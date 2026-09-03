@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Play, Pause, Volume2, VolumeX, Download, Share2, Heart, Sparkles, X, Grid, Eye, EyeOff } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Download, Share2, Sparkles, X, Grid, Eye, EyeOff } from 'lucide-react';
 import api from '../services/api.js';
 import { API_BASE_URL } from '../config/env.js';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -24,9 +24,9 @@ export default function StoryViewer() {
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [hideCaptions, setHideCaptions] = useState(false);
 
-  const [floatingHearts, setFloatingHearts] = useState([]);
-  const [lastTapTime, setLastTapTime] = useState(0);
-  const [hasLiked, setHasLiked] = useState(false);
+  // Swipe Gestures
+  const [touchStart, setTouchStart] = useState(null);
+  const [touchEnd, setTouchEnd] = useState(null);
 
   const [showGridDrawer, setShowGridDrawer] = useState(false);
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
@@ -99,18 +99,47 @@ export default function StoryViewer() {
     return () => clearInterval(timer);
   }, [hasStarted, isPaused, currentIndex, currentPhoto, isFinaleSlide, showGridDrawer]);
 
-  const handleDoubleTap = (e) => {
-    const now = Date.now();
-    if (now - lastTapTime < 300) {
-      const heartId = Date.now() + Math.random();
-      const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX || rect.width / 2;
-      const y = e.clientY || rect.height / 2;
-      setFloatingHearts((p) => [...p, { id: heartId, x, y }]);
-      setHasLiked(true);
-      setTimeout(() => setFloatingHearts((p) => p.filter((h) => h.id !== heartId)), 1200);
+  const handleNextSlide = () => {
+    setProgress(0);
+    if (currentIndex < totalSlides - 1) {
+      setCurrentIndex((c) => c + 1);
+    } else {
+      setCurrentIndex(0);
     }
-    setLastTapTime(now);
+  };
+
+  const handlePrevSlide = () => {
+    setProgress(0);
+    if (currentIndex > 0) {
+      setCurrentIndex((c) => c - 1);
+    } else {
+      setCurrentIndex(totalSlides - 1);
+    }
+  };
+
+  // Swipe handlers (Swipe Left -> Next, Swipe Right -> Prev)
+  const minSwipeDistance = 45;
+  const onTouchStart = (e) => {
+    setTouchEnd(null);
+    if (e.targetTouches && e.targetTouches.length > 0) {
+      setTouchStart(e.targetTouches[0].clientX);
+    }
+  };
+  const onTouchMove = (e) => {
+    if (e.targetTouches && e.targetTouches.length > 0) {
+      setTouchEnd(e.targetTouches[0].clientX);
+    }
+  };
+  const onTouchEnd = () => {
+    if (touchStart === null || touchEnd === null) return;
+    const distance = touchStart - touchEnd;
+    if (distance > minSwipeDistance) {
+      handleNextSlide();
+    } else if (distance < -minSwipeDistance) {
+      handlePrevSlide();
+    }
+    setTouchStart(null);
+    setTouchEnd(null);
   };
 
   const handleDownloadAll = async () => {
@@ -146,7 +175,9 @@ export default function StoryViewer() {
 
   return (
     <div
-      onClick={handleDoubleTap}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
       className='fixed inset-0 w-screen h-[100dvh] bg-[#070709] text-white flex items-center justify-center select-none overflow-hidden touch-none z-50'>
       
       {story.soundtrack?.audioUrl && (
@@ -272,11 +303,25 @@ export default function StoryViewer() {
           )}
         </div>
 
-        {/* Tap navigation */}
+        {/* Tap navigation (50% Left = Prev, 50% Right = Next) */}
         {hasStarted && !isFinaleSlide && (
           <div className='absolute inset-0 z-20 flex'>
-            <div onClick={() => { if (currentIndex > 0) setCurrentIndex((c) => c - 1); }} className='w-1/3 h-full' />
-            <div onClick={() => { if (currentIndex < totalSlides - 1) setCurrentIndex((c) => c + 1); }} className='w-2/3 h-full' />
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                handlePrevSlide();
+              }}
+              className='w-1/2 h-full cursor-w-resize'
+              aria-label='Previous Slide'
+            />
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                handleNextSlide();
+              }}
+              className='w-1/2 h-full cursor-e-resize'
+              aria-label='Next Slide'
+            />
           </div>
         )}
       </div>

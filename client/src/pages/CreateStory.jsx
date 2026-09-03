@@ -229,13 +229,23 @@ export default function CreateStory({ user }) {
 
   const handleSaveAndPublish = async () => {
     try {
+      if (!formData.clientName?.trim() || !formData.occasion?.trim()) {
+        toast.error('Client name and occasion are required.');
+        return;
+      }
+      if (!formData.photos || formData.photos.length === 0) {
+        toast.error('Please add at least one photo before saving.');
+        return;
+      }
       const res = await api.post('/v1/stories', formData);
       if (res.data?.success) {
         toast.success('🎉 Story published successfully!');
         navigate(`/story/${res.data.data.storyId}`);
       }
     } catch (err) {
-      toast.error('Failed to publish story');
+      console.error('Publish error:', err);
+      const msg = err.response?.data?.message || err.message || 'Failed to publish story';
+      toast.error(msg);
     }
   };
 

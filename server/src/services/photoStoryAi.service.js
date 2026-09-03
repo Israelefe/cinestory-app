@@ -191,33 +191,73 @@ Important: "slides" MUST contain exactly ${photoCount} items corresponding to ea
     }
   }
 
-  // High-Grade Human Editorial Fallback Engine
+  // High-Grade Human Editorial Fallback Engine - tailored dynamically to the exact occasion
   const occLower = (occasion + ' ' + adminDescription).toLowerCase();
   let defaultTheme = 'neon_violet';
   if (occLower.includes('wed') || occLower.includes('love') || occLower.includes('anniversary')) defaultTheme = 'sunset_rose';
-  if (occLower.includes('birth') || occLower.includes('gold')) defaultTheme = 'obsidian_gold';
-  if (occLower.includes('corporate') || occLower.includes('exec') || occLower.includes('headshot')) defaultTheme = 'clean_editorial';
-  if (occLower.includes('royal') || occLower.includes('culture') || occLower.includes('trad')) defaultTheme = 'royal_emerald';
+  else if (occLower.includes('birth') || occLower.includes('gold') || occLower.includes('year') || occLower.includes('th') || occLower.includes('st') || occLower.includes('rd')) defaultTheme = 'obsidian_gold';
+  else if (occLower.includes('corporate') || occLower.includes('exec') || occLower.includes('headshot')) defaultTheme = 'clean_editorial';
+  else if (occLower.includes('royal') || occLower.includes('culture') || occLower.includes('trad')) defaultTheme = 'royal_emerald';
+  else if (occLower.includes('grad') || occLower.includes('convoc')) defaultTheme = 'celestial_aurora';
 
-  const themeDetails = THEME_PRESETS[defaultTheme];
+  const themeDetails = THEME_PRESETS[defaultTheme] || THEME_PRESETS.neon_violet;
 
-  const humanMoments = [
-    { title: 'The Arrival', caption: 'Quiet confidence setting the tone for the entire session.', typo: 'cinematic_drift', anim: 'word_fade_up' },
-    { title: 'Golden Details', caption: 'It’s always the subtle things that tell the biggest story.', typo: 'editorial_quote', anim: 'letter_drift' },
-    { title: 'Effortless', caption: 'No forcing it. Just pure, natural presence in front of the lens.', typo: 'minimal_clean', anim: 'smooth_slide' },
-    { title: 'The Core', caption: 'A look that commands the room without saying a word.', typo: 'typewriter', anim: 'typewriter' },
-    { title: 'Signature Style', caption: 'Owning the aesthetic. Absolutely breathtaking.', typo: 'neon_pop', anim: 'scale_pop' },
-    { title: 'Timeless', caption: 'Some portraits never age. This is one of them.', typo: 'bold_banner', anim: 'blur_reveal' }
+  // Build dynamic occasion-specific narrative chapters
+  let occasionMoments = [];
+  if (occLower.includes('birth')) {
+    occasionMoments = [
+      { title: 'The Celebration', caption: `Marking ${occasion} in sheer style, radiance, and unmatched joy.` },
+      { title: 'Golden Chapter', caption: `Stepping into this new year with effortless grace and poise.` },
+      { title: 'Pure Radiance', caption: `Every frame reflects the energy, charm, and beauty of celebrating ${occasion}.` },
+      { title: 'Living Iconic', caption: `Confidence at its peak—owning every single second of this milestone.` },
+      { title: 'Timeless Glow', caption: `A signature portrait for ${clientName} to remember this exact moment forever.` },
+      { title: 'The Next Era', caption: `Here is to another spectacular year filled with wins, peace, and luxury.` }
+    ];
+  } else if (occLower.includes('wed') || occLower.includes('love') || occLower.includes('anniversary')) {
+    occasionMoments = [
+      { title: 'Two Souls', caption: `A timeless love story captured in its purest, most authentic light.` },
+      { title: 'The Connection', caption: `Quiet glances, genuine laughter, and promises sealed in time.` },
+      { title: 'Golden Harmony', caption: `Celebrating every step that brought you both to this unforgettable union.` },
+      { title: 'The Vow', caption: `Bound by elegance and devotion—a love meant for a lifetime.` },
+      { title: 'Pure Joy', caption: `The undeniable happiness shared between two hearts beating as one.` },
+      { title: 'Forever Forward', caption: `The beginning of an extraordinary lifetime chapter together.` }
+    ];
+  } else if (occLower.includes('grad') || occLower.includes('convoc')) {
+    occasionMoments = [
+      { title: 'The Milestone', caption: `Years of dedication, late nights, and relentless drive culminate right here.` },
+      { title: 'Scholarly Poise', caption: `Carrying the crown of accomplishment with undeniable dignity.` },
+      { title: 'A New Horizon', caption: `Stepping forward into the future prepared to lead and conquer.` },
+      { title: 'Pride & Joy', caption: `A well-deserved triumph that family and friends will cherish always.` }
+    ];
+  } else {
+    occasionMoments = [
+      { title: 'The Arrival', caption: `Capturing ${clientName}'s distinctive aura and energy for this ${occasion}.` },
+      { title: 'Signature Style', caption: `Effortless grace in front of the lens, celebrating ${occasion}.` },
+      { title: 'The Essence', caption: `A look that commands admiration—unfiltered presence and elegance.` },
+      { title: 'Timeless Focus', caption: `Masterfully crafted moments honoring ${clientName}'s ${occasion}.` },
+      { title: 'Golden Details', caption: `It is the subtle, intimate moments that make this ${occasion} unforgettable.` },
+      { title: 'Grand Finale', caption: `A masterpiece portrait series from IDEAS Media Studio that stands the test of time.` }
+    ];
+  }
+
+  const humanStyles = [
+    { typo: 'cinematic_drift', anim: 'word_fade_up' },
+    { typo: 'editorial_quote', anim: 'letter_drift' },
+    { typo: 'minimal_clean', anim: 'smooth_slide' },
+    { typo: 'typewriter', anim: 'typewriter' },
+    { typo: 'neon_pop', anim: 'scale_pop' },
+    { typo: 'bold_banner', anim: 'blur_reveal' }
   ];
 
   const fallbackPhotos = photos.map((p, idx) => {
-    const template = humanMoments[idx % humanMoments.length];
+    const template = occasionMoments[idx % occasionMoments.length];
+    const style = humanStyles[idx % humanStyles.length];
     return {
       ...p,
       chapterTitle: template.title,
       caption: template.caption,
-      typographyStyle: template.typo,
-      textAnimation: template.anim,
+      typographyStyle: style.typo,
+      textAnimation: style.anim,
       textBackground: 'frosted_glass',
       captionPosition: 'bottom',
       zoomEffect: idx % 2 === 0 ? 'zoom_in' : 'zoom_out',
@@ -227,14 +267,15 @@ Important: "slides" MUST contain exactly ${photoCount} items corresponding to ea
   });
 
   return {
-    title: `${clientName}'s ${occasion} Masterpieces`,
-    storySummary: `A timeless visual story celebrating ${clientName}'s ${occasion} at IDEAS Media Company.`,
+    title: `${clientName} • ${occasion}`,
+    storySummary: `A personalized visual tribute celebrating ${clientName}'s milestone ${occasion}, captured with distinction at IDEAS Media Studio.`,
     theme: {
       palette: defaultTheme,
       typography: 'cinematic_serif',
-      vibeTag: 'Timeless Aura',
+      vibeTag: occLower.includes('birth') ? 'Golden Milestone' : 'Timeless Radiance',
       bgGradient: themeDetails.bgGradient,
-      accentColor: themeDetails.accentColor
+      accentColor: themeDetails.accentColor,
+      glowColor: themeDetails.glowColor
     },
     soundtrack: selectedSoundtrack,
     photos: fallbackPhotos
