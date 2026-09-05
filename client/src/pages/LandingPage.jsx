@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
+import Footer from '../components/Footer.jsx';
 import {
   ArrowRight,
   Camera,
@@ -1228,6 +1229,9 @@ export default function LandingPage({ onOpenAuth }) {
           </div>
         </div>
       </section>
+
+      {/* ─── FOOTER (LANDING PAGE ONLY) ─── */}
+      <Footer />
     </div>
   );
 }

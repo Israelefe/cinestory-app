@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar.jsx';
-import Footer from './components/Footer.jsx';
 import AuthModal from './components/AuthModal.jsx';
 import LandingPage from './pages/LandingPage.jsx';
 import Dashboard from './pages/Dashboard.jsx';
@@ -50,7 +49,6 @@ export default function App() {
                 <Route path="/admin" element={<AdminDashboard user={user} />} />
               </Routes>
             </main>
-            <Footer />
           </div>
         } />
       </Routes>
