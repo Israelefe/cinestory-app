@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Film, Plus, LogOut, ShieldCheck, Sparkles } from 'lucide-react';
+import { Film, Plus, LogOut, ShieldCheck, Sparkles, ArrowRight } from 'lucide-react';
 
 export default function Navbar({ user, onOpenAuth, onLogout }) {
   return (
@@ -19,7 +19,7 @@ export default function Navbar({ user, onOpenAuth, onLogout }) {
           <a href='#pricing' className='hover:text-white transition-colors'>Pricing</a>
         </div>
 
-        <div className='flex items-center gap-3'>
+        <div className='flex items-center gap-2.5 sm:gap-3'>
           {user ? (
             <>
               <div className='hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#ff5a47]/10 border border-[#ff5a47]/25 text-[#ff9b8e] text-xs font-bold'>
@@ -54,14 +54,14 @@ export default function Navbar({ user, onOpenAuth, onLogout }) {
             <>
               <button
                 onClick={onOpenAuth}
-                className='text-xs font-bold text-zinc-300 hover:text-white px-3 py-1.5 rounded-lg hover:bg-white/5 transition-colors cursor-pointer'>
+                className='inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] px-3.5 sm:px-4 py-2 text-xs font-bold text-zinc-300 backdrop-blur-md transition-all hover:border-white/25 hover:bg-white/[0.08] hover:text-white active:scale-95 cursor-pointer shadow-sm'>
                 Sign In
               </button>
               <Link
                 to='/create'
-                className='bg-[#ff5a47] hover:bg-[#ff7564] text-white px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl font-bold text-xs shadow-md shadow-[#ff5a47]/20 flex items-center gap-1.5 hover:scale-105 active:scale-95 transition-all'>
-                <span className='hidden sm:inline'>Start Free (2/mo)</span>
-                <span className='sm:hidden'>Start Free</span>
+                className='inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#ff5a47] hover:bg-[#ff7564] text-white px-4 sm:px-5 py-2 text-xs font-bold shadow-md shadow-[#ff5a47]/25 transition-all hover:shadow-[#ff5a47]/40 active:scale-95'>
+                <span>Start Free</span>
+                <ArrowRight size={13} className='hidden sm:inline text-white/80' />
               </Link>
             </>
           )}
