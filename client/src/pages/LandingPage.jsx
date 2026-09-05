@@ -547,14 +547,10 @@ export default function LandingPage({ onOpenAuth }) {
           {/* Main Content Column */}
           <div className='relative z-10 w-full text-center lg:text-left'>
             
-            {/* 1. Positioning Badge (Prestigious, High-Impact on Mobile & Desktop) */}
-            <div className='mb-3.5 inline-flex items-center gap-2 rounded-full border border-[#ff5a47]/35 bg-gradient-to-r from-[#ff5a47]/15 to-[#ff8c7a]/10 px-3.5 py-1.5 text-[10.5px] font-extrabold uppercase tracking-[0.18em] text-[#ff9b8e] shadow-[0_0_20px_rgba(255,90,71,0.18)] backdrop-blur-md sm:mb-5 sm:px-4 sm:text-xs sm:tracking-[0.22em]'>
-              <span className='relative flex h-2 w-2'>
-                <span className='absolute inline-flex h-full w-full animate-ping rounded-full bg-[#ff5a47] opacity-80' />
-                <span className='relative inline-flex h-2 w-2 rounded-full bg-[#ff5a47] shadow-[0_0_8px_#ff5a47]' />
-              </span>
-              <span>The Photo Delivery Platform for Photographers</span>
-            </div>
+            {/* 1. Editorial Category Positioning */}
+            <p className='mb-3 text-[11px] font-bold uppercase tracking-[0.22em] text-[#ff8c7a] sm:mb-4 sm:text-xs sm:tracking-[0.26em]'>
+              The Photo Delivery Platform for Photographers
+            </p>
 
             {/* 2. Master Command H1 */}
             <h1 className='font-display text-[2.35rem] font-extrabold leading-[1.02] tracking-[-0.04em] text-white sm:text-5xl lg:text-[4.5rem]'>
