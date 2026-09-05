@@ -513,7 +513,7 @@ export default function LandingPage({ onOpenAuth }) {
     <div className='min-h-screen w-full overflow-x-hidden bg-[#070709] text-white selection:bg-[#ff5a47] selection:text-white'>
       
       {/* ─── HERO SECTION ─── */}
-      <section className='relative px-4 pb-12 pt-24 sm:px-8 sm:pb-20 sm:pt-32 lg:min-h-[100svh] lg:pt-36'>
+      <section className='relative px-4 pb-12 pt-20 sm:px-8 sm:pb-20 sm:pt-32 lg:min-h-[100svh] lg:pt-36'>
         {/* Ambient atmospheric glows */}
         <div className='pointer-events-none absolute left-[-15%] top-[-15%] h-[400px] w-[400px] rounded-full bg-[#ff5a47]/15 blur-[140px] sm:h-[650px] sm:w-[650px]' />
         <div className='pointer-events-none absolute right-[-10%] top-[10%] h-[350px] w-[350px] rounded-full bg-[#ff8c7a]/10 blur-[130px] sm:h-[500px] sm:w-[500px]' />
@@ -526,13 +526,13 @@ export default function LandingPage({ onOpenAuth }) {
           {/* Main Content Column */}
           <div className='relative z-10 w-full text-center md:text-left'>
             
-            {/* 1. Editorial Category Positioning */}
-            <p className='mb-2.5 text-[11px] font-bold uppercase tracking-[0.22em] text-[#ff8c7a] sm:mb-4 sm:text-xs sm:tracking-[0.26em]'>
+            {/* 1. Editorial Category Positioning (Desktop only so mobile doesn't get crowded) */}
+            <p className='hidden md:block mb-3 text-xs font-bold uppercase tracking-[0.24em] text-[#ff8c7a]'>
               The Photo Delivery Platform for Photographers
             </p>
 
             {/* 2. Master Command H1 */}
-            <h1 className='font-display text-4xl sm:text-5xl lg:text-[4.5rem] font-extrabold leading-[1.02] tracking-[-0.04em] text-white'>
+            <h1 className='font-display text-3xl sm:text-5xl lg:text-[4.5rem] font-extrabold leading-[1.04] tracking-[-0.035em] text-white'>
               Don't just deliver photos.<br />
               <span className='text-transparent bg-clip-text bg-gradient-to-r from-[#ff7b69] via-[#ff5a47] to-[#ffb2a8] drop-shadow-[0_8px_30px_rgba(255,90,71,0.35)]'>
                 Premiere them.
@@ -540,7 +540,7 @@ export default function LandingPage({ onOpenAuth }) {
             </h1>
 
             {/* ON MOBILE ONLY: The Interactive Photo Story sits right under the headline so it is seen immediately! */}
-            <div className='my-7 md:hidden' ref={previewRef}>
+            <div className='my-5 md:hidden' ref={previewRef}>
               {renderPhoneSimulator()}
             </div>
 
