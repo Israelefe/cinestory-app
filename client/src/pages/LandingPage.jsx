@@ -248,7 +248,7 @@ export default function LandingPage({ onOpenAuth }) {
 
   // Reusable Phone Simulator Component (Identical design on mobile and desktop)
   const renderPhoneSimulator = () => (
-    <div className='relative mx-auto w-full max-w-[320px] sm:max-w-[340px]'>
+    <div className='relative mx-auto w-full max-w-[285px] sm:max-w-[340px]'>
       
       {/* Genre Switcher Pills */}
       <div className='mb-3.5 flex items-center justify-center gap-1.5'>
@@ -538,10 +538,10 @@ export default function LandingPage({ onOpenAuth }) {
         {/* Subtle grid lines */}
         <div className='pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:3.5rem_3.5rem] [mask-image:radial-gradient(ellipse_75%_65%_at_50%_15%,#000_60%,transparent_100%)]' />
 
-        <div className='relative mx-auto max-w-7xl lg:min-h-[calc(100svh-11rem)] lg:grid lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-12'>
+        <div className='relative mx-auto max-w-7xl md:min-h-[calc(100svh-11rem)] md:grid md:grid-cols-2 lg:grid-cols-[1.05fr_0.95fr] md:items-center md:gap-8 lg:gap-12'>
           
           {/* Main Content Column */}
-          <div className='relative z-10 w-full text-center lg:text-left'>
+          <div className='relative z-10 w-full text-center md:text-left'>
             
             {/* 1. Editorial Category Positioning */}
             <p className='mb-2.5 text-[11px] font-bold uppercase tracking-[0.22em] text-[#ff8c7a] sm:mb-4 sm:text-xs sm:tracking-[0.26em]'>
@@ -556,14 +556,19 @@ export default function LandingPage({ onOpenAuth }) {
               </span>
             </h1>
 
+            {/* ON MOBILE ONLY: The Interactive Photo Story sits right under the headline so it is seen immediately! */}
+            <div className='my-7 md:hidden' ref={previewRef}>
+              {renderPhoneSimulator()}
+            </div>
+
             {/* 3. Supporting Copy */}
-            <p className='mx-auto mt-4 max-w-lg text-sm leading-relaxed text-zinc-300 sm:mt-6 sm:text-base sm:leading-7 lg:mx-0'>
+            <p className='mx-auto mt-4 max-w-lg text-sm leading-relaxed text-zinc-300 sm:mt-6 sm:text-base sm:leading-7 md:mx-0'>
               Transform completed photoshoots into cinematic, interactive Photo Stories your clients can experience,
               share and download. Built for photographers and media studios who want final delivery to feel as premium as the photography itself.
             </p>
 
-            {/* 4. CTAs (Both buttons visible on mobile and desktop) */}
-            <div className='mt-5 flex flex-col justify-center gap-3 sm:mt-8 sm:flex-row lg:justify-start'>
+            {/* 4. CTAs */}
+            <div className='mt-5 flex flex-col justify-center gap-3 sm:mt-8 sm:flex-row md:justify-start'>
               <Link
                 to='/create'
                 className='group inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-[#ff5a47] px-6 py-3.5 text-sm font-black text-white shadow-[0_12px_35px_rgba(255,90,71,0.32)] transition hover:-translate-y-0.5 hover:bg-[#ff7564] active:translate-y-0 sm:w-auto sm:px-7 sm:py-4'>
@@ -572,7 +577,7 @@ export default function LandingPage({ onOpenAuth }) {
               </Link>
               <button
                 onClick={startStory}
-                className='inline-flex w-full items-center justify-center gap-2.5 rounded-2xl border border-white/15 bg-white/[.05] px-5 py-3.5 text-sm font-bold text-zinc-200 backdrop-blur-xl transition hover:bg-white/[.1] sm:w-auto sm:px-6 sm:py-4'>
+                className='hidden md:inline-flex items-center justify-center gap-2.5 rounded-2xl border border-white/15 bg-white/[.05] px-5 py-3.5 text-sm font-bold text-zinc-200 backdrop-blur-xl transition hover:bg-white/[.1] sm:w-auto sm:px-6 sm:py-4'>
                 <span className='grid h-5 w-5 place-items-center rounded-full bg-[#ff5a47]/20 text-[#ff7b69]'>
                   <Play size={10} fill='currentColor' />
                 </span>
@@ -581,7 +586,7 @@ export default function LandingPage({ onOpenAuth }) {
             </div>
 
             {/* 5. Trust & Friction Badges */}
-            <div className='mt-5 flex flex-wrap justify-center gap-x-4 gap-y-2 text-[11px] font-medium text-zinc-400 sm:mt-6 sm:text-xs lg:justify-start'>
+            <div className='mt-5 flex flex-wrap justify-center gap-x-4 gap-y-2 text-[11px] font-medium text-zinc-400 sm:mt-6 sm:text-xs md:justify-start'>
               <span className='flex items-center gap-1.5'>
                 <Check size={13} className='text-[#ff6b57]' /> 2 Stories free / mo
               </span>
@@ -597,8 +602,8 @@ export default function LandingPage({ onOpenAuth }) {
             </div>
           </div>
 
-          {/* Interactive Photo Story Showcase (Identical on mobile and desktop: stacked naturally on mobile, right column on desktop) */}
-          <div className='mt-12 lg:mt-0 flex justify-center' ref={previewRef}>
+          {/* ON DESKTOP ONLY: The Interactive Photo Story Showcase sits in the right column */}
+          <div className='hidden md:flex justify-center'>
             {renderPhoneSimulator()}
           </div>
 
