@@ -193,11 +193,6 @@ const faqs = [
   }
 ];
 
-const reveal = {
-  hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] } }
-};
-
 export default function LandingPage({ onOpenAuth }) {
   const previewRef = useRef(null);
   const [selectedPresetIndex, setSelectedPresetIndex] = useState(0);
@@ -251,60 +246,338 @@ export default function LandingPage({ onOpenAuth }) {
     setIsPlaying(true);
   };
 
+  // Reusable Phone Simulator Component
+  const renderPhoneSimulator = (isMobile = false) => (
+    <div className={`relative mx-auto w-full ${isMobile ? 'max-w-[310px]' : 'max-w-[340px]'}`}>
+      
+      {/* Genre Switcher Pills */}
+      <div className='mb-3.5 flex items-center justify-center gap-1.5'>
+        <span className='mr-1 hidden text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:inline'>
+          Shoot Type:
+        </span>
+        {heroPresets.map((preset, idx) => (
+          <button
+            key={preset.id}
+            onClick={() => handleSelectPreset(idx)}
+            className={`flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-bold transition ${
+              selectedPresetIndex === idx
+                ? 'bg-[#ff5a47] text-white shadow-md shadow-[#ff5a47]/30'
+                : 'border border-white/10 bg-white/5 text-zinc-400 hover:text-white'
+            }`}>
+            <span>{preset.icon}</span>
+            <span>{preset.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Floating Badges (Desktop only) */}
+      {!isMobile && (
+        <div className='hidden lg:block'>
+          <motion.div
+            animate={{ y: [0, -5, 0] }}
+            transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+            className='absolute -left-7 top-16 z-30 flex items-center gap-2 rounded-xl border border-white/15 bg-black/80 p-2.5 shadow-2xl backdrop-blur-xl'>
+            <div className='grid h-8 w-8 place-items-center rounded-lg bg-[#ff5a47]/20 text-[#ff7b69]'>
+              <WandSparkles size={15} />
+            </div>
+            <div>
+              <p className='text-[9px] font-black uppercase tracking-wider text-[#ff9b8e]'>AI Director</p>
+              <p className='text-xs font-bold text-white'>Opening Hook Selected</p>
+            </div>
+          </motion.div>
+
+          <motion.div
+            animate={{ y: [0, 5, 0] }}
+            transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut', delay: 0.4 }}
+            className='absolute -right-6 top-28 z-30 flex items-center gap-2 rounded-xl border border-white/15 bg-black/80 p-2.5 shadow-2xl backdrop-blur-xl'>
+            <div className='grid h-8 w-8 place-items-center rounded-lg bg-[#ff5a47]/20 text-[#ff7b69]'>
+              <Music2 size={15} />
+            </div>
+            <div>
+              <p className='text-[9px] font-black uppercase tracking-wider text-[#ff9b8e]'>Soundtrack Sync</p>
+              <p className='text-xs font-bold text-white'>{currentPreset.soundtrack}</p>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Phone Screen Player */}
+      <div className='relative mx-auto aspect-[9/16] w-full overflow-hidden rounded-[2.5rem] border-[2.5px] border-white/20 bg-zinc-950 p-2 shadow-[0_25px_80px_rgba(0,0,0,0.85)] ring-1 ring-white/10 sm:rounded-[2.8rem] sm:border-[3px] sm:p-2.5'>
+        <div className='relative h-full w-full overflow-hidden rounded-[2.1rem] bg-black sm:rounded-[2.3rem]'>
+          
+          {/* Dynamic Island Pill Notch */}
+          <div className='absolute left-1/2 top-2 z-40 flex h-3.5 w-18 -translate-x-1/2 items-center justify-between rounded-full bg-black px-2 ring-1 ring-white/10'>
+            <div className='h-1.5 w-1.5 rounded-full bg-white/20' />
+            <div className='h-1.5 w-1.5 rounded-full bg-emerald-500/80 shadow-[0_0_6px_#10b981]' />
+          </div>
+
+          <AnimatePresence mode='wait'>
+            {/* ─── STATE 1: COVER SCREEN ─── */}
+            {storyStatus === 'cover' && (
+              <motion.div
+                key={`cover-${currentPreset.id}`}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className='absolute inset-0'>
+                <img
+                  src={currentPreset.coverImage}
+                  alt=''
+                  className='absolute inset-0 h-full w-full object-cover'
+                />
+                <div className='absolute inset-0 bg-gradient-to-t from-black via-black/35 to-black/30' />
+                
+                {/* Veylo Logo */}
+                <div className='absolute inset-x-0 top-[16%] flex flex-col items-center px-4 text-center'>
+                  <img src='/veylo/veylo-mark.svg' alt='' className='h-10 w-10 rounded-xl shadow-lg' />
+                  <span className='mt-2.5 rounded-full border border-white/20 bg-black/40 px-3 py-0.5 text-[8px] font-black uppercase tracking-[.2em] text-white backdrop-blur-md'>
+                    A Veylo Photo Story
+                  </span>
+                </div>
+
+                {/* Cover Details & Play Button */}
+                <div className='absolute inset-x-0 bottom-0 p-5 text-center'>
+                  <p className='font-serif text-2xl font-semibold text-white sm:text-3xl'>
+                    {currentPreset.tag}
+                  </p>
+                  <p className='mt-1 text-[11px] font-medium text-white/75'>
+                    {currentPreset.occasion}
+                  </p>
+
+                  <div className='mt-2.5 flex items-center justify-center gap-1.5 text-[8px] font-semibold text-white/80'>
+                    <span className='inline-flex items-center gap-1 rounded border border-white/15 bg-black/40 px-2 py-0.5'>
+                      <Music2 size={8} className='text-[#ff7b69]' /> {currentPreset.soundtrack}
+                    </span>
+                  </div>
+
+                  <button
+                    onClick={startStory}
+                    className='mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#ff5a47] py-3 text-xs font-black text-white shadow-lg shadow-[#ff5a47]/35 transition hover:bg-[#ff7564] active:scale-95'>
+                    <Play size={12} fill='currentColor' /> Watch Premiere
+                  </button>
+                  <p className='mt-2 text-[8px] font-bold uppercase tracking-wider text-white/45'>
+                    Tap to begin
+                  </p>
+                </div>
+              </motion.div>
+            )}
+
+            {/* ─── STATE 2: PLAYING STORY FRAMES ─── */}
+            {storyStatus === 'playing' && (
+              <motion.div
+                key={`frame-${currentPreset.id}-${activeFrame}`}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.55 }}
+                className='absolute inset-0 cursor-pointer'
+                onClick={togglePlayPause}>
+                <motion.img
+                  src={frames[activeFrame].image}
+                  alt=''
+                  initial={{ scale: 1.02 }}
+                  animate={{ scale: activeFrame % 2 === 0 ? 1.08 : 1.05, x: activeFrame % 2 === 0 ? 0 : -5 }}
+                  transition={{ duration: 5.5, ease: 'linear' }}
+                  className='absolute inset-0 h-full w-full object-cover'
+                />
+                <div className='absolute inset-0 bg-gradient-to-t from-black/95 via-transparent to-black/60' />
+
+                {/* Caption Card */}
+                <div className='absolute inset-x-0 bottom-0 p-3.5'>
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.15 }}
+                    className='rounded-xl border border-[#ff7b69]/30 bg-black/85 p-3 text-left shadow-2xl backdrop-blur-xl'>
+                    <div className='flex items-center justify-between'>
+                      <span className='rounded border border-[#ff7b69]/40 bg-[#ff5a47]/15 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-[.14em] text-[#ff9b8e]'>
+                        {frames[activeFrame].chapter}
+                      </span>
+                      <span className='text-[8px] font-bold text-white/50'>
+                        {activeFrame + 1} / {frames.length}
+                      </span>
+                    </div>
+                    <p className='mt-2 text-xs font-semibold leading-relaxed text-white'>
+                      {frames[activeFrame].line}
+                    </p>
+                  </motion.div>
+                </div>
+              </motion.div>
+            )}
+
+            {/* ─── STATE 3: FINALE & GALLERY REVEAL ─── */}
+            {storyStatus === 'ending' && (
+              <motion.div
+                key='ending'
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className='absolute inset-0 flex flex-col items-center justify-center bg-[radial-gradient(circle_at_top,#4a1a18_0%,#180e11_45%,#050505_100%)] p-5 text-center'>
+                {/* Fan of completed photos */}
+                <div className='relative mb-5 h-20 w-32'>
+                  {[frames[0].image, frames[1].image, frames[2].image].map((img, idx) => (
+                    <img
+                      key={img}
+                      src={img}
+                      alt=''
+                      className={`absolute left-1/2 top-1/2 h-16 w-12 rounded-lg border-2 object-cover shadow-xl ${
+                        idx === 0
+                          ? '-translate-x-[125%] -translate-y-1/2 -rotate-12 border-white/20'
+                          : idx === 1
+                          ? 'z-10 -translate-x-1/2 -translate-y-1/2 border-[#ff7b69]'
+                          : 'translate-x-[25%] -translate-y-1/2 rotate-12 border-white/20'
+                      }`}
+                    />
+                  ))}
+                </div>
+
+                <span className='text-[8px] font-black uppercase tracking-[.2em] text-[#ff9b8e]'>
+                  Premiere Concluded
+                </span>
+                <p className='mt-1.5 font-serif text-xl font-semibold text-white'>
+                  Your Photos Are Ready
+                </p>
+                <p className='mt-1 text-[10px] leading-snug text-white/60'>
+                  Browse all finished high-res photos, view full-screen, or download all.
+                </p>
+
+                <div className='mt-4 w-full space-y-2'>
+                  <button className='flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#ff5a47] py-2.5 text-[10px] font-black text-white'>
+                    <ImageIcon size={11} /> View full photo gallery
+                  </button>
+                  <button className='flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 py-2 text-[10px] font-bold text-white'>
+                    <Download size={11} /> Download all (High-Res)
+                  </button>
+                  <button className='flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 py-2 text-[10px] font-bold text-white'>
+                    <Share2 size={11} /> Share Photo Story
+                  </button>
+                </div>
+
+                <button
+                  onClick={restartStory}
+                  className='mt-3 flex items-center gap-1 text-[8px] font-black uppercase tracking-wider text-white/50 hover:text-white'>
+                  <RotateCcw size={9} /> Replay premiere
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Progress Bar & Live Equalizer during playback */}
+          {storyStatus === 'playing' && (
+            <div className='absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-black/90 via-black/40 to-transparent px-3 pb-4 pt-6'>
+              {/* Progress Segments */}
+              <div className='flex gap-1'>
+                {frames.map((_, idx) => (
+                  <button
+                    key={idx}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveFrame(idx);
+                      setIsPlaying(true);
+                    }}
+                    className='h-[2.5px] flex-1 overflow-hidden rounded-full bg-white/25'>
+                    <span
+                      className={`block h-full bg-white transition-all duration-300 ${
+                        idx < activeFrame
+                          ? 'w-full'
+                          : idx === activeFrame
+                          ? 'w-full'
+                          : 'w-0'
+                      }`}
+                    />
+                  </button>
+                ))}
+              </div>
+
+              {/* Metadata & Equalizer */}
+              <div className='mt-2 flex items-center justify-between'>
+                <div className='flex items-center gap-1.5'>
+                  <img src='/veylo/veylo-mark.svg' alt='' className='h-5 w-5 rounded-md' />
+                  <div className='text-left'>
+                    <p className='text-[9px] font-black leading-none text-white'>{currentPreset.tag}</p>
+                    <div className='mt-0.5 flex items-center gap-1 text-[7px] font-medium text-[#ff9b8e]'>
+                      {isPlaying && (
+                        <span className='flex h-2 items-end gap-[1px]'>
+                          <span className='h-full w-[1px] animate-pulse bg-[#ff5a47]' />
+                          <span className='h-1.5 w-[1px] animate-pulse bg-[#ff5a47]' />
+                          <span className='h-2 w-[1px] animate-pulse bg-[#ff5a47]' />
+                        </span>
+                      )}
+                      <span className='truncate max-w-[110px]'>{currentPreset.soundtrack}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className='flex items-center gap-1'>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsMuted(!isMuted);
+                    }}
+                    className='grid h-5 w-5 place-items-center rounded-full bg-black/40 text-white/80'>
+                    {isMuted ? <VolumeX size={9} /> : <Volume2 size={9} />}
+                  </button>
+                  <button
+                    onClick={togglePlayPause}
+                    className='grid h-5 w-5 place-items-center rounded-full bg-black/40 text-white'>
+                    {isPlaying ? <Pause size={9} /> : <Play size={9} fill='currentColor' />}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className='min-h-screen w-full overflow-x-hidden bg-[#070709] text-white selection:bg-[#ff5a47] selection:text-white'>
       
-      {/* ─── HERO SECTION (100% MOBILE RESPONSIVE & HIGH IMPACT) ─── */}
+      {/* ─── HERO SECTION ─── */}
       <section className='relative px-4 pb-12 pt-24 sm:px-8 sm:pb-20 sm:pt-32 lg:min-h-[100svh] lg:pt-36'>
-        {/* Ambient atmospheric lighting */}
+        {/* Ambient atmospheric glows */}
         <div className='pointer-events-none absolute left-[-15%] top-[-15%] h-[400px] w-[400px] rounded-full bg-[#ff5a47]/15 blur-[140px] sm:h-[650px] sm:w-[650px]' />
         <div className='pointer-events-none absolute right-[-10%] top-[10%] h-[350px] w-[350px] rounded-full bg-[#ff8c7a]/10 blur-[130px] sm:h-[500px] sm:w-[500px]' />
 
-        {/* Subtle background grid */}
+        {/* Subtle grid lines */}
         <div className='pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:3.5rem_3.5rem] [mask-image:radial-gradient(ellipse_75%_65%_at_50%_15%,#000_60%,transparent_100%)]' />
 
-        <div className='relative mx-auto grid max-w-7xl items-center gap-8 lg:min-h-[calc(100svh-11rem)] lg:grid-cols-[1.05fr_0.95fr] lg:gap-12'>
+        <div className='relative mx-auto max-w-7xl lg:min-h-[calc(100svh-11rem)] lg:grid lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-12'>
           
-          {/* Left Column: Typography & CTAs */}
-          <motion.div
-            initial='hidden'
-            animate='show'
-            variants={{ show: { transition: { staggerChildren: 0.08 } } }}
-            className='relative z-10 w-full text-center lg:text-left'>
+          {/* Main Content Column */}
+          <div className='relative z-10 w-full text-center lg:text-left'>
             
-            {/* Live Eyebrow Badge */}
-            <motion.div
-              variants={reveal}
-              className='mb-4 inline-flex items-center gap-2 rounded-full border border-[#ff5a47]/30 bg-[#ff5a47]/10 px-3 py-1 text-[10px] font-extrabold uppercase tracking-[.18em] text-[#ff9b8e] sm:text-xs'>
+            {/* 1. Positioning Badge (Prestigious, High-Impact on Mobile & Desktop) */}
+            <div className='mb-3.5 inline-flex items-center gap-2 rounded-full border border-[#ff5a47]/35 bg-gradient-to-r from-[#ff5a47]/15 to-[#ff8c7a]/10 px-3.5 py-1.5 text-[10.5px] font-extrabold uppercase tracking-[0.18em] text-[#ff9b8e] shadow-[0_0_20px_rgba(255,90,71,0.18)] backdrop-blur-md sm:mb-5 sm:px-4 sm:text-xs sm:tracking-[0.22em]'>
               <span className='relative flex h-2 w-2'>
-                <span className='absolute inline-flex h-full w-full animate-ping rounded-full bg-[#ff5a47] opacity-75' />
+                <span className='absolute inline-flex h-full w-full animate-ping rounded-full bg-[#ff5a47] opacity-80' />
                 <span className='relative inline-flex h-2 w-2 rounded-full bg-[#ff5a47] shadow-[0_0_8px_#ff5a47]' />
               </span>
-              The Photo Delivery Platform for Photographers
-            </motion.div>
+              <span>The Photo Delivery Platform for Photographers</span>
+            </div>
 
-            {/* Master H1 */}
-            <motion.h1
-              variants={reveal}
-              className='font-display text-[2.35rem] font-extrabold leading-[1.02] tracking-[-0.04em] text-white sm:text-5xl lg:text-[4.5rem]'>
+            {/* 2. Master Command H1 */}
+            <h1 className='font-display text-[2.35rem] font-extrabold leading-[1.02] tracking-[-0.04em] text-white sm:text-5xl lg:text-[4.5rem]'>
               Don't just deliver photos.<br />
               <span className='text-transparent bg-clip-text bg-gradient-to-r from-[#ff7b69] via-[#ff5a47] to-[#ffb2a8] drop-shadow-[0_8px_30px_rgba(255,90,71,0.35)]'>
                 Premiere them.
               </span>
-            </motion.h1>
+            </h1>
 
-            {/* Subtitle */}
-            <motion.p
-              variants={reveal}
-              className='mx-auto mt-4 max-w-lg text-sm leading-relaxed text-zinc-300 sm:mt-6 sm:text-base sm:leading-7 lg:mx-0'>
+            {/* 3. ON MOBILE ONLY: The Interactive Photo Story appears IMMEDIATELY here! */}
+            {/* The mobile user sees the story right away without scrolling past text! */}
+            <div className='my-6 w-full lg:hidden' ref={previewRef}>
+              {renderPhoneSimulator(true)}
+            </div>
+
+            {/* 4. Supporting Copy */}
+            <p className='mx-auto mt-4 max-w-lg text-sm leading-relaxed text-zinc-300 sm:mt-6 sm:text-base sm:leading-7 lg:mx-0'>
               Transform completed photoshoots into cinematic, interactive Photo Stories your clients can experience,
               share and download. Built for photographers and media studios who want final delivery to feel as premium as the photography itself.
-            </motion.p>
+            </p>
 
-            {/* CTAs */}
-            <motion.div
-              variants={reveal}
-              className='mt-6 flex flex-col justify-center gap-3 sm:flex-row lg:justify-start'>
+            {/* 5. CTAs */}
+            <div className='mt-5 flex flex-col justify-center gap-3 sm:mt-8 sm:flex-row lg:justify-start'>
               <Link
                 to='/create'
                 className='group inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-[#ff5a47] px-6 py-3.5 text-sm font-black text-white shadow-[0_12px_35px_rgba(255,90,71,0.32)] transition hover:-translate-y-0.5 hover:bg-[#ff7564] active:translate-y-0 sm:w-auto sm:px-7 sm:py-4'>
@@ -319,12 +592,10 @@ export default function LandingPage({ onOpenAuth }) {
                 </span>
                 <span>Watch Story Premiere</span>
               </button>
-            </motion.div>
+            </div>
 
-            {/* Trust & Guarantee Badges */}
-            <motion.div
-              variants={reveal}
-              className='mt-6 flex flex-wrap justify-center gap-x-4 gap-y-2 text-[11px] font-medium text-zinc-400 sm:text-xs lg:justify-start'>
+            {/* 6. Trust & Friction Badges */}
+            <div className='mt-5 flex flex-wrap justify-center gap-x-4 gap-y-2 text-[11px] font-medium text-zinc-400 sm:mt-6 sm:text-xs lg:justify-start'>
               <span className='flex items-center gap-1.5'>
                 <Check size={13} className='text-[#ff6b57]' /> 2 Stories free / mo
               </span>
@@ -337,293 +608,14 @@ export default function LandingPage({ onOpenAuth }) {
               <span className='flex items-center gap-1.5'>
                 <Check size={13} className='text-[#ff6b57]' /> No card required
               </span>
-            </motion.div>
-          </motion.div>
-
-          {/* Right Column: Live Interactive Device / Showcase */}
-          <motion.div
-            ref={previewRef}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.15, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-            className='relative mx-auto w-full max-w-[420px] lg:mr-0'>
-
-            {/* Genre Switcher Pills */}
-            <div className='mb-3 flex items-center justify-center gap-1.5 sm:justify-start'>
-              <span className='mr-1 hidden text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:inline'>
-                Sample Shoot:
-              </span>
-              {heroPresets.map((preset, idx) => (
-                <button
-                  key={preset.id}
-                  onClick={() => handleSelectPreset(idx)}
-                  className={`flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-bold transition ${
-                    selectedPresetIndex === idx
-                      ? 'bg-[#ff5a47] text-white shadow-md shadow-[#ff5a47]/30'
-                      : 'border border-white/10 bg-white/5 text-zinc-400 hover:text-white'
-                  }`}>
-                  <span>{preset.icon}</span>
-                  <span>{preset.label}</span>
-                </button>
-              ))}
             </div>
+          </div>
 
-            {/* Floating Glass Badges (Desktop & Tablet only) */}
-            <div className='hidden lg:block'>
-              <motion.div
-                animate={{ y: [0, -5, 0] }}
-                transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-                className='absolute -left-6 top-16 z-30 flex items-center gap-2 rounded-xl border border-white/15 bg-black/80 p-2.5 shadow-2xl backdrop-blur-xl'>
-                <div className='grid h-8 w-8 place-items-center rounded-lg bg-[#ff5a47]/20 text-[#ff7b69]'>
-                  <WandSparkles size={15} />
-                </div>
-                <div>
-                  <p className='text-[9px] font-black uppercase tracking-wider text-[#ff9b8e]'>AI Director</p>
-                  <p className='text-xs font-bold text-white'>Opening Hook Selected</p>
-                </div>
-              </motion.div>
+          {/* ON DESKTOP ONLY: The Interactive Photo Story Showcase sits in the right column */}
+          <div className='hidden lg:block lg:mr-0'>
+            {renderPhoneSimulator(false)}
+          </div>
 
-              <motion.div
-                animate={{ y: [0, 5, 0] }}
-                transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut', delay: 0.4 }}
-                className='absolute -right-5 top-28 z-30 flex items-center gap-2 rounded-xl border border-white/15 bg-black/80 p-2.5 shadow-2xl backdrop-blur-xl'>
-                <div className='grid h-8 w-8 place-items-center rounded-lg bg-[#ff5a47]/20 text-[#ff7b69]'>
-                  <Music2 size={15} />
-                </div>
-                <div>
-                  <p className='text-[9px] font-black uppercase tracking-wider text-[#ff9b8e]'>Soundtrack Sync</p>
-                  <p className='text-xs font-bold text-white'>{currentPreset.soundtrack}</p>
-                </div>
-              </motion.div>
-            </div>
-
-            {/* Phone Screen Player */}
-            <div className='relative mx-auto aspect-[9/16] w-full max-w-[310px] overflow-hidden rounded-[2.4rem] border-[2.5px] border-white/20 bg-zinc-950 p-2 shadow-[0_25px_80px_rgba(0,0,0,0.85)] ring-1 ring-white/10 sm:max-w-[330px] sm:rounded-[2.8rem] sm:border-[3px] sm:p-2.5'>
-              <div className='relative h-full w-full overflow-hidden rounded-[2rem] bg-black sm:rounded-[2.3rem]'>
-                
-                {/* Camera Notch Island */}
-                <div className='absolute left-1/2 top-2 z-40 flex h-3.5 w-18 -translate-x-1/2 items-center justify-between rounded-full bg-black px-2 ring-1 ring-white/10'>
-                  <div className='h-1.5 w-1.5 rounded-full bg-white/20' />
-                  <div className='h-1.5 w-1.5 rounded-full bg-emerald-500/80 shadow-[0_0_6px_#10b981]' />
-                </div>
-
-                <AnimatePresence mode='wait'>
-                  {/* ─── STATE 1: COVER ─── */}
-                  {storyStatus === 'cover' && (
-                    <motion.div
-                      key={`cover-${currentPreset.id}`}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className='absolute inset-0'>
-                      <img
-                        src={currentPreset.coverImage}
-                        alt=''
-                        className='absolute inset-0 h-full w-full object-cover'
-                      />
-                      <div className='absolute inset-0 bg-gradient-to-t from-black via-black/35 to-black/30' />
-                      
-                      {/* Veylo Logo */}
-                      <div className='absolute inset-x-0 top-[16%] flex flex-col items-center px-4 text-center'>
-                        <img src='/veylo/veylo-mark.svg' alt='' className='h-10 w-10 rounded-xl shadow-lg' />
-                        <span className='mt-2.5 rounded-full border border-white/20 bg-black/40 px-3 py-0.5 text-[8px] font-black uppercase tracking-[.2em] text-white backdrop-blur-md'>
-                          A Veylo Photo Story
-                        </span>
-                      </div>
-
-                      {/* Cover Details */}
-                      <div className='absolute inset-x-0 bottom-0 p-5 text-center'>
-                        <p className='font-serif text-2xl font-semibold text-white sm:text-3xl'>
-                          {currentPreset.tag}
-                        </p>
-                        <p className='mt-1 text-[11px] font-medium text-white/75'>
-                          {currentPreset.occasion}
-                        </p>
-
-                        <div className='mt-2.5 flex items-center justify-center gap-1.5 text-[8px] font-semibold text-white/80'>
-                          <span className='inline-flex items-center gap-1 rounded border border-white/15 bg-black/40 px-2 py-0.5'>
-                            <Music2 size={8} className='text-[#ff7b69]' /> {currentPreset.soundtrack}
-                          </span>
-                        </div>
-
-                        <button
-                          onClick={startStory}
-                          className='mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#ff5a47] py-3 text-xs font-black text-white shadow-lg shadow-[#ff5a47]/35 transition hover:bg-[#ff7564] active:scale-95'>
-                          <Play size={12} fill='currentColor' /> Watch Premiere
-                        </button>
-                        <p className='mt-2 text-[8px] font-bold uppercase tracking-wider text-white/45'>
-                          Tap to play
-                        </p>
-                      </div>
-                    </motion.div>
-                  )}
-
-                  {/* ─── STATE 2: PLAYING ACTIVE FRAMES ─── */}
-                  {storyStatus === 'playing' && (
-                    <motion.div
-                      key={`frame-${currentPreset.id}-${activeFrame}`}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.55 }}
-                      className='absolute inset-0 cursor-pointer'
-                      onClick={togglePlayPause}>
-                      <motion.img
-                        src={frames[activeFrame].image}
-                        alt=''
-                        initial={{ scale: 1.02 }}
-                        animate={{ scale: activeFrame % 2 === 0 ? 1.08 : 1.05, x: activeFrame % 2 === 0 ? 0 : -5 }}
-                        transition={{ duration: 5.5, ease: 'linear' }}
-                        className='absolute inset-0 h-full w-full object-cover'
-                      />
-                      <div className='absolute inset-0 bg-gradient-to-t from-black/95 via-transparent to-black/60' />
-
-                      {/* Caption Card */}
-                      <div className='absolute inset-x-0 bottom-0 p-3.5'>
-                        <motion.div
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.15 }}
-                          className='rounded-xl border border-[#ff7b69]/30 bg-black/85 p-3 text-left shadow-2xl backdrop-blur-xl'>
-                          <div className='flex items-center justify-between'>
-                            <span className='rounded border border-[#ff7b69]/40 bg-[#ff5a47]/15 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-[.14em] text-[#ff9b8e]'>
-                              {frames[activeFrame].chapter}
-                            </span>
-                            <span className='text-[8px] font-bold text-white/50'>
-                              {activeFrame + 1} / {frames.length}
-                            </span>
-                          </div>
-                          <p className='mt-2 text-xs font-semibold leading-relaxed text-white'>
-                            {frames[activeFrame].line}
-                          </p>
-                        </motion.div>
-                      </div>
-                    </motion.div>
-                  )}
-
-                  {/* ─── STATE 3: FINALE & DOWNLOAD GALLERY ─── */}
-                  {storyStatus === 'ending' && (
-                    <motion.div
-                      key='ending'
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className='absolute inset-0 flex flex-col items-center justify-center bg-[radial-gradient(circle_at_top,#4a1a18_0%,#180e11_45%,#050505_100%)] p-5 text-center'>
-                      {/* Fan of photos */}
-                      <div className='relative mb-5 h-20 w-32'>
-                        {[frames[0].image, frames[1].image, frames[2].image].map((img, idx) => (
-                          <img
-                            key={img}
-                            src={img}
-                            alt=''
-                            className={`absolute left-1/2 top-1/2 h-16 w-12 rounded-lg border-2 object-cover shadow-xl ${
-                              idx === 0
-                                ? '-translate-x-[125%] -translate-y-1/2 -rotate-12 border-white/20'
-                                : idx === 1
-                                ? 'z-10 -translate-x-1/2 -translate-y-1/2 border-[#ff7b69]'
-                                : 'translate-x-[25%] -translate-y-1/2 rotate-12 border-white/20'
-                            }`}
-                          />
-                        ))}
-                      </div>
-
-                      <span className='text-[8px] font-black uppercase tracking-[.2em] text-[#ff9b8e]'>
-                        Premiere Concluded
-                      </span>
-                      <p className='mt-1.5 font-serif text-xl font-semibold text-white'>
-                        Your Photos Are Ready
-                      </p>
-                      <p className='mt-1 text-[10px] leading-snug text-white/60'>
-                        Browse all finished high-res photos, view full-screen, or download all.
-                      </p>
-
-                      <div className='mt-4 w-full space-y-2'>
-                        <button className='flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#ff5a47] py-2.5 text-[10px] font-black text-white'>
-                          <ImageIcon size={11} /> View full photo gallery
-                        </button>
-                        <button className='flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 py-2 text-[10px] font-bold text-white'>
-                          <Download size={11} /> Download all (High-Res)
-                        </button>
-                        <button className='flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 py-2 text-[10px] font-bold text-white'>
-                          <Share2 size={11} /> Share Photo Story
-                        </button>
-                      </div>
-
-                      <button
-                        onClick={restartStory}
-                        className='mt-3 flex items-center gap-1 text-[8px] font-black uppercase tracking-wider text-white/50 hover:text-white'>
-                        <RotateCcw size={9} /> Replay premiere
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* Progress Bar & Audio Equalizer during playback */}
-                {storyStatus === 'playing' && (
-                  <div className='absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-black/90 via-black/40 to-transparent px-3 pb-4 pt-6'>
-                    {/* Story progress segments */}
-                    <div className='flex gap-1'>
-                      {frames.map((_, idx) => (
-                        <button
-                          key={idx}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveFrame(idx);
-                            setIsPlaying(true);
-                          }}
-                          className='h-[2.5px] flex-1 overflow-hidden rounded-full bg-white/25'>
-                          <span
-                            className={`block h-full bg-white transition-all duration-300 ${
-                              idx < activeFrame
-                                ? 'w-full'
-                                : idx === activeFrame
-                                ? 'w-full'
-                                : 'w-0'
-                            }`}
-                          />
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Metadata & Equalizer */}
-                    <div className='mt-2 flex items-center justify-between'>
-                      <div className='flex items-center gap-1.5'>
-                        <img src='/veylo/veylo-mark.svg' alt='' className='h-5 w-5 rounded-md' />
-                        <div className='text-left'>
-                          <p className='text-[9px] font-black leading-none text-white'>{currentPreset.tag}</p>
-                          <div className='mt-0.5 flex items-center gap-1 text-[7px] font-medium text-[#ff9b8e]'>
-                            {isPlaying && (
-                              <span className='flex h-2 items-end gap-[1px]'>
-                                <span className='h-full w-[1px] animate-pulse bg-[#ff5a47]' />
-                                <span className='h-1.5 w-[1px] animate-pulse bg-[#ff5a47]' />
-                                <span className='h-2 w-[1px] animate-pulse bg-[#ff5a47]' />
-                              </span>
-                            )}
-                            <span className='truncate max-w-[110px]'>{currentPreset.soundtrack}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className='flex items-center gap-1'>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setIsMuted(!isMuted);
-                          }}
-                          className='grid h-5 w-5 place-items-center rounded-full bg-black/40 text-white/80'>
-                          {isMuted ? <VolumeX size={9} /> : <Volume2 size={9} />}
-                        </button>
-                        <button
-                          onClick={togglePlayPause}
-                          className='grid h-5 w-5 place-items-center rounded-full bg-black/40 text-white'>
-                          {isPlaying ? <Pause size={9} /> : <Play size={9} fill='currentColor' />}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </motion.div>
         </div>
       </section>
 
