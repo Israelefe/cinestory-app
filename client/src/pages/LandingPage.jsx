@@ -246,20 +246,20 @@ export default function LandingPage({ onOpenAuth }) {
     setIsPlaying(true);
   };
 
-  // Reusable Phone Simulator Component
-  const renderPhoneSimulator = (isMobile = false) => (
-    <div className={`relative mx-auto w-full ${isMobile ? 'max-w-[310px]' : 'max-w-[340px]'}`}>
+  // Reusable Phone Simulator Component (Identical design on mobile and desktop)
+  const renderPhoneSimulator = () => (
+    <div className='relative mx-auto w-full max-w-[320px] sm:max-w-[340px]'>
       
       {/* Genre Switcher Pills */}
       <div className='mb-3.5 flex items-center justify-center gap-1.5'>
-        <span className='mr-1 hidden text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:inline'>
+        <span className='mr-1 text-[10px] font-black uppercase tracking-wider text-zinc-500'>
           Shoot Type:
         </span>
         {heroPresets.map((preset, idx) => (
           <button
             key={preset.id}
             onClick={() => handleSelectPreset(idx)}
-            className={`flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-bold transition ${
+            className={`flex items-center gap-1 rounded-full px-2.5 sm:px-3 py-1 text-[11px] font-bold transition ${
               selectedPresetIndex === idx
                 ? 'bg-[#ff5a47] text-white shadow-md shadow-[#ff5a47]/30'
                 : 'border border-white/10 bg-white/5 text-zinc-400 hover:text-white'
@@ -270,58 +270,42 @@ export default function LandingPage({ onOpenAuth }) {
         ))}
       </div>
 
-      {/* Floating Badges (Desktop only) */}
-      {!isMobile && (
-        <div className='hidden lg:block'>
-          <motion.div
-            animate={{ y: [0, -5, 0] }}
-            transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-            className='absolute -left-7 top-16 z-30 flex items-center gap-2 rounded-xl border border-white/15 bg-black/80 p-2.5 shadow-2xl backdrop-blur-xl'>
-            <div className='grid h-8 w-8 place-items-center rounded-lg bg-[#ff5a47]/20 text-[#ff7b69]'>
-              <WandSparkles size={15} />
-            </div>
-            <div>
-              <p className='text-[9px] font-black uppercase tracking-wider text-[#ff9b8e]'>AI Director</p>
-              <p className='text-xs font-bold text-white'>Opening Hook Selected</p>
-            </div>
-          </motion.div>
-
-          <motion.div
-            animate={{ y: [0, 5, 0] }}
-            transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut', delay: 0.4 }}
-            className='absolute -right-6 top-28 z-30 flex items-center gap-2 rounded-xl border border-white/15 bg-black/80 p-2.5 shadow-2xl backdrop-blur-xl'>
-            <div className='grid h-8 w-8 place-items-center rounded-lg bg-[#ff5a47]/20 text-[#ff7b69]'>
-              <Music2 size={15} />
-            </div>
-            <div>
-              <p className='text-[9px] font-black uppercase tracking-wider text-[#ff9b8e]'>Soundtrack Sync</p>
-              <p className='text-xs font-bold text-white'>{currentPreset.soundtrack}</p>
-            </div>
-          </motion.div>
+      {/* Floating Badges (Visible and responsive on both mobile and desktop) */}
+      <motion.div
+        animate={{ y: [0, -5, 0] }}
+        transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+        className='absolute -left-3 sm:-left-7 top-16 z-30 flex items-center gap-2 rounded-xl border border-white/15 bg-black/80 p-2 sm:p-2.5 shadow-2xl backdrop-blur-xl'>
+        <div className='grid h-7 w-7 sm:h-8 sm:w-8 place-items-center rounded-lg bg-[#ff5a47]/20 text-[#ff7b69]'>
+          <WandSparkles size={14} />
         </div>
-      )}
+        <div>
+          <p className='text-[8px] sm:text-[9px] font-black uppercase tracking-wider text-[#ff9b8e]'>AI Director</p>
+          <p className='text-[11px] sm:text-xs font-bold text-white'>Opening Hook Selected</p>
+        </div>
+      </motion.div>
+
+      <motion.div
+        animate={{ y: [0, 5, 0] }}
+        transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut', delay: 0.4 }}
+        className='absolute -right-3 sm:-right-6 top-28 z-30 flex items-center gap-2 rounded-xl border border-white/15 bg-black/80 p-2 sm:p-2.5 shadow-2xl backdrop-blur-xl'>
+        <div className='grid h-7 w-7 sm:h-8 sm:w-8 place-items-center rounded-lg bg-[#ff5a47]/20 text-[#ff7b69]'>
+          <Music2 size={14} />
+        </div>
+        <div>
+          <p className='text-[8px] sm:text-[9px] font-black uppercase tracking-wider text-[#ff9b8e]'>Soundtrack Sync</p>
+          <p className='text-[11px] sm:text-xs font-bold text-white truncate max-w-[110px] sm:max-w-none'>{currentPreset.soundtrack}</p>
+        </div>
+      </motion.div>
 
       {/* Phone Screen Player */}
-      <div
-        className={
-          isMobile
-            ? 'relative mx-auto aspect-[9/15] w-full overflow-hidden rounded-3xl border border-white/20 bg-zinc-950 p-1.5 shadow-[0_20px_60px_rgba(0,0,0,0.85)] ring-1 ring-white/10'
-            : 'relative mx-auto aspect-[9/16] w-full overflow-hidden rounded-[2.8rem] border-[3px] border-white/20 bg-zinc-950 p-2.5 shadow-[0_25px_80px_rgba(0,0,0,0.85)] ring-1 ring-white/10'
-        }>
-        <div
-          className={
-            isMobile
-              ? 'relative h-full w-full overflow-hidden rounded-[1.3rem] bg-black'
-              : 'relative h-full w-full overflow-hidden rounded-[2.3rem] bg-black'
-          }>
+      <div className='relative mx-auto aspect-[9/16] w-full overflow-hidden rounded-[2.5rem] sm:rounded-[2.8rem] border-[2.5px] sm:border-[3px] border-white/20 bg-zinc-950 p-2 sm:p-2.5 shadow-[0_25px_80px_rgba(0,0,0,0.85)] ring-1 ring-white/10'>
+        <div className='relative h-full w-full overflow-hidden rounded-[2.1rem] sm:rounded-[2.3rem] bg-black'>
           
-          {/* Dynamic Island Pill Notch (Desktop only) */}
-          {!isMobile && (
-            <div className='absolute left-1/2 top-2 z-40 flex h-3.5 w-18 -translate-x-1/2 items-center justify-between rounded-full bg-black px-2 ring-1 ring-white/10'>
-              <div className='h-1.5 w-1.5 rounded-full bg-white/20' />
-              <div className='h-1.5 w-1.5 rounded-full bg-emerald-500/80 shadow-[0_0_6px_#10b981]' />
-            </div>
-          )}
+          {/* Dynamic Island Pill Notch */}
+          <div className='absolute left-1/2 top-2 z-40 flex h-3.5 w-18 -translate-x-1/2 items-center justify-between rounded-full bg-black px-2 ring-1 ring-white/10'>
+            <div className='h-1.5 w-1.5 rounded-full bg-white/20' />
+            <div className='h-1.5 w-1.5 rounded-full bg-emerald-500/80 shadow-[0_0_6px_#10b981]' />
+          </div>
 
           <AnimatePresence mode='wait'>
             {/* ─── STATE 1: COVER SCREEN ─── */}
@@ -565,7 +549,7 @@ export default function LandingPage({ onOpenAuth }) {
             </p>
 
             {/* 2. Master Command H1 */}
-            <h1 className='font-display text-[2.2rem] font-extrabold leading-[1.04] tracking-[-0.035em] text-white sm:text-5xl lg:text-[4.5rem]'>
+            <h1 className='font-display text-4xl sm:text-5xl lg:text-[4.5rem] font-extrabold leading-[1.02] tracking-[-0.04em] text-white'>
               Don't just deliver photos.<br />
               <span className='text-transparent bg-clip-text bg-gradient-to-r from-[#ff7b69] via-[#ff5a47] to-[#ffb2a8] drop-shadow-[0_8px_30px_rgba(255,90,71,0.35)]'>
                 Premiere them.
@@ -573,12 +557,12 @@ export default function LandingPage({ onOpenAuth }) {
             </h1>
 
             {/* 3. Supporting Copy */}
-            <p className='mx-auto mt-3.5 max-w-lg text-sm leading-relaxed text-zinc-300 sm:mt-6 sm:text-base sm:leading-7 lg:mx-0'>
+            <p className='mx-auto mt-4 max-w-lg text-sm leading-relaxed text-zinc-300 sm:mt-6 sm:text-base sm:leading-7 lg:mx-0'>
               Transform completed photoshoots into cinematic, interactive Photo Stories your clients can experience,
               share and download. Built for photographers and media studios who want final delivery to feel as premium as the photography itself.
             </p>
 
-            {/* 4. CTAs */}
+            {/* 4. CTAs (Both buttons visible on mobile and desktop) */}
             <div className='mt-5 flex flex-col justify-center gap-3 sm:mt-8 sm:flex-row lg:justify-start'>
               <Link
                 to='/create'
@@ -588,7 +572,7 @@ export default function LandingPage({ onOpenAuth }) {
               </Link>
               <button
                 onClick={startStory}
-                className='hidden items-center justify-center gap-2.5 rounded-2xl border border-white/15 bg-white/[.05] px-5 py-3.5 text-sm font-bold text-zinc-200 backdrop-blur-xl transition hover:bg-white/[.1] sm:inline-flex sm:w-auto sm:px-6 sm:py-4'>
+                className='inline-flex w-full items-center justify-center gap-2.5 rounded-2xl border border-white/15 bg-white/[.05] px-5 py-3.5 text-sm font-bold text-zinc-200 backdrop-blur-xl transition hover:bg-white/[.1] sm:w-auto sm:px-6 sm:py-4'>
                 <span className='grid h-5 w-5 place-items-center rounded-full bg-[#ff5a47]/20 text-[#ff7b69]'>
                   <Play size={10} fill='currentColor' />
                 </span>
@@ -597,7 +581,7 @@ export default function LandingPage({ onOpenAuth }) {
             </div>
 
             {/* 5. Trust & Friction Badges */}
-            <div className='mt-4 flex flex-wrap justify-center gap-x-4 gap-y-2 text-[11px] font-medium text-zinc-400 sm:mt-6 sm:text-xs lg:justify-start'>
+            <div className='mt-5 flex flex-wrap justify-center gap-x-4 gap-y-2 text-[11px] font-medium text-zinc-400 sm:mt-6 sm:text-xs lg:justify-start'>
               <span className='flex items-center gap-1.5'>
                 <Check size={13} className='text-[#ff6b57]' /> 2 Stories free / mo
               </span>
@@ -611,20 +595,11 @@ export default function LandingPage({ onOpenAuth }) {
                 <Check size={13} className='text-[#ff6b57]' /> No card required
               </span>
             </div>
-
-            {/* 6. ON MOBILE ONLY: The Interactive Photo Story Showcase */}
-            <div className='mt-8 w-full lg:hidden' ref={previewRef}>
-              <div className='mb-2.5 flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-[#ff9b8e]'>
-                <Sparkles size={12} className='text-[#ff5a47]' />
-                <span>Interactive Client Preview</span>
-              </div>
-              {renderPhoneSimulator(true)}
-            </div>
           </div>
 
-          {/* ON DESKTOP ONLY: The Interactive Photo Story Showcase sits in the right column */}
-          <div className='hidden lg:block lg:mr-0'>
-            {renderPhoneSimulator(false)}
+          {/* Interactive Photo Story Showcase (Identical on mobile and desktop: stacked naturally on mobile, right column on desktop) */}
+          <div className='mt-12 lg:mt-0 flex justify-center' ref={previewRef}>
+            {renderPhoneSimulator()}
           </div>
 
         </div>
