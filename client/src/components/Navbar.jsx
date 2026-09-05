@@ -10,7 +10,7 @@ export default function Navbar({ user, onOpenAuth, onLogout }) {
           <img src='/veylo/veylo-mark.svg' alt='' className='h-10 w-10 rounded-xl object-contain transition-transform group-hover:scale-105' />
           <div className='flex flex-col'>
             <span className='font-display text-2xl font-extrabold leading-none tracking-[-.04em] text-white'>Veylo</span>
-            <span className='mt-1 hidden text-[9px] font-bold uppercase tracking-[.16em] text-[#ff9b8e] sm:block'>Don't just deliver it. Premiere it.</span>
+            <span className='mt-1 hidden text-[9px] font-bold uppercase tracking-[.16em] text-[#ff9b8e] sm:block'>Don't just deliver photos. Premiere them.</span>
           </div>
         </Link>
 

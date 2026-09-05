@@ -63,7 +63,7 @@ export default function Footer() {
           <div className='flex flex-wrap gap-5'>
             <span>Photo-only</span>
             <span>Mobile-first</span>
-            <span>Don't just deliver it. Premiere it.</span>
+            <span>Don't just deliver photos. Premiere them.</span>
           </div>
         </div>
       </div>
