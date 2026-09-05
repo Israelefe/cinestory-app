@@ -526,15 +526,18 @@ export default function LandingPage({ onOpenAuth }) {
           {/* Main Content Column */}
           <div className='relative z-10 w-full text-center md:text-left'>
             
-            {/* 1. Editorial Category Positioning (Desktop only so mobile doesn't get crowded) */}
-            <p className='hidden md:block mb-3 text-xs font-bold uppercase tracking-[0.24em] text-[#ff8c7a]'>
-              The Photo Delivery Platform for Photographers
-            </p>
+            {/* 1. Editorial Category Positioning (Desktop only) */}
+            <div className='hidden md:inline-flex items-center gap-2 mb-4'>
+              <span className='h-1.5 w-1.5 rounded-full bg-[#ff5a47]' />
+              <span className='text-[11px] font-bold uppercase tracking-[0.24em] text-[#ff8c7a]'>
+                The Photo Delivery Platform for Photographers
+              </span>
+            </div>
 
-            {/* 2. Master Command H1 */}
-            <h1 className='font-display text-3xl sm:text-5xl lg:text-[4.5rem] font-extrabold leading-[1.04] tracking-[-0.035em] text-white'>
+            {/* 2. Master Command H1 (Architectural Sans + High-Fashion Serif Italic) */}
+            <h1 className='font-display text-[2.4rem] sm:text-5xl lg:text-[4.4rem] font-extrabold leading-[1.02] tracking-[-0.035em] text-white'>
               Don't just deliver photos.<br />
-              <span className='text-transparent bg-clip-text bg-gradient-to-r from-[#ff7b69] via-[#ff5a47] to-[#ffb2a8] drop-shadow-[0_8px_30px_rgba(255,90,71,0.35)]'>
+              <span className='font-serif italic font-normal text-[#ff7b69] tracking-normal'>
                 Premiere them.
               </span>
             </h1>
