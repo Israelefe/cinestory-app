@@ -302,14 +302,26 @@ export default function LandingPage({ onOpenAuth }) {
       )}
 
       {/* Phone Screen Player */}
-      <div className='relative mx-auto aspect-[9/16] w-full overflow-hidden rounded-[2.5rem] border-[2.5px] border-white/20 bg-zinc-950 p-2 shadow-[0_25px_80px_rgba(0,0,0,0.85)] ring-1 ring-white/10 sm:rounded-[2.8rem] sm:border-[3px] sm:p-2.5'>
-        <div className='relative h-full w-full overflow-hidden rounded-[2.1rem] bg-black sm:rounded-[2.3rem]'>
+      <div
+        className={
+          isMobile
+            ? 'relative mx-auto aspect-[9/15] w-full overflow-hidden rounded-3xl border border-white/20 bg-zinc-950 p-1.5 shadow-[0_20px_60px_rgba(0,0,0,0.85)] ring-1 ring-white/10'
+            : 'relative mx-auto aspect-[9/16] w-full overflow-hidden rounded-[2.8rem] border-[3px] border-white/20 bg-zinc-950 p-2.5 shadow-[0_25px_80px_rgba(0,0,0,0.85)] ring-1 ring-white/10'
+        }>
+        <div
+          className={
+            isMobile
+              ? 'relative h-full w-full overflow-hidden rounded-[1.3rem] bg-black'
+              : 'relative h-full w-full overflow-hidden rounded-[2.3rem] bg-black'
+          }>
           
-          {/* Dynamic Island Pill Notch */}
-          <div className='absolute left-1/2 top-2 z-40 flex h-3.5 w-18 -translate-x-1/2 items-center justify-between rounded-full bg-black px-2 ring-1 ring-white/10'>
-            <div className='h-1.5 w-1.5 rounded-full bg-white/20' />
-            <div className='h-1.5 w-1.5 rounded-full bg-emerald-500/80 shadow-[0_0_6px_#10b981]' />
-          </div>
+          {/* Dynamic Island Pill Notch (Desktop only) */}
+          {!isMobile && (
+            <div className='absolute left-1/2 top-2 z-40 flex h-3.5 w-18 -translate-x-1/2 items-center justify-between rounded-full bg-black px-2 ring-1 ring-white/10'>
+              <div className='h-1.5 w-1.5 rounded-full bg-white/20' />
+              <div className='h-1.5 w-1.5 rounded-full bg-emerald-500/80 shadow-[0_0_6px_#10b981]' />
+            </div>
+          )}
 
           <AnimatePresence mode='wait'>
             {/* ─── STATE 1: COVER SCREEN ─── */}
@@ -548,31 +560,25 @@ export default function LandingPage({ onOpenAuth }) {
           <div className='relative z-10 w-full text-center lg:text-left'>
             
             {/* 1. Editorial Category Positioning */}
-            <p className='mb-3 text-[11px] font-bold uppercase tracking-[0.22em] text-[#ff8c7a] sm:mb-4 sm:text-xs sm:tracking-[0.26em]'>
+            <p className='mb-2.5 text-[11px] font-bold uppercase tracking-[0.22em] text-[#ff8c7a] sm:mb-4 sm:text-xs sm:tracking-[0.26em]'>
               The Photo Delivery Platform for Photographers
             </p>
 
             {/* 2. Master Command H1 */}
-            <h1 className='font-display text-[2.35rem] font-extrabold leading-[1.02] tracking-[-0.04em] text-white sm:text-5xl lg:text-[4.5rem]'>
+            <h1 className='font-display text-[2.2rem] font-extrabold leading-[1.04] tracking-[-0.035em] text-white sm:text-5xl lg:text-[4.5rem]'>
               Don't just deliver photos.<br />
               <span className='text-transparent bg-clip-text bg-gradient-to-r from-[#ff7b69] via-[#ff5a47] to-[#ffb2a8] drop-shadow-[0_8px_30px_rgba(255,90,71,0.35)]'>
                 Premiere them.
               </span>
             </h1>
 
-            {/* 3. ON MOBILE ONLY: The Interactive Photo Story appears IMMEDIATELY here! */}
-            {/* The mobile user sees the story right away without scrolling past text! */}
-            <div className='my-6 w-full lg:hidden' ref={previewRef}>
-              {renderPhoneSimulator(true)}
-            </div>
-
-            {/* 4. Supporting Copy */}
-            <p className='mx-auto mt-4 max-w-lg text-sm leading-relaxed text-zinc-300 sm:mt-6 sm:text-base sm:leading-7 lg:mx-0'>
+            {/* 3. Supporting Copy */}
+            <p className='mx-auto mt-3.5 max-w-lg text-sm leading-relaxed text-zinc-300 sm:mt-6 sm:text-base sm:leading-7 lg:mx-0'>
               Transform completed photoshoots into cinematic, interactive Photo Stories your clients can experience,
               share and download. Built for photographers and media studios who want final delivery to feel as premium as the photography itself.
             </p>
 
-            {/* 5. CTAs */}
+            {/* 4. CTAs */}
             <div className='mt-5 flex flex-col justify-center gap-3 sm:mt-8 sm:flex-row lg:justify-start'>
               <Link
                 to='/create'
@@ -582,7 +588,7 @@ export default function LandingPage({ onOpenAuth }) {
               </Link>
               <button
                 onClick={startStory}
-                className='inline-flex w-full items-center justify-center gap-2.5 rounded-2xl border border-white/15 bg-white/[.05] px-5 py-3.5 text-sm font-bold text-zinc-200 backdrop-blur-xl transition hover:bg-white/[.1] sm:w-auto sm:px-6 sm:py-4'>
+                className='hidden items-center justify-center gap-2.5 rounded-2xl border border-white/15 bg-white/[.05] px-5 py-3.5 text-sm font-bold text-zinc-200 backdrop-blur-xl transition hover:bg-white/[.1] sm:inline-flex sm:w-auto sm:px-6 sm:py-4'>
                 <span className='grid h-5 w-5 place-items-center rounded-full bg-[#ff5a47]/20 text-[#ff7b69]'>
                   <Play size={10} fill='currentColor' />
                 </span>
@@ -590,13 +596,13 @@ export default function LandingPage({ onOpenAuth }) {
               </button>
             </div>
 
-            {/* 6. Trust & Friction Badges */}
-            <div className='mt-5 flex flex-wrap justify-center gap-x-4 gap-y-2 text-[11px] font-medium text-zinc-400 sm:mt-6 sm:text-xs lg:justify-start'>
+            {/* 5. Trust & Friction Badges */}
+            <div className='mt-4 flex flex-wrap justify-center gap-x-4 gap-y-2 text-[11px] font-medium text-zinc-400 sm:mt-6 sm:text-xs lg:justify-start'>
               <span className='flex items-center gap-1.5'>
                 <Check size={13} className='text-[#ff6b57]' /> 2 Stories free / mo
               </span>
               <span className='flex items-center gap-1.5'>
-                <Check size={13} className='text-[#ff6b57]' /> WhatsApp-ready
+                <Check size={13} className='text-[#ff6b57]' /> Link-ready
               </span>
               <span className='flex items-center gap-1.5'>
                 <Check size={13} className='text-[#ff6b57]' /> Full gallery & downloads
@@ -604,6 +610,15 @@ export default function LandingPage({ onOpenAuth }) {
               <span className='flex items-center gap-1.5'>
                 <Check size={13} className='text-[#ff6b57]' /> No card required
               </span>
+            </div>
+
+            {/* 6. ON MOBILE ONLY: The Interactive Photo Story Showcase */}
+            <div className='mt-8 w-full lg:hidden' ref={previewRef}>
+              <div className='mb-2.5 flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-[#ff9b8e]'>
+                <Sparkles size={12} className='text-[#ff5a47]' />
+                <span>Interactive Client Preview</span>
+              </div>
+              {renderPhoneSimulator(true)}
             </div>
           </div>
 
@@ -625,7 +640,7 @@ export default function LandingPage({ onOpenAuth }) {
               <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> Editorial Storytelling</span>
               <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> Music & Narration</span>
               <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> High-Res Client Downloads</span>
-              <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> WhatsApp-Ready Delivery</span>
+              <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> Link-Ready Delivery</span>
             </React.Fragment>
           ))}
         </div>
@@ -705,7 +720,7 @@ export default function LandingPage({ onOpenAuth }) {
               <div className='relative z-10 mt-6 rounded-xl border border-[#ff5a47]/30 bg-black/60 p-3 text-xs font-medium text-[#ff9b8e] backdrop-blur-xl'>
                 <div className='flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between'>
                   <span className='font-mono font-bold'>veylo.com.ng/s/ada-at-30</span>
-                  <span className='text-[10px] font-black uppercase tracking-wider text-white/80'>Ready for WhatsApp</span>
+                  <span className='text-[10px] font-black uppercase tracking-wider text-white/80'>Link-ready</span>
                 </div>
               </div>
             </div>
@@ -1073,7 +1088,7 @@ export default function LandingPage({ onOpenAuth }) {
                     'Basic TTS voice narration',
                     'Complete client photo gallery',
                     'Individual & bulk photo downloads',
-                    'Shareable link (WhatsApp-ready)',
+                    'Shareable link (Link-ready)',
                     'Standard processing priority',
                     'Veylo watermark branding'
                   ].map((feat) => (
