@@ -246,66 +246,48 @@ export default function LandingPage({ onOpenAuth }) {
     setIsPlaying(true);
   };
 
-  // Reusable Phone Simulator Component (Identical design on mobile and desktop)
+  // Reusable Editorial Showcase Component (Luxury Photography Experience)
   const renderPhoneSimulator = () => (
-    <div className='relative mx-auto w-full max-w-[285px] sm:max-w-[340px]'>
+    <div className='relative mx-auto w-full max-w-[320px] sm:max-w-[360px]'>
       
-      {/* Genre Switcher Pills */}
-      <div className='mb-3.5 flex items-center justify-center gap-1.5'>
-        <span className='mr-1 text-[10px] font-black uppercase tracking-wider text-zinc-500'>
-          Shoot Type:
-        </span>
+      {/* Editorial Story Switcher (Minimalist luxury tabs, no generic SaaS pills or emojis) */}
+      <div className='mb-4 flex items-center justify-center gap-1.5 sm:gap-2'>
         {heroPresets.map((preset, idx) => (
           <button
             key={preset.id}
             onClick={() => handleSelectPreset(idx)}
-            className={`flex items-center gap-1 rounded-full px-2.5 sm:px-3 py-1 text-[11px] font-bold transition ${
+            className={`rounded-full px-3 sm:px-3.5 py-1 text-[10.5px] sm:text-[11px] font-medium tracking-wide transition ${
               selectedPresetIndex === idx
-                ? 'bg-[#ff5a47] text-white shadow-md shadow-[#ff5a47]/30'
-                : 'border border-white/10 bg-white/5 text-zinc-400 hover:text-white'
+                ? 'bg-white text-black shadow-[0_2px_14px_rgba(255,255,255,0.22)] font-semibold'
+                : 'border border-white/10 bg-white/[0.04] text-zinc-400 hover:text-white hover:border-white/20'
             }`}>
-            <span>{preset.icon}</span>
-            <span>{preset.label}</span>
+            {preset.tag}
           </button>
         ))}
       </div>
 
-      {/* Floating Badges (Visible and responsive on both mobile and desktop) */}
-      <motion.div
-        animate={{ y: [0, -5, 0] }}
-        transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-        className='absolute -left-3 sm:-left-7 top-16 z-30 flex items-center gap-2 rounded-xl border border-white/15 bg-black/80 p-2 sm:p-2.5 shadow-2xl backdrop-blur-xl'>
-        <div className='grid h-7 w-7 sm:h-8 sm:w-8 place-items-center rounded-lg bg-[#ff5a47]/20 text-[#ff7b69]'>
-          <WandSparkles size={14} />
+      {/* Showcase Device with Layered Darkroom Background Prints */}
+      <div className='relative mx-auto w-full max-w-[270px] sm:max-w-[310px]'>
+        
+        {/* Layered Editorial Background Prints (Authentic photography context, zero bouncing AI widgets) */}
+        <div className='pointer-events-none absolute -left-4 top-8 h-[82%] w-[48%] -rotate-6 overflow-hidden rounded-3xl border border-white/10 bg-zinc-900 opacity-40 shadow-2xl sm:-left-7'>
+          <img src='/veylo/pv-editorial.jpeg' alt='' className='h-full w-full object-cover contrast-125' />
+          <div className='absolute inset-0 bg-black/40' />
         </div>
-        <div>
-          <p className='text-[8px] sm:text-[9px] font-black uppercase tracking-wider text-[#ff9b8e]'>AI Director</p>
-          <p className='text-[11px] sm:text-xs font-bold text-white'>Opening Hook Selected</p>
+        <div className='pointer-events-none absolute -right-4 bottom-8 h-[74%] w-[44%] rotate-6 overflow-hidden rounded-3xl border border-white/10 bg-zinc-900 opacity-40 shadow-2xl sm:-right-6'>
+          <img src='/veylo/pv-motion.jpeg' alt='' className='h-full w-full object-cover contrast-110' />
+          <div className='absolute inset-0 bg-black/40' />
         </div>
-      </motion.div>
 
-      <motion.div
-        animate={{ y: [0, 5, 0] }}
-        transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut', delay: 0.4 }}
-        className='absolute -right-3 sm:-right-6 top-28 z-30 flex items-center gap-2 rounded-xl border border-white/15 bg-black/80 p-2 sm:p-2.5 shadow-2xl backdrop-blur-xl'>
-        <div className='grid h-7 w-7 sm:h-8 sm:w-8 place-items-center rounded-lg bg-[#ff5a47]/20 text-[#ff7b69]'>
-          <Music2 size={14} />
-        </div>
-        <div>
-          <p className='text-[8px] sm:text-[9px] font-black uppercase tracking-wider text-[#ff9b8e]'>Soundtrack Sync</p>
-          <p className='text-[11px] sm:text-xs font-bold text-white truncate max-w-[110px] sm:max-w-none'>{currentPreset.soundtrack}</p>
-        </div>
-      </motion.div>
-
-      {/* Phone Screen Player */}
-      <div className='relative mx-auto aspect-[9/16] w-full overflow-hidden rounded-[2.5rem] sm:rounded-[2.8rem] border-[2.5px] sm:border-[3px] border-white/20 bg-zinc-950 p-2 sm:p-2.5 shadow-[0_25px_80px_rgba(0,0,0,0.85)] ring-1 ring-white/10'>
-        <div className='relative h-full w-full overflow-hidden rounded-[2.1rem] sm:rounded-[2.3rem] bg-black'>
-          
-          {/* Dynamic Island Pill Notch */}
-          <div className='absolute left-1/2 top-2 z-40 flex h-3.5 w-18 -translate-x-1/2 items-center justify-between rounded-full bg-black px-2 ring-1 ring-white/10'>
-            <div className='h-1.5 w-1.5 rounded-full bg-white/20' />
-            <div className='h-1.5 w-1.5 rounded-full bg-emerald-500/80 shadow-[0_0_6px_#10b981]' />
-          </div>
+        {/* Central Premiere Screen */}
+        <div className='relative mx-auto aspect-[9/16] w-full overflow-hidden rounded-[2.5rem] sm:rounded-[2.8rem] border-[2.5px] sm:border-[3px] border-white/20 bg-zinc-950 p-2 sm:p-2.5 shadow-[0_30px_100px_rgba(0,0,0,0.9)] ring-1 ring-white/10'>
+          <div className='relative h-full w-full overflow-hidden rounded-[2.1rem] sm:rounded-[2.3rem] bg-black'>
+            
+            {/* Dynamic Island Pill Notch */}
+            <div className='absolute left-1/2 top-2 z-40 flex h-3.5 w-18 -translate-x-1/2 items-center justify-between rounded-full bg-black px-2 ring-1 ring-white/10'>
+              <div className='h-1.5 w-1.5 rounded-full bg-white/20' />
+              <div className='h-1.5 w-1.5 rounded-full bg-emerald-500/80 shadow-[0_0_6px_#10b981]' />
+            </div>
 
           <AnimatePresence mode='wait'>
             {/* ─── STATE 1: COVER SCREEN ─── */}
@@ -524,6 +506,7 @@ export default function LandingPage({ onOpenAuth }) {
         </div>
       </div>
     </div>
+  </div>
   );
 
   return (
