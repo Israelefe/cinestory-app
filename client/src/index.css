@@ -8,8 +8,20 @@ body {
   background-color: #070709;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
+.veylo-grain {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.86' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.75'/%3E%3C/svg%3E");
+}
+
 .font-serif {
   font-family: 'Playfair Display', Georgia, serif;
+}
+
+.font-display {
+  font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
 }
 
 /* Custom scrollbars */
@@ -25,5 +37,5 @@ body {
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #A24CF3;
+  background: #ff5a47;
 }

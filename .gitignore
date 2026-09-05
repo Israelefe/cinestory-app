@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Production build output
+dist/
+client/dist/
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+server/.env
+
+# Runtime and cache
+.runtime/
+.DS_Store
+Thumbs.db
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

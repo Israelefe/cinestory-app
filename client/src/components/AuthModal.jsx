@@ -51,14 +51,14 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
           </button>
 
           <div className='text-center space-y-2 mb-6'>
-            <div className='w-12 h-12 rounded-2xl bg-purple-600/20 text-purple-400 flex items-center justify-center mx-auto border border-purple-500/30'>
+            <div className='w-12 h-12 rounded-2xl bg-[#ff5a47]/20 text-[#ff7b69] flex items-center justify-center mx-auto border border-[#ff5a47]/30'>
               <Sparkles size={24} />
             </div>
             <h2 className='text-2xl font-black text-white'>
-              {isLogin ? 'Sign In to CineStory' : 'Create Creator Account'}
+              {isLogin ? 'Sign In to Veylo' : 'Create Studio Account'}
             </h2>
             <p className='text-xs text-gray-400'>
-              {isLogin ? 'Access and share your cinematic photo stories' : 'Start turning photoshoots into viral cinematic stories'}
+              {isLogin ? 'Access and share your cinematic photo stories' : 'Start turning finished photoshoots into premium client premieres'}
             </p>
           </div>
 

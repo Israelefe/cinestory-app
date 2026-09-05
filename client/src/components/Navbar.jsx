@@ -1,30 +1,30 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Sparkles, Film, Plus, LogOut, ShieldCheck } from 'lucide-react';
+import { Film, Plus, LogOut, ShieldCheck, Sparkles } from 'lucide-react';
 
 export default function Navbar({ user, onOpenAuth, onLogout }) {
   return (
-    <nav className='fixed top-0 inset-x-0 z-50 bg-black/60 backdrop-blur-2xl border-b border-white/10'>
+    <nav className='fixed top-0 inset-x-0 z-50 border-b border-white/10 bg-[#09090b]/80 backdrop-blur-2xl'>
       <div className='max-w-7xl mx-auto px-5 sm:px-8 h-20 flex items-center justify-between'>
-        <Link to='/' className='flex items-center gap-2.5 group'>
-          <div className='w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-500 p-[2px] shadow-lg shadow-purple-500/20 group-hover:scale-105 transition-transform'>
-            <div className='w-full h-full bg-black rounded-2xl flex items-center justify-center'>
-              <Sparkles size={18} className='text-purple-400' />
-            </div>
-          </div>
+        <Link to='/' className='flex items-center gap-3 group'>
+          <img src='/veylo/veylo-mark.svg' alt='' className='h-10 w-10 rounded-xl object-contain transition-transform group-hover:scale-105' />
           <div className='flex flex-col'>
-            <span className='font-black text-lg tracking-tight text-white leading-none'>CineStory<span className='text-purple-400'>.ai</span></span>
-            <span className='text-[10px] text-gray-400 tracking-widest uppercase font-semibold mt-0.5'>Cinematic Premiere Reels</span>
+            <span className='font-display text-2xl font-extrabold leading-none tracking-[-.04em] text-white'>Veylo</span>
+            <span className='mt-1 hidden text-[9px] font-bold uppercase tracking-[.16em] text-[#ff9b8e] sm:block'>Don't just deliver it. Premiere it.</span>
           </div>
         </Link>
 
         <div className='flex items-center gap-3'>
           {user ? (
             <>
+              <div className='hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#ff5a47]/10 border border-[#ff5a47]/25 text-[#ff9b8e] text-xs font-bold'>
+                <Sparkles size={13} className='text-[#ff5a47]' />
+                <span>{user.isPro ? 'Veylo Pro' : 'Free Tier'}</span>
+              </div>
               {user.role === 'admin' && (
                 <Link
                   to='/admin'
-                  className='text-xs font-bold text-purple-300 bg-purple-600/20 border border-purple-500/30 hover:bg-purple-600/30 px-3 py-2 rounded-xl transition-colors flex items-center gap-1.5'>
+                  className='text-xs font-bold text-[#ff9b8e] bg-[#ff5a47]/10 border border-[#ff5a47]/25 hover:bg-[#ff5a47]/15 px-3 py-2 rounded-xl transition-colors flex items-center gap-1.5'>
                   <ShieldCheck size={14} /> Admin
                 </Link>
               )}
@@ -35,7 +35,7 @@ export default function Navbar({ user, onOpenAuth, onLogout }) {
               </Link>
               <Link
                 to='/create'
-                className='bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-lg shadow-purple-500/25 flex items-center gap-1.5 hover:scale-105 active:scale-95 transition-all'>
+                className='bg-[#ff5a47] hover:bg-[#ff7564] text-white px-4 py-2.5 rounded-xl font-black text-xs shadow-lg shadow-[#ff5a47]/20 flex items-center gap-1.5 hover:scale-105 active:scale-95 transition-all'>
                 <Plus size={15} /> Create Story
               </Link>
               <button
@@ -49,13 +49,15 @@ export default function Navbar({ user, onOpenAuth, onLogout }) {
             <>
               <button
                 onClick={onOpenAuth}
-                className='text-xs font-bold text-gray-300 hover:text-white px-4 py-2 rounded-xl hover:bg-white/5 transition-colors cursor-pointer'>
+                className='hidden text-xs font-bold text-gray-300 hover:text-white px-4 py-2 rounded-xl hover:bg-white/5 transition-colors cursor-pointer sm:block'>
                 Sign In
               </button>
               <Link
                 to='/create'
-                className='bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-5 py-2.5 rounded-xl font-bold text-xs shadow-lg shadow-purple-500/25 flex items-center gap-1.5 hover:scale-105 active:scale-95 transition-all'>
-                <Sparkles size={14} /> Try AI Director
+                className='bg-[#ff5a47] hover:bg-[#ff7564] text-white px-5 py-2.5 rounded-xl font-black text-xs shadow-lg shadow-[#ff5a47]/20 flex items-center gap-1.5 hover:scale-105 active:scale-95 transition-all'>
+                <span className='text-base leading-none'>✦</span>
+                <span className='sm:hidden'>Try Veylo</span>
+                <span className='hidden sm:inline'>Start Free (2/mo)</span>
               </Link>
             </>
           )}
