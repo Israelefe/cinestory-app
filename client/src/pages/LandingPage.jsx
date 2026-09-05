@@ -10,7 +10,6 @@ import {
   Folder,
   Image as ImageIcon,
   Layers,
-  Lock,
   Mic2,
   Music2,
   Pause,
@@ -19,28 +18,24 @@ import {
   Share2,
   ShieldCheck,
   Sliders,
-  Smartphone,
   Sparkles,
   Type,
   Volume2,
   VolumeX,
-  WandSparkles,
-  Zap
+  WandSparkles
 } from 'lucide-react';
 
 const heroPresets = [
   {
     id: 'ada',
-    label: 'Birthday Premiere',
+    label: 'Birthday',
     icon: '🎂',
     client: 'Ada',
     tag: 'Ada at 30',
     occasion: 'Birthday Portrait Premiere',
     soundtrack: 'Golden Hour Reverie',
     bpm: '92 BPM',
-    duration: '0:28',
     coverImage: '/veylo/pv-red-phone.jpeg',
-    coverChapter: 'THE ARRIVAL',
     frames: [
       { image: '/veylo/pv-red-phone.jpeg', chapter: 'THE ARRIVAL', line: 'Thirty enters the room before she says a word.' },
       { image: '/veylo/pv-espresso.jpeg', chapter: 'AFTER HOURS', line: 'She built this version of herself in rooms no one applauded.' },
@@ -52,16 +47,14 @@ const heroPresets = [
   },
   {
     id: 'wedding',
-    label: 'Wedding Story',
+    label: 'Wedding',
     icon: '💍',
     client: 'Tobi & Kemi',
     tag: 'Tobi & Kemi',
     occasion: 'Wedding Premiere',
     soundtrack: 'Whispering Skies',
     bpm: '84 BPM',
-    duration: '0:32',
     coverImage: '/veylo/pv-soft.jpeg',
-    coverChapter: 'THE PROMISE',
     frames: [
       { image: '/veylo/pv-soft.jpeg', chapter: 'THE MORNING OF', line: 'A calm that only comes when you are completely sure.' },
       { image: '/veylo/pv-reaching.jpeg', chapter: 'FIRST LOOK', line: 'Ten years of friendship, one breath before forever.' },
@@ -73,16 +66,14 @@ const heroPresets = [
   },
   {
     id: 'editorial',
-    label: 'Fashion Lookbook',
+    label: 'Lookbook',
     icon: '👗',
-    client: 'The Studio',
+    client: 'Studio Lookbook',
     tag: 'The September Issue',
-    occasion: 'Editorial Lookbook',
+    occasion: 'High Fashion Lookbook',
     soundtrack: 'Aura of Eternity',
     bpm: '98 BPM',
-    duration: '0:30',
     coverImage: '/veylo/pv-editorial.jpeg',
-    coverChapter: 'PROLOGUE',
     frames: [
       { image: '/veylo/pv-editorial.jpeg', chapter: 'PROLOGUE', line: 'Sharp tailoring. Architectural light. Unapologetic presence.' },
       { image: '/veylo/pv-white-fashion.jpeg', chapter: 'IN TRANSIT', line: 'Between flights, fittings, and the next collection.' },
@@ -203,8 +194,8 @@ const faqs = [
 ];
 
 const reveal = {
-  hidden: { opacity: 0, y: 24 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] } }
+  hidden: { opacity: 0, y: 20 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] } }
 };
 
 export default function LandingPage({ onOpenAuth }) {
@@ -220,7 +211,7 @@ export default function LandingPage({ onOpenAuth }) {
   const currentPreset = heroPresets[selectedPresetIndex];
   const frames = currentPreset.frames;
 
-  // Auto-advance frames when playing
+  // Auto-advance frames during playback
   useEffect(() => {
     if (storyStatus !== 'playing' || !isPlaying) return undefined;
     const timer = window.setTimeout(() => {
@@ -230,7 +221,7 @@ export default function LandingPage({ onOpenAuth }) {
         return;
       }
       setActiveFrame((f) => f + 1);
-    }, 4400);
+    }, 4200);
     return () => window.clearTimeout(timer);
   }, [activeFrame, isPlaying, storyStatus, frames.length]);
 
@@ -262,49 +253,50 @@ export default function LandingPage({ onOpenAuth }) {
 
   return (
     <div className='min-h-screen w-full overflow-x-hidden bg-[#070709] text-white selection:bg-[#ff5a47] selection:text-white'>
-      {/* ─── HERO SECTION ─── */}
-      <section className='relative min-h-[100svh] px-4 pb-16 pt-28 sm:px-8 sm:pb-24 sm:pt-36 lg:pt-40'>
-        {/* Ambient atmospheric glows */}
-        <div className='pointer-events-none absolute left-[-15%] top-[-15%] h-[550px] w-[550px] rounded-full bg-[#ff5a47]/18 blur-[160px] sm:h-[700px] sm:w-[700px]' />
-        <div className='pointer-events-none absolute right-[-10%] top-[10%] h-[400px] w-[400px] rounded-full bg-[#ff8c7a]/12 blur-[140px] sm:h-[550px] sm:w-[550px]' />
-        <div className='pointer-events-none absolute bottom-0 left-1/2 h-[350px] w-[700px] -translate-x-1/2 rounded-full bg-[#ff5a47]/10 blur-[180px]' />
+      
+      {/* ─── HERO SECTION (100% MOBILE RESPONSIVE & HIGH IMPACT) ─── */}
+      <section className='relative px-4 pb-12 pt-24 sm:px-8 sm:pb-20 sm:pt-32 lg:min-h-[100svh] lg:pt-36'>
+        {/* Ambient atmospheric lighting */}
+        <div className='pointer-events-none absolute left-[-15%] top-[-15%] h-[400px] w-[400px] rounded-full bg-[#ff5a47]/15 blur-[140px] sm:h-[650px] sm:w-[650px]' />
+        <div className='pointer-events-none absolute right-[-10%] top-[10%] h-[350px] w-[350px] rounded-full bg-[#ff8c7a]/10 blur-[130px] sm:h-[500px] sm:w-[500px]' />
 
-        {/* Subtle background grid lines with mask */}
-        <div className='pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_70%_60%_at_50%_15%,#000_65%,transparent_100%)]' />
+        {/* Subtle background grid */}
+        <div className='pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:3.5rem_3.5rem] [mask-image:radial-gradient(ellipse_75%_65%_at_50%_15%,#000_60%,transparent_100%)]' />
 
-        <div className='relative mx-auto grid max-w-7xl items-center gap-12 lg:min-h-[calc(100svh-12rem)] lg:grid-cols-[1fr_1fr] lg:gap-14'>
-          {/* Left Column: Headline & Positioning */}
+        <div className='relative mx-auto grid max-w-7xl items-center gap-8 lg:min-h-[calc(100svh-11rem)] lg:grid-cols-[1.05fr_0.95fr] lg:gap-12'>
+          
+          {/* Left Column: Typography & CTAs */}
           <motion.div
             initial='hidden'
             animate='show'
-            variants={{ show: { transition: { staggerChildren: 0.1 } } }}
-            className='relative z-10 w-full max-w-2xl text-center lg:text-left'>
+            variants={{ show: { transition: { staggerChildren: 0.08 } } }}
+            className='relative z-10 w-full text-center lg:text-left'>
             
             {/* Live Eyebrow Badge */}
             <motion.div
               variants={reveal}
-              className='mb-5 inline-flex items-center gap-2.5 rounded-full border border-[#ff5a47]/30 bg-[#ff5a47]/10 px-3.5 py-1.5 text-[10px] font-extrabold uppercase tracking-[.22em] text-[#ff9b8e] sm:text-[11px]'>
+              className='mb-4 inline-flex items-center gap-2 rounded-full border border-[#ff5a47]/30 bg-[#ff5a47]/10 px-3 py-1 text-[10px] font-extrabold uppercase tracking-[.18em] text-[#ff9b8e] sm:text-xs'>
               <span className='relative flex h-2 w-2'>
-                <span className='absolute inline-flex h-full w-full animate-ping rounded-full bg-[#ff5a47] opacity-75'></span>
-                <span className='relative inline-flex h-2 w-2 rounded-full bg-[#ff5a47] shadow-[0_0_10px_#ff5a47]'></span>
+                <span className='absolute inline-flex h-full w-full animate-ping rounded-full bg-[#ff5a47] opacity-75' />
+                <span className='relative inline-flex h-2 w-2 rounded-full bg-[#ff5a47] shadow-[0_0_8px_#ff5a47]' />
               </span>
               The Photo Delivery Platform for Photographers
             </motion.div>
 
-            {/* Main Command H1 */}
+            {/* Master H1 */}
             <motion.h1
               variants={reveal}
-              className='font-display text-[clamp(2.7rem,6.2vw,6.5rem)] font-extrabold leading-[.92] tracking-[-.055em] text-white'>
-              Don't just deliver photos.
-              <span className='mt-2 block text-transparent bg-clip-text bg-gradient-to-r from-[#ff7b69] via-[#ff5a47] to-[#ffb2a8] drop-shadow-[0_12px_40px_rgba(255,90,71,0.35)]'>
+              className='font-display text-[2.35rem] font-extrabold leading-[1.02] tracking-[-0.04em] text-white sm:text-5xl lg:text-[4.5rem]'>
+              Don't just deliver photos.<br />
+              <span className='text-transparent bg-clip-text bg-gradient-to-r from-[#ff7b69] via-[#ff5a47] to-[#ffb2a8] drop-shadow-[0_8px_30px_rgba(255,90,71,0.35)]'>
                 Premiere them.
               </span>
             </motion.h1>
 
-            {/* Supporting Copy */}
+            {/* Subtitle */}
             <motion.p
               variants={reveal}
-              className='mx-auto mt-6 max-w-xl text-base leading-7 text-zinc-300 sm:text-lg sm:leading-8 lg:mx-0'>
+              className='mx-auto mt-4 max-w-lg text-sm leading-relaxed text-zinc-300 sm:mt-6 sm:text-base sm:leading-7 lg:mx-0'>
               Transform completed photoshoots into cinematic, interactive Photo Stories your clients can experience,
               share and download. Built for photographers and media studios who want final delivery to feel as premium as the photography itself.
             </motion.p>
@@ -312,60 +304,63 @@ export default function LandingPage({ onOpenAuth }) {
             {/* CTAs */}
             <motion.div
               variants={reveal}
-              className='mt-8 flex flex-col justify-center gap-3.5 sm:flex-row lg:justify-start'>
+              className='mt-6 flex flex-col justify-center gap-3 sm:flex-row lg:justify-start'>
               <Link
                 to='/create'
-                className='group relative inline-flex items-center justify-center gap-3.5 rounded-2xl bg-[#ff5a47] px-7 py-4 text-sm font-black text-white shadow-[0_18px_50px_rgba(255,90,71,0.3)] transition hover:-translate-y-0.5 hover:bg-[#ff7564] active:translate-y-0'>
+                className='group inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-[#ff5a47] px-6 py-3.5 text-sm font-black text-white shadow-[0_12px_35px_rgba(255,90,71,0.32)] transition hover:-translate-y-0.5 hover:bg-[#ff7564] active:translate-y-0 sm:w-auto sm:px-7 sm:py-4'>
                 <span>Create Your First Photo Story</span>
-                <ArrowRight size={17} className='transition-transform group-hover:translate-x-1' />
+                <ArrowRight size={16} className='transition-transform group-hover:translate-x-1' />
               </Link>
               <button
                 onClick={startStory}
-                className='inline-flex items-center justify-center gap-2.5 rounded-2xl border border-white/15 bg-white/[.05] px-6 py-4 text-sm font-bold text-zinc-200 backdrop-blur-xl transition hover:bg-white/[.1] hover:border-white/25'>
-                <span className='grid h-6 w-6 place-items-center rounded-full bg-[#ff5a47]/20 text-[#ff7b69]'>
-                  <Play size={11} fill='currentColor' />
+                className='inline-flex w-full items-center justify-center gap-2.5 rounded-2xl border border-white/15 bg-white/[.05] px-5 py-3.5 text-sm font-bold text-zinc-200 backdrop-blur-xl transition hover:bg-white/[.1] sm:w-auto sm:px-6 sm:py-4'>
+                <span className='grid h-5 w-5 place-items-center rounded-full bg-[#ff5a47]/20 text-[#ff7b69]'>
+                  <Play size={10} fill='currentColor' />
                 </span>
-                <span>Watch Ada's Story</span>
+                <span>Watch Story Premiere</span>
               </button>
             </motion.div>
 
-            {/* Value & Trust Badges */}
+            {/* Trust & Guarantee Badges */}
             <motion.div
               variants={reveal}
-              className='mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2.5 text-xs font-medium text-zinc-400 lg:justify-start'>
-              <span className='flex items-center gap-2'>
-                <Check size={14} className='shrink-0 text-[#ff6b57]' /> 2 Photo Stories free / month
+              className='mt-6 flex flex-wrap justify-center gap-x-4 gap-y-2 text-[11px] font-medium text-zinc-400 sm:text-xs lg:justify-start'>
+              <span className='flex items-center gap-1.5'>
+                <Check size={13} className='text-[#ff6b57]' /> 2 Stories free / mo
               </span>
-              <span className='flex items-center gap-2'>
-                <Check size={14} className='shrink-0 text-[#ff6b57]' /> Opens in any browser (WhatsApp-ready)
+              <span className='flex items-center gap-1.5'>
+                <Check size={13} className='text-[#ff6b57]' /> WhatsApp-ready
               </span>
-              <span className='flex items-center gap-2'>
-                <Check size={14} className='shrink-0 text-[#ff6b57]' /> Full gallery & downloads at the end
+              <span className='flex items-center gap-1.5'>
+                <Check size={13} className='text-[#ff6b57]' /> Full gallery & downloads
               </span>
-              <span className='flex items-center gap-2'>
-                <Check size={14} className='shrink-0 text-[#ff6b57]' /> No credit card required
+              <span className='flex items-center gap-1.5'>
+                <Check size={13} className='text-[#ff6b57]' /> No card required
               </span>
             </motion.div>
           </motion.div>
 
-          {/* Right Column: Interactive Phone Simulator & Smart Badges */}
+          {/* Right Column: Live Interactive Device / Showcase */}
           <motion.div
             ref={previewRef}
-            initial={{ opacity: 0, scale: 0.94 }}
+            initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.2, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-            className='relative mx-auto w-full max-w-[500px] lg:mr-0'>
+            transition={{ delay: 0.15, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+            className='relative mx-auto w-full max-w-[420px] lg:mr-0'>
 
-            {/* Shoot Preset Tabs: Switcher */}
-            <div className='mb-4 flex items-center justify-center gap-1.5 overflow-x-auto pb-1 sm:justify-start'>
+            {/* Genre Switcher Pills */}
+            <div className='mb-3 flex items-center justify-center gap-1.5 sm:justify-start'>
+              <span className='mr-1 hidden text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:inline'>
+                Sample Shoot:
+              </span>
               {heroPresets.map((preset, idx) => (
                 <button
                   key={preset.id}
                   onClick={() => handleSelectPreset(idx)}
-                  className={`flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold transition ${
+                  className={`flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-bold transition ${
                     selectedPresetIndex === idx
                       ? 'bg-[#ff5a47] text-white shadow-md shadow-[#ff5a47]/30'
-                      : 'border border-white/10 bg-white/5 text-zinc-400 hover:border-white/20 hover:text-white'
+                      : 'border border-white/10 bg-white/5 text-zinc-400 hover:text-white'
                   }`}>
                   <span>{preset.icon}</span>
                   <span>{preset.label}</span>
@@ -373,63 +368,47 @@ export default function LandingPage({ onOpenAuth }) {
               ))}
             </div>
 
-            {/* Floating Intelligence Badges (Desktop & Tablet only to avoid mobile horizontal scroll) */}
-            <div className='hidden sm:block'>
-              {/* Floating Badge 1: Top Left */}
-              <motion.div
-                animate={{ y: [0, -6, 0] }}
-                transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut' }}
-                className='absolute -left-8 top-16 z-30 flex items-center gap-2.5 rounded-2xl border border-white/15 bg-black/75 p-3 text-left shadow-2xl backdrop-blur-xl'>
-                <div className='grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#ff5a47]/20 text-[#ff7b69]'>
-                  <WandSparkles size={16} />
-                </div>
-                <div>
-                  <p className='text-[10px] font-black uppercase tracking-wider text-[#ff9b8e]'>AI Director</p>
-                  <p className='text-xs font-bold text-white'>Opening Hook Crowned</p>
-                </div>
-              </motion.div>
-
-              {/* Floating Badge 2: Top Right */}
-              <motion.div
-                animate={{ y: [0, 6, 0] }}
-                transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
-                className='absolute -right-6 top-32 z-30 flex items-center gap-2.5 rounded-2xl border border-white/15 bg-black/75 p-3 text-left shadow-2xl backdrop-blur-xl'>
-                <div className='grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#ff5a47]/20 text-[#ff7b69]'>
-                  <Music2 size={16} />
-                </div>
-                <div>
-                  <p className='text-[10px] font-black uppercase tracking-wider text-[#ff9b8e]'>Soundtrack Sync</p>
-                  <p className='text-xs font-bold text-white'>{currentPreset.soundtrack} · {currentPreset.bpm}</p>
-                </div>
-              </motion.div>
-
-              {/* Floating Badge 3: Bottom Right */}
+            {/* Floating Glass Badges (Desktop & Tablet only) */}
+            <div className='hidden lg:block'>
               <motion.div
                 animate={{ y: [0, -5, 0] }}
-                transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
-                className='absolute -right-4 bottom-20 z-30 flex items-center gap-2.5 rounded-2xl border border-white/15 bg-black/75 p-3 text-left shadow-2xl backdrop-blur-xl'>
-                <div className='grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#ff5a47]/20 text-[#ff7b69]'>
-                  <ImageIcon size={16} />
+                transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+                className='absolute -left-6 top-16 z-30 flex items-center gap-2 rounded-xl border border-white/15 bg-black/80 p-2.5 shadow-2xl backdrop-blur-xl'>
+                <div className='grid h-8 w-8 place-items-center rounded-lg bg-[#ff5a47]/20 text-[#ff7b69]'>
+                  <WandSparkles size={15} />
                 </div>
                 <div>
-                  <p className='text-[10px] font-black uppercase tracking-wider text-[#ff9b8e]'>Pristine Delivery</p>
-                  <p className='text-xs font-bold text-white'>High-Res Client Downloads</p>
+                  <p className='text-[9px] font-black uppercase tracking-wider text-[#ff9b8e]'>AI Director</p>
+                  <p className='text-xs font-bold text-white'>Opening Hook Selected</p>
+                </div>
+              </motion.div>
+
+              <motion.div
+                animate={{ y: [0, 5, 0] }}
+                transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut', delay: 0.4 }}
+                className='absolute -right-5 top-28 z-30 flex items-center gap-2 rounded-xl border border-white/15 bg-black/80 p-2.5 shadow-2xl backdrop-blur-xl'>
+                <div className='grid h-8 w-8 place-items-center rounded-lg bg-[#ff5a47]/20 text-[#ff7b69]'>
+                  <Music2 size={15} />
+                </div>
+                <div>
+                  <p className='text-[9px] font-black uppercase tracking-wider text-[#ff9b8e]'>Soundtrack Sync</p>
+                  <p className='text-xs font-bold text-white'>{currentPreset.soundtrack}</p>
                 </div>
               </motion.div>
             </div>
 
-            {/* Phone Chassis Mockup */}
-            <div className='relative mx-auto aspect-[9/17] w-[82%] max-w-[340px] overflow-hidden rounded-[2.8rem] border-[3px] border-white/20 bg-zinc-950 p-2.5 shadow-[0_45px_120px_rgba(0,0,0,0.85)] ring-1 ring-white/10 sm:w-[74%]'>
-              <div className='relative h-full w-full overflow-hidden rounded-[2.2rem] bg-black'>
+            {/* Phone Screen Player */}
+            <div className='relative mx-auto aspect-[9/16] w-full max-w-[310px] overflow-hidden rounded-[2.4rem] border-[2.5px] border-white/20 bg-zinc-950 p-2 shadow-[0_25px_80px_rgba(0,0,0,0.85)] ring-1 ring-white/10 sm:max-w-[330px] sm:rounded-[2.8rem] sm:border-[3px] sm:p-2.5'>
+              <div className='relative h-full w-full overflow-hidden rounded-[2rem] bg-black sm:rounded-[2.3rem]'>
                 
-                {/* Dynamic Island Pill Notch */}
-                <div className='absolute left-1/2 top-2.5 z-40 flex h-4 w-20 -translate-x-1/2 items-center justify-between rounded-full bg-black px-2 ring-1 ring-white/10'>
+                {/* Camera Notch Island */}
+                <div className='absolute left-1/2 top-2 z-40 flex h-3.5 w-18 -translate-x-1/2 items-center justify-between rounded-full bg-black px-2 ring-1 ring-white/10'>
                   <div className='h-1.5 w-1.5 rounded-full bg-white/20' />
-                  <div className='h-2 w-2 rounded-full bg-emerald-500/80 shadow-[0_0_6px_#10b981]' />
+                  <div className='h-1.5 w-1.5 rounded-full bg-emerald-500/80 shadow-[0_0_6px_#10b981]' />
                 </div>
 
                 <AnimatePresence mode='wait'>
-                  {/* ─── STATE 1: COVER SCREEN ─── */}
+                  {/* ─── STATE 1: COVER ─── */}
                   {storyStatus === 'cover' && (
                     <motion.div
                       key={`cover-${currentPreset.id}`}
@@ -442,41 +421,38 @@ export default function LandingPage({ onOpenAuth }) {
                         alt=''
                         className='absolute inset-0 h-full w-full object-cover'
                       />
-                      <div className='absolute inset-0 bg-[linear-gradient(to_bottom,rgba(0,0,0,.25),rgba(15,7,9,.25)_40%,rgba(0,0,0,.94))]' />
+                      <div className='absolute inset-0 bg-gradient-to-t from-black via-black/35 to-black/30' />
                       
-                      {/* Veylo Logo Pill */}
-                      <div className='absolute inset-x-0 top-[18%] flex flex-col items-center px-6 text-center'>
-                        <img src='/veylo/veylo-mark.svg' alt='' className='h-12 w-12 rounded-2xl shadow-xl' />
-                        <span className='mt-3.5 rounded-full border border-white/25 bg-black/40 px-3.5 py-1 text-[8px] font-black uppercase tracking-[.22em] text-white backdrop-blur-xl'>
+                      {/* Veylo Logo */}
+                      <div className='absolute inset-x-0 top-[16%] flex flex-col items-center px-4 text-center'>
+                        <img src='/veylo/veylo-mark.svg' alt='' className='h-10 w-10 rounded-xl shadow-lg' />
+                        <span className='mt-2.5 rounded-full border border-white/20 bg-black/40 px-3 py-0.5 text-[8px] font-black uppercase tracking-[.2em] text-white backdrop-blur-md'>
                           A Veylo Photo Story
                         </span>
                       </div>
 
-                      {/* Cover Details & CTA */}
-                      <div className='absolute inset-x-0 bottom-0 px-6 pb-7 text-center sm:px-8 sm:pb-8'>
-                        <p className='font-serif text-3xl font-semibold leading-tight text-white sm:text-4xl'>
+                      {/* Cover Details */}
+                      <div className='absolute inset-x-0 bottom-0 p-5 text-center'>
+                        <p className='font-serif text-2xl font-semibold text-white sm:text-3xl'>
                           {currentPreset.tag}
                         </p>
-                        <p className='mt-1.5 text-xs font-semibold text-white/75'>
+                        <p className='mt-1 text-[11px] font-medium text-white/75'>
                           {currentPreset.occasion}
                         </p>
 
-                        <div className='mt-3 flex items-center justify-center gap-2'>
-                          <span className='inline-flex items-center gap-1 rounded-md border border-white/15 bg-black/40 px-2.5 py-0.5 text-[8px] font-bold text-white/90 backdrop-blur-md'>
-                            <Music2 size={9} className='text-[#ff7b69]' /> {currentPreset.soundtrack}
-                          </span>
-                          <span className='inline-flex items-center gap-1 rounded-md border border-white/15 bg-black/40 px-2.5 py-0.5 text-[8px] font-bold text-white/90 backdrop-blur-md'>
-                            <Mic2 size={9} className='text-[#ff7b69]' /> Voice
+                        <div className='mt-2.5 flex items-center justify-center gap-1.5 text-[8px] font-semibold text-white/80'>
+                          <span className='inline-flex items-center gap-1 rounded border border-white/15 bg-black/40 px-2 py-0.5'>
+                            <Music2 size={8} className='text-[#ff7b69]' /> {currentPreset.soundtrack}
                           </span>
                         </div>
 
                         <button
                           onClick={startStory}
-                          className='mt-5 flex w-full items-center justify-center gap-2.5 rounded-2xl bg-[#ff5a47] px-4 py-3.5 text-xs font-extrabold text-white shadow-[0_12px_35px_rgba(255,90,71,0.4)] transition hover:bg-[#ff7564] active:scale-95'>
-                          <Play size={13} fill='currentColor' /> Watch Premiere
+                          className='mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#ff5a47] py-3 text-xs font-black text-white shadow-lg shadow-[#ff5a47]/35 transition hover:bg-[#ff7564] active:scale-95'>
+                          <Play size={12} fill='currentColor' /> Watch Premiere
                         </button>
-                        <p className='mt-2.5 text-[8px] font-bold uppercase tracking-[.18em] text-white/50'>
-                          Tap to begin
+                        <p className='mt-2 text-[8px] font-bold uppercase tracking-wider text-white/45'>
+                          Tap to play
                         </p>
                       </div>
                     </motion.div>
@@ -489,35 +465,35 @@ export default function LandingPage({ onOpenAuth }) {
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
-                      transition={{ duration: 0.6 }}
+                      transition={{ duration: 0.55 }}
                       className='absolute inset-0 cursor-pointer'
                       onClick={togglePlayPause}>
                       <motion.img
                         src={frames[activeFrame].image}
                         alt=''
                         initial={{ scale: 1.02 }}
-                        animate={{ scale: activeFrame % 2 === 0 ? 1.1 : 1.06, x: activeFrame % 2 === 0 ? 0 : -6 }}
-                        transition={{ duration: 6, ease: 'linear' }}
+                        animate={{ scale: activeFrame % 2 === 0 ? 1.08 : 1.05, x: activeFrame % 2 === 0 ? 0 : -5 }}
+                        transition={{ duration: 5.5, ease: 'linear' }}
                         className='absolute inset-0 h-full w-full object-cover'
                       />
                       <div className='absolute inset-0 bg-gradient-to-t from-black/95 via-transparent to-black/60' />
 
                       {/* Caption Card */}
-                      <div className='absolute inset-x-0 bottom-0 p-4'>
+                      <div className='absolute inset-x-0 bottom-0 p-3.5'>
                         <motion.div
-                          initial={{ opacity: 0, y: 14 }}
+                          initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.2 }}
-                          className='rounded-2xl border border-[#ff7b69]/30 bg-black/80 p-4 text-left shadow-2xl backdrop-blur-xl'>
+                          transition={{ delay: 0.15 }}
+                          className='rounded-xl border border-[#ff7b69]/30 bg-black/85 p-3 text-left shadow-2xl backdrop-blur-xl'>
                           <div className='flex items-center justify-between'>
-                            <span className='inline-flex rounded-md border border-[#ff7b69]/40 bg-[#ff5a47]/15 px-2 py-0.5 text-[8px] font-black uppercase tracking-[.16em] text-[#ff9b8e]'>
+                            <span className='rounded border border-[#ff7b69]/40 bg-[#ff5a47]/15 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-[.14em] text-[#ff9b8e]'>
                               {frames[activeFrame].chapter}
                             </span>
                             <span className='text-[8px] font-bold text-white/50'>
                               {activeFrame + 1} / {frames.length}
                             </span>
                           </div>
-                          <p className='mt-2.5 text-xs font-semibold leading-5 text-white sm:text-sm'>
+                          <p className='mt-2 text-xs font-semibold leading-relaxed text-white'>
                             {frames[activeFrame].line}
                           </p>
                         </motion.div>
@@ -531,15 +507,15 @@ export default function LandingPage({ onOpenAuth }) {
                       key='ending'
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
-                      className='absolute inset-0 flex flex-col items-center justify-center bg-[radial-gradient(circle_at_top,#4a1a18_0%,#1a0f12_45%,#050505_100%)] px-5 text-center'>
-                      {/* Fan of completed photographs */}
-                      <div className='relative mb-6 h-24 w-36'>
+                      className='absolute inset-0 flex flex-col items-center justify-center bg-[radial-gradient(circle_at_top,#4a1a18_0%,#180e11_45%,#050505_100%)] p-5 text-center'>
+                      {/* Fan of photos */}
+                      <div className='relative mb-5 h-20 w-32'>
                         {[frames[0].image, frames[1].image, frames[2].image].map((img, idx) => (
                           <img
                             key={img}
                             src={img}
                             alt=''
-                            className={`absolute left-1/2 top-1/2 h-20 w-14 rounded-xl border-2 object-cover shadow-2xl ${
+                            className={`absolute left-1/2 top-1/2 h-16 w-12 rounded-lg border-2 object-cover shadow-xl ${
                               idx === 0
                                 ? '-translate-x-[125%] -translate-y-1/2 -rotate-12 border-white/20'
                                 : idx === 1
@@ -553,38 +529,38 @@ export default function LandingPage({ onOpenAuth }) {
                       <span className='text-[8px] font-black uppercase tracking-[.2em] text-[#ff9b8e]'>
                         Premiere Concluded
                       </span>
-                      <p className='mt-2 font-serif text-2xl font-semibold text-white'>
+                      <p className='mt-1.5 font-serif text-xl font-semibold text-white'>
                         Your Photos Are Ready
                       </p>
-                      <p className='mt-1.5 text-[10px] leading-4 text-white/60'>
+                      <p className='mt-1 text-[10px] leading-snug text-white/60'>
                         Browse all finished high-res photos, view full-screen, or download all.
                       </p>
 
-                      <div className='mt-5 w-full space-y-2'>
-                        <button className='flex w-full items-center justify-center gap-2 rounded-xl bg-[#ff5a47] py-2.5 text-[10px] font-extrabold text-white'>
-                          <ImageIcon size={12} /> View full photo gallery
+                      <div className='mt-4 w-full space-y-2'>
+                        <button className='flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#ff5a47] py-2.5 text-[10px] font-black text-white'>
+                          <ImageIcon size={11} /> View full photo gallery
                         </button>
-                        <button className='flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 py-2.5 text-[10px] font-extrabold text-white'>
-                          <Download size={12} /> Download all (High-Res)
+                        <button className='flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 py-2 text-[10px] font-bold text-white'>
+                          <Download size={11} /> Download all (High-Res)
                         </button>
-                        <button className='flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 py-2.5 text-[10px] font-extrabold text-white'>
-                          <Share2 size={12} /> Share Photo Story
+                        <button className='flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 py-2 text-[10px] font-bold text-white'>
+                          <Share2 size={11} /> Share Photo Story
                         </button>
                       </div>
 
                       <button
                         onClick={restartStory}
-                        className='mt-3.5 flex items-center gap-1 text-[8px] font-black uppercase tracking-[.18em] text-white/50 hover:text-white'>
-                        <RotateCcw size={10} /> Replay premiere
+                        className='mt-3 flex items-center gap-1 text-[8px] font-black uppercase tracking-wider text-white/50 hover:text-white'>
+                        <RotateCcw size={9} /> Replay premiere
                       </button>
                     </motion.div>
                   )}
                 </AnimatePresence>
 
-                {/* Top Control Bar during Story Playback */}
+                {/* Progress Bar & Audio Equalizer during playback */}
                 {storyStatus === 'playing' && (
-                  <div className='absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-black/85 via-black/40 to-transparent px-3 pb-6 pt-7'>
-                    {/* Segmented Story Progress Bar */}
+                  <div className='absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-black/90 via-black/40 to-transparent px-3 pb-4 pt-6'>
+                    {/* Story progress segments */}
                     <div className='flex gap-1'>
                       {frames.map((_, idx) => (
                         <button
@@ -608,40 +584,38 @@ export default function LandingPage({ onOpenAuth }) {
                       ))}
                     </div>
 
-                    {/* Metadata & Audio Equalizer Indicator */}
-                    <div className='mt-2.5 flex items-center justify-between'>
-                      <div className='flex items-center gap-2'>
-                        <img src='/veylo/veylo-mark.svg' alt='' className='h-6 w-6 rounded-lg' />
+                    {/* Metadata & Equalizer */}
+                    <div className='mt-2 flex items-center justify-between'>
+                      <div className='flex items-center gap-1.5'>
+                        <img src='/veylo/veylo-mark.svg' alt='' className='h-5 w-5 rounded-md' />
                         <div className='text-left'>
-                          <p className='text-[10px] font-black leading-none text-white'>{currentPreset.tag}</p>
+                          <p className='text-[9px] font-black leading-none text-white'>{currentPreset.tag}</p>
                           <div className='mt-0.5 flex items-center gap-1 text-[7px] font-medium text-[#ff9b8e]'>
-                            {/* Animated Audio Equalizer Bars */}
                             {isPlaying && (
-                              <span className='flex h-2 items-end gap-[1.5px]'>
-                                <span className='h-full w-[1.5px] animate-pulse bg-[#ff5a47]' />
-                                <span className='h-1.5 w-[1.5px] animate-pulse bg-[#ff5a47] [animation-delay:0.2s]' />
-                                <span className='h-2.5 w-[1.5px] animate-pulse bg-[#ff5a47] [animation-delay:0.4s]' />
+                              <span className='flex h-2 items-end gap-[1px]'>
+                                <span className='h-full w-[1px] animate-pulse bg-[#ff5a47]' />
+                                <span className='h-1.5 w-[1px] animate-pulse bg-[#ff5a47]' />
+                                <span className='h-2 w-[1px] animate-pulse bg-[#ff5a47]' />
                               </span>
                             )}
-                            <span>{currentPreset.soundtrack}</span>
+                            <span className='truncate max-w-[110px]'>{currentPreset.soundtrack}</span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Controls: Volume & Play/Pause */}
                       <div className='flex items-center gap-1'>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             setIsMuted(!isMuted);
                           }}
-                          className='grid h-6 w-6 place-items-center rounded-full bg-black/40 text-white/80 hover:text-white'>
-                          {isMuted ? <VolumeX size={10} /> : <Volume2 size={10} />}
+                          className='grid h-5 w-5 place-items-center rounded-full bg-black/40 text-white/80'>
+                          {isMuted ? <VolumeX size={9} /> : <Volume2 size={9} />}
                         </button>
                         <button
                           onClick={togglePlayPause}
-                          className='grid h-6 w-6 place-items-center rounded-full bg-black/40 text-white'>
-                          {isPlaying ? <Pause size={10} /> : <Play size={10} fill='currentColor' />}
+                          className='grid h-5 w-5 place-items-center rounded-full bg-black/40 text-white'>
+                          {isPlaying ? <Pause size={9} /> : <Play size={9} fill='currentColor' />}
                         </button>
                       </div>
                     </div>
@@ -653,89 +627,94 @@ export default function LandingPage({ onOpenAuth }) {
         </div>
       </section>
 
-      {/* ─── VALUE PILLARS TICKER (RESPONSIVE AUTO-MARQUEE / WRAP) ─── */}
-      <section className='border-y border-white/10 bg-[#0c0c10] py-4 sm:py-5'>
-        <div className='mx-auto flex max-w-7xl flex-wrap items-center justify-center gap-x-8 gap-y-3 px-4 text-center text-[10px] font-extrabold uppercase tracking-[.2em] text-zinc-400 sm:text-[11px] md:justify-between'>
-          <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> Photos Stay Photos</span>
-          <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> Veylo AI Director</span>
-          <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> Editorial Storytelling</span>
-          <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> Music & Narration</span>
-          <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> High-Res Client Downloads</span>
+      {/* ─── VALUE PILLARS TICKER (INFINITE SMOOTH MARQUEE) ─── */}
+      <section className='overflow-hidden border-y border-white/10 bg-[#0c0c10] py-3.5'>
+        <div className='animate-marquee flex items-center gap-8 text-[11px] font-extrabold uppercase tracking-[.22em] text-zinc-400'>
+          {[1, 2].map((loop) => (
+            <React.Fragment key={loop}>
+              <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> Photos Stay Photos</span>
+              <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> Veylo AI Director</span>
+              <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> Editorial Storytelling</span>
+              <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> Music & Narration</span>
+              <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> High-Res Client Downloads</span>
+              <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> WhatsApp-Ready Delivery</span>
+            </React.Fragment>
+          ))}
         </div>
       </section>
 
       {/* ─── THE TRANSFORMATION: BEFORE VS AFTER (VIRAL HOOK) ─── */}
-      <section className='px-4 py-20 sm:px-8 sm:py-28 lg:py-36'>
+      <section className='px-4 py-16 sm:px-8 sm:py-24 lg:py-32'>
         <div className='mx-auto max-w-7xl'>
-          <div className='grid gap-6 lg:grid-cols-2 lg:items-end'>
+          <div className='grid gap-4 lg:grid-cols-2 lg:items-end'>
             <div>
-              <p className='mb-3 text-xs font-extrabold uppercase tracking-[.24em] text-[#ff6b57]'>
+              <p className='text-xs font-extrabold uppercase tracking-[.24em] text-[#ff6b57]'>
                 The Client Reaction Is Your Brand
               </p>
-              <h2 className='font-display text-[clamp(2.2rem,5vw,5rem)] font-extrabold leading-[.94] tracking-[-.055em]'>
+              <h2 className='mt-2 font-display text-2xl font-extrabold leading-[1.05] tracking-[-.04em] sm:text-4xl lg:text-5xl'>
                 Photographers still delivering shoots like this?
               </h2>
             </div>
-            <p className='max-w-lg text-base leading-7 text-zinc-400 sm:text-lg lg:pb-2'>
+            <p className='text-sm leading-relaxed text-zinc-400 sm:text-base'>
               After weeks of planning, directing, lighting, and meticulous retouching, the way your photographs arrive
               either flattens the work—or creates a client for life.
             </p>
           </div>
 
-          <div className='mt-12 grid gap-6 lg:grid-cols-2'>
+          <div className='mt-10 grid gap-5 lg:grid-cols-2'>
             {/* The Cold Delivery */}
-            <div className='relative flex flex-col justify-between rounded-[2.2rem] border border-white/10 bg-zinc-950 p-6 sm:p-10'>
+            <div className='flex flex-col justify-between rounded-3xl border border-white/10 bg-zinc-950 p-6 sm:p-8'>
               <div>
                 <div className='flex items-center justify-between text-xs font-black uppercase tracking-[.18em] text-zinc-500'>
                   <span>THE OLD WAY</span>
-                  <span className='rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] text-zinc-400 sm:text-xs'>
+                  <span className='rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] text-zinc-400'>
                     184 RAW / JPG FILES
                   </span>
                 </div>
 
-                <div className='mt-10 inline-flex h-16 w-16 items-center justify-center rounded-3xl border border-white/10 bg-zinc-900 text-zinc-500 sm:h-20 sm:w-20'>
-                  <Folder size={36} strokeWidth={1.2} />
+                <div className='mt-8 inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-zinc-900 text-zinc-500'>
+                  <Folder size={28} strokeWidth={1.2} />
                 </div>
 
-                <h3 className='mt-6 font-display text-2xl font-bold text-zinc-300 sm:text-3xl'>
+                <h3 className='mt-5 font-display text-xl font-bold text-zinc-300 sm:text-2xl'>
                   “Hi, here is your Google Drive link.”
                 </h3>
-                <p className='mt-3 text-sm leading-6 text-zinc-400'>
+                <p className='mt-2.5 text-xs leading-relaxed text-zinc-400 sm:text-sm'>
                   Opened on a phone. Pinched, zoomed, scrolled in silence. Downloaded frantically. Closed. Zero emotional
                   crescendo. Your art ends in a spreadsheet of filenames.
                 </p>
               </div>
 
-              <div className='mt-8 rounded-2xl border border-white/5 bg-black/40 p-3.5 text-xs font-mono text-zinc-500'>
+              <div className='mt-6 rounded-xl border border-white/5 bg-black/40 p-3 text-xs font-mono text-zinc-500'>
                 <p className='truncate'>drive.google.com/drive/folders/7xK9... · 184 items · 4.8 GB</p>
               </div>
             </div>
 
             {/* The Veylo Premiere */}
-            <div className='relative flex flex-col justify-between overflow-hidden rounded-[2.2rem] border border-[#ff5a47]/40 bg-[#ff5a47]/[.06] p-6 sm:p-10'>
-              <div className='absolute -right-16 -top-16 h-72 w-72 rounded-full bg-[#ff5a47]/20 blur-[100px]' />
+            <div className='relative flex flex-col justify-between overflow-hidden rounded-3xl border border-[#ff5a47]/40 bg-[#ff5a47]/[.06] p-6 sm:p-8'>
+              <div className='absolute -right-16 -top-16 h-60 w-60 rounded-full bg-[#ff5a47]/20 blur-[90px]' />
 
               <div className='relative z-10'>
                 <div className='flex items-center justify-between text-xs font-black uppercase tracking-[.18em] text-[#ff9b8e]'>
                   <span className='flex items-center gap-1.5'>
-                    <Sparkles size={14} className='text-[#ff5a47]' /> THE VEYLO PREMIERE
+                    <Sparkles size={13} className='text-[#ff5a47]' /> THE VEYLO PREMIERE
                   </span>
-                  <span className='rounded-full border border-[#ff5a47]/30 bg-[#ff5a47]/15 px-3 py-1 text-[10px] font-bold text-[#ff9b8e] sm:text-xs'>
+                  <span className='rounded-full border border-[#ff5a47]/30 bg-[#ff5a47]/15 px-2.5 py-0.5 text-[10px] font-bold text-[#ff9b8e]'>
                     EXPERIENCE FIRST
                   </span>
                 </div>
 
-                <p className='mt-10 font-serif text-2xl font-semibold leading-snug text-white sm:text-4xl'>
+                <p className='mt-6 font-serif text-xl font-semibold leading-snug text-white sm:text-3xl'>
                   Her name. Her soundtrack. Her photographs, revealed one moment at a time.
                 </p>
 
-                <p className='mt-4 text-sm leading-6 text-zinc-300 sm:text-base sm:leading-7'>
+                <p className='mt-3 text-xs leading-relaxed text-zinc-300 sm:text-sm sm:leading-6'>
                   Music begins. Editorial chapter lines appear. Subtle motion brings each portrait alive. Then, the full
                   gallery unlocks for high-resolution individual and bulk downloads.
                 </p>
               </div>
 
-              <div className='relative z-10 mt-8 rounded-2xl border border-[#ff5a47]/30 bg-black/60 p-3.5 text-xs font-medium text-[#ff9b8e] backdrop-blur-xl'>
+              <div className='relative z-10 mt-6 rounded-xl border border-[#ff5a47]/30 bg-black/60 p-3 text-xs font-medium text-[#ff9b8e] backdrop-blur-xl'>
                 <div className='flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between'>
                   <span className='font-mono font-bold'>veylo.com.ng/s/ada-at-30</span>
                   <span className='text-[10px] font-black uppercase tracking-wider text-white/80'>Ready for WhatsApp</span>
@@ -747,36 +726,36 @@ export default function LandingPage({ onOpenAuth }) {
       </section>
 
       {/* ─── VEYLO AI DIRECTOR: THE CORE CONCEPT ─── */}
-      <section id='ai-director' className='border-y border-white/10 bg-[#0c0c10] px-4 py-20 sm:px-8 sm:py-28 lg:py-36'>
+      <section id='ai-director' className='border-y border-white/10 bg-[#0c0c10] px-4 py-16 sm:px-8 sm:py-24 lg:py-32'>
         <div className='mx-auto max-w-7xl'>
           <div className='mx-auto max-w-3xl text-center'>
-            <div className='inline-flex items-center gap-2 rounded-full border border-[#ff5a47]/30 bg-[#ff5a47]/10 px-4 py-1.5 text-xs font-extrabold uppercase tracking-[.22em] text-[#ff9b8e]'>
-              <WandSparkles size={14} /> The Veylo AI Director
+            <div className='inline-flex items-center gap-2 rounded-full border border-[#ff5a47]/30 bg-[#ff5a47]/10 px-3.5 py-1 text-[10px] font-extrabold uppercase tracking-[.2em] text-[#ff9b8e] sm:text-xs'>
+              <WandSparkles size={13} /> The Veylo AI Director
             </div>
-            <h2 className='mt-5 font-display text-[clamp(2.4rem,5vw,5rem)] font-extrabold leading-[.94] tracking-[-.05em]'>
+            <h2 className='mt-4 font-display text-2xl font-extrabold leading-[1.05] tracking-[-.04em] sm:text-4xl lg:text-5xl'>
               Veylo directs the delivery.
             </h2>
-            <p className='mt-4 text-base leading-7 text-zinc-400 sm:text-lg'>
+            <p className='mt-3 text-xs leading-relaxed text-zinc-400 sm:text-base'>
               Instead of presenting Veylo as just “captions + a gallery + music”, we built an AI Director.
               It understands the emotional arc of your shoot, chooses the strongest hook, and stages the premiere automatically.
             </p>
           </div>
 
-          <div className='mt-14 grid gap-5 md:grid-cols-2 lg:grid-cols-3'>
+          <div className='mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3'>
             {aiDirectorFeatures.map((feature, index) => {
               const Icon = feature.icon;
               return (
                 <div
                   key={feature.title}
-                  className='group relative rounded-[2rem] border border-white/10 bg-white/[.02] p-6 transition duration-300 hover:border-[#ff5a47]/40 hover:bg-white/[.04] sm:p-8'>
+                  className='group rounded-2xl border border-white/10 bg-white/[.02] p-5 transition duration-300 hover:border-[#ff5a47]/40 hover:bg-white/[.04] sm:p-6'>
                   <div className='flex items-center justify-between'>
-                    <div className='grid h-12 w-12 place-items-center rounded-2xl bg-[#ff5a47]/10 text-[#ff7b69] transition group-hover:scale-110 group-hover:bg-[#ff5a47]/20'>
-                      <Icon size={22} />
+                    <div className='grid h-10 w-10 place-items-center rounded-xl bg-[#ff5a47]/10 text-[#ff7b69]'>
+                      <Icon size={18} />
                     </div>
                     <span className='font-mono text-xs font-bold text-zinc-600'>0{index + 1}</span>
                   </div>
-                  <h3 className='mt-6 text-xl font-extrabold text-white'>{feature.title}</h3>
-                  <p className='mt-2.5 text-sm leading-6 text-zinc-400'>{feature.text}</p>
+                  <h3 className='mt-4 text-base font-extrabold text-white sm:text-lg'>{feature.title}</h3>
+                  <p className='mt-2 text-xs leading-relaxed text-zinc-400 sm:text-sm'>{feature.text}</p>
                 </div>
               );
             })}
@@ -785,32 +764,32 @@ export default function LandingPage({ onOpenAuth }) {
       </section>
 
       {/* ─── THE TWO SIDES OF VEYLO: STUDIO WORKFLOW VS CLIENT PREMIERE ─── */}
-      <section id='how-it-works' className='px-4 py-20 sm:px-8 sm:py-28 lg:py-36'>
+      <section id='how-it-works' className='px-4 py-16 sm:px-8 sm:py-24 lg:py-32'>
         <div className='mx-auto max-w-7xl'>
           <div className='mx-auto max-w-2xl text-center'>
             <p className='text-xs font-extrabold uppercase tracking-[.24em] text-[#ff6b57]'>End-To-End Experience</p>
-            <h2 className='mt-3 font-display text-4xl font-extrabold leading-[.95] tracking-[-.05em] sm:text-6xl'>
+            <h2 className='mt-2 font-display text-2xl font-extrabold leading-[1.05] tracking-[-.04em] sm:text-4xl lg:text-5xl'>
               Built for the studio.<br />
               <span className='text-zinc-500'>Felt by the client.</span>
             </h2>
             
-            {/* Responsive Tab Switcher */}
-            <div className='mt-8 flex justify-center'>
-              <div className='grid w-full max-w-md grid-cols-2 rounded-2xl border border-white/15 bg-white/5 p-1 backdrop-blur-xl'>
+            {/* Segmented Tab Switcher */}
+            <div className='mt-6 flex justify-center'>
+              <div className='grid w-full max-w-xs grid-cols-2 rounded-xl border border-white/15 bg-white/5 p-1 backdrop-blur-xl'>
                 <button
                   onClick={() => setActiveWorkflowTab('photographer')}
-                  className={`rounded-xl py-2.5 text-center text-xs font-extrabold transition ${
+                  className={`rounded-lg py-2 text-center text-xs font-extrabold transition ${
                     activeWorkflowTab === 'photographer'
-                      ? 'bg-[#ff5a47] text-white shadow-lg shadow-[#ff5a47]/25'
+                      ? 'bg-[#ff5a47] text-white shadow-md shadow-[#ff5a47]/25'
                       : 'text-zinc-400 hover:text-white'
                   }`}>
-                  Photographer (3 Mins)
+                  Photographer (3m)
                 </button>
                 <button
                   onClick={() => setActiveWorkflowTab('client')}
-                  className={`rounded-xl py-2.5 text-center text-xs font-extrabold transition ${
+                  className={`rounded-lg py-2 text-center text-xs font-extrabold transition ${
                     activeWorkflowTab === 'client'
-                      ? 'bg-[#ff5a47] text-white shadow-lg shadow-[#ff5a47]/25'
+                      ? 'bg-[#ff5a47] text-white shadow-md shadow-[#ff5a47]/25'
                       : 'text-zinc-400 hover:text-white'
                   }`}>
                   Client Premiere
@@ -819,9 +798,9 @@ export default function LandingPage({ onOpenAuth }) {
             </div>
           </div>
 
-          <div className='mt-12'>
+          <div className='mt-10'>
             {activeWorkflowTab === 'photographer' ? (
-              <div className='grid gap-5 md:grid-cols-3'>
+              <div className='grid gap-4 md:grid-cols-3'>
                 {[
                   {
                     step: '01',
@@ -844,16 +823,16 @@ export default function LandingPage({ onOpenAuth }) {
                 ].map((item) => (
                   <div
                     key={item.step}
-                    className='rounded-[2rem] border border-white/10 bg-[#111115] p-6 transition hover:border-white/20 sm:p-8'>
+                    className='rounded-2xl border border-white/10 bg-[#111115] p-5 transition hover:border-white/20 sm:p-6'>
                     <span className='font-mono text-xs font-bold text-[#ff6b57]'>{item.step}</span>
-                    <h3 className='mt-5 text-xl font-extrabold text-white sm:text-2xl'>{item.title}</h3>
-                    <p className='mt-1.5 text-xs font-bold uppercase tracking-wider text-[#ff9b8e]'>{item.subtitle}</p>
-                    <p className='mt-3.5 text-sm leading-6 text-zinc-400'>{item.desc}</p>
+                    <h3 className='mt-3 text-lg font-extrabold text-white sm:text-xl'>{item.title}</h3>
+                    <p className='mt-1 text-[10px] font-bold uppercase tracking-wider text-[#ff9b8e] sm:text-xs'>{item.subtitle}</p>
+                    <p className='mt-2.5 text-xs leading-relaxed text-zinc-400 sm:text-sm'>{item.desc}</p>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className='grid gap-5 md:grid-cols-3'>
+              <div className='grid gap-4 md:grid-cols-3'>
                 {[
                   {
                     step: '01',
@@ -876,11 +855,11 @@ export default function LandingPage({ onOpenAuth }) {
                 ].map((item) => (
                   <div
                     key={item.step}
-                    className='rounded-[2rem] border border-white/10 bg-[#111115] p-6 transition hover:border-white/20 sm:p-8'>
+                    className='rounded-2xl border border-white/10 bg-[#111115] p-5 transition hover:border-white/20 sm:p-6'>
                     <span className='font-mono text-xs font-bold text-[#ff6b57]'>{item.step}</span>
-                    <h3 className='mt-5 text-xl font-extrabold text-white sm:text-2xl'>{item.title}</h3>
-                    <p className='mt-1.5 text-xs font-bold uppercase tracking-wider text-[#ff9b8e]'>{item.subtitle}</p>
-                    <p className='mt-3.5 text-sm leading-6 text-zinc-400'>{item.desc}</p>
+                    <h3 className='mt-3 text-lg font-extrabold text-white sm:text-xl'>{item.title}</h3>
+                    <p className='mt-1 text-[10px] font-bold uppercase tracking-wider text-[#ff9b8e] sm:text-xs'>{item.subtitle}</p>
+                    <p className='mt-2.5 text-xs leading-relaxed text-zinc-400 sm:text-sm'>{item.desc}</p>
                   </div>
                 ))}
               </div>
@@ -889,17 +868,17 @@ export default function LandingPage({ onOpenAuth }) {
         </div>
       </section>
 
-      {/* ─── MOVING REEL: VISUAL RICHNESS (MOBILE OPTIMIZED) ─── */}
-      <section className='overflow-hidden border-y border-white/10 bg-[#0c0c10] py-20'>
-        <div className='mx-auto mb-10 max-w-7xl px-4 sm:px-8'>
+      {/* ─── MOVING REEL: VISUAL RICHNESS (SMOOTH & RESPONSIVE) ─── */}
+      <section className='overflow-hidden border-y border-white/10 bg-[#0c0c10] py-14 sm:py-20'>
+        <div className='mx-auto mb-8 max-w-7xl px-4 sm:px-8'>
           <p className='text-xs font-extrabold uppercase tracking-[.24em] text-[#ff6b57]'>
             Every Shoot Has Its Own Pulse
           </p>
-          <div className='mt-3 grid gap-4 lg:grid-cols-[1fr_420px] lg:items-end'>
-            <h2 className='font-display text-3xl font-extrabold leading-[.95] tracking-[-.05em] sm:text-5xl'>
+          <div className='mt-2 grid gap-3 lg:grid-cols-[1fr_420px] lg:items-end'>
+            <h2 className='font-display text-2xl font-extrabold leading-[1.05] tracking-[-.04em] sm:text-4xl'>
               Veylo doesn't force every story to feel the same.
             </h2>
-            <p className='text-sm leading-6 text-zinc-400 sm:text-base'>
+            <p className='text-xs leading-relaxed text-zinc-400 sm:text-sm'>
               A quiet portrait needs room to breathe. A 30th birthday needs lift. A fashion lookbook needs nerve. The AI
               Director follows the photographs.
             </p>
@@ -907,15 +886,15 @@ export default function LandingPage({ onOpenAuth }) {
         </div>
 
         {[portfolioImages.slice(0, 11), portfolioImages.slice(11)].map((row, rowIndex) => (
-          <div key={rowIndex} className={rowIndex === 0 ? 'mb-3.5 flex' : 'flex'}>
+          <div key={rowIndex} className={rowIndex === 0 ? 'mb-3 flex' : 'flex'}>
             <motion.div
-              className='flex shrink-0 gap-3 px-2 sm:gap-4'
+              className='flex shrink-0 gap-3 px-1.5'
               animate={{ x: rowIndex === 0 ? ['0%', '-50%'] : ['-50%', '0%'] }}
-              transition={{ duration: rowIndex === 0 ? 50 : 44, repeat: Infinity, ease: 'linear' }}>
+              transition={{ duration: rowIndex === 0 ? 46 : 40, repeat: Infinity, ease: 'linear' }}>
               {[...row, ...row].map((image, index) => (
                 <div
                   key={`${image.src}-${index}`}
-                  className='group relative h-[240px] w-[170px] shrink-0 overflow-hidden rounded-2xl border border-white/10 sm:h-[350px] sm:w-[260px] sm:rounded-[1.5rem]'>
+                  className='group relative h-[210px] w-[150px] shrink-0 overflow-hidden rounded-2xl border border-white/10 sm:h-[320px] sm:w-[230px]'>
                   <img
                     src={image.src}
                     alt=''
@@ -923,7 +902,7 @@ export default function LandingPage({ onOpenAuth }) {
                     className='h-full w-full object-cover transition duration-700 group-hover:scale-105'
                   />
                   <div className='absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-80' />
-                  <span className='absolute bottom-3 left-3 text-[8px] font-extrabold uppercase tracking-[.2em] text-white/80 sm:bottom-4 sm:left-4 sm:text-[9px]'>
+                  <span className='absolute bottom-3 left-3 text-[8px] font-extrabold uppercase tracking-[.18em] text-white/80 sm:text-[9px]'>
                     {image.label}
                   </span>
                 </div>
@@ -934,37 +913,37 @@ export default function LandingPage({ onOpenAuth }) {
       </section>
 
       {/* ─── PHILOSOPHY: YOUR PHOTOS STAY YOUR PHOTOS ─── */}
-      <section className='px-4 py-20 sm:px-8 sm:py-28 lg:py-36'>
-        <div className='relative mx-auto min-h-[580px] max-w-7xl overflow-hidden rounded-[2.5rem] border border-white/10 sm:min-h-[660px]'>
+      <section className='px-4 py-16 sm:px-8 sm:py-24 lg:py-32'>
+        <div className='relative mx-auto min-h-[500px] max-w-7xl overflow-hidden rounded-3xl border border-white/10 sm:min-h-[600px]'>
           <img
             src='/veylo/pv-photographer.jpeg'
             alt='Photographer at work'
             className='absolute inset-0 h-full w-full object-cover object-center'
           />
-          <div className='absolute inset-0 bg-gradient-to-t from-black via-black/80 to-black/40 lg:bg-gradient-to-r lg:from-black lg:via-black/70 lg:to-transparent' />
-          <div className='relative z-10 flex min-h-[580px] max-w-2xl flex-col justify-end p-6 sm:min-h-[660px] sm:p-12 lg:justify-center'>
+          <div className='absolute inset-0 bg-gradient-to-t from-black via-black/85 to-black/40 lg:bg-gradient-to-r lg:from-black lg:via-black/75 lg:to-transparent' />
+          <div className='relative z-10 flex min-h-[500px] max-w-2xl flex-col justify-end p-5 sm:min-h-[600px] sm:p-10 lg:justify-center'>
             <div className='inline-flex items-center gap-2 text-xs font-extrabold uppercase tracking-[.24em] text-[#ff9b8e]'>
-              <Camera size={15} /> Your Art Stays Untouched
+              <Camera size={14} /> Your Art Stays Untouched
             </div>
-            <h2 className='mt-4 font-display text-3xl font-extrabold leading-[.95] tracking-[-.05em] sm:text-5xl lg:text-6xl'>
+            <h2 className='mt-3 font-display text-2xl font-extrabold leading-[1.05] tracking-[-.04em] sm:text-4xl lg:text-5xl'>
               You craft the photographs.<br />
               <span className='text-[#ff9b8e]'>Veylo premieres them.</span>
             </h2>
-            <p className='mt-5 text-sm leading-6 text-zinc-300 sm:text-base sm:leading-7'>
+            <p className='mt-3 text-xs leading-relaxed text-zinc-300 sm:text-sm sm:leading-6'>
               Veylo does not generate synthetic pixels, crop your compositions, or modify your color grading.
               We don't build bloated CRMs, invoicing tools, or website builders.
             </p>
-            <p className='mt-2 text-sm font-semibold leading-6 text-white sm:text-base'>
+            <p className='mt-2 text-xs font-semibold text-white sm:text-sm'>
               Veylo does ONE thing: turns finished photoshoots into unforgettable client experiences.
             </p>
-            <div className='mt-6 flex flex-wrap gap-2.5 sm:gap-4'>
-              <div className='rounded-xl border border-white/15 bg-black/60 px-3.5 py-2 text-[11px] font-bold text-white backdrop-blur-md sm:text-xs'>
+            <div className='mt-5 flex flex-wrap gap-2'>
+              <div className='rounded-lg border border-white/15 bg-black/60 px-3 py-1.5 text-[10px] font-bold text-white backdrop-blur-md sm:text-xs'>
                 ✓ No AI face altering
               </div>
-              <div className='rounded-xl border border-white/15 bg-black/60 px-3.5 py-2 text-[11px] font-bold text-white backdrop-blur-md sm:text-xs'>
+              <div className='rounded-lg border border-white/15 bg-black/60 px-3 py-1.5 text-[10px] font-bold text-white backdrop-blur-md sm:text-xs'>
                 ✓ Color grading preserved
               </div>
-              <div className='rounded-xl border border-white/15 bg-black/60 px-3.5 py-2 text-[11px] font-bold text-white backdrop-blur-md sm:text-xs'>
+              <div className='rounded-lg border border-white/15 bg-black/60 px-3 py-1.5 text-[10px] font-bold text-white backdrop-blur-md sm:text-xs'>
                 ✓ Pristine high-resolution
               </div>
             </div>
@@ -973,45 +952,45 @@ export default function LandingPage({ onOpenAuth }) {
       </section>
 
       {/* ─── SOUND & VOICE: TYPOGRAPHY OR VOICE NARRATION ─── */}
-      <section className='border-y border-white/10 bg-[#0c0c10] px-4 py-20 sm:px-8 sm:py-28 lg:py-36'>
+      <section className='border-y border-white/10 bg-[#0c0c10] px-4 py-16 sm:px-8 sm:py-24 lg:py-32'>
         <div className='mx-auto max-w-7xl'>
-          <div className='mb-12 grid gap-4 lg:grid-cols-[1fr_420px] lg:items-end'>
+          <div className='mb-8 grid gap-3 lg:grid-cols-[1fr_420px] lg:items-end'>
             <div>
               <p className='text-xs font-extrabold uppercase tracking-[.24em] text-[#ff6b57]'>Sound & Storytelling</p>
-              <h2 className='mt-3 font-display text-4xl font-extrabold leading-[.94] tracking-[-.055em] sm:text-6xl'>
+              <h2 className='mt-2 font-display text-2xl font-extrabold leading-[1.05] tracking-[-.04em] sm:text-4xl'>
                 Words that know when to speak.
               </h2>
             </div>
-            <p className='text-sm leading-6 text-zinc-400 sm:text-base'>
+            <p className='text-xs leading-relaxed text-zinc-400 sm:text-sm'>
               Keep it minimalist with music + typography, or let Veylo voice the story out loud. The photographer chooses.
             </p>
           </div>
 
-          <div className='grid gap-6 md:grid-cols-2'>
-            <div className='rounded-[2.2rem] border border-white/10 bg-[#111115] p-6 sm:p-10'>
-              <div className='grid h-12 w-12 place-items-center rounded-2xl bg-white/5 text-[#ff6b57]'>
-                <Type size={24} />
+          <div className='grid gap-4 md:grid-cols-2'>
+            <div className='rounded-2xl border border-white/10 bg-[#111115] p-5 sm:p-8'>
+              <div className='grid h-10 w-10 place-items-center rounded-xl bg-white/5 text-[#ff6b57]'>
+                <Type size={20} />
               </div>
-              <h3 className='mt-6 text-2xl font-extrabold text-white'>Mode A: Music + Typography</h3>
-              <p className='mt-3 text-sm leading-6 text-zinc-400'>
+              <h3 className='mt-4 text-lg font-extrabold text-white sm:text-xl'>Mode A: Music + Typography</h3>
+              <p className='mt-2 text-xs leading-relaxed text-zinc-400 sm:text-sm'>
                 Sleek editorial typography appears at key frames over an ambient cinema score. Subtle, understated, and
                 sophisticated—perfect for high-fashion lookbooks and quiet personal portraits.
               </p>
-              <div className='mt-6 rounded-xl border border-white/10 bg-black/40 p-3.5 text-xs italic text-zinc-300'>
+              <div className='mt-4 rounded-lg border border-white/10 bg-black/40 p-3 text-xs italic text-zinc-300'>
                 “Thirty enters the room before she says a word.”
               </div>
             </div>
 
-            <div className='rounded-[2.2rem] border border-[#ff5a47]/30 bg-[#ff5a47]/[.05] p-6 sm:p-10'>
-              <div className='grid h-12 w-12 place-items-center rounded-2xl bg-[#ff5a47]/15 text-[#ff7b69]'>
-                <Mic2 size={24} />
+            <div className='rounded-2xl border border-[#ff5a47]/30 bg-[#ff5a47]/[.05] p-5 sm:p-8'>
+              <div className='grid h-10 w-10 place-items-center rounded-xl bg-[#ff5a47]/15 text-[#ff7b69]'>
+                <Mic2 size={20} />
               </div>
-              <h3 className='mt-6 text-2xl font-extrabold text-white'>Mode B: Music + Voice Narration (TTS)</h3>
-              <p className='mt-3 text-sm leading-6 text-zinc-300'>
+              <h3 className='mt-4 text-lg font-extrabold text-white sm:text-xl'>Mode B: Music + Voice Narration (TTS)</h3>
+              <p className='mt-2 text-xs leading-relaxed text-zinc-300 sm:text-sm'>
                 Veylo automatically crafts and speaks a warm voiceover that narrates the client's milestone. A feature
                 built for viral TikTok and Instagram client reactions.
               </p>
-              <div className='mt-6 rounded-xl border border-[#ff5a47]/30 bg-black/60 p-3.5 text-xs font-semibold text-[#ff9b8e]'>
+              <div className='mt-4 rounded-lg border border-[#ff5a47]/30 bg-black/60 p-3 text-xs font-semibold text-[#ff9b8e]'>
                 ✦ Spoken aloud: “She built this version of herself in rooms no one applauded...”
               </div>
             </div>
@@ -1020,27 +999,27 @@ export default function LandingPage({ onOpenAuth }) {
       </section>
 
       {/* ─── THEMES SHOWCASE ─── */}
-      <section id='themes' className='px-4 py-20 sm:px-8 sm:py-28 lg:py-36'>
+      <section id='themes' className='px-4 py-16 sm:px-8 sm:py-24 lg:py-32'>
         <div className='mx-auto max-w-7xl'>
-          <div className='flex flex-col justify-between gap-4 md:flex-row md:items-end'>
+          <div className='flex flex-col justify-between gap-3 md:flex-row md:items-end'>
             <div>
               <p className='text-xs font-extrabold uppercase tracking-[.24em] text-[#ff6b57]'>Start With The Feeling</p>
-              <h2 className='mt-3 font-display text-4xl font-extrabold tracking-[-.05em] sm:text-6xl'>
+              <h2 className='mt-2 font-display text-2xl font-extrabold tracking-[-.04em] sm:text-4xl'>
                 Cinematic themes.<br />
                 <span className='text-zinc-500'>Zero blank canvas.</span>
               </h2>
             </div>
-            <p className='max-w-sm text-sm leading-6 text-zinc-400'>
+            <p className='max-w-sm text-xs leading-relaxed text-zinc-400 sm:text-sm'>
               Enough aesthetic variety to match any shoot. Fast enough to publish in minutes without needing design skills.
             </p>
           </div>
 
-          <div className='mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3'>
+          <div className='mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3'>
             {themes.map((theme) => (
               <Link
                 to='/create'
                 key={theme.name}
-                className='group relative aspect-[4/5] overflow-hidden rounded-[2.2rem] border border-white/10 transition duration-500 hover:border-white/30'>
+                className='group relative aspect-[4/5] overflow-hidden rounded-2xl border border-white/10 transition duration-500 hover:border-white/30 sm:rounded-3xl'>
                 <img
                   src={theme.image}
                   alt=''
@@ -1048,11 +1027,11 @@ export default function LandingPage({ onOpenAuth }) {
                   className='h-full w-full object-cover transition duration-700 group-hover:scale-105'
                 />
                 <div className='absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent' />
-                <div className='absolute inset-x-0 bottom-0 p-6'>
-                  <span className='mb-2.5 block h-1 w-10 rounded-full' style={{ backgroundColor: theme.color }} />
-                  <h3 className='text-xl font-extrabold text-white sm:text-2xl'>{theme.name}</h3>
-                  <p className='mt-1.5 text-[10px] font-bold uppercase tracking-[.18em] text-[#ff9b8e]'>{theme.fit}</p>
-                  <p className='mt-1.5 text-xs leading-5 text-zinc-300 opacity-85'>{theme.desc}</p>
+                <div className='absolute inset-x-0 bottom-0 p-5'>
+                  <span className='mb-2 block h-1 w-8 rounded-full' style={{ backgroundColor: theme.color }} />
+                  <h3 className='text-lg font-extrabold text-white sm:text-xl'>{theme.name}</h3>
+                  <p className='mt-1 text-[10px] font-bold uppercase tracking-[.16em] text-[#ff9b8e]'>{theme.fit}</p>
+                  <p className='mt-1 text-xs leading-snug text-zinc-300 opacity-85'>{theme.desc}</p>
                 </div>
               </Link>
             ))}
@@ -1061,42 +1040,42 @@ export default function LandingPage({ onOpenAuth }) {
       </section>
 
       {/* ─── PRICING: FREE VS PRO (NO CREDITS, JUST UNLIMITED DELIVERY) ─── */}
-      <section id='pricing' className='border-y border-white/10 bg-[#0c0c10] px-4 py-20 sm:px-8 sm:py-28 lg:py-36'>
+      <section id='pricing' className='border-y border-white/10 bg-[#0c0c10] px-4 py-16 sm:px-8 sm:py-24 lg:py-32'>
         <div className='mx-auto max-w-7xl'>
           <div className='mx-auto max-w-3xl text-center'>
             <p className='text-xs font-extrabold uppercase tracking-[.24em] text-[#ff6b57]'>Transparent Pricing</p>
-            <h2 className='mt-3 font-display text-[clamp(2.4rem,5vw,5.5rem)] font-extrabold leading-[.94] tracking-[-.055em]'>
+            <h2 className='mt-2 font-display text-2xl font-extrabold leading-[1.05] tracking-[-.04em] sm:text-4xl lg:text-5xl'>
               No credits. No token math.<br />
               <span className='text-transparent bg-clip-text bg-gradient-to-r from-[#ff7b69] via-[#ff5a47] to-[#ff9b8e]'>
                 Just unlimited delivery.
               </span>
             </h2>
-            <p className='mt-4 text-base leading-7 text-zinc-400 sm:text-lg'>
+            <p className='mt-3 text-xs leading-relaxed text-zinc-400 sm:text-base'>
               No wondering if you have “15 tokens remaining.” Pay once a month and run your photography deliveries with total peace of mind.
             </p>
           </div>
 
-          <div className='mt-14 grid gap-6 md:mx-auto md:max-w-5xl md:grid-cols-2 lg:gap-10'>
+          <div className='mt-10 grid gap-5 md:mx-auto md:max-w-4xl md:grid-cols-2'>
             {/* ─── TIER 1: VEYLO FREE ─── */}
-            <div className='relative flex flex-col justify-between rounded-[2.5rem] border border-white/15 bg-[#111115] p-6 sm:p-10'>
+            <div className='flex flex-col justify-between rounded-3xl border border-white/15 bg-[#111115] p-5 sm:p-8'>
               <div>
                 <div className='flex items-center justify-between'>
                   <span className='text-xs font-black uppercase tracking-[.2em] text-zinc-400'>Veylo Free</span>
-                  <span className='rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold text-zinc-400'>
+                  <span className='rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[9px] font-bold text-zinc-400'>
                     TEST DRIVE
                   </span>
                 </div>
 
-                <div className='mt-5 flex items-baseline gap-2'>
-                  <span className='text-4xl font-extrabold tracking-[-.05em] text-white sm:text-5xl'>₦0</span>
-                  <span className='text-sm font-bold text-zinc-500'>/ month</span>
+                <div className='mt-4 flex items-baseline gap-1.5'>
+                  <span className='text-3xl font-extrabold tracking-tight text-white sm:text-4xl'>₦0</span>
+                  <span className='text-xs font-bold text-zinc-500'>/ month</span>
                 </div>
 
-                <p className='mt-3 text-sm font-semibold text-zinc-300'>
+                <p className='mt-2 text-xs font-semibold text-zinc-300'>
                   Give real value so you can genuinely experience Veylo with real clients.
                 </p>
 
-                <div className='mt-6 space-y-3 border-t border-white/10 pt-6 text-sm'>
+                <div className='mt-5 space-y-2.5 border-t border-white/10 pt-5 text-xs text-zinc-300 sm:text-sm'>
                   {[
                     '2 Photo Stories every month',
                     'Veylo AI Director & photo sequencing',
@@ -1110,46 +1089,46 @@ export default function LandingPage({ onOpenAuth }) {
                     'Standard processing priority',
                     'Veylo watermark branding'
                   ].map((feat) => (
-                    <div key={feat} className='flex items-start gap-2.5 text-zinc-300'>
-                      <Check size={15} className='mt-0.5 shrink-0 text-[#ff6b57]' />
-                      <span className='text-xs sm:text-sm'>{feat}</span>
+                    <div key={feat} className='flex items-start gap-2'>
+                      <Check size={14} className='mt-0.5 shrink-0 text-[#ff6b57]' />
+                      <span>{feat}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div className='mt-8'>
+              <div className='mt-6'>
                 <Link
                   to='/create'
-                  className='flex w-full items-center justify-center gap-2.5 rounded-2xl border border-white/20 bg-white/5 py-4 text-sm font-extrabold text-white transition hover:bg-white/10'>
+                  className='flex w-full items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 py-3 text-xs font-extrabold text-white transition hover:bg-white/10 sm:text-sm'>
                   Start Free — 2 Stories/mo
                 </Link>
-                <p className='mt-2.5 text-center text-xs text-zinc-500'>No credit card required. Free forever.</p>
+                <p className='mt-2 text-center text-[10px] text-zinc-500'>No credit card required. Free forever.</p>
               </div>
             </div>
 
             {/* ─── TIER 2: VEYLO PRO (FEATURED) ─── */}
-            <div className='relative flex flex-col justify-between overflow-hidden rounded-[2.5rem] border-2 border-[#ff5a47] bg-[#ff5a47]/[.08] p-6 shadow-[0_20px_80px_rgba(255,90,71,.2)] sm:p-10'>
-              <div className='absolute -right-16 -top-16 h-72 w-72 rounded-full bg-[#ff5a47]/25 blur-[90px]' />
+            <div className='relative flex flex-col justify-between overflow-hidden rounded-3xl border-2 border-[#ff5a47] bg-[#ff5a47]/[.08] p-5 shadow-[0_15px_60px_rgba(255,90,71,.2)] sm:p-8'>
+              <div className='absolute -right-16 -top-16 h-56 w-56 rounded-full bg-[#ff5a47]/20 blur-[80px]' />
 
               <div className='relative z-10'>
                 <div className='flex items-center justify-between'>
                   <span className='text-xs font-black uppercase tracking-[.2em] text-[#ff9b8e]'>Veylo Pro</span>
-                  <span className='rounded-full bg-[#ff5a47] px-3.5 py-1 text-[10px] font-black uppercase tracking-wider text-white shadow-md'>
+                  <span className='rounded-full bg-[#ff5a47] px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-white shadow-sm'>
                     STUDIO STANDARD
                   </span>
                 </div>
 
-                <div className='mt-5 flex items-baseline gap-2'>
-                  <span className='text-4xl font-extrabold tracking-[-.05em] text-white sm:text-5xl'>₦20,000</span>
-                  <span className='text-sm font-bold text-zinc-400'>/ month</span>
+                <div className='mt-4 flex items-baseline gap-1.5'>
+                  <span className='text-3xl font-extrabold tracking-tight text-white sm:text-4xl'>₦20,000</span>
+                  <span className='text-xs font-bold text-zinc-400'>/ month</span>
                 </div>
 
-                <p className='mt-3 text-sm font-semibold text-white'>
+                <p className='mt-2 text-xs font-semibold text-white'>
                   The main product for working photographers and media studios.
                 </p>
 
-                <div className='mt-6 space-y-3 border-t border-white/15 pt-6 text-sm'>
+                <div className='mt-5 space-y-2.5 border-t border-white/15 pt-5 text-xs text-white sm:text-sm'>
                   {[
                     'Unlimited Photo Stories (fair use)',
                     'Full AI Director & photo understanding',
@@ -1165,34 +1144,34 @@ export default function LandingPage({ onOpenAuth }) {
                     'Extended media hosting & cloud storage',
                     'Priority generation & rendering'
                   ].map((feat) => (
-                    <div key={feat} className='flex items-start gap-2.5 text-white'>
-                      <Check size={15} className='mt-0.5 shrink-0 text-[#ff7b69]' />
-                      <span className='text-xs font-medium sm:text-sm'>{feat}</span>
+                    <div key={feat} className='flex items-start gap-2'>
+                      <Check size={14} className='mt-0.5 shrink-0 text-[#ff7b69]' />
+                      <span className='font-medium'>{feat}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div className='relative z-10 mt-8'>
+              <div className='relative z-10 mt-6'>
                 <Link
                   to='/create'
-                  className='flex w-full items-center justify-center gap-2.5 rounded-2xl bg-[#ff5a47] py-4 text-sm font-extrabold text-white shadow-[0_12px_35px_rgba(255,90,71,.35)] transition hover:bg-[#ff7564]'>
+                  className='flex w-full items-center justify-center gap-2 rounded-xl bg-[#ff5a47] py-3 text-xs font-black text-white shadow-lg shadow-[#ff5a47]/30 transition hover:bg-[#ff7564] sm:text-sm'>
                   Get Veylo Pro — ₦20,000/mo
                 </Link>
-                <p className='mt-2.5 text-center text-xs text-zinc-400'>
+                <p className='mt-2 text-center text-[10px] text-zinc-400'>
                   One client referral covers your entire year. Cancel anytime.
                 </p>
               </div>
             </div>
           </div>
 
-          {/* ─── FAIR USE ASSURANCE CALLOUT ─── */}
-          <div className='mx-auto mt-10 max-w-4xl rounded-2xl border border-white/10 bg-black/40 p-5 backdrop-blur-md sm:p-6'>
-            <div className='flex flex-col items-center gap-3.5 text-center sm:flex-row sm:text-left'>
-              <div className='grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#ff5a47]/15 text-[#ff7b69]'>
-                <ShieldCheck size={22} />
+          {/* Fair Use Protection Callout */}
+          <div className='mx-auto mt-8 max-w-4xl rounded-2xl border border-white/10 bg-black/40 p-4 backdrop-blur-md sm:p-5'>
+            <div className='flex flex-col items-center gap-3 text-center sm:flex-row sm:text-left'>
+              <div className='grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#ff5a47]/15 text-[#ff7b69]'>
+                <ShieldCheck size={18} />
               </div>
-              <div className='text-xs leading-5 text-zinc-400 sm:leading-6'>
+              <div className='text-xs leading-relaxed text-zinc-400'>
                 <strong className='text-white'>Fair-Use Protection: </strong>
                 Normal photographer and studio usage is completely unlimited. Fair use simply protects against automated
                 scraping, multi-studio account pooling, or bot-generated bulk spam. Built for professional photographers
@@ -1204,26 +1183,26 @@ export default function LandingPage({ onOpenAuth }) {
       </section>
 
       {/* ─── FREQUENTLY ASKED QUESTIONS (FAQ) ─── */}
-      <section className='px-4 py-20 sm:px-8 sm:py-28 lg:py-36'>
-        <div className='mx-auto max-w-4xl'>
+      <section className='px-4 py-16 sm:px-8 sm:py-24 lg:py-32'>
+        <div className='mx-auto max-w-3xl'>
           <div className='text-center'>
             <p className='text-xs font-extrabold uppercase tracking-[.24em] text-[#ff6b57]'>Clarity For Studios</p>
-            <h2 className='mt-3 font-display text-3xl font-extrabold sm:text-5xl'>Frequently Asked Questions</h2>
+            <h2 className='mt-2 font-display text-2xl font-extrabold sm:text-4xl'>Frequently Asked Questions</h2>
           </div>
 
-          <div className='mt-12 space-y-3.5'>
+          <div className='mt-8 space-y-2.5'>
             {faqs.map((faq, index) => {
               const isOpen = openFaq === index;
               return (
                 <div
                   key={faq.q}
-                  className='overflow-hidden rounded-2xl border border-white/10 bg-[#111115] transition'>
+                  className='overflow-hidden rounded-xl border border-white/10 bg-[#111115] transition'>
                   <button
                     onClick={() => setOpenFaq(isOpen ? null : index)}
-                    className='flex w-full items-center justify-between p-5 text-left text-sm font-bold text-white hover:text-[#ff7b69] sm:p-6 sm:text-base'>
-                    <span className='pr-4'>{faq.q}</span>
+                    className='flex w-full items-center justify-between p-4 text-left text-xs font-bold text-white hover:text-[#ff7b69] sm:p-5 sm:text-sm'>
+                    <span className='pr-3'>{faq.q}</span>
                     <ChevronDown
-                      size={18}
+                      size={16}
                       className={`shrink-0 transition-transform duration-300 ${isOpen ? 'rotate-180 text-[#ff5a47]' : 'text-zinc-500'}`}
                     />
                   </button>
@@ -1233,8 +1212,8 @@ export default function LandingPage({ onOpenAuth }) {
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.3 }}>
-                        <div className='border-t border-white/10 px-5 pb-5 pt-3.5 text-xs leading-6 text-zinc-400 sm:px-6 sm:pb-6 sm:text-sm sm:leading-7'>
+                        transition={{ duration: 0.25 }}>
+                        <div className='border-t border-white/10 px-4 pb-4 pt-2.5 text-xs leading-relaxed text-zinc-400 sm:px-5 sm:pb-5'>
                           {faq.a}
                         </div>
                       </motion.div>
@@ -1248,32 +1227,32 @@ export default function LandingPage({ onOpenAuth }) {
       </section>
 
       {/* ─── BOTTOM HERO CTA ─── */}
-      <section className='px-4 pb-20 sm:px-8 sm:pb-28 lg:pb-36'>
-        <div className='relative mx-auto max-w-7xl overflow-hidden rounded-[2.5rem] border border-[#ff7b69]/30 bg-gradient-to-br from-[#d94738] via-[#ad3138] to-[#541f32] px-5 py-16 text-center shadow-[0_30px_100px_rgba(255,90,71,.25)] sm:px-12 sm:py-24 lg:py-28'>
-          <div className='absolute left-1/2 top-0 h-80 w-80 -translate-x-1/2 rounded-full bg-[#ffc1b8]/20 blur-[100px]' />
+      <section className='px-4 pb-16 sm:px-8 sm:pb-24 lg:pb-32'>
+        <div className='relative mx-auto max-w-7xl overflow-hidden rounded-3xl border border-[#ff7b69]/30 bg-gradient-to-br from-[#d94738] via-[#ad3138] to-[#541f32] p-6 text-center shadow-[0_20px_80px_rgba(255,90,71,.25)] sm:p-12 lg:py-20'>
+          <div className='absolute left-1/2 top-0 h-60 w-60 -translate-x-1/2 rounded-full bg-[#ffc1b8]/20 blur-[90px]' />
           <div className='relative z-10'>
-            <img src='/veylo/veylo-mark.svg' alt='' className='mx-auto h-14 w-14 rounded-2xl shadow-xl sm:h-16 sm:w-16' />
-            <p className='mt-6 text-xs font-extrabold uppercase tracking-[.24em] text-[#ffd4ce]'>
+            <img src='/veylo/veylo-mark.svg' alt='' className='mx-auto h-12 w-12 rounded-xl shadow-lg sm:h-14 sm:w-14' />
+            <p className='mt-4 text-[10px] font-extrabold uppercase tracking-[.22em] text-[#ffd4ce] sm:text-xs'>
               Don't just deliver photos. Premiere them.
             </p>
-            <h2 className='mx-auto mt-3 max-w-4xl font-display text-4xl font-extrabold leading-[.94] tracking-[-.05em] text-white sm:text-6xl lg:text-7xl'>
+            <h2 className='mx-auto mt-2 max-w-3xl font-display text-2xl font-extrabold leading-[1.05] tracking-[-.04em] text-white sm:text-4xl lg:text-5xl'>
               “Are my pictures ready?”<br />
               <span className='text-white'>Make the answer worth opening.</span>
             </h2>
-            <p className='mx-auto mt-5 max-w-xl text-sm leading-6 text-white/80 sm:text-base sm:leading-7'>
+            <p className='mx-auto mt-3 max-w-lg text-xs leading-relaxed text-white/80 sm:text-sm sm:leading-6'>
               Premiere your next shoot with 2 free stories every month. When you're ready to make it your studio standard,
               upgrade to Unlimited for ₦20,000/month.
             </p>
-            <div className='mt-8 flex flex-col justify-center gap-3.5 sm:flex-row'>
+            <div className='mt-6 flex flex-col justify-center gap-3 sm:flex-row'>
               <Link
                 to='/create'
-                className='group inline-flex items-center justify-center gap-3.5 rounded-2xl bg-white px-8 py-4 text-sm font-extrabold text-[#7c2027] transition hover:-translate-y-0.5 hover:bg-zinc-100'>
+                className='group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-6 py-3.5 text-xs font-black text-[#7c2027] transition hover:bg-zinc-100 sm:w-auto sm:text-sm'>
                 <span>Create Your First Photo Story</span>
-                <ArrowRight size={17} className='transition-transform group-hover:translate-x-1' />
+                <ArrowRight size={15} className='transition-transform group-hover:translate-x-1' />
               </Link>
               <Link
                 to='/create'
-                className='inline-flex items-center justify-center gap-2.5 rounded-2xl border border-white/30 bg-black/20 px-8 py-4 text-sm font-extrabold text-white backdrop-blur-md transition hover:bg-black/30'>
+                className='inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/30 bg-black/20 px-6 py-3.5 text-xs font-extrabold text-white backdrop-blur-md transition hover:bg-black/30 sm:w-auto sm:text-sm'>
                 Get Veylo Pro (₦20k/mo)
               </Link>
             </div>
