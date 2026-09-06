@@ -45,41 +45,41 @@ const heroPresets = [
       {
         image: '/veylo/ada/ada-1.jpg',
         act: 'ACT I',
-        chapter: 'THE REVEAL',
-        title: 'Thirty Enters the Room',
-        line: 'Poised, radiant, and welcoming thirty on her own terms.',
+        chapter: 'THE RED LINE',
+        title: 'Thirty on Her Own Terms',
+        line: 'Emerald velvet, crimson cat-eye shades, and the unmistakable poise of owning the room.',
         motion: 'zoom-in'
       },
       {
         image: '/veylo/ada/ada-2.jpg',
         act: 'ACT II',
-        chapter: 'THE TOAST',
-        title: 'Pour the Vintage',
-        line: 'A glass raised to every quiet season that built this unwavering confidence.',
+        chapter: 'OVER THE RIM',
+        title: 'A Knowing Gaze',
+        line: 'A glance over the tinted lenses. Thirty with zero apologies and unwavering confidence.',
         motion: 'pan-down'
       },
       {
         image: '/veylo/ada/ada-3.jpg',
         act: 'ACT III',
-        chapter: 'UNREHEARSED JOY',
-        title: 'The Real Smile',
-        line: 'The photograph that made everyone stop scrolling. Pure, effortless happiness.',
+        chapter: 'THE CONVERSATION',
+        title: 'Holding the Line',
+        line: 'Listening only to the voices that matter. Golden jewelry catching warm studio shadows.',
         motion: 'pan-right'
       },
       {
         image: '/veylo/ada/ada-4.jpg',
         act: 'ACT IV',
-        chapter: 'THE CELEBRATION',
-        title: 'A Life With Her Name On It',
-        line: 'Surrounded by golden light, warmth, and the celebration she earned.',
+        chapter: 'THE SILHOUETTE',
+        title: 'Standing in Her Power',
+        line: 'Sculpted, bold, and commanding. Every quiet milestone leading to this exact presence.',
         motion: 'zoom-in'
       },
       {
         image: '/veylo/ada/ada-5.jpg',
         act: 'ACT V',
-        chapter: 'NOIR MASTERWORK',
-        title: 'Timeless in Monochrome',
-        line: 'Thirty. Whole, unapologetic, and only just beginning.',
+        chapter: 'THE FINALE',
+        title: 'A Decade Claimed',
+        line: 'Eye-to-eye with the camera. Thirty is not a number—it is a masterwork.',
         motion: 'zoom-out'
       }
     ]
@@ -102,39 +102,39 @@ const heroPresets = [
         act: 'ACT I',
         chapter: 'THE COVENANT',
         title: 'Before the World Arrives',
-        line: 'Forehead to forehead, breathing in the quiet before forever begins.',
+        line: 'Dressed in sculpted gold Aso-Oke and Agbada. One quiet breath together before the celebrations.',
         motion: 'zoom-in'
       },
       {
         image: '/veylo/wedding/wedding-2.jpg',
         act: 'ACT II',
-        chapter: 'FIRST LOOK',
-        title: 'Ten Years in One Breath',
-        line: 'From best friends to husband and wife. Zero doubts in the room.',
+        chapter: 'FIRST EMBRACE',
+        title: 'Ten Years of Laughter',
+        line: 'Hands intertwined at her waist. From university sweethearts to husband and wife.',
         motion: 'pan-down'
       },
       {
         image: '/veylo/wedding/wedding-3.jpg',
         act: 'ACT III',
-        chapter: 'THE PROMISE',
-        title: 'Two Hands, One Life',
-        line: 'Held tight in velvet and silk. A sacred promise sealed.',
+        chapter: 'SERENE DEVOTION',
+        title: 'Hand on His Shoulder',
+        line: 'Warm afternoon light spilling across the veranda. The calm at the heart of the celebration.',
         motion: 'pan-right'
       },
       {
         image: '/veylo/wedding/wedding-4.jpg',
         act: 'ACT IV',
-        chapter: 'THE VEIL',
-        title: 'Radiance in Glass',
-        line: 'Afternoon sunlight pouring through the pavilion onto the bride.',
+        chapter: 'REGAL HERITAGE',
+        title: 'Two Families, One Crown',
+        line: 'Every hand-beaded pattern and embroidered stitch honoring the legacy they begin today.',
         motion: 'zoom-in'
       },
       {
         image: '/veylo/wedding/wedding-5.jpg',
         act: 'ACT V',
-        chapter: 'FINE ART NOIR',
-        title: 'An Heirloom for Decades',
-        line: 'Not just photo delivery. The heirloom story of where it all started.',
+        chapter: 'THE SEALED PROMISE',
+        title: 'Sealed With a Kiss',
+        line: 'Eyes closed in pure joy. The heirloom portrait their grandchildren will hang on the wall.',
         motion: 'zoom-out'
       }
     ]
@@ -156,45 +156,46 @@ const heroPresets = [
         image: '/veylo/editorial/editorial-1.jpg',
         act: 'ACT I',
         chapter: 'THE PORTFOLIO',
-        title: 'Kendra in Front of the Lens',
-        line: 'Sharp analog contrast meets high fashion presence. The opening frame sets the tone.',
+        title: 'Kendra in Black & White',
+        line: 'Sharp 35mm monochrome contrast, sculpted Bantu knots, and an analog Polaroid in hand.',
         motion: 'zoom-in'
       },
       {
         image: '/veylo/editorial/editorial-2.jpg',
         act: 'ACT II',
-        chapter: 'EDITORIAL GAZE',
-        title: 'Commanding the Frame',
-        line: 'Every angle intentional. Sculpted light bringing out pure confidence and edge.',
+        chapter: 'PLAYFUL CANDID',
+        title: 'Behind the Viewfinder',
+        line: 'A subtle wink over the camera body. Effortless cool meets editorial precision.',
         motion: 'pan-down'
       },
       {
         image: '/veylo/editorial/editorial-3.jpg',
         act: 'ACT III',
-        chapter: 'ANALOG TEXTURE',
-        title: 'The Polaroid Frame',
-        line: 'Tactile 35mm grit and natural expression. High-fashion photography with soul.',
+        chapter: 'THE INSTANT PRINT',
+        title: 'Developing in Real Time',
+        line: 'Looking down at the instant film. Real tangible art captured on physical emulsion.',
         motion: 'pan-right'
       },
       {
         image: '/veylo/editorial/editorial-4.jpg',
         act: 'ACT IV',
-        chapter: 'SHADOW & FORM',
-        title: 'Sculpting the Silhouette',
-        line: 'Editorial light lines that elevate standard delivery into gallery art.',
+        chapter: 'THE SELECTION',
+        title: 'The Chosen Frame',
+        line: 'Admiring the shot that defines the season. No heavy filters, just pure authenticity.',
         motion: 'zoom-in'
       },
       {
         image: '/veylo/editorial/editorial-5.jpg',
         act: 'ACT V',
-        chapter: 'THE COLLECTION',
-        title: 'Ready for the Agency',
-        line: 'Curated, sequenced, and ready for model management, agency submission, and print.',
+        chapter: 'THE MASTER LOOKBOOK',
+        title: 'The Agency Collection',
+        line: 'Curated, sequenced, and ready for high-fashion representation, agency boards, and print.',
         motion: 'zoom-out'
       }
     ]
   }
 ];
+
 
 const themes = [
   {
