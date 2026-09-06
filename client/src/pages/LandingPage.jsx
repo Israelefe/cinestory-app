@@ -7,6 +7,8 @@ import {
   Camera,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Download,
   Folder,
   Image as ImageIcon,
@@ -33,17 +35,53 @@ const heroPresets = [
     icon: '🎂',
     client: 'Ada',
     tag: 'Ada at 30',
-    occasion: 'Birthday Portrait Premiere',
+    occasion: '30th Birthday Portrait Premiere',
+    photographer: 'Lumière Studios · Lagos',
     soundtrack: 'Golden Hour Reverie',
-    bpm: '92 BPM',
-    coverImage: '/veylo/pv-red-phone.jpeg',
+    audioUrl: '/audio/soundtrack-1.mp3',
+    themeColor: '#ff5a47',
+    coverImage: '/veylo/ada/ada-1.jpg',
     frames: [
-      { image: '/veylo/pv-red-phone.jpeg', chapter: 'THE ARRIVAL', line: 'Thirty enters the room before she says a word.' },
-      { image: '/veylo/pv-espresso.jpeg', chapter: 'AFTER HOURS', line: 'She built this version of herself in rooms no one applauded.' },
-      { image: '/veylo/pv-white-suit.jpeg', chapter: 'OWN TERMS', line: 'Soft voice. Clear boundaries. A life with her name on it.' },
-      { image: '/veylo/pv-motion.jpeg', chapter: 'UNREHEARSED', line: 'The best part was the laugh that came after the pose.' },
-      { image: '/veylo/pv-luxury.jpeg', chapter: 'THE YEAR AHEAD', line: 'No shrinking. No asking. No waiting for permission.' },
-      { image: '/veylo/pv-hero.jpeg', chapter: 'THIRTY', line: 'Here. Whole. And only just beginning.' }
+      {
+        image: '/veylo/ada/ada-1.jpg',
+        act: 'ACT I',
+        chapter: 'THE REVEAL',
+        title: 'Thirty Enters the Room',
+        line: 'Poised, radiant, and welcoming thirty on her own terms.',
+        motion: 'zoom-in'
+      },
+      {
+        image: '/veylo/ada/ada-2.jpg',
+        act: 'ACT II',
+        chapter: 'THE TOAST',
+        title: 'Pour the Vintage',
+        line: 'A glass raised to every quiet season that built this unwavering confidence.',
+        motion: 'pan-down'
+      },
+      {
+        image: '/veylo/ada/ada-3.jpg',
+        act: 'ACT III',
+        chapter: 'UNREHEARSED JOY',
+        title: 'The Real Smile',
+        line: 'The photograph that made everyone stop scrolling. Pure, effortless happiness.',
+        motion: 'pan-right'
+      },
+      {
+        image: '/veylo/ada/ada-4.jpg',
+        act: 'ACT IV',
+        chapter: 'THE CELEBRATION',
+        title: 'A Life With Her Name On It',
+        line: 'Surrounded by golden light, warmth, and the celebration she earned.',
+        motion: 'zoom-in'
+      },
+      {
+        image: '/veylo/ada/ada-5.jpg',
+        act: 'ACT V',
+        chapter: 'NOIR MASTERWORK',
+        title: 'Timeless in Monochrome',
+        line: 'Thirty. Whole, unapologetic, and only just beginning.',
+        motion: 'zoom-out'
+      }
     ]
   },
   {
@@ -52,17 +90,53 @@ const heroPresets = [
     icon: '💍',
     client: 'Tobi & Kemi',
     tag: 'Tobi & Kemi',
-    occasion: 'Wedding Premiere',
+    occasion: 'Wedding Day Premiere',
+    photographer: 'The Covenant Studios',
     soundtrack: 'Whispering Skies',
-    bpm: '84 BPM',
-    coverImage: '/veylo/pv-soft.jpeg',
+    audioUrl: '/audio/soundtrack-2.mp3',
+    themeColor: '#f3a89e',
+    coverImage: '/veylo/wedding/wedding-1.jpg',
     frames: [
-      { image: '/veylo/pv-soft.jpeg', chapter: 'THE MORNING OF', line: 'A calm that only comes when you are completely sure.' },
-      { image: '/veylo/pv-reaching.jpeg', chapter: 'FIRST LOOK', line: 'Ten years of friendship, one breath before forever.' },
-      { image: '/veylo/pv-bnw.jpeg', chapter: 'THE PROMISE', line: 'Two families. One covenant. Zero doubts.' },
-      { image: '/veylo/pv-ghana.jpeg', chapter: 'TRADITION', line: 'Carrying forward the grace of everyone before us.' },
-      { image: '/veylo/pv-casual.jpeg', chapter: 'CELEBRATION', line: 'Dance until the shoes come off and only joy remains.' },
-      { image: '/veylo/pv-hero.jpeg', chapter: 'FOREVER', line: 'Not the end of the day. The start of the lifetime.' }
+      {
+        image: '/veylo/wedding/wedding-1.jpg',
+        act: 'ACT I',
+        chapter: 'THE COVENANT',
+        title: 'Before the World Arrives',
+        line: 'Forehead to forehead, breathing in the quiet before forever begins.',
+        motion: 'zoom-in'
+      },
+      {
+        image: '/veylo/wedding/wedding-2.jpg',
+        act: 'ACT II',
+        chapter: 'FIRST LOOK',
+        title: 'Ten Years in One Breath',
+        line: 'From best friends to husband and wife. Zero doubts in the room.',
+        motion: 'pan-down'
+      },
+      {
+        image: '/veylo/wedding/wedding-3.jpg',
+        act: 'ACT III',
+        chapter: 'THE PROMISE',
+        title: 'Two Hands, One Life',
+        line: 'Held tight in velvet and silk. A sacred promise sealed.',
+        motion: 'pan-right'
+      },
+      {
+        image: '/veylo/wedding/wedding-4.jpg',
+        act: 'ACT IV',
+        chapter: 'THE VEIL',
+        title: 'Radiance in Glass',
+        line: 'Afternoon sunlight pouring through the pavilion onto the bride.',
+        motion: 'zoom-in'
+      },
+      {
+        image: '/veylo/wedding/wedding-5.jpg',
+        act: 'ACT V',
+        chapter: 'FINE ART NOIR',
+        title: 'An Heirloom for Decades',
+        line: 'Not just photo delivery. The heirloom story of where it all started.',
+        motion: 'zoom-out'
+      }
     ]
   },
   {
@@ -71,17 +145,53 @@ const heroPresets = [
     icon: '👗',
     client: 'Studio Lookbook',
     tag: 'The September Issue',
-    occasion: 'High Fashion Lookbook',
+    occasion: 'Haute Couture Lookbook',
+    photographer: 'Vogue Africa Collective',
     soundtrack: 'Aura of Eternity',
-    bpm: '98 BPM',
-    coverImage: '/veylo/pv-editorial.jpeg',
+    audioUrl: '/audio/soundtrack-3.mp3',
+    themeColor: '#e0a96d',
+    coverImage: '/veylo/editorial/editorial-1.jpg',
     frames: [
-      { image: '/veylo/pv-editorial.jpeg', chapter: 'PROLOGUE', line: 'Sharp tailoring. Architectural light. Unapologetic presence.' },
-      { image: '/veylo/pv-white-fashion.jpeg', chapter: 'IN TRANSIT', line: 'Between flights, fittings, and the next collection.' },
-      { image: '/veylo/pv-striking.jpeg', chapter: 'HIGH CONTRAST', line: 'Light sculpts what confidence already built.' },
-      { image: '/veylo/pv-shay.jpeg', chapter: 'THE STATEMENT', line: 'The most striking piece is always the woman wearing it.' },
-      { image: '/veylo/pv-playful-scale.jpeg', chapter: 'COMPOSITION', line: 'Fashion that refuses to sit quietly in the background.' },
-      { image: '/veylo/pv-brand.jpeg', chapter: 'THE ARCHIVE', line: 'A body of work that defines the current era.' }
+      {
+        image: '/veylo/editorial/editorial-1.jpg',
+        act: 'ACT I',
+        chapter: 'PROLOGUE',
+        title: 'The Polaroid Master',
+        line: 'Instant film meets architectural framing. The face of the new collection.',
+        motion: 'zoom-in'
+      },
+      {
+        image: '/veylo/editorial/editorial-2.jpg',
+        act: 'ACT II',
+        chapter: 'THE GAZE',
+        title: 'Commanding the Lens',
+        line: 'Light sculpts what confidence built. The gaze speaks before the garment.',
+        motion: 'pan-down'
+      },
+      {
+        image: '/veylo/editorial/editorial-3.jpg',
+        act: 'ACT III',
+        chapter: 'TACTILE SOUL',
+        title: 'Analog In High Contrast',
+        line: 'Every grain and texture intentional. Refusing to sit quietly in the archive.',
+        motion: 'pan-right'
+      },
+      {
+        image: '/veylo/editorial/editorial-4.jpg',
+        act: 'ACT IV',
+        chapter: 'SHADOW & SILK',
+        title: 'High Contrast Form',
+        line: 'Sculptural lines that elevate commercial delivery into gallery art.',
+        motion: 'zoom-in'
+      },
+      {
+        image: '/veylo/editorial/editorial-5.jpg',
+        act: 'ACT V',
+        chapter: 'THE ARCHIVE',
+        title: 'Signed & Delivered',
+        line: 'Final campaign frames curated, sequenced, and ready for publication.',
+        motion: 'zoom-out'
+      }
     ]
   }
 ];
@@ -196,42 +306,91 @@ const faqs = [
 
 export default function LandingPage({ onOpenAuth }) {
   const previewRef = useRef(null);
+  const audioRef = useRef(null);
   const [selectedPresetIndex, setSelectedPresetIndex] = useState(0);
   const [activeFrame, setActiveFrame] = useState(0);
   const [storyStatus, setStoryStatus] = useState('cover'); // 'cover' | 'playing' | 'ending'
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [isHolding, setIsHolding] = useState(false);
+  const [flashKey, setFlashKey] = useState(0);
+  const [tapSide, setTapSide] = useState(null); // 'left' | 'right' | null
   const [activeWorkflowTab, setActiveWorkflowTab] = useState('photographer');
   const [openFaq, setOpenFaq] = useState(null);
 
   const currentPreset = heroPresets[selectedPresetIndex];
   const frames = currentPreset.frames;
 
-  // Auto-advance frames during playback
+  // Synchronize audio mute state
   useEffect(() => {
-    if (storyStatus !== 'playing' || !isPlaying) return undefined;
+    if (audioRef.current) {
+      audioRef.current.muted = isMuted;
+    }
+  }, [isMuted]);
+
+  // Synchronize audio playback with story state
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (storyStatus === 'playing' && isPlaying && !isHolding) {
+      audio.play().catch(() => {});
+    } else {
+      audio.pause();
+    }
+  }, [storyStatus, isPlaying, isHolding]);
+
+  // Synchronize track src when preset changes
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.src = heroPresets[selectedPresetIndex].audioUrl;
+    audio.currentTime = 0;
+    if (storyStatus === 'playing' && isPlaying) {
+      audio.play().catch(() => {});
+    }
+  }, [selectedPresetIndex]);
+
+  // Auto-advance frames during playback (pauses while holding down)
+  useEffect(() => {
+    if (storyStatus !== 'playing' || !isPlaying || isHolding) return undefined;
     const timer = window.setTimeout(() => {
       if (activeFrame >= frames.length - 1) {
         setStoryStatus('ending');
         setIsPlaying(false);
+        if (audioRef.current) {
+          audioRef.current.pause();
+        }
         return;
       }
       setActiveFrame((f) => f + 1);
-    }, 4200);
+      setFlashKey((k) => k + 1);
+    }, 4500);
     return () => window.clearTimeout(timer);
-  }, [activeFrame, isPlaying, storyStatus, frames.length]);
+  }, [activeFrame, isPlaying, isHolding, storyStatus, frames.length]);
 
   const handleSelectPreset = (index) => {
     setSelectedPresetIndex(index);
     setActiveFrame(0);
     setStoryStatus('cover');
     setIsPlaying(false);
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
   };
 
   const startStory = () => {
     setActiveFrame(0);
     setStoryStatus('playing');
     setIsPlaying(true);
+    setFlashKey(1);
+    const audio = audioRef.current;
+    if (audio) {
+      audio.src = heroPresets[selectedPresetIndex].audioUrl;
+      audio.currentTime = 0;
+      audio.play().catch(() => {});
+    }
     previewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
@@ -240,26 +399,104 @@ export default function LandingPage({ onOpenAuth }) {
     setIsPlaying((prev) => !prev);
   };
 
+  const toggleMute = (e) => {
+    e?.stopPropagation();
+    setIsMuted((prev) => !prev);
+  };
+
   const restartStory = (e) => {
     e?.stopPropagation();
     setActiveFrame(0);
     setStoryStatus('playing');
     setIsPlaying(true);
+    setFlashKey((k) => k + 1);
+    const audio = audioRef.current;
+    if (audio) {
+      audio.currentTime = 0;
+      audio.play().catch(() => {});
+    }
   };
 
-  // Reusable Editorial Showcase Component (Luxury Photography Experience)
+  const handlePrevFrame = (e) => {
+    e?.stopPropagation();
+    if (activeFrame > 0) {
+      setActiveFrame((f) => f - 1);
+      setFlashKey((k) => k + 1);
+    } else {
+      setActiveFrame(0);
+      setFlashKey((k) => k + 1);
+    }
+    setTapSide('left');
+    setTimeout(() => setTapSide(null), 280);
+  };
+
+  const handleNextFrame = (e) => {
+    e?.stopPropagation();
+    if (activeFrame < frames.length - 1) {
+      setActiveFrame((f) => f + 1);
+      setFlashKey((k) => k + 1);
+    } else {
+      setStoryStatus('ending');
+      setIsPlaying(false);
+      if (audioRef.current) audioRef.current.pause();
+    }
+    setTapSide('right');
+    setTimeout(() => setTapSide(null), 280);
+  };
+
+  const getMotionAnimation = (motionType) => {
+    switch (motionType) {
+      case 'pan-down':
+        return {
+          initial: { scale: 1.15, y: -16, x: 0 },
+          animate: { scale: 1.05, y: 10, x: 0 },
+          transition: { duration: 5.5, ease: 'linear' }
+        };
+      case 'pan-right':
+        return {
+          initial: { scale: 1.06, x: -14, y: 0 },
+          animate: { scale: 1.16, x: 10, y: 0 },
+          transition: { duration: 5.5, ease: 'linear' }
+        };
+      case 'zoom-out':
+        return {
+          initial: { scale: 1.18, x: 0, y: 0 },
+          animate: { scale: 1.02, x: 0, y: 0 },
+          transition: { duration: 5.5, ease: 'linear' }
+        };
+      case 'zoom-in':
+      default:
+        return {
+          initial: { scale: 1.02, x: 0, y: 0 },
+          animate: { scale: 1.16, x: -6, y: -4 },
+          transition: { duration: 5.5, ease: 'linear' }
+        };
+    }
+  };
+
+  // Reusable Luxury Interactive Story Simulator
   const renderPhoneSimulator = () => (
     <div className='relative mx-auto w-full max-w-[320px] sm:max-w-[360px]'>
       
-      {/* Editorial Story Switcher (Minimalist luxury tabs, no generic SaaS pills or emojis) */}
+      {/* Hidden Real HTML5 Audio Element */}
+      <audio
+        ref={audioRef}
+        src={currentPreset.audioUrl}
+        loop
+        playsInline
+        preload='auto'
+        className='hidden'
+      />
+
+      {/* Editorial Story Switcher */}
       <div className='mb-4 flex items-center justify-center gap-1.5 sm:gap-2'>
         {heroPresets.map((preset, idx) => (
           <button
             key={preset.id}
             onClick={() => handleSelectPreset(idx)}
-            className={`rounded-full px-3 sm:px-3.5 py-1 text-[10.5px] sm:text-[11px] font-medium tracking-wide transition ${
+            className={`rounded-full px-3.5 py-1 text-[10.5px] sm:text-[11.5px] font-semibold tracking-wide transition ${
               selectedPresetIndex === idx
-                ? 'bg-white text-black shadow-[0_2px_14px_rgba(255,255,255,0.22)] font-semibold'
+                ? 'bg-white text-black shadow-[0_2px_14px_rgba(255,255,255,0.25)]'
                 : 'border border-white/10 bg-white/[0.04] text-zinc-400 hover:text-white hover:border-white/20'
             }`}>
             {preset.tag}
@@ -267,247 +504,372 @@ export default function LandingPage({ onOpenAuth }) {
         ))}
       </div>
 
-      {/* Showcase Device with Layered Darkroom Background Prints */}
-      <div className='relative mx-auto w-full max-w-[270px] sm:max-w-[310px]'>
+      {/* Showcase Device Container with Glow & Background Prints */}
+      <div className='relative mx-auto w-full max-w-[275px] sm:max-w-[315px]'>
         
-        {/* Layered Editorial Background Prints (Authentic photography context, zero bouncing AI widgets) */}
-        <div className='pointer-events-none absolute -left-4 top-8 h-[82%] w-[48%] -rotate-6 overflow-hidden rounded-3xl border border-white/10 bg-zinc-900 opacity-40 shadow-2xl sm:-left-7'>
-          <img src='/veylo/pv-editorial.jpeg' alt='' className='h-full w-full object-cover contrast-125' />
+        {/* Dynamic Studio Backlight Glow that breathes with playback */}
+        <div
+          className='pointer-events-none absolute -inset-6 rounded-[3.5rem] opacity-40 blur-2xl transition-all duration-1000 -z-10'
+          style={{
+            background: isPlaying
+              ? `radial-gradient(circle, ${currentPreset.themeColor} 0%, transparent 70%)`
+              : 'transparent'
+          }}
+        />
+
+        {/* Cohesive Shoot Prints in Background (Belonging to the EXACT SAME photoshoot) */}
+        <div className='pointer-events-none absolute -left-4 top-8 h-[82%] w-[48%] -rotate-6 overflow-hidden rounded-3xl border border-white/10 bg-zinc-900 opacity-35 shadow-2xl sm:-left-7'>
+          <img
+            src={frames[1]?.image || currentPreset.coverImage}
+            alt=''
+            className='h-full w-full object-cover contrast-110'
+          />
           <div className='absolute inset-0 bg-black/40' />
         </div>
-        <div className='pointer-events-none absolute -right-4 bottom-8 h-[74%] w-[44%] rotate-6 overflow-hidden rounded-3xl border border-white/10 bg-zinc-900 opacity-40 shadow-2xl sm:-right-6'>
-          <img src='/veylo/pv-motion.jpeg' alt='' className='h-full w-full object-cover contrast-110' />
+        <div className='pointer-events-none absolute -right-4 bottom-8 h-[74%] w-[44%] rotate-6 overflow-hidden rounded-3xl border border-white/10 bg-zinc-900 opacity-35 shadow-2xl sm:-right-6'>
+          <img
+            src={frames[2]?.image || currentPreset.coverImage}
+            alt=''
+            className='h-full w-full object-cover contrast-110'
+          />
           <div className='absolute inset-0 bg-black/40' />
         </div>
 
-        {/* Central Premiere Screen */}
-        <div className='relative mx-auto aspect-[9/16] w-full overflow-hidden rounded-[2.5rem] sm:rounded-[2.8rem] border-[2.5px] sm:border-[3px] border-white/20 bg-zinc-950 p-2 sm:p-2.5 shadow-[0_30px_100px_rgba(0,0,0,0.9)] ring-1 ring-white/10'>
+        {/* Central Premiere Screen Mockup */}
+        <div className='relative mx-auto aspect-[9/16] w-full overflow-hidden rounded-[2.5rem] sm:rounded-[2.8rem] border-[2.5px] sm:border-[3px] border-white/20 bg-zinc-950 p-2 sm:p-2.5 shadow-[0_30px_100px_rgba(0,0,0,0.95)] ring-1 ring-white/10'>
           <div className='relative h-full w-full overflow-hidden rounded-[2.1rem] sm:rounded-[2.3rem] bg-black'>
             
             {/* Dynamic Island Pill Notch */}
-            <div className='absolute left-1/2 top-2 z-40 flex h-3.5 w-18 -translate-x-1/2 items-center justify-between rounded-full bg-black px-2 ring-1 ring-white/10'>
+            <div className='absolute left-1/2 top-2 z-40 flex h-3.5 w-20 -translate-x-1/2 items-center justify-between rounded-full bg-black px-2.5 ring-1 ring-white/10'>
               <div className='h-1.5 w-1.5 rounded-full bg-white/20' />
-              <div className='h-1.5 w-1.5 rounded-full bg-emerald-500/80 shadow-[0_0_6px_#10b981]' />
+              <div className={`h-1.5 w-1.5 rounded-full transition-colors ${isPlaying ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : 'bg-zinc-600'}`} />
             </div>
 
-          <AnimatePresence mode='wait'>
-            {/* ─── STATE 1: COVER SCREEN ─── */}
-            {storyStatus === 'cover' && (
-              <motion.div
-                key={`cover-${currentPreset.id}`}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className='absolute inset-0'>
-                <img
-                  src={currentPreset.coverImage}
-                  alt=''
-                  className='absolute inset-0 h-full w-full object-cover'
+            {/* Camera Strobe Flash Transition on frame changes */}
+            <AnimatePresence>
+              {flashKey > 0 && storyStatus === 'playing' && (
+                <motion.div
+                  key={`flash-${flashKey}`}
+                  initial={{ opacity: 0.85 }}
+                  animate={{ opacity: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.38, ease: 'easeOut' }}
+                  className='pointer-events-none absolute inset-0 z-30 bg-gradient-to-t from-white/95 via-amber-100/70 to-transparent mix-blend-screen'
                 />
-                <div className='absolute inset-0 bg-gradient-to-t from-black via-black/35 to-black/30' />
-                
-                {/* Veylo Logo */}
-                <div className='absolute inset-x-0 top-[16%] flex flex-col items-center px-4 text-center'>
-                  <img src='/veylo/veylo-mark.svg' alt='' className='h-10 w-10 rounded-xl shadow-lg' />
-                  <span className='mt-2.5 rounded-full border border-white/20 bg-black/40 px-3 py-0.5 text-[8px] font-black uppercase tracking-[.2em] text-white backdrop-blur-md'>
-                    A Veylo Photo Story
-                  </span>
-                </div>
+              )}
+            </AnimatePresence>
 
-                {/* Cover Details & Play Button */}
-                <div className='absolute inset-x-0 bottom-0 p-5 text-center'>
-                  <p className='font-serif text-2xl font-semibold text-white sm:text-3xl'>
-                    {currentPreset.tag}
-                  </p>
-                  <p className='mt-1 text-[11px] font-medium text-white/75'>
-                    {currentPreset.occasion}
-                  </p>
+            {/* Tap Navigation Feedback Indicators */}
+            <AnimatePresence>
+              {tapSide === 'left' && (
+                <motion.div
+                  initial={{ opacity: 0.8, x: 4 }}
+                  animate={{ opacity: 0, x: -10 }}
+                  exit={{ opacity: 0 }}
+                  className='pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 z-40 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-md border border-white/20'>
+                  <ChevronLeft size={18} />
+                </motion.div>
+              )}
+              {tapSide === 'right' && (
+                <motion.div
+                  initial={{ opacity: 0.8, x: -4 }}
+                  animate={{ opacity: 0, x: 10 }}
+                  exit={{ opacity: 0 }}
+                  className='pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 z-40 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-md border border-white/20'>
+                  <ChevronRight size={18} />
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-                  <div className='mt-2.5 flex items-center justify-center gap-1.5 text-[8px] font-semibold text-white/80'>
-                    <span className='inline-flex items-center gap-1 rounded border border-white/15 bg-black/40 px-2 py-0.5'>
-                      <Music2 size={8} className='text-[#ff7b69]' /> {currentPreset.soundtrack}
+            {/* Paused Indicator When Finger/Mouse is Held Down */}
+            <AnimatePresence>
+              {isHolding && storyStatus === 'playing' && (
+                <motion.div
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  className='pointer-events-none absolute top-14 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 rounded-full border border-white/20 bg-black/85 px-3 py-1 text-[9px] font-bold uppercase tracking-widest text-white backdrop-blur-md shadow-2xl'>
+                  <Pause size={10} fill='currentColor' /> Paused
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Story State Renderer */}
+            <AnimatePresence mode='wait'>
+              
+              {/* ─── STATE 1: COVER SCREEN ─── */}
+              {storyStatus === 'cover' && (
+                <motion.div
+                  key={`cover-${currentPreset.id}`}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className='absolute inset-0'>
+                  <img
+                    src={currentPreset.coverImage}
+                    alt=''
+                    className='absolute inset-0 h-full w-full object-cover'
+                  />
+                  <div className='absolute inset-0 bg-gradient-to-t from-black via-black/40 to-black/30' />
+                  
+                  {/* Subtle film grain & vignette */}
+                  <div className='pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_40%,rgba(0,0,0,0.75)_100%)]' />
+
+                  {/* Veylo Logo */}
+                  <div className='absolute inset-x-0 top-[15%] flex flex-col items-center px-4 text-center'>
+                    <img src='/veylo/veylo-mark.svg' alt='' className='h-10 w-10 rounded-xl shadow-lg' />
+                    <span className='mt-2.5 rounded-full border border-white/20 bg-black/50 px-3 py-0.5 text-[8px] font-black uppercase tracking-[.22em] text-[#ff9b8e] backdrop-blur-md'>
+                      {currentPreset.photographer}
                     </span>
                   </div>
 
-                  <button
-                    onClick={startStory}
-                    className='mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#ff5a47] py-3 text-xs font-black text-white shadow-lg shadow-[#ff5a47]/35 transition hover:bg-[#ff7564] active:scale-95'>
-                    <Play size={12} fill='currentColor' /> Watch Premiere
-                  </button>
-                  <p className='mt-2 text-[8px] font-bold uppercase tracking-wider text-white/45'>
-                    Tap to begin
-                  </p>
-                </div>
-              </motion.div>
-            )}
+                  {/* Cover Details & Play Button */}
+                  <div className='absolute inset-x-0 bottom-0 p-5 text-center'>
+                    <span className='inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2.5 py-0.5 text-[8px] font-extrabold uppercase tracking-widest text-white/90 backdrop-blur-md'>
+                      Client Premiere
+                    </span>
+                    <p className='mt-2 font-serif text-2xl font-bold text-white sm:text-3xl drop-shadow-[0_2px_12px_rgba(0,0,0,0.9)]'>
+                      {currentPreset.tag}
+                    </p>
+                    <p className='mt-0.5 text-[11px] font-medium text-white/80'>
+                      {currentPreset.occasion}
+                    </p>
 
-            {/* ─── STATE 2: PLAYING STORY FRAMES ─── */}
-            {storyStatus === 'playing' && (
-              <motion.div
-                key={`frame-${currentPreset.id}-${activeFrame}`}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.55 }}
-                className='absolute inset-0 cursor-pointer'
-                onClick={togglePlayPause}>
-                <motion.img
-                  src={frames[activeFrame].image}
-                  alt=''
-                  initial={{ scale: 1.02 }}
-                  animate={{ scale: activeFrame % 2 === 0 ? 1.08 : 1.05, x: activeFrame % 2 === 0 ? 0 : -5 }}
-                  transition={{ duration: 5.5, ease: 'linear' }}
-                  className='absolute inset-0 h-full w-full object-cover'
-                />
-                <div className='absolute inset-0 bg-gradient-to-t from-black/95 via-transparent to-black/60' />
-
-                {/* Caption Card */}
-                <div className='absolute inset-x-0 bottom-0 p-3.5'>
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.15 }}
-                    className='rounded-xl border border-[#ff7b69]/30 bg-black/85 p-3 text-left shadow-2xl backdrop-blur-xl'>
-                    <div className='flex items-center justify-between'>
-                      <span className='rounded border border-[#ff7b69]/40 bg-[#ff5a47]/15 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-[.14em] text-[#ff9b8e]'>
-                        {frames[activeFrame].chapter}
-                      </span>
-                      <span className='text-[8px] font-bold text-white/50'>
-                        {activeFrame + 1} / {frames.length}
+                    <div className='mt-2.5 flex items-center justify-center gap-1.5 text-[8.5px] font-semibold text-white/85'>
+                      <span className='inline-flex items-center gap-1 rounded-md border border-white/15 bg-black/50 px-2 py-0.5'>
+                        <Music2 size={9} className='text-[#ff7b69]' /> {currentPreset.soundtrack}
                       </span>
                     </div>
-                    <p className='mt-2 text-xs font-semibold leading-relaxed text-white'>
-                      {frames[activeFrame].line}
-                    </p>
-                  </motion.div>
-                </div>
-              </motion.div>
-            )}
 
-            {/* ─── STATE 3: FINALE & GALLERY REVEAL ─── */}
-            {storyStatus === 'ending' && (
-              <motion.div
-                key='ending'
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className='absolute inset-0 flex flex-col items-center justify-center bg-[radial-gradient(circle_at_top,#4a1a18_0%,#180e11_45%,#050505_100%)] p-5 text-center'>
-                {/* Fan of completed photos */}
-                <div className='relative mb-5 h-20 w-32'>
-                  {[frames[0].image, frames[1].image, frames[2].image].map((img, idx) => (
-                    <img
-                      key={img}
-                      src={img}
-                      alt=''
-                      className={`absolute left-1/2 top-1/2 h-16 w-12 rounded-lg border-2 object-cover shadow-xl ${
-                        idx === 0
-                          ? '-translate-x-[125%] -translate-y-1/2 -rotate-12 border-white/20'
-                          : idx === 1
-                          ? 'z-10 -translate-x-1/2 -translate-y-1/2 border-[#ff7b69]'
-                          : 'translate-x-[25%] -translate-y-1/2 rotate-12 border-white/20'
-                      }`}
+                    <button
+                      onClick={startStory}
+                      className='mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#ff5a47] py-3 text-xs font-black text-white shadow-xl shadow-[#ff5a47]/35 transition hover:bg-[#ff7564] active:scale-95 cursor-pointer'>
+                      <Play size={12} fill='currentColor' /> Watch Premiere
+                    </button>
+                    <p className='mt-2 text-[8px] font-bold uppercase tracking-wider text-white/50'>
+                      Music & photographs synced
+                    </p>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* ─── STATE 2: PLAYING STORY FRAMES ─── */}
+              {storyStatus === 'playing' && (
+                <motion.div
+                  key={`frame-${currentPreset.id}-${activeFrame}`}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.55 }}
+                  className='absolute inset-0 select-none'>
+                  
+                  {/* Photo with Ken Burns Motion Effect */}
+                  {(() => {
+                    const m = getMotionAnimation(frames[activeFrame].motion);
+                    return (
+                      <motion.img
+                        src={frames[activeFrame].image}
+                        alt=''
+                        initial={m.initial}
+                        animate={m.animate}
+                        transition={m.transition}
+                        className='absolute inset-0 h-full w-full object-cover will-change-transform'
+                      />
+                    );
+                  })()}
+
+                  {/* Golden Dust / Sparkle Particle Overlay */}
+                  <div className='pointer-events-none absolute inset-0 z-10 overflow-hidden opacity-35'>
+                    <div className='absolute top-1/4 left-1/4 h-1.5 w-1.5 rounded-full bg-amber-300 blur-[0.6px] animate-pulse' />
+                    <div className='absolute top-2/3 right-1/4 h-2 w-2 rounded-full bg-amber-100 blur-[1px] animate-pulse' style={{ animationDelay: '1.2s' }} />
+                    <div className='absolute bottom-1/3 left-1/5 h-1 w-1 rounded-full bg-amber-200 blur-[0.4px] animate-pulse' style={{ animationDelay: '0.6s' }} />
+                  </div>
+
+                  {/* Cinematic Darkroom Lens Vignette */}
+                  <div className='pointer-events-none absolute inset-0 z-10 bg-[radial-gradient(ellipse_at_center,transparent_42%,rgba(0,0,0,0.8)_100%)]' />
+
+                  {/* 50/50 Interactive Tap Navigation Zones (Tap Left: Prev, Tap Right: Next, Hold: Pause) */}
+                  <div
+                    className='absolute inset-0 z-20 flex'
+                    onMouseDown={() => setIsHolding(true)}
+                    onMouseUp={() => setIsHolding(false)}
+                    onTouchStart={() => setIsHolding(true)}
+                    onTouchEnd={() => setIsHolding(false)}>
+                    <button
+                      type='button'
+                      onClick={handlePrevFrame}
+                      className='h-full w-1/2 cursor-pointer select-none outline-none'
+                      aria-label='Previous frame'
                     />
+                    <button
+                      type='button'
+                      onClick={handleNextFrame}
+                      className='h-full w-1/2 cursor-pointer select-none outline-none'
+                      aria-label='Next frame'
+                    />
+                  </div>
+
+                  {/* High-Fashion Editorial Typography Overlay */}
+                  <div className='pointer-events-none absolute inset-x-0 bottom-0 z-25 bg-gradient-to-t from-black via-black/80 to-transparent px-4 pb-4 pt-14 text-left'>
+                    <motion.div
+                      key={`caption-${selectedPresetIndex}-${activeFrame}`}
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.45, ease: 'easeOut', delay: 0.1 }}
+                      className='space-y-1.5'>
+                      <div className='flex items-center justify-between'>
+                        <span className='inline-flex items-center gap-1 rounded-md border border-[#ff7b69]/40 bg-[#ff5a47]/20 px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.18em] text-[#ff9b8e] backdrop-blur-md'>
+                          <Sparkles size={8} className='text-[#ff7b69]' />
+                          {frames[activeFrame].act} · {frames[activeFrame].chapter}
+                        </span>
+                        <span className='text-[8.5px] font-mono font-bold tracking-widest text-white/50'>
+                          0{activeFrame + 1} / 0{frames.length}
+                        </span>
+                      </div>
+
+                      <h3 className='font-serif text-lg font-bold leading-snug text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.9)]'>
+                        {frames[activeFrame].title}
+                      </h3>
+
+                      <p className='text-[11px] leading-relaxed text-zinc-200 drop-shadow-[0_1px_6px_rgba(0,0,0,0.9)]'>
+                        {frames[activeFrame].line}
+                      </p>
+
+                      <div className='flex items-center justify-between pt-1 text-[7.5px] font-medium text-white/45 tracking-wider'>
+                        <span>{currentPreset.photographer}</span>
+                        <span className='italic opacity-80'>Tap sides to navigate</span>
+                      </div>
+                    </motion.div>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* ─── STATE 3: FINALE & GALLERY REVEAL ─── */}
+              {storyStatus === 'ending' && (
+                <motion.div
+                  key='ending'
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className='absolute inset-0 flex flex-col items-center justify-center bg-[radial-gradient(circle_at_top,#4a1a18_0%,#180e11_45%,#050505_100%)] p-5 text-center'>
+                  
+                  {/* Fan of completed photos from this exact shoot */}
+                  <div className='relative mb-5 h-20 w-32'>
+                    {[frames[0].image, frames[1].image, frames[2].image].map((img, idx) => (
+                      <img
+                        key={img}
+                        src={img}
+                        alt=''
+                        className={`absolute left-1/2 top-1/2 h-16 w-12 rounded-lg border-2 object-cover shadow-2xl ${
+                          idx === 0
+                            ? '-translate-x-[125%] -translate-y-1/2 -rotate-12 border-white/20'
+                            : idx === 1
+                            ? 'z-10 -translate-x-1/2 -translate-y-1/2 border-[#ff7b69]'
+                            : 'translate-x-[25%] -translate-y-1/2 rotate-12 border-white/20'
+                        }`}
+                      />
+                    ))}
+                  </div>
+
+                  <span className='rounded-full border border-[#ff7b69]/40 bg-[#ff5a47]/15 px-2.5 py-0.5 text-[8px] font-black uppercase tracking-[.2em] text-[#ff9b8e]'>
+                    Premiere Concluded
+                  </span>
+                  <p className='mt-2 font-serif text-xl font-bold text-white'>
+                    {currentPreset.client}'s Photos Are Ready
+                  </p>
+                  <p className='mt-1 text-[10px] leading-relaxed text-zinc-300'>
+                    All high-resolution retouched photographs unlocked in the client gallery.
+                  </p>
+
+                  <div className='mt-4 w-full space-y-2'>
+                    <button className='flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#ff5a47] py-2.5 text-[10px] font-black text-white shadow-lg shadow-[#ff5a47]/30 transition hover:bg-[#ff7564]'>
+                      <ImageIcon size={11} /> Open Client Photo Gallery
+                    </button>
+                    <button className='flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 py-2 text-[10px] font-bold text-white transition hover:bg-white/10'>
+                      <Download size={11} /> Download All (High-Res ZIP)
+                    </button>
+                    <button className='flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 py-2 text-[10px] font-bold text-white transition hover:bg-white/10'>
+                      <Share2 size={11} /> Share Photo Story
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={restartStory}
+                    className='mt-3.5 flex items-center gap-1 text-[8.5px] font-black uppercase tracking-wider text-white/50 hover:text-white transition cursor-pointer'>
+                    <RotateCcw size={9} /> Replay premiere
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Top Bar: Progress Segments, Live Audio Equalizer & Controls */}
+            {storyStatus === 'playing' && (
+              <div className='pointer-events-auto absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-black/90 via-black/50 to-transparent px-3 pb-4 pt-6'>
+                
+                {/* Progress Segments */}
+                <div className='flex gap-1'>
+                  {frames.map((_, idx) => (
+                    <button
+                      key={idx}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveFrame(idx);
+                        setFlashKey((k) => k + 1);
+                        setIsPlaying(true);
+                      }}
+                      className='h-[2.5px] flex-1 overflow-hidden rounded-full bg-white/25 cursor-pointer'>
+                      <span
+                        className={`block h-full bg-white transition-all duration-300 ${
+                          idx < activeFrame
+                            ? 'w-full'
+                            : idx === activeFrame
+                            ? 'w-full'
+                            : 'w-0'
+                        }`}
+                      />
+                    </button>
                   ))}
                 </div>
 
-                <span className='text-[8px] font-black uppercase tracking-[.2em] text-[#ff9b8e]'>
-                  Premiere Concluded
-                </span>
-                <p className='mt-1.5 font-serif text-xl font-semibold text-white'>
-                  Your Photos Are Ready
-                </p>
-                <p className='mt-1 text-[10px] leading-snug text-white/60'>
-                  Browse all finished high-res photos, view full-screen, or download all.
-                </p>
-
-                <div className='mt-4 w-full space-y-2'>
-                  <button className='flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#ff5a47] py-2.5 text-[10px] font-black text-white'>
-                    <ImageIcon size={11} /> View full photo gallery
-                  </button>
-                  <button className='flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 py-2 text-[10px] font-bold text-white'>
-                    <Download size={11} /> Download all (High-Res)
-                  </button>
-                  <button className='flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 py-2 text-[10px] font-bold text-white'>
-                    <Share2 size={11} /> Share Photo Story
-                  </button>
-                </div>
-
-                <button
-                  onClick={restartStory}
-                  className='mt-3 flex items-center gap-1 text-[8px] font-black uppercase tracking-wider text-white/50 hover:text-white'>
-                  <RotateCcw size={9} /> Replay premiere
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Progress Bar & Live Equalizer during playback */}
-          {storyStatus === 'playing' && (
-            <div className='absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-black/90 via-black/40 to-transparent px-3 pb-4 pt-6'>
-              {/* Progress Segments */}
-              <div className='flex gap-1'>
-                {frames.map((_, idx) => (
-                  <button
-                    key={idx}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setActiveFrame(idx);
-                      setIsPlaying(true);
-                    }}
-                    className='h-[2.5px] flex-1 overflow-hidden rounded-full bg-white/25'>
-                    <span
-                      className={`block h-full bg-white transition-all duration-300 ${
-                        idx < activeFrame
-                          ? 'w-full'
-                          : idx === activeFrame
-                          ? 'w-full'
-                          : 'w-0'
-                      }`}
-                    />
-                  </button>
-                ))}
-              </div>
-
-              {/* Metadata & Equalizer */}
-              <div className='mt-2 flex items-center justify-between'>
-                <div className='flex items-center gap-1.5'>
-                  <img src='/veylo/veylo-mark.svg' alt='' className='h-5 w-5 rounded-md' />
-                  <div className='text-left'>
-                    <p className='text-[9px] font-black leading-none text-white'>{currentPreset.tag}</p>
-                    <div className='mt-0.5 flex items-center gap-1 text-[7px] font-medium text-[#ff9b8e]'>
-                      {isPlaying && (
-                        <span className='flex h-2 items-end gap-[1px]'>
-                          <span className='h-full w-[1px] animate-pulse bg-[#ff5a47]' />
-                          <span className='h-1.5 w-[1px] animate-pulse bg-[#ff5a47]' />
-                          <span className='h-2 w-[1px] animate-pulse bg-[#ff5a47]' />
-                        </span>
-                      )}
-                      <span className='truncate max-w-[110px]'>{currentPreset.soundtrack}</span>
+                {/* Metadata & Audio Equalizer */}
+                <div className='mt-2 flex items-center justify-between'>
+                  <div className='flex items-center gap-1.5'>
+                    <img src='/veylo/veylo-mark.svg' alt='' className='h-5 w-5 rounded-md' />
+                    <div className='text-left'>
+                      <p className='text-[9px] font-black leading-none text-white'>{currentPreset.tag}</p>
+                      <div className='mt-0.5 flex items-center gap-1 text-[7.5px] font-semibold text-[#ff9b8e]'>
+                        {/* Live Soundwave Bars */}
+                        <div className='flex items-end gap-[1.5px] h-2.5'>
+                          <span className={`w-[1.5px] bg-[#ff5a47] rounded-full transition-all ${isPlaying && !isMuted ? 'animate-pulse h-2.5' : 'h-1'}`} />
+                          <span className={`w-[1.5px] bg-[#ff7b69] rounded-full transition-all ${isPlaying && !isMuted ? 'animate-pulse h-2' : 'h-1.5'}`} style={{ animationDelay: '0.15s' }} />
+                          <span className={`w-[1.5px] bg-[#ff9b8e] rounded-full transition-all ${isPlaying && !isMuted ? 'animate-pulse h-2.5' : 'h-1'}`} style={{ animationDelay: '0.3s' }} />
+                          <span className={`w-[1.5px] bg-[#ff5a47] rounded-full transition-all ${isPlaying && !isMuted ? 'animate-pulse h-1.5' : 'h-1'}`} style={{ animationDelay: '0.2s' }} />
+                        </div>
+                        <span className='truncate max-w-[110px]'>{currentPreset.soundtrack}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className='flex items-center gap-1'>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsMuted(!isMuted);
-                    }}
-                    className='grid h-5 w-5 place-items-center rounded-full bg-black/40 text-white/80'>
-                    {isMuted ? <VolumeX size={9} /> : <Volume2 size={9} />}
-                  </button>
-                  <button
-                    onClick={togglePlayPause}
-                    className='grid h-5 w-5 place-items-center rounded-full bg-black/40 text-white'>
-                    {isPlaying ? <Pause size={9} /> : <Play size={9} fill='currentColor' />}
-                  </button>
+                  <div className='flex items-center gap-1.5'>
+                    <button
+                      onClick={toggleMute}
+                      className='grid h-6 w-6 place-items-center rounded-full bg-black/50 text-white/90 border border-white/10 hover:bg-black/80 transition cursor-pointer'
+                      title={isMuted ? 'Unmute audio' : 'Mute audio'}>
+                      {isMuted ? <VolumeX size={10} /> : <Volume2 size={10} />}
+                    </button>
+                    <button
+                      onClick={togglePlayPause}
+                      className='grid h-6 w-6 place-items-center rounded-full bg-black/50 text-white border border-white/10 hover:bg-black/80 transition cursor-pointer'
+                      title={isPlaying ? 'Pause' : 'Play'}>
+                      {isPlaying ? <Pause size={10} /> : <Play size={10} fill='currentColor' />}
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>
-  </div>
   );
 
   return (
