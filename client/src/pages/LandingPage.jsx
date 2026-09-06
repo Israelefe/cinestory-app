@@ -35,9 +35,9 @@ const heroPresets = [
     icon: '🎂',
     client: 'Ada',
     tag: 'Ada at 30',
-    occasion: '30th Birthday Portrait Premiere',
-    photographer: 'Lumière Studios · Lagos',
-    soundtrack: 'Golden Hour Reverie',
+    occasion: '30th Birthday Milestone Premiere',
+    photographer: 'Studio Lumière · Victoria Island',
+    soundtrack: 'Thirty & Thriving (Lounge Groove)',
     audioUrl: '/audio/soundtrack-1.mp3',
     themeColor: '#ff5a47',
     coverImage: '/veylo/ada/ada-1.jpg',
@@ -45,41 +45,41 @@ const heroPresets = [
       {
         image: '/veylo/ada/ada-1.jpg',
         act: 'ACT I',
-        chapter: 'THE RED LINE',
-        title: 'Thirty on Her Own Terms',
-        line: 'Emerald velvet, crimson cat-eye shades, and the unmistakable poise of owning the room.',
+        chapter: 'THE MIDNIGHT CALL',
+        title: 'Midnight Strikes: Happy Birthday, Ada',
+        line: 'The phone starts ringing off the hook. Birthday calls, voice notes, and prayers pouring in from everywhere.',
         motion: 'zoom-in'
       },
       {
         image: '/veylo/ada/ada-2.jpg',
         act: 'ACT II',
-        chapter: 'OVER THE RIM',
-        title: 'A Knowing Gaze',
-        line: 'A glance over the tinted lenses. Thirty with zero apologies and unwavering confidence.',
+        chapter: 'LOOKING BACK',
+        title: 'Wait... I am Actually 30 Today',
+        line: 'Lowering the sunglasses with a smile. Leaving the doubts of her twenties behind and never looking back.',
         motion: 'pan-down'
       },
       {
         image: '/veylo/ada/ada-3.jpg',
         act: 'ACT III',
-        chapter: 'THE CONVERSATION',
-        title: 'Holding the Line',
-        line: 'Listening only to the voices that matter. Golden jewelry catching warm studio shadows.',
+        chapter: 'THE BLESSINGS',
+        title: 'Surrounded by So Much Love',
+        line: 'Listening to mom’s early morning prayers on the receiver. Thirty years of grace, health, and family.',
         motion: 'pan-right'
       },
       {
         image: '/veylo/ada/ada-4.jpg',
         act: 'ACT IV',
-        chapter: 'THE SILHOUETTE',
-        title: 'Standing in Her Power',
-        line: 'Sculpted, bold, and commanding. Every quiet milestone leading to this exact presence.',
+        chapter: 'STEPPING UP',
+        title: 'Stepping into Her Golden Era',
+        line: 'Standing tall and commanding her future. Career thriving, peace protected, and looking this good.',
         motion: 'zoom-in'
       },
       {
         image: '/veylo/ada/ada-5.jpg',
         act: 'ACT V',
-        chapter: 'THE FINALE',
-        title: 'A Decade Claimed',
-        line: 'Eye-to-eye with the camera. Thirty is not a number—it is a masterwork.',
+        chapter: 'THE TOAST',
+        title: 'Here is to Thirty and Unstoppable',
+        line: 'Eye to eye with the camera. Thirty is not just a milestone—it is her absolute prime. Cheers to Ada!',
         motion: 'zoom-out'
       }
     ]
@@ -90,51 +90,51 @@ const heroPresets = [
     icon: '💍',
     client: 'Tobi & Kemi',
     tag: 'Tobi & Kemi',
-    occasion: 'Wedding Day Premiere',
-    photographer: 'The Covenant Studios',
-    soundtrack: 'Whispering Skies',
+    occasion: 'Traditional Yoruba Wedding Premiere',
+    photographer: 'The Covenant Studios · Lagos',
+    soundtrack: 'Yoruba Wedding Drums & Percussion',
     audioUrl: '/audio/soundtrack-2.mp3',
-    themeColor: '#f3a89e',
+    themeColor: '#e59b5f',
     coverImage: '/veylo/wedding/wedding-1.jpg',
     frames: [
       {
         image: '/veylo/wedding/wedding-1.jpg',
         act: 'ACT I',
-        chapter: 'THE COVENANT',
-        title: 'Before the World Arrives',
-        line: 'Dressed in sculpted gold Aso-Oke and Agbada. One quiet breath together before the celebrations.',
+        chapter: 'THE FIRST LOOK',
+        title: 'One Quiet Breath Together',
+        line: 'Sitting together in our matching gold Aso-Oke, holding hands before the guests and music arrive.',
         motion: 'zoom-in'
       },
       {
         image: '/veylo/wedding/wedding-2.jpg',
         act: 'ACT II',
-        chapter: 'FIRST EMBRACE',
-        title: 'Ten Years of Laughter',
-        line: 'Hands intertwined at her waist. From university sweethearts to husband and wife.',
+        chapter: 'OUR STORY',
+        title: 'Seven Years of Loving You',
+        line: 'From university friends walking around campus to husband and wife. We always knew this day was coming.',
         motion: 'pan-down'
       },
       {
         image: '/veylo/wedding/wedding-3.jpg',
         act: 'ACT III',
-        chapter: 'SERENE DEVOTION',
-        title: 'Hand on His Shoulder',
-        line: 'Warm afternoon light spilling across the veranda. The calm at the heart of the celebration.',
+        chapter: 'THE BLESSINGS',
+        title: 'Our Families Standing Behind Us',
+        line: 'Our parents gave their blessing, our mothers shed tears of joy, and two large families officially became one.',
         motion: 'pan-right'
       },
       {
         image: '/veylo/wedding/wedding-4.jpg',
         act: 'ACT IV',
-        chapter: 'REGAL HERITAGE',
-        title: 'Two Families, One Crown',
-        line: 'Every hand-beaded pattern and embroidered stitch honoring the legacy they begin today.',
+        chapter: 'THE ENTRANCE',
+        title: 'Time to Dance In with the Aso-Ebi',
+        line: 'The talking drums are singing, the Alaga is calling our names, and the dance floor is ready for us.',
         motion: 'zoom-in'
       },
       {
         image: '/veylo/wedding/wedding-5.jpg',
         act: 'ACT V',
         chapter: 'THE SEALED PROMISE',
-        title: 'Sealed With a Kiss',
-        line: 'Eyes closed in pure joy. The heirloom portrait their grandchildren will hang on the wall.',
+        title: 'Forever Yours: Mr. & Mrs. Adeleke',
+        line: 'A kiss on the cheek to seal forever. Thank you to everyone who celebrated our love story today!',
         motion: 'zoom-out'
       }
     ]
@@ -145,51 +145,51 @@ const heroPresets = [
     icon: '👗',
     client: 'Kendra',
     tag: 'Kendra · Lookbook',
-    occasion: 'Model Portfolio & Fashion Lookbook',
+    occasion: 'Model Portfolio & Studio Lookbook',
     photographer: 'Lumière Fashion Arts · Lekki',
-    soundtrack: 'Aura of Eternity',
+    soundtrack: 'Studio 35mm (Analog Funk)',
     audioUrl: '/audio/soundtrack-3.mp3',
     themeColor: '#e0a96d',
     coverImage: '/veylo/editorial/editorial-1.jpg',
     frames: [
       {
         image: '/veylo/editorial/editorial-1.jpg',
-        act: 'ACT I',
-        chapter: 'THE PORTFOLIO',
-        title: 'Kendra in Black & White',
-        line: 'Sharp 35mm monochrome contrast, sculpted Bantu knots, and an analog Polaroid in hand.',
+        act: 'FRAME 01',
+        chapter: 'STUDIO CALL',
+        title: '9:00 AM: Testing the Lights',
+        line: 'Bantu knots styled, oversized blazer fitted, and vintage Polaroid in hand. Testing the analog tones.',
         motion: 'zoom-in'
       },
       {
         image: '/veylo/editorial/editorial-2.jpg',
-        act: 'ACT II',
-        chapter: 'PLAYFUL CANDID',
-        title: 'Behind the Viewfinder',
-        line: 'A subtle wink over the camera body. Effortless cool meets editorial precision.',
+        act: 'FRAME 02',
+        chapter: 'UNSCRIPTED',
+        title: 'When the Director Says “Have Fun”',
+        line: 'A quick wink through the viewfinder. Sometimes the most relaxed, unscripted shots become the favorites.',
         motion: 'pan-down'
       },
       {
         image: '/veylo/editorial/editorial-3.jpg',
-        act: 'ACT III',
-        chapter: 'THE INSTANT PRINT',
-        title: 'Developing in Real Time',
-        line: 'Looking down at the instant film. Real tangible art captured on physical emulsion.',
+        act: 'FRAME 03',
+        chapter: 'THE FIRST PULL',
+        title: 'Waiting for the Film to Develop',
+        line: 'Pulling the first instant snapshot from the camera. Real chemical film grain that digital filters cannot fake.',
         motion: 'pan-right'
       },
       {
         image: '/veylo/editorial/editorial-4.jpg',
-        act: 'ACT IV',
-        chapter: 'THE SELECTION',
-        title: 'The Chosen Frame',
-        line: 'Admiring the shot that defines the season. No heavy filters, just pure authenticity.',
+        act: 'FRAME 04',
+        chapter: 'THE COVER SHOT',
+        title: 'The Entire Studio Stopped and Cheered',
+        line: 'Looking down at the photo as the whole creative team agreed: this frame is the undisputed hero of the shoot.',
         motion: 'zoom-in'
       },
       {
         image: '/veylo/editorial/editorial-5.jpg',
-        act: 'ACT V',
-        chapter: 'THE MASTER LOOKBOOK',
-        title: 'The Agency Collection',
-        line: 'Curated, sequenced, and ready for high-fashion representation, agency boards, and print.',
+        act: 'FRAME 05',
+        chapter: 'COMP CARD',
+        title: 'Ready for the Agency Boards',
+        line: 'Curated, printed, and ready for international agency submissions across Lagos, London, and Paris.',
         motion: 'zoom-out'
       }
     ]
