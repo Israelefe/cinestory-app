@@ -140,13 +140,13 @@ const heroPresets = [
     ]
   },
   {
-    id: 'editorial',
+    id: 'lookbook',
     label: 'Lookbook',
     icon: '👗',
-    client: 'Studio Lookbook',
-    tag: 'The September Issue',
-    occasion: 'Haute Couture Lookbook',
-    photographer: 'Vogue Africa Collective',
+    client: 'Kendra',
+    tag: 'Kendra · Lookbook',
+    occasion: 'Model Portfolio & Fashion Lookbook',
+    photographer: 'Lumière Fashion Arts · Lekki',
     soundtrack: 'Aura of Eternity',
     audioUrl: '/audio/soundtrack-3.mp3',
     themeColor: '#e0a96d',
@@ -155,41 +155,41 @@ const heroPresets = [
       {
         image: '/veylo/editorial/editorial-1.jpg',
         act: 'ACT I',
-        chapter: 'PROLOGUE',
-        title: 'The Polaroid Master',
-        line: 'Instant film meets architectural framing. The face of the new collection.',
+        chapter: 'THE PORTFOLIO',
+        title: 'Kendra in Front of the Lens',
+        line: 'Sharp analog contrast meets high fashion presence. The opening frame sets the tone.',
         motion: 'zoom-in'
       },
       {
         image: '/veylo/editorial/editorial-2.jpg',
         act: 'ACT II',
-        chapter: 'THE GAZE',
-        title: 'Commanding the Lens',
-        line: 'Light sculpts what confidence built. The gaze speaks before the garment.',
+        chapter: 'EDITORIAL GAZE',
+        title: 'Commanding the Frame',
+        line: 'Every angle intentional. Sculpted light bringing out pure confidence and edge.',
         motion: 'pan-down'
       },
       {
         image: '/veylo/editorial/editorial-3.jpg',
         act: 'ACT III',
-        chapter: 'TACTILE SOUL',
-        title: 'Analog In High Contrast',
-        line: 'Every grain and texture intentional. Refusing to sit quietly in the archive.',
+        chapter: 'ANALOG TEXTURE',
+        title: 'The Polaroid Frame',
+        line: 'Tactile 35mm grit and natural expression. High-fashion photography with soul.',
         motion: 'pan-right'
       },
       {
         image: '/veylo/editorial/editorial-4.jpg',
         act: 'ACT IV',
-        chapter: 'SHADOW & SILK',
-        title: 'High Contrast Form',
-        line: 'Sculptural lines that elevate commercial delivery into gallery art.',
+        chapter: 'SHADOW & FORM',
+        title: 'Sculpting the Silhouette',
+        line: 'Editorial light lines that elevate standard delivery into gallery art.',
         motion: 'zoom-in'
       },
       {
         image: '/veylo/editorial/editorial-5.jpg',
         act: 'ACT V',
-        chapter: 'THE ARCHIVE',
-        title: 'Signed & Delivered',
-        line: 'Final campaign frames curated, sequenced, and ready for publication.',
+        chapter: 'THE COLLECTION',
+        title: 'Ready for the Agency',
+        line: 'Curated, sequenced, and ready for model management, agency submission, and print.',
         motion: 'zoom-out'
       }
     ]
