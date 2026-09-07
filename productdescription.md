@@ -1699,3 +1699,34 @@ And the main brand positioning still remains:
 
 Because Veylo now helps photographers manage both **what the client chooses before final editing** and **how the final photographs are delivered afterward**.
 
+---
+
+# 51. Mandatory Agent Thinking & Human-First Copywriting Rule
+
+> **CRITICAL DIRECTIVE FOR ALL AI AGENTS**:
+> All agents working on this project must think deeply and rigorously before writing any code, landing page copy, descriptions, or documentation.
+> 
+> Under NO circumstance may any agent produce generic, robotic, or nonsensical AI text.
+
+### The Rule
+
+1. **Think Before Writing:**
+   Understand the actual workflow, the real person using the product (a professional portrait or event photographer), and the real client opening the link on their phone.
+   If a sentence does not make complete, practical sense in real life, do not write it.
+
+2. **Zero Generic AI Fluff:**
+   Banned phrases include: *"elevate your workflow"*, *"unlock unparalleled synergy"*, *"seamlessly curate"*, *"tapestry of memories"*, *"emotional crescendo"*, *"demand excellence from proofing to premiere"*, and all similar robotic tropes.
+
+3. **100% Human-Like & Grounded:**
+   Write like an authentic, observant human being. Speak plainly, directly, and with quiet confidence. Use terms photographers and clients actually use:
+   - *"Pick your 15 favorites"* (not *"Curate your bespoke selection matrix"*).
+   - *"Stop chasing clients on WhatsApp for screenshot circles"* (not *"Alleviate asynchronous feedback bottlenecks"*).
+   - *"Send a private link"* (not *"Deploy a friction-free client endpoint"*).
+
+4. **100% Logical Coherence:**
+   Every single claim must reflect how the app actually works. No contradictory statements, no fake pixel generation claims, and no confusion between proofing and final delivery.
+
+5. **Nigerian Photography Context:**
+   Keep the product grounded in Nigerian photography reality: Naira pricing (₦20,000/mo), WhatsApp delivery, mobile data mindfulness, and authentic celebration culture (traditional weddings, 30th birthdays, lookbooks, owambe events).
+
+

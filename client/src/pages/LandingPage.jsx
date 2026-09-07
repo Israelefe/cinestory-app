@@ -210,21 +210,21 @@ const themes = [
     fit: 'Portraits · Birthdays · Fashion',
     image: '/veylo/pv-luxury.jpeg',
     color: '#ff5a47',
-    desc: 'High-contrast typography, velvet dark aesthetics, and haute couture pacing.'
+    desc: 'Dark aesthetic, bold typography, and measured pacing. Ideal for studio portraits, birthday milestones, and fashion shoots.'
   },
   {
     name: 'Romantic Grace',
     fit: 'Weddings · Maternity · Love',
     image: '/veylo/pv-soft.jpeg',
     color: '#f3a89e',
-    desc: 'Soft warm light, gentle transitions, and heartfelt emotional narration.'
+    desc: 'Warm tones, gentle photo motion, and romantic pacing. Built for weddings, couples, and anniversary sessions.'
   },
   {
     name: 'Celebration Energy',
     fit: 'Milestones · Graduations · Events',
     image: '/veylo/pv-hero.jpeg',
     color: '#f0a33a',
-    desc: 'Dynamic pacing, energetic soundtrack synchronization, and bold celebratory chaptering.'
+    desc: 'Upbeat rhythm, vibrant motion, and bold chapter headlines. Perfect for graduations, milestone parties, and celebrations.'
   }
 ];
 
@@ -255,68 +255,68 @@ const portfolioImages = [
 const aiDirectorFeatures = [
   {
     icon: WandSparkles,
-    title: 'Crowns the Best Opening Photo',
-    text: 'Identifies the single most captivating frame to hook the client before they scroll. First impressions decide how the work is felt.'
+    title: 'Picks the Strongest Cover Shot',
+    text: 'Finds the most striking portrait to open the story. When your client taps the link, the very first image grabs their attention.'
   },
   {
     icon: Layers,
-    title: 'Intelligent Photo Sequencing',
-    text: 'Sequences photos by narrative cadence, visual emotion, and energy—never by arbitrary camera timestamps or file numbers.'
+    title: 'Puts Photos in Natural Story Order',
+    text: 'Groups and sequences photos by mood, angle variety, and energy—not by whatever random file order the camera saved.'
   },
   {
     icon: Type,
-    title: 'Editorial Storytelling',
-    text: 'Crafts bespoke, magazine-grade chapter titles and narrative lines that honor the milestone without cheese or generic clichés.'
+    title: 'Clean Story Chapter Titles',
+    text: 'Writes short, tasteful chapter headlines using your shoot notes (like “The Golden Hour” or “Midnight Strikes”). Never cheesy, never robotic.'
   },
   {
     icon: Music2,
-    title: 'Music Timing & Pacing',
-    text: 'Synchronizes photo transitions and subtle Ken Burns movement to the heartbeat of hand-picked cinema soundtracks.'
+    title: 'Music That Matches the Mood',
+    text: 'Pairs your photos with curated background tracks and subtle motion that glides naturally with the music.'
   },
   {
     icon: Mic2,
-    title: 'Optional Voice Narration (TTS)',
-    text: 'Choose between pure music + typography or warm spoken narration written using your client and occasion notes.'
+    title: 'Optional Spoken Voiceover',
+    text: 'Keep it quiet with just music and text, or turn on a warm voiceover that narrates the client’s milestone out loud.'
   },
   {
     icon: Sliders,
-    title: 'You Remain in Full Creative Control',
-    text: 'Veylo directs the draft in seconds. You have 1-click control to reorder photos, edit captions, swap soundtracks, or change themes.'
+    title: 'You Always Have the Final Say',
+    text: 'Veylo builds the first draft in seconds. You can reorder photos, tweak text, swap soundtracks, or change themes anytime.'
   }
 ];
 
 const faqs = [
   {
     q: 'What is Veylo Pre-Delivery and client photo selection?',
-    a: 'Pre-Delivery allows you to send a private, watermarked selection gallery of unfinalized proofs to your client before you begin retouching. You set a selection quota (e.g. 15 of 80 proofs). Your client browses on mobile, selects their favorites with a live counter ("12 of 15 selected"), adds optional retouch notes, and taps Submit. You get the exact chosen photos to edit—ending messy WhatsApp screenshots and filename lists.'
+    a: 'Pre-Delivery allows you to send a private, watermarked selection gallery to your client before you start editing. You upload your culled proofs and set a limit (like 15 photos). Your client opens the link on their phone, taps their favorites with a live counter (“12 of 15 selected”), adds editing notes, and taps Submit. You get the exact chosen photos to retouch—ending messy WhatsApp screenshots and confusing filename lists.'
   },
   {
-    q: 'Can I watermark my proofs so unedited photos aren’t downloaded or shared?',
-    a: 'Yes, absolutely. You can enable custom proof watermarks (e.g., "PROOF — Studio Name") that appear only on the proofing gallery. Watermarks are never shown on your final delivered photographs or Photo Stories.'
+    q: 'Can I watermark my proofs so unedited photos aren’t shared?',
+    a: 'Yes. You can turn on custom proof watermarks (like “PROOF — Studio Name”) across the preview photos. The watermark only appears in the proofing gallery—never on your final retouched photos or Photo Stories.'
   },
   {
     q: 'Who pays for Veylo?',
-    a: 'The photographer or media studio pays for the platform. Your clients receive their Photo Story and gallery 100% free with no login or app installation required.'
+    a: 'The photographer or studio subscribes to Veylo. Your clients never pay a kobo, and they don’t need an account or an app to choose their photos or view their delivery.'
   },
   {
     q: 'How does the Free plan work?',
-    a: 'You get 2 full Photo Stories every single month for ₦0. It includes the AI Director, music, sequencing, and the full client download gallery so you can test it on real client sessions before upgrading.'
+    a: 'You get 2 Photo Stories every month for ₦0. You get full access to the AI Director, music library, story sequencing, and client downloads so you can test it on real client shoots before upgrading.'
   },
   {
-    q: 'What does "Unlimited under fair use" mean?',
-    a: 'Normal photographer usage is completely unlimited. Shoot 10, 30, or 60 sessions a month for your clients—it is all covered. Fair use simply protects against automated bot abuse, scraping, or multiple unrelated studios sharing a single account.'
+    q: 'What does “Unlimited under fair use” mean?',
+    a: 'It means you don’t have to count tokens or worry about limits. Deliver 10, 25, or 50 shoots a month for your clients—it’s all included. Fair use simply protects against automated bots, scraping, or multiple unrelated studios sharing a single login.'
   },
   {
-    q: 'Do clients need to install an app or create an account?',
-    a: 'Never. Veylo stories open instantly in any mobile or desktop browser (Safari, Chrome, etc.). It is optimized for direct WhatsApp and Instagram delivery.'
+    q: 'Do my clients need to install an app or create an account?',
+    a: 'No. Veylo links open immediately in Chrome, Safari, or whatever browser is on the client’s phone. It’s built specifically to be sent over WhatsApp and Instagram DMs.'
   },
   {
-    q: 'Can clients still download their high-resolution photos?',
-    a: 'Yes, absolutely. Veylo puts an experience before the gallery—not instead of it. Right after the cinematic premiere, the client enters "Your Photos", where they can browse full-screen, download individual photos, or tap "Download All" for the entire high-res package.'
+    q: 'Can clients still download their original high-resolution photos?',
+    a: 'Yes, 100%. Veylo gives your client an experience before the gallery—not instead of it. Right after watching their Photo Story, they enter the full gallery where they can view photos full-screen, download individual favorites, or download the entire original package in high resolution.'
   },
   {
-    q: 'Does Veylo alter, retouch, or compress my photos?',
-    a: 'No. Veylo does not generate fake pixels, retouch faces, or alter your color grade. Your finished photographs are honored and presented in crisp, pristine resolution.'
+    q: 'Does Veylo change, retouch, or compress my photos?',
+    a: 'No. Veylo never modifies your color grading, never adds fake AI pixels, and never compresses your delivered downloads. Your original photography is preserved exactly as you created it.'
   }
 ];
 
@@ -966,7 +966,7 @@ export default function LandingPage({ onOpenAuth }) {
 
             {/* 3. Supporting Copy */}
             <p className='mx-auto mt-4 max-w-lg text-sm leading-relaxed text-zinc-300 sm:mt-6 sm:text-base sm:leading-7 md:mx-0'>
-              Streamline client proofing and selection before retouching, then transform finished work into cinematic, interactive Photo Stories with instant high-res downloads. Built for photographers and media studios who demand excellence from proofing to premiere.
+              Send clients a clean link to choose their favorite photos before you retouch, then deliver the finished shoot as an interactive Photo Story with music and high-res downloads. No more messy WhatsApp screenshots. No more cold Google Drive links.
             </p>
 
             {/* 4. CTAs */}
@@ -990,16 +990,16 @@ export default function LandingPage({ onOpenAuth }) {
             {/* 5. Trust & Friction Badges */}
             <div className='mt-5 flex flex-wrap justify-center gap-x-4 gap-y-2 text-[11px] font-medium text-zinc-400 sm:mt-6 sm:text-xs md:justify-start'>
               <span className='flex items-center gap-1.5'>
-                <Check size={13} className='text-[#ff6b57]' /> Client proofing & quotas
+                <Check size={13} className='text-[#ff6b57]' /> Client proofing with quotas
               </span>
               <span className='flex items-center gap-1.5'>
-                <Check size={13} className='text-[#ff6b57]' /> 2 Stories free / mo
+                <Check size={13} className='text-[#ff6b57]' /> 2 free stories every month
               </span>
               <span className='flex items-center gap-1.5'>
-                <Check size={13} className='text-[#ff6b57]' /> Full gallery & downloads
+                <Check size={13} className='text-[#ff6b57]' /> Full high-res downloads
               </span>
               <span className='flex items-center gap-1.5'>
-                <Check size={13} className='text-[#ff6b57]' /> No card required
+                <Check size={13} className='text-[#ff6b57]' /> No credit card needed
               </span>
             </div>
           </div>
@@ -1035,15 +1035,14 @@ export default function LandingPage({ onOpenAuth }) {
           <div className='grid gap-4 lg:grid-cols-2 lg:items-end'>
             <div>
               <p className='text-xs font-extrabold uppercase tracking-[.24em] text-[#ff6b57]'>
-                The Client Reaction Is Your Brand
+                The Reality of Photo Delivery
               </p>
               <h2 className='mt-2 font-display text-2xl font-extrabold leading-[1.05] tracking-[-.04em] sm:text-4xl lg:text-5xl'>
-                Photographers still delivering shoots like this?
+                Still sending client photos the old way?
               </h2>
             </div>
             <p className='text-sm leading-relaxed text-zinc-400 sm:text-base'>
-              After weeks of planning, directing, lighting, and meticulous retouching, the way your photographs arrive
-              either flattens the work—or creates a client for life.
+              You spend hours directing, lighting, and retouching a session. But when it's time to deliver, everything gets lost in messy WhatsApp chats or cold folders of raw file names.
             </p>
           </div>
 
@@ -1066,9 +1065,9 @@ export default function LandingPage({ onOpenAuth }) {
                   “Here is the Drive link. WhatsApp me your 15 picks.”
                 </h3>
                 <p className='mt-2.5 text-xs leading-relaxed text-zinc-400 sm:text-sm'>
-                  Clients scroll in silence on small phone screens. They send back 40 screenshots with red circles, or endless messy texts:
+                  Your client scrolls on a small phone screen. They send back 40 screenshots with red circles, or endless messy texts:
                   <span className='italic block text-zinc-300 my-1'>“Edit IMG_4812, 4826, 4855... wait, swap 4826 for 4830!”</span>
-                  Unwatermarked unedited files circulate. Zero emotional crescendo. Your weeks of artistry end in a confusing spreadsheet.
+                  Unedited proofs get posted online without permission. And your weeks of creative work end in a confusing spreadsheet.
                 </p>
               </div>
 
@@ -1092,11 +1091,11 @@ export default function LandingPage({ onOpenAuth }) {
                 </div>
 
                 <p className='mt-6 font-serif text-xl font-semibold leading-snug text-white sm:text-3xl'>
-                  Organized proofing before editing. An unforgettable premiere when done.
+                  A clean selection link. Then a delivery they brag about.
                 </p>
 
                 <p className='mt-3 text-xs leading-relaxed text-zinc-300 sm:text-sm sm:leading-6'>
-                  First, send a watermarked Selection Gallery with strict quotas and photo notes. Once selected, retouch with clarity. Then, premiere the finished collection with bespoke music, editorial motion, and instant high-res gallery downloads.
+                  First, send a watermarked proofing gallery where clients tap to choose their exact package quota (like 15 of 80) and leave notes. When you finish retouching, send their Photo Story. Music plays, photos glide, and they download the full high-res package in one tap.
                 </p>
               </div>
 
@@ -1127,7 +1126,7 @@ export default function LandingPage({ onOpenAuth }) {
               Stop chasing clients on WhatsApp<br className='hidden sm:inline' /> for photo selections.
             </h2>
             <p className='mt-3 text-xs leading-relaxed text-zinc-400 sm:text-base'>
-              Before you spend hours retouching, send a curated <span className='text-zinc-200 font-semibold'>Selection Gallery</span> with strict quotas, custom proof watermarks, and client retouch notes. Clients choose their favorites on their phones in 3 minutes—no app or account required.
+              Before you spend hours retouching, upload your culled proofs and set the client’s package limit. Your client opens the private link on their phone, picks their favorites with a live counter, and leaves retouch notes. When they tap submit, you get the exact list to edit.
             </p>
           </div>
 
@@ -1322,23 +1321,23 @@ export default function LandingPage({ onOpenAuth }) {
             {[
               {
                 icon: CheckCircle2,
-                title: 'Selection Quotas & Deadlines',
-                desc: 'Set hard selection limits (e.g. 15 photos) that match your client package. Optional selection countdown deadlines keep your editing queue moving.'
+                title: 'Strict Selection Limits',
+                desc: 'Set the exact number of photos included in the client’s package (e.g. 15 photos). The counter stops them from picking 40 photos when they only paid for 15.'
               },
               {
                 icon: Lock,
-                title: 'Automated Proof Watermarks',
-                desc: 'Protect unretouched work before final delivery. Add your studio name or custom proof overlay automatically. Watermarks vanish on final delivered photos.'
+                title: 'Proof Watermarks',
+                desc: 'Protect unedited work before final delivery. A subtle studio watermark appears automatically over proofs so clients don’t share raw unedited shots.'
               },
               {
                 icon: MessageSquare,
-                title: 'Lightweight Retouch Notes',
-                desc: 'Clients can pin specific retouch instructions directly to individual photos (“Make this B&W”, “Soften facial shadow”)—ending confusing WhatsApp chats.'
+                title: 'Photo Retouch Notes',
+                desc: 'Clients can attach simple notes directly to an image (“Make this one black and white”, “Soften the shadow”). No more confusing messages.'
               },
               {
                 icon: FileCheck,
-                title: 'Studio Pipeline Tracker',
-                desc: 'Manage every project through 5 clear stages: Waiting for Selection → In Progress → Selection Submitted → Retouching → Ready to Premiere.'
+                title: 'Clear Pipeline Status',
+                desc: 'See exactly where each shoot stands on your dashboard: Waiting for selection, In progress, Selection submitted, Currently editing, or Ready to premiere.'
               }
             ].map((pillar, idx) => {
               const Icon = pillar.icon;
@@ -1367,14 +1366,13 @@ export default function LandingPage({ onOpenAuth }) {
         <div className='mx-auto max-w-7xl'>
           <div className='mx-auto max-w-3xl text-center'>
             <div className='inline-flex items-center gap-2 rounded-full border border-[#ff5a47]/30 bg-[#ff5a47]/10 px-3.5 py-1 text-[10px] font-extrabold uppercase tracking-[.2em] text-[#ff9b8e] sm:text-xs'>
-              <WandSparkles size={13} /> The Veylo AI Director
+              <WandSparkles size={13} /> Stage 02 · The Veylo AI Director
             </div>
             <h2 className='mt-4 font-display text-2xl font-extrabold leading-[1.05] tracking-[-.04em] sm:text-4xl lg:text-5xl'>
-              Veylo directs the delivery.
+              Turn a folder of photos into a story.
             </h2>
             <p className='mt-3 text-xs leading-relaxed text-zinc-400 sm:text-base'>
-              Instead of presenting Veylo as just “captions + a gallery + music”, we built an AI Director.
-              It understands the emotional arc of your shoot, chooses the strongest hook, and stages the premiere automatically.
+              Dumping 50 photos into a gallery is forgettable. The AI Director picks the strongest opening portrait, arranges the shoot into a natural sequence, writes clean story chapters from your notes, and pairs the mood with cinema-grade music.
             </p>
           </div>
 
@@ -1442,30 +1440,30 @@ export default function LandingPage({ onOpenAuth }) {
                   {
                     step: '01',
                     stage: 'PRE-DELIVERY',
-                    title: 'Upload Proofs & Quotas',
-                    subtitle: 'Curated proofs · Watermarks · 15 limit',
-                    desc: 'Perform your basic cull and upload client proofs with a custom watermark and selection quota. Send one private WhatsApp link.'
+                    title: 'Upload Proofs & Set Quota',
+                    subtitle: 'Quick cull · Proof watermarks · 15 limit',
+                    desc: 'Remove blurry or test shots, upload usable proofs, set a 15-photo package limit and an optional deadline. Send the private WhatsApp link.'
                   },
                   {
                     step: '02',
                     stage: 'CLIENT PROOFING',
                     title: 'Client Selects on Mobile',
                     subtitle: 'No login · Live counter · Retouch notes',
-                    desc: 'Your client opens the link on their phone, taps their favorites with a real-time counter (e.g. 12/15), adds retouch notes, and hits Submit.'
+                    desc: 'Your client opens the link on their phone, taps their favorites with a live counter (e.g. 12/15), adds editing notes, and hits Submit.'
                   },
                   {
                     step: '03',
                     stage: 'STUDIO AI',
-                    title: 'Retouch & AI Director',
-                    subtitle: 'Finished edits · Intelligent sequencing',
-                    desc: 'Retouch the chosen photos and upload. The AI Director analyzes harmony, selects the opening hook, writes story chapters, and pairs the soundtrack.'
+                    title: 'Retouch & AI Story Draft',
+                    subtitle: 'Finished edits · Natural sequence & music',
+                    desc: 'Retouch only the photos they selected. Upload your edits and let Veylo organize the story sequence, write chapter titles, and sync the music.'
                   },
                   {
                     step: '04',
                     stage: 'FINAL DELIVERY',
-                    title: 'Premiere & Downloads',
-                    subtitle: 'veylo.com.ng/s/ada-at-30 · Link-ready',
-                    desc: 'Publish with one click. Your client experiences their cinematic Photo Story premiere first, followed by full-res individual and zip downloads.'
+                    title: 'Premiere & Deliver',
+                    subtitle: 'Branded link · Full gallery downloads',
+                    desc: 'Send the final link. Your client watches their Photo Story premiere first, then downloads full-resolution photos individually or as a complete zip.'
                   }
                 ].map((item) => (
                   <div
@@ -1490,22 +1488,22 @@ export default function LandingPage({ onOpenAuth }) {
                     step: '01',
                     stage: 'SELECTION',
                     title: 'Choose Favorites on Phone',
-                    subtitle: 'Clean mobile proofing · 1-click select',
-                    desc: 'Open the private WhatsApp link. Browse watermarked proofs on any phone, select up to your package allowance, add retouch notes, and tap Submit.'
+                    subtitle: 'Clean mobile gallery · 1-click select',
+                    desc: 'Open the WhatsApp link. Browse watermarked proofs, tap your favorite photos up to your package allowance, add editing notes, and tap Submit.'
                   },
                   {
                     step: '02',
                     stage: 'PREMIERE',
-                    title: 'The Cinematic Cover & Story',
-                    subtitle: 'Ambient music · Bespoke typography',
-                    desc: 'Once retouched, your final story arrives. Ambient music begins, gentle motion brings each portrait to life, and poetic chapter headlines capture your milestone.'
+                    title: 'Watch Your Story Premiere',
+                    subtitle: 'Music · Photo motion · Story headlines',
+                    desc: 'When your photographer finishes editing, tap your delivery link. Music plays, photos glide smoothly, and story headlines highlight your moments.'
                   },
                   {
                     step: '03',
                     stage: 'GALLERY',
-                    title: 'Full High-Res Downloads',
+                    title: 'Download Full-Res Photos',
                     subtitle: 'Full-screen view · 1-click individual & bulk zip',
-                    desc: 'After the emotional finale, the complete gallery unfolds. Browse, view full-screen, download individual favorites, or download the entire original package.'
+                    desc: 'Right after the premiere, the full gallery unlocks. Save individual favorites to your camera roll or download all high-res photos in one tap.'
                   }
                 ].map((item) => (
                   <div
@@ -1583,18 +1581,16 @@ export default function LandingPage({ onOpenAuth }) {
           <div className='absolute inset-0 bg-gradient-to-t from-black via-black/85 to-black/40 lg:bg-gradient-to-r lg:from-black lg:via-black/75 lg:to-transparent' />
           <div className='relative z-10 flex min-h-[500px] max-w-2xl flex-col justify-end p-5 sm:min-h-[600px] sm:p-10 lg:justify-center'>
             <div className='inline-flex items-center gap-2 text-xs font-extrabold uppercase tracking-[.24em] text-[#ff9b8e]'>
-              <Camera size={14} /> Your Art Stays Untouched
+              <Camera size={14} /> Your Photography Stays Untouched
             </div>
             <h2 className='mt-3 font-display text-2xl font-extrabold leading-[1.05] tracking-[-.04em] sm:text-4xl lg:text-5xl'>
-              You craft the photographs.<br />
-              <span className='text-[#ff9b8e]'>Veylo premieres them.</span>
+              Your photography stays your photography.
             </h2>
             <p className='mt-3 text-xs leading-relaxed text-zinc-300 sm:text-sm sm:leading-6'>
-              Veylo does not generate synthetic pixels, crop your compositions, or modify your color grading.
-              We don't build bloated CRMs, invoicing tools, or website builders.
+              Veylo never generates fake AI pixels, never modifies your color grading, and never crops your framing. We don't try to be an all-in-one CRM, an invoicing tool, or a complex website builder.
             </p>
             <p className='mt-2 text-xs font-semibold text-white sm:text-sm'>
-              Veylo does ONE thing: turns finished photoshoots into unforgettable client experiences.
+              We do one thing: help you run simple photo selection and deliver finished shoots in a way that truly wows your clients.
             </p>
             <div className='mt-5 flex flex-wrap gap-2'>
               <div className='rounded-lg border border-white/15 bg-black/60 px-3 py-1.5 text-[10px] font-bold text-white backdrop-blur-md sm:text-xs'>
@@ -1604,7 +1600,7 @@ export default function LandingPage({ onOpenAuth }) {
                 ✓ Color grading preserved
               </div>
               <div className='rounded-lg border border-white/15 bg-black/60 px-3 py-1.5 text-[10px] font-bold text-white backdrop-blur-md sm:text-xs'>
-                ✓ Pristine high-resolution
+                ✓ Pristine original resolution
               </div>
             </div>
           </div>
@@ -1616,13 +1612,13 @@ export default function LandingPage({ onOpenAuth }) {
         <div className='mx-auto max-w-7xl'>
           <div className='mb-8 grid gap-3 lg:grid-cols-[1fr_420px] lg:items-end'>
             <div>
-              <p className='text-xs font-extrabold uppercase tracking-[.24em] text-[#ff6b57]'>Sound & Storytelling</p>
+              <p className='text-xs font-extrabold uppercase tracking-[.24em] text-[#ff6b57]'>Music & Storytelling</p>
               <h2 className='mt-2 font-display text-2xl font-extrabold leading-[1.05] tracking-[-.04em] sm:text-4xl'>
-                Words that know when to speak.
+                Two ways to tell the story.
               </h2>
             </div>
             <p className='text-xs leading-relaxed text-zinc-400 sm:text-sm'>
-              Keep it minimalist with music + typography, or let Veylo voice the story out loud. The photographer chooses.
+              Keep it minimalist with background music and story headlines, or turn on spoken voiceover for emotional milestone shoots. You decide.
             </p>
           </div>
 
@@ -1631,10 +1627,9 @@ export default function LandingPage({ onOpenAuth }) {
               <div className='grid h-10 w-10 place-items-center rounded-xl bg-white/5 text-[#ff6b57]'>
                 <Type size={20} />
               </div>
-              <h3 className='mt-4 text-lg font-extrabold text-white sm:text-xl'>Mode A: Music + Typography</h3>
+              <h3 className='mt-4 text-lg font-extrabold text-white sm:text-xl'>Mode A: Music + Story Headlines</h3>
               <p className='mt-2 text-xs leading-relaxed text-zinc-400 sm:text-sm'>
-                Sleek editorial typography appears at key frames over an ambient cinema score. Subtle, understated, and
-                sophisticated—perfect for high-fashion lookbooks and quiet personal portraits.
+                Clean editorial text appears on key photos while a cinema track plays in the background. Understated and timeless—perfect for fashion lookbooks, studio portraits, and birthday sessions.
               </p>
               <div className='mt-4 rounded-lg border border-white/10 bg-black/40 p-3 text-xs italic text-zinc-300'>
                 “Thirty enters the room before she says a word.”
@@ -1645,13 +1640,12 @@ export default function LandingPage({ onOpenAuth }) {
               <div className='grid h-10 w-10 place-items-center rounded-xl bg-[#ff5a47]/15 text-[#ff7b69]'>
                 <Mic2 size={20} />
               </div>
-              <h3 className='mt-4 text-lg font-extrabold text-white sm:text-xl'>Mode B: Music + Voice Narration (TTS)</h3>
+              <h3 className='mt-4 text-lg font-extrabold text-white sm:text-xl'>Mode B: Music + Spoken Voiceover</h3>
               <p className='mt-2 text-xs leading-relaxed text-zinc-300 sm:text-sm'>
-                Veylo automatically crafts and speaks a warm voiceover that narrates the client's milestone. A feature
-                built for viral TikTok and Instagram client reactions.
+                Veylo writes a warm, short narration based on your shoot notes and reads it aloud over the music. Great for emotional weddings, anniversary tributes, and videos clients share on TikTok or Instagram.
               </p>
               <div className='mt-4 rounded-lg border border-[#ff5a47]/30 bg-black/60 p-3 text-xs font-semibold text-[#ff9b8e]'>
-                ✦ Spoken aloud: “She built this version of herself in rooms no one applauded...”
+                ✦ Spoken voiceover: “She built this version of herself in rooms where no one applauded...”
               </div>
             </div>
           </div>
