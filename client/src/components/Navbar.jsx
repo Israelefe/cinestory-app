@@ -17,8 +17,9 @@ export default function Navbar({ user, onOpenAuth, onLogout }) {
         {/* Center Desktop Navigation (Only shown on Landing Page where functional) */}
         {isLandingPage && (
           <div className='hidden md:flex items-center gap-8 text-xs font-semibold text-zinc-400'>
-            <a href='#how-it-works' className='hover:text-white transition-colors'>How It Works</a>
+            <a href='#pre-delivery' className='hover:text-white transition-colors'>Pre-Delivery</a>
             <a href='#ai-director' className='hover:text-white transition-colors'>AI Director</a>
+            <a href='#how-it-works' className='hover:text-white transition-colors'>How It Works</a>
             <a href='#themes' className='hover:text-white transition-colors'>Themes</a>
             <a href='#pricing' className='hover:text-white transition-colors'>Pricing</a>
           </div>

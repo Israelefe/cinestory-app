@@ -1503,3 +1503,199 @@ If the development agent needs a short permanent instruction, use this:
 **Don’t just deliver photos. Premiere them.**
 
 That should now be the **source of truth your agents work from**.
+
+---
+
+# 50. Veylo Pre-Delivery — Client Selection Feature
+
+**Veylo Pre-Delivery is a client proofing and photo-selection feature that allows photographers to send a curated set of unfinalized photos to their clients before final editing, so the client can choose the images they want the photographer to retouch and deliver.**
+
+It sits before the final Veylo Photo Story workflow.
+
+The purpose is to make photo selection simple, organized, and professional instead of relying on WhatsApp screenshots, long filename lists, or back-and-forth messages.
+
+### Core workflow
+
+The photographer first completes the shoot and performs a basic cull to remove obvious duplicates, missed-focus images, test shots, and photos they do not want the client to see.
+
+They then upload the remaining **client proofs** to Veylo and create a **Selection Gallery**.
+
+The photographer can set:
+
+* client name
+* project/shoot title
+* maximum number of photos the client may select
+* optional selection deadline
+* optional password protection
+* optional watermark on proofs
+* whether downloads are allowed
+
+Veylo then generates a private shareable link.
+
+The photographer sends that link to the client through WhatsApp, email, or any other channel.
+
+The client opens the gallery without needing a Veylo account, browses the photos, and selects the images they want.
+
+Each image can have a simple action such as:
+
+**Select**
+
+The interface should always show progress, for example:
+
+**12 of 15 selected**
+
+Once the client is satisfied, they tap:
+
+### **Submit Selection**
+
+Veylo confirms the final choice and sends the completed selection back to the photographer.
+
+The photographer then sees exactly which images were chosen and can begin final retouching.
+
+After editing, the photographer can upload or replace the selected proofs with the finished versions and continue into the normal Veylo final-delivery workflow.
+
+### Full Veylo workflow with Pre-Delivery
+
+**Shoot completed**
+↓
+**Photographer culls usable proofs**
+↓
+**Upload proofs to Veylo**
+↓
+**Create Client Selection Gallery**
+↓
+**Client selects preferred photos**
+↓
+**Client submits selection**
+↓
+**Photographer receives selected images**
+↓
+**Photographer performs final retouching**
+↓
+**Final edited photos are uploaded**
+↓
+**Veylo AI Director creates the Photo Story**
+↓
+**Photographer publishes final delivery**
+↓
+**Client receives Photo Story + final gallery + downloads**
+
+### Example
+
+A photographer shoots a birthday session and has 300 images.
+
+After basic culling, they choose 80 acceptable proofs.
+
+The client's package includes:
+
+**15 final edited photographs.**
+
+The photographer uploads the 80 proofs to Veylo and sets:
+
+> **Maximum selections: 15**
+
+The client receives a link and sees:
+
+> **Choose your 15 favorite photos**
+
+They browse the gallery and make their choices.
+
+As they select images, Veylo shows:
+
+**8/15 selected**  
+**12/15 selected**  
+**15/15 selected**  
+
+The client submits.
+
+The photographer receives:
+
+> **Amaka has completed her selection — 15 photos selected.**
+
+The photographer edits those 15 photos and then uses the finished images to create the client's cinematic Veylo Photo Story.
+
+### Proof watermarks
+
+Because these photos may not yet be fully edited or delivered, Veylo should support optional proof watermarks.
+
+For example:
+
+**PROOF — XYZ Photography**
+
+The watermark is shown only on the selection version.
+
+It should not appear on the final delivered photographs.
+
+### Client notes
+
+The client may optionally be allowed to leave a short note on a selected image.
+
+For example:
+
+> “Please make this one black and white.”
+
+or:
+
+> “Can you remove the person in the background?”
+
+This should remain lightweight. Veylo should not become a full project-management or messaging platform.
+
+### Photographer dashboard
+
+Selection projects should have clear statuses such as:
+
+**Waiting for Selection**
+
+**Selection in Progress**
+
+**Selection Submitted**
+
+**Editing**
+
+**Ready for Final Delivery**
+
+The photographer should be able to immediately see:
+
+* client name
+* number of proofs
+* selection limit
+* number selected
+* deadline
+* submission status
+
+For example:
+
+> **Amaka Birthday Shoot**  
+> 15 / 15 selected  
+> **Selection Submitted**  
+
+### Important product rule
+
+Veylo should not encourage photographers to upload literally every shutter press from a shoot.
+
+The photographer should first perform a basic cull and upload only the **proofs they are comfortable showing the client**.
+
+Veylo Pre-Delivery is a **proofing and selection tool**, not an AI culling tool in V1.
+
+### Product positioning
+
+This feature expands Veylo from being only a final-delivery product into a more complete photo-delivery workflow.
+
+Veylo now supports two major stages:
+
+**Pre-Delivery**  
+Client Proofing & Photo Selection  
+
+**Final Delivery**  
+Cinematic Photo Story + Gallery + Downloads  
+
+So Veylo's broader workflow becomes:
+
+> **Select. Finish. Premiere. Deliver.**
+
+And the main brand positioning still remains:
+
+# **Veylo — The Photo Delivery Platform for Photographers**
+
+Because Veylo now helps photographers manage both **what the client chooses before final editing** and **how the final photographs are delivered afterward**.
+

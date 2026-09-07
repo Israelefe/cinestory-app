@@ -6,18 +6,25 @@ import {
   ArrowRight,
   Camera,
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Download,
+  Eye,
+  FileCheck,
   Folder,
   Image as ImageIcon,
   Layers,
+  Lock,
+  MessageSquare,
   Mic2,
   Music2,
   Pause,
   Play,
   RotateCcw,
+  Send,
   Share2,
   ShieldCheck,
   Sliders,
@@ -280,6 +287,14 @@ const aiDirectorFeatures = [
 
 const faqs = [
   {
+    q: 'What is Veylo Pre-Delivery and client photo selection?',
+    a: 'Pre-Delivery allows you to send a private, watermarked selection gallery of unfinalized proofs to your client before you begin retouching. You set a selection quota (e.g. 15 of 80 proofs). Your client browses on mobile, selects their favorites with a live counter ("12 of 15 selected"), adds optional retouch notes, and taps Submit. You get the exact chosen photos to edit—ending messy WhatsApp screenshots and filename lists.'
+  },
+  {
+    q: 'Can I watermark my proofs so unedited photos aren’t downloaded or shared?',
+    a: 'Yes, absolutely. You can enable custom proof watermarks (e.g., "PROOF — Studio Name") that appear only on the proofing gallery. Watermarks are never shown on your final delivered photographs or Photo Stories.'
+  },
+  {
     q: 'Who pays for Veylo?',
     a: 'The photographer or media studio pays for the platform. Your clients receive their Photo Story and gallery 100% free with no login or app installation required.'
   },
@@ -305,6 +320,37 @@ const faqs = [
   }
 ];
 
+const sampleProofs = [
+  {
+    id: 1,
+    image: '/veylo/ada/ada-1.jpg',
+    code: 'IMG_4812.CR3',
+    note: 'Love the lighting! Make this the cover photo.',
+    hasNote: true
+  },
+  {
+    id: 2,
+    image: '/veylo/ada/ada-2.jpg',
+    code: 'IMG_4826.CR3',
+    note: 'Please deliver this one in high-contrast B&W.',
+    hasNote: true
+  },
+  {
+    id: 3,
+    image: '/veylo/ada/ada-4.jpg',
+    code: 'IMG_4855.CR3',
+    note: 'Can you soften the background shadow on this one?',
+    hasNote: true
+  },
+  {
+    id: 4,
+    image: '/veylo/ada/ada-3.jpg',
+    code: 'IMG_4839.CR3',
+    note: '',
+    hasNote: false
+  }
+];
+
 export default function LandingPage({ onOpenAuth }) {
   const previewRef = useRef(null);
   const audioRef = useRef(null);
@@ -318,6 +364,13 @@ export default function LandingPage({ onOpenAuth }) {
   const [tapSide, setTapSide] = useState(null); // 'left' | 'right' | null
   const [activeWorkflowTab, setActiveWorkflowTab] = useState('photographer');
   const [openFaq, setOpenFaq] = useState(null);
+  const [selectedProofIds, setSelectedProofIds] = useState([1, 2, 3]);
+
+  const toggleProofSelect = (id) => {
+    setSelectedProofIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
 
   const currentPreset = heroPresets[selectedPresetIndex];
   const frames = currentPreset.frames;
@@ -894,7 +947,7 @@ export default function LandingPage({ onOpenAuth }) {
             <div className='hidden md:inline-flex items-center gap-2 mb-4'>
               <span className='h-1.5 w-1.5 rounded-full bg-[#ff5a47]' />
               <span className='text-[11px] font-bold uppercase tracking-[0.24em] text-[#ff8c7a]'>
-                The Photo Delivery Platform for Photographers
+                The Photo Delivery Platform for Photographers · Pre-Delivery to Premiere
               </span>
             </div>
 
@@ -913,8 +966,7 @@ export default function LandingPage({ onOpenAuth }) {
 
             {/* 3. Supporting Copy */}
             <p className='mx-auto mt-4 max-w-lg text-sm leading-relaxed text-zinc-300 sm:mt-6 sm:text-base sm:leading-7 md:mx-0'>
-              Transform completed photoshoots into cinematic, interactive Photo Stories your clients can experience,
-              share and download. Built for photographers and media studios who want final delivery to feel as premium as the photography itself.
+              Streamline client proofing and selection before retouching, then transform finished work into cinematic, interactive Photo Stories with instant high-res downloads. Built for photographers and media studios who demand excellence from proofing to premiere.
             </p>
 
             {/* 4. CTAs */}
@@ -938,10 +990,10 @@ export default function LandingPage({ onOpenAuth }) {
             {/* 5. Trust & Friction Badges */}
             <div className='mt-5 flex flex-wrap justify-center gap-x-4 gap-y-2 text-[11px] font-medium text-zinc-400 sm:mt-6 sm:text-xs md:justify-start'>
               <span className='flex items-center gap-1.5'>
-                <Check size={13} className='text-[#ff6b57]' /> 2 Stories free / mo
+                <Check size={13} className='text-[#ff6b57]' /> Client proofing & quotas
               </span>
               <span className='flex items-center gap-1.5'>
-                <Check size={13} className='text-[#ff6b57]' /> Link-ready
+                <Check size={13} className='text-[#ff6b57]' /> 2 Stories free / mo
               </span>
               <span className='flex items-center gap-1.5'>
                 <Check size={13} className='text-[#ff6b57]' /> Full gallery & downloads
@@ -965,12 +1017,13 @@ export default function LandingPage({ onOpenAuth }) {
         <div className='animate-marquee flex items-center gap-8 text-[11px] font-extrabold uppercase tracking-[.22em] text-zinc-400'>
           {[1, 2].map((loop) => (
             <React.Fragment key={loop}>
-              <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> Photos Stay Photos</span>
+              <span className='flex items-center gap-2 text-white'><span className='text-emerald-400'>✦</span> Client Proofing & Selection</span>
+              <span className='flex items-center gap-2 text-white'><span className='text-emerald-400'>✦</span> Proof Watermarking</span>
               <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> Veylo AI Director</span>
               <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> Editorial Storytelling</span>
               <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> Music & Narration</span>
               <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> High-Res Client Downloads</span>
-              <span className='flex items-center gap-2 text-white'><span className='text-[#ff5a47]'>✦</span> Link-Ready Delivery</span>
+              <span className='flex items-center gap-2 text-white'><span className='text-emerald-400'>✦</span> Select · Finish · Premiere · Deliver</span>
             </React.Fragment>
           ))}
         </div>
@@ -1001,7 +1054,7 @@ export default function LandingPage({ onOpenAuth }) {
                 <div className='flex items-center justify-between text-xs font-black uppercase tracking-[.18em] text-zinc-500'>
                   <span>THE OLD WAY</span>
                   <span className='rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] text-zinc-400'>
-                    184 RAW / JPG FILES
+                    RAW ARCHIVES & SCREENSHOTS
                   </span>
                 </div>
 
@@ -1010,16 +1063,17 @@ export default function LandingPage({ onOpenAuth }) {
                 </div>
 
                 <h3 className='mt-5 font-display text-xl font-bold text-zinc-300 sm:text-2xl'>
-                  “Hi, here is your Google Drive link.”
+                  “Here is the Drive link. WhatsApp me your 15 picks.”
                 </h3>
                 <p className='mt-2.5 text-xs leading-relaxed text-zinc-400 sm:text-sm'>
-                  Opened on a phone. Pinched, zoomed, scrolled in silence. Downloaded frantically. Closed. Zero emotional
-                  crescendo. Your art ends in a spreadsheet of filenames.
+                  Clients scroll in silence on small phone screens. They send back 40 screenshots with red circles, or endless messy texts:
+                  <span className='italic block text-zinc-300 my-1'>“Edit IMG_4812, 4826, 4855... wait, swap 4826 for 4830!”</span>
+                  Unwatermarked unedited files circulate. Zero emotional crescendo. Your weeks of artistry end in a confusing spreadsheet.
                 </p>
               </div>
 
               <div className='mt-6 rounded-xl border border-white/5 bg-black/40 p-3 text-xs font-mono text-zinc-500'>
-                <p className='truncate'>drive.google.com/drive/folders/7xK9... · 184 items · 4.8 GB</p>
+                <p className='truncate'>drive.google.com/drive/folders/7xK9... · 184 raw proofs · 4.8 GB</p>
               </div>
             </div>
 
@@ -1030,31 +1084,281 @@ export default function LandingPage({ onOpenAuth }) {
               <div className='relative z-10'>
                 <div className='flex items-center justify-between text-xs font-black uppercase tracking-[.18em] text-[#ff9b8e]'>
                   <span className='flex items-center gap-1.5'>
-                    <Sparkles size={13} className='text-[#ff5a47]' /> THE VEYLO PREMIERE
+                    <Sparkles size={13} className='text-[#ff5a47]' /> THE VEYLO PIPELINE
                   </span>
                   <span className='rounded-full border border-[#ff5a47]/30 bg-[#ff5a47]/15 px-2.5 py-0.5 text-[10px] font-bold text-[#ff9b8e]'>
-                    EXPERIENCE FIRST
+                    SELECT · FINISH · PREMIERE · DELIVER
                   </span>
                 </div>
 
                 <p className='mt-6 font-serif text-xl font-semibold leading-snug text-white sm:text-3xl'>
-                  Her name. Her soundtrack. Her photographs, revealed one moment at a time.
+                  Organized proofing before editing. An unforgettable premiere when done.
                 </p>
 
                 <p className='mt-3 text-xs leading-relaxed text-zinc-300 sm:text-sm sm:leading-6'>
-                  Music begins. Editorial chapter lines appear. Subtle motion brings each portrait alive. Then, the full
-                  gallery unlocks for high-resolution individual and bulk downloads.
+                  First, send a watermarked Selection Gallery with strict quotas and photo notes. Once selected, retouch with clarity. Then, premiere the finished collection with bespoke music, editorial motion, and instant high-res gallery downloads.
                 </p>
               </div>
 
               <div className='relative z-10 mt-6 rounded-xl border border-[#ff5a47]/30 bg-black/60 p-3 text-xs font-medium text-[#ff9b8e] backdrop-blur-xl'>
                 <div className='flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between'>
                   <span className='font-mono font-bold'>veylo.com.ng/s/ada-at-30</span>
-                  <span className='text-[10px] font-black uppercase tracking-wider text-white/80'>Link-ready</span>
+                  <span className='text-[10px] font-black uppercase tracking-wider text-emerald-400 font-mono'>15 / 15 Selected · Ready to Premiere</span>
                 </div>
               </div>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* ─── VEYLO PRE-DELIVERY: CLIENT PROOFING & PHOTO SELECTION ─── */}
+      <section id='pre-delivery' className='border-t border-white/10 bg-[#0a0a0e] px-4 py-16 sm:px-8 sm:py-24 lg:py-32 relative overflow-hidden'>
+        {/* Ambient atmospheric glow */}
+        <div className='pointer-events-none absolute left-1/2 top-1/4 -translate-x-1/2 -translate-y-1/2 h-[500px] w-[800px] rounded-full bg-emerald-500/[0.04] blur-[150px]' />
+
+        <div className='mx-auto max-w-7xl relative z-10'>
+          
+          {/* Section Header */}
+          <div className='mx-auto max-w-3xl text-center'>
+            <div className='inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1 text-[10px] font-extrabold uppercase tracking-[.2em] text-emerald-400 sm:text-xs'>
+              <CheckCircle2 size={13} /> Stage 01 · Client Proofing & Photo Selection
+            </div>
+            <h2 className='mt-4 font-display text-2xl font-extrabold leading-[1.05] tracking-[-.04em] sm:text-4xl lg:text-5xl'>
+              Stop chasing clients on WhatsApp<br className='hidden sm:inline' /> for photo selections.
+            </h2>
+            <p className='mt-3 text-xs leading-relaxed text-zinc-400 sm:text-base'>
+              Before you spend hours retouching, send a curated <span className='text-zinc-200 font-semibold'>Selection Gallery</span> with strict quotas, custom proof watermarks, and client retouch notes. Clients choose their favorites on their phones in 3 minutes—no app or account required.
+            </p>
+          </div>
+
+          {/* Interactive Proofing Gallery Simulator */}
+          <div className='mt-12 rounded-3xl border border-white/15 bg-zinc-950/90 p-4 sm:p-7 shadow-[0_25px_80px_rgba(0,0,0,0.8)] backdrop-blur-xl'>
+            
+            {/* Gallery Control Bar */}
+            <div className='flex flex-col gap-4 border-b border-white/10 pb-5 sm:flex-row sm:items-center sm:justify-between'>
+              <div>
+                <div className='flex items-center gap-2.5'>
+                  <span className='h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_#34d399]' />
+                  <h3 className='font-display text-base sm:text-lg font-bold text-white'>Amaka · 30th Birthday Session</h3>
+                </div>
+                <p className='text-xs text-zinc-400 mt-0.5'>Studio Lumière · Proofing Gallery (80 usable proofs uploaded)</p>
+              </div>
+
+              {/* Live Status & Quota tracker */}
+              <div className='flex flex-wrap items-center gap-3'>
+                <div className='rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2'>
+                  <div className='flex items-center justify-between gap-4 text-xs'>
+                    <span className='font-medium text-zinc-400'>Selection Quota:</span>
+                    <span className='font-mono font-black text-emerald-400'>
+                      {12 + (selectedProofIds.length - 3)} / 15 selected
+                    </span>
+                  </div>
+                  <div className='mt-1.5 h-1.5 w-36 sm:w-44 overflow-hidden rounded-full bg-white/10'>
+                    <div
+                      className='h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300'
+                      style={{ width: `${Math.min(100, Math.max(0, ((12 + (selectedProofIds.length - 3)) / 15) * 100))}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div className='hidden sm:flex items-center gap-1.5 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-300'>
+                  <Clock size={13} />
+                  <span>Deadline: Friday 6:00 PM</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Instruction strip with interactive hint */}
+            <div className='my-4 flex items-center justify-between rounded-xl bg-white/[0.02] border border-white/5 px-4 py-2 text-xs text-zinc-400'>
+              <span className='flex items-center gap-2'>
+                <span className='rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300 uppercase'>Client View</span>
+                <span>Choose your 15 favorite photographs for final retouching</span>
+              </span>
+              <span className='hidden md:inline text-[11px] text-zinc-500 italic'>
+                💡 Try tapping cards to select / deselect
+              </span>
+            </div>
+
+            {/* Proofing Cards Grid */}
+            <div className='grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4'>
+              {sampleProofs.map((proof) => {
+                const isSelected = selectedProofIds.includes(proof.id);
+                return (
+                  <div
+                    key={proof.id}
+                    onClick={() => toggleProofSelect(proof.id)}
+                    className={`group relative flex flex-col justify-between overflow-hidden rounded-2xl border transition-all cursor-pointer select-none ${
+                      isSelected
+                        ? 'border-emerald-500/60 bg-emerald-500/[0.04] shadow-[0_0_20px_rgba(16,185,129,0.15)] ring-1 ring-emerald-500/40'
+                        : 'border-white/10 bg-zinc-900/60 hover:border-white/25 hover:bg-zinc-900'
+                    }`}>
+                    
+                    {/* Photo container */}
+                    <div className='relative aspect-[3/4] w-full overflow-hidden bg-black'>
+                      <img
+                        src={proof.image}
+                        alt={proof.code}
+                        className={`h-full w-full object-cover transition-transform duration-500 group-hover:scale-105 ${
+                          isSelected ? 'contrast-105' : 'opacity-70 contrast-90'
+                        }`}
+                      />
+
+                      {/* Angled Proof Watermark Overlay (As specified in productdescription.md) */}
+                      <div className='pointer-events-none absolute inset-0 flex items-center justify-center rotate-[-25deg] select-none'>
+                        <span className='rounded border border-white/20 bg-black/45 px-2 py-0.5 font-mono text-[9px] sm:text-[10px] font-black uppercase tracking-[0.24em] text-white/40 backdrop-blur-[1.5px] shadow-sm'>
+                          PROOF · LUMIÈRE
+                        </span>
+                      </div>
+
+                      {/* Top Bar inside image: File code & Selection Badge */}
+                      <div className='absolute inset-x-0 top-0 flex items-center justify-between p-2.5'>
+                        <span className='rounded-md bg-black/70 px-1.5 py-0.5 font-mono text-[9px] font-bold text-zinc-300 backdrop-blur-md border border-white/10'>
+                          {proof.code}
+                        </span>
+
+                        {/* Interactive Selection Checkbox */}
+                        <div
+                          className={`grid h-6 w-6 place-items-center rounded-full transition-transform active:scale-90 ${
+                            isSelected
+                              ? 'bg-emerald-500 text-black shadow-md shadow-emerald-500/40'
+                              : 'border border-white/40 bg-black/50 text-white/60 group-hover:border-white'
+                          }`}>
+                          {isSelected ? <Check size={13} strokeWidth={3} /> : <span className='text-[10px] font-bold'>+</span>}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Bottom Metadata & Client Retouch Note */}
+                    <div className='p-2.5 sm:p-3'>
+                      <div className='flex items-center justify-between text-[11px] font-bold'>
+                        <span className={isSelected ? 'text-emerald-400' : 'text-zinc-400'}>
+                          {isSelected ? 'Selected ✓' : 'Tap to select'}
+                        </span>
+                        {proof.hasNote && (
+                          <span className='flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-amber-300 border border-amber-500/20'>
+                            <MessageSquare size={9} /> Note
+                          </span>
+                        )}
+                      </div>
+
+                      {proof.hasNote && (
+                        <p className='mt-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 p-1.5 text-[10px] leading-tight text-amber-200/90'>
+                          “{proof.note}”
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Bottom Proofing Action & Summary Bar */}
+            <div className='mt-6 flex flex-col gap-3 rounded-2xl border border-white/10 bg-black/50 p-4 sm:flex-row sm:items-center sm:justify-between'>
+              <div className='flex items-center gap-3'>
+                <div className='grid h-9 w-9 place-items-center rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'>
+                  <FileCheck size={18} />
+                </div>
+                <div>
+                  <p className='text-xs font-bold text-white'>
+                    {12 + (selectedProofIds.length - 3)} of 15 photos selected
+                  </p>
+                  <p className='text-[11px] text-zinc-400'>
+                    Client can attach optional retouch notes to any chosen photograph
+                  </p>
+                </div>
+              </div>
+
+              <div className='flex items-center gap-2'>
+                <button
+                  type='button'
+                  className='inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 py-2.5 text-xs font-black text-black shadow-lg shadow-emerald-500/25 transition hover:bg-emerald-400 active:scale-95'>
+                  <Send size={13} />
+                  <span>Submit Selection to Studio</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Studio Pipeline Tracking Strip */}
+            <div className='mt-6 border-t border-white/10 pt-5'>
+              <p className='text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 mb-3'>
+                Photographer Dashboard Status Tracking
+              </p>
+              <div className='grid grid-cols-2 gap-2 sm:grid-cols-5 text-[11px]'>
+                {[
+                  { name: '1. Waiting for Client', active: false, done: true },
+                  { name: '2. Selection in Progress', active: true, done: false },
+                  { name: '3. Selection Submitted', active: false, done: false },
+                  { name: '4. Studio Retouching', active: false, done: false },
+                  { name: '5. Ready for Premiere', active: false, done: false },
+                ].map((st) => (
+                  <div
+                    key={st.name}
+                    className={`rounded-xl border p-2.5 transition ${
+                      st.active
+                        ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300 font-bold'
+                        : st.done
+                        ? 'border-white/10 bg-white/[0.02] text-zinc-400 font-medium'
+                        : 'border-white/5 bg-transparent text-zinc-600 font-medium'
+                    }`}>
+                    <div className='flex items-center gap-1.5'>
+                      {st.done ? (
+                        <Check size={12} className='text-emerald-400' />
+                      ) : st.active ? (
+                        <span className='h-2 w-2 rounded-full bg-emerald-400 animate-pulse' />
+                      ) : (
+                        <span className='h-1.5 w-1.5 rounded-full bg-zinc-700' />
+                      )}
+                      <span className='truncate'>{st.name}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+          </div>
+
+          {/* 4 Core Pre-Delivery Pillars */}
+          <div className='mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4'>
+            {[
+              {
+                icon: CheckCircle2,
+                title: 'Selection Quotas & Deadlines',
+                desc: 'Set hard selection limits (e.g. 15 photos) that match your client package. Optional selection countdown deadlines keep your editing queue moving.'
+              },
+              {
+                icon: Lock,
+                title: 'Automated Proof Watermarks',
+                desc: 'Protect unretouched work before final delivery. Add your studio name or custom proof overlay automatically. Watermarks vanish on final delivered photos.'
+              },
+              {
+                icon: MessageSquare,
+                title: 'Lightweight Retouch Notes',
+                desc: 'Clients can pin specific retouch instructions directly to individual photos (“Make this B&W”, “Soften facial shadow”)—ending confusing WhatsApp chats.'
+              },
+              {
+                icon: FileCheck,
+                title: 'Studio Pipeline Tracker',
+                desc: 'Manage every project through 5 clear stages: Waiting for Selection → In Progress → Selection Submitted → Retouching → Ready to Premiere.'
+              }
+            ].map((pillar, idx) => {
+              const Icon = pillar.icon;
+              return (
+                <div
+                  key={pillar.title}
+                  className='rounded-2xl border border-white/10 bg-white/[0.02] p-5 transition hover:border-emerald-500/30 hover:bg-white/[0.04] sm:p-6'>
+                  <div className='flex items-center justify-between'>
+                    <div className='grid h-10 w-10 place-items-center rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'>
+                      <Icon size={18} />
+                    </div>
+                    <span className='font-mono text-xs font-bold text-zinc-600'>0{idx + 1}</span>
+                  </div>
+                  <h3 className='mt-4 text-base font-extrabold text-white'>{pillar.title}</h3>
+                  <p className='mt-2 text-xs leading-relaxed text-zinc-400'>{pillar.desc}</p>
+                </div>
+              );
+            })}
+          </div>
+
         </div>
       </section>
 
@@ -1116,7 +1420,7 @@ export default function LandingPage({ onOpenAuth }) {
                       ? 'bg-[#ff5a47] text-white shadow-md shadow-[#ff5a47]/25'
                       : 'text-zinc-400 hover:text-white'
                   }`}>
-                  Photographer (3m)
+                  Photographer (4 Steps)
                 </button>
                 <button
                   onClick={() => setActiveWorkflowTab('client')}
@@ -1125,7 +1429,7 @@ export default function LandingPage({ onOpenAuth }) {
                       ? 'bg-[#ff5a47] text-white shadow-md shadow-[#ff5a47]/25'
                       : 'text-zinc-400 hover:text-white'
                   }`}>
-                  Client Premiere
+                  Client Experience
                 </button>
               </div>
             </div>
@@ -1133,34 +1437,49 @@ export default function LandingPage({ onOpenAuth }) {
 
           <div className='mt-10'>
             {activeWorkflowTab === 'photographer' ? (
-              <div className='grid gap-4 md:grid-cols-3'>
+              <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-4'>
                 {[
                   {
                     step: '01',
-                    title: 'Enter Shoot Details',
-                    subtitle: 'Client: Ada · Occasion: Birthday · Mood: Luxury',
-                    desc: 'Add quick shoot notes. Veylo uses the context to write poetic chapter headlines and emotional narrative lines.'
+                    stage: 'PRE-DELIVERY',
+                    title: 'Upload Proofs & Quotas',
+                    subtitle: 'Curated proofs · Watermarks · 15 limit',
+                    desc: 'Perform your basic cull and upload client proofs with a custom watermark and selection quota. Send one private WhatsApp link.'
                   },
                   {
                     step: '02',
-                    title: 'Upload Finished Work',
-                    subtitle: 'Your selected & retouched photos',
-                    desc: 'The AI Director analyzes visual harmony, selects the opening hook, sequences the flow, and pairs the soundtrack.'
+                    stage: 'CLIENT PROOFING',
+                    title: 'Client Selects on Mobile',
+                    subtitle: 'No login · Live counter · Retouch notes',
+                    desc: 'Your client opens the link on their phone, taps their favorites with a real-time counter (e.g. 12/15), adds retouch notes, and hits Submit.'
                   },
                   {
                     step: '03',
-                    title: 'Publish & WhatsApp Link',
-                    subtitle: 'veylo.com.ng/s/ada-at-30',
-                    desc: 'Preview the story, make any quick adjustments, click publish, and send one branded premiere link directly to your client.'
+                    stage: 'STUDIO AI',
+                    title: 'Retouch & AI Director',
+                    subtitle: 'Finished edits · Intelligent sequencing',
+                    desc: 'Retouch the chosen photos and upload. The AI Director analyzes harmony, selects the opening hook, writes story chapters, and pairs the soundtrack.'
+                  },
+                  {
+                    step: '04',
+                    stage: 'FINAL DELIVERY',
+                    title: 'Premiere & Downloads',
+                    subtitle: 'veylo.com.ng/s/ada-at-30 · Link-ready',
+                    desc: 'Publish with one click. Your client experiences their cinematic Photo Story premiere first, followed by full-res individual and zip downloads.'
                   }
                 ].map((item) => (
                   <div
                     key={item.step}
                     className='rounded-2xl border border-white/10 bg-[#111115] p-5 transition hover:border-white/20 sm:p-6'>
-                    <span className='font-mono text-xs font-bold text-[#ff6b57]'>{item.step}</span>
-                    <h3 className='mt-3 text-lg font-extrabold text-white sm:text-xl'>{item.title}</h3>
-                    <p className='mt-1 text-[10px] font-bold uppercase tracking-wider text-[#ff9b8e] sm:text-xs'>{item.subtitle}</p>
-                    <p className='mt-2.5 text-xs leading-relaxed text-zinc-400 sm:text-sm'>{item.desc}</p>
+                    <div className='flex items-center justify-between'>
+                      <span className='font-mono text-xs font-bold text-[#ff6b57]'>{item.step}</span>
+                      <span className='rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-zinc-400'>
+                        {item.stage}
+                      </span>
+                    </div>
+                    <h3 className='mt-3 text-lg font-extrabold text-white'>{item.title}</h3>
+                    <p className='mt-1 text-[10px] font-bold uppercase tracking-wider text-[#ff9b8e]'>{item.subtitle}</p>
+                    <p className='mt-2.5 text-xs leading-relaxed text-zinc-400'>{item.desc}</p>
                   </div>
                 ))}
               </div>
@@ -1169,30 +1488,38 @@ export default function LandingPage({ onOpenAuth }) {
                 {[
                   {
                     step: '01',
-                    title: 'The Cinematic Cover',
-                    subtitle: 'Opens instantly in any mobile browser',
-                    desc: 'Client taps the link on WhatsApp. Ambient music begins. Their name and occasion appear in bespoke editorial typography.'
+                    stage: 'SELECTION',
+                    title: 'Choose Favorites on Phone',
+                    subtitle: 'Clean mobile proofing · 1-click select',
+                    desc: 'Open the private WhatsApp link. Browse watermarked proofs on any phone, select up to your package allowance, add retouch notes, and tap Submit.'
                   },
                   {
                     step: '02',
-                    title: 'Storytelling Premiere',
-                    subtitle: 'Motion, chapters & optional narration',
-                    desc: 'Each photo glides with gentle Ken Burns motion. Heartfelt editorial captions appear at emotional moments with optional voice narration.'
+                    stage: 'PREMIERE',
+                    title: 'The Cinematic Cover & Story',
+                    subtitle: 'Ambient music · Bespoke typography',
+                    desc: 'Once retouched, your final story arrives. Ambient music begins, gentle motion brings each portrait to life, and poetic chapter headlines capture your milestone.'
                   },
                   {
                     step: '03',
-                    title: 'Your Photos Gallery',
-                    subtitle: 'Full-screen view + 1-click downloads',
-                    desc: 'After the emotional finale, the complete gallery unfolds. Clients browse, view full-screen, download individual favorites, or download all in high-res.'
+                    stage: 'GALLERY',
+                    title: 'Full High-Res Downloads',
+                    subtitle: 'Full-screen view · 1-click individual & bulk zip',
+                    desc: 'After the emotional finale, the complete gallery unfolds. Browse, view full-screen, download individual favorites, or download the entire original package.'
                   }
                 ].map((item) => (
                   <div
                     key={item.step}
                     className='rounded-2xl border border-white/10 bg-[#111115] p-5 transition hover:border-white/20 sm:p-6'>
-                    <span className='font-mono text-xs font-bold text-[#ff6b57]'>{item.step}</span>
-                    <h3 className='mt-3 text-lg font-extrabold text-white sm:text-xl'>{item.title}</h3>
-                    <p className='mt-1 text-[10px] font-bold uppercase tracking-wider text-[#ff9b8e] sm:text-xs'>{item.subtitle}</p>
-                    <p className='mt-2.5 text-xs leading-relaxed text-zinc-400 sm:text-sm'>{item.desc}</p>
+                    <div className='flex items-center justify-between'>
+                      <span className='font-mono text-xs font-bold text-[#ff6b57]'>{item.step}</span>
+                      <span className='rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-zinc-400'>
+                        {item.stage}
+                      </span>
+                    </div>
+                    <h3 className='mt-3 text-lg font-extrabold text-white'>{item.title}</h3>
+                    <p className='mt-1 text-[10px] font-bold uppercase tracking-wider text-[#ff9b8e]'>{item.subtitle}</p>
+                    <p className='mt-2.5 text-xs leading-relaxed text-zinc-400'>{item.desc}</p>
                   </div>
                 ))}
               </div>
