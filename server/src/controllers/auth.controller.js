@@ -16,6 +16,7 @@ const email = z.string().trim().email().max(254).transform(normalizeEmail);
 const password = z.string().min(8, 'Use at least 8 characters.').max(128);
 const registerSchema = z.object({ name: z.string().trim().min(2).max(100), email, password, confirmPassword: z.string(), turnstileToken: z.string().optional() }).refine(data => data.password === data.confirmPassword, { path: ['confirmPassword'], message: 'The passwords do not match.' });
 const codeSchema = z.object({ email, code: z.string().regex(/^\d{6}$/) });
+const challengedCodeSchema = codeSchema.extend({ turnstileToken: z.string().optional() });
 const loginSchema = z.object({ email, password: z.string().min(1).max(128), remember: z.boolean().optional().default(true), turnstileToken: z.string().optional() });
 const resetSchema = z.object({ resetToken: z.string().min(20), password, confirmPassword: z.string() }).refine(data => data.password === data.confirmPassword, { path: ['confirmPassword'], message: 'The passwords do not match.' });
 
@@ -40,15 +41,15 @@ async function issueCode(user, purpose) {
   else await sendPasswordResetEmail({ to: user.email, name: user.name, code });
 }
 
-async function validChallenge(token, req) {
-  return verifyTurnstile(token, req.ip);
+async function validChallenge(token, req, action) {
+  return verifyTurnstile(token, req.ip, action);
 }
 
 export async function register(req, res) {
   try {
     const parsed = registerSchema.safeParse(req.body);
     if (!parsed.success) return validationFailure(res, parsed);
-    if (!(await validChallenge(parsed.data.turnstileToken, req))) return res.status(400).json({ success: false, code: 'CHALLENGE_FAILED', message: 'We could not verify this request. Please try again.' });
+    if (!(await validChallenge(parsed.data.turnstileToken, req, 'register'))) return res.status(400).json({ success: false, code: 'CHALLENGE_FAILED', message: 'We could not verify this request. Please try again.' });
     const existing = await User.findOne({ email: parsed.data.email });
     if (existing?.emailVerifiedAt) return res.status(409).json({ success: false, code: 'EMAIL_IN_USE', message: 'An account already uses this email address.' });
     if (existing) {
@@ -69,8 +70,9 @@ export async function register(req, res) {
 
 export async function verifyEmail(req, res) {
   try {
-    const parsed = codeSchema.safeParse(req.body);
+    const parsed = challengedCodeSchema.safeParse(req.body);
     if (!parsed.success) return validationFailure(res, parsed);
+    if (!(await validChallenge(parsed.data.turnstileToken, req, 'verify_email'))) return res.status(400).json({ success: false, code: 'CHALLENGE_FAILED', message: 'Complete the security check before verifying your email.' });
     const user = await User.findOne({ email: parsed.data.email });
     if (!user) return res.status(400).json({ success: false, code: 'INVALID_CODE', message: 'That code is incorrect or has expired.' });
     if (user.emailVerifiedAt) {
@@ -104,7 +106,7 @@ export async function resendVerification(req, res) {
   try {
     const parsed = z.object({ email, turnstileToken: z.string().optional() }).safeParse(req.body);
     if (!parsed.success) return validationFailure(res, parsed);
-    if (!(await validChallenge(parsed.data.turnstileToken, req))) return res.status(400).json({ success: false, code: 'CHALLENGE_FAILED', message: 'We could not verify this request. Please try again.' });
+    if (!(await validChallenge(parsed.data.turnstileToken, req, 'verify_email'))) return res.status(400).json({ success: false, code: 'CHALLENGE_FAILED', message: 'We could not verify this request. Please try again.' });
     const user = await User.findOne({ email: parsed.data.email });
     if (!user || user.emailVerifiedAt) return res.json({ success: true, message: 'If the account still needs verification, a new code has been sent.' });
     const current = await AuthCode.findOne({ userId: user._id, purpose: 'verify-email' });
@@ -128,7 +130,7 @@ export async function login(req, res) {
     const generic = { success: false, code: 'INVALID_CREDENTIALS', message: 'The email address or password is incorrect.' };
     if (!user) return res.status(401).json(generic);
     if (user.accountStatus === 'suspended') return res.status(403).json({ success: false, code: 'ACCOUNT_SUSPENDED', message: 'This account is unavailable. Contact Veylo support.' });
-    if (user.failedLoginCount >= 3 && !(await validChallenge(parsed.data.turnstileToken, req))) return res.status(400).json({ success: false, code: 'CHALLENGE_REQUIRED', message: 'Please complete the security check and try again.' });
+    if (user.failedLoginCount >= 3 && !(await validChallenge(parsed.data.turnstileToken, req, 'login'))) return res.status(400).json({ success: false, code: 'CHALLENGE_REQUIRED', message: 'Please complete the security check and try again.' });
     if (!(await user.comparePassword(parsed.data.password))) {
       user.failedLoginCount = (user.failedLoginCount || 0) + 1;
       await user.save();
@@ -310,7 +312,7 @@ export async function forgotPassword(req, res) {
   try {
     const parsed = z.object({ email, turnstileToken: z.string().optional() }).safeParse(req.body);
     if (!parsed.success) return validationFailure(res, parsed);
-    if (!(await validChallenge(parsed.data.turnstileToken, req))) return res.status(400).json({ success: false, code: 'CHALLENGE_FAILED', message: 'We could not verify this request. Please try again.' });
+    if (!(await validChallenge(parsed.data.turnstileToken, req, 'forgot_password'))) return res.status(400).json({ success: false, code: 'CHALLENGE_FAILED', message: 'We could not verify this request. Please try again.' });
     const user = await User.findOne({ email: parsed.data.email });
     if (user?.emailVerifiedAt && user.providers.includes('password')) {
       const current = await AuthCode.findOne({ userId: user._id, purpose: 'reset-password' });
@@ -324,8 +326,9 @@ export async function forgotPassword(req, res) {
 
 export async function verifyPasswordResetCode(req, res) {
   try {
-    const parsed = codeSchema.safeParse(req.body);
+    const parsed = challengedCodeSchema.safeParse(req.body);
     if (!parsed.success) return validationFailure(res, parsed);
+    if (!(await validChallenge(parsed.data.turnstileToken, req, 'verify_password_reset'))) return res.status(400).json({ success: false, code: 'CHALLENGE_FAILED', message: 'Complete the security check before continuing.' });
     const user = await User.findOne({ email: parsed.data.email });
     const record = user ? await AuthCode.findOne({ userId: user._id, purpose: 'reset-password' }).select('+codeDigest') : null;
     if (!record || record.expiresAt <= new Date() || record.attempts >= 5 || !safeEqual(codeDigest(user.email, 'reset-password', parsed.data.code), record.codeDigest)) {

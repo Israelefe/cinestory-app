@@ -24,13 +24,16 @@ export default function VerifyEmailPage({ onAuthenticated }) {
   async function verify(event) {
     event.preventDefault();
     if (code.length !== 6) return setStatus({ loading: false, error: 'Enter all six digits from the email.', note: '' });
+    if (!turnstileToken) return setStatus({ loading: false, error: 'Complete the security check before verifying your email.', note: '' });
     setStatus({ loading: true, error: '', note: '' });
     try {
-      const { data } = await api.post('/v1/auth/verify-email', { email, code });
+      const { data } = await api.post('/v1/auth/verify-email', { email, code, turnstileToken });
       sessionStorage.removeItem('veylo_pending_email');
       onAuthenticated(data.user);
       navigate(data.next || '/onboarding', { replace: true });
     } catch (error) {
+      challengeRef.current?.reset();
+      setTurnstileToken('');
       setStatus({ loading: false, error: apiMessage(error, 'That code could not be verified.'), note: '' });
     }
   }
@@ -51,5 +54,5 @@ export default function VerifyEmailPage({ onAuthenticated }) {
     }
   }
 
-  return <Page className="v-auth-flow-page"><section className="v-wrap v-auth-flow-wrap"><Reveal className="v-auth-flow-card"><span className="v-auth-flow-icon"><MailCheck size={24} /></span><p className="v-eyebrow">Confirm your email</p><h1>Check your inbox.</h1><p className="v-copy">We sent a six-digit code to <strong>{email || 'your email address'}</strong>. Enter it here within ten minutes.</p>{!location.state?.email && !sessionStorage.getItem('veylo_pending_email') && <div className="v-field"><label htmlFor="verify-email">Email address</label><input id="verify-email" type="email" value={email} onChange={event => setEmail(event.target.value)} /></div>}<form className="v-form" onSubmit={verify}><OtpInput value={code} onChange={setCode} disabled={status.loading} /><TurnstileCheck ref={challengeRef} action="resend_verification" onVerify={setTurnstileToken} />{status.error && <p className="v-form-status" role="alert">{status.error}</p>}{status.note && <p className="v-form-success" role="status">{status.note}</p>}<button className="v-button" disabled={status.loading || code.length !== 6}>{status.loading ? 'Checking the code…' : 'Verify email'}<ArrowRight size={18} /></button></form><button type="button" className="v-auth-text-button" onClick={resend} disabled={status.loading || seconds > 0 || !turnstileToken}>{seconds > 0 ? `Send another code in ${seconds}s` : !turnstileToken ? 'Completing security check…' : 'Send another code'}</button><p className="v-signup-login">Wrong email? <Link to="/signup">Return to Create Account</Link></p></Reveal></section></Page>;
+  return <Page className="v-auth-flow-page"><section className="v-wrap v-auth-flow-wrap"><Reveal className="v-auth-flow-card"><span className="v-auth-flow-icon"><MailCheck size={24} /></span><p className="v-eyebrow">Confirm your email</p><h1>Check your inbox.</h1><p className="v-copy">We sent a six-digit code to <strong>{email || 'your email address'}</strong>. Enter it here within ten minutes.</p>{!location.state?.email && !sessionStorage.getItem('veylo_pending_email') && <div className="v-field"><label htmlFor="verify-email">Email address</label><input id="verify-email" type="email" value={email} onChange={event => setEmail(event.target.value)} /></div>}<form className="v-form" onSubmit={verify}><OtpInput value={code} onChange={setCode} disabled={status.loading} /><TurnstileCheck ref={challengeRef} action="verify_email" onVerify={setTurnstileToken} />{status.error && <p className="v-form-status" role="alert">{status.error}</p>}{status.note && <p className="v-form-success" role="status">{status.note}</p>}<button className="v-button" disabled={status.loading || code.length !== 6 || !turnstileToken}>{status.loading ? 'Checking the code…' : !turnstileToken ? 'Complete the security check' : 'Verify email'}<ArrowRight size={18} /></button></form><button type="button" className="v-auth-text-button" onClick={resend} disabled={status.loading || seconds > 0 || !turnstileToken}>{seconds > 0 ? `Send another code in ${seconds}s` : !turnstileToken ? 'Complete the security check first' : 'Send another code'}</button><p className="v-signup-login">Wrong email? <Link to="/signup">Return to Create Account</Link></p></Reveal></section></Page>;
 }

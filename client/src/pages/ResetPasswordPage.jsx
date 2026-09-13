@@ -1,15 +1,18 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight, Check, Eye, EyeOff, KeyRound } from 'lucide-react';
 import OtpInput from '../components/OtpInput.jsx';
+import TurnstileCheck from '../components/TurnstileCheck.jsx';
 import { Page, Reveal } from '../components/PublicDesign.jsx';
 import api, { apiMessage } from '../services/api.js';
 
 export default function ResetPasswordPage() {
   const location = useLocation();
   const navigate = useNavigate();
+  const challengeRef = useRef(null);
   const [email] = useState(location.state?.email || sessionStorage.getItem('veylo_reset_email') || '');
   const [code, setCode] = useState('');
+  const [turnstileToken, setTurnstileToken] = useState('');
   const [resetToken, setResetToken] = useState('');
   const [passwords, setPasswords] = useState({ password: '', confirmPassword: '' });
   const [shown, setShown] = useState(false);
@@ -17,12 +20,18 @@ export default function ResetPasswordPage() {
   const [status, setStatus] = useState({ loading: false, error: '' });
   async function verify(event) {
     event.preventDefault();
+    if (code.length !== 6) return setStatus({ loading: false, error: 'Enter all six digits from the email.' });
+    if (!turnstileToken) return setStatus({ loading: false, error: 'Complete the security check before continuing.' });
     setStatus({ loading: true, error: '' });
     try {
-      const { data } = await api.post('/v1/auth/password/verify-code', { email, code });
+      const { data } = await api.post('/v1/auth/password/verify-code', { email, code, turnstileToken });
       setResetToken(data.resetToken);
       setStatus({ loading: false, error: '' });
-    } catch (error) { setStatus({ loading: false, error: apiMessage(error, 'That code could not be verified.') }); }
+    } catch (error) {
+      challengeRef.current?.reset();
+      setTurnstileToken('');
+      setStatus({ loading: false, error: apiMessage(error, 'That code could not be verified.') });
+    }
   }
   async function reset(event) {
     event.preventDefault();
@@ -37,5 +46,5 @@ export default function ResetPasswordPage() {
   }
   if (!email) return <Page className="v-auth-flow-page"><section className="v-wrap v-auth-flow-wrap"><Reveal className="v-auth-flow-card"><h1>Request a new code.</h1><p className="v-copy">Start with the email address connected to your account.</p><Link className="v-button" to="/forgot-password">Reset password<ArrowRight size={18} /></Link></Reveal></section></Page>;
   if (done) return <Page className="v-auth-flow-page"><section className="v-wrap v-auth-flow-wrap"><Reveal className="v-auth-flow-card"><span className="v-auth-flow-icon"><Check size={24} /></span><p className="v-eyebrow">Password updated</p><h1>You can sign in again.</h1><p className="v-copy">Your old sessions have been closed. Use your new password the next time you sign in.</p><button className="v-button" onClick={() => navigate('/signin', { replace: true })}>Go to Sign In<ArrowRight size={18} /></button></Reveal></section></Page>;
-  return <Page className="v-auth-flow-page"><section className="v-wrap v-auth-flow-wrap"><Reveal className="v-auth-flow-card"><span className="v-auth-flow-icon"><KeyRound size={24} /></span><p className="v-eyebrow">Reset your password</p>{!resetToken ? <><h1>Enter the code.</h1><p className="v-copy">Use the six-digit code sent to <strong>{email}</strong>.</p><form className="v-form" onSubmit={verify}><OtpInput value={code} onChange={setCode} disabled={status.loading} />{status.error && <p className="v-form-status" role="alert">{status.error}</p>}<button className="v-button" disabled={status.loading || code.length !== 6}>{status.loading ? 'Checking the code…' : 'Continue'}<ArrowRight size={18} /></button></form><p className="v-signup-login">Code expired? <Link to="/forgot-password">Request another one</Link></p></> : <><h1>Choose a new password.</h1><p className="v-copy">Use at least eight characters that you do not use for another account.</p><form className="v-form" onSubmit={reset}><div className="v-field"><label htmlFor="new-password">New password</label><input id="new-password" type={shown ? 'text' : 'password'} autoComplete="new-password" required minLength={8} maxLength={128} value={passwords.password} onChange={event => setPasswords(current => ({ ...current, password: event.target.value }))} /></div><div className="v-field"><label htmlFor="confirm-new-password">Confirm password</label><input id="confirm-new-password" type={shown ? 'text' : 'password'} autoComplete="new-password" required minLength={8} maxLength={128} value={passwords.confirmPassword} onChange={event => setPasswords(current => ({ ...current, confirmPassword: event.target.value }))} /></div><label className="v-password-toggle"><input type="checkbox" checked={shown} onChange={event => setShown(event.target.checked)} /><span>{shown ? <EyeOff size={16} /> : <Eye size={16} />}Show passwords</span></label>{status.error && <p className="v-form-status" role="alert">{status.error}</p>}<button className="v-button" disabled={status.loading}>{status.loading ? 'Changing your password…' : 'Change password'}<ArrowRight size={18} /></button></form></>}</Reveal></section></Page>;
+  return <Page className="v-auth-flow-page"><section className="v-wrap v-auth-flow-wrap"><Reveal className="v-auth-flow-card"><span className="v-auth-flow-icon"><KeyRound size={24} /></span><p className="v-eyebrow">Reset your password</p>{!resetToken ? <><h1>Enter the code.</h1><p className="v-copy">Use the six-digit code sent to <strong>{email}</strong>.</p><form className="v-form" onSubmit={verify}><OtpInput value={code} onChange={setCode} disabled={status.loading} /><TurnstileCheck ref={challengeRef} action="verify_password_reset" onVerify={setTurnstileToken} />{status.error && <p className="v-form-status" role="alert">{status.error}</p>}<button className="v-button" disabled={status.loading || code.length !== 6 || !turnstileToken}>{status.loading ? 'Checking the code…' : !turnstileToken ? 'Complete the security check' : 'Continue'}<ArrowRight size={18} /></button></form><p className="v-signup-login">Code expired? <Link to="/forgot-password">Request another one</Link></p></> : <><h1>Choose a new password.</h1><p className="v-copy">Use at least eight characters that you do not use for another account.</p><form className="v-form" onSubmit={reset}><div className="v-field"><label htmlFor="new-password">New password</label><input id="new-password" type={shown ? 'text' : 'password'} autoComplete="new-password" required minLength={8} maxLength={128} value={passwords.password} onChange={event => setPasswords(current => ({ ...current, password: event.target.value }))} /></div><div className="v-field"><label htmlFor="confirm-new-password">Confirm password</label><input id="confirm-new-password" type={shown ? 'text' : 'password'} autoComplete="new-password" required minLength={8} maxLength={128} value={passwords.confirmPassword} onChange={event => setPasswords(current => ({ ...current, confirmPassword: event.target.value }))} /></div><label className="v-password-toggle"><input type="checkbox" checked={shown} onChange={event => setShown(event.target.checked)} /><span>{shown ? <EyeOff size={16} /> : <Eye size={16} />}Show passwords</span></label>{status.error && <p className="v-form-status" role="alert">{status.error}</p>}<button className="v-button" disabled={status.loading}>{status.loading ? 'Changing your password…' : 'Change password'}<ArrowRight size={18} /></button></form></>}</Reveal></section></Page>;
 }

@@ -69,7 +69,7 @@ export default function SigninPage({ onAuthenticated }) {
           <label className="v-auth-consent"><input type="checkbox" checked={form.remember} onChange={event => setForm(current => ({ ...current, remember: event.target.checked }))} /><span>Keep me signed in on this device</span></label>
           <div className={status.challenge ? 'v-challenge-visible' : ''}><TurnstileCheck ref={challengeRef} action="login" onVerify={setTurnstileToken} /></div>
           {status.error && <p className="v-form-status" role="alert">{status.error}</p>}
-          <button type="submit" className="v-button" disabled={status.loading}>{status.loading ? 'Signing you in…' : 'Sign in'}<ArrowRight size={18} /></button>
+          <button type="submit" className="v-button" disabled={status.loading || (status.challenge && !turnstileToken)}>{status.loading ? 'Signing you in…' : status.challenge && !turnstileToken ? 'Complete the security check' : 'Sign in'}<ArrowRight size={18} /></button>
         </form>
         <p className="v-signup-login">New to Veylo? <Link to="/signup">Create an account</Link></p>
         <p className="v-fine">By continuing, you agree to the <Link to="/terms">terms of use</Link> and acknowledge the <Link to="/privacy">privacy policy</Link>.</p>
