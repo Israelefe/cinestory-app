@@ -35,7 +35,7 @@ export async function generateAiPhotoStory({
     selectedSoundtrack = CURATED_SOUNDTRACKS[0];
   }
 
-  const systemPrompt = `You are the Lead Creative Director & Senior Visual Storyteller for IDEAS MEDIA COMPANY (Benin City, Nigeria).
+  const systemPrompt = `You are the Lead Creative Director & Senior Visual Storyteller for Veylo Media Studio (Lagos, Nigeria).
 Your writing is deeply personal, high-fashion, authentic, and emotionally resonant—written directly to and about the client, honoring their exact milestone or photoshoot occasion.
 
 CRITICAL EDITORIAL RULES:
@@ -101,8 +101,8 @@ Important: "slides" MUST contain exactly ${photoCount} items corresponding to ea
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${apiKey}`,
-            'HTTP-Referer': 'https://ideasmediacompany.com',
-            'X-Title': 'IDEAS AI Photo Story Director',
+            'HTTP-Referer': 'https://veylo.com.ng',
+            'X-Title': 'Veylo AI Photo Story Director',
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -172,7 +172,7 @@ Important: "slides" MUST contain exactly ${photoCount} items corresponding to ea
 
             return {
               title: parsed.title || `${clientName} in Focus: ${occasion}`,
-              storySummary: parsed.storySummary || `Celebrating ${clientName}'s memorable ${occasion} captured at IDEAS Media Studio.`,
+              storySummary: parsed.storySummary || `Celebrating ${clientName}'s memorable ${occasion} captured at Veylo Media Studio.`,
               theme: {
                 palette: chosenPalette,
                 typography: parsed.theme?.typography || 'cinematic_serif',
@@ -236,7 +236,7 @@ Important: "slides" MUST contain exactly ${photoCount} items corresponding to ea
       { title: 'The Essence', caption: `A look that commands admiration—unfiltered presence and elegance.` },
       { title: 'Timeless Focus', caption: `Masterfully crafted moments honoring ${clientName}'s ${occasion}.` },
       { title: 'Golden Details', caption: `It is the subtle, intimate moments that make this ${occasion} unforgettable.` },
-      { title: 'Grand Finale', caption: `A masterpiece portrait series from IDEAS Media Studio that stands the test of time.` }
+      { title: 'Grand Finale', caption: `A masterpiece portrait series from Veylo Media Studio that stands the test of time.` }
     ];
   }
 
@@ -268,7 +268,7 @@ Important: "slides" MUST contain exactly ${photoCount} items corresponding to ea
 
   return {
     title: `${clientName} • ${occasion}`,
-    storySummary: `A personalized visual tribute celebrating ${clientName}'s milestone ${occasion}, captured with distinction at IDEAS Media Studio.`,
+    storySummary: `A personalized visual tribute celebrating ${clientName}'s milestone ${occasion}, captured with distinction at Veylo Media Studio.`,
     theme: {
       palette: defaultTheme,
       typography: 'cinematic_serif',

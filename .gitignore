@@ -15,6 +15,9 @@ server/.env
 
 # Runtime and cache
 .runtime/
+.visual-review/
+tmp/
+asset-archive/
 .DS_Store
 Thumbs.db
 npm-debug.log*

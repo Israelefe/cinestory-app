@@ -56,8 +56,10 @@ export async function getPublicStory(req, res) {
 
 export async function getUserStories(req, res) {
   try {
-    const filter = req.user?.id ? { userId: req.user.id } : {};
-    const stories = await PhotoStory.find(filter).sort({ createdAt: -1 }).lean();
+    if (!req.user?.id) {
+      return res.status(401).json({ success: false, message: 'Authentication required to view your stories.' });
+    }
+    const stories = await PhotoStory.find({ userId: req.user.id }).sort({ createdAt: -1 }).lean();
     res.json({ success: true, data: stories });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -75,6 +77,17 @@ export async function trackDownload(req, res) {
 
 export async function deleteStory(req, res) {
   try {
+    if (!req.user?.id) {
+      return res.status(401).json({ success: false, message: 'Authentication required.' });
+    }
+    const story = await PhotoStory.findById(req.params.id);
+    if (!story) {
+      return res.status(404).json({ success: false, message: 'Story not found.' });
+    }
+    // Verify ownership or superadmin role
+    if (story.userId && story.userId.toString() !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Unauthorized: You can only delete your own stories.' });
+    }
     await PhotoStory.findByIdAndDelete(req.params.id);
     res.json({ success: true, message: 'Story deleted.' });
   } catch (err) {

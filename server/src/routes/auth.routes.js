@@ -1,22 +1,22 @@
 import express from 'express';
-import { register, login, getMe } from '../controllers/auth.controller.js';
-import jwt from 'jsonwebtoken';
+import { forgotPassword, getMe, googleLogin, login, logout, logoutAll, refreshSession, register, resendVerification, resetPassword, verifyEmail, verifyPasswordResetCode } from '../controllers/auth.controller.js';
+import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth.middleware.js';
+import { authAttemptLimit, emailCodeLimit, registrationLimit } from '../middleware/rateLimit.middleware.js';
 
 const router = express.Router();
 
-export function authMiddleware(req, res, next) {
-  const token = req.headers.authorization?.replace(/^Bearer\s+/, '');
-  if (!token) return res.status(401).json({ success: false, message: 'Authorization required.' });
-  try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET || 'secret');
-    next();
-  } catch (e) {
-    res.status(401).json({ success: false, message: 'Invalid or expired token.' });
-  }
-}
-
-router.post('/register', register);
-router.post('/login', login);
+router.post('/register', registrationLimit, register);
+router.post('/verify-email', authAttemptLimit, verifyEmail);
+router.post('/resend-verification', emailCodeLimit, resendVerification);
+router.post('/login', authAttemptLimit, login);
+router.post('/google', authAttemptLimit, googleLogin);
+router.post('/refresh', authAttemptLimit, refreshSession);
+router.post('/logout', logout);
+router.post('/logout-all', authMiddleware, logoutAll);
 router.get('/me', authMiddleware, getMe);
+router.post('/password/forgot', emailCodeLimit, forgotPassword);
+router.post('/password/verify-code', authAttemptLimit, verifyPasswordResetCode);
+router.post('/password/reset', authAttemptLimit, resetPassword);
 
+export { authMiddleware, optionalAuthMiddleware };
 export default router;

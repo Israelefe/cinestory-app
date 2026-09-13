@@ -1,8 +1,8 @@
 import mongoose from 'mongoose';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const photoStorySchema = new mongoose.Schema({
-  storyId: { type: String, unique: true, default: () => uuidv4().slice(0, 8) },
+  storyId: { type: String, unique: true, default: () => randomUUID().slice(0, 8) },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
   clientName: { type: String, required: true },
   occasion: { type: String, required: true },
@@ -34,6 +34,7 @@ const photoStorySchema = new mongoose.Schema({
       caption: { type: String, default: '' },
       typographyStyle: { type: String, default: 'typewriter' },
       textAnimation: { type: String, default: 'typewriter' },
+      textBackground: { type: String, default: 'transparent_shadow' },
       captionPosition: { type: String, default: 'bottom' },
       zoomEffect: { type: String, default: 'zoom_in' },
       colorAccent: { type: String, default: '#A24CF3' },

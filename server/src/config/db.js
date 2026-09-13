@@ -6,12 +6,12 @@ export async function connectDB() {
     const conn = await mongoose.connect(uri, {
       serverSelectionTimeoutMS: 3000
     });
-    console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
+    console.log(`[db] MongoDB Connected: ${conn.connection.host}`);
     return conn;
   } catch (error) {
     mongoose.set('bufferCommands', false);
-    console.warn(`⚠️ MongoDB Connection Error: ${error.message}`);
-    console.warn('⚠️ Server running without database persistence. Configure MONGODB_URI in server/.env to enable database operations.');
+    console.warn(`[db] Warning - MongoDB Connection Error: ${error.message}`);
+    console.warn('[db] Warning - Server running without database persistence. Configure MONGODB_URI in server/.env to enable database operations.');
     return null;
   }
 }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Navigate } from 'react-router-dom';
 import {
   ShieldCheck,
   Users,
@@ -9,8 +10,7 @@ import {
   Search,
   Trash2,
   ExternalLink,
-  RefreshCw,
-  Sparkles
+  RefreshCw
 } from 'lucide-react';
 import api from '../services/api.js';
 import { toast } from 'react-toastify';
@@ -66,6 +66,10 @@ export default function AdminDashboard({ user }) {
       toast.error('Failed to update plan');
     }
   };
+
+  if (!user || user.role !== 'admin') {
+    return <Navigate to='/' replace />;
+  }
 
   return (
     <div className='min-h-screen bg-[#070709] text-white pt-28 pb-20 px-5 sm:px-8 max-w-7xl mx-auto space-y-8'>

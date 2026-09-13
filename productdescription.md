@@ -10,7 +10,7 @@
 
 ## Brand Line
 
-### **Don’t just deliver photos. Premiere them.**
+### **Don’t just deliver photos. Showcase them.**
 
 Veylo is not primarily an AI app, gallery app, slideshow maker, or photo editor.
 
@@ -22,7 +22,18 @@ Its purpose is to make the final delivery of professional photographs feel as pr
 
 # 2. Core Product Definition
 
-**Veylo is a photo-first client delivery platform that allows photographers and media studios to transform completed photoshoots into beautiful, interactive, cinematic Photo Stories and deliver them directly to clients through a shareable web link.**
+**Veylo is an AI-powered photo delivery platform that turns a finished shoot into a designed first viewing, followed by the complete downloadable gallery.**
+
+The photographer chooses one of six delivery formats:
+
+1. **Photo Story — Watch.** A directed sequence with a beginning, rhythm, and finale.
+2. **Editorial Page — Explore.** A scrollable publication designed around the character of the shoot.
+3. **Photo Reveal — Discover.** A first viewing that moves only when the client is ready.
+4. **Canvas — Move.** A spatial arrangement the client can explore freely.
+5. **Chapters — Choose.** A large collection organised into the natural moments inside the shoot.
+6. **Album — Turn.** A page-by-page keepsake with a fixed cover, image order, pairings, and closing spread.
+
+Album is different from Canvas. Canvas lets the client move freely through a visual space. Album gives the collection a deliberate page order that the client turns through.
 
 The photographer uploads their already edited photographs.
 
@@ -42,7 +53,7 @@ The final experience is published online.
 
 The photographer sends the Veylo link to their client.
 
-The client first experiences the photos as an interactive Photo Story and can then access the normal photo gallery and download their images.
+The client first experiences the selected delivery format and can then open the complete gallery and download their images.
 
 ---
 
@@ -173,7 +184,7 @@ The experience should feel closer to:
 * a premium editorial
 * luxury magazine presentation
 * cinematic title sequence
-* digital premiere
+* digital showcase
 
 than a traditional slideshow.
 
@@ -683,6 +694,53 @@ Style:
 * stronger rhythm
 * faster transitions
 
+---
+
+## Cinematic
+
+For:
+* dramatic shoots
+* couples
+* storytelling sessions
+
+Style:
+* widescreen pacing
+* cinematic typography
+* dramatic lighting focus
+* immersive storytelling atmosphere
+
+---
+
+## Minimal
+
+For:
+* clean, simple, modern presentation for almost any shoot
+* studio portraits
+* fine art
+* lookbooks
+
+Style:
+* understated typography
+* generous whitespace
+* subtle transitions
+* effortless modern clarity
+
+---
+
+## Family
+
+For:
+* family sessions
+* children
+* newborns
+* casual lifestyle shoots
+
+Style:
+* warm typography
+* natural pacing
+* playful transitions
+* heartwarming storytelling
+
 More themes can be introduced later.
 
 ---
@@ -868,7 +926,7 @@ The photographer should be able to configure:
 
 The Photo Story can display:
 
-> Photography by Ideas Media
+> Photography by Veylo Media
 
 Free stories can include:
 
@@ -1030,7 +1088,7 @@ Example:
 
 ### Amaka at 30
 
-Photography by Ideas Media
+Photography by Veylo Media
 
 The shared result itself becomes marketing for both the photographer and Veylo.
 
@@ -1107,29 +1165,22 @@ Recommended current allowance:
 
 ### **2 Photo Stories per month**
 
-The free product should provide enough value to let photographers genuinely experience Veylo.
+Create and deliver up to 2 Photo Stories every month.
 
-Free can include:
+Free includes:
 
-* AI Director
-* story generation
-* photo sequencing
-* storytelling
-* cinematic motion
-* music
-* limited/basic narration
-* gallery
-* downloads
-* sharing
-
-Possible limitations:
-
-* Veylo branding
-* lower storage
-* fewer customization options
-* standard processing priority
-
-Do not make Free useless.
+* 2 Photo Stories every month
+* All story themes
+* AI story creation
+* AI-drafted titles and captions
+* Story editing and regeneration
+* Music and AI voice narration
+* Your studio name and logo
+* Password-protected stories
+* Client gallery and photo downloads
+* High-resolution gallery and downloads
+* Shareable story links
+* No payment card required
 
 Free is the acquisition engine.
 
@@ -1137,37 +1188,20 @@ Free is the acquisition engine.
 
 # 36. Veylo Pro
 
-# **₦20,000/month**
+For working photographers and studios.
 
-Main paid product.
+# **₦25,000/month**
+
+For photographers delivering more shoots each month.
 
 ## **Unlimited Photo Stories**
 
 Subject to reasonable fair use.
 
-Pro should include the complete professional Veylo experience:
+Pro includes:
 
-* unlimited Photo Stories
-* Veylo AI Director
-* AI photo understanding
-* intelligent sequencing
-* all standard themes
-* cinematic motion
-* music
-* music synchronization
-* AI editorial storytelling
-* TTS narration
-* story editing
-* photographer branding
-* logo
-* better privacy options
-* gallery
-* high-resolution downloads
-* higher storage
-* reasonable AI regeneration
-* priority generation where applicable
-
-Avoid splitting basic Veylo functionality into numerous artificial paid tiers.
+* Everything in Veylo Free
+* Unlimited Photo Stories, subject to fair use
 
 ---
 
@@ -1291,7 +1325,7 @@ Secondary CTA:
 
 Brand line:
 
-> **Don’t just deliver photos. Premiere them.**
+> **Don’t just deliver photos. Showcase them.**
 
 ---
 
@@ -1337,7 +1371,7 @@ Another version:
 
 And the brand line remains:
 
-> **Don’t just deliver photos. Premiere them.**
+> **Don’t just deliver photos. Showcase them.**
 
 ---
 
@@ -1492,7 +1526,7 @@ If the answer is no, it probably does not belong in Veylo V1.
 
 If the development agent needs a short permanent instruction, use this:
 
-> **Veylo is a Nigeria-first photo delivery SaaS built for photographers and media studios. Its positioning is “Veylo — The Photo Delivery Platform for Photographers.” Photographers upload already edited client photographs, provide context such as occasion and mood, and Veylo's AI Director analyzes the full collection and automatically creates an interactive cinematic Photo Story using intelligent sequencing, visual chapters, short editorial storytelling, tasteful photo motion, music and optional TTS narration. The photographer can preview and make simple edits before publishing the story as a shareable web link. Clients experience the Photo Story first and then access the normal downloadable photo gallery. Veylo is photo-only for V1. It is not a video generator, photo editor, CRM, booking platform, invoicing system, website builder or general photography-management suite. Veylo Free currently allows 2 Photo Stories per month. Veylo Pro costs ₦20,000/month and offers unlimited Photo Stories subject to reasonable fair use. The product must remain simple, premium, mobile-first, photographer-focused and strongly optimized for client delivery through links and WhatsApp.**
+> **Veylo is a Nigeria-first photo delivery SaaS built for photographers and media studios. Its positioning is “Veylo — The Photo Delivery Platform for Photographers.” Photographers upload already edited client photographs, provide context such as occasion and mood, and Veylo's AI Director analyzes the full collection and automatically creates an interactive cinematic Photo Story using intelligent sequencing, visual chapters, short editorial storytelling, tasteful photo motion, music and optional TTS narration. The photographer can preview and make simple edits before publishing the story as a shareable web link. Clients experience the Photo Story first and then access the normal downloadable photo gallery. Veylo is photo-only for V1. It is not a video generator, photo editor, CRM, booking platform, invoicing system, website builder or general photography-management suite. Veylo Free currently allows 2 Photo Stories per month. Veylo Pro costs ₦25,000/month and offers unlimited Photo Stories subject to reasonable fair use. The product must remain simple, premium, mobile-first, photographer-focused and strongly optimized for client delivery through links and WhatsApp.**
 
 ## Final Brand Structure
 
@@ -1500,204 +1534,42 @@ If the development agent needs a short permanent instruction, use this:
 
 ### **The Photo Delivery Platform for Photographers**
 
-**Don’t just deliver photos. Premiere them.**
+**Don’t just deliver photos. Showcase them.**
 
 That should now be the **source of truth your agents work from**.
 
 ---
 
-# 50. Veylo Pre-Delivery — Client Selection Feature
+# 50. Final-Delivery Workflow
 
-**Veylo Pre-Delivery is a client proofing and photo-selection feature that allows photographers to send a curated set of unfinalized photos to their clients before final editing, so the client can choose the images they want the photographer to retouch and deliver.**
+**Veylo is exclusively a final-delivery platform for photographers and media studios.**
 
-It sits before the final Veylo Photo Story workflow.
+Veylo does not handle unedited client proofing, photo culling, or pre-delivery selection. The photographer finishes their shoot and editing first in their usual tools, then uses Veylo to present and deliver the completed shoot.
 
-The purpose is to make photo selection simple, organized, and professional instead of relying on WhatsApp screenshots, long filename lists, or back-and-forth messages.
+### The Core Flow
 
-### Core workflow
+1. **Photographer finishes editing the shoot**  
+   The photographer completes the photoshoot, selects their best images, edits, retouches, and color-grades them in their normal software (Lightroom, Photoshop, Capture One).
 
-The photographer first completes the shoot and performs a basic cull to remove obvious duplicates, missed-focus images, test shots, and photos they do not want the client to see.
+2. **Uploads the final photos**  
+   The photographer uploads the completed, high-resolution photographs directly to Veylo.
 
-They then upload the remaining **client proofs** to Veylo and create a **Selection Gallery**.
+3. **Creates a Photo Story**  
+   Veylo’s AI Director analyzes the finished collection, organizes the photos into meaningful acts and chapters, writes short editorial captions, applies tasteful photo motion, and pairs the story with music and optional voice narration. The photographer can preview and refine the presentation.
 
-The photographer can set:
+4. **Shares one link**  
+   The photographer generates a single shareable link and sends it directly to the client via WhatsApp, email, or DM.
 
-* client name
-* project/shoot title
-* maximum number of photos the client may select
-* optional selection deadline
-* optional password protection
-* optional watermark on proofs
-* whether downloads are allowed
+5. **Client watches, browses, and downloads**  
+   The client opens the link in their browser (nothing to install, works on any device). They first watch their cinematic Photo Story, then move directly into the full gallery to view, share, and download their high-resolution photos.
 
-Veylo then generates a private shareable link.
+### Key Capabilities
 
-The photographer sends that link to the client through WhatsApp, email, or any other channel.
-
-The client opens the gallery without needing a Veylo account, browses the photos, and selects the images they want.
-
-Each image can have a simple action such as:
-
-**Select**
-
-The interface should always show progress, for example:
-
-**12 of 15 selected**
-
-Once the client is satisfied, they tap:
-
-### **Submit Selection**
-
-Veylo confirms the final choice and sends the completed selection back to the photographer.
-
-The photographer then sees exactly which images were chosen and can begin final retouching.
-
-After editing, the photographer can upload or replace the selected proofs with the finished versions and continue into the normal Veylo final-delivery workflow.
-
-### Full Veylo workflow with Pre-Delivery
-
-**Shoot completed**
-↓
-**Photographer culls usable proofs**
-↓
-**Upload proofs to Veylo**
-↓
-**Create Client Selection Gallery**
-↓
-**Client selects preferred photos**
-↓
-**Client submits selection**
-↓
-**Photographer receives selected images**
-↓
-**Photographer performs final retouching**
-↓
-**Final edited photos are uploaded**
-↓
-**Veylo AI Director creates the Photo Story**
-↓
-**Photographer publishes final delivery**
-↓
-**Client receives Photo Story + final gallery + downloads**
-
-### Example
-
-A photographer shoots a birthday session and has 300 images.
-
-After basic culling, they choose 80 acceptable proofs.
-
-The client's package includes:
-
-**15 final edited photographs.**
-
-The photographer uploads the 80 proofs to Veylo and sets:
-
-> **Maximum selections: 15**
-
-The client receives a link and sees:
-
-> **Choose your 15 favorite photos**
-
-They browse the gallery and make their choices.
-
-As they select images, Veylo shows:
-
-**8/15 selected**  
-**12/15 selected**  
-**15/15 selected**  
-
-The client submits.
-
-The photographer receives:
-
-> **Amaka has completed her selection — 15 photos selected.**
-
-The photographer edits those 15 photos and then uses the finished images to create the client's cinematic Veylo Photo Story.
-
-### Proof watermarks
-
-Because these photos may not yet be fully edited or delivered, Veylo should support optional proof watermarks.
-
-For example:
-
-**PROOF — XYZ Photography**
-
-The watermark is shown only on the selection version.
-
-It should not appear on the final delivered photographs.
-
-### Client notes
-
-The client may optionally be allowed to leave a short note on a selected image.
-
-For example:
-
-> “Please make this one black and white.”
-
-or:
-
-> “Can you remove the person in the background?”
-
-This should remain lightweight. Veylo should not become a full project-management or messaging platform.
-
-### Photographer dashboard
-
-Selection projects should have clear statuses such as:
-
-**Waiting for Selection**
-
-**Selection in Progress**
-
-**Selection Submitted**
-
-**Editing**
-
-**Ready for Final Delivery**
-
-The photographer should be able to immediately see:
-
-* client name
-* number of proofs
-* selection limit
-* number selected
-* deadline
-* submission status
-
-For example:
-
-> **Amaka Birthday Shoot**  
-> 15 / 15 selected  
-> **Selection Submitted**  
-
-### Important product rule
-
-Veylo should not encourage photographers to upload literally every shutter press from a shoot.
-
-The photographer should first perform a basic cull and upload only the **proofs they are comfortable showing the client**.
-
-Veylo Pre-Delivery is a **proofing and selection tool**, not an AI culling tool in V1.
-
-### Product positioning
-
-This feature expands Veylo from being only a final-delivery product into a more complete photo-delivery workflow.
-
-Veylo now supports two major stages:
-
-**Pre-Delivery**  
-Client Proofing & Photo Selection  
-
-**Final Delivery**  
-Cinematic Photo Story + Gallery + Downloads  
-
-So Veylo's broader workflow becomes:
-
-> **Select. Finish. Premiere. Deliver.**
-
-And the main brand positioning still remains:
-
-# **Veylo — The Photo Delivery Platform for Photographers**
-
-Because Veylo now helps photographers manage both **what the client chooses before final editing** and **how the final photographs are delivered afterward**.
+* **Photo Story Presentation**: Turns finished photographs into an emotional, interactive, cinematic story with music, movement, and editorial captions.
+* **Full Gallery & High-Res Downloads**: Full gallery view where clients can view every delivered photo and download individual images or the complete shoot in original quality.
+* **Effortless Sharing**: Clients can easily share their story link with family and friends on WhatsApp, social media, or messaging apps.
+* **Privacy & Access Control**: Photographers can add password protection to stories for private deliveries or client confidentiality.
+* **Studio Branding**: Veylo Pro deliveries prominently feature the photographer’s studio name and branding rather than generic file-sharing interfaces.
 
 ---
 
@@ -1715,18 +1587,17 @@ Because Veylo now helps photographers manage both **what the client chooses befo
    If a sentence does not make complete, practical sense in real life, do not write it.
 
 2. **Zero Generic AI Fluff:**
-   Banned phrases include: *"elevate your workflow"*, *"unlock unparalleled synergy"*, *"seamlessly curate"*, *"tapestry of memories"*, *"emotional crescendo"*, *"demand excellence from proofing to premiere"*, and all similar robotic tropes.
+   Banned phrases include: *"elevate your workflow"*, *"unlock unparalleled synergy"*, *"seamlessly curate"*, *"tapestry of memories"*, *"emotional crescendo"*, *"demand excellence from delivery to showcase"*, and all similar robotic tropes.
 
 3. **100% Human-Like & Grounded:**
    Write like an authentic, observant human being. Speak plainly, directly, and with quiet confidence. Use terms photographers and clients actually use:
-   - *"Pick your 15 favorites"* (not *"Curate your bespoke selection matrix"*).
-   - *"Stop chasing clients on WhatsApp for screenshot circles"* (not *"Alleviate asynchronous feedback bottlenecks"*).
-   - *"Send a private link"* (not *"Deploy a friction-free client endpoint"*).
+   - *"Your Photo Story is ready"* (not *"Deploying bespoke delivery endpoints"*).
+   - *"No more awkward Google Drive links"* (not *"Eliminating digital asset distribution friction"*).
+   - *"Send a private link"* (not *"Provisioning personalized client touchpoints"*).
 
 4. **100% Logical Coherence:**
-   Every single claim must reflect how the app actually works. No contradictory statements, no fake pixel generation claims, and no confusion between proofing and final delivery.
+   Every single claim must reflect how the app actually works. No contradictory statements, no fake pixel generation claims, and no confusion about quotas, pricing, or features. Veylo is strictly a final-delivery platform for completed photoshoots.
 
 5. **Nigerian Photography Context:**
-   Keep the product grounded in Nigerian photography reality: Naira pricing (₦20,000/mo), WhatsApp delivery, mobile data mindfulness, and authentic celebration culture (traditional weddings, 30th birthdays, lookbooks, owambe events).
-
+   Keep the product grounded in Nigerian photography reality: Naira pricing (₦25,000/mo), WhatsApp delivery, mobile data mindfulness, and authentic celebration culture (traditional weddings, 30th birthdays, lookbooks, owambe events).
 

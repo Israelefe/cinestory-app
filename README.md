@@ -1,10 +1,10 @@
-# 🎬 CineStory.ai — Standalone AI Photo Story SaaS
+# CineStory.ai — Standalone AI Photo Story SaaS
 
-A complete standalone platform that turns photoshoot pictures into interactive, music-synced, Spotify Wrapped-style cinematic premiere reels.
+A complete standalone platform that turns photoshoot pictures into interactive, music-synced, Spotify Wrapped-style cinematic showcase reels.
 
 ---
 
-## 🚀 Quick Start (Local Development)
+## Quick Start (Local Development)
 
 ### 1. Start the Backend Server
 ```bash
@@ -26,7 +26,7 @@ Frontend runs at `http://localhost:5173`.
 
 ---
 
-## 📁 Project Architecture
+## Project Architecture
 
 ```
 StoryApp/
@@ -50,7 +50,7 @@ StoryApp/
 
 ---
 
-## 🌐 Deployment Guide
+## Deployment Guide
 
 1. **Frontend (Vercel / Netlify):**
    - Root Directory: `StoryApp/client`

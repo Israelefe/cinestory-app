@@ -1,349 +1,248 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Play, Pause, Volume2, VolumeX, Download, Share2, Sparkles, X, Grid, Eye, EyeOff } from 'lucide-react';
-import api from '../services/api.js';
-import { API_BASE_URL } from '../config/env.js';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { Play, Pause, Volume2, VolumeX, Download, Share2, X, Grid, RotateCcw, ChevronLeft, ChevronRight, ArrowUpRight, Film, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'react-toastify';
+import api from '../services/api.js';
+import { DEMO_PRESETS } from '../constants/demoStories.js';
+import { useDialogFocus } from '../components/useDialogFocus.js';
+export { DEMO_PRESETS } from '../constants/demoStories.js';
 
-export default function StoryViewer() {
-  const { storyId } = useParams();
-  const navigate = useNavigate();
-  const [story, setStory] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+function mediaUrl(value) {
+ if (typeof value !== 'string' || !value) return '';
+ try { const url = new URL(value, window.location.origin); return url.protocol === 'https:' || (url.origin === window.location.origin && url.protocol === 'http:') ? url.href : ''; } catch { return ''; }
+}
+function GalleryDialog({ photos, clientName, demoId, onClose, onDownload, downloading, onDownloadAll, allDownloading }) {
+ const panel = useRef(null);
+ const [selected, setSelected] = useState(null);
+ useDialogFocus(true, panel, onClose);
+ return <motion.div className="v-gallery-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}><div className="v-gallery-dialog" ref={panel} role="dialog" aria-modal="true" aria-labelledby="gallery-title" tabIndex={-1}><header className="v-gallery-header"><div><p className="v-eyebrow">{clientName}</p><h2 id="gallery-title">{selected === null ? 'The photographs.' : 'A closer look.'}</h2></div><button className="v-view-icon" onClick={onClose} aria-label="Close gallery"><X size={21} /></button></header>{selected === null ? <><div className="v-gallery-grid">{photos.map((photo, i) => <div key={photo.id || i}><button className="v-gallery-image" onClick={() => setSelected(i)} aria-label={'View photograph ' + (i + 1)}><img src={demoId ? '/veylo/web/demo-' + demoId + '-' + (i + 1) + '-480.webp' : mediaUrl(photo.thumbnailUrl || photo.url)} alt={photo.caption || 'Photograph ' + (i + 1)} loading="lazy" decoding="async" /></button><button className="v-gallery-download" onClick={() => onDownload(i)} disabled={downloading === i || allDownloading}><span>{String(i + 1).padStart(2, '0')}</span>{downloading === i ? 'Preparing…' : 'Download'}<Download size={14} /></button></div>)}</div><footer className="v-gallery-footer"><p>Download the uploaded photographs.<br /><span>Your browser may ask you to allow multiple downloads.</span></p><button className="v-button" onClick={onDownloadAll} disabled={allDownloading || downloading !== null}>{allDownloading ? 'Preparing downloads…' : 'Download all'}<Download size={17} /></button></footer></> : <div className="v-lightbox"><img src={mediaUrl(photos[selected].url)} alt={photos[selected].caption || 'Photograph ' + (selected + 1)} /><div className="v-lightbox-controls"><button className="v-view-icon" onClick={() => setSelected(Math.max(0, selected - 1))} disabled={selected === 0} aria-label="Previous photograph"><ChevronLeft size={20} /></button><button className="v-gallery-download" onClick={() => setSelected(null)}>Back to gallery</button><button className="v-view-icon" onClick={() => setSelected(Math.min(photos.length - 1, selected + 1))} disabled={selected === photos.length - 1} aria-label="Next photograph"><ChevronRight size={20} /></button></div></div>}</div></motion.div>;
+}
 
-  const [hasStarted, setHasStarted] = useState(false);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [isManuallyPaused, setIsManuallyPaused] = useState(false);
-  const [isHoldingScreen, setIsHoldingScreen] = useState(false);
-  const isPaused = isManuallyPaused || isHoldingScreen;
-  const [progress, setProgress] = useState(0);
+const STORY_LAYOUTS = ['cinema', 'poster', 'split', 'collage'];
+const TEXT_STYLES = ['typewriter', 'editorial_quote', 'neon_pop', 'cinematic_drift', 'minimal_clean', 'bold_banner'];
+const TEXT_BACKGROUNDS = ['frosted_glass', 'solid_dark', 'neon_pill', 'transparent_shadow', 'vogue_bordered'];
+const CAPTION_POSITIONS = ['top', 'middle', 'bottom', 'left', 'right'];
+const safeChoice = (value, choices, fallback) => choices.includes(value) ? value : fallback;
+const sceneLayout = (photo, index) => safeChoice(photo?.sceneLayout || photo?.layout, STORY_LAYOUTS, STORY_LAYOUTS[index % STORY_LAYOUTS.length]);
 
-  const [isMuted, setIsMuted] = useState(false);
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-  const [hideCaptions, setHideCaptions] = useState(false);
+function SceneTransition({ kind, accent, reduced }) {
+ if (reduced) return null;
+ const transitionKind = ['cut', 'fade', 'slide_left', 'rise', 'scale'].includes(kind) ? kind : 'fade';
+ return <div className={'v-story-transition is-' + transitionKind} style={{ '--transition-accent': accent }} aria-hidden="true">
+  {transitionKind === 'cut' && <><motion.i className="v-story-transition-flash" initial={{ opacity: .82 }} animate={{ opacity: 0 }} transition={{ duration: .34, ease: 'easeOut' }} /><motion.i className="v-story-transition-cutline" initial={{ scaleX: 0, opacity: 1 }} animate={{ scaleX: 1, opacity: 0 }} transition={{ scaleX: { duration: .38, ease: [0.22, 1, 0.36, 1] }, opacity: { delay: .3, duration: .14 } }} /></>}
+  {transitionKind === 'fade' && <motion.i className="v-story-transition-veil" initial={{ opacity: 1, scale: 1.08 }} animate={{ opacity: 0, scale: 1 }} transition={{ duration: .72, ease: [0.22, 1, 0.36, 1] }} />}
+  {transitionKind === 'slide_left' && <><motion.i className="v-story-transition-panel is-one" initial={{ x: '0%' }} animate={{ x: '-104%' }} transition={{ duration: .72, ease: [0.76, 0, 0.24, 1] }} /><motion.i className="v-story-transition-panel is-two" initial={{ x: '0%' }} animate={{ x: '104%' }} transition={{ duration: .78, delay: .06, ease: [0.76, 0, 0.24, 1] }} /></>}
+  {transitionKind === 'rise' && <><motion.i className="v-story-transition-rise is-one" initial={{ y: '0%' }} animate={{ y: '-104%' }} transition={{ duration: .76, ease: [0.76, 0, 0.24, 1] }} /><motion.i className="v-story-transition-rise is-two" initial={{ y: '0%' }} animate={{ y: '104%' }} transition={{ duration: .76, delay: .08, ease: [0.76, 0, 0.24, 1] }} /></>}
+  {transitionKind === 'scale' && <motion.i className="v-story-transition-iris" initial={{ clipPath: 'circle(145% at 50% 50%)' }} animate={{ clipPath: 'circle(0% at 50% 50%)' }} transition={{ duration: .84, ease: [0.76, 0, 0.24, 1] }} />}
+ </div>;
+}
 
-  // Swipe Gestures
-  const [touchStart, setTouchStart] = useState(null);
-  const [touchEnd, setTouchEnd] = useState(null);
+function AnimatedStoryText({ text, mode, animation, reduced }) {
+ const effect = animation || ({ cinema: 'word_fade_up', poster: 'scale_pop', split: 'smooth_slide', collage: 'letter_drift' }[mode]);
+ const starts = {
+  word_fade_up: { opacity: 0, y: 24 },
+  scale_pop: { opacity: 0, scale: .72, rotate: -2 },
+  smooth_slide: { opacity: 0, x: 24 },
+  blur_reveal: { opacity: 0, y: 12, filter: 'blur(9px)' },
+  letter_drift: { opacity: 0, y: -14, rotate: 2 }
+ };
+ if (reduced) return <h2>{text}</h2>;
+ if (effect === 'typewriter') {
+  let letterIndex = 0;
+  return <h2 className="v-story-typewriter">{text.split(/\s+/).map((word, wordIndex, words) => <span className="v-story-type-word" key={wordIndex}>{[...word].map(character => {
+   const delay = Math.min(letterIndex++, 54) * .026;
+   return <motion.span className="v-story-type-character" key={letterIndex} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: .06, delay }}>{character}</motion.span>;
+  })}{wordIndex < words.length - 1 ? '\u00a0' : ''}</span>)}</h2>;
+ }
+ const byLetter = effect === 'letter_drift';
+ const units = byLetter ? [...text] : text.split(/\s+/);
+ return <motion.h2 initial="hidden" animate="visible" variants={{ visible: { transition: { staggerChildren: byLetter ? .018 : .055, delayChildren: .12 } } }}>{units.map((unit, i) => <motion.span className="v-story-word" key={i} variants={{ hidden: starts[effect] || starts.word_fade_up, visible: { opacity: 1, x: 0, y: 0, scale: 1, rotate: 0, filter: 'blur(0px)', transition: { type: 'spring', damping: 22, stiffness: 190 } } }}>{unit === ' ' ? '\u00a0' : unit}{!byLetter && i < units.length - 1 ? '\u00a0' : ''}</motion.span>)}</motion.h2>;
+}
 
-  const [showGridDrawer, setShowGridDrawer] = useState(false);
-  const [isDownloadingAll, setIsDownloadingAll] = useState(false);
+function StoryScene({ demo, demoId, photos, photo, index, mode, started, finished, reduced, displaySrc, displaySet, motionForPhoto, accent }) {
+ const adjacentIndex = index < photos.length - 1 ? index + 1 : Math.max(0, index - 1);
+ const adjacentSrc = demo ? '/veylo/web/demo-' + demoId + '-' + (adjacentIndex + 1) + '-960.webp' : mediaUrl(photos[adjacentIndex]?.url);
+ const finaleIndexes = [...new Set([0, Math.floor((photos.length - 1) / 2), photos.length - 1])];
+ const finaleSource = i => demo ? '/veylo/web/demo-' + demoId + '-' + (i + 1) + '-960.webp' : mediaUrl(photos[i]?.thumbnailUrl || photos[i]?.url);
+ const duration = Math.max(2, Number(photo?.duration) || 5.5);
+ const focus = photo?.focalPoint || photo?.visualAnalysis?.focalPoint || '50% 50%';
+ const adjacentFocus = photos[adjacentIndex]?.focalPoint || photos[adjacentIndex]?.visualAnalysis?.focalPoint || '50% 50%';
+ const photoTransition = { duration: reduced ? 0 : duration, ease: 'linear' };
+ const adjacentMotion = reduced ? { scale: 1, x: 0, y: 0 } : index % 2 === 0 ? { scale: [1.04, 1.13], x: ['2%', '-2%'] } : { scale: [1.13, 1.04], y: ['-2%', '2%'] };
 
-  const audioRef = useRef(null);
+ if (!started) return <div className="v-story-scene is-cover"><img className="v-story-scene-backdrop v-story-cover-backdrop" src={displaySrc} alt="" aria-hidden="true" /><motion.div className="v-story-cover-photo" initial={reduced ? false : { opacity: .35, filter: 'blur(10px) brightness(.65)' }} animate={{ opacity: 1, filter: 'blur(0px) brightness(1)' }} transition={{ duration: reduced ? 0 : 1.1, ease: [0.22, 1, 0.36, 1] }}><motion.img src={displaySrc} srcSet={displaySet} sizes="(max-width: 767px) 100vw, 58vw" style={{ objectPosition: focus }} alt={photo?.caption || 'Opening photograph'} animate={motionForPhoto} transition={{ duration: reduced ? 0 : Math.max(8, duration * 1.4), ease: 'easeInOut', repeat: reduced ? 0 : Infinity, repeatType: 'mirror' }} draggable="false" /></motion.div><motion.i className="v-story-cover-line" initial={reduced ? false : { scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ duration: reduced ? 0 : 1.1, delay: reduced ? 0 : .3, ease: [0.22, 1, 0.36, 1] }} /></div>;
 
-  useEffect(() => {
-    const fetchStory = async () => {
-      try {
-        setLoading(true);
-        const res = await api.get(`/v1/stories/public/${storyId}`);
-        if (res.data?.success) {
-          setStory(res.data.data);
-        } else {
-          setError('Story not found');
-        }
-      } catch (err) {
-        setError('Story not available');
-      } finally {
-        setLoading(false);
-      }
-    };
-    if (storyId) fetchStory();
-  }, [storyId]);
+ if (finished) return <motion.div className="v-story-scene v-story-finale" initial={reduced ? false : { opacity: 0, scale: .94 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: reduced ? 0 : .7, ease: [0.22, 1, 0.36, 1] }}>
+  <div className="v-story-finale-number" aria-hidden="true">END</div>
+  <div className="v-story-finale-photos">{finaleIndexes.map((photoIndex, i) => <motion.figure key={photoIndex} initial={reduced ? false : { opacity: 0, y: 42, rotate: (i - 1) * 7 }} animate={{ opacity: 1, y: 0, rotate: (i - 1) * 4 }} transition={{ type: 'spring', damping: 24, stiffness: 150, delay: reduced ? 0 : i * .1 }}><motion.img src={finaleSource(photoIndex)} alt="" animate={reduced ? { scale: 1 } : { scale: i === 1 ? [1.03, 1.11] : [1.11, 1.03], x: i === 0 ? ['2%', '-2%'] : i === 2 ? ['-2%', '2%'] : 0 }} transition={{ duration: reduced ? 0 : 8 + i, ease: 'easeInOut', repeat: reduced ? 0 : Infinity, repeatType: 'mirror' }} /></motion.figure>)}</div>
+ </motion.div>;
 
-  const totalSlides = (story?.photos?.length || 0) + 1;
-  const isFinaleSlide = currentIndex === (story?.photos?.length || 0);
-  const currentPhoto = story?.photos?.[currentIndex];
-  const themeAccent = story?.theme?.accentColor || '#A24CF3';
-  const themeGlow = story?.theme?.glowColor || 'rgba(162, 76, 243, 0.35)';
+ const transitionKind = ['cut', 'fade', 'slide_left', 'rise', 'scale'].includes(photo?.transition) ? photo.transition : 'fade';
+ const sceneEntrance = transitionKind === 'slide_left' ? { opacity: .55, x: '5%', scale: 1.035 } : transitionKind === 'rise' ? { opacity: .55, y: '4%', scale: 1.035 } : transitionKind === 'scale' ? { opacity: .5, scale: 1.08 } : { opacity: .55, scale: 1.025 };
+ return <AnimatePresence mode="wait"><motion.div key={demoId + ':' + index} className={'v-story-scene is-' + mode + ' transition-' + transitionKind + (index === 0 ? ' is-opening-frame' : '')} initial={reduced ? false : sceneEntrance} animate={{ opacity: 1, x: 0, y: 0, scale: 1 }} exit={{ opacity: 0, scale: .985 }} transition={{ duration: reduced ? 0 : .58, ease: [0.22, 1, 0.36, 1] }}>
+  {mode === 'cinema' && <><img className="v-story-scene-backdrop v-story-cinema-backdrop" src={displaySrc} alt="" aria-hidden="true" /><motion.div className="v-story-cinema-photo" initial={reduced ? false : { clipPath: 'inset(0 0 100% 0)', scale: 1.06 }} animate={{ clipPath: 'inset(0 0 0% 0)', scale: 1 }} transition={{ duration: reduced ? 0 : .85, ease: [0.22, 1, 0.36, 1] }}><motion.img src={displaySrc} srcSet={displaySet} sizes="(max-width: 767px) 100vw, 52vw" style={{ objectPosition: focus }} alt={photo?.caption || 'Photograph ' + (index + 1)} animate={motionForPhoto} transition={photoTransition} draggable="false" /></motion.div><span className="v-story-cinema-number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span><span className="v-story-cinema-label">{index === 0 ? 'Opening frame' : 'Story frame'}</span><motion.i className="v-story-cinema-sweep" initial={reduced ? false : { scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ duration: reduced ? 0 : .9, delay: reduced ? 0 : .2, ease: [0.22, 1, 0.36, 1] }} /></>}
+  {mode === 'poster' && <><img className="v-story-scene-backdrop" src={displaySrc} alt="" aria-hidden="true" /><motion.figure className="v-story-poster-card" initial={reduced ? false : { y: 70, rotate: 5, scale: .86 }} animate={{ y: 0, rotate: -2, scale: 1 }} transition={{ type: 'spring', damping: 23, stiffness: 125 }}><motion.img src={displaySrc} srcSet={displaySet} style={{ objectPosition: focus }} alt={photo?.caption || 'Photograph ' + (index + 1)} animate={motionForPhoto} transition={photoTransition} draggable="false" /></motion.figure><span className="v-story-scene-number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span></>}
+  {mode === 'split' && <><motion.div className="v-story-split-photo" initial={reduced ? false : { x: '-22%', scale: 1.08 }} animate={{ x: 0, scale: 1 }} transition={{ duration: reduced ? 0 : .7, ease: [0.22, 1, 0.36, 1] }}><motion.img src={displaySrc} srcSet={displaySet} style={{ objectPosition: focus }} alt={photo?.caption || 'Photograph ' + (index + 1)} animate={motionForPhoto} transition={photoTransition} draggable="false" /></motion.div><motion.div className="v-story-split-panel" initial={reduced ? false : { y: '100%' }} animate={{ y: 0 }} transition={{ duration: reduced ? 0 : .65, ease: [0.22, 1, 0.36, 1] }}><span aria-hidden="true">{String(index + 1).padStart(2, '0')}</span></motion.div></>}
+  {mode === 'collage' && <><div className="v-story-collage-backdrop" /><motion.figure className="v-story-collage-main" initial={reduced ? false : { x: '-35%', rotate: -9, scale: .84 }} animate={{ x: 0, rotate: -3, scale: 1 }} transition={{ type: 'spring', damping: 22, stiffness: 120 }}><motion.img src={displaySrc} style={{ objectPosition: focus }} alt={photo?.caption || 'Photograph ' + (index + 1)} animate={motionForPhoto} transition={photoTransition} draggable="false" /></motion.figure><motion.figure className="v-story-collage-side" initial={reduced ? false : { x: '45%', rotate: 10, opacity: 0 }} animate={{ x: 0, rotate: 4, opacity: 1 }} transition={{ type: 'spring', damping: 24, stiffness: 125, delay: reduced ? 0 : .12 }}><motion.img src={adjacentSrc} style={{ objectPosition: adjacentFocus }} alt="" aria-hidden="true" animate={adjacentMotion} transition={photoTransition} draggable="false" /></motion.figure><span className="v-story-scene-number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span></>}
+  <SceneTransition kind={transitionKind} accent={accent} reduced={reduced} />
+ </motion.div></AnimatePresence>;
+}
+export default function StoryViewer({ demoMode = false }) {
+ const { storyId } = useParams();
+ const [params] = useSearchParams();
+ const location = useLocation();
+ const navigate = useNavigate();
+ const demo = demoMode || storyId === 'demo';
+ const demoId = DEMO_PRESETS.some(p => p.id === params.get('preset')) ? params.get('preset') : 'ada';
 
-  const startPlayback = () => {
-    setHasStarted(true);
-    setCurrentIndex(0);
-    setProgress(0);
-    if (audioRef.current) {
-      audioRef.current.currentTime = 0;
-      audioRef.current.muted = false;
-      audioRef.current.play().then(() => setIsPlayingAudio(true)).catch(() => {});
-    }
+ const isFromFormats =
+  location.state?.from === 'formats' ||
+  params.get('from') === 'formats' ||
+  Boolean(location.state?.returnTo?.includes('/formats'));
+ const isFromNiche =
+  location.state?.from === 'niche' ||
+  Boolean(location.state?.returnTo?.startsWith('/for/'));
+
+ const backDestination = location.state?.returnTo ||
+  (isFromFormats ? '/formats#photo-story' : (demo ? '/#photo-story' : '/'));
+
+ const handleBack = (e) => {
+  if (window.history.length > 1 && (isFromFormats || isFromNiche)) {
+   e.preventDefault();
+   navigate(-1);
+  }
+ };
+
+ const reduced = useReducedMotion();
+ const [story, setStory] = useState(null);
+ const [loading, setLoading] = useState(true);
+ const [error, setError] = useState('');
+ const [started, setStarted] = useState(false);
+ const [index, setIndex] = useState(0);
+ const [paused, setPaused] = useState(false);
+ const [finished, setFinished] = useState(false);
+ const [muted, setMuted] = useState(false);
+ const [audioPlaying, setAudioPlaying] = useState(false);
+ const [captions, setCaptions] = useState(true);
+ const [gallery, setGallery] = useState(false);
+ const [holding, setHolding] = useState(false);
+ const [downloading, setDownloading] = useState(null);
+ const [allDownloading, setAllDownloading] = useState(false);
+ const [hidden, setHidden] = useState(document.hidden);
+ const audio = useRef(null);
+ const progress = useRef(null);
+ const elapsed = useRef(0);
+ const touch = useRef(null);
+ const stage = useRef(null);
+ const photos = story?.photos || [];
+ const photo = photos[index];
+ const running = started && !paused && !finished && !gallery && !holding && !hidden;
+ useEffect(() => {
+  const visibility = () => setHidden(document.hidden);
+  document.addEventListener('visibilitychange', visibility);
+  return () => document.removeEventListener('visibilitychange', visibility);
+ }, []);
+ useEffect(() => {
+  let active = true;
+  setStarted(false); setIndex(0); setPaused(false); setFinished(false); setGallery(false); setError(''); setLoading(true); elapsed.current = 0;
+  if (demo) { setStory(DEMO_PRESETS.find(p => p.id === demoId)); setLoading(false); }
+  else api.get('/v1/stories/public/' + encodeURIComponent(storyId)).then(res => {
+   if (!active) return;
+   if (!res.data?.success || !Array.isArray(res.data.data?.photos) || !res.data.data.photos.length) throw new Error('Story not found');
+   setStory(res.data.data); setLoading(false);
+  }).catch(() => { if (active) { setError('This story could not be opened. Check the link with the photographer.'); setLoading(false); } });
+  return () => { active = false; };
+ }, [demo, demoId, storyId]);
+ const go = useCallback(direction => {
+  elapsed.current = 0; setFinished(false); setIndex(current => Math.max(0, Math.min(photos.length - 1, current + direction)));
+  if (progress.current) progress.current.style.transform = 'scaleX(0)';
+ }, [photos.length]);
+ useEffect(() => {
+  if (!running) return;
+  let frame; let previous = performance.now();
+  const duration = Math.max(2, Math.min(30, Number(photo?.duration) || 5.5)) * 1000;
+  const tick = now => {
+   elapsed.current += now - previous; previous = now;
+   if (progress.current) progress.current.style.transform = 'scaleX(' + Math.min(1, elapsed.current / duration) + ')';
+   if (elapsed.current >= duration) {
+    elapsed.current = 0;
+    if (index >= photos.length - 1) setFinished(true); else setIndex(i => i + 1);
+    return;
+   }
+   frame = requestAnimationFrame(tick);
   };
-
-  useEffect(() => {
-    if (!audioRef.current || isMuted || !hasStarted) return;
-    if (isPaused || showGridDrawer) {
-      audioRef.current.pause();
-      setIsPlayingAudio(false);
-    } else {
-      audioRef.current.play().then(() => setIsPlayingAudio(true)).catch(() => {});
-    }
-  }, [isPaused, showGridDrawer, isMuted, hasStarted]);
-
-  useEffect(() => {
-    if (!hasStarted || isPaused || isFinaleSlide || showGridDrawer) return;
-    const duration = (currentPhoto?.duration || 5.5) * 1000;
-    const intervalTime = 50;
-    const increment = (intervalTime / duration) * 100;
-
-    const timer = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          if (currentIndex < totalSlides - 1) setCurrentIndex((c) => c + 1);
-          else setCurrentIndex(0);
-          return 0;
-        }
-        return prev + increment;
-      });
-    }, intervalTime);
-
-    return () => clearInterval(timer);
-  }, [hasStarted, isPaused, currentIndex, currentPhoto, isFinaleSlide, showGridDrawer]);
-
-  const handleNextSlide = () => {
-    setProgress(0);
-    if (currentIndex < totalSlides - 1) {
-      setCurrentIndex((c) => c + 1);
-    } else {
-      setCurrentIndex(0);
-    }
+  frame = requestAnimationFrame(tick);
+  return () => cancelAnimationFrame(frame);
+ }, [running, index, photo?.duration, photos.length]);
+ useEffect(() => {
+  const element = audio.current;
+  if (!element) return;
+  element.muted = muted;
+  if (running && !muted) element.play().then(() => setAudioPlaying(true)).catch(() => setAudioPlaying(false));
+  else { element.pause(); setAudioPlaying(false); }
+ }, [running, muted, story]);
+ useEffect(() => {
+  const handle = e => {
+   if (gallery || /INPUT|TEXTAREA|SELECT|BUTTON|A/.test(e.target.tagName)) return;
+   if (e.key === 'ArrowRight' && started) { e.preventDefault(); go(1); }
+   if (e.key === 'ArrowLeft' && started) { e.preventDefault(); go(-1); }
+   if (e.code === 'Space' && started) { e.preventDefault(); setPaused(p => !p); }
   };
-
-  const handlePrevSlide = () => {
-    setProgress(0);
-    if (currentIndex > 0) {
-      setCurrentIndex((c) => c - 1);
-    } else {
-      setCurrentIndex(totalSlides - 1);
-    }
-  };
-
-  // Swipe handlers (Swipe Left -> Next, Swipe Right -> Prev)
-  const minSwipeDistance = 45;
-  const onTouchStart = (e) => {
-    setTouchEnd(null);
-    if (e.targetTouches && e.targetTouches.length > 0) {
-      setTouchStart(e.targetTouches[0].clientX);
-    }
-  };
-  const onTouchMove = (e) => {
-    if (e.targetTouches && e.targetTouches.length > 0) {
-      setTouchEnd(e.targetTouches[0].clientX);
-    }
-  };
-  const onTouchEnd = () => {
-    if (touchStart === null || touchEnd === null) return;
-    const distance = touchStart - touchEnd;
-    if (distance > minSwipeDistance) {
-      handleNextSlide();
-    } else if (distance < -minSwipeDistance) {
-      handlePrevSlide();
-    }
-    setTouchStart(null);
-    setTouchEnd(null);
-  };
-
-  const handleDownloadAll = async () => {
-    if (!story?.photos?.length || isDownloadingAll) return;
-    try {
-      setIsDownloadingAll(true);
-      toast.info('Downloading all master photos...');
-      for (let i = 0; i < story.photos.length; i++) {
-        const p = story.photos[i];
-        const res = await fetch(p.url);
-        const blob = await res.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${story.clientName}_Photo_${i + 1}.jpg`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-        await new Promise((r) => setTimeout(r, 350));
-      }
-      api.post(`/v1/stories/public/${storyId}/track-download`).catch(() => {});
-      toast.success('🎉 All master photos downloaded!');
-    } catch (e) {
-      toast.error('Download error');
-    } finally {
-      setIsDownloadingAll(false);
-    }
-  };
-
-  if (loading) return <div className='fixed inset-0 bg-black text-white flex items-center justify-center font-bold'>Loading Cinematic Story...</div>;
-  if (error || !story) return <div className='fixed inset-0 bg-black text-white flex flex-col items-center justify-center p-6 text-center'><h2 className='text-xl font-bold mb-2'>Story Unavailable</h2><Link to='/' className='px-6 py-2 rounded-full bg-white text-black text-xs font-bold'>Go Home</Link></div>;
-
-  return (
-    <div
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
-      className='fixed inset-0 w-screen h-[100dvh] bg-[#070709] text-white flex items-center justify-center select-none overflow-hidden touch-none z-50'>
-      
-      {story.soundtrack?.audioUrl && (
-        <audio
-          ref={audioRef}
-          src={story.soundtrack.audioUrl.startsWith('http') ? `${API_BASE_URL}/v1/stories/proxy/audio-stream?url=${encodeURIComponent(story.soundtrack.audioUrl)}` : story.soundtrack.audioUrl}
-          loop
-          preload='auto'
-          playsInline
-          className='hidden'
-        />
-      )}
-
-      {/* Main Story Canvas */}
-      <div
-        onMouseDown={() => hasStarted && setIsHoldingScreen(true)}
-        onMouseUp={() => hasStarted && setIsHoldingScreen(false)}
-        onTouchStart={() => hasStarted && setIsHoldingScreen(true)}
-        onTouchEnd={() => hasStarted && setIsHoldingScreen(false)}
-        className='relative w-full h-full lg:max-w-[420px] lg:h-[92vh] lg:rounded-3xl overflow-hidden bg-black shadow-2xl flex flex-col justify-between border-0 lg:border lg:border-white/15'>
-        
-        {/* Top Bar */}
-        <div className='relative z-40 px-4 pt-3.5 pb-2.5 bg-gradient-to-b from-black/90 to-transparent space-y-2.5 pointer-events-auto'>
-          {/* Progress */}
-          <div className='flex gap-1.5'>
-            {Array.from({ length: totalSlides }).map((_, idx) => (
-              <div key={idx} className='flex-1 h-[2.5px] rounded-full bg-white/25 overflow-hidden'>
-                <div className='h-full transition-all duration-75' style={{ backgroundColor: idx === currentIndex ? themeAccent : '#FFFFFF', width: idx < currentIndex ? '100%' : idx === currentIndex ? `${progress}%` : '0%' }} />
-              </div>
-            ))}
-          </div>
-
-          {/* Header */}
-          <div className='flex items-center justify-between text-white'>
-            <div className='flex items-center gap-2 min-w-0'>
-              <div className='w-8 h-8 rounded-full p-[2px]' style={{ background: `linear-gradient(135deg, ${themeAccent}, #F59E0B)` }}>
-                <div className='w-full h-full bg-black rounded-full flex items-center justify-center text-[10px] font-black'>✦</div>
-              </div>
-              <div className='truncate'>
-                <p className='text-xs font-bold truncate leading-none'>{story.clientName}</p>
-                <p className='text-[10px] text-white/70 truncate mt-1 leading-none'>{story.occasion}</p>
-              </div>
-            </div>
-
-            <div className='flex items-center gap-1.5'>
-              {hasStarted && !isFinaleSlide && (
-                <button onClick={(e) => { e.stopPropagation(); setHideCaptions((h) => !h); }} className='w-7 h-7 rounded-full bg-black/40 flex items-center justify-center'>
-                  {hideCaptions ? <EyeOff size={13}/> : <Eye size={13}/>}
-                </button>
-              )}
-              {hasStarted && (
-                <button onClick={(e) => { e.stopPropagation(); setIsManuallyPaused((p) => !p); }} className='w-7 h-7 rounded-full bg-black/40 flex items-center justify-center'>
-                  {isManuallyPaused ? <Play size={12}/> : <Pause size={12}/>}
-                </button>
-              )}
-              <button onClick={(e) => { e.stopPropagation(); navigate('/'); }} className='w-7 h-7 rounded-full bg-black/40 flex items-center justify-center'>
-                <X size={13}/>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Cover / Slide / Finale */}
-        <div className='absolute inset-0 z-10 flex items-center justify-center bg-black overflow-hidden'>
-          {!hasStarted && (
-            <div onClick={startPlayback} className='w-full h-full p-6 flex flex-col justify-between items-center text-center relative cursor-pointer'>
-              {story.photos?.[0] && <img src={story.photos[0].url} alt='' className='absolute inset-0 w-full h-full object-cover opacity-45 filter blur-[3px]' />}
-              <div className='absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent' />
-              <div className='mt-12 z-20 space-y-2'>
-                <span className='px-3 py-1 rounded-full bg-white/10 text-[10px] font-black uppercase tracking-widest' style={{ color: themeAccent }}>CINEMATIC PREMIERE</span>
-                <h1 className='text-3xl font-black text-white font-serif'>{story.clientName}</h1>
-                <p className='text-xs text-white/80 font-medium'>{story.occasion}</p>
-              </div>
-              <div className='mb-12 z-20 w-full max-w-xs'>
-                <button className='w-full py-4 rounded-2xl text-white font-extrabold text-sm shadow-xl flex items-center justify-center gap-2' style={{ background: `linear-gradient(135deg, ${themeAccent}, #7E2CD8)` }}>
-                  <Play size={16}/> Watch Premiere
-                </button>
-              </div>
-            </div>
-          )}
-
-          {hasStarted && !isFinaleSlide && currentPhoto && (
-            <>
-              <motion.img
-                key={currentIndex}
-                src={currentPhoto.url}
-                alt=''
-                initial={{ scale: 1.02, opacity: 0 }}
-                animate={{ scale: 1.1, opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 5.5, ease: 'linear' }}
-                className='absolute inset-0 w-full h-full object-cover'
-              />
-              <div className='absolute inset-x-0 bottom-0 h-36 bg-gradient-to-t from-black/80 to-transparent pointer-events-none' />
-              
-              {!hideCaptions && currentPhoto.caption && (
-                <div className='absolute bottom-5 inset-x-3 z-30 pointer-events-none'>
-                  <div className='max-w-sm mx-auto px-4 py-2.5 rounded-2xl bg-black/65 backdrop-blur-xl border border-white/15 text-left space-y-1'>
-                    <span className='text-[10px] font-black uppercase' style={{ color: themeAccent }}>✦ {currentPhoto.chapterTitle}</span>
-                    <p className='text-xs sm:text-sm font-medium text-white'>{currentPhoto.caption}</p>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
-          {hasStarted && isFinaleSlide && (
-            <div className='w-full h-full p-6 flex flex-col justify-between items-center text-center relative z-20'>
-              <div className='mt-24 space-y-3'>
-                <span className='text-[10px] font-black uppercase px-3 py-1 rounded-full bg-white/10' style={{ color: themeAccent }}>PREMIERE FINALE</span>
-                <h2 className='text-3xl font-black font-serif'>Thank You, {story.clientName}!</h2>
-                <p className='text-xs text-gray-400 max-w-xs'>{story.storySummary || 'All your master photoshoot captures are ready.'}</p>
-              </div>
-              <div className='w-full max-w-xs space-y-2 mb-8'>
-                <button onClick={handleDownloadAll} disabled={isDownloadingAll} className='w-full py-3.5 rounded-2xl bg-emerald-500 font-bold text-xs flex items-center justify-center gap-2'>
-                  <Download size={14}/> Download All Photos
-                </button>
-                <button onClick={() => setShowGridDrawer(true)} className='w-full py-3 rounded-2xl bg-white/10 text-xs font-bold flex items-center justify-center gap-2'>
-                  <Grid size={14}/> View Gallery
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Tap navigation (50% Left = Prev, 50% Right = Next) */}
-        {hasStarted && !isFinaleSlide && (
-          <div className='absolute inset-0 z-20 flex'>
-            <div
-              onClick={(e) => {
-                e.stopPropagation();
-                handlePrevSlide();
-              }}
-              className='w-1/2 h-full cursor-w-resize'
-              aria-label='Previous Slide'
-            />
-            <div
-              onClick={(e) => {
-                e.stopPropagation();
-                handleNextSlide();
-              }}
-              className='w-1/2 h-full cursor-e-resize'
-              aria-label='Next Slide'
-            />
-          </div>
-        )}
-      </div>
-
-      {/* Grid Drawer */}
-      <AnimatePresence>
-        {showGridDrawer && (
-          <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} className='fixed inset-0 z-50 bg-black text-white flex flex-col'>
-            <div className='p-4 border-b border-white/10 flex items-center justify-between'>
-              <h3 className='font-bold text-sm'>{story.title}</h3>
-              <button onClick={() => setShowGridDrawer(false)}><X size={18}/></button>
-            </div>
-            <div className='flex-1 p-4 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-3'>
-              {story.photos.map((p, idx) => (
-                <div key={idx} className='aspect-[4/5] rounded-xl overflow-hidden relative'>
-                  <img src={p.url} alt='' className='w-full h-full object-cover' />
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
+  document.addEventListener('keydown', handle); return () => document.removeEventListener('keydown', handle);
+ }, [gallery, started, go]);
+ const start = () => { setStarted(true); setPaused(false); setFinished(false); setIndex(0); elapsed.current = 0; if (audio.current) { audio.current.currentTime = 0; if (!muted) audio.current.play().then(() => setAudioPlaying(true)).catch(() => setAudioPlaying(false)); } };
+ const share = async () => {
+  const url = window.location.href;
+  try { if (navigator.share) await navigator.share({ title: story.title || 'A Veylo Photo Story', url }); else { await navigator.clipboard.writeText(url); toast.success('Story link copied.'); } } catch (e) { if (e.name !== 'AbortError') toast.info('Copy the link from your browser’s address bar to share this story.'); }
+ };
+ const download = async (i, quiet = false) => {
+  setDownloading(i);
+  try {
+   const url = mediaUrl(photos[i].url); if (!url) throw new Error('Invalid image');
+   const response = await fetch(url); if (!response.ok) throw new Error('Download failed');
+   const blob = await response.blob(); if (!blob.type.startsWith('image/')) throw new Error('Unsupported file');
+   const extension = ({'image/png':'png','image/webp':'webp','image/jpeg':'jpg'})[blob.type] || 'jpg';
+   const object = URL.createObjectURL(blob);
+   const a = document.createElement('a'); a.href = object; a.download = (story.clientName || 'Veylo').replace(/[^a-z0-9_-]/gi, '_').slice(0, 60) + '-' + (i + 1) + '.' + extension;
+   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(object), 30000);
+   if (!quiet) { toast.success('Download requested. Check your browser’s downloads.'); if (!demo) api.post('/v1/stories/public/' + encodeURIComponent(storyId) + '/track-download').catch(() => {}); }
+   return true;
+  } catch { toast.error('Couldn’t download this photograph. Please try again.'); return false; }
+  finally { setDownloading(null); }
+ };
+ const downloadAll = async () => {
+  if (allDownloading) return; setAllDownloading(true);
+  try { for (let i = 0; i < photos.length; i++) { if (!await download(i, true)) return; await new Promise(r => setTimeout(r, 250)); } toast.success('Downloads requested. Your browser may ask you to allow multiple files.'); if (!demo) api.post('/v1/stories/public/' + encodeURIComponent(storyId) + '/track-download').catch(() => {}); } finally { setAllDownloading(false); }
+ };
+ if (loading) return <div className="v-page-loading" role="status">Opening your Photo Story…</div>;
+ if (error || !story) return <div className="v-public v-view-error"><Film size={30} /><h1>This story isn’t available.</h1><p>{error}</p><Link className="v-button" to={backDestination}>Back to Veylo<ArrowUpRight size={17} /></Link></div>;
+ const displaySrc = demo ? '/veylo/web/demo-' + demoId + '-' + (index + 1) + '-960.webp' : mediaUrl(photo?.url);
+ const displaySet = demo ? [480, 960, 1440].map(w => '/veylo/web/demo-' + demoId + '-' + (index + 1) + '-' + w + '.webp ' + w + 'w').join(', ') : undefined;
+ const motionName = String(photo?.motion || photo?.zoomEffect || 'zoom_in').replaceAll('_', '-');
+ const motionForPhoto = reduced ? { scale: 1, x: 0, y: 0 } : motionName === 'pan-down' ? { scale: 1.16, y: ['-4%', '4%'] } : motionName === 'pan-up' ? { scale: 1.16, y: ['4%', '-4%'] } : motionName === 'pan-right' ? { scale: 1.16, x: ['-4%', '4%'] } : motionName === 'pan-left' ? { scale: 1.16, x: ['4%', '-4%'] } : motionName === 'zoom-out' ? { scale: [1.18, 1.03] } : { scale: [1.02, 1.16] };
+ const layoutMode = sceneLayout(photo, index);
+ const textStyle = safeChoice(photo?.typographyStyle, TEXT_STYLES, 'cinematic_drift');
+ const textBackground = safeChoice(photo?.textBackground, TEXT_BACKGROUNDS, 'transparent_shadow');
+ const captionPosition = safeChoice(photo?.captionPosition, CAPTION_POSITIONS, 'bottom');
+ const opening = story.opening || {};
+ const finale = story.finale || {};
+ return <div className="v-public v-story-shell" style={{ '--story-accent': photo?.colorAccent || story.theme?.accentColor || '#ff5a47', '--story-glow': photo?.glowColor || story.theme?.glowColor || 'rgba(255,90,71,.35)', '--story-secondary': photo?.secondaryColor || story.theme?.secondaryColor || '#151518' }}>
+ <div className="v-story-ambient" aria-hidden="true"><img src={displaySrc} alt="" /></div>
+ <main className="v-story-canvas" id="main-content" ref={stage} onPointerDown={e => { if (e.pointerType !== 'mouse') touch.current = { x: e.clientX, y: e.clientY }; if (started) setHolding(true); }} onPointerUp={e => { setHolding(false); if (touch.current) { const dx = e.clientX - touch.current.x; const dy = e.clientY - touch.current.y; if (started && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) go(dx < 0 ? 1 : -1); touch.current = null; } }} onPointerCancel={() => { setHolding(false); touch.current = null; }} onPointerLeave={() => setHolding(false)}>
+  <StoryScene demo={demo} demoId={demoId} photos={photos} photo={photo} index={index} mode={layoutMode} started={started} finished={finished} reduced={reduced} displaySrc={displaySrc} displaySet={displaySet} motionForPhoto={motionForPhoto} accent={photo?.colorAccent || story.theme?.accentColor || '#ff5a47'} />
+  <div className="v-story-shade" aria-hidden="true" />
+  <div className="v-story-progress" role="progressbar" aria-label="Photo Story progress" aria-valuemin={1} aria-valuemax={photos.length} aria-valuenow={index + 1}>{photos.map((_, i) => <span key={i} className={i < index ? 'is-done' : i === index ? 'is-current' : ''}><i ref={i === index ? progress : null} /></span>)}</div>
+  <header className="v-story-top"><div className="v-story-studio"><Link to={backDestination} onClick={handleBack} className="v-story-mark" aria-label={demo ? (isFromFormats ? 'Back to Photo Story on the formats page' : isFromNiche ? 'Back to the page you opened this story from' : 'Back to the Photo Story section on the homepage') : 'Veylo home'}><img src="/veylo/veylo-mark.svg" alt="" /></Link><div><strong>{story.clientName || story.title}</strong><span>{story.studioName || story.occasion}</span></div></div><div className="v-story-top-actions"><button onClick={() => setMuted(value => !value)} aria-label={muted ? 'Turn sound on' : 'Turn sound off'}>{muted ? <VolumeX size={17} /> : <Volume2 size={17} />}</button><button onClick={share} aria-label="Share story"><Share2 size={17} /></button></div></header>
+  {!started ? <section className="v-story-cover"><p className="v-story-kicker">{opening.eyebrow || (demo ? 'A Veylo Photo Story' : 'Your photographs are ready')}</p><h1>{opening.headline || story.clientName || story.title}</h1><p className="v-story-cover-occasion">{story.occasion}</p><p className="v-story-summary">{opening.copy || story.storySummary || 'Your finished photographs, brought together for you.'}</p><button className="v-story-primary" onClick={start}><Play size={18} fill="currentColor" />{opening.buttonLabel || 'Begin the story'}</button><p className="v-story-hint">{opening.hint || 'Turn your sound on. Tap either side to move through the story.'}</p></section> : <>
+   <button className="v-story-tap v-story-tap-left" onClick={() => go(-1)} disabled={index === 0} aria-label="Previous photograph" />
+   <button className="v-story-tap v-story-tap-right" onClick={() => go(1)} disabled={index === photos.length - 1} aria-label="Next photograph" />
+   <section key={finished ? 'finale' : 'caption-' + index} className={'v-story-caption is-' + layoutMode + ' is-type-' + textStyle + ' has-' + textBackground + ' position-' + captionPosition + ' ' + (!captions ? 'is-hidden ' : '') + (finished ? 'is-finale' : '')} aria-live={paused || finished ? 'polite' : 'off'}>{finished ? <><motion.p className="v-story-kicker" initial={reduced ? false : { opacity: 0, x: -18 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: reduced ? 0 : .18 }}>{finale.eyebrow || 'That’s the story'}</motion.p><AnimatedStoryText text={finale.headline || 'The full gallery is ready.'} mode="poster" animation={finale.textAnimation || 'word_fade_up'} reduced={reduced} /><motion.p initial={reduced ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: reduced ? 0 : .5 }}>{finale.copy || 'Take your time with every photograph. Save one, or keep the whole set.'}</motion.p><motion.button className="v-story-gallery-cta" onClick={() => setGallery(true)} initial={reduced ? false : { opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: reduced ? 0 : .65 }}>{finale.buttonLabel || 'Open your gallery'}<Grid size={16} /></motion.button></> : <><motion.p className="v-story-kicker" initial={reduced ? false : { opacity: 0, x: -18 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: reduced ? 0 : .08 }}>{photo?.chapterTitle || 'The photographs'}</motion.p><AnimatedStoryText text={photo?.caption || 'One more moment from the day.'} mode={layoutMode} animation={photo?.textAnimation} reduced={reduced} /></>}</section>
+   <div className={'v-story-controls ' + (finished ? 'is-finished' : '')}><button onClick={() => setCaptions(value => !value)} aria-label={captions ? 'Hide captions' : 'Show captions'}>{captions ? <Eye size={17} /> : <EyeOff size={17} />}</button><button className="v-story-play" onClick={finished ? start : () => setPaused(value => !value)} aria-label={finished ? 'Replay story' : paused ? 'Resume story' : 'Pause story'}>{finished ? <RotateCcw size={18} /> : paused ? <Play size={18} fill="currentColor" /> : <Pause size={18} fill="currentColor" />}</button>{!finished && <button onClick={() => setGallery(true)} aria-label="Open gallery"><Grid size={17} /></button>}</div>
+  </>}
+  {story.soundtrack?.audioUrl && <div className="v-story-sound"><span className={audioPlaying ? 'is-playing' : ''} /><p>{audioPlaying ? 'Now playing' : muted ? 'Sound off' : 'Soundtrack'} · {story.soundtrack.title || 'Selected track'}</p></div>}
+ </main>
+ {story.soundtrack?.audioUrl && <audio ref={audio} src={mediaUrl(story.soundtrack.audioUrl)} loop preload="none" onError={() => setAudioPlaying(false)} />}
+ <AnimatePresence>{gallery && <GalleryDialog photos={photos} clientName={story.clientName} demoId={demo ? demoId : null} onClose={() => setGallery(false)} onDownload={download} downloading={downloading} onDownloadAll={downloadAll} allDownloading={allDownloading} />}</AnimatePresence>
+ </div>;
 }

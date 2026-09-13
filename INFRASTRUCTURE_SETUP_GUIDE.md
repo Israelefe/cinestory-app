@@ -1,10 +1,10 @@
-# 🛠️ Standalone CineStory App — Complete Infrastructure Setup Guide
+# Standalone CineStory App — Complete Infrastructure Setup Guide
 
 This master guide details **every single external service, database, cloud bucket, email provider, and SuperAdmin portal setup** required to run this app completely independently from IDEAS Media Company.
 
 ---
 
-## 📋 Master Checklist Overview
+## Master Checklist Overview
 
 - [ ] **1. Dedicated MongoDB Database** (MongoDB Atlas)
 - [ ] **2. Dedicated Cloud Storage** (Cloudinary / AWS S3)
@@ -19,7 +19,7 @@ This master guide details **every single external service, database, cloud bucke
 
 ---
 
-## 1. 🗄️ Dedicated Database Setup (MongoDB Atlas)
+## 1. Dedicated Database Setup (MongoDB Atlas)
 *Do NOT use the IDEAS Media database so customer data is 100% separated.*
 
 1. Go to [MongoDB Atlas](https://www.mongodb.com/atlas) and sign in.
@@ -36,7 +36,7 @@ This master guide details **every single external service, database, cloud bucke
 
 ---
 
-## 2. ☁️ Dedicated Media Storage (Cloudinary)
+## 2. Dedicated Media Storage (Cloudinary)
 *A separate storage bucket for story photos, thumbnails, and custom audio tracks.*
 
 1. Go to [Cloudinary](https://cloudinary.com/) and create a separate account.
@@ -53,7 +53,7 @@ This master guide details **every single external service, database, cloud bucke
 
 ---
 
-## 3. 🤖 Dedicated AI Director Engine (OpenRouter)
+## 3. Dedicated AI Director Engine (OpenRouter)
 *Powers the AI Director that analyzes the occasion, selects themes, and writes captions.*
 
 1. Go to [OpenRouter](https://openrouter.ai/) and create an account.
@@ -67,7 +67,7 @@ This master guide details **every single external service, database, cloud bucke
 
 ---
 
-## 4. 📧 Transactional Email API (Resend)
+## 4. Transactional Email API (Resend)
 *Delivers welcome emails, receipts, and story-ready alerts to clients.*
 
 1. Go to [Resend](https://resend.com/) and create an account.
@@ -82,7 +82,7 @@ This master guide details **every single external service, database, cloud bucke
 
 ---
 
-## 5. 👑 SuperAdmin Creator Account Setup
+## 5. SuperAdmin Creator Account Setup
 *Your personal master control center to oversee all users, view platform metrics, and delete content.*
 
 1. Register an account on the app with your personal email (e.g. `admin@cinestory.app`).
@@ -102,7 +102,7 @@ This master guide details **every single external service, database, cloud bucke
 
 ---
 
-## 6. 🌍 Custom Brand Domain & DNS Setup
+## 6. Custom Brand Domain & DNS Setup
 *Give the app its own standalone web address (e.g., `cinestory.app` or `myphotostory.com`).*
 
 1. Purchase a domain from [Namecheap](https://www.namecheap.com/) or [Porkbun](https://porkbun.com/).
@@ -112,7 +112,7 @@ This master guide details **every single external service, database, cloud bucke
 
 ---
 
-## 7. ⚙️ Backend Server Deployment (Render / Railway)
+## 7. Backend Server Deployment (Render / Railway)
 
 1. Go to [Render](https://render.com/) -> Click **"New Web Service"**.
 2. Connect your Git repository.
@@ -140,7 +140,7 @@ This master guide details **every single external service, database, cloud bucke
 
 ---
 
-## 8. 🖥️ Frontend Hosting & Global CDN (Vercel)
+## 8. Frontend Hosting & Global CDN (Vercel)
 
 1. Go to [Vercel](https://vercel.com/) -> Click **"Add New Project"**.
 2. Select your Git repository.
@@ -159,14 +159,14 @@ This master guide details **every single external service, database, cloud bucke
 
 ---
 
-## 9. 💳 Payment Gateways Setup (Paystack & Stripe)
+## 9. Payment Gateways Setup (Paystack & Stripe)
 
 * **Paystack (Nigeria & Africa):** Set `PAYSTACK_PUBLIC_KEY` & `PAYSTACK_SECRET_KEY`.
 * **Stripe (Global USD/EUR):** Set `STRIPE_PUBLISHABLE_KEY` & `STRIPE_SECRET_KEY`.
 
 ---
 
-## 10. 🔑 Google 1-Click Login (OAuth)
+## 10. Google 1-Click Login (OAuth)
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/) -> Create project.
 2. Credentials -> OAuth 2.0 Client ID -> Web Application.

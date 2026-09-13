@@ -1,57 +1,129 @@
-import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import Navbar from './components/Navbar.jsx';
-import AuthModal from './components/AuthModal.jsx';
-import LandingPage from './pages/LandingPage.jsx';
-import Dashboard from './pages/Dashboard.jsx';
-import CreateStory from './pages/CreateStory.jsx';
-import StoryViewer from './pages/StoryViewer.jsx';
-import AdminDashboard from './pages/AdminDashboard.jsx';
+import React, { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigationType } from 'react-router-dom';
+import { MotionConfig } from 'framer-motion';
 import { ToastContainer } from 'react-toastify';
+import Navbar from './components/Navbar.jsx';
+import LandingPage from './pages/LandingPage.jsx';
+import api from './services/api.js';
 import 'react-toastify/dist/ReactToastify.css';
+
+const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
+const CreateStory = lazy(() => import('./pages/CreateStory.jsx'));
+const StoryViewer = lazy(() => import('./pages/StoryViewer.jsx'));
+const FormatDemo = lazy(() => import('./pages/FormatDemo.jsx'));
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard.jsx'));
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy.jsx'));
+const TermsOfService = lazy(() => import('./pages/TermsOfService.jsx'));
+const FairUsePolicy = lazy(() => import('./pages/FairUsePolicy.jsx'));
+const AboutUs = lazy(() => import('./pages/AboutUs.jsx'));
+const NichePage = lazy(() => import('./pages/NichePage.jsx'));
+const ClientExperience = lazy(() => import('./pages/ClientExperience.jsx'));
+const PricingPage = lazy(() => import('./pages/PricingPage.jsx'));
+const SignupPage = lazy(() => import('./pages/SignupPage.jsx'));
+const SigninPage = lazy(() => import('./pages/SigninPage.jsx'));
+const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage.jsx'));
+const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage.jsx'));
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage.jsx'));
+const OnboardingPage = lazy(() => import('./pages/OnboardingPage.jsx'));
+const DeliveryFormats = lazy(() => import('./pages/DeliveryFormats.jsx'));
+const PortfolioPage = lazy(() => import('./pages/PortfolioPage.jsx'));
+const ContactSupport = lazy(() => import('./pages/ContactSupport.jsx'));
+const Changelog = lazy(() => import('./pages/Changelog.jsx'));
+const NotFound = lazy(() => import('./pages/NotFound.jsx'));
+const routeScrollPositions = new Map();
+
+function RoutePosition() {
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  const { pathname, hash, key } = location;
+  useEffect(() => {
+    const previous = window.history.scrollRestoration;
+    window.history.scrollRestoration = 'manual';
+    return () => { window.history.scrollRestoration = previous; };
+  }, []);
+  useLayoutEffect(() => {
+    const rememberPosition = () => routeScrollPositions.set(key, { top: window.scrollY, left: window.scrollX });
+    window.addEventListener('scroll', rememberPosition, { passive: true });
+    return () => { rememberPosition(); window.removeEventListener('scroll', rememberPosition); };
+  }, [key]);
+  useLayoutEffect(() => {
+    let frame;
+    let stopped = false;
+    const deadline = performance.now() + 2500;
+    const saved = navigationType === 'POP' ? routeScrollPositions.get(key) : undefined;
+    const restore = () => {
+      if (stopped) return;
+      if (hash) {
+        const target = document.getElementById(hash.slice(1));
+        if (target) { target.scrollIntoView({ block: 'start', behavior: 'auto' }); stopped = true; return; }
+        if (performance.now() >= deadline) { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); stopped = true; return; }
+        frame = window.requestAnimationFrame(restore);
+        return;
+      }
+      if (!saved) { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); stopped = true; return; }
+      const maxTop = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight) - window.innerHeight;
+      if (maxTop + 2 >= saved.top) { window.scrollTo({ top: saved.top, left: saved.left, behavior: 'auto' }); stopped = true; return; }
+      if (performance.now() >= deadline) { window.scrollTo({ top: Math.max(0, maxTop), left: saved.left, behavior: 'auto' }); stopped = true; return; }
+      frame = window.requestAnimationFrame(restore);
+    };
+    restore();
+    return () => { stopped = true; window.cancelAnimationFrame(frame); };
+  }, [pathname, hash, key, navigationType]);
+  useEffect(() => {
+    const names = { '/': 'Photo delivery for finished shoots', '/formats': 'Six delivery formats', '/portfolio': 'Veylo Portfolio', '/pricing': 'Plans and pricing', '/signup': 'Create your account', '/signin': 'Sign in', '/verify-email': 'Verify your email', '/forgot-password': 'Reset your password', '/reset-password': 'Choose a new password', '/onboarding': 'Set up your studio', '/about': 'About us', '/client-experience': 'The client experience', '/contact': 'Get in touch', '/privacy': 'Privacy policy', '/terms': 'Terms of use', '/fair-use': 'Fair use', '/changelog': 'Product updates', '/create': 'Create a Photo Story', '/demo': 'Watch a Photo Story', '/demo/editorial': 'Explore an Editorial Page', '/demo/reveal': 'Begin a Photo Reveal', '/demo/canvas': 'Explore a Canvas', '/demo/chapters': 'Choose a chapter', '/demo/album': 'Turn through an Album' };
+    const label = names[pathname] || (pathname.startsWith('/for/') ? `For ${pathname.split('/').pop().replaceAll('-', ' ')}` : 'Photo delivery');
+    document.title = `Veylo — ${label}`;
+  }, [pathname]);
+  return null;
+}
+
+function ProtectedRoute({ user, loading, requireAdmin = false, children }) {
+  const location = useLocation();
+  if (loading) return <div className="v-page-loading" role="status">Checking your account…</div>;
+  if (!user) return <Navigate to="/signin" replace state={{ from: `${location.pathname}${location.search}` }} />;
+  if (!user.onboardingComplete && location.pathname !== '/onboarding') return <Navigate to="/onboarding" replace />;
+  if (requireAdmin && user.role !== 'admin') return <Navigate to="/dashboard" replace />;
+  return children;
+}
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [authModalOpen, setAuthModalOpen] = useState(false);
-
+  const [authLoading, setAuthLoading] = useState(true);
+  const authVersion = useRef(0);
   useEffect(() => {
-    const saved = localStorage.getItem('cinestory_user');
-    if (saved) {
-      try { setUser(JSON.parse(saved)); } catch (e) {}
-    }
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('utm_source')) sessionStorage.setItem('veylo_utm_source', params.get('utm_source'));
+    if (params.get('utm_campaign')) sessionStorage.setItem('veylo_utm_campaign', params.get('utm_campaign'));
+    if (document.referrer && !document.referrer.startsWith(window.location.origin)) sessionStorage.setItem('veylo_referrer', document.referrer);
   }, []);
-
-  const handleLogout = () => {
-    localStorage.removeItem('cinestory_token');
-    localStorage.removeItem('cinestory_user');
+  useEffect(() => {
+    let active = true;
+    const version = authVersion.current;
+    api.get('/v1/auth/me', { timeout: 8000 }).then(({ data }) => { if (active && version === authVersion.current) setUser(data.user); }).catch(() => { if (active && version === authVersion.current) setUser(null); }).finally(() => { if (active) setAuthLoading(false); });
+    return () => { active = false; };
+  }, []);
+  const handleAuthenticated = nextUser => { authVersion.current += 1; setUser(nextUser); setAuthLoading(false); };
+  const handleLogout = async () => {
+    try { await api.post('/v1/auth/logout'); } catch {}
+    authVersion.current += 1;
     setUser(null);
-    window.location.href = '/';
+    window.location.assign('/');
   };
-
-  return (
-    <BrowserRouter>
-      <ToastContainer position="top-right" theme="dark" autoClose={3000} />
-      <AuthModal
-        isOpen={authModalOpen}
-        onClose={() => setAuthModalOpen(false)}
-        onAuthSuccess={(u) => setUser(u)}
-      />
-      <Routes>
-        <Route path="/story/:storyId" element={<StoryViewer />} />
-        <Route path="*" element={
-          <div className="flex flex-col min-h-screen bg-[#070709] text-white">
-            <Navbar user={user} onOpenAuth={() => setAuthModalOpen(true)} onLogout={handleLogout} />
-            <main className="flex-1">
-              <Routes>
-                <Route path="/" element={<LandingPage onOpenAuth={() => setAuthModalOpen(true)} />} />
-                <Route path="/dashboard" element={<Dashboard user={user} />} />
-                <Route path="/create" element={<CreateStory user={user} />} />
-                <Route path="/admin" element={<AdminDashboard user={user} />} />
-              </Routes>
-            </main>
-          </div>
-        } />
-      </Routes>
-    </BrowserRouter>
-  );
+  return <MotionConfig reducedMotion="user"><BrowserRouter><RoutePosition /><ToastContainer position="top-right" theme="dark" autoClose={3000} /><Suspense fallback={<div className="v-page-loading" role="status">Opening Veylo…</div>}><Routes>
+    <Route path="/story/:storyId" element={<StoryViewer />} />
+    <Route path="/demo" element={<StoryViewer demoMode />} />
+    <Route path="/demo/:formatId" element={<FormatDemo />} />
+    <Route path="*" element={<div className="min-h-screen bg-[#070709] text-white"><Navbar user={user} onLogout={handleLogout} /><main id="main-content"><Routes>
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/dashboard" element={<ProtectedRoute user={user} loading={authLoading}><Dashboard user={user} /></ProtectedRoute>} />
+      <Route path="/create" element={<ProtectedRoute user={user} loading={authLoading}><CreateStory user={user} /></ProtectedRoute>} />
+      <Route path="/admin" element={<ProtectedRoute user={user} loading={authLoading} requireAdmin><AdminDashboard user={user} /></ProtectedRoute>} />
+      <Route path="/formats" element={<DeliveryFormats />} /><Route path="/portfolio" element={<PortfolioPage />} /><Route path="/pricing" element={<PricingPage />} />
+      <Route path="/signup" element={<SignupPage onAuthenticated={handleAuthenticated} />} /><Route path="/signin" element={<SigninPage onAuthenticated={handleAuthenticated} />} />
+      <Route path="/verify-email" element={<VerifyEmailPage onAuthenticated={handleAuthenticated} />} /><Route path="/forgot-password" element={<ForgotPasswordPage />} /><Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/onboarding" element={<ProtectedRoute user={user} loading={authLoading}><OnboardingPage user={user} onAuthenticated={handleAuthenticated} /></ProtectedRoute>} />
+      <Route path="/contact" element={<ContactSupport />} /><Route path="/changelog" element={<Changelog />} /><Route path="/about" element={<AboutUs />} /><Route path="/for/:slug" element={<NichePage />} /><Route path="/client-experience" element={<ClientExperience />} />
+      <Route path="/privacy" element={<PrivacyPolicy />} /><Route path="/terms" element={<TermsOfService />} /><Route path="/fair-use" element={<FairUsePolicy />} /><Route path="*" element={<NotFound />} />
+    </Routes></main></div>} />
+  </Routes></Suspense></BrowserRouter></MotionConfig>;
 }

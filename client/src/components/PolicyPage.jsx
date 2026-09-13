@@ -1,0 +1,5 @@
+import React from 'react';
+import { Page, Intro, Reveal, Eyebrow, TextLink } from './PublicDesign.jsx';
+export default function PolicyPage({ title, description, note, sections }) {
+ return <Page><Intro eyebrow="The details / Veylo" title={title} description={description}><div className="v-policy-meta"><span>Updated September 2026</span><span>Tech-City Technology · Nigeria</span></div></Intro><div className="v-wrap v-policy-layout"><aside className="v-policy-nav"><Eyebrow>On this page</Eyebrow><nav aria-label={title + ' sections'}>{sections.map((s, i) => <a key={s.id} href={'#' + s.id}><span className="v-index">{String(i + 1).padStart(2, '0')}</span>{s.title}</a>)}</nav><div className="mt-6"><TextLink to="/contact">Ask a question</TextLink></div></aside><div className="v-policy-content">{note && <Reveal className="v-policy-note">{note}</Reveal>}{sections.map(s => <section id={s.id} key={s.id}><Reveal><h2>{s.title}</h2>{s.paragraphs?.map(p => <p key={p}>{p}</p>)}{s.items && <ul>{s.items.map(p => <li key={p}>{p}</li>)}</ul>}{s.contact && <p><a href="mailto:info@veylo.com.ng">info@veylo.com.ng</a></p>}</Reveal></section>)}</div></div></Page>;
+}

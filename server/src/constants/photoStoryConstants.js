@@ -1,5 +1,5 @@
 /**
- * IDEAS MEDIA COMPANY - 100 Curated Soundtracks & Customization Constants
+ * Veylo Media - 100 Curated Soundtracks & Customization Constants
  * Spanning 10 Genres with High-Res Audio and Mood Tags
  */
 
@@ -9,7 +9,7 @@ export const CURATED_SOUNDTRACKS = [
     id: 'st_1',
     genre: 'Cinematic Ambient',
     title: 'Golden Hour Reverie',
-    artist: 'Pixabay Studio / IDEAS Master',
+    artist: 'Pixabay Studio / Veylo Master',
     audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
     durationSec: 120,
     mood: 'Dreamy & Majestic',
@@ -19,7 +19,7 @@ export const CURATED_SOUNDTRACKS = [
     id: 'st_2',
     genre: 'Cinematic Ambient',
     title: 'Aura of Eternity',
-    artist: 'IDEAS Cinematic Soundscapes',
+    artist: 'Veylo Cinematic Soundscapes',
     audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
     durationSec: 145,
     mood: 'Ethereal & Poetic',
@@ -59,7 +59,7 @@ export const CURATED_SOUNDTRACKS = [
     id: 'st_6',
     genre: 'Cinematic Ambient',
     title: 'Solitude of Gold',
-    artist: 'IDEAS Master Vault',
+    artist: 'Veylo Master Vault',
     audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3',
     durationSec: 110,
     mood: 'Subtle & Sophisticated',
@@ -171,7 +171,7 @@ export const CURATED_SOUNDTRACKS = [
     id: 'st_17',
     genre: 'Afrobeats Celebration',
     title: 'Vibrant Benin City Beats',
-    artist: 'IDEAS Afro House',
+    artist: 'Veylo Afro House',
     audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
     durationSec: 126,
     mood: 'Energetic & Confident',
@@ -213,7 +213,7 @@ export const CURATED_SOUNDTRACKS = [
     id: 'st_21',
     genre: 'Romantic Wedding',
     title: 'Heartfelt Whispers',
-    artist: 'Pixabay Studio / IDEAS Master',
+    artist: 'Pixabay Studio / Veylo Master',
     audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3',
     durationSec: 135,
     mood: 'Tender & Romantic',
@@ -315,7 +315,7 @@ export const CURATED_SOUNDTRACKS = [
     id: 'st_31',
     genre: 'Luxury High Fashion',
     title: 'Obsidian Velvet Symphony',
-    artist: 'Pixabay Studio / IDEAS Master',
+    artist: 'Pixabay Studio / Veylo Master',
     audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-15.mp3',
     durationSec: 145,
     mood: 'Ultra-Luxury & Sleek',
@@ -519,7 +519,7 @@ export const CURATED_SOUNDTRACKS = [
     id: 'st_51',
     genre: 'High-Energy Celebration',
     title: 'Radiant Euphoria',
-    artist: 'Pixabay Studio / IDEAS Master',
+    artist: 'Pixabay Studio / Veylo Master',
     audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
     durationSec: 128,
     mood: 'Uplifting & Radiant',
@@ -621,7 +621,7 @@ export const CURATED_SOUNDTRACKS = [
     id: 'st_61',
     genre: 'Royal Orchestral',
     title: 'Crown & Glory',
-    artist: 'Pixabay Studio / IDEAS Master',
+    artist: 'Pixabay Studio / Veylo Master',
     audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-13.mp3',
     durationSec: 130,
     mood: 'Majestic & Heroic',
@@ -1017,7 +1017,7 @@ export const CURATED_SOUNDTRACKS = [
     id: 'st_100',
     genre: 'Acoustic Memories',
     title: 'Timeless Blessing',
-    artist: 'IDEAS Master Finale Orchestra',
+    artist: 'Veylo Master Finale Orchestra',
     audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3',
     durationSec: 160,
     mood: 'Sacred & Radiant',
@@ -1103,7 +1103,7 @@ export const KEN_BURNS_EFFECTS = [
 ];
 
 export const COLOR_SWATCHES = [
-  '#A24CF3', // IDEAS Royal Purple
+  '#A24CF3', // Veylo Royal Purple
   '#F59E0B', // Studio Gold
   '#EC4899', // Radiant Pink
   '#10B981', // Emerald Luxe

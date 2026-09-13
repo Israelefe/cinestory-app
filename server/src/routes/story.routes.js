@@ -39,9 +39,9 @@ router.get('/proxy/audio-stream', async (req, res) => {
 });
 
 // Creator Studio Endpoints
-router.post('/ai-generate', generateStoryWithAi);
-router.post('/', createStory);
-router.get('/my-stories', getUserStories);
-router.delete('/:id', deleteStory);
+router.post('/ai-generate', authMiddleware, generateStoryWithAi);
+router.post('/', authMiddleware, createStory);
+router.get('/my-stories', authMiddleware, getUserStories);
+router.delete('/:id', authMiddleware, deleteStory);
 
 export default router;

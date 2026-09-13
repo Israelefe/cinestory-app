@@ -1,0 +1,18 @@
+import React from 'react';
+import PolicyPage from '../components/PolicyPage.jsx';
+
+const sections = [
+  { id: 'who-we-are', title: 'Who we are', paragraphs: ['Veylo is a photo presentation and delivery platform operated by Tech-City Technology in Nigeria. It helps photographers turn finished shoots into designed client experiences followed by downloadable galleries.'] },
+  { id: 'information', title: 'Information used by Veylo', paragraphs: ['The service uses information you provide to create an account, prepare a delivery, and build a portfolio when you choose to publish one.'], items: ['Account details such as your name, email address, password hash, and plan.', 'Shoot content such as photographs, client names, shoot context, titles, captions, music, and narration choices.', 'Portfolio content such as studio information, location, social links, categories, and selected work.', 'Delivery activity such as view and download counts.', 'Support correspondence you choose to send us.'] },
+  { id: 'how-it-is-used', title: 'How information is used', paragraphs: ['Account information supports sign-in and account management. Photographs and shoot details are used to prepare, display, host, and deliver the experiences you request.', 'When an AI-assisted feature is used, the information needed for that feature may be processed by an external AI service. Review shoot context before submitting it, avoid unnecessary confidential information, and check the result before publishing.'] },
+  { id: 'providers', title: 'Hosting and service providers', paragraphs: ['Veylo uses external services for functions such as media hosting, account and project storage, payments, email, and AI-assisted preparation. Those providers process the information needed to perform their part of the service.'] },
+  { id: 'delivery-access', title: 'Who can access a delivery', paragraphs: ['A person with a published delivery link may be able to open it and download the photographs. A recipient can forward the link or downloaded files to another person.', 'Before publishing, make sure you have permission to share the photographs and any client information included in the delivery.'] },
+  { id: 'portfolio-access', title: 'Public portfolios', paragraphs: ['A published Veylo Portfolio is public. Only add photographs, studio information, contact details, and links you intend visitors to see.'] },
+  { id: 'storage', title: 'Storage and deletion', paragraphs: ['Signed-in photographers can manage their projects through their account. Copies already downloaded by recipients remain outside Veylo’s control.', 'For account deletion or removal of hosted media, contact us with the relevant account email and delivery link. Keep your own backups of finished photographs.'] },
+  { id: 'browser-storage', title: 'Browser storage', paragraphs: ['Veylo stores sign-in information in your browser’s local storage to keep you signed in. Signing out removes those saved sign-in details from that browser.'] },
+  { id: 'privacy-contact', title: 'Questions and requests', paragraphs: ['For a privacy question, account correction, or deletion request, contact the team. Include enough information to identify the account or delivery, but never send your password.'], contact: true }
+];
+
+export default function PrivacyPolicy() {
+  return <PolicyPage title="Privacy, explained." description="What the service uses, how published links work, and where to send a privacy request." note="Only publish photographs and client details you have permission to share through a client delivery or public portfolio." sections={sections} />;
+}

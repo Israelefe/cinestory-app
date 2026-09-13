@@ -3,9 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/veylo/veylo-mark.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#080806" />
-    <meta name="description" content="Don't just deliver photos. Premiere them. Veylo is the photo delivery platform built for photographers and media studios." />
+    <meta name="description" content="Upload one finished shoot and deliver it as a Photo Story, Editorial Page, Photo Reveal, Canvas, Chapters, or Album, followed by the complete gallery. Built for Nigerian photographers and studios." />
+    <meta property="og:site_name" content="Veylo" />
+    <meta property="og:title" content="Veylo — Don't just deliver photos. Showcase them." />
+    <meta property="og:description" content="One finished shoot, five client delivery experiences, and the complete downloadable gallery. Built for Nigerian photographers and studios." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/veylo/veylo-logo.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Veylo — Don't just deliver photos. Showcase them." />
+    <meta name="twitter:description" content="One finished shoot, five client delivery experiences, and the complete downloadable gallery. Built for Nigerian photographers and studios." />
+    <meta name="twitter:image" content="/veylo/veylo-logo.jpg" />
     <title>Veylo — The Photo Delivery Platform for Photographers</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,6 +24,43 @@
   </head>
   <body class="bg-[#09090b] text-white antialiased selection:bg-[#ff5a47] selection:text-white">
     <div id="root"></div>
+    <div id="startup-error" hidden style="max-width:36rem;margin:6rem auto;padding:1.5rem;color:#fff;background:#111115;font-family:system-ui,sans-serif;line-height:1.6">
+      <h1 style="font-size:1.5rem">Veylo hasn’t loaded.</h1>
+      <p>The page couldn’t finish loading. Reload it to try again.</p>
+      <pre id="startup-error-detail" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+      <button type="button" onclick="window.location.reload()" style="padding:.8rem 1.2rem;border:0;border-radius:.75rem;background:#ff5a47;color:#fff;font-weight:700;cursor:pointer">Reload page</button>
+    </div>
+    <noscript><p style="padding:2rem;color:white;font-family:system-ui">Veylo needs JavaScript to open. Enable JavaScript in your browser, then reload this page.</p></noscript>
+    <script>
+      (() => {
+        const root = document.getElementById('root');
+        const panel = document.getElementById('startup-error');
+        const detail = document.getElementById('startup-error-detail');
+        const isLocal = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+        const show = (message) => {
+          if (root.childElementCount) return;
+          detail.textContent = isLocal ? message : 'Check your connection, then try again.';
+          panel.hidden = false;
+        };
+        const onError = (event) => {
+          if (event.target instanceof HTMLScriptElement) show('A page script could not be downloaded.');
+          else if (event.message) show(event.message);
+        };
+        const onRejection = (event) => show(String(event.reason?.message || event.reason || 'A page script failed to start.'));
+        window.addEventListener('error', onError, true);
+        window.addEventListener('unhandledrejection', onRejection);
+        const timer = setTimeout(() => show('Startup took longer than expected. A script may be blocked or unavailable.'), 12000);
+        const observer = new MutationObserver(() => {
+          if (!root.childElementCount) return;
+          panel.hidden = true;
+          clearTimeout(timer);
+          window.removeEventListener('error', onError, true);
+          window.removeEventListener('unhandledrejection', onRejection);
+          observer.disconnect();
+        });
+        observer.observe(root, { childList: true });
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
