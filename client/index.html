@@ -37,13 +37,26 @@
         const panel = document.getElementById('startup-error');
         const detail = document.getElementById('startup-error-detail');
         const isLocal = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+        const recoveryKey = 'veylo:startup-recovery';
+        const recoverOnce = () => {
+          if (!navigator.onLine) return false;
+          const now = Date.now();
+          let previous = 0;
+          try { previous = Number(sessionStorage.getItem(recoveryKey) || 0); } catch {}
+          if (now - previous < 30000) return false;
+          try { sessionStorage.setItem(recoveryKey, String(now)); } catch {}
+          location.reload();
+          return true;
+        };
         const show = (message) => {
           if (root.childElementCount) return;
           detail.textContent = isLocal ? message : 'Check your connection, then try again.';
           panel.hidden = false;
         };
         const onError = (event) => {
-          if (event.target instanceof HTMLScriptElement) show('A page script could not be downloaded.');
+          if (event.target instanceof HTMLScriptElement) {
+            if (!recoverOnce()) show('A page script could not be downloaded.');
+          }
           else if (event.message) show(event.message);
         };
         const onRejection = (event) => show(String(event.reason?.message || event.reason || 'A page script failed to start.'));
@@ -52,6 +65,7 @@
         const timer = setTimeout(() => show('Startup took longer than expected. A script may be blocked or unavailable.'), 12000);
         const observer = new MutationObserver(() => {
           if (!root.childElementCount) return;
+          try { sessionStorage.removeItem(recoveryKey); } catch {}
           panel.hidden = true;
           clearTimeout(timer);
           window.removeEventListener('error', onError, true);

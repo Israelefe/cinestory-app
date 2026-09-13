@@ -1,4 +1,5 @@
 import React from 'react';
+import { isPageChunkError, recoverPageLoadOnce } from '../utils/pageLoadRecovery.js';
 
 export default class AppErrorBoundary extends React.Component {
   state = { error: null, errorInfo: null };
@@ -9,6 +10,7 @@ export default class AppErrorBoundary extends React.Component {
 
   componentDidCatch(error, info) {
     console.error('Veylo could not render the app:', error, info);
+    if (isPageChunkError(error) && recoverPageLoadOnce('error-boundary')) return;
     this.setState({ errorInfo: info });
   }
 
