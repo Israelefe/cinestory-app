@@ -1,7 +1,7 @@
-import { v2 as cloudinary } from 'cloudinary';
 import { z } from 'zod';
 import User from '../models/User.js';
 import { publicUser } from '../utils/auth.js';
+import { cloudinary, configureCloudinary } from '../services/cloudinary.service.js';
 
 const specialties = ['Portraits', 'Weddings', 'Birthdays', 'Fashion and editorial', 'Commercial and branding', 'Maternity', 'Graduation', 'Events', 'Other'];
 const sources = ['Instagram', 'TikTok', 'YouTube', 'Google Search', 'WhatsApp', 'Another photographer', 'Friend or colleague', 'Event or workshop', 'Other', 'Prefer not to say'];
@@ -101,8 +101,7 @@ function isSupportedImage(file) {
 export async function uploadStudioLogo(req, res) {
   try {
     if (!isSupportedImage(req.file)) return res.status(400).json({ success: false, message: 'Choose a JPEG, PNG or WebP image.' });
-    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) return res.status(503).json({ success: false, message: 'Image upload is temporarily unavailable.' });
-    cloudinary.config({ cloud_name: process.env.CLOUDINARY_CLOUD_NAME, api_key: process.env.CLOUDINARY_API_KEY, api_secret: process.env.CLOUDINARY_API_SECRET, secure: true });
+    if (!configureCloudinary()) return res.status(503).json({ success: false, code: 'UPLOAD_CONFIGURATION_ERROR', message: 'Veylo could not connect to image storage. Please try again shortly.' });
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
     const uploaded = await new Promise((resolve, reject) => {
@@ -117,6 +116,6 @@ export async function uploadStudioLogo(req, res) {
   } catch (error) {
     console.error('[onboarding/logo]', error.http_code || error.name || 'upload_error', error.message);
     const unavailable = [401, 403].includes(Number(error.http_code));
-    res.status(unavailable ? 503 : 502).json({ success: false, code: unavailable ? 'UPLOAD_CONFIGURATION_ERROR' : 'IMAGE_UPLOAD_FAILED', message: unavailable ? 'Profile image upload is temporarily unavailable. Your other details can still be saved.' : 'Cloudinary could not process that image. Try a different JPEG, PNG or WebP file.' });
+    res.status(unavailable ? 503 : 502).json({ success: false, code: unavailable ? 'UPLOAD_CONFIGURATION_ERROR' : 'IMAGE_UPLOAD_FAILED', message: unavailable ? 'Veylo could not connect to image storage. Please try again shortly.' : 'That image could not be processed. Try a different JPEG, PNG or WebP file.' });
   }
 }

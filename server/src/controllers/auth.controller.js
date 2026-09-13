@@ -1,6 +1,5 @@
 import crypto from 'crypto';
 import mongoose from 'mongoose';
-import { v2 as cloudinary } from 'cloudinary';
 import { OAuth2Client } from 'google-auth-library';
 import { z } from 'zod';
 import User from '../models/User.js';
@@ -10,6 +9,7 @@ import PasswordResetToken from '../models/PasswordResetToken.js';
 import PhotoStory from '../models/PhotoStory.js';
 import { sendPasswordChangedEmail, sendPasswordResetEmail, sendVerificationEmail, sendWelcomeEmail } from '../services/email.service.js';
 import { verifyTurnstile } from '../services/turnstile.service.js';
+import { cloudinary, configureCloudinary } from '../services/cloudinary.service.js';
 import { REFRESH_COOKIE, clearSessionCookies, codeDigest, createSession, normalizeEmail, publicUser, randomToken, safeEqual, setSessionCookies, tokenDigest } from '../utils/auth.js';
 
 const email = z.string().trim().email().max(254).transform(normalizeEmail);
@@ -301,7 +301,7 @@ export async function deleteAccount(req, res) {
     const hasDeliveryAssets = stories.some(story => [story.soundtrack?.audioUrl, ...(story.photos || []).map(photo => photo.url)].some(url => String(url || '').includes(`/${userPrefix}/`)));
     const hasStudioAsset = user.studio?.logoPublicId?.startsWith(`veylo/studios/${user._id}/`);
     if (hasStudioAsset || hasDeliveryAssets) {
-      cloudinary.config({ cloud_name: process.env.CLOUDINARY_CLOUD_NAME, api_key: process.env.CLOUDINARY_API_KEY, api_secret: process.env.CLOUDINARY_API_SECRET, secure: true });
+      if (!configureCloudinary()) throw new Error('Cloudinary credentials are missing.');
       await Promise.all([
         hasStudioAsset ? removeCloudinaryFolder(`veylo/studios/${user._id}`, ['image']) : Promise.resolve(),
         hasDeliveryAssets ? removeCloudinaryFolder(userPrefix, ['image', 'video'], ['photos', 'audio']) : Promise.resolve()

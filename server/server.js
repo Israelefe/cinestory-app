@@ -8,6 +8,7 @@ import authRoutes from './src/routes/auth.routes.js';
 import onboardingRoutes from './src/routes/onboarding.routes.js';
 import storyRoutes from './src/routes/story.routes.js';
 import adminRoutes from './src/routes/admin.routes.js';
+import { checkCloudinaryConnection } from './src/services/cloudinary.service.js';
 
 dotenv.config();
 
@@ -66,5 +67,11 @@ app.use((error, req, res, next) => {
 
 connectDB().then(connection => {
   if (!connection && process.env.NODE_ENV === 'production') process.exit(1);
-  app.listen(PORT, () => console.log(`[Veylo] Server running at http://localhost:${PORT}`));
+  app.listen(PORT, () => {
+    console.log(`[Veylo] Server running at http://localhost:${PORT}`);
+    checkCloudinaryConnection().then(result => {
+      if (result.ok) console.info('[cloudinary] Connection verified.');
+      else console.error(`[cloudinary] Configuration rejected: ${result.reason}`);
+    });
+  });
 });

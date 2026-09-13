@@ -49,13 +49,14 @@ export function sendPasswordResetEmail({ to, name, code }) {
 }
 
 export function sendWelcomeEmail({ to, name }) {
-  const firstName = escapeHtml(name.split(' ')[0] || 'there');
+  const rawFirstName = String(name).trim().split(/\s+/)[0].replace(/[\r\n]/g, '') || 'there';
+  const firstName = escapeHtml(rawFirstName);
   const url = `${process.env.CLIENT_URL || 'https://veylo.com.ng'}/onboarding`;
   return send('welcome', {
     to,
-    subject: 'Your Veylo account is ready',
-    text: `Welcome to Veylo, ${name}. Finish setting up your studio and create your first delivery: ${url}`,
-    html: shell(`<h1 style="margin:0 0 16px;font-size:30px;font-weight:500">Welcome to Veylo, ${firstName}.</h1><p style="color:#b8b1aa;line-height:1.75">Your account is ready. Tell us a little about your studio, then you can prepare your first client delivery.</p><a href="${url}" style="display:inline-block;margin-top:24px;background:#ff5a47;color:#100c0b;padding:14px 22px;text-decoration:none;font-size:13px;font-weight:700">Finish setting up</a>`)
+    subject: `Welcome to Veylo, ${rawFirstName}`,
+    text: `Hi ${name}, welcome to Veylo. You now have a better way to deliver finished shoots and give clients something worth opening. Add your studio details, then prepare your first client delivery: ${url}`,
+    html: shell(`<p style="margin:0 0 14px;color:#ff9b8e;font-size:11px;font-weight:700;letter-spacing:1.6px">YOUR ACCOUNT IS READY</p><h1 style="margin:0 0 18px;font-size:30px;font-weight:500">Welcome to Veylo, ${firstName}.</h1><p style="margin:0;color:#b8b1aa;line-height:1.75">You now have a better way to deliver finished shoots and give clients something worth opening.</p><p style="margin:14px 0 0;color:#b8b1aa;line-height:1.75">Add your studio details, then prepare your first client delivery.</p><a href="${escapeHtml(url)}" style="display:inline-block;margin-top:26px;background:#ff5a47;color:#100c0b;padding:14px 22px;text-decoration:none;font-size:13px;font-weight:700">Set up your studio</a>`)
   });
 }
 
