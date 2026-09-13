@@ -1,0 +1,211 @@
+.v-dashboard-hero {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: end;
+}
+
+.v-dashboard-welcome .v-dashboard-studio {
+  margin-bottom: 30px;
+}
+
+.v-dashboard-welcome > h1 {
+  margin-top: 0;
+}
+
+.v-dashboard-plan-summary {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 15px 16px;
+  border: 1px solid #ffffff17;
+  background: #0c0c10;
+}
+
+.v-dashboard-plan-summary > svg {
+  color: #ff9b8e;
+}
+
+.v-dashboard-plan-summary span,
+.v-dashboard-plan-summary small {
+  display: block;
+}
+
+.v-dashboard-plan-summary span {
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.v-dashboard-plan-summary small {
+  margin-top: 4px;
+  color: #77716b;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.v-dashboard-plan-summary > a {
+  color: #ff9b8e;
+  font-size: 9px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.v-dashboard-overview {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.v-dashboard-overview article {
+  min-height: 112px;
+  padding: 17px 14px;
+}
+
+.v-dashboard-overview article > svg {
+  margin-top: 18px;
+}
+
+.v-dashboard-deliveries > header h2 {
+  margin-top: 0;
+}
+
+.v-dashboard-empty {
+  overflow: hidden;
+}
+
+.v-dashboard-empty-preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 330px;
+  overflow: hidden;
+  border-top: 1px solid #ffffff12;
+  background: radial-gradient(circle at 50% 45%, #ff5a471c, transparent 36%), #09090c;
+}
+
+.v-dashboard-empty-preview > i {
+  position: absolute;
+  width: min(62%, 220px);
+  height: 230px;
+  border: 1px solid #ffffff13;
+  background: #111116;
+  transform: translate3d(-28px, 9px, 0) rotate(-7deg);
+}
+
+.v-dashboard-empty-preview > i:nth-child(2) {
+  transform: translate3d(28px, 9px, 0) rotate(7deg);
+}
+
+.v-dashboard-empty-preview > div {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  width: min(64%, 230px);
+  height: 250px;
+  padding: 22px;
+  border: 1px solid #ffffff24;
+  background: linear-gradient(180deg, #19191f, #0e0e12);
+  box-shadow: 0 28px 70px #000a;
+  transform: translateZ(0);
+  animation: v-dashboard-card-breathe 6s ease-in-out infinite;
+}
+
+.v-dashboard-empty-preview svg {
+  margin-bottom: auto;
+  color: #ff9b8e;
+}
+
+.v-dashboard-empty-preview span {
+  color: #ff9b8e;
+  font-size: 7px;
+  font-weight: 750;
+  letter-spacing: .14em;
+}
+
+.v-dashboard-empty-preview strong {
+  max-width: 170px;
+  margin-top: 10px;
+  font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
+  font-size: 20px;
+  font-weight: 470;
+  line-height: 1.08;
+}
+
+@keyframes v-dashboard-card-breathe {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(0, -7px, 0); }
+}
+
+@media (min-width: 640px) {
+  .v-dashboard-hero {
+    grid-template-columns: minmax(0, 1fr) 260px;
+    gap: 36px;
+  }
+
+  .v-dashboard-plan-summary {
+    align-self: end;
+  }
+
+  .v-dashboard-overview article {
+    min-height: 130px;
+    padding: 21px 19px;
+  }
+
+  .v-dashboard-empty-preview {
+    min-height: 390px;
+  }
+}
+
+@media (min-width: 768px) {
+  .v-dashboard-empty {
+    grid-template-columns: minmax(0, 1.08fr) minmax(300px, .92fr);
+  }
+
+  .v-dashboard-empty-preview {
+    border-top: 0;
+    border-left: 1px solid #ffffff12;
+  }
+}
+
+@media (min-width: 1024px) {
+  .v-dashboard-hero {
+    grid-template-columns: minmax(0, 1fr) 300px;
+  }
+
+  .v-dashboard-welcome {
+    grid-column: 1;
+  }
+
+  .v-dashboard-plan-summary {
+    grid-column: 2;
+  }
+
+  .v-dashboard-overview article {
+    min-height: 140px;
+    padding: 24px;
+  }
+
+  .v-dashboard-empty-preview {
+    min-height: 440px;
+  }
+}
+
+@media (max-width: 374px) {
+  .v-dashboard-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .v-dashboard-overview article {
+    min-height: 96px;
+  }
+
+  .v-dashboard-empty-preview {
+    min-height: 300px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v-dashboard-empty-preview > div {
+    animation: none;
+  }
+}

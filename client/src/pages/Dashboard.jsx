@@ -1,14 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ArrowRight, BadgeCheck, Camera, Copy, Download, ExternalLink, Eye, Film, Folder, Image, LayoutGrid, MessageCircle, MoreHorizontal, Plus, RefreshCw, Settings, Trash2 } from 'lucide-react';
+import { ArrowRight, BadgeCheck, Camera, Copy, Download, ExternalLink, Eye, Film, Folder, Image, MessageCircle, MoreHorizontal, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import api, { apiMessage } from '../services/api.js';
 import { APP_URL } from '../config/env.js';
 import { toast } from 'react-toastify';
-
-const formats = [
-  ['Photo Story', Film], ['Editorial', Image], ['Photo Reveal', Eye], ['Canvas', LayoutGrid], ['Chapters', Folder], ['Album', Image]
-];
+import './Dashboard.css';
 
 export default function Dashboard({ user }) {
   const reduced = useReducedMotion();
@@ -70,27 +67,26 @@ export default function Dashboard({ user }) {
     <div className="v-dashboard-glow" aria-hidden="true" />
     <div className="v-dashboard-wrap">
       <motion.header className="v-dashboard-hero" initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .5 }}>
-        <div className="v-dashboard-studio">
-          <span className="v-dashboard-avatar">{user?.avatar ? <img src={user.avatar} alt="" /> : <Camera size={24} />}</span>
-          <div><p>{studioName}</p><span>{user?.studio?.city ? `${user.studio.city}, ${user.studio.state}` : 'Your Veylo studio'}</span></div>
+        <div className="v-dashboard-welcome">
+          <div className="v-dashboard-studio"><span className="v-dashboard-avatar">{user?.avatar ? <img src={user.avatar} alt="" /> : <Camera size={24} />}</span><div><p>{studioName}</p><span>{user?.studio?.city ? `${user.studio.city}, ${user.studio.state}` : 'Your Veylo studio'}</span></div></div>
+          <h1>Good to see you,<br /><em>{firstName}.</em></h1>
+          <span>Open a client delivery or start with your next finished shoot.</span>
         </div>
-        <div className="v-dashboard-welcome"><p>Welcome back, {firstName}.</p><h1>Your finished shoots,<br /><em>ready to send properly.</em></h1><span>Prepare a delivery, check a client link, or send finished photographs on WhatsApp.</span></div>
-        <div className="v-dashboard-hero-actions"><Link to="/create" className="v-button"><Plus size={17} />Create a delivery<ArrowRight size={17} /></Link><Link to="/settings" className="v-dashboard-secondary"><Settings size={16} />Account settings</Link></div>
+        <div className="v-dashboard-plan-summary"><BadgeCheck size={19} /><div><span>{isPro ? 'Veylo Pro' : 'Veylo Free'}</span><small>{isPro ? 'Unlimited deliveries under fair use' : 'Three deliveries each month'}</small></div>{!isPro && <Link to="/pricing">View Pro</Link>}</div>
       </motion.header>
 
       <motion.section className="v-dashboard-overview" aria-label="Studio overview" initial={reduced ? false : { opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .5, delay: .08 }}>
-        <article><div><span>DELIVERIES</span><strong>{stories.length}</strong></div><Film size={20} /><p>{stories.length === 1 ? 'One finished shoot shared' : 'Finished shoots in your studio'}</p></article>
-        <article><div><span>CLIENT VIEWS</span><strong>{totalViews}</strong></div><Eye size={20} /><p>Times your delivery links were opened</p></article>
-        <article><div><span>DOWNLOADS</span><strong>{totalDownloads}</strong></div><Download size={20} /><p>Photograph downloads recorded</p></article>
-        <article className="v-dashboard-plan"><div><span>YOUR PLAN</span><strong>{isPro ? 'Pro' : 'Free'}</strong></div><BadgeCheck size={20} /><p>{isPro ? 'Unlimited deliveries under fair use' : 'Up to three final deliveries each month'}</p>{!isPro && <Link to="/pricing">See Veylo Pro<ArrowRight size={13} /></Link>}</article>
+        <article><div><span>DELIVERIES</span><strong>{stories.length}</strong></div><Film size={20} /></article>
+        <article><div><span>CLIENT VIEWS</span><strong>{totalViews}</strong></div><Eye size={20} /></article>
+        <article><div><span>DOWNLOADS</span><strong>{totalDownloads}</strong></div><Download size={20} /></article>
       </motion.section>
 
       <section className="v-dashboard-deliveries">
-        <header><div><p className="v-eyebrow">Your work</p><h2>Client deliveries</h2><span>Everything you have prepared and shared from this account.</span></div>{stories.length > 0 && <Link to="/create" className="v-dashboard-new"><Plus size={16} />New delivery</Link>}</header>
+        <header><div><h2>Client deliveries</h2><span>{stories.length > 0 ? 'Open, share, or check a delivery.' : 'Your finished shoots will appear here.'}</span></div>{stories.length > 0 && <Link to="/create" className="v-dashboard-new"><Plus size={16} />New delivery</Link>}</header>
 
         {loading ? <div className="v-dashboard-state"><RefreshCw className="v-spin" size={27} /><strong>Opening your studio…</strong><span>Loading your latest deliveries.</span></div> : loadError ? <div className="v-dashboard-state v-dashboard-error"><Folder size={27} /><strong>Your deliveries did not load.</strong><span>{loadError}</span><button type="button" onClick={fetchStories}>Try again</button></div> : stories.length === 0 ? <motion.div className="v-dashboard-empty" initial={reduced ? false : { opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
-          <div className="v-dashboard-empty-copy"><p>YOUR FIRST DELIVERY</p><h3>The retouching is done.<br />How should the photographs arrive?</h3><span>Upload the final photographs, explain the shoot, and choose how your client will experience them before opening the full gallery.</span><Link to="/create" className="v-button"><Plus size={17} />Create your first delivery<ArrowRight size={17} /></Link></div>
-          <div className="v-dashboard-format-list">{formats.map(([label, Icon], index) => <div key={label}><span>0{index + 1}</span><Icon size={17} /><strong>{label}</strong></div>)}</div>
+          <div className="v-dashboard-empty-copy"><p>YOUR FIRST DELIVERY</p><h3>No deliveries<br />here yet.</h3><span>When your next finished shoot is ready, start here. Veylo will guide you through the rest.</span><Link to="/create" className="v-button"><Plus size={17} />Create your first delivery<ArrowRight size={17} /></Link></div>
+          <div className="v-dashboard-empty-preview" aria-hidden="true"><i /><i /><div><Image size={25} /><span>FIRST CLIENT DELIVERY</span><strong>Ready when the photographs are.</strong></div></div>
         </motion.div> : <div className="v-delivery-grid"><AnimatePresence>{stories.map((story, index) => <motion.article key={story._id} className="v-delivery-card" initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: .97 }} transition={{ duration: .42, delay: Math.min(index * .05, .25) }}>
           <Link to={`/story/${story.storyId}`} target="_blank" rel="noreferrer" className="v-delivery-cover" aria-label={`Open ${story.title || story.clientName || 'delivery'}`}>{story.photos?.[0]?.url ? <img src={story.photos[0].thumbnailUrl || story.photos[0].url} alt="" loading="lazy" decoding="async" /> : <span><Film size={28} /></span>}<i /><small>{story.format || 'Photo Story'}</small></Link>
           <div className="v-delivery-body"><div className="v-delivery-title"><div><span>{story.clientName || 'Client delivery'}</span><h3>{story.title || story.occasion || 'Finished shoot'}</h3></div><button type="button" onClick={() => setOpenMenu(value => value === story._id ? '' : story._id)} aria-label="Delivery options" aria-expanded={openMenu === story._id}><MoreHorizontal size={19} /></button>{openMenu === story._id && <div className="v-delivery-menu"><button type="button" onClick={() => copyLink(story.storyId)}><Copy size={15} />Copy client link</button><a href={`/story/${story.storyId}`} target="_blank" rel="noreferrer"><ExternalLink size={15} />Open delivery</a><button type="button" onClick={() => handleDelete(story._id)}><Trash2 size={15} />Delete delivery</button></div>}</div>
