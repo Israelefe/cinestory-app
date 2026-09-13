@@ -30,7 +30,7 @@ const TurnstileCheck = forwardRef(function TurnstileCheck({ onVerify, action }, 
       widget.current = window.turnstile.render(container.current, {
         sitekey: TURNSTILE_SITE_KEY,
         theme: 'dark',
-        size: window.innerWidth < 390 ? 'compact' : 'flexible',
+        size: 'flexible',
         appearance: 'interaction-only',
         action,
         callback: onVerify,

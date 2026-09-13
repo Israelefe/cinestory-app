@@ -29,6 +29,7 @@ function cookieBase() {
   return { secure: process.env.NODE_ENV === 'production', sameSite: process.env.COOKIE_SAME_SITE || 'lax', domain: process.env.COOKIE_DOMAIN || undefined };
 }
 export async function createSession(user, req, res, { remember = true } = {}) {
+  if (!user?.emailVerifiedAt || user.accountStatus !== 'active') throw new Error('A verified, active account is required to create a session.');
   const refreshToken = randomToken(48);
   const csrfToken = randomToken(32);
   const sessionLifetime = remember ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;

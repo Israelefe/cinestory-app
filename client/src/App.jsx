@@ -3,6 +3,8 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigationType 
 import { MotionConfig } from 'framer-motion';
 import { ToastContainer } from 'react-toastify';
 import Navbar from './components/Navbar.jsx';
+import ProductHeader from './components/ProductHeader.jsx';
+import CookiePreferences from './components/CookiePreferences.jsx';
 import LandingPage from './pages/LandingPage.jsx';
 import api from './services/api.js';
 import 'react-toastify/dist/ReactToastify.css';
@@ -82,9 +84,55 @@ function ProtectedRoute({ user, loading, requireAdmin = false, children }) {
   const location = useLocation();
   if (loading) return <div className="v-page-loading" role="status">Checking your account…</div>;
   if (!user) return <Navigate to="/signin" replace state={{ from: `${location.pathname}${location.search}` }} />;
+  if (!user.emailVerified) return <Navigate to="/verify-email" replace state={{ email: user.email }} />;
   if (!user.onboardingComplete && !['/onboarding', '/settings'].includes(location.pathname)) return <Navigate to="/onboarding" replace />;
+  if (user.onboardingComplete && location.pathname === '/onboarding') return <Navigate to="/dashboard" replace />;
   if (requireAdmin && user.role !== 'admin') return <Navigate to="/dashboard" replace />;
   return children;
+}
+
+function GuestOnlyRoute({ user, loading, children }) {
+  if (loading) return <div className="v-page-loading" role="status">Checking your account…</div>;
+  if (!user) return children;
+  if (!user.emailVerified) return <Navigate to="/verify-email" replace state={{ email: user.email }} />;
+  return <Navigate to={user.onboardingComplete ? '/dashboard' : '/onboarding'} replace />;
+}
+
+function VerificationRoute({ user, loading, children }) {
+  if (loading) return <div className="v-page-loading" role="status">Checking your account…</div>;
+  if (user?.emailVerified) return <Navigate to={user.onboardingComplete ? '/dashboard' : '/onboarding'} replace />;
+  return children;
+}
+
+const focusedRoutes = new Set(['/signup', '/signin', '/verify-email', '/forgot-password', '/reset-password', '/onboarding', '/dashboard', '/create', '/settings', '/admin']);
+const authRoutes = new Set(['/signup', '/signin', '/verify-email', '/forgot-password', '/reset-password']);
+const productRoutes = new Set(['/dashboard', '/create', '/settings', '/admin']);
+
+function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountDeleted }) {
+  const { pathname } = useLocation();
+  const showPublicHeader = !focusedRoutes.has(pathname);
+  return <div className="min-h-screen bg-[#070709] text-white">
+    {showPublicHeader && <Navbar user={user} onLogout={onLogout} />}
+    {authRoutes.has(pathname) && <ProductHeader mode="auth" />}
+    {pathname === '/onboarding' && <ProductHeader mode="setup" user={user} onLogout={onLogout} />}
+    {productRoutes.has(pathname) && <ProductHeader user={user} onLogout={onLogout} />}
+    <main id="main-content"><Routes>
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/dashboard" element={<ProtectedRoute user={user} loading={authLoading}><Dashboard user={user} onLogout={onLogout} /></ProtectedRoute>} />
+      <Route path="/create" element={<ProtectedRoute user={user} loading={authLoading}><CreateStory user={user} /></ProtectedRoute>} />
+      <Route path="/admin" element={<ProtectedRoute user={user} loading={authLoading} requireAdmin><AdminDashboard user={user} /></ProtectedRoute>} />
+      <Route path="/formats" element={<DeliveryFormats />} /><Route path="/portfolio" element={<PortfolioPage />} /><Route path="/pricing" element={<PricingPage />} />
+      <Route path="/signup" element={<GuestOnlyRoute user={user} loading={authLoading}><SignupPage onAuthenticated={onAuthenticated} /></GuestOnlyRoute>} />
+      <Route path="/signin" element={<GuestOnlyRoute user={user} loading={authLoading}><SigninPage onAuthenticated={onAuthenticated} /></GuestOnlyRoute>} />
+      <Route path="/verify-email" element={<VerificationRoute user={user} loading={authLoading}><VerifyEmailPage onAuthenticated={onAuthenticated} /></VerificationRoute>} />
+      <Route path="/forgot-password" element={<GuestOnlyRoute user={user} loading={authLoading}><ForgotPasswordPage /></GuestOnlyRoute>} />
+      <Route path="/reset-password" element={<GuestOnlyRoute user={user} loading={authLoading}><ResetPasswordPage /></GuestOnlyRoute>} />
+      <Route path="/onboarding" element={<ProtectedRoute user={user} loading={authLoading}><OnboardingPage user={user} onAuthenticated={onAuthenticated} onLogout={onLogout} /></ProtectedRoute>} />
+      <Route path="/settings" element={<ProtectedRoute user={user} loading={authLoading}><AccountSettings user={user} onAccountDeleted={onAccountDeleted} /></ProtectedRoute>} />
+      <Route path="/contact" element={<ContactSupport />} /><Route path="/changelog" element={<Changelog />} /><Route path="/about" element={<AboutUs />} /><Route path="/for/:slug" element={<NichePage />} /><Route path="/client-experience" element={<ClientExperience />} />
+      <Route path="/privacy" element={<PrivacyPolicy />} /><Route path="/terms" element={<TermsOfService />} /><Route path="/fair-use" element={<FairUsePolicy />} /><Route path="*" element={<NotFound />} />
+    </Routes></main>
+  </div>;
 }
 
 export default function App() {
@@ -115,22 +163,10 @@ export default function App() {
     setUser(null);
     window.location.assign('/');
   };
-  return <MotionConfig reducedMotion="user"><BrowserRouter><RoutePosition /><ToastContainer position="top-right" theme="dark" autoClose={3000} /><Suspense fallback={<div className="v-page-loading" role="status">Opening Veylo…</div>}><Routes>
+  return <MotionConfig reducedMotion="user"><BrowserRouter><RoutePosition /><CookiePreferences /><ToastContainer position="top-right" theme="dark" autoClose={3000} /><Suspense fallback={<div className="v-page-loading" role="status">Opening Veylo…</div>}><Routes>
     <Route path="/story/:storyId" element={<StoryViewer />} />
     <Route path="/demo" element={<StoryViewer demoMode />} />
     <Route path="/demo/:formatId" element={<FormatDemo />} />
-    <Route path="*" element={<div className="min-h-screen bg-[#070709] text-white"><Navbar user={user} onLogout={handleLogout} /><main id="main-content"><Routes>
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/dashboard" element={<ProtectedRoute user={user} loading={authLoading}><Dashboard user={user} /></ProtectedRoute>} />
-      <Route path="/create" element={<ProtectedRoute user={user} loading={authLoading}><CreateStory user={user} /></ProtectedRoute>} />
-      <Route path="/admin" element={<ProtectedRoute user={user} loading={authLoading} requireAdmin><AdminDashboard user={user} /></ProtectedRoute>} />
-      <Route path="/formats" element={<DeliveryFormats />} /><Route path="/portfolio" element={<PortfolioPage />} /><Route path="/pricing" element={<PricingPage />} />
-      <Route path="/signup" element={<SignupPage onAuthenticated={handleAuthenticated} />} /><Route path="/signin" element={<SigninPage onAuthenticated={handleAuthenticated} />} />
-      <Route path="/verify-email" element={<VerifyEmailPage onAuthenticated={handleAuthenticated} />} /><Route path="/forgot-password" element={<ForgotPasswordPage />} /><Route path="/reset-password" element={<ResetPasswordPage />} />
-      <Route path="/onboarding" element={<ProtectedRoute user={user} loading={authLoading}><OnboardingPage user={user} onAuthenticated={handleAuthenticated} /></ProtectedRoute>} />
-      <Route path="/settings" element={<ProtectedRoute user={user} loading={authLoading}><AccountSettings user={user} onAccountDeleted={handleAccountDeleted} /></ProtectedRoute>} />
-      <Route path="/contact" element={<ContactSupport />} /><Route path="/changelog" element={<Changelog />} /><Route path="/about" element={<AboutUs />} /><Route path="/for/:slug" element={<NichePage />} /><Route path="/client-experience" element={<ClientExperience />} />
-      <Route path="/privacy" element={<PrivacyPolicy />} /><Route path="/terms" element={<TermsOfService />} /><Route path="/fair-use" element={<FairUsePolicy />} /><Route path="*" element={<NotFound />} />
-    </Routes></main></div>} />
+    <Route path="*" element={<WebsiteShell user={user} authLoading={authLoading} onAuthenticated={handleAuthenticated} onLogout={handleLogout} onAccountDeleted={handleAccountDeleted} />} />
   </Routes></Suspense></BrowserRouter></MotionConfig>;
 }

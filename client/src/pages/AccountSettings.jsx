@@ -29,7 +29,7 @@ export default function AccountSettings({ user, onAccountDeleted }) {
     removeAccount({ password });
   }
 
-  return <Page className="v-account-page">
+  return <Page className="v-account-page" footer={false}>
     <section className="v-wrap v-account-wrap">
       <Reveal className="v-account-heading">
         <Link to="/dashboard" className="v-auth-text-button"><ArrowLeft size={16} />Back to my deliveries</Link>

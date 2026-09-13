@@ -54,8 +54,8 @@ export function Eyebrow({ children, number }) {
   return <p className="v-eyebrow">{number && <span className="v-index">{number}</span>}{children}</p>;
 }
 
-export function Page({ children, className = '' }) {
-  return <div className={'v-public ' + className}>{children}<Footer /></div>;
+export function Page({ children, className = '', footer = true }) {
+  return <div className={'v-public ' + className}>{children}{footer && <Footer />}</div>;
 }
 
 export function Intro({ eyebrow, title, accent, description, children, className = '' }) {

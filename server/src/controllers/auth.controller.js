@@ -37,8 +37,14 @@ async function issueCode(user, purpose) {
     { codeDigest: codeDigest(user.email, purpose, code), attempts: 0, expiresAt: new Date(now + 10 * 60 * 1000), resendAvailableAt: new Date(now + 60 * 1000) },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
-  if (purpose === 'verify-email') await sendVerificationEmail({ to: user.email, name: user.name, code });
-  else await sendPasswordResetEmail({ to: user.email, name: user.name, code });
+  try {
+    if (purpose === 'verify-email') await sendVerificationEmail({ to: user.email, name: user.name, code });
+    else await sendPasswordResetEmail({ to: user.email, name: user.name, code });
+  } catch (error) {
+    // Let the person retry immediately when the email provider rejects a send.
+    await AuthCode.updateOne({ userId: user._id, purpose }, { resendAvailableAt: new Date(0) });
+    throw error;
+  }
 }
 
 async function validChallenge(token, req, action) {
@@ -137,6 +143,7 @@ export async function login(req, res) {
       return res.status(401).json({ ...generic, requiresChallenge: user.failedLoginCount >= 3 });
     }
     if (!user.emailVerifiedAt) return res.status(403).json({ success: false, code: 'EMAIL_NOT_VERIFIED', email: user.email, message: 'Verify your email address before signing in.' });
+    user.accountStatus = 'active';
     user.failedLoginCount = 0;
     user.loginLockedUntil = undefined;
     user.lastLoginAt = new Date();
@@ -158,12 +165,27 @@ export async function googleLogin(req, res) {
     const profile = ticket.getPayload();
     if (!profile?.sub || !profile.email || !profile.email_verified) return res.status(401).json({ success: false, message: 'Google could not verify this email address.' });
     let user = await User.findOne({ googleId: profile.sub }).select('+googleId');
+    if (user?.accountStatus === 'suspended') return res.status(403).json({ success: false, code: 'ACCOUNT_SUSPENDED', message: 'This account is unavailable. Contact Veylo support.' });
     if (!user) {
-      const sameEmail = await User.findOne({ email: normalizeEmail(profile.email) });
-      if (sameEmail) return res.status(409).json({ success: false, code: 'ACCOUNT_LINK_REQUIRED', message: 'An account already uses this email. Sign in with your password first.' });
-      user = await User.create({ name: String(profile.name || profile.given_name || 'Photographer').slice(0, 100), email: normalizeEmail(profile.email), googleId: profile.sub, providers: ['google'], emailVerifiedAt: new Date(), accountStatus: 'active', avatar: profile.picture || '' });
-      sendWelcomeEmail({ to: user.email, name: user.name }).catch(error => console.error('[email/welcome]', error.message));
+      const sameEmail = await User.findOne({ email: normalizeEmail(profile.email) }).select('+googleId');
+      if (sameEmail) {
+        if (!sameEmail.emailVerifiedAt) return res.status(403).json({ success: false, code: 'EMAIL_NOT_VERIFIED', email: sameEmail.email, message: 'Enter the code sent to your email before using this account.' });
+        if (sameEmail.googleId && sameEmail.googleId !== profile.sub) return res.status(409).json({ success: false, code: 'GOOGLE_ACCOUNT_CONFLICT', message: 'This email is already connected to another Google account.' });
+        if (sameEmail.accountStatus === 'suspended') return res.status(403).json({ success: false, code: 'ACCOUNT_SUSPENDED', message: 'This account is unavailable. Contact Veylo support.' });
+        sameEmail.googleId = profile.sub;
+        sameEmail.providers = sameEmail.providers || [];
+        if (!sameEmail.providers.includes('google')) sameEmail.providers.push('google');
+        sameEmail.accountStatus = 'active';
+        if (!sameEmail.avatar && profile.picture) sameEmail.avatar = profile.picture;
+        await sameEmail.save();
+        await AuthCode.deleteMany({ userId: sameEmail._id, purpose: 'verify-email' });
+        user = sameEmail;
+      } else {
+        user = await User.create({ name: String(profile.name || profile.given_name || 'Photographer').slice(0, 100), email: normalizeEmail(profile.email), googleId: profile.sub, providers: ['google'], emailVerifiedAt: new Date(), accountStatus: 'active', avatar: profile.picture || '' });
+        sendWelcomeEmail({ to: user.email, name: user.name }).catch(error => console.error('[email/welcome]', error.message));
+      }
     }
+    user.accountStatus = 'active';
     user.lastLoginAt = new Date();
     await user.save();
     await createSession(user, req, res);
@@ -184,7 +206,7 @@ export async function refreshSession(req, res) {
       return res.status(401).json({ success: false, code: 'SESSION_EXPIRED', message: 'Your session has expired.' });
     }
     const user = await User.findById(session.userId);
-    if (!user || user.accountStatus !== 'active') return res.status(401).json({ success: false, code: 'SESSION_EXPIRED', message: 'Your session has expired.' });
+    if (!user || user.accountStatus !== 'active' || !user.emailVerifiedAt) return res.status(401).json({ success: false, code: 'SESSION_EXPIRED', message: 'Your session has expired.' });
     const newRefreshToken = randomToken(48);
     const csrfToken = randomToken(32);
     session.refreshTokenDigest = tokenDigest(newRefreshToken);

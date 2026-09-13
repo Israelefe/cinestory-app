@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUpRight, Check, Copy, Mail } from 'lucide-react';
+import { openCookieSettings } from './CookiePreferences.jsx';
 
 const emailAddress = 'info@veylo.com.ng';
 
@@ -77,6 +78,7 @@ export default function Footer() {
           <p>© {new Date().getFullYear()} Veylo. A product of Tech-City Technology.</p>
           <span>Built in Nigeria. Made for your next delivery.</span>
           <div className="v-footer-socials">
+            <button type="button" onClick={openCookieSettings}>Cookie settings</button>
             <a href="https://www.instagram.com/veylo_com_ng/" target="_blank" rel="noopener noreferrer">Instagram <ArrowUpRight size={12} /></a>
             <a href="https://www.tiktok.com/@veylo.com.ng" target="_blank" rel="noopener noreferrer">TikTok <ArrowUpRight size={12} /></a>
             <a href="https://www.youtube.com/@veylophotographydelivery" target="_blank" rel="noopener noreferrer">YouTube <ArrowUpRight size={12} /></a>

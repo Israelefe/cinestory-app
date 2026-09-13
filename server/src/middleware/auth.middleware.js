@@ -1,4 +1,5 @@
 import Session from '../models/Session.js';
+import User from '../models/User.js';
 import { ACCESS_COOKIE, CSRF_COOKIE, safeEqual, tokenDigest, verifyAccessToken } from '../utils/auth.js';
 
 async function authenticate(req) {
@@ -8,7 +9,9 @@ async function authenticate(req) {
   const payload = verifyAccessToken(token);
   const session = await Session.findOne({ _id: payload.sid, userId: payload.id, revokedAt: null, expiresAt: { $gt: new Date() } }).select('+csrfTokenDigest');
   if (!session) return null;
-  return { payload, session };
+  const user = await User.findById(payload.id).select('_id email role accountStatus emailVerifiedAt onboardingCompletedAt');
+  if (!user || user.accountStatus !== 'active') return null;
+  return { payload, session, user };
 }
 
 function csrfIsValid(req, session) {
@@ -22,8 +25,9 @@ export async function authMiddleware(req, res, next) {
   try {
     const authenticated = await authenticate(req);
     if (!authenticated) return res.status(401).json({ success: false, code: 'AUTH_REQUIRED', message: 'Please sign in to continue.' });
+    if (!authenticated.user.emailVerifiedAt) return res.status(403).json({ success: false, code: 'EMAIL_NOT_VERIFIED', email: authenticated.user.email, message: 'Verify your email address before continuing.' });
     if (!csrfIsValid(req, authenticated.session)) return res.status(403).json({ success: false, code: 'CSRF_INVALID', message: 'Please refresh the page and try again.' });
-    req.user = authenticated.payload;
+    req.user = { ...authenticated.payload, emailVerified: true, onboardingComplete: Boolean(authenticated.user.onboardingCompletedAt) };
     req.authSession = authenticated.session;
     next();
   } catch {
@@ -34,9 +38,9 @@ export async function authMiddleware(req, res, next) {
 export async function optionalAuthMiddleware(req, res, next) {
   try {
     const authenticated = await authenticate(req);
-    if (authenticated) {
+    if (authenticated?.user.emailVerifiedAt) {
       if (!csrfIsValid(req, authenticated.session)) return res.status(403).json({ success: false, code: 'CSRF_INVALID', message: 'Please refresh the page and try again.' });
-      req.user = authenticated.payload;
+      req.user = { ...authenticated.payload, emailVerified: true, onboardingComplete: Boolean(authenticated.user.onboardingCompletedAt) };
       req.authSession = authenticated.session;
     }
   } catch {

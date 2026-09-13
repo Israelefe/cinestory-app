@@ -103,11 +103,12 @@ export async function uploadStudioLogo(req, res) {
     if (!isSupportedImage(req.file)) return res.status(400).json({ success: false, message: 'Choose a JPEG, PNG or WebP image.' });
     if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) return res.status(503).json({ success: false, message: 'Image upload is temporarily unavailable.' });
     cloudinary.config({ cloud_name: process.env.CLOUDINARY_CLOUD_NAME, api_key: process.env.CLOUDINARY_API_KEY, api_secret: process.env.CLOUDINARY_API_SECRET, secure: true });
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
     const uploaded = await new Promise((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream({ folder: `veylo/studios/${req.user.id}`, public_id: 'profile', overwrite: true, resource_type: 'image', transformation: [{ width: 900, height: 900, crop: 'limit', quality: 'auto:good', fetch_format: 'auto' }] }, (error, result) => error ? reject(error) : resolve(result));
+      const stream = cloudinary.uploader.upload_stream({ folder: `veylo/studios/${req.user.id}`, public_id: 'profile', overwrite: true, invalidate: true, resource_type: 'image', transformation: [{ width: 900, height: 900, crop: 'limit', quality: 'auto:good' }] }, (error, result) => error ? reject(error) : resolve(result));
       stream.end(req.file.buffer);
     });
-    const user = await User.findById(req.user.id);
     user.studio.logoUrl = uploaded.secure_url;
     user.studio.logoPublicId = uploaded.public_id;
     user.avatar = uploaded.secure_url;
@@ -115,6 +116,7 @@ export async function uploadStudioLogo(req, res) {
     res.json({ success: true, user: publicUser(user), url: uploaded.secure_url });
   } catch (error) {
     console.error('[onboarding/logo]', error.http_code || error.name || 'upload_error', error.message);
-    res.status(500).json({ success: false, message: 'We could not upload that image. Please try another one.' });
+    const unavailable = [401, 403].includes(Number(error.http_code));
+    res.status(unavailable ? 503 : 502).json({ success: false, code: unavailable ? 'UPLOAD_CONFIGURATION_ERROR' : 'IMAGE_UPLOAD_FAILED', message: unavailable ? 'Profile image upload is temporarily unavailable. Your other details can still be saved.' : 'Cloudinary could not process that image. Try a different JPEG, PNG or WebP file.' });
   }
 }
