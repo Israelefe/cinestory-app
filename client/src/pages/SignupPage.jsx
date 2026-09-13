@@ -80,7 +80,7 @@ export default function SignupPage({ onAuthenticated }) {
           <label className="v-auth-consent"><input name="accepted" type="checkbox" checked={form.accepted} onChange={update} /><span>I agree to Veylo’s <Link to="/terms">terms of use</Link> and <Link to="/privacy">privacy policy</Link>.</span></label>
           <TurnstileCheck ref={challengeRef} action="register" onVerify={setTurnstileToken} />
           {status.error && <p className="v-form-status" role="alert">{status.error}</p>}
-          <button type="submit" className="v-button" disabled={status.loading}>{status.loading ? 'Creating your account…' : 'Create free account'}<ArrowRight size={18} /></button>
+          <button type="submit" className="v-button" disabled={status.loading || !turnstileToken}>{status.loading ? 'Creating your account…' : !turnstileToken ? 'Completing security check…' : 'Create free account'}<ArrowRight size={18} /></button>
         </form>
         <ul>{reasons.map(reason => <li key={reason}><Check size={15} /><span>{reason}</span></li>)}</ul>
         <p className="v-signup-login">Already have an account? <Link to="/signin">Sign in</Link></p>

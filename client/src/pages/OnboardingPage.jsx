@@ -36,7 +36,7 @@ export default function OnboardingPage({ user, onAuthenticated }) {
     try {
       const body = new FormData();
       body.append('logo', file);
-      const { data } = await api.post('/v1/onboarding/logo', body, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const { data } = await api.post('/v1/onboarding/logo', body);
       setLogo(data.url);
       onAuthenticated(data.user);
       setStatus({ loading: false, upload: false, error: '' });

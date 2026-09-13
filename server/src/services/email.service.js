@@ -15,18 +15,22 @@ function shell(content) {
   return `<div style="margin:0;background:#070709;padding:40px 18px;color:#f1efe9;font-family:Arial,sans-serif"><div style="max-width:560px;margin:0 auto;border:1px solid #29292f;background:#0c0c10;padding:38px"><p style="margin:0 0 28px;color:#ff9b8e;font-size:12px;font-weight:700;letter-spacing:2px">VEYLO</p>${content}<p style="margin:34px 0 0;border-top:1px solid #29292f;padding-top:20px;color:#817c76;font-size:12px;line-height:1.7">Don’t just deliver photos. Showcase them.</p></div></div>`;
 }
 
-async function send(message) {
+async function send(kind, message) {
   const { data, error } = await resend().emails.send({
-    from: process.env.RESEND_FROM_EMAIL || 'Veylo <hello@updates.veylo.com.ng>',
+    from: process.env.RESEND_FROM_EMAIL || 'Veylo <info@veylo.com.ng>',
     ...message
   });
-  if (error) throw new Error(error.message || 'Email could not be sent.');
+  if (error) {
+    console.error(`[email/${kind}] rejected`, error.name || error.statusCode || 'provider_error', error.message || 'Email could not be sent.');
+    throw new Error(error.message || 'Email could not be sent.');
+  }
+  console.info(`[email/${kind}] accepted`, data?.id || 'no_delivery_id');
   return data;
 }
 
 export function sendVerificationEmail({ to, name, code }) {
   const safeName = escapeHtml(name.split(' ')[0] || 'there');
-  return send({
+  return send('verification', {
     to,
     subject: `${code} is your Veylo verification code`,
     text: `Hi ${name}, use ${code} to verify your Veylo email address. It expires in 10 minutes.`,
@@ -36,7 +40,7 @@ export function sendVerificationEmail({ to, name, code }) {
 
 export function sendPasswordResetEmail({ to, name, code }) {
   const safeName = escapeHtml(name.split(' ')[0] || 'there');
-  return send({
+  return send('password-reset', {
     to,
     subject: `${code} is your Veylo password reset code`,
     text: `Hi ${name}, use ${code} to reset your Veylo password. It expires in 10 minutes.`,
@@ -47,7 +51,7 @@ export function sendPasswordResetEmail({ to, name, code }) {
 export function sendWelcomeEmail({ to, name }) {
   const firstName = escapeHtml(name.split(' ')[0] || 'there');
   const url = `${process.env.CLIENT_URL || 'https://veylo.com.ng'}/onboarding`;
-  return send({
+  return send('welcome', {
     to,
     subject: 'Your Veylo account is ready',
     text: `Welcome to Veylo, ${name}. Finish setting up your studio and create your first delivery: ${url}`,
@@ -56,7 +60,7 @@ export function sendWelcomeEmail({ to, name }) {
 }
 
 export function sendPasswordChangedEmail({ to, name }) {
-  return send({
+  return send('password-changed', {
     to,
     subject: 'Your Veylo password was changed',
     text: `Hi ${name}, your Veylo password was changed. Contact info@veylo.com.ng if this was not you.`,
@@ -65,5 +69,5 @@ export function sendPasswordChangedEmail({ to, name }) {
 }
 
 export async function sendStoryReadyEmail({ to, clientName, storyTitle, storyUrl }) {
-  return send({ to, subject: `Your photographs are ready — ${storyTitle}`, text: `${clientName}, your photographs are ready: ${storyUrl}`, html: shell(`<h1 style="margin:0 0 16px;font-size:30px;font-weight:500">Your photographs are ready.</h1><p style="color:#b8b1aa;line-height:1.75">${escapeHtml(clientName)}, your photographer has prepared ${escapeHtml(storyTitle)} for you.</p><a href="${escapeHtml(storyUrl)}" style="display:inline-block;margin-top:24px;background:#ff5a47;color:#100c0b;padding:14px 22px;text-decoration:none;font-size:13px;font-weight:700">Open your delivery</a>`) });
+  return send('story-ready', { to, subject: `Your photographs are ready — ${storyTitle}`, text: `${clientName}, your photographs are ready: ${storyUrl}`, html: shell(`<h1 style="margin:0 0 16px;font-size:30px;font-weight:500">Your photographs are ready.</h1><p style="color:#b8b1aa;line-height:1.75">${escapeHtml(clientName)}, your photographer has prepared ${escapeHtml(storyTitle)} for you.</p><a href="${escapeHtml(storyUrl)}" style="display:inline-block;margin-top:24px;background:#ff5a47;color:#100c0b;padding:14px 22px;text-decoration:none;font-size:13px;font-weight:700">Open your delivery</a>`) });
 }

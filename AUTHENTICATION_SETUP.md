@@ -8,10 +8,10 @@ Create the `veylo` database and place its connection string in `MONGODB_URI`. Gi
 
 ## Resend
 
-Verify a sending subdomain such as `updates.veylo.com.ng`, including its SPF and DKIM records. Add DMARC to the Veylo domain. Create a restricted API key and configure:
+Verify `veylo.com.ng`, including the SPF and DKIM records Resend provides. Add DMARC to the Veylo domain. Create a restricted API key and configure:
 
 - `RESEND_API_KEY`
-- `RESEND_FROM_EMAIL=Veylo <hello@updates.veylo.com.ng>`
+- `RESEND_FROM_EMAIL=Veylo <info@veylo.com.ng>`
 
 ## Cloudflare Turnstile
 

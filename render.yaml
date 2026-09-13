@@ -27,7 +27,7 @@ services:
       - key: RESEND_API_KEY
         sync: false
       - key: RESEND_FROM_EMAIL
-        value: Veylo <hello@updates.veylo.com.ng>
+        value: Veylo <info@veylo.com.ng>
       - key: TURNSTILE_SECRET_KEY
         sync: false
       - key: GOOGLE_CLIENT_ID

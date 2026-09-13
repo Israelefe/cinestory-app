@@ -9,7 +9,7 @@ const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 60000,
   withCredentials: true,
-  headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+  headers: { 'X-Requested-With': 'XMLHttpRequest' }
 });
 
 api.interceptors.request.use(config => {

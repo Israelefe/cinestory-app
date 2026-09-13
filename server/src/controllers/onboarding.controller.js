@@ -114,7 +114,7 @@ export async function uploadStudioLogo(req, res) {
     await user.save();
     res.json({ success: true, user: publicUser(user), url: uploaded.secure_url });
   } catch (error) {
-    console.error('[onboarding/logo]', error.message);
+    console.error('[onboarding/logo]', error.http_code || error.name || 'upload_error', error.message);
     res.status(500).json({ success: false, message: 'We could not upload that image. Please try another one.' });
   }
 }
