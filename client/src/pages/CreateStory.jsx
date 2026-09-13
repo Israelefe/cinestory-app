@@ -99,7 +99,7 @@ export default function CreateStory({ user }) {
       setUploadingAudio(true);
       toast.info('Uploading custom soundtrack...');
       const cloudRes = await uploadImageToCloudinary(file, {
-        folder: 'assets/cinestory/audio',
+        folder: `veylo/users/${user.id}/audio`,
         resource_type: 'auto'
       });
 
@@ -139,7 +139,7 @@ export default function CreateStory({ user }) {
       const file = fileArray[i];
       try {
         const result = await uploadImageToCloudinary(file, {
-          folder: 'assets/cinestory/photos',
+          folder: `veylo/users/${user.id}/photos`,
           onProgress: (p) => {
             setUploadProgress(Math.round(((i + p / 100) / total) * 100));
           }

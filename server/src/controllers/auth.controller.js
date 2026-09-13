@@ -1,10 +1,13 @@
 import crypto from 'crypto';
+import mongoose from 'mongoose';
+import { v2 as cloudinary } from 'cloudinary';
 import { OAuth2Client } from 'google-auth-library';
 import { z } from 'zod';
 import User from '../models/User.js';
 import AuthCode from '../models/AuthCode.js';
 import Session from '../models/Session.js';
 import PasswordResetToken from '../models/PasswordResetToken.js';
+import PhotoStory from '../models/PhotoStory.js';
 import { sendPasswordChangedEmail, sendPasswordResetEmail, sendVerificationEmail, sendWelcomeEmail } from '../services/email.service.js';
 import { verifyTurnstile } from '../services/turnstile.service.js';
 import { REFRESH_COOKIE, clearSessionCookies, codeDigest, createSession, normalizeEmail, publicUser, randomToken, safeEqual, setSessionCookies, tokenDigest } from '../utils/auth.js';
@@ -223,6 +226,82 @@ export async function getMe(req, res) {
   } catch (error) {
     console.error('[auth/me]', error.message);
     res.status(500).json({ success: false, message: 'We could not open your account. Please try again.' });
+  }
+}
+
+const deleteAccountSchema = z.object({
+  confirmation: z.string().trim().max(254),
+  password: z.string().max(128).optional().default(''),
+  googleCredential: z.string().optional().default('')
+});
+
+async function confirmAccountOwner(user, data) {
+  if (normalizeEmail(data.confirmation) !== user.email) return false;
+  if (user.providers.includes('password')) return Boolean(data.password) && user.comparePassword(data.password);
+  if (!user.providers.includes('google') || data.googleCredential.length < 20) return false;
+  try {
+    const ticket = await new OAuth2Client(process.env.GOOGLE_CLIENT_ID).verifyIdToken({ idToken: data.googleCredential, audience: process.env.GOOGLE_CLIENT_ID });
+    const profile = ticket.getPayload();
+    return Boolean(profile?.email_verified && normalizeEmail(profile.email) === user.email && profile.sub === user.googleId);
+  } catch {
+    return false;
+  }
+}
+
+async function removeCloudinaryResources(prefix, resourceType = 'image') {
+  await cloudinary.api.delete_resources_by_prefix(prefix, { resource_type: resourceType, type: 'upload', invalidate: true });
+}
+
+async function deleteCloudinaryFolder(path) {
+  await cloudinary.api.delete_folder(path).catch(error => {
+    if (error?.http_code !== 404) throw error;
+  });
+}
+
+async function removeCloudinaryFolder(prefix, resourceTypes, childFolders = []) {
+  await Promise.all(resourceTypes.map(resourceType => removeCloudinaryResources(prefix, resourceType)));
+  for (const child of childFolders) await deleteCloudinaryFolder(`${prefix}/${child}`);
+  await deleteCloudinaryFolder(prefix);
+}
+
+export async function deleteAccount(req, res) {
+  try {
+    const parsed = deleteAccountSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ success: false, message: 'Enter the email address connected to this account.' });
+    const user = await User.findById(req.user.id).select('+password +googleId');
+    if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
+    if (!(await confirmAccountOwner(user, parsed.data))) return res.status(403).json({ success: false, code: 'ACCOUNT_CONFIRMATION_FAILED', message: 'We could not confirm that this account belongs to you.' });
+
+    const userPrefix = `veylo/users/${user._id}`;
+    const stories = await PhotoStory.find({ userId: user._id }).select('photos.url soundtrack.audioUrl').lean();
+    const hasDeliveryAssets = stories.some(story => [story.soundtrack?.audioUrl, ...(story.photos || []).map(photo => photo.url)].some(url => String(url || '').includes(`/${userPrefix}/`)));
+    const hasStudioAsset = user.studio?.logoPublicId?.startsWith(`veylo/studios/${user._id}/`);
+    if (hasStudioAsset || hasDeliveryAssets) {
+      cloudinary.config({ cloud_name: process.env.CLOUDINARY_CLOUD_NAME, api_key: process.env.CLOUDINARY_API_KEY, api_secret: process.env.CLOUDINARY_API_SECRET, secure: true });
+      await Promise.all([
+        hasStudioAsset ? removeCloudinaryFolder(`veylo/studios/${user._id}`, ['image']) : Promise.resolve(),
+        hasDeliveryAssets ? removeCloudinaryFolder(userPrefix, ['image', 'video'], ['photos', 'audio']) : Promise.resolve()
+      ]);
+    }
+
+    const transaction = await mongoose.startSession();
+    try {
+      await transaction.withTransaction(async () => {
+        const options = { session: transaction };
+        await PhotoStory.deleteMany({ userId: user._id }, options);
+        await Session.deleteMany({ userId: user._id }, options);
+        await AuthCode.deleteMany({ userId: user._id }, options);
+        await PasswordResetToken.deleteMany({ userId: user._id }, options);
+        await User.deleteOne({ _id: user._id }, options);
+      });
+    } finally {
+      await transaction.endSession();
+    }
+    clearSessionCookies(res);
+    res.json({ success: true, message: 'Your Veylo account and its data have been deleted.' });
+  } catch (error) {
+    console.error('[auth/delete-account]', error.http_code || error.name || 'delete_error', error.message);
+    res.status(500).json({ success: false, message: 'We could not delete the complete account. Your account is still available. Please try again.' });
   }
 }
 

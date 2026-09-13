@@ -15,7 +15,8 @@ import {
   Camera,
   CheckCircle2,
   ArrowRight,
-  MessageCircle
+  MessageCircle,
+  Settings
 } from 'lucide-react';
 import api from '../services/api.js';
 import { APP_URL } from '../config/env.js';
@@ -99,7 +100,11 @@ export default function Dashboard({ user }) {
           </p>
         </div>
 
-        <div className='flex items-center gap-3 w-full md:w-auto'>
+        <div className='flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto'>
+          <Link to='/settings' className='justify-center border border-white/15 hover:border-white/30 active:scale-95 text-zinc-200 px-5 py-3.5 rounded-2xl font-bold text-xs sm:text-sm flex items-center gap-2 transition-all duration-150'>
+            <Settings size={16} />
+            <span>Account settings</span>
+          </Link>
           <Link
             to='/create'
             className='w-full md:w-auto justify-center bg-[#ff5a47] hover:bg-[#ff7564] active:scale-95 text-white px-6 py-3.5 rounded-2xl font-bold text-xs sm:text-sm shadow-lg shadow-[#ff5a47]/30 flex items-center gap-2 transition-all duration-150'>

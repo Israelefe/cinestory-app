@@ -25,6 +25,7 @@ const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage.jsx'));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage.jsx'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage.jsx'));
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage.jsx'));
+const AccountSettings = lazy(() => import('./pages/AccountSettings.jsx'));
 const DeliveryFormats = lazy(() => import('./pages/DeliveryFormats.jsx'));
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage.jsx'));
 const ContactSupport = lazy(() => import('./pages/ContactSupport.jsx'));
@@ -70,7 +71,7 @@ function RoutePosition() {
     return () => { stopped = true; window.cancelAnimationFrame(frame); };
   }, [pathname, hash, key, navigationType]);
   useEffect(() => {
-    const names = { '/': 'Photo delivery for finished shoots', '/formats': 'Six delivery formats', '/portfolio': 'Veylo Portfolio', '/pricing': 'Plans and pricing', '/signup': 'Create your account', '/signin': 'Sign in', '/verify-email': 'Verify your email', '/forgot-password': 'Reset your password', '/reset-password': 'Choose a new password', '/onboarding': 'Set up your studio', '/about': 'About us', '/client-experience': 'The client experience', '/contact': 'Get in touch', '/privacy': 'Privacy policy', '/terms': 'Terms of use', '/fair-use': 'Fair use', '/changelog': 'Product updates', '/create': 'Create a Photo Story', '/demo': 'Watch a Photo Story', '/demo/editorial': 'Explore an Editorial Page', '/demo/reveal': 'Begin a Photo Reveal', '/demo/canvas': 'Explore a Canvas', '/demo/chapters': 'Choose a chapter', '/demo/album': 'Turn through an Album' };
+    const names = { '/': 'Photo delivery for finished shoots', '/formats': 'Six delivery formats', '/portfolio': 'Veylo Portfolio', '/pricing': 'Plans and pricing', '/signup': 'Create your account', '/signin': 'Sign in', '/verify-email': 'Verify your email', '/forgot-password': 'Reset your password', '/reset-password': 'Choose a new password', '/onboarding': 'Set up your studio', '/settings': 'Account settings', '/about': 'About us', '/client-experience': 'The client experience', '/contact': 'Get in touch', '/privacy': 'Privacy policy', '/terms': 'Terms of use', '/fair-use': 'Fair use', '/changelog': 'Product updates', '/create': 'Create a Photo Story', '/demo': 'Watch a Photo Story', '/demo/editorial': 'Explore an Editorial Page', '/demo/reveal': 'Begin a Photo Reveal', '/demo/canvas': 'Explore a Canvas', '/demo/chapters': 'Choose a chapter', '/demo/album': 'Turn through an Album' };
     const label = names[pathname] || (pathname.startsWith('/for/') ? `For ${pathname.split('/').pop().replaceAll('-', ' ')}` : 'Photo delivery');
     document.title = `Veylo — ${label}`;
   }, [pathname]);
@@ -81,7 +82,7 @@ function ProtectedRoute({ user, loading, requireAdmin = false, children }) {
   const location = useLocation();
   if (loading) return <div className="v-page-loading" role="status">Checking your account…</div>;
   if (!user) return <Navigate to="/signin" replace state={{ from: `${location.pathname}${location.search}` }} />;
-  if (!user.onboardingComplete && location.pathname !== '/onboarding') return <Navigate to="/onboarding" replace />;
+  if (!user.onboardingComplete && !['/onboarding', '/settings'].includes(location.pathname)) return <Navigate to="/onboarding" replace />;
   if (requireAdmin && user.role !== 'admin') return <Navigate to="/dashboard" replace />;
   return children;
 }
@@ -109,6 +110,11 @@ export default function App() {
     setUser(null);
     window.location.assign('/');
   };
+  const handleAccountDeleted = () => {
+    authVersion.current += 1;
+    setUser(null);
+    window.location.assign('/');
+  };
   return <MotionConfig reducedMotion="user"><BrowserRouter><RoutePosition /><ToastContainer position="top-right" theme="dark" autoClose={3000} /><Suspense fallback={<div className="v-page-loading" role="status">Opening Veylo…</div>}><Routes>
     <Route path="/story/:storyId" element={<StoryViewer />} />
     <Route path="/demo" element={<StoryViewer demoMode />} />
@@ -122,6 +128,7 @@ export default function App() {
       <Route path="/signup" element={<SignupPage onAuthenticated={handleAuthenticated} />} /><Route path="/signin" element={<SigninPage onAuthenticated={handleAuthenticated} />} />
       <Route path="/verify-email" element={<VerifyEmailPage onAuthenticated={handleAuthenticated} />} /><Route path="/forgot-password" element={<ForgotPasswordPage />} /><Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/onboarding" element={<ProtectedRoute user={user} loading={authLoading}><OnboardingPage user={user} onAuthenticated={handleAuthenticated} /></ProtectedRoute>} />
+      <Route path="/settings" element={<ProtectedRoute user={user} loading={authLoading}><AccountSettings user={user} onAccountDeleted={handleAccountDeleted} /></ProtectedRoute>} />
       <Route path="/contact" element={<ContactSupport />} /><Route path="/changelog" element={<Changelog />} /><Route path="/about" element={<AboutUs />} /><Route path="/for/:slug" element={<NichePage />} /><Route path="/client-experience" element={<ClientExperience />} />
       <Route path="/privacy" element={<PrivacyPolicy />} /><Route path="/terms" element={<TermsOfService />} /><Route path="/fair-use" element={<FairUsePolicy />} /><Route path="*" element={<NotFound />} />
     </Routes></main></div>} />
