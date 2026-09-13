@@ -56,7 +56,7 @@ export default function AccountSettings({ user, onAccountDeleted }) {
         </form> : <div className="v-google-delete">
           <p>Confirm with the Google account connected to this email address.</p>
           {status.error && <p className="v-form-status" role="alert">{status.error}</p>}
-          {emailMatches ? <GoogleSignIn onCredential={credential => removeAccount({ googleCredential: credential })} onUnavailable={() => setStatus({ loading: false, error: 'Google confirmation is not available right now.' })} /> : <button className="v-delete-button" disabled><Trash2 size={17} />Type your email to continue</button>}
+          {emailMatches ? <GoogleSignIn onCredential={credential => removeAccount({ googleCredential: credential })} onUnavailable={message => setStatus({ loading: false, error: message || 'Google confirmation is not available right now.' })} /> : <button className="v-delete-button" disabled><Trash2 size={17} />Type your email to continue</button>}
         </div>}
       </Reveal>
     </section>

@@ -67,7 +67,7 @@ export default function SigninPage({ onAuthenticated }) {
       <Reveal className="v-auth-panel" delay={.06}>
         <header className="v-auth-panel-head"><div><p className="v-eyebrow"><Camera size={14} />Photographer sign in</p><h2>Welcome back.</h2></div><p>New to Veylo? <Link to="/signup">Create an account</Link></p></header>
         <p className="v-auth-panel-copy">Use the email address connected to your photographer or studio account.</p>
-        <GoogleSignIn onCredential={google} onUnavailable={() => setStatus(current => ({ ...current, error: 'Google sign-in is not available right now. Use your email to continue.' }))} />
+        <GoogleSignIn onCredential={google} onUnavailable={message => setStatus(current => ({ ...current, loading: false, error: message || 'Google sign-in is not available right now. Use your email to continue.' }))} />
         <div className="v-auth-divider"><span>or sign in with email</span></div>
         <form className="v-form" onSubmit={submit}>
           <div className="v-field"><label htmlFor="signin-email">Email address</label><input id="signin-email" name="email" type="email" inputMode="email" autoComplete="email" required maxLength={254} value={form.email} onChange={event => setForm(current => ({ ...current, email: event.target.value }))} /></div>

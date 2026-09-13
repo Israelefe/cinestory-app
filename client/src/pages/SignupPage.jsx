@@ -82,7 +82,7 @@ export default function SignupPage({ onAuthenticated }) {
           <p>Already registered? <Link to="/signin">Sign in</Link></p>
         </header>
         <div className="v-auth-included">{included.map(item => <span key={item}><Check size={14} />{item}</span>)}</div>
-        <GoogleSignIn onCredential={google} onUnavailable={() => setStatus({ loading: false, error: 'Google sign-in is not available right now. Use your email to continue.' })} />
+        <GoogleSignIn context="signup" onCredential={google} onUnavailable={message => setStatus({ loading: false, error: message || 'Google sign-in is not available right now. Use your email to continue.' })} />
         <div className="v-auth-divider"><span>or continue with email</span></div>
         <form className="v-form" onSubmit={submit}>
           <div className="v-auth-two"><div className="v-field"><label htmlFor="signup-name">Your name</label><input id="signup-name" name="name" autoComplete="name" required minLength={2} maxLength={100} value={form.name} onChange={update} /></div><div className="v-field"><label htmlFor="signup-email">Email address</label><input id="signup-email" name="email" type="email" inputMode="email" autoComplete="email" required maxLength={254} value={form.email} onChange={update} /></div></div>
