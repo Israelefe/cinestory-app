@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Camera, LogOut, Settings } from 'lucide-react';
+import { Camera, LayoutDashboard, LogOut, Settings } from 'lucide-react';
+import './Header.css';
 
 export default function ProductHeader({ user, onLogout, mode = 'app' }) {
   const { pathname } = useLocation();
@@ -15,8 +16,8 @@ export default function ProductHeader({ user, onLogout, mode = 'app' }) {
       {auth && <Link className="v-product-home" to="/">Back to Veylo</Link>}
       {setup && <div className="v-product-setup-label"><Camera size={15} /><span>Setting up {user?.studio?.name || user?.name || 'your studio'}</span></div>}
       {!auth && !setup && <nav aria-label="Account navigation">
-        <Link to="/dashboard" aria-current={pathname === '/dashboard' ? 'page' : undefined}>Deliveries</Link>
-        <Link to="/settings" aria-current={pathname === '/settings' ? 'page' : undefined}><Settings size={15} />Settings</Link>
+        {pathname !== '/dashboard' && <Link to="/dashboard"><LayoutDashboard size={15} /><span>Dashboard</span></Link>}
+        {pathname !== '/settings' && <Link to="/settings"><Settings size={15} /><span>Settings</span></Link>}
       </nav>}
       {user && <button type="button" className="v-product-signout" onClick={onLogout}><LogOut size={16} /><span>Sign out</span></button>}
     </div>

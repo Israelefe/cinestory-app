@@ -1,0 +1,75 @@
+.v-nav-dashboard {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid #ffffff1f;
+  color: #ded8d1;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+  transition: color .2s, border-color .2s, background .2s, transform .18s;
+}
+
+.v-nav-dashboard:hover {
+  border-color: #ff9b8e70;
+  background: #ff5a4709;
+  color: #ffb0a6;
+}
+
+.v-nav-dashboard:active {
+  transform: scale(.97);
+}
+
+.v-product-signout,
+.v-product-signout span,
+.v-product-header nav a,
+.v-product-header nav a span {
+  flex: none;
+  white-space: nowrap;
+}
+
+@media (max-width: 639px) {
+  .v-nav-logout {
+    display: none;
+  }
+
+  .v-product-header-inner {
+    gap: 10px;
+  }
+
+  .v-product-header nav {
+    gap: 3px;
+  }
+
+  .v-product-header nav a,
+  .v-product-signout {
+    padding-inline: 10px;
+  }
+}
+
+@media (max-width: 420px) {
+  .v-product-header nav a span {
+    display: none;
+  }
+
+  .v-product-header nav a {
+    width: 42px;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 374px) {
+  .v-product-header nav a:first-child {
+    display: inline-flex;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v-nav-dashboard {
+    transition: none;
+  }
+}
