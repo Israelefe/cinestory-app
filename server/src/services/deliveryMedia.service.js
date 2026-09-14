@@ -48,8 +48,7 @@ export function signedImageUrl(publicId, { width = 1600, thumbnail = false, atta
   const transformation = resourceType !== 'image' ? undefined : thumbnail
     ? [{ crop: 'fill', width: 480, height: 600, gravity: 'auto', quality: 'auto:eco', fetch_format: 'auto' }]
     : [{ crop: 'limit', width, quality: 'auto:good', fetch_format: 'auto' }];
-  const authToken = process.env.CLOUDINARY_AUTH_TOKEN_KEY ? { duration: 15 * 60 } : undefined;
-  return cloudinary.url(publicId, { secure: true, resource_type: resourceType, type: 'authenticated', sign_url: true, auth_token: authToken, transformation, flags: attachment ? 'attachment' : undefined });
+  return cloudinary.url(publicId, { secure: true, resource_type: resourceType, type: 'authenticated', sign_url: true, transformation, flags: attachment ? 'attachment' : undefined });
 }
 
 export function signedArchiveUrl(publicIds, filename = 'veylo-gallery', prefix = '') {
@@ -60,8 +59,7 @@ export function signedArchiveUrl(publicIds, filename = 'veylo-gallery', prefix =
 
 export function signedOgImageUrl(publicId) {
   ready();
-  const authToken = process.env.CLOUDINARY_AUTH_TOKEN_KEY ? { duration: 15 * 60 } : undefined;
-  return cloudinary.url(publicId, { secure: true, resource_type: 'image', type: 'authenticated', sign_url: true, auth_token: authToken, transformation: [{ crop: 'fill', width: 1200, height: 630, gravity: 'auto', quality: 'auto:good', fetch_format: 'jpg' }] });
+  return cloudinary.url(publicId, { secure: true, resource_type: 'image', type: 'authenticated', sign_url: true, transformation: [{ crop: 'fill', width: 1200, height: 630, gravity: 'auto', quality: 'auto:good', fetch_format: 'jpg' }] });
 }
 
 export async function removeDeliveryMedia(userId, deliveryId) {

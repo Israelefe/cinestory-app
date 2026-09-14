@@ -9,8 +9,7 @@ export function configureCloudinary() {
   const apiKey = value('CLOUDINARY_API_KEY');
   const apiSecret = value('CLOUDINARY_API_SECRET');
   if (!cloudName || !apiKey || !apiSecret) return false;
-  const authTokenKey = value('CLOUDINARY_AUTH_TOKEN_KEY');
-  cloudinary.config({ cloud_name: cloudName, api_key: apiKey, api_secret: apiSecret, secure: true, ...(authTokenKey ? { auth_token: { key: authTokenKey } } : {}) });
+  cloudinary.config({ cloud_name: cloudName, api_key: apiKey, api_secret: apiSecret, secure: true });
   return true;
 }
 

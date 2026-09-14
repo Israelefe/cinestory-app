@@ -32,7 +32,7 @@ if (process.env.NODE_ENV === 'production') {
     if (billingMissing.length) throw new Error(`Missing billing configuration: ${billingMissing.join(', ')}`);
   }
   if (process.env.DELIVERY_PIPELINE_ENABLED === 'true') {
-    const deliveryMissing = ['ALIBABA_MODEL_STUDIO_API_KEY', 'ALIBABA_WORKSPACE_ID', 'DEEPGRAM_API_KEY', 'CLOUDINARY_AUTH_TOKEN_KEY'].filter(name => !process.env[name]);
+    const deliveryMissing = ['ALIBABA_MODEL_STUDIO_API_KEY', 'ALIBABA_WORKSPACE_ID', 'DEEPGRAM_API_KEY'].filter(name => !process.env[name]);
     if (deliveryMissing.length) throw new Error(`Missing delivery pipeline configuration: ${deliveryMissing.join(', ')}`);
   }
 }
