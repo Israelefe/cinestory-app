@@ -31,8 +31,8 @@ export async function generateNarration(delivery) {
   if (!apiKey) throw Object.assign(new Error('Deepgram narration is not configured.'), { code: 'NARRATION_NOT_CONFIGURED' });
   const text = narrationText(delivery);
   if (!text) throw Object.assign(new Error('Add approved story text before creating narration.'), { code: 'NARRATION_TEXT_REQUIRED' });
-  const voice = process.env.DEEPGRAM_TTS_MODEL || 'aura-2-athena-en';
-  const response = await fetch(`https://api.deepgram.com/v1/speak?model=${encodeURIComponent(voice)}&encoding=mp3`, { method: 'POST', headers: { Authorization: `Token ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ text }), signal: AbortSignal.timeout(90_000) });
+  const voice = process.env.DEEPGRAM_TTS_MODEL || 'flux-hannah-en';
+  const response = await fetch(`https://api.deepgram.com/v2/speak?model=${encodeURIComponent(voice)}&encoding=mp3`, { method: 'POST', headers: { Authorization: `Token ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ text }), signal: AbortSignal.timeout(90_000) });
   if (!response.ok) {
     const providerMessage = await response.text().catch(() => '');
     throw Object.assign(new Error(`Deepgram could not create narration${providerMessage ? `: ${providerMessage.slice(0, 160)}` : '.'}`), { code: 'NARRATION_REQUEST_FAILED' });
