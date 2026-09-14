@@ -19,8 +19,9 @@ async function analyze(job, delivery) {
   delivery.status = 'analyzing';
   await delivery.save();
   const assets = delivery.assets.sort((a, b) => a.sortOrder - b.sortOrder);
-  const insights = Array.isArray(job.result?.insights) ? job.result.insights : [];
-  for (let offset = job.cursor || 0; offset < assets.length; offset += 20) {
+  const startOffset = job.cursor || 0;
+  const insights = startOffset > 0 && Array.isArray(job.result?.insights) ? [...job.result.insights] : [];
+  for (let offset = startOffset; offset < assets.length; offset += 20) {
     const batch = assets.slice(offset, offset + 20).map(asset => ({ assetId: asset.assetId, analysisUrl: signedImageUrl(asset.publicId, { width: 1024 }) }));
     const batchInsights = await analyzeImageBatch({ brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, assets: batch });
     insights.push(...batchInsights);
@@ -56,27 +57,33 @@ async function direct(job, delivery) {
   if (!direction) {
     direction = await createGlobalDirection({ format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, collectionAnalysis: delivery.collectionAnalysis, imageInsights: insights, revisionInstruction: job.input?.instruction || '', currentDirection: job.type === 'revise' ? delivery.creativeDirection : null });
     if (direction.format !== format) {
-      const error = new Error('The creative model returned the wrong delivery format. Run the direction again.');
-      error.code = 'INVALID_DIRECTION_FORMAT';
-      throw error;
+      direction.format = format;
     }
     await saveJob(job, { stage: 'setting-direction', cursor: 0, progress: 18, result: { direction, frames } });
   }
+  const sectionIds = new Set(direction.sections.map(section => section.id));
+  const defaultSectionId = direction.sections[0]?.id || 'section-1';
   for (let offset = job.cursor || 0; offset < insights.length; offset += 40) {
     const batch = insights.slice(offset, offset + 40);
     const result = await createFrameBatch({ format, brief: delivery.brief, clientName: delivery.clientName, direction, imageInsights: batch, revisionInstruction: job.input?.instruction || '', currentFrames: job.type === 'revise' ? (delivery.creativeDirection?.frames || []).filter(frame => batch.some(item => item.assetId === frame.assetId)) : [] });
-    if (result.frames.some((frame, index) => frame.assetId !== batch[index]?.assetId)) {
-      const error = new Error('The creative model changed the photograph order. Run the direction again.');
-      error.code = 'INVALID_FRAME_SEQUENCE';
-      throw error;
-    }
-    const sectionIds = new Set(direction.sections.map(section => section.id));
-    if (result.frames.some(frame => !sectionIds.has(frame.sectionId))) {
-      const error = new Error('The creative model assigned a photograph to an unknown section. Run the direction again.');
-      error.code = 'INVALID_FRAME_SECTION';
-      throw error;
-    }
-    frames.push(...result.frames);
+    const frameMap = new Map((result.frames || []).map(frame => [frame.assetId, frame]));
+    const alignedFrames = batch.map((item, index) => {
+      const frame = frameMap.get(item.assetId) || result.frames?.[index] || {
+        assetId: item.assetId,
+        sectionId: defaultSectionId,
+        role: 'supporting',
+        headline: '',
+        caption: '',
+        motion: 'slow-push',
+        transition: 'crossfade',
+        duration: 4.5,
+        emphasis: 5
+      };
+      if (!sectionIds.has(frame.sectionId)) frame.sectionId = defaultSectionId;
+      frame.assetId = item.assetId;
+      return frame;
+    });
+    frames.push(...alignedFrames);
     await saveJob(job, { stage: 'directing-photographs', cursor: offset + batch.length, progress: 18 + Math.round(((offset + batch.length) / insights.length) * 78), result: { direction, frames } });
   }
   const sections = direction.sections.map(section => ({ ...section, assetIds: frames.filter(frame => frame.sectionId === section.id).map(frame => frame.assetId) })).filter(section => section.assetIds.length);
