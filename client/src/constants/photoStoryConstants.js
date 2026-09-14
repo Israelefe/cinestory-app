@@ -660,7 +660,7 @@ export const CURATED_SOUNDTRACKS = [
   {
     id: 'st_65',
     genre: 'Royal Orchestral',
-    title: 'Symphony of the Brave',
+    title: 'Brave Enough to Begin',
     artist: 'Epic Cinematic Works',
     audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
     durationSec: 132,

@@ -11,8 +11,9 @@ import lazyWithRecovery from './utils/lazyWithRecovery.jsx';
 import 'react-toastify/dist/ReactToastify.css';
 
 const Dashboard = lazyWithRecovery(() => import('./pages/Dashboard.jsx'), 'dashboard');
-const CreateStory = lazyWithRecovery(() => import('./pages/CreateStory.jsx'), 'create-delivery');
+const CreateDelivery = lazyWithRecovery(() => import('./pages/CreateDelivery.jsx'), 'create-delivery');
 const StoryViewer = lazyWithRecovery(() => import('./pages/StoryViewer.jsx'), 'photo-story');
+const DeliveryViewer = lazyWithRecovery(() => import('./pages/DeliveryViewer.jsx'), 'client-delivery');
 const FormatDemo = lazyWithRecovery(() => import('./pages/FormatDemo.jsx'), 'format-demo');
 const AdminDashboard = lazyWithRecovery(() => import('./pages/AdminDashboard.jsx'), 'admin');
 const PrivacyPolicy = lazyWithRecovery(() => import('./pages/PrivacyPolicy.jsx'), 'privacy');
@@ -29,6 +30,10 @@ const ForgotPasswordPage = lazyWithRecovery(() => import('./pages/ForgotPassword
 const ResetPasswordPage = lazyWithRecovery(() => import('./pages/ResetPasswordPage.jsx'), 'reset-password');
 const OnboardingPage = lazyWithRecovery(() => import('./pages/OnboardingPage.jsx'), 'onboarding');
 const AccountSettings = lazyWithRecovery(() => import('./pages/AccountSettings.jsx'), 'settings');
+const BillingPage = lazyWithRecovery(() => import('./pages/BillingPage.jsx'), 'billing');
+const ImageLibrary = lazyWithRecovery(() => import('./pages/ImageLibrary.jsx'), 'image-library');
+const ManagePortfolio = lazyWithRecovery(() => import('./pages/ManagePortfolio.jsx'), 'manage-portfolio');
+const PublicStudioPortfolio = lazyWithRecovery(() => import('./pages/PublicStudioPortfolio.jsx'), 'studio-portfolio');
 const DeliveryFormats = lazyWithRecovery(() => import('./pages/DeliveryFormats.jsx'), 'formats');
 const PortfolioPage = lazyWithRecovery(() => import('./pages/PortfolioPage.jsx'), 'portfolio');
 const ContactSupport = lazyWithRecovery(() => import('./pages/ContactSupport.jsx'), 'contact');
@@ -74,7 +79,10 @@ function RoutePosition() {
     return () => { stopped = true; window.cancelAnimationFrame(frame); };
   }, [pathname, hash, key, navigationType]);
   useEffect(() => {
-    const names = { '/': 'Photo delivery for finished shoots', '/formats': 'Six delivery formats', '/portfolio': 'Veylo Portfolio', '/pricing': 'Plans and pricing', '/signup': 'Create your account', '/signin': 'Sign in', '/verify-email': 'Verify your email', '/forgot-password': 'Reset your password', '/reset-password': 'Choose a new password', '/onboarding': 'Set up your studio', '/settings': 'Account settings', '/about': 'About us', '/client-experience': 'The client experience', '/contact': 'Get in touch', '/privacy': 'Privacy policy', '/terms': 'Terms of use', '/fair-use': 'Fair use', '/changelog': 'Product updates', '/create': 'Create a Photo Story', '/demo': 'Watch a Photo Story', '/demo/editorial': 'Explore an Editorial Page', '/demo/reveal': 'Begin a Photo Reveal', '/demo/canvas': 'Explore a Canvas', '/demo/chapters': 'Choose a chapter', '/demo/album': 'Turn through an Album' };
+    const names = { '/': 'Photo delivery for finished shoots', '/formats': 'Six delivery formats', '/portfolio': 'Veylo Portfolio', '/pricing': 'Plans and pricing', '/signup': 'Create your account', '/signin': 'Sign in', '/verify-email': 'Verify your email', '/forgot-password': 'Reset your password', '/reset-password': 'Choose a new password', '/onboarding': 'Set up your studio', '/settings': 'Account settings', '/about': 'About us', '/client-experience': 'The client experience', '/contact': 'Get in touch', '/privacy': 'Privacy policy', '/terms': 'Terms of use', '/fair-use': 'Fair use', '/changelog': 'Product updates', '/create': 'Create a delivery', '/demo': 'Watch a Photo Story', '/demo/editorial': 'Explore an Editorial Page', '/demo/reveal': 'Begin a Photo Reveal', '/demo/canvas': 'Explore a Canvas', '/demo/chapters': 'Choose a chapter', '/demo/album': 'Turn through an Album' };
+    if (pathname === '/billing') names[pathname] = 'Plan and billing';
+    if (pathname === '/library') names[pathname] = 'Personal image library';
+    if (pathname === '/portfolio/manage') names[pathname] = 'Manage portfolio';
     const label = names[pathname] || (pathname.startsWith('/for/') ? `For ${pathname.split('/').pop().replaceAll('-', ' ')}` : 'Photo delivery');
     document.title = `Veylo — ${label}`;
   }, [pathname]);
@@ -105,11 +113,11 @@ function VerificationRoute({ user, loading, children }) {
   return children;
 }
 
-const focusedRoutes = new Set(['/signup', '/signin', '/verify-email', '/forgot-password', '/reset-password', '/onboarding', '/dashboard', '/create', '/settings', '/admin']);
+const focusedRoutes = new Set(['/signup', '/signin', '/verify-email', '/forgot-password', '/reset-password', '/onboarding', '/dashboard', '/create', '/settings', '/billing', '/library', '/portfolio/manage', '/admin']);
 const authRoutes = new Set(['/signup', '/signin', '/verify-email', '/forgot-password', '/reset-password']);
-const productRoutes = new Set(['/dashboard', '/create', '/settings', '/admin']);
+const productRoutes = new Set(['/dashboard', '/create', '/settings', '/billing', '/library', '/portfolio/manage', '/admin']);
 
-function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountDeleted }) {
+function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountDeleted, onPlanChanged }) {
   const { pathname } = useLocation();
   const showPublicHeader = !focusedRoutes.has(pathname);
   return <div className="min-h-screen bg-[#070709] text-white">
@@ -120,7 +128,7 @@ function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountD
     <main id="main-content"><Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/dashboard" element={<ProtectedRoute user={user} loading={authLoading}><Dashboard user={user} onLogout={onLogout} /></ProtectedRoute>} />
-      <Route path="/create" element={<ProtectedRoute user={user} loading={authLoading}><CreateStory user={user} /></ProtectedRoute>} />
+      <Route path="/create" element={<ProtectedRoute user={user} loading={authLoading}><CreateDelivery user={user} /></ProtectedRoute>} />
       <Route path="/admin" element={<ProtectedRoute user={user} loading={authLoading} requireAdmin><AdminDashboard user={user} /></ProtectedRoute>} />
       <Route path="/formats" element={<DeliveryFormats />} /><Route path="/portfolio" element={<PortfolioPage />} /><Route path="/pricing" element={<PricingPage />} />
       <Route path="/signup" element={<GuestOnlyRoute user={user} loading={authLoading}><SignupPage onAuthenticated={onAuthenticated} /></GuestOnlyRoute>} />
@@ -130,6 +138,9 @@ function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountD
       <Route path="/reset-password" element={<GuestOnlyRoute user={user} loading={authLoading}><ResetPasswordPage /></GuestOnlyRoute>} />
       <Route path="/onboarding" element={<ProtectedRoute user={user} loading={authLoading}><OnboardingPage user={user} onAuthenticated={onAuthenticated} onLogout={onLogout} /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute user={user} loading={authLoading}><AccountSettings user={user} onAccountDeleted={onAccountDeleted} /></ProtectedRoute>} />
+      <Route path="/billing" element={<ProtectedRoute user={user} loading={authLoading}><BillingPage onPlanChanged={onPlanChanged} /></ProtectedRoute>} />
+      <Route path="/library" element={<ProtectedRoute user={user} loading={authLoading}><ImageLibrary /></ProtectedRoute>} />
+      <Route path="/portfolio/manage" element={<ProtectedRoute user={user} loading={authLoading}><ManagePortfolio /></ProtectedRoute>} />
       <Route path="/contact" element={<ContactSupport />} /><Route path="/changelog" element={<Changelog />} /><Route path="/about" element={<AboutUs />} /><Route path="/for/:slug" element={<NichePage />} /><Route path="/client-experience" element={<ClientExperience />} />
       <Route path="/privacy" element={<PrivacyPolicy />} /><Route path="/terms" element={<TermsOfService />} /><Route path="/fair-use" element={<FairUsePolicy />} /><Route path="*" element={<NotFound />} />
     </Routes></main>
@@ -164,10 +175,13 @@ export default function App() {
     setUser(null);
     window.location.assign('/');
   };
+  const handlePlanChanged = plan => setUser(current => current ? { ...current, plan } : current);
   return <MotionConfig reducedMotion="user"><BrowserRouter><RoutePosition /><CookiePreferences /><ToastContainer position="top-right" theme="dark" autoClose={3000} /><Suspense fallback={<div className="v-page-loading" role="status">Opening Veylo…</div>}><Routes>
     <Route path="/story/:storyId" element={<StoryViewer />} />
+    <Route path="/d/:publicId" element={<DeliveryViewer />} />
+    <Route path="/@:handle" element={<PublicStudioPortfolio />} />
     <Route path="/demo" element={<StoryViewer demoMode />} />
     <Route path="/demo/:formatId" element={<FormatDemo />} />
-    <Route path="*" element={<WebsiteShell user={user} authLoading={authLoading} onAuthenticated={handleAuthenticated} onLogout={handleLogout} onAccountDeleted={handleAccountDeleted} />} />
+    <Route path="*" element={<WebsiteShell user={user} authLoading={authLoading} onAuthenticated={handleAuthenticated} onLogout={handleLogout} onAccountDeleted={handleAccountDeleted} onPlanChanged={handlePlanChanged} />} />
   </Routes></Suspense></BrowserRouter></MotionConfig>;
 }

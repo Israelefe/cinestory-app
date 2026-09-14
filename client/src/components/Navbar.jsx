@@ -35,7 +35,7 @@ export default function Navbar({ user, onLogout }) {
  <motion.div id="public-menu" ref={menuRef} role="dialog" aria-modal="true" aria-label="Navigation menu" tabIndex={-1} className="v-menu" initial={reduced ? false : { opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ type: 'spring', damping: 25, stiffness: 280 }}>
  <button className="v-menu-close" onClick={() => setOpen(false)} aria-label="Close navigation"><X size={20} /></button>
  <nav aria-label="Mobile navigation">{[...links, ...(user ? [['Dashboard', '/dashboard'], ['Account settings', '/settings']] : []), ['Contact', '/contact']].map(([label, path]) => <Link key={path} to={path} onClick={() => setOpen(false)} aria-current={pathname === path ? 'page' : undefined}>{label}<ArrowUpRight size={17} /></Link>)}</nav>
- <div className="v-actions"><Link to={user ? '/create' : '/signup'} onClick={() => setOpen(false)} className="v-button">{user ? 'Create a Photo Story' : 'Get started'}<ArrowRight size={17} /></Link>{user ? <button className="v-button v-button-secondary" onClick={() => { setOpen(false); onLogout(); }}>Sign out</button> : <Link className="v-button v-button-secondary" to="/signin" onClick={() => setOpen(false)}>Sign in</Link>}</div>
+ <div className="v-actions"><Link to={user ? '/create' : '/signup'} onClick={() => setOpen(false)} className="v-button">{user ? 'Create a delivery' : 'Get started'}<ArrowRight size={17} /></Link>{user ? <button className="v-button v-button-secondary" onClick={() => { setOpen(false); onLogout(); }}>Sign out</button> : <Link className="v-button v-button-secondary" to="/signin" onClick={() => setOpen(false)}>Sign in</Link>}</div>
  </motion.div></>}</AnimatePresence>
  </>;
 }

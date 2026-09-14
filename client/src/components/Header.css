@@ -45,6 +45,10 @@
     gap: 3px;
   }
 
+  .v-product-header nav .v-nav-billing {
+    display: none;
+  }
+
   .v-product-header nav a,
   .v-product-signout {
     padding-inline: 10px;

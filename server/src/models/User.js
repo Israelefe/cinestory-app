@@ -31,7 +31,15 @@ const userSchema = new mongoose.Schema({
   emailVerifiedAt: { type: Date },
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
   plan: { type: String, enum: ['free', 'pro', 'studio'], default: 'free' },
+  planOverride: {
+    plan: { type: String, enum: ['free', 'pro'] },
+    expiresAt: Date,
+    reason: { type: String, trim: true, maxlength: 240 },
+    grantedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+  },
   storiesCount: { type: Number, default: 0, min: 0 },
+  storageUsedBytes: { type: Number, default: 0, min: 0 },
+  proRetentionUntil: Date,
   avatar: { type: String, trim: true },
   studio: { type: studioSchema, default: () => ({}) },
   acquisition: { type: acquisitionSchema, default: () => ({}) },

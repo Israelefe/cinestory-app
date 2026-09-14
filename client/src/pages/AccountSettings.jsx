@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Camera, ShieldCheck, Trash2 } from 'lucide-react';
+import { ArrowLeft, Camera, CreditCard, ShieldCheck, Trash2 } from 'lucide-react';
 import GoogleSignIn from '../components/GoogleSignIn.jsx';
 import { Page, Reveal } from '../components/PublicDesign.jsx';
 import api, { apiMessage } from '../services/api.js';
@@ -42,6 +42,12 @@ export default function AccountSettings({ user, onAccountDeleted }) {
         <span className="v-account-avatar">{user?.avatar ? <img src={user.avatar} alt="" /> : <Camera size={23} />}</span>
         <div><small>ACCOUNT</small><strong>{user?.studio?.name || user?.name}</strong><p>{user?.email}</p></div>
         <span className="v-account-plan"><ShieldCheck size={15} />Veylo {user?.plan === 'pro' ? 'Pro' : 'Free'}</span>
+      </Reveal>
+
+      <Reveal className="v-account-billing" delay={.08}>
+        <span><CreditCard size={20} /></span>
+        <div><small>PLAN AND BILLING</small><strong>Manage {user?.plan === 'pro' ? 'your Pro subscription' : 'your Veylo plan'}</strong><p>See plan limits, payment history, and monthly subscription controls.</p></div>
+        <Link to="/billing">Open billing</Link>
       </Reveal>
 
       <Reveal className="v-delete-account" delay={.1}>

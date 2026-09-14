@@ -1,5 +1,7 @@
 import PhotoStory from '../models/PhotoStory.js';
 import { generateAiPhotoStory } from '../services/photoStoryAi.service.js';
+import User from '../models/User.js';
+import { resolveEntitlements, reservePublishSlot } from '../services/entitlement.service.js';
 
 export async function generateStoryWithAi(req, res) {
   try {
@@ -10,6 +12,9 @@ export async function generateStoryWithAi(req, res) {
     if (!photos?.length) {
       return res.status(400).json({ success: false, message: 'At least one photo is required.' });
     }
+    const user = await User.findById(req.user.id);
+    const entitlements = await resolveEntitlements(user);
+    if (photos.length > entitlements.limits.photosPerDelivery) return res.status(403).json({ success: false, code: 'PHOTO_LIMIT_REACHED', message: `${entitlements.planName} allows up to ${entitlements.limits.photosPerDelivery} photographs in one delivery.` });
 
     const storyConfig = await generateAiPhotoStory({
       clientName: clientName || 'Client',
@@ -26,14 +31,19 @@ export async function generateStoryWithAi(req, res) {
 }
 
 export async function createStory(req, res) {
+  let reservation;
   try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
+    reservation = await reservePublishSlot(user, Array.isArray(req.body.photos) ? req.body.photos.length : 0);
     const story = await PhotoStory.create({
       ...req.body,
       userId: req.user?.id || null
     });
     res.status(201).json({ success: true, data: story });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    await reservation?.release().catch(() => {});
+    res.status(err.status || 500).json({ success: false, code: err.code, message: err.message || 'We could not publish this delivery.' });
   }
 }
 

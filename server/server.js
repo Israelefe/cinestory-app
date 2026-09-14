@@ -8,7 +8,15 @@ import authRoutes from './src/routes/auth.routes.js';
 import onboardingRoutes from './src/routes/onboarding.routes.js';
 import storyRoutes from './src/routes/story.routes.js';
 import adminRoutes from './src/routes/admin.routes.js';
+import billingRoutes from './src/routes/billing.routes.js';
+import deliveryRoutes from './src/routes/delivery.routes.js';
+import storageRoutes from './src/routes/storage.routes.js';
+import portfolioRoutes from './src/routes/portfolio.routes.js';
+import { paystackWebhook } from './src/controllers/billing.controller.js';
 import { checkCloudinaryConnection } from './src/services/cloudinary.service.js';
+import { startDeliveryWorker } from './src/services/deliveryWorker.service.js';
+import { startRetentionWorker } from './src/services/retention.service.js';
+import { startPortfolioWorker } from './src/services/portfolioWorker.service.js';
 
 dotenv.config();
 
@@ -19,6 +27,14 @@ if (process.env.NODE_ENV === 'production') {
   const missing = required.filter(name => !process.env[name]);
   if (missing.length) throw new Error(`Missing required production configuration: ${missing.join(', ')}`);
   if (process.env.JWT_SECRET.length < 32 || process.env.OTP_SECRET.length < 32) throw new Error('JWT_SECRET and OTP_SECRET must each contain at least 32 characters.');
+  if (process.env.BILLING_ENABLED === 'true') {
+    const billingMissing = ['PAYSTACK_SECRET_KEY', 'PAYSTACK_PRO_PLAN_CODE', 'BILLING_ENCRYPTION_KEY'].filter(name => !process.env[name]);
+    if (billingMissing.length) throw new Error(`Missing billing configuration: ${billingMissing.join(', ')}`);
+  }
+  if (process.env.DELIVERY_PIPELINE_ENABLED === 'true') {
+    const deliveryMissing = ['ALIBABA_MODEL_STUDIO_API_KEY', 'ALIBABA_WORKSPACE_ID', 'DEEPGRAM_API_KEY', 'CLOUDINARY_AUTH_TOKEN_KEY'].filter(name => !process.env[name]);
+    if (deliveryMissing.length) throw new Error(`Missing delivery pipeline configuration: ${deliveryMissing.join(', ')}`);
+  }
 }
 const allowedOrigins = new Set([
   process.env.CLIENT_URL,
@@ -35,6 +51,8 @@ if (process.env.NODE_ENV !== 'production') {
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+// Paystack signs the exact request bytes. This route must stay above express.json().
+app.post('/api/v1/webhooks/paystack', express.raw({ type: 'application/json', limit: '256kb' }), paystackWebhook);
 app.use(cors({
   credentials: true,
   origin(origin, callback) {
@@ -56,6 +74,10 @@ app.get('/health', (req, res) => res.json({ status: 'healthy', app: 'Veylo API S
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/onboarding', onboardingRoutes);
 app.use('/api/v1/stories', storyRoutes);
+app.use('/api/v1/billing', billingRoutes);
+app.use('/api/v1/deliveries', deliveryRoutes);
+app.use('/api/v1/storage', storageRoutes);
+app.use('/api/v1/portfolios', portfolioRoutes);
 app.use('/api/v1/admin', adminRoutes);
 
 app.use((error, req, res, next) => {
@@ -73,5 +95,7 @@ connectDB().then(connection => {
       if (result.ok) console.info('[cloudinary] Connection verified.');
       else console.error(`[cloudinary] Configuration rejected: ${result.reason}`);
     });
+    if (process.env.DELIVERY_PIPELINE_ENABLED === 'true') { startDeliveryWorker(); startPortfolioWorker(); }
+    startRetentionWorker();
   });
 });

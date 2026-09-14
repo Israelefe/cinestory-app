@@ -1,260 +1,97 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import {
-  ShieldCheck,
-  Users,
-  Film,
-  Eye,
-  Download,
-  DollarSign,
-  Search,
-  Trash2,
-  ExternalLink,
-  RefreshCw
-} from 'lucide-react';
-import api from '../services/api.js';
+import { motion } from 'framer-motion';
+import { Banknote, Download, Eye, Film, ReceiptText, RefreshCw, Search, ShieldCheck, Users } from 'lucide-react';
 import { toast } from 'react-toastify';
+import api from '../services/api.js';
+
+const formatNames = { 'photo-story': 'Photo Story', editorial: 'Editorial Page', 'photo-reveal': 'Photo Reveal', canvas: 'Canvas', chapters: 'Chapters', album: 'Album' };
+const nairaFromKobo = (value = 0) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(value / 100);
+const shortDate = value => value ? new Intl.DateTimeFormat('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value)) : '—';
+
+function Status({ value }) {
+  const calm = ['success', 'active', 'published', 'pro'].includes(value);
+  const warning = ['pending', 'checkout_pending', 'canceling', 'past_due', 'partially_refunded', 'refund pending'].includes(value);
+  return <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[.12em] ${calm ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300' : warning ? 'border-amber-300/25 bg-amber-300/10 text-amber-200' : 'border-white/10 bg-white/[.05] text-white/55'}`}>{String(value || 'unknown').replaceAll('_', ' ')}</span>;
+}
+
+function Metric({ icon: Icon, label, value, note }) {
+  return <motion.article initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="rounded-[1.4rem] border border-white/10 bg-white/[.035] p-5 sm:p-6">
+    <div className="mb-6 flex items-center justify-between text-white/45"><span className="text-[11px] font-semibold uppercase tracking-[.16em]">{label}</span><Icon size={17} /></div>
+    <p className="text-2xl font-medium tracking-[-.04em] text-white sm:text-3xl">{value}</p><p className="mt-2 text-xs leading-5 text-white/40">{note}</p>
+  </motion.article>;
+}
 
 export default function AdminDashboard({ user }) {
-  const [tab, setTab] = useState('stories');
+  const [tab, setTab] = useState('deliveries');
   const [analytics, setAnalytics] = useState(null);
-  const [stories, setStories] = useState([]);
+  const [deliveries, setDeliveries] = useState([]);
   const [users, setUsers] = useState([]);
+  const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [refund, setRefund] = useState(null);
+  const [refundAmount, setRefundAmount] = useState('');
+  const [refundNote, setRefundNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const fetchAdminData = async () => {
+  const fetchAdminData = useCallback(async () => {
     try {
       setLoading(true);
-      const [analyticsRes, storiesRes, usersRes] = await Promise.all([
-        api.get('/v1/admin/analytics'),
-        api.get('/v1/admin/stories', { params: { search } }),
-        api.get('/v1/admin/users', { params: { search } })
+      const [analyticsRes, deliveriesRes, usersRes, paymentsRes] = await Promise.all([
+        api.get('/v1/admin/analytics'), api.get('/v1/admin/deliveries', { params: { search } }),
+        api.get('/v1/admin/users', { params: { search } }), api.get('/v1/admin/payments', { params: { search } })
       ]);
-
-      if (analyticsRes.data?.success) setAnalytics(analyticsRes.data.data);
-      if (storiesRes.data?.success) setStories(storiesRes.data.data);
-      if (usersRes.data?.success) setUsers(usersRes.data.data);
-    } catch (err) {
-      toast.error('Failed to load SuperAdmin data. Ensure role: "admin".');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchAdminData();
+      setAnalytics(analyticsRes.data?.data || null); setDeliveries(deliveriesRes.data?.data || []);
+      setUsers(usersRes.data?.data || []); setPayments(paymentsRes.data?.data || []);
+    } catch (error) { toast.error(error.response?.data?.message || 'We could not load the admin records.'); }
+    finally { setLoading(false); }
   }, [search]);
 
-  const handleDeleteStory = async (id) => {
-    if (!window.confirm('SuperAdmin: Permanently delete this story?')) return;
+  useEffect(() => { const timer = window.setTimeout(fetchAdminData, 250); return () => window.clearTimeout(timer); }, [fetchAdminData]);
+
+  const updatePlan = async (userId, plan) => {
     try {
-      await api.delete(`/v1/admin/stories/${id}`);
-      toast.success('Story deleted');
-      fetchAdminData();
-    } catch (err) {
-      toast.error('Failed to delete story');
-    }
+      await api.patch(`/v1/admin/users/${userId}/plan`, { plan, reason: plan === 'pro' ? 'Granted by Veylo support' : 'Changed by Veylo support' });
+      toast.success(`Account changed to ${plan === 'pro' ? 'Pro' : 'Free'}.`); fetchAdminData();
+    } catch (error) { toast.error(error.response?.data?.message || 'We could not change that plan.'); }
   };
 
-  const handleUpdateUserPlan = async (userId, newPlan) => {
+  const openRefund = payment => { setRefund(payment); setRefundAmount(String(Math.max(0, payment.amountKobo - payment.refundedAmountKobo) / 100)); setRefundNote(''); };
+  const submitRefund = async event => {
+    event.preventDefault(); const amountKobo = Math.round(Number(refundAmount) * 100);
+    if (!Number.isInteger(amountKobo) || amountKobo < 100) return toast.error('Enter a refund of at least ₦1.');
     try {
-      await api.patch(`/v1/admin/users/${userId}/plan`, { plan: newPlan });
-      toast.success(`User updated to ${newPlan} plan!`);
-      fetchAdminData();
-    } catch (err) {
-      toast.error('Failed to update plan');
-    }
+      setSubmitting(true); await api.post(`/v1/admin/payments/${refund._id}/refund`, { amountKobo, note: refundNote.trim() });
+      toast.success('Paystack accepted the refund request.'); setRefund(null); await fetchAdminData();
+    } catch (error) { toast.error(error.response?.data?.message || 'We could not start that refund.'); }
+    finally { setSubmitting(false); }
   };
 
-  if (!user || user.role !== 'admin') {
-    return <Navigate to='/' replace />;
-  }
+  const tabCount = useMemo(() => ({ deliveries: deliveries.length, users: users.length, payments: payments.length }), [deliveries, users, payments]);
+  if (!user || user.role !== 'admin') return <Navigate to="/" replace />;
 
-  return (
-    <div className='min-h-screen bg-[#070709] text-white pt-28 pb-20 px-5 sm:px-8 max-w-7xl mx-auto space-y-8'>
-      {/* Admin Header */}
-      <div className='flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-gradient-to-r from-purple-950/40 via-[#111116] to-[#111116] p-6 sm:p-8 rounded-3xl border border-purple-500/30 shadow-2xl'>
-        <div>
-          <div className='inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 text-xs font-black uppercase tracking-wider mb-2 border border-purple-500/40'>
-            <ShieldCheck size={14} /> SuperAdmin Control Center
-          </div>
-          <h1 className='text-3xl font-black text-white'>Platform Master Control</h1>
-          <p className='text-xs text-gray-400 mt-1'>View all platform users, monitor story views, manage subscriptions, and oversee content.</p>
-        </div>
-        <button
-          onClick={fetchAdminData}
-          className='bg-white/10 hover:bg-white/20 text-white px-5 py-3 rounded-2xl font-bold text-xs flex items-center gap-2 transition-all cursor-pointer'>
-          <RefreshCw size={14} /> Refresh Data
-        </button>
-      </div>
+  return <div className="min-h-screen overflow-x-hidden bg-[#070709] px-4 pb-24 pt-28 text-white sm:px-6 md:px-8 lg:px-12"><div className="mx-auto max-w-7xl">
+    <section className="relative overflow-hidden rounded-[1.8rem] border border-white/10 bg-[#0c0c10] px-5 py-7 sm:px-8 sm:py-9 md:px-10">
+      <div className="pointer-events-none absolute -right-24 -top-32 h-80 w-80 rounded-full bg-[#ff5a47]/10 blur-3xl" />
+      <div className="relative flex flex-col gap-7 md:flex-row md:items-end md:justify-between"><div className="max-w-2xl"><p className="mb-4 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[.18em] text-[#ff9b8e]"><ShieldCheck size={16} /> Veylo administration</p><h1 className="text-3xl font-medium tracking-[-.05em] sm:text-4xl md:text-5xl">See what is happening across Veylo.</h1><p className="mt-4 max-w-xl text-sm leading-6 text-white/50 sm:text-base">Accounts, client deliveries, subscriptions, and payments in one private workspace.</p></div>
+        <button type="button" onClick={fetchAdminData} className="inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-full border border-white/15 bg-white/[.06] px-5 text-sm font-semibold transition-transform hover:-translate-y-0.5 active:scale-95 md:self-auto"><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Refresh</button></div>
+    </section>
 
-      {/* Analytics KPI Cards */}
-      {analytics && (
-        <div className='grid grid-cols-2 lg:grid-cols-4 gap-4'>
-          <div className='bg-[#111116] border border-white/10 rounded-2xl p-5 space-y-1'>
-            <div className='flex items-center justify-between text-gray-400'>
-              <span className='text-xs font-bold uppercase'>Total Users</span>
-              <Users size={16} className='text-purple-400' />
-            </div>
-            <p className='text-2xl sm:text-3xl font-black text-white'>{analytics.totalUsers}</p>
-            <p className='text-[11px] text-emerald-400 font-medium'>{analytics.proUsers} on Pro/Studio</p>
-          </div>
+    {analytics && <section className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"><Metric icon={Users} label="Accounts" value={analytics.totalUsers.toLocaleString()} note={`${analytics.proUsers.toLocaleString()} currently marked Pro`} /><Metric icon={Film} label="Deliveries" value={analytics.totalDeliveries.toLocaleString()} note={`${analytics.publishedDeliveries.toLocaleString()} live client links`} /><Metric icon={Eye} label="Client views" value={analytics.totalViews.toLocaleString()} note={`${analytics.totalDownloads.toLocaleString()} gallery downloads`} /><Metric icon={Banknote} label="Monthly revenue" value={nairaFromKobo(analytics.monthlyRecurringRevenueKobo)} note={`${analytics.activeSubscriptions.toLocaleString()} paid subscriptions`} /></section>}
 
-          <div className='bg-[#111116] border border-white/10 rounded-2xl p-5 space-y-1'>
-            <div className='flex items-center justify-between text-gray-400'>
-              <span className='text-xs font-bold uppercase'>Total Stories</span>
-              <Film size={16} className='text-indigo-400' />
-            </div>
-            <p className='text-2xl sm:text-3xl font-black text-white'>{analytics.totalStories}</p>
-            <p className='text-[11px] text-gray-400 font-medium'>Live reels</p>
-          </div>
+    <section className="mt-9"><div className="flex flex-col gap-4 border-b border-white/10 pb-5 lg:flex-row lg:items-center lg:justify-between"><div className="grid grid-cols-3 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5">{[['deliveries', Film, 'Deliveries'], ['users', Users, 'Accounts'], ['payments', ReceiptText, 'Payments']].map(([key, Icon, label]) => <button key={key} type="button" onClick={() => setTab(key)} className={`flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-xs font-semibold transition-all active:scale-95 sm:px-5 ${tab === key ? 'bg-white text-black' : 'text-white/50 hover:bg-white/[.06] hover:text-white'}`}><Icon size={15} /><span className="hidden sm:inline">{label}</span><span className="text-[10px] opacity-55">{tabCount[key]}</span></button>)}</div>
+      <label className="relative block w-full lg:w-80"><Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/35" /><span className="sr-only">Search records</span><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search this workspace" className="min-h-12 w-full rounded-2xl border border-white/10 bg-white/[.035] pl-11 pr-4 text-sm text-white outline-none transition-colors placeholder:text-white/30 focus:border-[#ff9b8e]/60" /></label></div>
+      {loading && <div className="py-20 text-center text-sm text-white/45">Loading current records…</div>}
 
-          <div className='bg-[#111116] border border-white/10 rounded-2xl p-5 space-y-1'>
-            <div className='flex items-center justify-between text-gray-400'>
-              <span className='text-xs font-bold uppercase'>Platform Views</span>
-              <Eye size={16} className='text-pink-400' />
-            </div>
-            <p className='text-2xl sm:text-3xl font-black text-white'>{analytics.totalViews.toLocaleString()}</p>
-            <p className='text-[11px] text-gray-400 font-medium'>{analytics.totalDownloads} total downloads</p>
-          </div>
+      {!loading && tab === 'deliveries' && <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{deliveries.map(item => <article key={item._id} className="rounded-[1.35rem] border border-white/10 bg-white/[.03] p-5 transition-transform hover:-translate-y-0.5"><div className="flex items-start justify-between gap-4"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">{formatNames[item.format] || 'Delivery'}</p><h2 className="mt-2 text-lg font-medium text-white">{item.title || item.clientName || 'Untitled delivery'}</h2></div><Status value={item.status} /></div><p className="mt-4 text-sm text-white/50">{item.userId?.studioName || item.userId?.name || 'Unknown studio'}</p><div className="mt-6 flex items-center gap-5 border-t border-white/[.07] pt-4 text-xs text-white/40"><span className="flex items-center gap-1.5"><Eye size={14} />{item.viewsCount || 0}</span><span className="flex items-center gap-1.5"><Download size={14} />{item.downloadsCount || 0}</span><span className="ml-auto">{shortDate(item.updatedAt)}</span></div></article>)}{!deliveries.length && <p className="py-14 text-sm text-white/45">No deliveries match that search.</p>}</div>}
 
-          <div className='bg-[#111116] border border-white/10 rounded-2xl p-5 space-y-1'>
-            <div className='flex items-center justify-between text-gray-400'>
-              <span className='text-xs font-bold uppercase'>Est. MRR</span>
-              <DollarSign size={16} className='text-emerald-400' />
-            </div>
-            <p className='text-2xl sm:text-3xl font-black text-emerald-400'>${analytics.estimatedRevenue.toLocaleString()}</p>
-            <p className='text-[11px] text-gray-400 font-medium'>Recurring Monthly</p>
-          </div>
-        </div>
-      )}
+      {!loading && tab === 'users' && <div className="mt-5 overflow-hidden rounded-[1.35rem] border border-white/10 bg-white/[.025]"><div className="divide-y divide-white/[.07]">{users.map(account => <article key={account._id} className="grid gap-5 p-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center md:px-6"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate font-medium text-white">{account.name}</h2>{account.role === 'admin' && <span className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-[#ff9b8e]"><ShieldCheck size={12} /> Admin</span>}</div><p className="mt-1 truncate text-sm text-white/42">{account.email}</p><p className="mt-2 text-xs text-white/30">Joined {shortDate(account.createdAt)}</p></div><div className="flex items-center gap-3"><Status value={account.plan} /><label><span className="sr-only">Change plan for {account.name}</span><select value={account.plan === 'pro' ? 'pro' : 'free'} onChange={event => updatePlan(account._id, event.target.value)} className="min-h-11 rounded-xl border border-white/10 bg-[#0c0c10] px-3 text-sm text-white outline-none focus:border-[#ff9b8e]/60"><option value="free">Free</option><option value="pro">Pro</option></select></label></div></article>)}</div>{!users.length && <p className="p-10 text-sm text-white/45">No accounts match that search.</p>}</div>}
 
-      {/* Tabs & Search */}
-      <div className='flex flex-col sm:flex-row justify-between items-center gap-4 border-b border-white/10 pb-4'>
-        <div className='flex gap-2 w-full sm:w-auto'>
-          <button
-            onClick={() => setTab('stories')}
-            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
-              tab === 'stories' ? 'bg-purple-600 text-white' : 'bg-white/5 text-gray-400 hover:text-white'
-            }`}>
-            All Stories ({stories.length})
-          </button>
-          <button
-            onClick={() => setTab('users')}
-            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
-              tab === 'users' ? 'bg-purple-600 text-white' : 'bg-white/5 text-gray-400 hover:text-white'
-            }`}>
-            All Users ({users.length})
-          </button>
-        </div>
+      {!loading && tab === 'payments' && <div className="mt-5 grid gap-3">{payments.map(payment => { const remaining = Math.max(0, payment.amountKobo - payment.refundedAmountKobo); const refundable = ['success', 'partially_refunded'].includes(payment.status) && remaining > 0 && !payment.refundPendingAmountKobo; return <article key={payment._id} className="grid gap-5 rounded-[1.35rem] border border-white/10 bg-white/[.03] p-5 md:grid-cols-[minmax(0,1.4fr)_minmax(8rem,.7fr)_minmax(8rem,.7fr)_auto] md:items-center md:px-6"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="truncate font-medium text-white">{payment.userId?.name || 'Unknown account'}</p><Status value={payment.refundPendingAmountKobo ? 'refund pending' : payment.status} /></div><p className="mt-1 truncate font-mono text-[11px] text-white/35">{payment.reference}</p><p className="mt-2 truncate text-xs text-white/40">{payment.userId?.email || 'No email'} · {shortDate(payment.paidAt || payment.createdAt)}</p></div><div><p className="text-[10px] uppercase tracking-wider text-white/30">Payment</p><p className="mt-1 font-medium">{nairaFromKobo(payment.amountKobo)}</p></div><div><p className="text-[10px] uppercase tracking-wider text-white/30">Refunded</p><p className="mt-1 font-medium text-white/65">{nairaFromKobo(payment.refundedAmountKobo)}</p></div><button type="button" disabled={!refundable} onClick={() => openRefund(payment)} className="min-h-11 rounded-full border border-white/12 px-5 text-xs font-semibold transition-all enabled:hover:-translate-y-0.5 enabled:hover:border-[#ff9b8e]/50 enabled:hover:text-[#ffb1a7] active:scale-95 disabled:cursor-not-allowed disabled:opacity-30">Refund</button></article>; })}{!payments.length && <p className="py-14 text-sm text-white/45">No payments match that search.</p>}</div>}
+    </section>
+  </div>
 
-        <div className='relative w-full sm:w-80'>
-          <Search size={15} className='absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500' />
-          <input
-            type='text'
-            placeholder='Search stories or users...'
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className='w-full bg-[#111116] border border-white/10 rounded-xl pl-10 pr-4 py-2 text-xs text-white outline-none focus:border-purple-500'
-          />
-        </div>
-      </div>
-
-      {/* TAB 1: ALL STORIES */}
-      {tab === 'stories' && (
-        <div className='bg-[#111116] border border-white/10 rounded-3xl overflow-hidden'>
-          <div className='overflow-x-auto'>
-            <table className='w-full text-left text-xs text-gray-300'>
-              <thead className='bg-black/40 text-gray-400 uppercase font-bold border-b border-white/10'>
-                <tr>
-                  <th className='p-4'>Cover / Title</th>
-                  <th className='p-4'>Creator</th>
-                  <th className='p-4'>Occasion</th>
-                  <th className='p-4'>Theme</th>
-                  <th className='p-4'>Views / Downloads</th>
-                  <th className='p-4 text-right'>Actions</th>
-                </tr>
-              </thead>
-              <tbody className='divide-y divide-white/5'>
-                {stories.map((s) => (
-                  <tr key={s._id} className='hover:bg-white/5 transition-colors'>
-                    <td className='p-4 flex items-center gap-3'>
-                      <img src={s.photos?.[0]?.thumbnailUrl || s.photos?.[0]?.url} alt='' className='w-12 h-12 rounded-xl object-cover bg-black border border-white/10 shrink-0' />
-                      <div className='min-w-0'>
-                        <p className='font-bold text-white truncate max-w-xs'>{s.title || s.clientName}</p>
-                        <p className='text-[10px] text-gray-500 font-mono'>{s.storyId}</p>
-                      </div>
-                    </td>
-                    <td className='p-4'>
-                      <p className='font-bold text-white'>{s.userId?.name || 'Guest'}</p>
-                      <p className='text-[10px] text-gray-500'>{s.userId?.email || 'N/A'}</p>
-                    </td>
-                    <td className='p-4 font-medium text-purple-300'>{s.occasion}</td>
-                    <td className='p-4 capitalize'>{s.theme?.palette?.replace('_', ' ') || 'Default'}</td>
-                    <td className='p-4'>
-                      <span className='font-bold text-white'>{s.viewsCount || 0}</span> views • <span className='text-emerald-400'>{s.downloadsCount || 0}</span> dl
-                    </td>
-                    <td className='p-4 text-right'>
-                      <div className='flex items-center justify-end gap-2'>
-                        <a href={`/story/${s.storyId}`} target='_blank' rel='noreferrer' className='p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white' title='View Story'><ExternalLink size={14}/></a>
-                        <button onClick={() => handleDeleteStory(s._id)} className='p-1.5 rounded-lg bg-red-500/20 hover:bg-red-500 text-red-300 hover:text-white transition-colors' title='Delete Story'><Trash2 size={14}/></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: ALL USERS */}
-      {tab === 'users' && (
-        <div className='bg-[#111116] border border-white/10 rounded-3xl overflow-hidden'>
-          <div className='overflow-x-auto'>
-            <table className='w-full text-left text-xs text-gray-300'>
-              <thead className='bg-black/40 text-gray-400 uppercase font-bold border-b border-white/10'>
-                <tr>
-                  <th className='p-4'>User</th>
-                  <th className='p-4'>Email</th>
-                  <th className='p-4'>Role</th>
-                  <th className='p-4'>Plan</th>
-                  <th className='p-4'>Joined</th>
-                  <th className='p-4 text-right'>Change Plan</th>
-                </tr>
-              </thead>
-              <tbody className='divide-y divide-white/5'>
-                {users.map((u) => (
-                  <tr key={u._id} className='hover:bg-white/5 transition-colors'>
-                    <td className='p-4 font-bold text-white'>{u.name}</td>
-                    <td className='p-4 text-gray-400'>{u.email}</td>
-                    <td className='p-4'>
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                        u.role === 'admin' ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40' : 'bg-white/10 text-gray-400'
-                      }`}>
-                        {u.role}
-                      </span>
-                    </td>
-                    <td className='p-4 font-bold capitalize text-emerald-400'>{u.plan}</td>
-                    <td className='p-4 text-gray-500'>{new Date(u.createdAt).toLocaleDateString()}</td>
-                    <td className='p-4 text-right'>
-                      <select
-                        value={u.plan}
-                        onChange={(e) => handleUpdateUserPlan(u._id, e.target.value)}
-                        className='bg-black/60 border border-white/10 rounded-lg px-2.5 py-1 text-xs text-white outline-none'>
-                        <option value='free'>Free</option>
-                        <option value='pro'>Pro ($4/story)</option>
-                        <option value='studio'>Studio ($19/mo)</option>
-                      </select>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  {refund && <div className="fixed inset-0 z-[80] grid place-items-end bg-black/75 p-3 backdrop-blur-sm sm:place-items-center" role="dialog" aria-modal="true" aria-labelledby="refund-title" onMouseDown={event => { if (event.target === event.currentTarget && !submitting) setRefund(null); }}><motion.form initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} onSubmit={submitRefund} className="w-full max-w-lg rounded-[1.7rem] border border-white/12 bg-[#0c0c10] p-6 shadow-2xl sm:p-8"><div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#ff5a47]/12 text-[#ff9b8e]"><ReceiptText size={20} /></div><h2 id="refund-title" className="mt-5 text-2xl font-medium tracking-[-.035em]">Refund this payment</h2><p className="mt-2 text-sm leading-6 text-white/48">Paystack will return the money through the original payment method. Veylo will keep an audit record of this request.</p><div className="mt-6 grid gap-4"><label className="text-xs font-semibold text-white/60">Amount in naira<input type="number" min="1" max={(refund.amountKobo - refund.refundedAmountKobo) / 100} step="1" required value={refundAmount} onChange={event => setRefundAmount(event.target.value)} className="mt-2 min-h-12 w-full rounded-xl border border-white/10 bg-black/30 px-4 text-base text-white outline-none focus:border-[#ff9b8e]/60" /></label><label className="text-xs font-semibold text-white/60">Reason for the audit record<textarea value={refundNote} onChange={event => setRefundNote(event.target.value)} maxLength={240} rows={3} placeholder="What happened?" className="mt-2 w-full resize-none rounded-xl border border-white/10 bg-black/30 p-4 text-sm leading-6 text-white outline-none placeholder:text-white/25 focus:border-[#ff9b8e]/60" /></label></div><div className="mt-7 grid grid-cols-2 gap-3"><button type="button" disabled={submitting} onClick={() => setRefund(null)} className="min-h-12 rounded-full border border-white/12 text-sm font-semibold transition-transform active:scale-95">Keep payment</button><button type="submit" disabled={submitting} className="min-h-12 rounded-full bg-[#ff5a47] px-4 text-sm font-bold text-[#160907] transition-transform hover:-translate-y-0.5 active:scale-95 disabled:opacity-50">{submitting ? 'Sending…' : 'Send refund'}</button></div></motion.form></div>}
+  </div>;
 }

@@ -10,6 +10,7 @@ const priceSummary = [
 const comparison = [
   ['Final photo deliveries', '3 each month', 'Unlimited under fair use'],
   ['Delivery formats', 'All six', 'All six'],
+  ['Photos in one delivery', 'Up to 100', 'Up to 500'],
   ['Complete gallery and downloads', 'Included', 'Included'],
   ['Veylo Portfolio', '—', 'Included'],
   ['Brand shown to your client', 'Veylo', 'Your studio'],
@@ -20,11 +21,14 @@ const comparison = [
 const faqs = [
   { q: 'How does Veylo Free work?', a: 'You can publish three final photo deliveries each month for ₦0. All six formats are included, and Veylo branding remains on the client experience.' },
   { q: 'What counts as one delivery?', a: 'One published client project counts as one delivery, whichever format you choose. The complete downloadable gallery is included in that project.' },
+  { q: 'How many photos can I add?', a: 'Free allows up to 100 finished photographs in one delivery. Pro allows up to 500. Veylo uses the photographs you upload and leaves the original files untouched.' },
   { q: 'Do I pay separately for a Photo Story, Album, or another format?', a: 'No. Photo Story, Editorial Page, Photo Reveal, Canvas, Chapters, and Album are included on both plans.' },
   { q: 'What does unlimited under fair use mean?', a: 'Normal client delivery work for one photographer or studio is included. Fair use prevents automated bulk use and unrelated studios sharing one account.' },
   { q: 'How does the 50 GB storage work?', a: 'Pro includes 50 GB for your personal image storage. Photographs hosted inside client deliveries do not reduce that allowance.' },
   { q: 'What changes when I remove Veylo branding?', a: 'Your photographer or studio name leads the published delivery. Veylo branding can be removed from the experience your client receives.' },
-  { q: 'Is Veylo Portfolio included?', a: 'Yes. Pro includes a public portfolio made from selected photographs and completed Veylo projects.' }
+  { q: 'Is Veylo Portfolio included?', a: 'Yes. Pro includes a public portfolio made from selected photographs and completed Veylo projects.' },
+  { q: 'What happens if I cancel Pro?', a: 'Your Pro access continues until the end of the month you already paid for. Your personal library and portfolio then stay private for 30 days, giving you time to renew, download, or remove your work.' },
+  { q: 'What happens when a renewal fails?', a: 'Veylo keeps Pro open for three days. Because Paystack does not retry a failed subscription charge automatically, you may need to complete a new checkout after that grace period.' }
 ];
 
 export default function PricingPage() {

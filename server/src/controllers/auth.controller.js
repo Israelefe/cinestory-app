@@ -7,9 +7,22 @@ import AuthCode from '../models/AuthCode.js';
 import Session from '../models/Session.js';
 import PasswordResetToken from '../models/PasswordResetToken.js';
 import PhotoStory from '../models/PhotoStory.js';
+import Subscription from '../models/Subscription.js';
+import Payment from '../models/Payment.js';
+import BillingEvent from '../models/BillingEvent.js';
+import AdminAudit from '../models/AdminAudit.js';
+import DeliveryUsage from '../models/DeliveryUsage.js';
+import Delivery from '../models/Delivery.js';
+import DeliveryJob from '../models/DeliveryJob.js';
+import PhotoLike from '../models/PhotoLike.js';
+import DeliveryView from '../models/DeliveryView.js';
+import StorageAsset from '../models/StorageAsset.js';
+import Portfolio from '../models/Portfolio.js';
+import PortfolioJob from '../models/PortfolioJob.js';
 import { sendPasswordChangedEmail, sendPasswordResetEmail, sendVerificationEmail, sendWelcomeEmail } from '../services/email.service.js';
 import { verifyTurnstile } from '../services/turnstile.service.js';
 import { cloudinary, configureCloudinary } from '../services/cloudinary.service.js';
+import { decryptBillingToken, paystackRequest } from '../services/paystack.service.js';
 import { REFRESH_COOKIE, clearSessionCookies, codeDigest, createSession, normalizeEmail, publicUser, randomToken, safeEqual, setSessionCookies, tokenDigest } from '../utils/auth.js';
 
 const email = z.string().trim().email().max(254).transform(normalizeEmail);
@@ -273,7 +286,7 @@ async function confirmAccountOwner(user, data) {
 }
 
 async function removeCloudinaryResources(prefix, resourceType = 'image') {
-  await cloudinary.api.delete_resources_by_prefix(prefix, { resource_type: resourceType, type: 'upload', invalidate: true });
+  await Promise.all(['upload', 'authenticated'].map(type => cloudinary.api.delete_resources_by_prefix(prefix, { resource_type: resourceType, type, invalidate: true })));
 }
 
 async function deleteCloudinaryFolder(path) {
@@ -282,9 +295,22 @@ async function deleteCloudinaryFolder(path) {
   });
 }
 
-async function removeCloudinaryFolder(prefix, resourceTypes, childFolders = []) {
+async function nestedCloudinaryFolders(prefix) {
+  const found = [];
+  let cursor;
+  do {
+    const response = await cloudinary.api.sub_folders(prefix, { max_results: 500, next_cursor: cursor });
+    for (const folder of response.folders || []) {
+      found.push(...await nestedCloudinaryFolders(folder.path), folder.path);
+    }
+    cursor = response.next_cursor;
+  } while (cursor);
+  return found;
+}
+
+async function removeCloudinaryFolder(prefix, resourceTypes) {
   await Promise.all(resourceTypes.map(resourceType => removeCloudinaryResources(prefix, resourceType)));
-  for (const child of childFolders) await deleteCloudinaryFolder(`${prefix}/${child}`);
+  for (const child of await nestedCloudinaryFolders(prefix)) await deleteCloudinaryFolder(child);
   await deleteCloudinaryFolder(prefix);
 }
 
@@ -296,15 +322,22 @@ export async function deleteAccount(req, res) {
     if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
     if (!(await confirmAccountOwner(user, parsed.data))) return res.status(403).json({ success: false, code: 'ACCOUNT_CONFIRMATION_FAILED', message: 'We could not confirm that this account belongs to you.' });
 
+    const paidSubscription = await Subscription.findOne({ userId: user._id, status: { $in: ['active', 'past_due'] }, subscriptionCode: { $exists: true } }).sort({ createdAt: -1 }).select('+emailTokenEncrypted');
+    if (paidSubscription) {
+      const token = decryptBillingToken(paidSubscription.emailTokenEncrypted);
+      if (!token) return res.status(409).json({ success: false, message: 'Cancel the active Pro subscription from Billing before deleting this account.' });
+      await paystackRequest('/subscription/disable', { method: 'POST', body: { code: paidSubscription.subscriptionCode, token } });
+    }
+
     const userPrefix = `veylo/users/${user._id}`;
     const stories = await PhotoStory.find({ userId: user._id }).select('photos.url soundtrack.audioUrl').lean();
-    const hasDeliveryAssets = stories.some(story => [story.soundtrack?.audioUrl, ...(story.photos || []).map(photo => photo.url)].some(url => String(url || '').includes(`/${userPrefix}/`)));
+    const hasDeliveryAssets = stories.some(story => [story.soundtrack?.audioUrl, ...(story.photos || []).map(photo => photo.url)].some(url => String(url || '').includes(`/${userPrefix}/`))) || await Delivery.exists({ userId: user._id }) || await StorageAsset.exists({ userId: user._id });
     const hasStudioAsset = user.studio?.logoPublicId?.startsWith(`veylo/studios/${user._id}/`);
     if (hasStudioAsset || hasDeliveryAssets) {
       if (!configureCloudinary()) throw new Error('Cloudinary credentials are missing.');
       await Promise.all([
         hasStudioAsset ? removeCloudinaryFolder(`veylo/studios/${user._id}`, ['image']) : Promise.resolve(),
-        hasDeliveryAssets ? removeCloudinaryFolder(userPrefix, ['image', 'video'], ['photos', 'audio']) : Promise.resolve()
+        hasDeliveryAssets ? removeCloudinaryFolder(userPrefix, ['image', 'video']) : Promise.resolve()
       ]);
     }
 
@@ -316,6 +349,20 @@ export async function deleteAccount(req, res) {
         await Session.deleteMany({ userId: user._id }, options);
         await AuthCode.deleteMany({ userId: user._id }, options);
         await PasswordResetToken.deleteMany({ userId: user._id }, options);
+        await Subscription.deleteMany({ userId: user._id }, options);
+        await Payment.deleteMany({ userId: user._id }, options);
+        await BillingEvent.deleteMany({ userId: user._id }, options);
+        await AdminAudit.deleteMany({ userId: user._id }, options);
+        await DeliveryUsage.deleteMany({ userId: user._id }, options);
+        const deliveries = await Delivery.find({ userId: user._id }).select('_id').session(transaction);
+        const deliveryIds = deliveries.map(item => item._id);
+        await PhotoLike.deleteMany({ deliveryId: { $in: deliveryIds } }, options);
+        await DeliveryView.deleteMany({ deliveryId: { $in: deliveryIds } }, options);
+        await DeliveryJob.deleteMany({ userId: user._id }, options);
+        await Delivery.deleteMany({ userId: user._id }, options);
+        await StorageAsset.deleteMany({ userId: user._id }, options);
+        await Portfolio.deleteMany({ userId: user._id }, options);
+        await PortfolioJob.deleteMany({ userId: user._id }, options);
         await User.deleteOne({ _id: user._id }, options);
       });
     } finally {

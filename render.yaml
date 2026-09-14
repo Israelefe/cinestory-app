@@ -38,3 +38,31 @@ services:
         sync: false
       - key: CLOUDINARY_API_SECRET
         sync: false
+      - key: CLOUDINARY_AUTH_TOKEN_KEY
+        sync: false
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: BILLING_ENABLED
+        value: "false"
+      - key: PAYSTACK_PRO_PLAN_CODE
+        sync: false
+      - key: PAYSTACK_CALLBACK_URL
+        value: https://veylo.com.ng/billing
+      - key: BILLING_ENCRYPTION_KEY
+        generateValue: true
+      - key: ALIBABA_MODEL_STUDIO_API_KEY
+        sync: false
+      - key: ALIBABA_WORKSPACE_ID
+        sync: false
+      - key: ALIBABA_BASE_URL
+        sync: false
+      - key: ALIBABA_VISION_MODEL
+        value: qwen3.7-flash
+      - key: ALIBABA_CREATIVE_MODEL
+        value: deepseek-v4.1-flash
+      - key: DEEPGRAM_API_KEY
+        sync: false
+      - key: DEEPGRAM_TTS_MODEL
+        value: aura-2-athena-en
+      - key: DELIVERY_PIPELINE_ENABLED
+        value: "false"

@@ -1,7 +1,8 @@
 import express from 'express';
-import { getAdminAnalytics, getAllUsers, updateUserPlan, getAllStories, adminDeleteStory } from '../controllers/admin.controller.js';
+import { getAdminAnalytics, getAllUsers, updateUserPlan, getAllStories, getAllDeliveries, getPayments, adminDeleteStory, refundPayment } from '../controllers/admin.controller.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import User from '../models/User.js';
+import { billingActionLimit } from '../middleware/rateLimit.middleware.js';
 
 const router = express.Router();
 
@@ -22,6 +23,9 @@ router.get('/analytics', getAdminAnalytics);
 router.get('/users', getAllUsers);
 router.patch('/users/:id/plan', updateUserPlan);
 router.get('/stories', getAllStories);
+router.get('/deliveries', getAllDeliveries);
+router.get('/payments', getPayments);
 router.delete('/stories/:id', adminDeleteStory);
+router.post('/payments/:id/refund', billingActionLimit, refundPayment);
 
 export default router;

@@ -18,8 +18,12 @@ export default function Dashboard({ user }) {
     try {
       setLoading(true);
       setLoadError('');
-      const { data } = await api.get('/v1/stories/my-stories');
-      setStories(data?.success ? data.data || [] : []);
+      const [legacy, current] = await Promise.allSettled([api.get('/v1/stories/my-stories'), api.get('/v1/deliveries')]);
+      if (legacy.status === 'rejected' && current.status === 'rejected') throw current.reason;
+      const legacyItems = legacy.status === 'fulfilled' && legacy.value.data?.success ? legacy.value.data.data || [] : [];
+      const currentItems = current.status === 'fulfilled' && current.value.data?.success ? current.value.data.data || [] : [];
+      const normalized = currentItems.map(item => ({ ...item, storyId: item.publicId, photos: item.assets, _deliveryType: 'current' }));
+      setStories([...normalized, ...legacyItems].sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt)));
     } catch (error) {
       setLoadError(apiMessage(error, 'We could not open your deliveries.'));
     } finally {
@@ -32,7 +36,8 @@ export default function Dashboard({ user }) {
   async function handleDelete(id) {
     if (!window.confirm('Delete this delivery and disable its client link? This cannot be undone.')) return;
     try {
-      await api.delete(`/v1/stories/${id}`);
+      const item = stories.find(story => story._id === id);
+      await api.delete(item?._deliveryType === 'current' ? `/v1/deliveries/${id}` : `/v1/stories/${id}`);
       setStories(current => current.filter(story => story._id !== id));
       setOpenMenu('');
       toast.success('Delivery deleted');
@@ -41,9 +46,10 @@ export default function Dashboard({ user }) {
     }
   }
 
-  async function copyLink(storyId) {
+  async function copyLink(story) {
     try {
-      await navigator.clipboard.writeText(`${APP_URL}/story/${storyId}`);
+      if (story.status !== 'published') return toast.info('Publish this draft before copying a client link.');
+      await navigator.clipboard.writeText(`${APP_URL}${story._deliveryType === 'current' ? `/d/${story.publicId}` : `/story/${story.storyId}`}`);
       toast.success('Client link copied');
     } catch {
       toast.error('Copy failed. Open the delivery and copy its address instead.');
@@ -51,7 +57,8 @@ export default function Dashboard({ user }) {
   }
 
   function shareWhatsApp(story) {
-    const url = `${APP_URL}/story/${story.storyId}`;
+    if (story.status !== 'published') return toast.info('Publish this draft before sharing it.');
+    const url = `${APP_URL}${story._deliveryType === 'current' ? `/d/${story.publicId}` : `/story/${story.storyId}`}`;
     const name = story.clientName ? ` ${story.clientName}` : '';
     const message = encodeURIComponent(`Hello${name}, your photographs are ready. Open your private Veylo delivery here:\n${url}`);
     window.open(`https://wa.me/?text=${message}`, '_blank', 'noopener,noreferrer');
@@ -72,7 +79,7 @@ export default function Dashboard({ user }) {
           <h1>Good to see you,<br /><em>{firstName}.</em></h1>
           <span>Open a client delivery or start with your next finished shoot.</span>
         </div>
-        <div className="v-dashboard-plan-summary"><BadgeCheck size={19} /><div><span>{isPro ? 'Veylo Pro' : 'Veylo Free'}</span><small>{isPro ? 'Unlimited deliveries under fair use' : 'Three deliveries each month'}</small></div>{!isPro && <Link to="/pricing">View Pro</Link>}</div>
+        <div className="v-dashboard-plan-summary"><BadgeCheck size={19} /><div><span>{isPro ? 'Veylo Pro' : 'Veylo Free'}</span><small>{isPro ? 'Unlimited deliveries under fair use' : 'Three deliveries each month'}</small></div><Link to="/billing">{isPro ? 'Manage plan' : 'View Pro'}</Link></div>
       </motion.header>
 
       <motion.section className="v-dashboard-overview" aria-label="Studio overview" initial={reduced ? false : { opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .5, delay: .08 }}>
@@ -88,8 +95,8 @@ export default function Dashboard({ user }) {
           <div className="v-dashboard-empty-copy"><p>YOUR FIRST DELIVERY</p><h3>No deliveries<br />here yet.</h3><span>When your next finished shoot is ready, start here. Veylo will guide you through the rest.</span><Link to="/create" className="v-button"><Plus size={17} />Create your first delivery<ArrowRight size={17} /></Link></div>
           <div className="v-dashboard-empty-preview" aria-hidden="true"><i /><i /><div><Image size={25} /><span>FIRST CLIENT DELIVERY</span><strong>Ready when the photographs are.</strong></div></div>
         </motion.div> : <div className="v-delivery-grid"><AnimatePresence>{stories.map((story, index) => <motion.article key={story._id} className="v-delivery-card" initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: .97 }} transition={{ duration: .42, delay: Math.min(index * .05, .25) }}>
-          <Link to={`/story/${story.storyId}`} target="_blank" rel="noreferrer" className="v-delivery-cover" aria-label={`Open ${story.title || story.clientName || 'delivery'}`}>{story.photos?.[0]?.url ? <img src={story.photos[0].thumbnailUrl || story.photos[0].url} alt="" loading="lazy" decoding="async" /> : <span><Film size={28} /></span>}<i /><small>{story.format || 'Photo Story'}</small></Link>
-          <div className="v-delivery-body"><div className="v-delivery-title"><div><span>{story.clientName || 'Client delivery'}</span><h3>{story.title || story.occasion || 'Finished shoot'}</h3></div><button type="button" onClick={() => setOpenMenu(value => value === story._id ? '' : story._id)} aria-label="Delivery options" aria-expanded={openMenu === story._id}><MoreHorizontal size={19} /></button>{openMenu === story._id && <div className="v-delivery-menu"><button type="button" onClick={() => copyLink(story.storyId)}><Copy size={15} />Copy client link</button><a href={`/story/${story.storyId}`} target="_blank" rel="noreferrer"><ExternalLink size={15} />Open delivery</a><button type="button" onClick={() => handleDelete(story._id)}><Trash2 size={15} />Delete delivery</button></div>}</div>
+          <Link to={story.status === 'published' ? (story._deliveryType === 'current' ? `/d/${story.publicId}` : `/story/${story.storyId}`) : `/create?draft=${story._id}`} target={story.status === 'published' ? '_blank' : undefined} rel="noreferrer" className="v-delivery-cover" aria-label={`Open ${story.title || story.clientName || 'delivery'}`}>{story.photos?.[0]?.url || story.photos?.[0]?.thumbnailUrl ? <img src={story.photos[0].thumbnailUrl || story.photos[0].url} alt="" loading="lazy" decoding="async" /> : <span><Film size={28} /></span>}<i /><small>{story.status === 'published' ? (story.format || 'Photo Story').replaceAll('-', ' ') : `${story.status} draft`}</small></Link>
+          <div className="v-delivery-body"><div className="v-delivery-title"><div><span>{story.clientName || 'Client delivery'}</span><h3>{story.title || story.occasion || 'Finished shoot'}</h3></div><button type="button" onClick={() => setOpenMenu(value => value === story._id ? '' : story._id)} aria-label="Delivery options" aria-expanded={openMenu === story._id}><MoreHorizontal size={19} /></button>{openMenu === story._id && <div className="v-delivery-menu"><button type="button" onClick={() => copyLink(story)}><Copy size={15} />Copy client link</button><a href={story._deliveryType === 'current' ? (story.status === 'published' ? `/d/${story.publicId}` : `/create?draft=${story._id}`) : `/story/${story.storyId}`} target={story.status === 'published' ? '_blank' : undefined} rel="noreferrer"><ExternalLink size={15} />{story.status === 'published' ? 'Open delivery' : 'Continue draft'}</a><button type="button" onClick={() => handleDelete(story._id)}><Trash2 size={15} />Delete delivery</button></div>}</div>
           <div className="v-delivery-numbers"><span><Eye size={14} />{story.viewsCount || 0} views</span><span><Download size={14} />{story.downloadsCount || 0} downloads</span></div>
           <button type="button" className="v-delivery-whatsapp" onClick={() => shareWhatsApp(story)}><MessageCircle size={16} />Send on WhatsApp</button></div>
         </motion.article>)}</AnimatePresence></div>}

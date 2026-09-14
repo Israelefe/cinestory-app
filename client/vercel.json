@@ -12,6 +12,10 @@
   ],
   "rewrites": [
     {
+      "source": "/d/:publicId",
+      "destination": "/api/delivery-share?publicId=:publicId"
+    },
+    {
       "source": "/api/:path*",
       "destination": "https://veylo-api-ptk3.onrender.com/api/:path*"
     },
