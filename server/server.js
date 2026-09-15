@@ -57,18 +57,26 @@ app.disable('x-powered-by');
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 // Paystack signs the exact request bytes. This route must stay above express.json().
 app.post('/api/v1/webhooks/paystack', express.raw({ type: 'application/json', limit: '256kb' }), paystackWebhook);
+function isAllowedOrigin(origin) {
+  if (!origin) return true;
+  const clean = origin.replace(/\/$/, '');
+  if (allowedOrigins.has(clean)) return true;
+  if (/^https:\/\/[a-zA-Z0-9_.-]+\.vercel\.app$/.test(clean)) return true;
+  return false;
+}
+
 app.use(cors({
   credentials: true,
   origin(origin, callback) {
-    if (!origin || allowedOrigins.has(origin.replace(/\/$/, ''))) return callback(null, true);
-    callback(new Error('Origin is not allowed.'));
+    if (isAllowedOrigin(origin)) return callback(null, true);
+    callback(new Error(`Origin ${origin} is not allowed.`));
   }
 }));
 app.use((req, res, next) => {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
   const origin = req.get('origin');
-  if (!origin || allowedOrigins.has(origin.replace(/\/$/, ''))) return next();
-  res.status(403).json({ success: false, message: 'This request origin is not allowed.' });
+  if (isAllowedOrigin(origin)) return next();
+  res.status(403).json({ success: false, message: `This request origin (${origin}) is not allowed.` });
 });
 app.use(cookieParser());
 app.use(express.json({ limit: '1mb' }));

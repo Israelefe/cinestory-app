@@ -2,7 +2,19 @@ import axios from 'axios';
 
 const browserOrigin = typeof window !== 'undefined' ? window.location.origin : '';
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:5000/api');
+function resolveApiBaseUrl() {
+  let url = import.meta.env.VITE_API_URL || '';
+  if (!url) {
+    return import.meta.env.PROD ? '/api' : 'http://localhost:5000/api';
+  }
+  url = url.trim().replace(/\/+$/, '');
+  if (!url.endsWith('/api')) {
+    url = `${url}/api`;
+  }
+  return url;
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 
 export const TOKEN_KEY = 'veylo_admin_token';
 

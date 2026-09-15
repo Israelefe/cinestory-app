@@ -35,7 +35,19 @@ export default function LoginPage({ onLoginSuccess }) {
         onLoginSuccess(data.admin);
       }
     } catch (err) {
-      const message = err.response?.data?.message || 'Invalid username or password. Please verify your credentials.';
+      console.error('[admin/login]', err);
+      let message = err.response?.data?.message;
+      if (!message) {
+        if (!err.response) {
+          message = `Unable to reach the backend at "${api.defaults.baseURL || 'unknown'}". Please ensure your Render backend is running and VITE_API_URL is set on Vercel.`;
+        } else if (err.response.status === 404) {
+          message = `API route not found (404) at ${api.defaults.baseURL}. Check your VITE_API_URL in Vercel.`;
+        } else if (err.response.status === 403) {
+          message = `Access rejected (403): ${err.response.data?.message || 'CORS origin blocked by backend.'}`;
+        } else {
+          message = `Server returned status ${err.response.status}. Please check Render logs.`;
+        }
+      }
       setError(message);
       toast.error(message);
     } finally {
