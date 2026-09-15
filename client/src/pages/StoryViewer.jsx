@@ -278,7 +278,24 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
     }
   }, [index, photos, demo, demoId]);
 
+  const handleNarrationEnded = () => {
+    setNarrationPlaying(false);
+    if (audio.current) audio.current.volume = 1.0;
+  };
+
   useEffect(() => {
+    const narrationEl = narrationRef.current;
+    if (!narrationEl || !hasNarration) return;
+    narrationEl.muted = muted;
+    if (running && !muted && narrationPlaying) {
+      narrationEl.play().catch(() => {});
+    } else {
+      narrationEl.pause();
+    }
+  }, [running, muted, narrationPlaying, hasNarration]);
+
+  useEffect(() => {
+    if (hasNarration) return; // Recorded Deepgram narration audio takes precedence
     if (!running || muted) {
       if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.cancel();
       if (audio.current) audio.current.volume = 1.0;
@@ -399,7 +416,17 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
     setStarted(true); setPaused(false); setFinished(false); setIndex(0); elapsed.current = 0;
     if (audio.current) {
       audio.current.currentTime = 0;
+      audio.current.volume = hasNarration ? 0.20 : 1.0;
       if (!muted) audio.current.play().then(() => setAudioPlaying(true)).catch(() => setAudioPlaying(false));
+    }
+    if (narrationRef.current && hasNarration) {
+      narrationRef.current.currentTime = 0;
+      if (!muted) {
+        narrationRef.current.play().then(() => {
+          setNarrationPlaying(true);
+          if (audio.current) audio.current.volume = 0.20;
+        }).catch(() => setNarrationPlaying(false));
+      }
     }
   };
   const share = async () => {
@@ -434,7 +461,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
    {story.soundtrack?.audioUrl && <div className="v-story-sound"><span className={audioPlaying ? 'is-playing' : ''} /><p>{audioPlaying ? 'Now playing' : muted ? 'Sound off' : 'Soundtrack'} · {story.soundtrack.title || 'Selected track'}</p></div>}
   </main>
   {story.soundtrack?.audioUrl && <audio ref={audio} src={mediaUrl(story.soundtrack.audioUrl)} loop preload="none" onError={() => setAudioPlaying(false)} />}
-  {deliveryProp?.narration?.url && <audio ref={narrationRef} src={mediaUrl(deliveryProp.narration.url)} preload="metadata" onEnded={handleNarrationEnded} />}
+  {deliveryProp?.narration?.url && <audio ref={narrationRef} src={mediaUrl(deliveryProp.narration.url)} preload="metadata" onEnded={handleNarrationEnded} onError={() => { setNarrationPlaying(false); if (audio.current) audio.current.volume = 1.0; }} />}
   <AnimatePresence>{gallery && <GalleryDialog photos={photos} clientName={story.clientName} demoId={demo ? demoId : null} onClose={() => setGallery(false)} onDownload={download} downloading={downloading} onDownloadAll={downloadAll} allDownloading={allDownloading} />}</AnimatePresence>
   </div>;
 }

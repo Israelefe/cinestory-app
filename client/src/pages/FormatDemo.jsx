@@ -1023,6 +1023,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio }) {
 export default function FormatDemo() {
   const { formatId } = useParams();
   useEffect(() => { const names = { editorial: 'Editorial Page', reveal: 'Photo Reveal', canvas: 'Canvas', chapters: 'Chapters', album: 'Album' }; if (names[formatId]) document.title = `Veylo — ${names[formatId]} demo`; }, [formatId]);
+  if (formatId === 'photo-story' || formatId === 'story') return <Navigate to="/demo" replace />;
   if (formatId === 'editorial') return <EditorialDemo />;
   if (formatId === 'reveal') return <RevealDemo />;
   if (formatId === 'canvas') return <CanvasDemo />;
