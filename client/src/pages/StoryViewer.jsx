@@ -6,7 +6,6 @@ import { toast } from 'react-toastify';
 import api from '../services/api.js';
 import { DEMO_PRESETS } from '../constants/demoStories.js';
 import { useDialogFocus } from '../components/useDialogFocus.js';
-import { DemoGallery, normalizeDeliveryPhotos } from './FormatDemo.jsx';
 export { DEMO_PRESETS } from '../constants/demoStories.js';
 
 function getFontFamily(type, fallback = "'Playfair Display', Georgia, serif") {
@@ -104,7 +103,7 @@ function StoryScene({ demo, demoId, photos, photo, index, mode, started, finishe
   <SceneTransition kind={transitionKind} accent={accent} reduced={reduced} />
  </motion.div></AnimatePresence>;
 }
-export default function StoryViewer({ demoMode = false, delivery: deliveryProp = null, galleryProps, audioState, toggleAudio }) {
+export default function StoryViewer({ demoMode = false, delivery: deliveryProp = null }) {
  const { storyId } = useParams();
  const [params] = useSearchParams();
  const location = useLocation();
@@ -276,40 +275,57 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
     }
   }, [index, photos, demo, demoId]);
 
-  const toggleNarration = async () => {
-    const player = narrationRef.current;
-    if (!player) return;
-    if (narrationPlaying) {
-      player.pause();
-      setNarrationPlaying(false);
-      if (audio.current) audio.current.volume = 1.0;
-    } else {
-      try {
-        await player.play();
-        setNarrationPlaying(true);
-        if (audio.current) audio.current.volume = 0.20;
-      } catch {
-        toast.info('Tap again to play narration.');
-      }
-    }
-  };
-
   const handleNarrationEnded = () => {
     setNarrationPlaying(false);
     if (audio.current) audio.current.volume = 1.0;
   };
 
   useEffect(() => {
-    if (!running) {
-      narrationRef.current?.pause();
-      setNarrationPlaying(false);
-      if (audio.current) audio.current.volume = 1.0;
+    const narrationEl = narrationRef.current;
+    if (!narrationEl || !hasNarration) return;
+    narrationEl.muted = muted;
+    if (running && !muted && narrationPlaying) {
+      narrationEl.play().catch(() => {});
+    } else {
+      narrationEl.pause();
     }
-  }, [running]);
+  }, [running, muted, hasNarration, narrationPlaying]);
 
+  const download = async (i, quiet = false) => {
+   setDownloading(i);
+   try {
+    const url = mediaUrl(photos[i].url); if (!url) throw new Error('Invalid image');
+    const response = await fetch(url); if (!response.ok) throw new Error('Download failed');
+    const blob = await response.blob(); if (!blob.type.startsWith('image/')) throw new Error('Unsupported file');
+    const extension = ({'image/png':'png','image/webp':'webp','image/jpeg':'jpg'})[blob.type] || 'jpg';
+    const object = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = object; a.download = (story.clientName || 'Veylo').replace(/[^a-z0-9_-]/gi, '_').slice(0, 60) + '-' + (i + 1) + '.' + extension;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(object), 30000);
+    if (!quiet) { toast.success('Download requested. Check your browser’s downloads.'); if (!demo && storyId) api.post('/v1/stories/public/' + encodeURIComponent(storyId) + '/track-download').catch(() => {}); }
+    return true;
+   } catch { toast.error('Couldn’t download this photograph. Please try again.'); return false; }
+   finally { setDownloading(null); }
+  };
+  const downloadAll = async () => {
+   if (allDownloading) return; setAllDownloading(true);
+   try { for (let i = 0; i < photos.length; i++) { if (!await download(i, true)) return; await new Promise(r => setTimeout(r, 250)); } toast.success('Downloads requested. Your browser may ask you to allow multiple files.'); if (!demo && storyId) api.post('/v1/stories/public/' + encodeURIComponent(storyId) + '/track-download').catch(() => {}); } finally { setAllDownloading(false); }
+  };
   const start = () => {
     setStarted(true); setPaused(false); setFinished(false); setIndex(0); elapsed.current = 0;
-    if (audio.current) { audio.current.currentTime = 0; if (!muted) audio.current.play().then(() => setAudioPlaying(true)).catch(() => setAudioPlaying(false)); }
+    if (audio.current) {
+      audio.current.currentTime = 0;
+      audio.current.volume = hasNarration ? 0.20 : 1.0;
+      if (!muted) audio.current.play().then(() => setAudioPlaying(true)).catch(() => setAudioPlaying(false));
+    }
+    if (narrationRef.current && hasNarration) {
+      narrationRef.current.currentTime = 0;
+      if (!muted) {
+        narrationRef.current.play().then(() => {
+          setNarrationPlaying(true);
+          if (audio.current) audio.current.volume = 0.20;
+        }).catch(() => setNarrationPlaying(false));
+      }
+    }
   };
   const share = async () => {
    const url = window.location.href;
@@ -333,20 +349,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
    <StoryScene demo={demo} demoId={demoId} photos={photos} photo={photo} index={index} mode={layoutMode} started={started} finished={finished} reduced={reduced} displaySrc={displaySrc} displaySet={displaySet} motionForPhoto={motionForPhoto} accent={photo?.colorAccent || story.theme?.accentColor || '#ff5a47'} />
    <div className="v-story-shade" aria-hidden="true" />
    <div className="v-story-progress" role="progressbar" aria-label="Photo Story progress" aria-valuemin={1} aria-valuemax={photos.length} aria-valuenow={index + 1}>{photos.map((_, i) => <span key={i} className={i < index ? 'is-done' : i === index ? 'is-current' : ''}><i ref={i === index ? progress : null} /></span>)}</div>
-   <header className="v-story-top"><div className="v-story-studio"><Link to={backDestination} onClick={handleBack} className="v-story-mark" aria-label={demo ? (isFromFormats ? 'Back to Photo Story on the formats page' : isFromNiche ? 'Back to the page you opened this story from' : 'Back to the Photo Story section on the homepage') : 'Veylo home'}><img src="/veylo/veylo-mark.svg" alt="" /></Link><div><strong style={{ fontFamily: 'var(--story-font-display)' }}>{story.clientName || story.title}</strong><span style={{ fontFamily: 'var(--story-font-body)' }}>{story.studioName || story.occasion}</span></div></div><div className="v-story-top-actions">
-    {hasNarration && (
-      <button
-        type="button"
-        className={`v-story-narration-btn ${narrationPlaying ? 'is-active' : ''}`}
-        onClick={toggleNarration}
-        aria-label={narrationPlaying ? 'Pause narration' : 'Play narration'}
-        title={narrationPlaying ? 'Pause narration' : 'Play narration'}
-      >
-        <Volume2 size={16} />
-        <span className="v-story-btn-text">{narrationPlaying ? 'Voiceover on' : 'Voiceover'}</span>
-      </button>
-    )}
-    <button onClick={() => setMuted(value => !value)} aria-label={muted ? 'Turn sound on' : 'Turn sound off'}>{muted ? <VolumeX size={17} /> : <Volume2 size={17} />}</button><button onClick={share} aria-label="Share story"><Share2 size={17} /></button></div></header>
+   <header className="v-story-top"><div className="v-story-studio"><Link to={backDestination} onClick={handleBack} className="v-story-mark" aria-label={demo ? (isFromFormats ? 'Back to Photo Story on the formats page' : isFromNiche ? 'Back to the page you opened this story from' : 'Back to the Photo Story section on the homepage') : 'Veylo home'}><img src="/veylo/veylo-mark.svg" alt="" /></Link><div><strong style={{ fontFamily: 'var(--story-font-display)' }}>{story.clientName || story.title}</strong><span style={{ fontFamily: 'var(--story-font-body)' }}>{story.studioName || story.occasion}</span></div></div><div className="v-story-top-actions"><button onClick={() => setMuted(value => !value)} aria-label={muted ? 'Turn sound on' : 'Turn sound off'}>{muted ? <VolumeX size={17} /> : <Volume2 size={17} />}</button><button onClick={share} aria-label="Share story"><Share2 size={17} /></button></div></header>
    {!started ? <section className="v-story-cover"><p className="v-story-kicker">{opening.eyebrow || (demo ? 'A Veylo Photo Story' : 'Your photographs are ready')}</p><h1 style={{ fontFamily: 'var(--story-font-display)' }}>{opening.headline || story.clientName || story.title}</h1><p className="v-story-cover-occasion">{story.occasion}</p><p className="v-story-summary">{opening.copy || story.storySummary || 'Your finished photographs, brought together for you.'}</p><button className="v-story-primary" onClick={start}><Play size={18} fill="currentColor" />{opening.buttonLabel || 'Begin the story'}</button><p className="v-story-hint">{opening.hint || 'Turn your sound on. Tap either side to move through the story.'}</p></section> : <>
     <button className="v-story-tap v-story-tap-left" onClick={() => go(-1)} disabled={index === 0} aria-label="Previous photograph" />
     <button className="v-story-tap v-story-tap-right" onClick={() => go(1)} disabled={index === photos.length - 1} aria-label="Next photograph" />
@@ -357,6 +360,6 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   </main>
   {story.soundtrack?.audioUrl && <audio ref={audio} src={mediaUrl(story.soundtrack.audioUrl)} loop preload="none" onError={() => setAudioPlaying(false)} />}
   {deliveryProp?.narration?.url && <audio ref={narrationRef} src={mediaUrl(deliveryProp.narration.url)} preload="metadata" onEnded={handleNarrationEnded} />}
-  <AnimatePresence>{gallery && <DemoGallery photos={deliveryProp?.assets?.length ? normalizeDeliveryPhotos(deliveryProp) : photos} title={story.clientName ? `${story.clientName} / ${story.title || 'Photo Story'}` : (story.title || 'Photo Story')} onClose={() => setGallery(false)} delivery={deliveryProp} {...galleryProps} />}</AnimatePresence>
+  <AnimatePresence>{gallery && <GalleryDialog photos={photos} clientName={story.clientName} demoId={demo ? demoId : null} onClose={() => setGallery(false)} onDownload={download} downloading={downloading} onDownloadAll={downloadAll} allDownloading={allDownloading} />}</AnimatePresence>
   </div>;
 }

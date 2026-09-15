@@ -232,7 +232,7 @@ export default function DeliveryViewer() {
     format === 'canvas' ? <CanvasDemo {...sharedProps} /> :
     format === 'chapters' ? <ChaptersDemo {...sharedProps} /> :
     format === 'album' ? <AlbumDemo {...sharedProps} /> :
-    <StoryViewer {...sharedProps} />;
+    <StoryViewer delivery={delivery} />;
 
   return (
     <>
@@ -245,7 +245,7 @@ export default function DeliveryViewer() {
           onEnded={() => setAudioState({ playing: '' })}
         />
       )}
-      {delivery.narration?.url && (
+      {delivery.narration?.url && !['photo-story'].includes(format) && (
         <audio
           ref={narrationRef}
           src={delivery.narration.url}

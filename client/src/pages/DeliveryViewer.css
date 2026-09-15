@@ -25,18 +25,18 @@
 .fd-header.is-light .fd-header-audio-btn.is-active{border-color:#a82f25;background:rgba(168,47,37,0.12);color:#8e2f28}
 
 .fd-gallery-head-actions{display:inline-flex;align-items:center;gap:10px}
-.fd-download-all-btn{display:inline-flex;align-items:center;gap:7px;min-height:40px;padding:8px 15px;border:1px solid var(--fd-accent, #ff5a47);background:var(--fd-accent, #ff5a47);color:#100b0a;font-size:11px;font-weight:750;letter-spacing:.05em;cursor:pointer;transition:transform .18s,filter .2s}
+.fd-download-all-btn{display:inline-flex;align-items:center;gap:7px;min-height:40px;padding:8px 15px;border:1px solid #ff5a47;background:#ff5a47;color:#100b0a;font-size:11px;font-weight:750;letter-spacing:.05em;cursor:pointer;transition:transform .18s,filter .2s}
 .fd-download-all-btn:hover:not(:disabled){transform:translateY(-1px);filter:brightness(1.08)}
 .fd-download-all-btn:disabled{opacity:.5;cursor:not-allowed}
 
 .fd-gallery-actions{display:inline-flex;align-items:center;gap:6px}
-.fd-gallery-actions button,.fd-lightbox-controls button.fd-like-btn,.fd-lightbox-controls button.fd-share-btn{display:grid;place-items:center;width:34px;height:34px;border:1px solid rgba(255,255,255,0.18);background:rgba(12,12,16,0.75);color:#e9e2db;cursor:pointer;backdrop-filter:blur(8px);transition:all .18s}
-.fd-gallery-actions button:hover,.fd-lightbox-controls button.fd-like-btn:hover,.fd-lightbox-controls button.fd-share-btn:hover{border-color:var(--fd-accent, #ff9b8e);color:var(--fd-accent, #ff9b8e)}
-.fd-like-btn.is-liked{border-color:var(--fd-accent, #ff5a47)!important;color:var(--fd-accent, #ff5a47)!important;background:rgba(255,90,71,0.12)!important}
+.fd-gallery-actions button,.fd-lightbox-controls button.fd-like-btn{display:grid;place-items:center;width:34px;height:34px;border:1px solid rgba(255,255,255,0.18);background:rgba(12,12,16,0.75);color:#e9e2db;cursor:pointer;backdrop-filter:blur(8px);transition:all .18s}
+.fd-gallery-actions button:hover,.fd-lightbox-controls button.fd-like-btn:hover{border-color:#ff9b8e;color:#ff9b8e}
+.fd-like-btn.is-liked{border-color:#ff5a47!important;color:#ff5a47!important;background:rgba(255,90,71,0.12)!important}
 
 @media(max-width:640px){
   .fd-audio-label{display:none}
-  .fd-download-all-btn{padding:8px 12px;font-size:10px}
-  .fd-download-all-btn span{display:inline}
+  .fd-download-all-btn span{display:none}
+  .fd-download-all-btn{padding:8px 10px}
 }
 

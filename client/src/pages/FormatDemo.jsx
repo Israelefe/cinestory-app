@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion, useScroll, useTransform } from 'framer-motion';
-import { ArrowLeft, BookOpen, Check, ChevronLeft, ChevronRight, Download, Grid2X2, Heart, Images, Info, RotateCcw, Share2, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowLeft, BookOpen, Check, ChevronLeft, ChevronRight, Download, Grid2X2, Heart, Images, RotateCcw, Volume2, VolumeX, X } from 'lucide-react';
 import { Photo } from '../components/PublicDesign.jsx';
 import { useDialogFocus } from '../components/useDialogFocus.js';
 import '../styles/format-demos.css';
@@ -147,24 +147,6 @@ export function DemoGallery({ photos, title, onClose, initialIndex = null, liked
   const allowIndividualDownloads = delivery ? delivery.access?.allowIndividualDownloads !== false : true;
   const allowLikes = delivery ? Boolean(delivery.access?.allowLikes && onLike) : false;
 
-  const handleShare = async (photo) => {
-    const targetUrl = imageSrc(photo);
-    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-      try {
-        await navigator.share({
-          title: photo.alt || delivery?.title || 'Photograph',
-          url: targetUrl
-        });
-        return;
-      } catch (err) {
-        if (err.name === 'AbortError') return;
-      }
-    }
-    if (onDownload) {
-      onDownload(photo.assetId || selected);
-    }
-  };
-
   return <motion.div className="fd-gallery-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <motion.section ref={panel} className="fd-gallery" role="dialog" aria-modal="true" aria-labelledby="fd-gallery-title" tabIndex={-1} initial={{ opacity: 0, y: 24, scale: .985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 15 }} transition={{ type: 'spring', damping: 27, stiffness: 240 }}>
       <header>
@@ -187,10 +169,6 @@ export function DemoGallery({ photos, title, onClose, initialIndex = null, liked
           <button type="button" onClick={onClose} aria-label="Close gallery"><X size={20} /></button>
         </div>
       </header>
-      <div className="fd-gallery-mobile-note">
-        <Info size={14} className="fd-gallery-note-icon" />
-        <span>Mobile tip: To download all photos, please close any floating chat bubbles (WhatsApp / Messenger) if your phone asks to clear overlays. You can also tap and save any photo individually.</span>
-      </div>
       {selected === null ? <div className="fd-gallery-grid">{photos.map((photo, index) => {
         const photoKey = photo.assetId || photo.name || index;
         return <figure key={photoKey}>
@@ -210,24 +188,12 @@ export function DemoGallery({ photos, title, onClose, initialIndex = null, liked
                   <Heart size={15} fill={liked?.has(photo.assetId || index) ? 'currentColor' : 'none'} />
                 </button>
               )}
-              {typeof navigator !== 'undefined' && typeof navigator.share === 'function' && (
-                <button
-                  type="button"
-                  onClick={() => handleShare(photo)}
-                  className="fd-share-btn"
-                  aria-label="Share or save photograph"
-                  title="Share or save to device"
-                >
-                  <Share2 size={14} />
-                </button>
-              )}
               {allowIndividualDownloads && (onDownload ? (
                 <button
                   type="button"
                   onClick={() => onDownload(photo.assetId || index)}
                   disabled={busy === (photo.assetId || index)}
                   aria-label="Download photograph"
-                  title="Download photograph"
                 >
                   <Download size={14} />
                 </button>
@@ -263,17 +229,6 @@ export function DemoGallery({ photos, title, onClose, initialIndex = null, liked
               aria-label={liked?.has(activePhoto?.assetId || selected) ? 'Unlike' : 'Like'}
             >
               <Heart size={16} fill={liked?.has(activePhoto?.assetId || selected) ? 'currentColor' : 'none'} />
-            </button>
-          )}
-          {typeof navigator !== 'undefined' && typeof navigator.share === 'function' && (
-            <button
-              type="button"
-              onClick={() => handleShare(activePhoto)}
-              className="fd-share-btn"
-              aria-label="Share or save to device"
-              title="Share or save to device"
-            >
-              <Share2 size={15} /><span>Save</span>
             </button>
           )}
           {allowIndividualDownloads && (onDownload ? (
