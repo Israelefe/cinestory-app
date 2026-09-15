@@ -18,19 +18,41 @@ export const imageSrc = (photo, width = 1440) => {
   return `/veylo/web/${photo?.name || photo}-${width}.webp`;
 };
 
+function getFontFamily(type, fallback = "'Playfair Display', Georgia, serif") {
+  switch (type) {
+    case 'editorial-serif':
+      return "'Playfair Display', Georgia, serif";
+    case 'soft-serif':
+      return "'Cormorant Garamond', 'Playfair Display', Georgia, serif";
+    case 'condensed-sans':
+      return "'Outfit', 'Plus Jakarta Sans', sans-serif";
+    case 'clean-sans':
+      return "'Plus Jakarta Sans', system-ui, sans-serif";
+    default:
+      return type ? `"${type}", ${fallback}` : fallback;
+  }
+}
+
 export function getFormatThemeStyles(delivery, fallback = {}) {
   const cd = delivery?.creativeDirection;
   const palette = cd?.palette || {};
   const typography = cd?.typography || {};
 
+  const accent = palette.accent || palette.accentColor || fallback.accent || '#ff5a47';
+  const bg = palette.background || palette.backgroundColor || fallback.bg || '#070709';
+  const surface = palette.surface || palette.surfaceColor || fallback.surface || '#0e0e13';
+  const text = palette.text || palette.textColor || fallback.text || '#f2eee8';
+  const displayFont = getFontFamily(typography.display || typography.displayFont, fallback.fontDisplay || "'Playfair Display', Georgia, serif");
+  const bodyFont = getFontFamily(typography.body || typography.bodyFont, fallback.fontBody || "'Plus Jakarta Sans', sans-serif");
+
   return {
-    '--fd-accent': palette.accentColor || fallback.accent || '#ff5a47',
-    '--fd-accent-soft': palette.accentColor ? `${palette.accentColor}26` : (fallback.accentSoft || '#ff5a4726'),
-    '--fd-bg': palette.backgroundColor || fallback.bg || '#070709',
-    '--fd-surface': palette.surfaceColor || fallback.surface || '#0e0e13',
-    '--fd-text': palette.textColor || fallback.text || '#f2eee8',
-    '--fd-font-display': typography.displayFont ? `"${typography.displayFont}", 'Playfair Display', Georgia, serif` : (fallback.fontDisplay || "'Playfair Display', Georgia, serif"),
-    '--fd-font-body': typography.bodyFont ? `"${typography.bodyFont}", 'Plus Jakarta Sans', sans-serif` : (fallback.fontBody || "'Plus Jakarta Sans', sans-serif")
+    '--fd-accent': accent,
+    '--fd-accent-soft': `${accent}26`,
+    '--fd-bg': bg,
+    '--fd-surface': surface,
+    '--fd-text': text,
+    '--fd-font-display': displayFont,
+    '--fd-font-body': bodyFont
   };
 }
 

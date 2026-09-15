@@ -502,8 +502,10 @@ STRUCTURE:
 - Close with a brief, warm sign-off.
 
 VOICE:
-- Speak like a real human — warm, direct, unhurried.
-- Celebrate the OCCASION (the ${shootType || 'shoot'}), not the photographs themselves.
+- Speak like someone narrating an intimate, elegant documentary biography of this person or milestone.
+- Calm, dignified, observant, and warm — never theatrical, never rushed like an auctioneer.
+- Leave natural breathing room between thoughts. Use periods and punctuation for measured, unhurried cadence.
+- Celebrate the PERSON and the OCCASION with quiet dignity.
 - Never describe images. Never say "in this photo" or "you can see".
 - No AI clichés (no elevate, tapestry, symphony, essence, timeless, etc.).
 ${voiceRules}

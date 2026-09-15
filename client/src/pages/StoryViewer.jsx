@@ -228,13 +228,16 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   return () => { active = false; };
  }, [demo, demoId, storyId, deliveryProp]);
  const go = useCallback(direction => {
+  if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.cancel();
   elapsed.current = 0; setFinished(false); setIndex(current => Math.max(0, Math.min(photos.length - 1, current + direction)));
   if (progress.current) progress.current.style.transform = 'scaleX(0)';
  }, [photos.length]);
  useEffect(() => {
   if (!running) return;
   let frame; let previous = performance.now();
-  const duration = Math.max(2, Math.min(30, Number(photo?.duration) || 5.5)) * 1000;
+  const wordCount = (photo?.caption || '').split(/\s+/).filter(Boolean).length;
+  const spokenBreathingSeconds = wordCount > 0 ? (wordCount * 0.52 + 1.8) : 5.5;
+  const duration = Math.max(2, Math.min(30, Math.max(Number(photo?.duration) || 5.5, spokenBreathingSeconds))) * 1000;
   const tick = now => {
    elapsed.current += now - previous; previous = now;
    if (progress.current) progress.current.style.transform = 'scaleX(' + Math.min(1, elapsed.current / duration) + ')';
@@ -247,7 +250,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   };
   frame = requestAnimationFrame(tick);
   return () => cancelAnimationFrame(frame);
- }, [running, index, photo?.duration, photos.length]);
+ }, [running, index, photo?.duration, photo?.caption, photos.length]);
  useEffect(() => {
   const element = audio.current;
   if (!element) return;
@@ -275,21 +278,69 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
     }
   }, [index, photos, demo, demoId]);
 
-  const handleNarrationEnded = () => {
-    setNarrationPlaying(false);
-    if (audio.current) audio.current.volume = 1.0;
-  };
-
   useEffect(() => {
-    const narrationEl = narrationRef.current;
-    if (!narrationEl || !hasNarration) return;
-    narrationEl.muted = muted;
-    if (running && !muted && narrationPlaying) {
-      narrationEl.play().catch(() => {});
-    } else {
-      narrationEl.pause();
+    if (!running || muted) {
+      if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.cancel();
+      if (audio.current) audio.current.volume = 1.0;
+      setNarrationPlaying(false);
+      return;
     }
-  }, [running, muted, hasNarration, narrationPlaying]);
+
+    const textToSpeak = finished
+      ? (story?.finale?.headline ? `${story.finale.headline}. ${story.finale.copy || ''}` : '')
+      : (photo?.caption || photo?.chapterTitle || '');
+
+    if (!textToSpeak) {
+      if (audio.current) audio.current.volume = 1.0;
+      setNarrationPlaying(false);
+      return;
+    }
+
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(textToSpeak);
+      utterance.rate = 0.85; // Unhurried, measured biographical documentary pace
+      utterance.pitch = 0.98;
+
+      const pickVoice = () => {
+        const voices = window.speechSynthesis.getVoices();
+        return (
+          voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Hannah') || v.name.includes('Samantha') || v.name.includes('Daniel') || v.name.includes('Serena'))) ||
+          voices.find(v => v.lang.startsWith('en')) ||
+          null
+        );
+      };
+
+      const voice = pickVoice();
+      if (voice) utterance.voice = voice;
+
+      utterance.onstart = () => {
+        setNarrationPlaying(true);
+        if (audio.current) audio.current.volume = 0.20; // Duck soundtrack
+      };
+      utterance.onend = () => {
+        setNarrationPlaying(false);
+        if (audio.current) audio.current.volume = 1.0; // Restore soundtrack
+      };
+      utterance.onerror = () => {
+        setNarrationPlaying(false);
+        if (audio.current) audio.current.volume = 1.0;
+      };
+
+      const timer = setTimeout(() => {
+        try {
+          window.speechSynthesis.speak(utterance);
+        } catch {
+          if (audio.current) audio.current.volume = 1.0;
+        }
+      }, 340);
+
+      return () => {
+        clearTimeout(timer);
+        if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.cancel();
+      };
+    }
+  }, [running, muted, index, finished, photo?.caption, photo?.chapterTitle, story?.finale]);
 
   const download = async (i, quiet = false) => {
    setDownloading(i);
@@ -307,24 +358,48 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
    finally { setDownloading(null); }
   };
   const downloadAll = async () => {
-   if (allDownloading) return; setAllDownloading(true);
-   try { for (let i = 0; i < photos.length; i++) { if (!await download(i, true)) return; await new Promise(r => setTimeout(r, 250)); } toast.success('Downloads requested. Your browser may ask you to allow multiple files.'); if (!demo && storyId) api.post('/v1/stories/public/' + encodeURIComponent(storyId) + '/track-download').catch(() => {}); } finally { setAllDownloading(false); }
+   if (allDownloading) return;
+   setAllDownloading(true);
+   if (deliveryProp?.publicId) {
+     try {
+       const token = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(`veylo_delivery_${deliveryProp.publicId}`) : null;
+       const response = await api.get(
+         `/v1/deliveries/public/${deliveryProp.publicId}/download-all`,
+         token ? { headers: { 'X-Delivery-Access': token } } : {}
+       );
+       const url = response.data.data.url;
+       const a = document.createElement('a');
+       a.href = url;
+       a.target = '_blank';
+       a.rel = 'noopener noreferrer';
+       a.download = `${(story.clientName || 'gallery').replace(/[^a-z0-9_-]/gi, '_')}-photographs.zip`;
+       document.body.appendChild(a);
+       a.click();
+       a.remove();
+       toast.info('Gallery download started. Check your browser downloads.');
+     } catch {
+       toast.error('We could not prepare the full gallery download.');
+     } finally {
+       setAllDownloading(false);
+     }
+     return;
+   }
+   try {
+     for (let i = 0; i < photos.length; i++) {
+       if (!await download(i, true)) return;
+       await new Promise(r => setTimeout(r, 250));
+     }
+     toast.success('Downloads requested. Check your browser downloads.');
+     if (!demo && storyId) api.post('/v1/stories/public/' + encodeURIComponent(storyId) + '/track-download').catch(() => {});
+   } finally {
+     setAllDownloading(false);
+   }
   };
   const start = () => {
     setStarted(true); setPaused(false); setFinished(false); setIndex(0); elapsed.current = 0;
     if (audio.current) {
       audio.current.currentTime = 0;
-      audio.current.volume = hasNarration ? 0.20 : 1.0;
       if (!muted) audio.current.play().then(() => setAudioPlaying(true)).catch(() => setAudioPlaying(false));
-    }
-    if (narrationRef.current && hasNarration) {
-      narrationRef.current.currentTime = 0;
-      if (!muted) {
-        narrationRef.current.play().then(() => {
-          setNarrationPlaying(true);
-          if (audio.current) audio.current.volume = 0.20;
-        }).catch(() => setNarrationPlaying(false));
-      }
     }
   };
   const share = async () => {
@@ -353,7 +428,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
    {!started ? <section className="v-story-cover"><p className="v-story-kicker">{opening.eyebrow || (demo ? 'A Veylo Photo Story' : 'Your photographs are ready')}</p><h1 style={{ fontFamily: 'var(--story-font-display)' }}>{opening.headline || story.clientName || story.title}</h1><p className="v-story-cover-occasion">{story.occasion}</p><p className="v-story-summary">{opening.copy || story.storySummary || 'Your finished photographs, brought together for you.'}</p><button className="v-story-primary" onClick={start}><Play size={18} fill="currentColor" />{opening.buttonLabel || 'Begin the story'}</button><p className="v-story-hint">{opening.hint || 'Turn your sound on. Tap either side to move through the story.'}</p></section> : <>
     <button className="v-story-tap v-story-tap-left" onClick={() => go(-1)} disabled={index === 0} aria-label="Previous photograph" />
     <button className="v-story-tap v-story-tap-right" onClick={() => go(1)} disabled={index === photos.length - 1} aria-label="Next photograph" />
-    <section key={finished ? 'finale' : 'caption-' + index} className={'v-story-caption is-' + layoutMode + ' is-type-' + textStyle + ' has-' + textBackground + ' position-' + captionPosition + ' ' + (!captions ? 'is-hidden ' : '') + (finished ? 'is-finale' : '')} aria-live={paused || finished ? 'polite' : 'off'}>{finished ? <><motion.p className="v-story-kicker" initial={reduced ? false : { opacity: 0, x: -18 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: reduced ? 0 : .18 }}>{finale.eyebrow || 'That’s the story'}</motion.p><AnimatedStoryText text={finale.headline || 'The full gallery is ready.'} mode="poster" animation={finale.textAnimation || 'word_fade_up'} reduced={reduced} /><motion.p initial={reduced ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: reduced ? 0 : .5 }}>{finale.copy || 'Take your time with every photograph. Save one, or keep the whole set.'}</motion.p><motion.button className="v-story-gallery-cta" onClick={() => setGallery(true)} initial={reduced ? false : { opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: reduced ? 0 : .65 }}>{finale.buttonLabel || 'Open your gallery'}<Grid size={16} /></motion.button></> : <><motion.p className="v-story-kicker" initial={reduced ? false : { opacity: 0, x: -18 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: reduced ? 0 : .08 }}>{photo?.chapterTitle || 'The photographs'}</motion.p><AnimatedStoryText text={photo?.caption || 'One more moment from the day.'} mode={layoutMode} animation={photo?.textAnimation} reduced={reduced} /></>}</section>
+    <section key={finished ? 'finale' : 'caption-' + index} className={'v-story-caption is-' + layoutMode + ' is-type-' + textStyle + ' has-' + textBackground + ' position-' + captionPosition + ' ' + (!captions ? 'is-hidden ' : '') + (finished ? 'is-finale' : '')} style={captions ? undefined : { display: 'none', visibility: 'hidden', opacity: 0, pointerEvents: 'none' }} aria-live={paused || finished ? 'polite' : 'off'}>{finished ? <><motion.p className="v-story-kicker" initial={reduced ? false : { opacity: 0, x: -18 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: reduced ? 0 : .18 }}>{finale.eyebrow || 'That’s the story'}</motion.p><AnimatedStoryText text={finale.headline || 'The full gallery is ready.'} mode="poster" animation={finale.textAnimation || 'word_fade_up'} reduced={reduced} /><motion.p initial={reduced ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: reduced ? 0 : .5 }}>{finale.copy || 'Take your time with every photograph. Save one, or keep the whole set.'}</motion.p><motion.button className="v-story-gallery-cta" onClick={() => setGallery(true)} initial={reduced ? false : { opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: reduced ? 0 : .65 }}>{finale.buttonLabel || 'Open your gallery'}<Grid size={16} /></motion.button></> : <><motion.p className="v-story-kicker" initial={reduced ? false : { opacity: 0, x: -18 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: reduced ? 0 : .08 }}>{photo?.chapterTitle || 'The photographs'}</motion.p><AnimatedStoryText text={photo?.caption || 'One more moment from the day.'} mode={layoutMode} animation={photo?.textAnimation} reduced={reduced} /></>}</section>
     <div className={'v-story-controls ' + (finished ? 'is-finished' : '')}><button onClick={() => setCaptions(value => !value)} aria-label={captions ? 'Hide captions' : 'Show captions'}>{captions ? <Eye size={17} /> : <EyeOff size={17} />}</button><button className="v-story-play" onClick={finished ? start : () => setPaused(value => !value)} aria-label={finished ? 'Replay story' : paused ? 'Resume story' : 'Pause story'}>{finished ? <RotateCcw size={18} /> : paused ? <Play size={18} fill="currentColor" /> : <Pause size={18} fill="currentColor" />}</button>{!finished && <button onClick={() => setGallery(true)} aria-label="Open gallery"><Grid size={17} /></button>}</div>
    </>}
    {story.soundtrack?.audioUrl && <div className="v-story-sound"><span className={audioPlaying ? 'is-playing' : ''} /><p>{audioPlaying ? 'Now playing' : muted ? 'Sound off' : 'Soundtrack'} · {story.soundtrack.title || 'Selected track'}</p></div>}
