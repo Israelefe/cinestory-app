@@ -9,7 +9,7 @@ export function Reveal({ children, className = '', delay = 0, ...props }) {
   return <motion.div className={className} initial={reduced ? false : { opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.14, margin: "-30px 0px" }} transition={{ duration: reduced ? 0 : 0.65, delay: reduced ? 0 : delay, ease: [0.22, 1, 0.36, 1] }} {...props}>{children}</motion.div>;
 }
 
-export function Photo({ name, alt, className = '', eager = false, sizes = '(max-width: 640px) 100vw, (max-width: 1024px) 60vw, 50vw', ...props }) {
+export function Photo({ name, url, alt, className = '', eager = false, sizes = '(max-width: 640px) 100vw, (max-width: 1024px) 60vw, 50vw', ...props }) {
   const imageRef = React.useRef(null);
   const [nearViewport, setNearViewport] = React.useState(eager);
 
@@ -30,6 +30,20 @@ export function Photo({ name, alt, className = '', eager = false, sizes = '(max-
     observer.observe(image);
     return () => observer.disconnect();
   }, [eager, nearViewport]);
+
+  if (url) {
+    return <img
+      ref={imageRef}
+      src={url}
+      sizes={sizes}
+      alt={alt || ''}
+      loading={eager ? 'eager' : 'lazy'}
+      fetchPriority={eager ? 'high' : nearViewport ? 'auto' : 'low'}
+      decoding="async"
+      className={'v-photo ' + className}
+      {...props}
+    />;
+  }
 
   const source = '/veylo/web/' + name;
   return <img

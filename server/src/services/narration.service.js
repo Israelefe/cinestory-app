@@ -5,17 +5,35 @@ import { createNarrationScript } from './alibabaCreativeDirector.service.js';
 
 function fallbackNarrationText(delivery) {
   const direction = delivery.creativeDirection || {};
-  const lines = [direction.openingLine, ...(direction.frames || []).map(frame => frame.caption).filter(Boolean), direction.closingLine]
-    .map(line => String(line || '').trim())
-    .filter(Boolean);
-  const selected = [];
-  let length = 0;
-  for (const line of lines) {
-    if (length + line.length + 1 > 1900) break;
-    selected.push(line);
-    length += line.length + 1;
+  const sections = direction.sections || [];
+  const frames = direction.frames || [];
+  const parts = [];
+
+  // Opening
+  if (direction.openingLine) parts.push(direction.openingLine.trim());
+
+  // Group frames by section for a walking narration
+  if (sections.length > 0) {
+    for (const section of sections) {
+      const sectionFrames = frames.filter(f => f.sectionId === section.id);
+      const sectionCaptions = sectionFrames.map(f => f.caption).filter(Boolean);
+      if (section.subtitle) parts.push(section.subtitle.trim());
+      else if (sectionCaptions.length > 0) parts.push(sectionCaptions[0].trim());
+    }
+  } else {
+    // No sections — pick a few representative captions with pauses
+    const captions = frames.map(f => f.caption).filter(Boolean);
+    const step = Math.max(1, Math.floor(captions.length / 4));
+    for (let i = 0; i < captions.length && parts.length < 6; i += step) {
+      parts.push(captions[i].trim());
+    }
   }
-  return selected.join(' ');
+
+  // Closing
+  if (direction.closingLine) parts.push(direction.closingLine.trim());
+
+  // Join with period-space for natural TTS pauses
+  return parts.filter(Boolean).join('. ').slice(0, 1900);
 }
 
 async function uploadAudio(buffer, delivery) {

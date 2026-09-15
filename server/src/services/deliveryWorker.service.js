@@ -65,7 +65,7 @@ async function direct(job, delivery) {
   const defaultSectionId = direction.sections[0]?.id || 'section-1';
   for (let offset = job.cursor || 0; offset < insights.length; offset += 40) {
     const batch = insights.slice(offset, offset + 40);
-    const result = await createFrameBatch({ format, brief: delivery.brief, clientName: delivery.clientName, direction, imageInsights: batch, revisionInstruction: job.input?.instruction || '', currentFrames: job.type === 'revise' ? (delivery.creativeDirection?.frames || []).filter(frame => batch.some(item => item.assetId === frame.assetId)) : [] });
+    const result = await createFrameBatch({ format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction, imageInsights: batch, revisionInstruction: job.input?.instruction || '', currentFrames: job.type === 'revise' ? (delivery.creativeDirection?.frames || []).filter(frame => batch.some(item => item.assetId === frame.assetId)) : [] });
     const frameMap = new Map((result.frames || []).map(frame => [frame.assetId, frame]));
     const alignedFrames = batch.map((item, index) => {
       const frame = frameMap.get(item.assetId) || result.frames?.[index] || {
@@ -111,7 +111,7 @@ async function revise(job, delivery) {
   if (insights.length !== selected.size) throw Object.assign(new Error('One of the selected photographs has no analysis.'), { code: 'ANALYSIS_REQUIRED' });
   const currentFrames = delivery.creativeDirection.frames.filter(frame => selected.has(frame.assetId));
   await saveJob(job, { stage: 'revising-selected-photographs', progress: 20 });
-  const result = await createFrameBatch({ format: delivery.format, brief: delivery.brief, clientName: delivery.clientName, direction: delivery.creativeDirection, imageInsights: insights, revisionInstruction: instruction, currentFrames });
+  const result = await createFrameBatch({ format: delivery.format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction: delivery.creativeDirection, imageInsights: insights, revisionInstruction: instruction, currentFrames });
   if (result.frames.some((frame, index) => frame.assetId !== insights[index]?.assetId)) throw Object.assign(new Error('The creative model changed the selected photograph order.'), { code: 'INVALID_FRAME_SEQUENCE' });
   const sectionIds = new Set(delivery.creativeDirection.sections.map(section => section.id));
   if (result.frames.some(frame => !sectionIds.has(frame.sectionId))) throw Object.assign(new Error('The creative model returned an unknown section.'), { code: 'INVALID_FRAME_SECTION' });

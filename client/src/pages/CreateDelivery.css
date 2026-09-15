@@ -56,3 +56,12 @@
 .v-soundtrack-select-btn{display:inline-flex;align-items:center;gap:7px;min-height:42px;padding:9px 15px;border:1px solid rgba(255,255,255,0.18);color:#dcd4cd;font-size:13px;font-weight:650;white-space:nowrap;transition:all .18s}
 .v-soundtrack-select-btn:hover{border-color:#ff5a47;color:#ff9b8e}
 .v-soundtrack-item.is-selected .v-soundtrack-select-btn{border-color:#6fc28d;background:rgba(111,194,141,0.12);color:#8bd6a4}
+
+/* Shoot Type Select Dropdown */
+.v-create-form select{appearance:none;width:100%;min-height:50px;padding:13px 15px;padding-right:42px;border:1px solid #ffffff1c;background:#101014;color:#f2ece6;font-size:14px;outline:none;cursor:pointer;transition:border-color .2s,background .2s;background-image:url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");background-repeat:no-repeat;background-position:right 14px center}
+.v-create-form select:focus{border-color:#ff9b8e70;background:#121217}
+.v-create-form select option{background:#1a1a20;color:#f2ece6}
+
+/* Format Card Selected State */
+.v-format-recommendations>button.is-selected{border-color:#ff5a47;background:rgba(255,90,71,0.08);box-shadow:0 0 0 1px #ff5a47,0 4px 20px rgba(255,90,71,0.1)}
+.v-format-check{position:absolute;top:12px;right:12px;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#ff5a47;color:#fff}

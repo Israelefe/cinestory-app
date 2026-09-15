@@ -254,15 +254,25 @@ async function completion({ model, messages, temperature = 0.35, maxTokens = 600
   throw error;
 }
 
-const voiceRules = `You are writing directly to the client to celebrate the purpose, milestone, and emotion of this shoot (e.g. birthday celebration, wedding, graduation, personal milestone, fashion lookbook). Ground your writing in what the photographer specified in their brief.
+const voiceRules = `You are writing directly to the client. Your PRIMARY source for every headline and caption is the SHOOT PURPOSE — what the photographer says this shoot celebrates (birthday, wedding, graduation, portrait session, etc.) and the brief they wrote about the client.
 
-CRITICAL DIRECTIVES:
-1. Speak to the human client with warmth, taste, and genuine celebration. Captions and headlines must honor the occasion and what this shoot represents to the client.
-2. NEVER write alt-text, image audits, or computer vision descriptions. Never write: "A photograph of...", "The subject is wearing...", "Visible in this image...", or describe studio backdrops, lighting equipment, and camera angles.
-3. Never invent relationships, names, or events that the photographer did not provide.
-4. Never use AI buzzwords or clichés: elevate, unlock, seamlessly, tapestry, symphony, beacon, testament, crescendo, delve, journey, essence, timeless radiance, pure grace, or grand finale.
-5. No hashtags, emojis, or corporate jargon.
-6. Leave captions empty when a photograph works better without text.`;
+STRICT RULES:
+1. Every headline and caption must celebrate the OCCASION and the CLIENT. Ask yourself: "What does this shoot mean to this person?" That answer drives every word you write.
+2. ABSOLUTELY NEVER describe what you see in the image. Never write alt-text. Banned phrases: "A photograph of", "The subject is wearing", "Visible in this image", "captured in", "posing against", "standing in", "studio backdrop", "floral arrangement", "emerald dress", "wearing a", "holding a". If it sounds like you are describing a photo to a blind person, delete it immediately.
+3. Write short, confident, warm. Sound like a real human speaking to a friend about their big day — not a robot cataloguing visual data.
+4. Never invent names, relationships, or events the photographer did not mention.
+5. Never use AI clichés: elevate, unlock, seamlessly, tapestry, symphony, beacon, testament, crescendo, delve, journey, essence, timeless, radiance, pure grace, grand finale, curated.
+6. No hashtags, emojis, or corporate jargon.
+7. Leave captions empty when a photograph speaks for itself.
+
+GOOD examples for a 30th birthday shoot for Ada:
+  - Headline: "The Start of a New Decade" / Caption: "Ada, this is the one you will keep coming back to."
+  - Headline: "Thirty" / Caption: "The confidence that showed up on this birthday."
+
+BAD examples (NEVER write like this):
+  - "A woman wearing a green satin dress posing against a cream studio backdrop."
+  - "Subject displays a warm smile while seated on a wooden stool."
+  - "Captured in natural lighting with soft bokeh in the background."`;
 
 export async function analyzeImageBatch({ brief, shootType, clientName, assets }) {
   const provider = config();
@@ -365,7 +375,7 @@ Rank all six delivery formats exactly once.`;
 
 export async function createGlobalDirection({ format, brief, shootType, clientName, collectionAnalysis, imageInsights, revisionInstruction = '', currentDirection = null }) {
   const provider = config();
-  const compact = imageInsights.map(item => ({ assetId: item.assetId, summary: item.summary, colors: item.dominantColors, weight: item.visualWeight, moment: item.moment }));
+  const compact = imageInsights.map(item => ({ assetId: item.assetId, weight: item.visualWeight, moment: item.moment, orientation: item.orientation }));
   const schemaInstructions = `Return a JSON object matching this schema:
 {
   "format": "${format}",
@@ -395,7 +405,7 @@ export async function createGlobalDirection({ format, brief, shootType, clientNa
   });
 }
 
-export async function createFrameBatch({ format, brief, clientName, direction, imageInsights, revisionInstruction = '', currentFrames = [] }) {
+export async function createFrameBatch({ format, brief, shootType, clientName, direction, imageInsights, revisionInstruction = '', currentFrames = [] }) {
   const provider = config();
   const validSectionIds = direction?.sections?.map(s => s.id) || ['main'];
   const schemaInstructions = `Return a JSON object matching this schema:
@@ -416,20 +426,31 @@ export async function createFrameBatch({ format, brief, clientName, direction, i
 }
 Return one frame per photograph in the supplied order.`;
 
+  // Strip image insights to minimal context — remove visual descriptions that
+  // cause the model to echo alt-text instead of writing occasion-focused copy
+  const minimalInsights = (imageInsights || []).map(insight => ({
+    assetId: insight.assetId,
+    moment: insight.moment,
+    visualWeight: insight.visualWeight,
+    orientation: insight.orientation
+  }));
+
   return completion({
     model: provider.creativeModel,
     messages: [
       {
         role: 'system',
-        content: `You are art directing the presentation of a finished ${format} for client "${clientName || 'Client'}".
-PURPOSE OF SHOOT: "${brief || 'Client photo collection'}".
+        content: `You are writing headlines and captions for a ${format} delivery of a "${shootType || 'photo'}" shoot for "${clientName || 'Client'}".
 
-CRITICAL INSTRUCTIONS:
-1. Every headline and caption must celebrate the PURPOSE of the shoot and speak directly to ${clientName || 'the client'} with warmth, respect, and quiet confidence.
-2. Under NO circumstances should you write an image analysis or describe what the camera sees (no "A photo of...", no "wearing...", no backdrop descriptions, no camera angle commentary).
-3. If a photo works better without words, leave caption empty ("").
-4. Assign every photograph to one existing section (${validSectionIds.join(', ')}).
-5. Choose cinematic motions and transitions that suit the emotional rhythm.
+THE PHOTOGRAPHER SAYS THIS SHOOT IS ABOUT:
+"${brief || 'Client photo collection'}"
+
+THIS IS YOUR PRIMARY DIRECTIVE: Every headline and caption must celebrate what this shoot represents — the occasion, the milestone, the person. Speak directly to ${clientName || 'the client'} with warmth.
+
+You have minimal context about each photo (the type of moment it captures and its visual weight). Use that to vary your writing — but NEVER describe what you see. Never write alt-text. Never mention clothing, backdrops, poses, or lighting.
+
+Assign every photograph to one existing section (${validSectionIds.join(', ')}). Choose cinematic motions and transitions that suit the emotional rhythm.
+
 ${voiceRules}
 
 ${schemaInstructions}`
@@ -443,7 +464,7 @@ ${schemaInstructions}`
           deliveryDirection: direction,
           photographerRevision: revisionInstruction,
           currentFrames,
-          photographs: imageInsights
+          photographs: minimalInsights
         })
       }
     ],
@@ -455,9 +476,13 @@ ${schemaInstructions}`
 
 export async function createNarrationScript({ clientName, shootType, brief, direction, format }) {
   const provider = config();
+  const sections = direction?.sections || [];
+  const frames = direction?.frames || [];
+  const sectionCount = sections.length || Math.min(frames.length, 6);
+
   const schemaInstructions = `Return a JSON object matching this schema:
 {
-  "script": "<a continuous, warm, intimate spoken welcome to the client, 70-130 words (approx. 30-40 seconds of speech), directly celebrating the purpose of the shoot and welcoming them to their photographs>"
+  "script": "<a narration script that walks through the photographs section by section, with natural pauses between each section, 80-200 words total>"
 }`;
 
   const result = await completion({
@@ -465,15 +490,20 @@ export async function createNarrationScript({ clientName, shootType, brief, dire
     messages: [
       {
         role: 'system',
-        content: `You are the studio creative director speaking a warm, intimate voiceover welcome to ${clientName || 'the client'} for their finished ${format}.
-The shoot was: "${shootType || 'Photography Session'}" — "${brief || 'Client Shoot'}".
+        content: `You are narrating a photo delivery for ${clientName || 'the client'}. The shoot was a "${shootType || 'Photography Session'}" — "${brief || 'Client Shoot'}".
 
-CRITICAL VOICE INSTRUCTIONS:
-1. Speak in plain, heartfelt English directly to ${clientName || 'the client'}.
-2. Celebrate the milestone and occasion (e.g. birthday, wedding, anniversary, graduation).
-3. Invite them to take their time and enjoy their photographs.
-4. Do NOT describe individual photos, camera equipment, or lighting.
-5. No AI buzzwords (no elevate, tapestry, symphony, essence, timeless, etc.).
+Write a spoken narration script that walks through the photographs ONE SECTION AT A TIME, like a narrator guiding the client through their story. There are ${sectionCount} sections.
+
+STRUCTURE:
+- Open with a warm 1-2 sentence welcome: greet ${clientName || 'the client'} and celebrate the occasion.
+- Then, for each section, write 1-2 short sentences that introduce what that part of the collection holds. Use natural pauses between sections (end sentences with periods and leave breathing room).
+- Close with a brief, warm sign-off.
+
+VOICE:
+- Speak like a real human — warm, direct, unhurried.
+- Celebrate the OCCASION (the ${shootType || 'shoot'}), not the photographs themselves.
+- Never describe images. Never say "in this photo" or "you can see".
+- No AI clichés (no elevate, tapestry, symphony, essence, timeless, etc.).
 ${voiceRules}
 
 ${schemaInstructions}`
@@ -481,17 +511,18 @@ ${schemaInstructions}`
       {
         role: 'user',
         content: JSON.stringify({
-          task: 'Write the spoken voiceover welcome script for this delivery',
+          task: 'Write the spoken voiceover narration that walks through the delivery section by section',
           clientName,
           shootType,
           photographerBrief: brief,
           deliveryTitle: direction?.title,
           openingLine: direction?.openingLine,
-          closingLine: direction?.closingLine
+          closingLine: direction?.closingLine,
+          sectionTitles: sections.map(s => s.title)
         })
       }
     ],
-    schema: z.object({ script: z.string().min(20).max(1000) }),
+    schema: z.object({ script: z.string().min(20).max(2000) }),
     repairLabel: 'narration script',
     schemaHint: schemaInstructions
   });

@@ -88,12 +88,12 @@ function StoryScene({ demo, demoId, photos, photo, index, mode, started, finishe
   <SceneTransition kind={transitionKind} accent={accent} reduced={reduced} />
  </motion.div></AnimatePresence>;
 }
-export default function StoryViewer({ demoMode = false }) {
+export default function StoryViewer({ demoMode = false, delivery: deliveryProp = null }) {
  const { storyId } = useParams();
  const [params] = useSearchParams();
  const location = useLocation();
  const navigate = useNavigate();
- const demo = demoMode || storyId === 'demo';
+ const demo = (demoMode || storyId === 'demo') && !deliveryProp;
  const demoId = DEMO_PRESETS.some(p => p.id === params.get('preset')) ? params.get('preset') : 'ada';
 
  const isFromFormats =
@@ -146,6 +146,51 @@ export default function StoryViewer({ demoMode = false }) {
  useEffect(() => {
   let active = true;
   setStarted(false); setIndex(0); setPaused(false); setFinished(false); setGallery(false); setError(''); setLoading(true); elapsed.current = 0;
+  if (deliveryProp) {
+    const frames = new Map((deliveryProp.creativeDirection?.frames || []).map(f => [f.assetId, f]));
+    const mappedPhotos = (deliveryProp.assets || []).map((asset, i) => {
+      const frame = frames.get(asset.assetId) || {};
+      return {
+        id: asset.assetId,
+        url: asset.url, // Original photographer upload quality
+        thumbnailUrl: asset.thumbnailUrl || asset.url,
+        caption: frame.caption || frame.headline || '',
+        chapterTitle: frame.headline || '',
+        duration: Math.max(2, Number(frame.duration) || 5.5),
+        motion: frame.motion || 'zoom_in',
+        sceneLayout: frame.layout || STORY_LAYOUTS[i % STORY_LAYOUTS.length],
+        typographyStyle: frame.typographyStyle || 'cinematic_drift',
+        transition: frame.transition || 'fade',
+        focalPoint: frame.focalPoint || '50% 50%'
+      };
+    });
+    const derived = {
+      title: deliveryProp.title,
+      clientName: deliveryProp.clientName,
+      studioName: deliveryProp.branding?.name || 'Veylo Studio',
+      occasion: deliveryProp.shootType || 'Finished photographs',
+      photos: mappedPhotos,
+      soundtrack: deliveryProp.soundtrack?.url ? { audioUrl: deliveryProp.soundtrack.url, title: deliveryProp.soundtrack.title || 'Soundtrack' } : null,
+      opening: {
+        eyebrow: deliveryProp.branding?.name ? `${deliveryProp.branding.name.toUpperCase()} PRESENTS` : 'A VEYLO PHOTO STORY',
+        headline: deliveryProp.creativeDirection?.title || deliveryProp.title,
+        copy: deliveryProp.creativeDirection?.openingLine || 'Your finished photographs, brought together for you.',
+        buttonLabel: 'Begin the story'
+      },
+      finale: {
+        eyebrow: 'THAT’S THE STORY',
+        headline: 'The full gallery is ready.',
+        copy: deliveryProp.creativeDirection?.closingLine || 'Take your time with every photograph. Save one, or keep the whole set.',
+        buttonLabel: 'Open your gallery'
+      },
+      theme: {
+        accentColor: '#ff5a47'
+      }
+    };
+    setStory(derived);
+    setLoading(false);
+    return () => { active = false; };
+  }
   if (demo) { setStory(DEMO_PRESETS.find(p => p.id === demoId)); setLoading(false); }
   else api.get('/v1/stories/public/' + encodeURIComponent(storyId)).then(res => {
    if (!active) return;
@@ -153,7 +198,7 @@ export default function StoryViewer({ demoMode = false }) {
    setStory(res.data.data); setLoading(false);
   }).catch(() => { if (active) { setError('This story could not be opened. Check the link with the photographer.'); setLoading(false); } });
   return () => { active = false; };
- }, [demo, demoId, storyId]);
+ }, [demo, demoId, storyId, deliveryProp]);
  const go = useCallback(direction => {
   elapsed.current = 0; setFinished(false); setIndex(current => Math.max(0, Math.min(photos.length - 1, current + direction)));
   if (progress.current) progress.current.style.transform = 'scaleX(0)';
