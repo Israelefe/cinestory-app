@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 const adminAuditSchema = new mongoose.Schema({
-  adminId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  adminId: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
   action: { type: String, required: true, trim: true },
   resourceType: { type: String, trim: true },

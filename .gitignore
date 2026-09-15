@@ -2,10 +2,12 @@
 node_modules/
 client/node_modules/
 server/node_modules/
+admin/node_modules/
 
 # Production build output
 dist/
 client/dist/
+admin/dist/
 
 # Environment variables & secrets
 .env

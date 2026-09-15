@@ -595,7 +595,7 @@ export async function getPhotoDownload(req, res) {
     const asset = delivery.assets.find(item => item.assetId === req.params.assetId);
     if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
     await Delivery.updateOne({ _id: delivery._id }, { $inc: { downloadsCount: 1 } });
-    res.json({ success: true, data: { url: signedImageUrl(asset.publicId, { width: 8000, attachment: true }) } });
+    res.json({ success: true, data: { url: signedImageUrl(asset.publicId, { original: true, attachment: true }) } });
   } catch (error) { res.status(500).json({ success: false, message: 'We could not prepare that download.' }); }
 }
 

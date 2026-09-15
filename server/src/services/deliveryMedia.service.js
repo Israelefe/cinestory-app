@@ -43,11 +43,13 @@ export async function confirmUploadedAsset({ userId, deliveryId, publicId, versi
   return cloudinary.api.resource(publicId, { resource_type: resourceType, type: 'authenticated' });
 }
 
-export function signedImageUrl(publicId, { width = 1600, thumbnail = false, attachment = false, resourceType = 'image' } = {}) {
+export function signedImageUrl(publicId, { width = 1600, thumbnail = false, attachment = false, original = false, resourceType = 'image' } = {}) {
   ready();
-  const transformation = resourceType !== 'image' ? undefined : thumbnail
-    ? [{ crop: 'fill', width: 480, height: 600, gravity: 'auto', quality: 'auto:eco', fetch_format: 'auto' }]
-    : [{ crop: 'limit', width, quality: 'auto:good', fetch_format: 'auto' }];
+  const transformation = resourceType !== 'image' ? undefined : original
+    ? undefined
+    : thumbnail
+      ? [{ crop: 'fill', width: 480, height: 600, gravity: 'auto', quality: 'auto:eco', fetch_format: 'auto' }]
+      : [{ crop: 'limit', width, quality: 'auto:good', fetch_format: 'auto' }];
   return cloudinary.url(publicId, { secure: true, resource_type: resourceType, type: 'authenticated', sign_url: true, transformation, flags: attachment ? 'attachment' : undefined });
 }
 

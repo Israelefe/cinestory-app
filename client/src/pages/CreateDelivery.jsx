@@ -7,6 +7,7 @@ import api, { apiMessage } from '../services/api.js';
 import { APP_URL } from '../config/env.js';
 import { uploadDeliveryPhotos, uploadDeliverySoundtrack } from '../utils/deliveryUpload.js';
 import { CURATED_DELIVERY_SOUNDTRACKS } from '../constants/deliveryFormats.js';
+import { SHOOT_TYPES } from '../constants/shootTypes.js';
 import './CreateDelivery.css';
 
 const formats = [
@@ -33,16 +34,16 @@ function StageHead({ eyebrow, title, copy }) {
 
 function DeliveryProgress({ type, value, stage, clientName, shootType }) {
   const milestoneSteps = [
-    { label: 'Reading & analyzing finished photographs', min: 0, max: 40 },
-    { label: 'Harmonizing palette, emotion & pacing', min: 40, max: 70 },
-    { label: 'Art-directing layout, camera motion & captions', min: 70, max: 100 }
+    { label: 'Reading your finished photographs', min: 0, max: 40 },
+    { label: 'Understanding the complete shoot', min: 40, max: 70 },
+    { label: 'Writing headlines and laying out the presentation', min: 70, max: 100 }
   ];
 
   const title =
-    type === 'analyze' ? 'Studying the Complete Shoot' :
-    type === 'direct' ? 'Art Directing the Presentation' :
-    type === 'revise' ? 'Applying Your Revisions' :
-    'Preparing Client Delivery';
+    type === 'analyze' ? 'Reading the Complete Shoot' :
+    type === 'direct' ? 'Creating Your Presentation' :
+    type === 'revise' ? 'Applying Your Changes' :
+    'Preparing Your Delivery';
 
   const clampedVal = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
 
@@ -55,7 +56,7 @@ function DeliveryProgress({ type, value, stage, clientName, shootType }) {
             <LoaderCircle className="v-spin" size={24} />
           </div>
           <div>
-            <small>AI CREATIVE DIRECTOR AT WORK</small>
+            <small>VEYLO AT WORK</small>
             <h3>{title}</h3>
             <p>{clientName ? `${clientName} · ` : ''}{shootType || 'Finished photographs'}</p>
           </div>
@@ -143,6 +144,7 @@ export default function CreateDelivery({ user }) {
   const [libraryAssets, setLibraryAssets] = useState([]);
   const [librarySelection, setLibrarySelection] = useState([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
+  const [selectedFormat, setSelectedFormat] = useState(null);
 
   useEffect(() => {
     return () => {
@@ -429,8 +431,8 @@ export default function CreateDelivery({ user }) {
         {error && <div className="v-create-error" role="alert"><span>{error}{failedJob && <button type="button" className="v-create-retry" onClick={retryFailedJob} disabled={Boolean(busy)}><RefreshCw size={14} />Retry this step</button>}</span><button type="button" onClick={() => { setError(''); setFailedJob(null); }}><X size={16} /></button></div>}
         <AnimatePresence mode="wait">
           {busy === 'loading' ? <Stage key="loading"><div className="v-create-loading"><LoaderCircle className="v-spin" size={25} /><strong>Opening your draft…</strong></div></Stage> : step === 1 ? <Stage key="brief">
-            <StageHead eyebrow="01 / The photographer’s context" title="Tell Veylo what this shoot is about." copy="Give the Creative Director facts it cannot learn from the photographs alone. This is where the personal details come from." />
-            <form className="v-create-form" onSubmit={startDraft}><label>Client name<input value={brief.clientName} onChange={event => setBrief(current => ({ ...current, clientName: event.target.value }))} maxLength={100} required placeholder="Ada" /></label><label>Type of shoot<input value={brief.shootType} onChange={event => setBrief(current => ({ ...current, shootType: event.target.value }))} maxLength={80} required placeholder="Fashion editorial" /></label><label className="is-wide">What should Veylo know?<textarea value={brief.brief} onChange={event => setBrief(current => ({ ...current, brief: event.target.value }))} minLength={20} maxLength={2000} required rows={7} placeholder="Tell us what the shoot was for, who it celebrates, the mood on set, outfits or moments that matter, and anything the client should feel when they open it." /><small>{brief.brief.length} / 2,000</small></label><button className="v-create-primary" disabled={Boolean(busy)}>Add the finished photographs<ArrowRight size={17} /></button></form>
+            <StageHead eyebrow="01 / The photographer's context" title="Tell Veylo what this shoot is about." copy="Give Veylo the facts it cannot learn from the photographs alone. This is where the personal details come from." />
+            <form className="v-create-form" onSubmit={startDraft}><label>Client name<input value={brief.clientName} onChange={event => setBrief(current => ({ ...current, clientName: event.target.value }))} maxLength={100} required placeholder="Ada" /></label><label>Type of shoot<select value={brief.shootType} onChange={event => setBrief(current => ({ ...current, shootType: event.target.value }))} required><option value="" disabled>Choose the type of shoot</option>{SHOOT_TYPES.map(type => <option key={type} value={type}>{type}</option>)}</select></label><label className="is-wide">What should Veylo know?<textarea value={brief.brief} onChange={event => setBrief(current => ({ ...current, brief: event.target.value }))} minLength={20} maxLength={2000} required rows={7} placeholder="Tell us what the shoot was for, who it celebrates, the mood on set, outfits or moments that matter, and anything the client should feel when they open it." /><small>{brief.brief.length} / 2,000</small></label><button className="v-create-primary" disabled={Boolean(busy)}>Add the finished photographs<ArrowRight size={17} /></button></form>
           </Stage> : step === 2 ? <Stage key="upload">
             <StageHead eyebrow="02 / Finished photographs" title="Add the files your client will receive." copy={`Upload the final edited photographs. Veylo will study the complete set without changing your retouching or colour grade.`} />
             <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={event => addPhotos(event.target.files)} />
@@ -440,10 +442,10 @@ export default function CreateDelivery({ user }) {
             <div className="v-create-footer"><button type="button" onClick={() => setStep(1)}><ArrowLeft size={16} />Edit shoot details</button><button type="button" className="v-create-primary" onClick={analyzeShoot} disabled={!orderedAssets.length || Boolean(busy)}>{busy === 'analyze' ? progress.stage : 'Analyze the complete shoot'}{busy === 'analyze' ? <LoaderCircle className="v-spin" size={17} /> : <ArrowRight size={17} />}</button></div>
             {busy === 'analyze' && <Progress value={progress.value} label={progress.stage} />}
           </Stage> : step === 3 ? <Stage key="format">
-            <StageHead eyebrow="03 / Format recommendation" title="The shoot has a direction." copy={delivery?.collectionAnalysis?.summary || 'Veylo has read the complete set. Choose the experience you want the client to receive.'} />
-            <div className="v-format-recommendations">{recommendations.map((recommendation, index) => { const item = formats.find(format => format.id === recommendation.format); const Icon = item?.icon || LayoutTemplate; return <button type="button" key={recommendation.format} onClick={() => chooseFormat(recommendation.format)} disabled={Boolean(busy)} className={index === 0 ? 'is-recommended' : ''}><span className="v-format-rank">{String(index + 1).padStart(2, '0')}</span><Icon size={22} /><div><small>{index === 0 ? 'VEYLO RECOMMENDS' : item?.verb}</small><strong>{item?.name}</strong><p>{recommendation.reason}</p></div><b>{recommendation.score}</b></button>; })}</div>
+            <StageHead eyebrow="03 / Format recommendation" title="Choose how the client sees it." copy={delivery?.collectionAnalysis?.summary || 'Veylo has read the complete set. Choose the experience you want the client to receive.'} />
+            <div className="v-format-recommendations">{recommendations.map((recommendation, index) => { const item = formats.find(format => format.id === recommendation.format); const Icon = item?.icon || LayoutTemplate; const isSelected = selectedFormat === recommendation.format; return <button type="button" key={recommendation.format} onClick={() => setSelectedFormat(recommendation.format)} disabled={Boolean(busy)} className={`${index === 0 ? 'is-recommended' : ''} ${isSelected ? 'is-selected' : ''}`}><span className="v-format-rank">{String(index + 1).padStart(2, '0')}</span><Icon size={22} /><div><small>{index === 0 ? 'VEYLO RECOMMENDS' : item?.verb}</small><strong>{item?.name}</strong><p>{recommendation.reason}</p></div><b>{recommendation.score}</b>{isSelected && <span className="v-format-check"><Check size={14} /></span>}</button>; })}</div>
             {busy === 'direct' && <Progress value={progress.value} label={progress.stage} />}
-            <div className="v-create-footer"><button type="button" onClick={() => setStep(2)}><ArrowLeft size={16} />Back to photographs</button></div>
+            <div className="v-create-footer"><button type="button" onClick={() => setStep(2)}><ArrowLeft size={16} />Back to photographs</button><button type="button" className="v-create-primary" onClick={() => chooseFormat(selectedFormat)} disabled={!selectedFormat || Boolean(busy)}>{busy === 'direct' ? progress.stage : selectedFormat ? `Create ${formatName(selectedFormat)}` : 'Choose a format above'}{busy === 'direct' ? <LoaderCircle className="v-spin" size={17} /> : <ArrowRight size={17} />}</button></div>
           </Stage> : step === 4 ? <Stage key="review">
             <StageHead eyebrow={`04 / Review the ${formatName(delivery?.format)}`} title="Check the order. Read every line." copy="Veylo proposes the direction. You decide what reaches your client. Edit any line and move any photograph before you publish." />
             <div className="v-review-opening"><label>Delivery title<input value={delivery?.creativeDirection?.title || ''} onChange={event => editDirection('title', event.target.value)} maxLength={80} /></label><label>Opening line<textarea value={delivery?.creativeDirection?.openingLine || ''} onChange={event => editDirection('openingLine', event.target.value)} maxLength={140} rows={3} /></label><label>Closing line<textarea value={delivery?.creativeDirection?.closingLine || ''} onChange={event => editDirection('closingLine', event.target.value)} maxLength={160} rows={3} /></label></div>

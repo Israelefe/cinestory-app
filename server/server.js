@@ -17,6 +17,7 @@ import { checkCloudinaryConnection } from './src/services/cloudinary.service.js'
 import { startDeliveryWorker } from './src/services/deliveryWorker.service.js';
 import { startRetentionWorker } from './src/services/retention.service.js';
 import { startPortfolioWorker } from './src/services/portfolioWorker.service.js';
+import { seedAdminFromEnv } from './src/utils/seedAdmin.js';
 
 dotenv.config();
 
@@ -38,6 +39,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 const allowedOrigins = new Set([
   process.env.CLIENT_URL,
+  process.env.ADMIN_URL,
   ...(process.env.ALLOWED_ORIGINS || '').split(',')
 ].filter(Boolean).map(value => value.trim().replace(/\/$/, '')));
 
@@ -46,6 +48,8 @@ if (process.env.NODE_ENV !== 'production') {
   allowedOrigins.add('http://127.0.0.1:5173');
   allowedOrigins.add('http://127.0.0.1:4173');
   allowedOrigins.add('http://localhost:4173');
+  allowedOrigins.add('http://localhost:5174');
+  allowedOrigins.add('http://127.0.0.1:5174');
 }
 
 app.set('trust proxy', 1);
@@ -89,6 +93,7 @@ app.use((error, req, res, next) => {
 
 connectDB().then(connection => {
   if (!connection && process.env.NODE_ENV === 'production') process.exit(1);
+  seedAdminFromEnv();
   app.listen(PORT, () => {
     console.log(`[Veylo] Server running at http://localhost:${PORT}`);
     checkCloudinaryConnection().then(result => {

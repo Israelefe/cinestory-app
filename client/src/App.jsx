@@ -15,7 +15,6 @@ const CreateDelivery = lazyWithRecovery(() => import('./pages/CreateDelivery.jsx
 const StoryViewer = lazyWithRecovery(() => import('./pages/StoryViewer.jsx'), 'photo-story');
 const DeliveryViewer = lazyWithRecovery(() => import('./pages/DeliveryViewer.jsx'), 'client-delivery');
 const FormatDemo = lazyWithRecovery(() => import('./pages/FormatDemo.jsx'), 'format-demo');
-const AdminDashboard = lazyWithRecovery(() => import('./pages/AdminDashboard.jsx'), 'admin');
 const PrivacyPolicy = lazyWithRecovery(() => import('./pages/PrivacyPolicy.jsx'), 'privacy');
 const TermsOfService = lazyWithRecovery(() => import('./pages/TermsOfService.jsx'), 'terms');
 const FairUsePolicy = lazyWithRecovery(() => import('./pages/FairUsePolicy.jsx'), 'fair-use');
@@ -113,9 +112,9 @@ function VerificationRoute({ user, loading, children }) {
   return children;
 }
 
-const focusedRoutes = new Set(['/signup', '/signin', '/verify-email', '/forgot-password', '/reset-password', '/onboarding', '/dashboard', '/create', '/settings', '/billing', '/library', '/portfolio/manage', '/admin']);
+const focusedRoutes = new Set(['/signup', '/signin', '/verify-email', '/forgot-password', '/reset-password', '/onboarding', '/dashboard', '/create', '/settings', '/billing', '/library', '/portfolio/manage']);
 const authRoutes = new Set(['/signup', '/signin', '/verify-email', '/forgot-password', '/reset-password']);
-const productRoutes = new Set(['/dashboard', '/create', '/settings', '/billing', '/library', '/portfolio/manage', '/admin']);
+const productRoutes = new Set(['/dashboard', '/create', '/settings', '/billing', '/library', '/portfolio/manage']);
 
 function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountDeleted, onPlanChanged }) {
   const { pathname } = useLocation();
@@ -129,7 +128,6 @@ function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountD
       <Route path="/" element={<LandingPage />} />
       <Route path="/dashboard" element={<ProtectedRoute user={user} loading={authLoading}><Dashboard user={user} onLogout={onLogout} /></ProtectedRoute>} />
       <Route path="/create" element={<ProtectedRoute user={user} loading={authLoading}><CreateDelivery user={user} /></ProtectedRoute>} />
-      <Route path="/admin" element={<ProtectedRoute user={user} loading={authLoading} requireAdmin><AdminDashboard user={user} /></ProtectedRoute>} />
       <Route path="/formats" element={<DeliveryFormats />} /><Route path="/portfolio" element={<PortfolioPage />} /><Route path="/pricing" element={<PricingPage />} />
       <Route path="/signup" element={<GuestOnlyRoute user={user} loading={authLoading}><SignupPage onAuthenticated={onAuthenticated} /></GuestOnlyRoute>} />
       <Route path="/signin" element={<GuestOnlyRoute user={user} loading={authLoading}><SigninPage onAuthenticated={onAuthenticated} /></GuestOnlyRoute>} />
