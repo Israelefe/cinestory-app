@@ -1,11 +1,12 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, ChevronUp, Clapperboard, Eye, Film, Image, LayoutTemplate, ListChecks, ListTree, LoaderCircle, LockKeyhole, Mail, Move, Music2, Newspaper, Play, QrCode, RefreshCw, Share2, Trash2, Upload, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, ChevronUp, Clapperboard, Eye, Film, Image, LayoutTemplate, ListChecks, ListTree, LoaderCircle, LockKeyhole, Mail, Move, Music2, Newspaper, Pause, Play, QrCode, RefreshCw, Share2, Trash2, Upload, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
 import { APP_URL } from '../config/env.js';
 import { uploadDeliveryPhotos, uploadDeliverySoundtrack } from '../utils/deliveryUpload.js';
+import { CURATED_DELIVERY_SOUNDTRACKS } from '../constants/deliveryFormats.js';
 import './CreateDelivery.css';
 
 const formats = [
@@ -28,6 +29,71 @@ function Stage({ children }) {
 
 function StageHead({ eyebrow, title, copy }) {
   return <header className="v-create-stage-head"><p>{eyebrow}</p><h1>{title}</h1><span>{copy}</span></header>;
+}
+
+function DeliveryProgress({ type, value, stage, clientName, shootType }) {
+  const milestoneSteps = [
+    { label: 'Reading & analyzing finished photographs', min: 0, max: 40 },
+    { label: 'Harmonizing palette, emotion & pacing', min: 40, max: 70 },
+    { label: 'Art-directing layout, camera motion & captions', min: 70, max: 100 }
+  ];
+
+  const title =
+    type === 'analyze' ? 'Studying the Complete Shoot' :
+    type === 'direct' ? 'Art Directing the Presentation' :
+    type === 'revise' ? 'Applying Your Revisions' :
+    'Preparing Client Delivery';
+
+  const clampedVal = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+
+  return (
+    <div className="v-delivery-progress-overlay" role="status" aria-live="polite">
+      <div className="v-delivery-progress-card">
+        <div className="v-delivery-progress-glow" aria-hidden="true" />
+        <div className="v-delivery-progress-header">
+          <div className="v-delivery-progress-icon">
+            <LoaderCircle className="v-spin" size={24} />
+          </div>
+          <div>
+            <small>AI CREATIVE DIRECTOR AT WORK</small>
+            <h3>{title}</h3>
+            <p>{clientName ? `${clientName} · ` : ''}{shootType || 'Finished photographs'}</p>
+          </div>
+          <div className="v-delivery-progress-badge">
+            <strong>{clampedVal}%</strong>
+          </div>
+        </div>
+
+        <div className="v-delivery-progress-track">
+          <b style={{ transform: `scaleX(${clampedVal / 100})` }} />
+        </div>
+
+        <div className="v-delivery-progress-status">
+          <span className="v-delivery-pulse-dot" />
+          <span>{stage || 'Processing with original resolution preserved…'}</span>
+        </div>
+
+        <div className="v-delivery-progress-milestones">
+          {milestoneSteps.map((s, idx) => {
+            const isDone = clampedVal >= s.max;
+            const isCurrent = clampedVal >= s.min && clampedVal < s.max;
+            return (
+              <div key={idx} className={`v-milestone ${isDone ? 'is-done' : ''} ${isCurrent ? 'is-current' : ''}`}>
+                <span className="v-milestone-check">
+                  {isDone ? <Check size={13} /> : <i>{idx + 1}</i>}
+                </span>
+                <span>{s.label}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="v-delivery-progress-footer">
+          <small>Original photo retouching and color grades are 100% preserved. No pixels are altered.</small>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function Progress({ value, label }) {
@@ -67,6 +133,9 @@ export default function CreateDelivery({ user }) {
   const [access, setAccess] = useState({ pinEnabled: false, pin: '', expiresAt: '', allowIndividualDownloads: true, allowDownloadAll: true, allowLikes: true, narration: false });
   const [audioRights, setAudioRights] = useState(false);
   const [audioTitle, setAudioTitle] = useState('');
+  const [soundtrackTab, setSoundtrackTab] = useState('curated');
+  const [previewTrackId, setPreviewTrackId] = useState(null);
+  const previewAudioRef = useRef(null);
   const [revisionIds, setRevisionIds] = useState([]);
   const [revisionInstruction, setRevisionInstruction] = useState('');
   const [clientEmail, setClientEmail] = useState('');
@@ -74,6 +143,14 @@ export default function CreateDelivery({ user }) {
   const [libraryAssets, setLibraryAssets] = useState([]);
   const [librarySelection, setLibrarySelection] = useState([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (previewAudioRef.current) {
+        previewAudioRef.current.pause();
+      }
+    };
+  }, []);
 
   const draftId = params.get('draft');
   useEffect(() => {
@@ -228,6 +305,41 @@ export default function CreateDelivery({ user }) {
     finally { setBusy(''); }
   }
 
+  function togglePreviewTrack(track) {
+    if (previewTrackId === track.id) {
+      previewAudioRef.current?.pause();
+      setPreviewTrackId(null);
+    } else {
+      if (!previewAudioRef.current) {
+        previewAudioRef.current = new Audio();
+        previewAudioRef.current.onended = () => setPreviewTrackId(null);
+      }
+      previewAudioRef.current.src = track.url;
+      previewAudioRef.current.play().catch(() => {});
+      setPreviewTrackId(track.id);
+    }
+  }
+
+  async function selectCuratedTrack(track) {
+    setBusy('soundtrack');
+    setError('');
+    try {
+      const response = await api.post(`/v1/deliveries/${delivery._id}/soundtrack/select`, {
+        title: track.title,
+        url: track.url,
+        genre: track.genre,
+        mood: track.mood,
+        durationSec: track.durationSec
+      });
+      setDelivery(current => ({ ...current, soundtrack: response.data.data }));
+      toast.success(`Attached "${track.title}" to delivery.`);
+    } catch (requestError) {
+      setError(apiMessage(requestError, 'We could not attach that track.'));
+    } finally {
+      setBusy('');
+    }
+  }
+
   async function retryFailedJob() {
     if (!failedJob) return;
     setBusy('retry'); setError('');
@@ -342,7 +454,76 @@ export default function CreateDelivery({ user }) {
           </Stage> : <Stage key="publish">
             {publishedUrl ? <div className="v-published"><span><Check size={25} /></span><p>CLIENT DELIVERY READY</p><h1>{delivery.title}</h1><small>Send one private link. Your client can open it on their phone without creating an account.</small><div><a className="v-create-primary" href={publishedUrl} target="_blank" rel="noreferrer">Open client view<ArrowRight size={17} /></a><button type="button" onClick={() => navigator.clipboard.writeText(publishedUrl).then(() => toast.success('Client link copied'))}>Copy client link</button><a href={`https://wa.me/?text=${encodeURIComponent(`Hello ${delivery.clientName}, your photographs are ready. Open your private delivery here:\n${publishedUrl}`)}`} target="_blank" rel="noreferrer">Send on WhatsApp</a><button type="button" onClick={shareDelivery}><Share2 size={15} />Open share menu</button><button type="button" onClick={downloadQr}><QrCode size={15} />Download QR code</button></div><form className="v-published-email" onSubmit={sendDeliveryEmail}><label><Mail size={15} /><input type="email" value={clientEmail} onChange={event => setClientEmail(event.target.value)} required maxLength={254} placeholder="Client email address" /></label><button type="submit" disabled={busy === 'email'}>{busy === 'email' ? 'Sending…' : 'Send by email'}</button></form><Link to="/dashboard">Return to my deliveries</Link></div> : <>
               <StageHead eyebrow="05 / Client access" title="Choose what happens after you share." copy="Set privacy and download controls, then publish one link for your client." />
-              <div className="v-publish-audio"><header><Music2 size={20} /><div><strong>Soundtrack</strong><span>{delivery?.creativeDirection?.music ? `The direction calls for ${delivery.creativeDirection.music.mood.toLowerCase()} ${delivery.creativeDirection.music.genre.toLowerCase()} at a ${delivery.creativeDirection.music.tempo} pace.` : 'Add a track that fits the approved direction.'}</span></div></header>{delivery?.soundtrack ? <div className="v-publish-track"><span><Music2 size={15} /><strong>{delivery.soundtrack.title}</strong><small>Added by you</small></span><button type="button" onClick={removeSoundtrack} disabled={busy === 'soundtrack'}><Trash2 size={15} />Remove</button></div> : <><label className="v-publish-rights"><input type="checkbox" checked={audioRights} onChange={event => setAudioRights(event.target.checked)} /><span>I own this track or have permission to use it in this client delivery.</span></label><div className="v-publish-track-form"><input value={audioTitle} onChange={event => setAudioTitle(event.target.value)} placeholder="Track title (optional)" maxLength={100} /><button type="button" onClick={() => audioInputRef.current?.click()} disabled={!audioRights || Boolean(busy)}><Upload size={15} />{busy === 'soundtrack' ? 'Adding track…' : 'Choose audio'}</button><input ref={audioInputRef} type="file" hidden accept="audio/mpeg,audio/wav,audio/mp4,audio/ogg,audio/aac" onChange={event => addSoundtrack(event.target.files?.[0])} /></div></>}</div>
+              <div className="v-publish-audio">
+                <header>
+                  <Music2 size={20} />
+                  <div>
+                    <strong>Soundtrack</strong>
+                    <span>{delivery?.creativeDirection?.music ? `The direction calls for ${delivery.creativeDirection.music.mood.toLowerCase()} ${delivery.creativeDirection.music.genre.toLowerCase()} at a ${delivery.creativeDirection.music.tempo} pace.` : 'Add a track that fits the approved direction.'}</span>
+                  </div>
+                </header>
+                {delivery?.soundtrack ? (
+                  <div className="v-publish-track">
+                    <span>
+                      <Music2 size={15} />
+                      <strong>{delivery.soundtrack.title}</strong>
+                      <small>{delivery.soundtrack.genre ? `${delivery.soundtrack.genre} · Curated` : 'Added by you'}</small>
+                    </span>
+                    <button type="button" onClick={removeSoundtrack} disabled={busy === 'soundtrack'}><Trash2 size={15} />Remove</button>
+                  </div>
+                ) : (
+                  <div className="v-soundtrack-manager">
+                    <div className="v-soundtrack-tabs">
+                      <button type="button" className={soundtrackTab === 'curated' ? 'is-active' : ''} onClick={() => setSoundtrackTab('curated')}>
+                        Curated soundtracks ({CURATED_DELIVERY_SOUNDTRACKS.length})
+                      </button>
+                      <button type="button" className={soundtrackTab === 'custom' ? 'is-active' : ''} onClick={() => setSoundtrackTab('custom')}>
+                        Upload your own audio
+                      </button>
+                    </div>
+
+                    {soundtrackTab === 'curated' ? (
+                      <div className="v-soundtrack-curated-list">
+                        {CURATED_DELIVERY_SOUNDTRACKS.map(track => {
+                          const isPlaying = previewTrackId === track.id;
+                          return (
+                            <div key={track.id} className="v-soundtrack-item">
+                              <button type="button" className={`v-soundtrack-play ${isPlaying ? 'is-playing' : ''}`} onClick={() => togglePreviewTrack(track)} aria-label={isPlaying ? 'Pause preview' : 'Play preview'}>
+                                {isPlaying ? <Pause size={14} /> : <Play size={14} />}
+                              </button>
+                              <div className="v-soundtrack-meta">
+                                <strong>{track.title}</strong>
+                                <span>
+                                  <b>{track.genre}</b>
+                                  <i>{track.mood}</i>
+                                  <small>{Math.floor(track.durationSec / 60)}:{String(track.durationSec % 60).padStart(2, '0')}</small>
+                                </span>
+                              </div>
+                              <button type="button" className="v-soundtrack-select-btn" onClick={() => selectCuratedTrack(track)} disabled={Boolean(busy)}>
+                                Use track
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="v-soundtrack-custom">
+                        <label className="v-publish-rights">
+                          <input type="checkbox" checked={audioRights} onChange={event => setAudioRights(event.target.checked)} />
+                          <span>I own this track or have permission to use it in this client delivery.</span>
+                        </label>
+                        <div className="v-publish-track-form">
+                          <input value={audioTitle} onChange={event => setAudioTitle(event.target.value)} placeholder="Track title (optional)" maxLength={100} />
+                          <button type="button" onClick={() => audioInputRef.current?.click()} disabled={!audioRights || Boolean(busy)}>
+                            <Upload size={15} />{busy === 'soundtrack' ? 'Adding track…' : 'Choose audio'}
+                          </button>
+                          <input ref={audioInputRef} type="file" hidden accept="audio/mpeg,audio/wav,audio/mp4,audio/ogg,audio/aac" onChange={event => addSoundtrack(event.target.files?.[0])} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
               <div className="v-publish-settings"><Toggle icon={LockKeyhole} label="Six-digit PIN" copy="Ask for a PIN before showing the client name, title, or photographs." checked={access.pinEnabled} onChange={value => setAccess(current => ({ ...current, pinEnabled: value }))}>{access.pinEnabled && <input value={access.pin} onChange={event => setAccess(current => ({ ...current, pin: event.target.value.replace(/\D/g, '').slice(0, 6) }))} inputMode="numeric" placeholder="000000" aria-label="Six-digit delivery PIN" />}</Toggle><label className="v-publish-expiry"><span>Link expiry</span><small>Leave empty when the delivery should stay open.</small><input type="date" value={access.expiresAt} min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)} onChange={event => setAccess(current => ({ ...current, expiresAt: event.target.value }))} /></label><Toggle icon={Image} label="Individual photo downloads" copy="Let the client download one photograph at a time." checked={access.allowIndividualDownloads} onChange={value => setAccess(current => ({ ...current, allowIndividualDownloads: value }))} /><Toggle icon={Clapperboard} label="Download the full gallery" copy="Let the client download every delivered photograph together." checked={access.allowDownloadAll} onChange={value => setAccess(current => ({ ...current, allowDownloadAll: value }))} /><Toggle icon={Check} label="Photo likes" copy="Let the client mark the photographs they love." checked={access.allowLikes} onChange={value => setAccess(current => ({ ...current, allowLikes: value }))} />{['photo-story', 'chapters'].includes(delivery?.format) && <Toggle icon={Play} label="Optional narration" copy="Use Deepgram to read the approved story lines in the delivery." checked={access.narration} onChange={value => setAccess(current => ({ ...current, narration: value }))} />}</div>
               {busy === 'publish' && progress.stage && <Progress value={progress.value} label={progress.stage} />}
               <div className="v-create-footer"><button type="button" onClick={() => setStep(4)}><ArrowLeft size={16} />Back to review</button><button type="button" className="v-create-primary" onClick={publish} disabled={Boolean(busy)}>{busy === 'publish' ? 'Preparing the client link…' : 'Publish client delivery'}<ArrowRight size={17} /></button></div>
@@ -351,6 +532,15 @@ export default function CreateDelivery({ user }) {
         </AnimatePresence>
       </main>
     </div>
+    {['analyze', 'direct', 'revise', 'publish'].includes(busy) && (
+      <DeliveryProgress
+        type={busy}
+        value={progress.value}
+        stage={progress.stage}
+        clientName={brief.clientName || delivery?.clientName}
+        shootType={brief.shootType || delivery?.shootType}
+      />
+    )}
     {libraryPicker && <div className="v-create-library-picker" role="presentation" onMouseDown={event => event.target === event.currentTarget && setLibraryPicker(false)}><section role="dialog" aria-modal="true" aria-label="Choose photographs from your library"><header><div><p>YOUR PRO LIBRARY</p><h2>Choose finished photographs</h2></div><button type="button" onClick={() => setLibraryPicker(false)}><X size={18} /></button></header>{libraryLoading ? <div className="v-create-library-state"><LoaderCircle className="v-spin" size={22} />Opening your library…</div> : libraryAssets.length ? <div className="v-create-library-grid">{libraryAssets.map(asset => <button type="button" key={asset._id} className={librarySelection.includes(asset._id) ? 'is-selected' : ''} onClick={() => toggleLibraryAsset(asset._id)}><img src={asset.thumbnailUrl || asset.url} alt={asset.originalFilename || 'Library photograph'} loading="lazy" /><span>{librarySelection.includes(asset._id) ? <Check size={15} /> : <Image size={15} />}</span></button>)}</div> : <div className="v-create-library-state"><Image size={22} />Your personal library is empty.</div>}<footer><span>{librarySelection.length} selected</span><button type="button" onClick={addFromLibrary} disabled={!librarySelection.length || busy === 'library'}>{busy === 'library' ? 'Adding photographs…' : 'Add to this delivery'}</button></footer></section></div>}
   </div>;
 }

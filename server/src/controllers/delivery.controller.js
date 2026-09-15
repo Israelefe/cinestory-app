@@ -100,6 +100,12 @@ export async function getDelivery(req, res) {
     if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
     const data = delivery.toObject();
     data.assets = delivery.assets.map(ownerAsset);
+    if (data.soundtrack?.publicId && !data.soundtrack.url) {
+      data.soundtrack.url = signedImageUrl(data.soundtrack.publicId, { resourceType: 'video' });
+    }
+    if (data.narration?.publicId && !data.narration.url) {
+      data.narration.url = signedImageUrl(data.narration.publicId, { resourceType: 'video' });
+    }
     res.json({ success: true, data });
   } catch (error) {
     console.error('[deliveries/get]', error.message);
@@ -291,6 +297,31 @@ export async function deleteSoundtrack(req, res) {
     await delivery.save();
     res.json({ success: true, message: 'Soundtrack removed.' });
   } catch { res.status(500).json({ success: false, message: 'We could not remove that soundtrack.' }); }
+}
+
+export async function selectCuratedSoundtrack(req, res) {
+  try {
+    const { title, url, genre, mood, durationSec } = req.body || {};
+    if (!title || !url) return res.status(400).json({ success: false, message: 'Track title and audio URL are required.' });
+    const delivery = await ownedDelivery(req.params.id, req.user.id);
+    if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This delivery is not available for audio selection.' });
+    if (delivery.soundtrack?.publicId) await removeDeliveryAudio(delivery.soundtrack.publicId).catch(() => {});
+    delivery.soundtrack = {
+      title: String(title).slice(0, 100),
+      url: String(url).slice(0, 500),
+      genre: genre ? String(genre).slice(0, 50) : '',
+      mood: mood ? String(mood).slice(0, 50) : '',
+      duration: Number(durationSec) || 120,
+      source: 'curated',
+      rightsConfirmedAt: new Date()
+    };
+    delivery.markModified('soundtrack');
+    await delivery.save();
+    res.status(200).json({ success: true, data: delivery.soundtrack });
+  } catch (error) {
+    console.error('[deliveries/soundtrack-select]', error.message);
+    res.status(500).json({ success: false, message: 'We could not attach that soundtrack.' });
+  }
 }
 
 export async function queueAnalysis(req, res) {

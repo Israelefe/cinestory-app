@@ -254,7 +254,15 @@ async function completion({ model, messages, temperature = 0.35, maxTokens = 600
   throw error;
 }
 
-const voiceRules = `Write plain, specific English that a Nigerian photographer would comfortably send to a real client. Captions must describe the person, shoot, clothing, expression, or occasion visible in the photographs. Never invent a relationship, age, event, location, or personal fact that the photographer did not provide. Never use: elevate, unlock, seamlessly, tapestry, symphony, beacon, testament, crescendo, delve, journey, essence, timeless radiance, pure grace, or grand finale. No slogans, emojis, hashtags, or vague praise.`;
+const voiceRules = `You are writing directly to the client to celebrate the purpose, milestone, and emotion of this shoot (e.g. birthday celebration, wedding, graduation, personal milestone, fashion lookbook). Ground your writing in what the photographer specified in their brief.
+
+CRITICAL DIRECTIVES:
+1. Speak to the human client with warmth, taste, and genuine celebration. Captions and headlines must honor the occasion and what this shoot represents to the client.
+2. NEVER write alt-text, image audits, or computer vision descriptions. Never write: "A photograph of...", "The subject is wearing...", "Visible in this image...", or describe studio backdrops, lighting equipment, and camera angles.
+3. Never invent relationships, names, or events that the photographer did not provide.
+4. Never use AI buzzwords or clichés: elevate, unlock, seamlessly, tapestry, symphony, beacon, testament, crescendo, delve, journey, essence, timeless radiance, pure grace, or grand finale.
+5. No hashtags, emojis, or corporate jargon.
+6. Leave captions empty when a photograph works better without text.`;
 
 export async function analyzeImageBatch({ brief, shootType, clientName, assets }) {
   const provider = config();
@@ -397,8 +405,8 @@ export async function createFrameBatch({ format, brief, clientName, direction, i
       "assetId": "<string matching supplied assetId>",
       "sectionId": "<one of: ${validSectionIds.join(', ')}>",
       "role": "opening" | "hero" | "supporting" | "detail" | "pair" | "finale",
-      "headline": "<brief headline, under 70 chars, or empty>",
-      "caption": "<natural caption under 180 chars, or empty>",
+      "headline": "<brief evocative headline under 70 chars, or empty>",
+      "caption": "<natural human caption under 180 chars, or empty>",
       "motion": "slow-push" | "slow-pull" | "pan-left" | "pan-right" | "float" | "still",
       "transition": "fade" | "crossfade" | "wipe" | "slide" | "reveal" | "cut",
       "duration": <number between 2 and 12 seconds>,
@@ -411,13 +419,84 @@ Return one frame per photograph in the supplied order.`;
   return completion({
     model: provider.creativeModel,
     messages: [
-      { role: 'system', content: `You are completing a Veylo ${format}. Assign every supplied photograph to one existing section (${validSectionIds.join(', ')}). Return one frame per assetId in the supplied order. Captions can be empty when the photograph works better without text. Use "still" sparingly; movement must suit the image. ${voiceRules}\n\n${schemaInstructions}` },
-      { role: 'user', content: JSON.stringify({ task: revisionInstruction ? 'Revise this batch of photograph directions' : 'Direct this batch of photographs', clientName, photographerBrief: brief, direction, photographerRevision: revisionInstruction, currentFrames, photographs: imageInsights }) }
+      {
+        role: 'system',
+        content: `You are art directing the presentation of a finished ${format} for client "${clientName || 'Client'}".
+PURPOSE OF SHOOT: "${brief || 'Client photo collection'}".
+
+CRITICAL INSTRUCTIONS:
+1. Every headline and caption must celebrate the PURPOSE of the shoot and speak directly to ${clientName || 'the client'} with warmth, respect, and quiet confidence.
+2. Under NO circumstances should you write an image analysis or describe what the camera sees (no "A photo of...", no "wearing...", no backdrop descriptions, no camera angle commentary).
+3. If a photo works better without words, leave caption empty ("").
+4. Assign every photograph to one existing section (${validSectionIds.join(', ')}).
+5. Choose cinematic motions and transitions that suit the emotional rhythm.
+${voiceRules}
+
+${schemaInstructions}`
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          task: revisionInstruction ? 'Revise this batch of photograph directions' : 'Direct this batch of photographs',
+          clientName,
+          shootPurposeAndBrief: brief,
+          deliveryDirection: direction,
+          photographerRevision: revisionInstruction,
+          currentFrames,
+          photographs: imageInsights
+        })
+      }
     ],
     schema: frameBatchSchema,
     repairLabel: 'photograph direction',
     schemaHint: schemaInstructions
   });
+}
+
+export async function createNarrationScript({ clientName, shootType, brief, direction, format }) {
+  const provider = config();
+  const schemaInstructions = `Return a JSON object matching this schema:
+{
+  "script": "<a continuous, warm, intimate spoken welcome to the client, 70-130 words (approx. 30-40 seconds of speech), directly celebrating the purpose of the shoot and welcoming them to their photographs>"
+}`;
+
+  const result = await completion({
+    model: provider.creativeModel,
+    messages: [
+      {
+        role: 'system',
+        content: `You are the studio creative director speaking a warm, intimate voiceover welcome to ${clientName || 'the client'} for their finished ${format}.
+The shoot was: "${shootType || 'Photography Session'}" — "${brief || 'Client Shoot'}".
+
+CRITICAL VOICE INSTRUCTIONS:
+1. Speak in plain, heartfelt English directly to ${clientName || 'the client'}.
+2. Celebrate the milestone and occasion (e.g. birthday, wedding, anniversary, graduation).
+3. Invite them to take their time and enjoy their photographs.
+4. Do NOT describe individual photos, camera equipment, or lighting.
+5. No AI buzzwords (no elevate, tapestry, symphony, essence, timeless, etc.).
+${voiceRules}
+
+${schemaInstructions}`
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          task: 'Write the spoken voiceover welcome script for this delivery',
+          clientName,
+          shootType,
+          photographerBrief: brief,
+          deliveryTitle: direction?.title,
+          openingLine: direction?.openingLine,
+          closingLine: direction?.closingLine
+        })
+      }
+    ],
+    schema: z.object({ script: z.string().min(20).max(1000) }),
+    repairLabel: 'narration script',
+    schemaHint: schemaInstructions
+  });
+
+  return result.script;
 }
 
 export async function createPortfolioDirection({ studioName, bio, location, items, imageInsights }) {

@@ -79,3 +79,73 @@ export const DELIVERY_PROCESS = [
   ['Review the direction', 'Veylo studies each photograph and the complete collection, then prepares the selected delivery. The photographer checks every decision before publishing.'],
   ['Send one link', 'Share the delivery through WhatsApp, Instagram DM, or email. The client experiences the work, then browses and downloads the full gallery.']
 ];
+
+export const CURATED_DELIVERY_SOUNDTRACKS = [
+  {
+    id: 'track_birthday_1',
+    title: "Ada's Celebration Groove",
+    artist: 'Veylo Studio Master',
+    url: '/audio/ada-birthday.mp3',
+    genre: 'Afro-Soul Celebration',
+    mood: 'Joyful & Vibrant',
+    tempo: 'upbeat',
+    durationSec: 140,
+    tags: ['Birthday', 'Milestone', 'Owambe', 'Party']
+  },
+  {
+    id: 'track_acoustic_1',
+    title: 'Golden Hour Reverie',
+    artist: 'Veylo Acoustic Studio',
+    url: '/audio/soundtrack-1.mp3',
+    genre: 'Cinematic Ambient',
+    mood: 'Dreamy & Majestic',
+    tempo: 'mid',
+    durationSec: 155,
+    tags: ['Wedding', 'Pre-Wedding', 'Sunset', 'Romance']
+  },
+  {
+    id: 'track_strings_1',
+    title: 'Velvet Acoustic Strings',
+    artist: 'Lumina Studio Orchestra',
+    url: '/audio/soundtrack-2.mp3',
+    genre: 'Warm Acoustic',
+    mood: 'Warm & Intimate',
+    tempo: 'slow',
+    durationSec: 165,
+    tags: ['Portrait', 'Studio', 'Quiet', 'Maternity']
+  },
+  {
+    id: 'track_soul_1',
+    title: 'Lagos Sunset Horizon',
+    artist: 'Veylo Soundscapes',
+    url: '/audio/soundtrack-3.mp3',
+    genre: 'Soulful Rhythmic',
+    mood: 'Soulful & Atmospheric',
+    tempo: 'mid',
+    durationSec: 148,
+    tags: ['Fashion', 'Editorial', 'Lookbook', 'Creative']
+  },
+  {
+    id: 'track_piano_1',
+    title: 'Whispering Horizons',
+    artist: 'Serenity Audio Lab',
+    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+    genre: 'Piano & Strings',
+    mood: 'Cinematic Warmth',
+    tempo: 'slow',
+    durationSec: 180,
+    tags: ['Wedding', 'Fine Art', 'Family', 'Album']
+  },
+  {
+    id: 'track_hope_1',
+    title: 'New Dawn Serenade',
+    artist: 'Velvet Horizon Studio',
+    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
+    genre: 'Contemporary Acoustic',
+    mood: 'Reflective & Pure',
+    tempo: 'mid',
+    durationSec: 175,
+    tags: ['Graduation', 'Milestone', 'Achievement', 'Portraits']
+  }
+];
+

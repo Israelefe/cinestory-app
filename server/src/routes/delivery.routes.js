@@ -1,7 +1,7 @@
 import express from 'express';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { aiGenerationLimit, clientDeliveryEmailLimit, mediaSignatureLimit, publicAccessLimit, publicMediaLimit } from '../middleware/rateLimit.middleware.js';
-import { addLibraryAssets, confirmDeliveryUpload, confirmSoundtrackUpload, createDelivery, deleteDelivery, deleteDeliveryAsset, deleteSoundtrack, emailClientDelivery, getDelivery, getDeliveryJob, getDeliveryQr, getDeliveryShareMeta, getGalleryDownload, getPhotoDownload, getPublicDelivery, listDeliveries, publishDelivery, queueAnalysis, queueDirection, queueNarration, queueRevision, retryDeliveryJob, signDeliveryUpload, signSoundtrackUpload, togglePhotoLike, unlockDelivery, updateDeliveryDetails, updateDeliveryReview } from '../controllers/delivery.controller.js';
+import { addLibraryAssets, confirmDeliveryUpload, confirmSoundtrackUpload, createDelivery, deleteDelivery, deleteDeliveryAsset, deleteSoundtrack, emailClientDelivery, getDelivery, getDeliveryJob, getDeliveryQr, getDeliveryShareMeta, getGalleryDownload, getPhotoDownload, getPublicDelivery, listDeliveries, publishDelivery, queueAnalysis, queueDirection, queueNarration, queueRevision, retryDeliveryJob, selectCuratedSoundtrack, signDeliveryUpload, signSoundtrackUpload, togglePhotoLike, unlockDelivery, updateDeliveryDetails, updateDeliveryReview } from '../controllers/delivery.controller.js';
 
 const router = express.Router();
 
@@ -24,6 +24,7 @@ router.post('/:id/uploads/from-library', addLibraryAssets);
 router.delete('/:id/assets/:assetId', deleteDeliveryAsset);
 router.post('/:id/soundtrack/sign', mediaSignatureLimit, signSoundtrackUpload);
 router.post('/:id/soundtrack/confirm', confirmSoundtrackUpload);
+router.post('/:id/soundtrack/select', selectCuratedSoundtrack);
 router.delete('/:id/soundtrack', deleteSoundtrack);
 router.post('/:id/analyze', aiGenerationLimit, queueAnalysis);
 router.post('/:id/direct', aiGenerationLimit, queueDirection);

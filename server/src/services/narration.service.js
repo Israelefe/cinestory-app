@@ -1,8 +1,9 @@
 import { Readable } from 'stream';
 import { cloudinary, configureCloudinary } from './cloudinary.service.js';
 import { deliveryFolder } from './deliveryMedia.service.js';
+import { createNarrationScript } from './alibabaCreativeDirector.service.js';
 
-function narrationText(delivery) {
+function fallbackNarrationText(delivery) {
   const direction = delivery.creativeDirection || {};
   const lines = [direction.openingLine, ...(direction.frames || []).map(frame => frame.caption).filter(Boolean), direction.closingLine]
     .map(line => String(line || '').trim())
@@ -29,7 +30,22 @@ export async function generateNarration(delivery) {
   if (!['photo-story', 'chapters'].includes(delivery.format)) throw Object.assign(new Error('Narration is available for Photo Story and Chapters.'), { code: 'NARRATION_FORMAT_UNAVAILABLE' });
   const apiKey = String(process.env.DEEPGRAM_API_KEY || '').trim();
   if (!apiKey) throw Object.assign(new Error('Deepgram narration is not configured.'), { code: 'NARRATION_NOT_CONFIGURED' });
-  const text = narrationText(delivery);
+
+  let text = String(delivery.narration?.transcript || '').trim();
+  if (!text) {
+    try {
+      text = await createNarrationScript({
+        clientName: delivery.clientName,
+        shootType: delivery.shootType,
+        brief: delivery.brief,
+        direction: delivery.creativeDirection,
+        format: delivery.format
+      });
+    } catch {
+      text = fallbackNarrationText(delivery);
+    }
+  }
+
   if (!text) throw Object.assign(new Error('Add approved story text before creating narration.'), { code: 'NARRATION_TEXT_REQUIRED' });
   const voice = process.env.DEEPGRAM_TTS_MODEL || 'flux-hannah-en';
   const response = await fetch(`https://api.deepgram.com/v2/speak?model=${encodeURIComponent(voice)}&encoding=mp3`, { method: 'POST', headers: { Authorization: `Token ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ text }), signal: AbortSignal.timeout(90_000) });
