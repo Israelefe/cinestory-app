@@ -148,9 +148,24 @@ const directionSchema = z.object({
   });
 });
 
-const frameSchema = z.object({
-  assetId: z.string().min(1).max(100),
-  sectionId: z.preprocess(val => String(val || '').toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 32) || 'section-1', z.string().regex(/^[a-z0-9-]{1,32}$/)),
+const frameSchema = z.preprocess(raw => {
+  if (!raw || typeof raw !== 'object') return {};
+  const assetId = raw.assetId ?? raw.id ?? raw.asset_id ?? raw.photoId ?? raw.photo_id ?? raw.publicId ?? '';
+  return {
+    ...raw,
+    assetId: String(assetId ?? '').trim().slice(0, 100),
+    sectionId: raw.sectionId ?? raw.section ?? raw.section_id ?? '',
+    role: raw.role,
+    headline: typeof raw.headline === 'string' ? raw.headline : (raw.title ?? ''),
+    caption: typeof raw.caption === 'string' ? raw.caption : (raw.text ?? raw.description ?? ''),
+    motion: raw.motion,
+    transition: raw.transition,
+    duration: raw.duration,
+    emphasis: raw.emphasis
+  };
+}, z.object({
+  assetId: z.preprocess(val => String(val ?? '').trim().slice(0, 100), z.string()),
+  sectionId: z.preprocess(val => String(val || '').toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 32) || 'section-1', z.string()),
   role: z.preprocess(val => ['opening', 'hero', 'supporting', 'detail', 'pair', 'finale'].includes(val) ? val : 'supporting', z.enum(['opening', 'hero', 'supporting', 'detail', 'pair', 'finale'])),
   headline: z.preprocess(val => String(val || '').trim().slice(0, 70), z.string().max(70)),
   caption: z.preprocess(val => String(val || '').trim().slice(0, 180), z.string().max(180)),
@@ -158,9 +173,23 @@ const frameSchema = z.object({
   transition: z.preprocess(val => TRANSITIONS.includes(val) ? val : 'crossfade', z.enum(TRANSITIONS)),
   duration: z.preprocess(val => Math.min(12, Math.max(2, Number(val) || 4.5)), z.number().min(2).max(12)),
   emphasis: z.preprocess(val => Math.min(10, Math.max(1, Math.round(Number(val) || 5))), z.number().int().min(1).max(10))
-});
+}));
 
-const frameBatchSchema = z.object({ frames: z.array(frameSchema).min(1).max(50) });
+const frameBatchSchema = z.preprocess(val => {
+  if (Array.isArray(val)) return { frames: val };
+  if (val && typeof val === 'object') {
+    if (Array.isArray(val.frames)) return val;
+    if (Array.isArray(val.photographs)) return { frames: val.photographs };
+    if (Array.isArray(val.photos)) return { frames: val.photos };
+    if (Array.isArray(val.images)) return { frames: val.images };
+    if (Array.isArray(val.data)) return { frames: val.data };
+    if (Array.isArray(val.items)) return { frames: val.items };
+    if (Array.isArray(val.directions)) return { frames: val.directions };
+    const arr = Object.values(val).find(v => Array.isArray(v));
+    if (arr) return { frames: arr };
+  }
+  return val;
+}, z.object({ frames: z.array(frameSchema) }));
 
 const portfolioDirectionSchema = z.object({
   headline: z.preprocess(val => String(val || '').trim().slice(0, 100) || 'Selected Works', z.string().min(4).max(100)),
@@ -192,8 +221,64 @@ function config() {
   return { apiKey, baseUrl: baseUrl.replace(/\/$/, ''), visionModel, creativeModel };
 }
 
+function repairTruncatedJson(raw) {
+  let text = String(raw || '').trim();
+  text = text.replace(/,\s*$/, '');
+  const quoteMatches = text.match(/"/g);
+  if (quoteMatches && quoteMatches.length % 2 !== 0) {
+    text += '"';
+  }
+  let openBraces = (text.match(/\{/g) || []).length;
+  let closeBraces = (text.match(/\}/g) || []).length;
+  let openBrackets = (text.match(/\[/g) || []).length;
+  let closeBrackets = (text.match(/\]/g) || []).length;
+
+  while (closeBraces < openBraces || closeBrackets < openBrackets) {
+    const lastOpenBrace = text.lastIndexOf('{');
+    const lastOpenBracket = text.lastIndexOf('[');
+    if (openBrackets > closeBrackets && (lastOpenBracket > lastOpenBrace || openBraces === closeBraces)) {
+      text += ']';
+      closeBrackets++;
+    } else if (openBraces > closeBraces) {
+      text += '}';
+      closeBraces++;
+    } else {
+      break;
+    }
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    const lastCompleteObj = text.lastIndexOf('}');
+    if (lastCompleteObj > 0) {
+      let candidate = text.slice(0, lastCompleteObj + 1).replace(/,\s*$/, '');
+      if (!candidate.endsWith(']}') && !candidate.endsWith('}')) {
+        candidate += ']}';
+      } else if (candidate.endsWith('}') && !candidate.endsWith(']}')) {
+        candidate = candidate.slice(0, -1) + ']}';
+      }
+      try {
+        return JSON.parse(candidate);
+      } catch {}
+    }
+    throw new Error('Could not repair truncated JSON.');
+  }
+}
+
 function jsonFromReply(reply) {
-  const cleaned = String(reply || '').replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/```(?:json)?/gi, '').trim();
+  let cleaned = String(reply || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<thought>[\s\S]*?<\/thought>/gi, '')
+    .replace(/```(?:json)?/gi, '')
+    .trim();
+
+  if (cleaned.includes('<think>')) {
+    cleaned = cleaned.replace(/<think>[\s\S]*$/gi, '').trim();
+  }
+  if (cleaned.includes('<thought>')) {
+    cleaned = cleaned.replace(/<thought>[\s\S]*$/gi, '').trim();
+  }
+
   const firstBrace = cleaned.indexOf('{');
   const firstBracket = cleaned.indexOf('[');
 
@@ -208,7 +293,9 @@ function jsonFromReply(reply) {
     end = cleaned.lastIndexOf(']');
   }
 
-  if (start < 0 || end <= start) throw new Error('The model did not return JSON.');
+  if (start < 0) throw new Error('The model did not return JSON.');
+  if (end <= start) end = cleaned.length - 1;
+
   const raw = cleaned.slice(start, end + 1);
   try {
     return JSON.parse(raw);
@@ -217,7 +304,11 @@ function jsonFromReply(reply) {
     try {
       return JSON.parse(sanitized);
     } catch {
-      throw initialError;
+      try {
+        return repairTruncatedJson(raw);
+      } catch {
+        throw initialError;
+      }
     }
   }
 }
@@ -245,12 +336,14 @@ async function completion({ model, messages, temperature = 0.35, maxTokens = 600
       if (parsed.success) return parsed.data;
       lastError = new Error(parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).slice(0, 8).join('; '));
     } catch (error) { lastError = error; }
+    console.warn(`[creative-director/${repairLabel}] Attempt ${attempt + 1} validation issue: ${lastError?.message}`);
     currentMessages = [
       ...messages,
       { role: 'assistant', content: String(reply || '') },
       { role: 'user', content: `Your ${repairLabel} response was invalid: ${lastError.message}. Return the complete corrected JSON object only. Keep every required field and use only the allowed values.${schemaHint ? `\n\nSchema specification:\n${schemaHint}` : ''}` }
     ];
   }
+  console.error(`[creative-director/${repairLabel}] All attempts failed. Last error: ${lastError?.message}`);
   const error = new Error(`The AI Creative Director returned an invalid ${repairLabel}. Please run it again.`);
   error.code = 'INVALID_MODEL_OUTPUT';
   throw error;
@@ -409,7 +502,11 @@ export async function createGlobalDirection({ format, brief, shootType, clientNa
 
 export async function createFrameBatch({ format, brief, shootType, clientName, direction, imageInsights, revisionInstruction = '', currentFrames = [] }) {
   const provider = config();
-  const validSectionIds = direction?.sections?.map(s => s.id) || ['main'];
+  const validSectionIds = (direction?.sections?.map(s => s.id) || []).filter(Boolean);
+  if (!validSectionIds.length) validSectionIds.push('section-1');
+  const defaultSectionId = validSectionIds[0];
+
+  const expectedAssetIds = (imageInsights || []).map(insight => String(insight.assetId || ''));
   const schemaInstructions = `Return a JSON object matching this schema:
 {
   "frames": [
@@ -428,21 +525,45 @@ export async function createFrameBatch({ format, brief, shootType, clientName, d
 }
 Return one frame per photograph in the supplied order.`;
 
-  // Strip image insights to minimal context — remove visual descriptions that
-  // cause the model to echo alt-text instead of writing occasion-focused copy
   const minimalInsights = (imageInsights || []).map(insight => ({
-    assetId: insight.assetId,
-    moment: insight.moment,
-    visualWeight: insight.visualWeight,
-    orientation: insight.orientation
+    assetId: String(insight.assetId || ''),
+    moment: insight.moment || '',
+    visualWeight: insight.visualWeight || 5,
+    orientation: insight.orientation || 'landscape'
   }));
 
-  return completion({
-    model: provider.creativeModel,
-    messages: [
-      {
-        role: 'system',
-        content: `You are writing headlines and captions for a ${format} delivery of a "${shootType || 'photo'}" shoot for "${clientName || 'Client'}".
+  const minimalDirection = {
+    title: direction?.title || 'Photo Story',
+    sections: (direction?.sections || []).map(s => ({ id: s.id, title: s.title }))
+  };
+
+  const alignFrames = (rawFrames = []) => {
+    const byAssetId = new Map(rawFrames.map(f => [String(f.assetId || ''), f]));
+    return expectedAssetIds.map((id, index) => {
+      const matched = byAssetId.get(id) || rawFrames[index];
+      const frame = matched ? { ...matched } : {};
+      frame.assetId = id;
+      if (!validSectionIds.includes(frame.sectionId)) frame.sectionId = defaultSectionId;
+      if (!['opening', 'hero', 'supporting', 'detail', 'pair', 'finale'].includes(frame.role)) {
+        frame.role = index === 0 ? 'hero' : 'supporting';
+      }
+      if (typeof frame.headline !== 'string') frame.headline = '';
+      if (typeof frame.caption !== 'string') frame.caption = '';
+      if (!MOTIONS.includes(frame.motion)) frame.motion = 'slow-push';
+      if (!TRANSITIONS.includes(frame.transition)) frame.transition = 'crossfade';
+      frame.duration = Math.min(12, Math.max(2, Number(frame.duration) || 4.5));
+      frame.emphasis = Math.min(10, Math.max(1, Math.round(Number(frame.emphasis) || 5)));
+      return frame;
+    });
+  };
+
+  try {
+    const result = await completion({
+      model: provider.creativeModel,
+      messages: [
+        {
+          role: 'system',
+          content: `You are writing headlines and captions for a ${format} delivery of a "${shootType || 'photo'}" shoot for "${clientName || 'Client'}".
 
 THE PHOTOGRAPHER SAYS THIS SHOOT IS ABOUT:
 "${brief || 'Client photo collection'}"
@@ -456,24 +577,31 @@ Assign every photograph to one existing section (${validSectionIds.join(', ')}).
 ${voiceRules}
 
 ${schemaInstructions}`
-      },
-      {
-        role: 'user',
-        content: JSON.stringify({
-          task: revisionInstruction ? 'Revise this batch of photograph directions' : 'Direct this batch of photographs',
-          clientName,
-          shootPurposeAndBrief: brief,
-          deliveryDirection: direction,
-          photographerRevision: revisionInstruction,
-          currentFrames,
-          photographs: minimalInsights
-        })
-      }
-    ],
-    schema: frameBatchSchema,
-    repairLabel: 'photograph direction',
-    schemaHint: schemaInstructions
-  });
+        },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            task: revisionInstruction ? 'Revise this batch of photograph directions' : 'Direct this batch of photographs',
+            clientName,
+            shootPurposeAndBrief: brief,
+            deliveryDirection: minimalDirection,
+            photographerRevision: revisionInstruction,
+            currentFrames: (currentFrames || []).slice(0, 20),
+            photographs: minimalInsights
+          })
+        }
+      ],
+      schema: frameBatchSchema,
+      repairLabel: 'photograph direction',
+      schemaHint: schemaInstructions
+    });
+
+    return { frames: alignFrames(result?.frames || []) };
+  } catch (error) {
+    console.warn('[createFrameBatch] Directing model returned invalid output, falling back to structured frames:', error.message);
+    if (error.code === 'AI_NOT_CONFIGURED' || error.code === 'MODEL_NOT_AVAILABLE') throw error;
+    return { frames: alignFrames([]) };
+  }
 }
 
 export async function createNarrationScript({ clientName, shootType, brief, direction, format }) {
