@@ -187,7 +187,9 @@ function config() {
   let parsed;
   try { parsed = new URL(baseUrl); } catch { throw new Error('ALIBABA_BASE_URL is not a valid URL.'); }
   if (parsed.protocol !== 'https:' || !parsed.hostname.endsWith('.aliyuncs.com')) throw new Error('ALIBABA_BASE_URL must use the Singapore Alibaba Model Studio HTTPS endpoint.');
-  return { apiKey, baseUrl: baseUrl.replace(/\/$/, ''), visionModel: process.env.ALIBABA_VISION_MODEL || 'qwen3.7-flash', creativeModel: process.env.ALIBABA_CREATIVE_MODEL || 'deepseek-v4.1-flash' };
+  const creativeModel = process.env.ALIBABA_CREATIVE_MODEL || 'deepseek-v4.1-flash';
+  const visionModel = process.env.ALIBABA_VISION_MODEL || creativeModel;
+  return { apiKey, baseUrl: baseUrl.replace(/\/$/, ''), visionModel, creativeModel };
 }
 
 function jsonFromReply(reply) {

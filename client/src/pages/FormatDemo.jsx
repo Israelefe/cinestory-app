@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion, useScroll, useTransform } from 'framer-motion';
-import { ArrowLeft, BookOpen, Check, ChevronLeft, ChevronRight, Download, Grid2X2, Heart, Images, RotateCcw, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowLeft, BookOpen, Check, ChevronLeft, ChevronRight, Download, Grid2X2, Heart, Images, Info, RotateCcw, Share2, Volume2, VolumeX, X } from 'lucide-react';
 import { Photo } from '../components/PublicDesign.jsx';
 import { useDialogFocus } from '../components/useDialogFocus.js';
 import '../styles/format-demos.css';
@@ -17,6 +17,22 @@ export const imageSrc = (photo, width = 1440) => {
   if (typeof photo === 'string' && (photo.startsWith('http') || photo.startsWith('/'))) return photo;
   return `/veylo/web/${photo?.name || photo}-${width}.webp`;
 };
+
+export function getFormatThemeStyles(delivery, fallback = {}) {
+  const cd = delivery?.creativeDirection;
+  const palette = cd?.palette || {};
+  const typography = cd?.typography || {};
+
+  return {
+    '--fd-accent': palette.accentColor || fallback.accent || '#ff5a47',
+    '--fd-accent-soft': palette.accentColor ? `${palette.accentColor}26` : (fallback.accentSoft || '#ff5a4726'),
+    '--fd-bg': palette.backgroundColor || fallback.bg || '#070709',
+    '--fd-surface': palette.surfaceColor || fallback.surface || '#0e0e13',
+    '--fd-text': palette.textColor || fallback.text || '#f2eee8',
+    '--fd-font-display': typography.displayFont ? `"${typography.displayFont}", 'Playfair Display', Georgia, serif` : (fallback.fontDisplay || "'Playfair Display', Georgia, serif"),
+    '--fd-font-body': typography.bodyFont ? `"${typography.bodyFont}", 'Plus Jakarta Sans', sans-serif` : (fallback.fontBody || "'Plus Jakarta Sans', sans-serif")
+  };
+}
 
 export function normalizeDeliveryPhotos(delivery, fallbackPhotos) {
   if (delivery?.assets?.length) {
@@ -131,6 +147,24 @@ export function DemoGallery({ photos, title, onClose, initialIndex = null, liked
   const allowIndividualDownloads = delivery ? delivery.access?.allowIndividualDownloads !== false : true;
   const allowLikes = delivery ? Boolean(delivery.access?.allowLikes && onLike) : false;
 
+  const handleShare = async (photo) => {
+    const targetUrl = imageSrc(photo);
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({
+          title: photo.alt || delivery?.title || 'Photograph',
+          url: targetUrl
+        });
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+    if (onDownload) {
+      onDownload(photo.assetId || selected);
+    }
+  };
+
   return <motion.div className="fd-gallery-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <motion.section ref={panel} className="fd-gallery" role="dialog" aria-modal="true" aria-labelledby="fd-gallery-title" tabIndex={-1} initial={{ opacity: 0, y: 24, scale: .985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 15 }} transition={{ type: 'spring', damping: 27, stiffness: 240 }}>
       <header>
@@ -153,6 +187,10 @@ export function DemoGallery({ photos, title, onClose, initialIndex = null, liked
           <button type="button" onClick={onClose} aria-label="Close gallery"><X size={20} /></button>
         </div>
       </header>
+      <div className="fd-gallery-mobile-note">
+        <Info size={14} className="fd-gallery-note-icon" />
+        <span>Mobile tip: To download all photos, please close any floating chat bubbles (WhatsApp / Messenger) if your phone asks to clear overlays. You can also tap and save any photo individually.</span>
+      </div>
       {selected === null ? <div className="fd-gallery-grid">{photos.map((photo, index) => {
         const photoKey = photo.assetId || photo.name || index;
         return <figure key={photoKey}>
@@ -172,12 +210,24 @@ export function DemoGallery({ photos, title, onClose, initialIndex = null, liked
                   <Heart size={15} fill={liked?.has(photo.assetId || index) ? 'currentColor' : 'none'} />
                 </button>
               )}
+              {typeof navigator !== 'undefined' && typeof navigator.share === 'function' && (
+                <button
+                  type="button"
+                  onClick={() => handleShare(photo)}
+                  className="fd-share-btn"
+                  aria-label="Share or save photograph"
+                  title="Share or save to device"
+                >
+                  <Share2 size={14} />
+                </button>
+              )}
               {allowIndividualDownloads && (onDownload ? (
                 <button
                   type="button"
                   onClick={() => onDownload(photo.assetId || index)}
                   disabled={busy === (photo.assetId || index)}
                   aria-label="Download photograph"
+                  title="Download photograph"
                 >
                   <Download size={14} />
                 </button>
@@ -213,6 +263,17 @@ export function DemoGallery({ photos, title, onClose, initialIndex = null, liked
               aria-label={liked?.has(activePhoto?.assetId || selected) ? 'Unlike' : 'Like'}
             >
               <Heart size={16} fill={liked?.has(activePhoto?.assetId || selected) ? 'currentColor' : 'none'} />
+            </button>
+          )}
+          {typeof navigator !== 'undefined' && typeof navigator.share === 'function' && (
+            <button
+              type="button"
+              onClick={() => handleShare(activePhoto)}
+              className="fd-share-btn"
+              aria-label="Share or save to device"
+              title="Share or save to device"
+            >
+              <Share2 size={15} /><span>Save</span>
             </button>
           )}
           {allowIndividualDownloads && (onDownload ? (
@@ -274,6 +335,13 @@ export function EditorialDemo({ delivery, galleryProps, audioState, toggleAudio 
   }
   if (!titleLines.length) titleLines.push(title);
 
+  const themeStyles = getFormatThemeStyles(delivery, {
+    bg: '#e7dfd1',
+    text: '#17130f',
+    accent: '#a82f25',
+    surface: '#ded4c4'
+  });
+
   const coverPhoto = photos[0];
   const photo2 = photos[1] || coverPhoto;
   const photo3 = photos[2] || photo2;
@@ -284,7 +352,7 @@ export function EditorialDemo({ delivery, galleryProps, audioState, toggleAudio 
   const frame3 = frames.get(photo3?.assetId) || {};
   const frame4 = frames.get(photo4?.assetId) || {};
 
-  return <div className="fd-page fd-editorial">
+  return <div className="fd-page fd-editorial" style={themeStyles}>
     <DemoHeader format="Editorial Page" client={client} sectionId="editorial-page" onGallery={() => setGallery(true)} light delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     <motion.div className="fd-ed-scroll-progress" style={reduced ? undefined : { scaleX: scrollYProgress }} aria-hidden="true" />
     <main>
@@ -329,6 +397,33 @@ export function EditorialDemo({ delivery, galleryProps, audioState, toggleAudio 
           </h2>
         </motion.div>
       </section>
+
+      {photos.length > 5 && (
+        <section className="fd-ed-gallery-preview">
+          <div className="fd-ed-preview-head">
+            <motion.span {...reveal()}>CURATED SELECTION</motion.span>
+            <motion.h3 {...reveal(0.08)}>Further highlights from this shoot</motion.h3>
+          </div>
+          <div className="fd-ed-preview-grid">
+            {photos.slice(4, Math.min(photos.length - 1, 10)).map((p, idx) => (
+              <motion.figure
+                key={p.assetId || p.name || idx}
+                {...reveal(idx * 0.08)}
+                className="fd-ed-preview-card"
+                onClick={() => setGallery(true)}
+              >
+                <div className="fd-ed-preview-thumb">
+                  <Photo name={p.name} url={p.url} alt={p.alt} sizes="(max-width: 640px) 92vw, (max-width: 1024px) 46vw, 30vw" />
+                </div>
+                <figcaption>
+                  <span>{String(idx + 5).padStart(2, '0')}</span>
+                  <p>{frames.get(p.assetId)?.headline || frames.get(p.assetId)?.caption || 'Finished portrait'}</p>
+                </figcaption>
+              </motion.figure>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="fd-ed-close">
         <EditorialPhoto photo={lastPhoto} sizes="(max-width: 767px) 88vw, 46vw" direction={1} />
@@ -451,7 +546,14 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio }) 
   const currentLine = activeFrame.caption || captionData[1];
   const motionEffect = revealMotions[index % revealMotions.length];
 
-  return <div className="fd-page fd-reveal" onTouchStart={event => { touchStart.current = event.changedTouches[0].clientX; }} onTouchEnd={event => { if (touchStart.current === null || !started || finished || !uncovered) return; const distance = event.changedTouches[0].clientX - touchStart.current; touchStart.current = null; if (Math.abs(distance) > 45) distance < 0 ? next() : previous(); }}>
+  const themeStyles = getFormatThemeStyles(delivery, {
+    bg: '#050506',
+    surface: '#0c0c0e',
+    text: '#f2eee8',
+    accent: '#ff9b8e'
+  });
+
+  return <div className="fd-page fd-reveal" style={themeStyles} onTouchStart={event => { touchStart.current = event.changedTouches[0].clientX; }} onTouchEnd={event => { if (touchStart.current === null || !started || finished || !uncovered) return; const distance = event.changedTouches[0].clientX - touchStart.current; touchStart.current = null; if (Math.abs(distance) > 45) distance < 0 ? next() : previous(); }}>
     <audio ref={audio} src={audioTrack} loop preload="metadata" muted={muted} />
     <DemoHeader format="Photo Reveal" client={client} sectionId="photo-reveal" onGallery={() => setGallery(true)} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     {!started ? <main className="fd-reveal-opening">
@@ -472,7 +574,7 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio }) 
           <div className="fd-reveal-controls"><button type="button" onClick={previous} disabled={index === 0 || !uncovered} aria-label="Previous portrait"><ChevronLeft size={18} /></button><button className="fd-reveal-next" type="button" onClick={next} disabled={!uncovered}>{index === photos.length - 1 ? 'Complete reveal' : 'Reveal next portrait'}<ChevronRight size={18} /></button></div>
         </aside>
       </div> : <motion.section className="fd-reveal-finale" initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }}>
-        <div className="fd-reveal-finale-grid">{photos.slice(0, 4).map((photo, photoIndex) => <motion.figure key={photo.url || photo.name} initial={reduced ? false : { opacity: 0, y: 34, rotate: (photoIndex - 1.5) * 3 }} animate={{ opacity: 1, y: 0, rotate: (photoIndex - 1.5) * 1.5 }} transition={{ delay: reduced ? 0 : photoIndex * .08 }}><Photo name={photo.name} url={photo.url} alt="" /></motion.figure>)}</div>
+        <div className="fd-reveal-finale-grid">{photos.slice(0, Math.min(photos.length, 6)).map((photo, photoIndex) => <motion.figure key={photo.url || photo.name} initial={reduced ? false : { opacity: 0, y: 34, rotate: (photoIndex - 1.5) * 3 }} animate={{ opacity: 1, y: 0, rotate: (photoIndex - 1.5) * 1.5 }} transition={{ delay: reduced ? 0 : photoIndex * .08 }}><Photo name={photo.name} url={photo.url} alt="" /></motion.figure>)}</div>
         <div className="fd-reveal-finale-copy"><span>{clientName.toUpperCase()} / ALL {photos.length} REVEALED</span><h1>These portraits<br />are yours.</h1><p>{closingLine}</p><div><button type="button" onClick={() => setGallery(true)}>View full gallery<Images size={17} /></button><button type="button" onClick={restart}><RotateCcw size={16} />Start again</button></div></div>
       </motion.section>}
     </main>}
@@ -577,7 +679,14 @@ export function CanvasDemo({ delivery, galleryProps, audioState, toggleAudio }) 
     else setActiveCluster(value => Math.max(0, Math.min(clusters.length - 1, value + direction)));
   };
 
-  return <div className="fd-page fd-canvas">
+  const themeStyles = getFormatThemeStyles(delivery, {
+    bg: '#d8cbb8',
+    surface: '#eee5d8',
+    text: '#19130f',
+    accent: '#764831'
+  });
+
+  return <div className="fd-page fd-canvas" style={themeStyles}>
     <DemoHeader format="Canvas" client={client} sectionId="canvas" onGallery={() => setGallery(true)} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     <main className="fd-wall-shell">
       <header className="fd-wall-intro"><div><span>{clientName.toUpperCase()} · CANVAS</span><strong>{cluster ? cluster.name : 'The complete canvas'}</strong></div><AnimatePresence mode="wait"><motion.p key={cluster?.name || 'overview'} initial={reduced ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .35 }}>{cluster ? cluster.note : 'Every finished portrait is here. Choose a group, or open any photograph.'}</motion.p></AnimatePresence>{activeCluster !== null && <button type="button" onClick={() => setActiveCluster(null)}><Grid2X2 size={15} />See the whole canvas</button>}</header>
@@ -666,6 +775,13 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio }
 
   const openChapterData = openIndex === null ? null : chaptersData[openIndex];
 
+  const themeStyles = getFormatThemeStyles(delivery, {
+    bg: '#090708',
+    surface: '#171111',
+    text: '#f3ece4',
+    accent: '#d7a86e'
+  });
+
   const openChapter = index => {
     setVisited(value => value.includes(index) ? value : [...value, index]);
     setOpenIndex(index);
@@ -676,7 +792,7 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio }
     setGallery(true);
   };
 
-  return <div className="fd-page fd-chapters">
+  return <div className="fd-page fd-chapters" style={{ ...themeStyles, '--chapter-accent': openChapterData?.accent || themeStyles['--fd-accent'] }}>
     <DemoHeader format="Chapters" client={client} sectionId="chapters" onGallery={() => { setGalleryIndex(null); setGallery(true); }} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
 
     <AnimatePresence mode="wait">
@@ -686,7 +802,7 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio }
           <p>{delivery?.creativeDirection?.openingLine || `We arranged your ${photos.length} finished portraits into ${chaptersData.length} chapters. Open whichever one you want first.`}</p>
           <div><strong>0{chaptersData.length}</strong><span>CHAPTERS</span><strong>{String(photos.length).padStart(2, '0')}</strong><span>PORTRAITS</span></div>
         </header>
-        <section className="fd-chapter-directory-board" aria-label={`${clientName}'s chapters`}>{chaptersData.map((item, index) => <motion.button type="button" key={item.name} className={`is-card-${(index % 3) + 1}${visited.includes(index) ? ' is-visited' : ''}`} onClick={() => openChapter(index)} initial={reduced ? false : { opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .65, delay: reduced ? 0 : .12 + index * .1, ease: [0.22, 1, 0.36, 1] }} whileHover={reduced ? undefined : { y: -5 }} whileTap={reduced ? undefined : { scale: .985 }}>
+        <section className={`fd-chapter-directory-board ${chaptersData.length > 3 ? 'is-grid-layout' : ''}`} aria-label={`${clientName}'s chapters`}>{chaptersData.map((item, index) => <motion.button type="button" key={item.name} className={`is-card-${(index % 3) + 1}${visited.includes(index) ? ' is-visited' : ''}`} onClick={() => openChapter(index)} initial={reduced ? false : { opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .65, delay: reduced ? 0 : .12 + index * .1, ease: [0.22, 1, 0.36, 1] }} whileHover={reduced ? undefined : { y: -5 }} whileTap={reduced ? undefined : { scale: .985 }}>
           <motion.span className="fd-chapter-directory-photo" animate={reduced ? undefined : { scale: [1.01, 1.055], x: index % 2 ? ['0%', '-1%'] : ['-1%', '1%'] }} transition={{ duration: 9 + index, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={item.photos[0].name} url={item.photos[0].url} alt={`${item.name} chapter cover`} eager={index === 0} sizes="(max-width: 767px) 64vw, 34vw" /></motion.span>
           <span className="fd-chapter-directory-shade" />
           <span className="fd-chapter-directory-number">0{index + 1}</span>
@@ -873,7 +989,14 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio }) {
 
   useEffect(() => () => audio.current?.pause(), []);
 
-  return <div className="fd-page fd-album">
+  const themeStyles = getFormatThemeStyles(delivery, {
+    bg: '#061426',
+    surface: '#eadcc7',
+    text: '#f5f7fb',
+    accent: '#ef8969'
+  });
+
+  return <div className="fd-page fd-album" style={themeStyles}>
     <audio ref={audio} src={audioTrack} loop preload="metadata" muted={muted} />
     <DemoHeader format="Album" client={client} sectionId="album" onGallery={() => setGallery(true)} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     {!started ? <main className="fd-album-cover">
@@ -884,7 +1007,36 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio }) {
     </main> : <main className="fd-album-reader" aria-live="polite" onTouchStart={event => { touchStart.current = event.changedTouches[0].clientX; }} onTouchEnd={event => { if (touchStart.current === null) return; const distance = event.changedTouches[0].clientX - touchStart.current; touchStart.current = null; if (Math.abs(distance) > 45) distance < 0 ? next() : previous(); }}>
       <div className="fd-album-reader-head"><span>{clientName.toUpperCase()}</span><div><i>{String(page + 1).padStart(2, '0')}</i><b>/</b><i>{String(spreadsData.length).padStart(2, '0')}</i></div><span>{albumTitle.toUpperCase()} · {new Date().getFullYear()}</span></div>
       <div className="fd-album-stage"><AnimatePresence mode="wait" custom={direction}><motion.div key={spreadsData[page].id + page} custom={direction} initial={reduced ? false : { opacity: .58, x: direction > 0 ? 38 : -38, clipPath: direction > 0 ? 'inset(0 0 0 7%)' : 'inset(0 7% 0 0)' }} animate={{ opacity: 1, x: 0, clipPath: 'inset(0 0 0 0%)' }} exit={reduced ? undefined : { opacity: 0, x: direction > 0 ? -26 : 26, clipPath: direction > 0 ? 'inset(0 7% 0 0)' : 'inset(0 0 0 7%)' }} transition={{ duration: reduced ? 0 : .68, ease: [0.22, 1, 0.36, 1] }}><AlbumSpread spread={spreadsData[page]} index={page} reduced={reduced} onGallery={() => setGallery(true)} /></motion.div></AnimatePresence></div>
-      <footer className="fd-album-controls"><button type="button" onClick={previous}><ChevronLeft size={18} /><span>{page === 0 ? 'Back to cover' : 'Previous page'}</span></button><div>{spreadsData.map((spread, index) => <button type="button" key={spread.id + index} className={page === index ? 'is-active' : ''} onClick={() => { setDirection(index > page ? 1 : -1); setPage(index); }} aria-label={`Open album page ${index + 1}`}><i /></button>)}</div><button type="button" onClick={next} disabled={page === spreadsData.length - 1}><span>Next page</span><ChevronRight size={18} /></button></footer>
+      <footer className="fd-album-controls">
+        <button type="button" onClick={previous}>
+          <ChevronLeft size={18} />
+          <span>{page === 0 ? 'Back to cover' : 'Previous page'}</span>
+        </button>
+        <div className="fd-album-dots-wrap">
+          {spreadsData.length <= 10 ? (
+            spreadsData.map((spread, index) => (
+              <button
+                type="button"
+                key={spread.id + index}
+                className={page === index ? 'is-active' : ''}
+                onClick={() => {
+                  setDirection(index > page ? 1 : -1);
+                  setPage(index);
+                }}
+                aria-label={`Open album page ${index + 1}`}
+              >
+                <i />
+              </button>
+            ))
+          ) : (
+            <span className="fd-album-counter">Spread {page + 1} of {spreadsData.length}</span>
+          )}
+        </div>
+        <button type="button" onClick={next} disabled={page === spreadsData.length - 1}>
+          <span>Next page</span>
+          <ChevronRight size={18} />
+        </button>
+      </footer>
     </main>}
     {started && <button className="fd-album-sound" type="button" onClick={toggleSound} aria-label={muted ? 'Turn album soundtrack on' : 'Mute album soundtrack'}>{muted ? <VolumeX size={17} /> : <Volume2 size={17} />}<span>{muted ? 'Sound off' : 'Sound on'}</span></button>}
     <AnimatePresence>{gallery && <DemoGallery photos={photos} title={client} onClose={() => setGallery(false)} delivery={delivery} {...galleryProps} />}</AnimatePresence>

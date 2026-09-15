@@ -9,8 +9,9 @@ export function Reveal({ children, className = '', delay = 0, ...props }) {
   return <motion.div className={className} initial={reduced ? false : { opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.14, margin: "-30px 0px" }} transition={{ duration: reduced ? 0 : 0.65, delay: reduced ? 0 : delay, ease: [0.22, 1, 0.36, 1] }} {...props}>{children}</motion.div>;
 }
 
-export function Photo({ name, url, alt, className = '', eager = false, sizes = '(max-width: 640px) 100vw, (max-width: 1024px) 60vw, 50vw', ...props }) {
+export function Photo({ name, url, thumbnailUrl, alt, className = '', eager = false, sizes = '(max-width: 640px) 100vw, (max-width: 1024px) 60vw, 50vw', ...props }) {
   const imageRef = React.useRef(null);
+  const [loaded, setLoaded] = React.useState(false);
   const [nearViewport, setNearViewport] = React.useState(eager);
 
   React.useEffect(() => {
@@ -25,7 +26,7 @@ export function Photo({ name, url, alt, className = '', eager = false, sizes = '
       if (!entries.some(entry => entry.isIntersecting)) return;
       setNearViewport(true);
       observer.disconnect();
-    }, { rootMargin: '140% 0px', threshold: 0.01 });
+    }, { rootMargin: '160% 0px', threshold: 0.01 });
 
     observer.observe(image);
     return () => observer.disconnect();
@@ -40,7 +41,15 @@ export function Photo({ name, url, alt, className = '', eager = false, sizes = '
       loading={eager ? 'eager' : 'lazy'}
       fetchPriority={eager ? 'high' : nearViewport ? 'auto' : 'low'}
       decoding="async"
-      className={'v-photo ' + className}
+      onLoad={() => setLoaded(true)}
+      className={'v-photo ' + (loaded ? 'is-loaded ' : 'is-loading ') + className}
+      style={{
+        backgroundImage: thumbnailUrl && !loaded ? `url("${thumbnailUrl}")` : undefined,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        transition: 'filter 0.35s ease, opacity 0.35s ease',
+        ...props.style
+      }}
       {...props}
     />;
   }

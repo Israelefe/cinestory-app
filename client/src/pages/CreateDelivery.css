@@ -65,3 +65,14 @@
 /* Format Card Selected State */
 .v-format-recommendations>button.is-selected{border-color:#ff5a47;background:rgba(255,90,71,0.08);box-shadow:0 0 0 1px #ff5a47,0 4px 20px rgba(255,90,71,0.1)}
 .v-format-check{position:absolute;top:12px;right:12px;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#ff5a47;color:#fff}
+
+/* Refined Form Fields & Textarea Styling */
+.v-create-field{display:grid;gap:10px}
+.v-create-field.is-wide{grid-column:1/-1}
+.v-create-field-header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.v-create-field-header label{color:#ded7d0;font-size:14px;font-weight:600;letter-spacing:-0.01em}
+.v-create-field-header small{color:#847d76;font-size:12px;font-variant-numeric:tabular-nums}
+.v-create-field-hint{margin:0;color:#918a83;font-size:13px;font-weight:400;line-height:1.55}
+.v-create-form textarea{font-family:inherit;font-size:14px;font-weight:400!important;line-height:1.65;color:#f2ece6}
+.v-create-form textarea::placeholder{color:#69635d;font-weight:400!important;font-style:normal;opacity:1}
+.v-create-form input::placeholder{color:#69635d;font-weight:400!important;font-style:normal;opacity:1}

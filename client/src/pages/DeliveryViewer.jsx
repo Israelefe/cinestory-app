@@ -81,11 +81,20 @@ export default function DeliveryViewer() {
     if (!selected) return;
     if (audioState.playing === kind) {
       selected.pause();
-      setAudioState({ playing: '' });
+      if (kind === 'narration' && soundtrackRef.current && !soundtrackRef.current.paused) {
+        soundtrackRef.current.volume = 1.0;
+        setAudioState({ playing: 'soundtrack' });
+      } else {
+        setAudioState({ playing: '' });
+      }
       return;
     }
-    other?.pause();
     try {
+      if (kind === 'narration' && soundtrackRef.current && !soundtrackRef.current.paused) {
+        soundtrackRef.current.volume = 0.20;
+      } else {
+        other?.pause();
+      }
       await selected.play();
       setAudioState({ playing: kind });
     } catch {
@@ -117,7 +126,15 @@ export default function DeliveryViewer() {
         `/v1/deliveries/public/${delivery.publicId}/photos/${assetId}/download`,
         { headers: accessHeaders(delivery.publicId) }
       );
-      window.location.assign(response.data.data.url);
+      const url = response.data.data.url;
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.download = `photo-${assetId}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
     } catch (err) {
       toast.error(apiMessage(err, 'We could not prepare that download.'));
     } finally {
@@ -132,7 +149,16 @@ export default function DeliveryViewer() {
         `/v1/deliveries/public/${delivery.publicId}/download-all`,
         { headers: accessHeaders(delivery.publicId) }
       );
-      window.location.assign(response.data.data.url);
+      const url = response.data.data.url;
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.download = `${(delivery.clientName || 'gallery').replace(/[^a-z0-9_-]/gi, '_')}-photographs.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      toast.info('Gallery download started. Check your browser downloads.');
     } catch (err) {
       toast.error(apiMessage(err, 'We could not prepare the full gallery.'));
     } finally {
@@ -206,7 +232,7 @@ export default function DeliveryViewer() {
     format === 'canvas' ? <CanvasDemo {...sharedProps} /> :
     format === 'chapters' ? <ChaptersDemo {...sharedProps} /> :
     format === 'album' ? <AlbumDemo {...sharedProps} /> :
-    <StoryViewer delivery={delivery} />;
+    <StoryViewer {...sharedProps} />;
 
   return (
     <>
@@ -224,7 +250,14 @@ export default function DeliveryViewer() {
           ref={narrationRef}
           src={delivery.narration.url}
           preload="metadata"
-          onEnded={() => setAudioState({ playing: '' })}
+          onEnded={() => {
+            if (soundtrackRef.current && !soundtrackRef.current.paused) {
+              soundtrackRef.current.volume = 1.0;
+              setAudioState({ playing: 'soundtrack' });
+            } else {
+              setAudioState({ playing: '' });
+            }
+          }}
         />
       )}
 

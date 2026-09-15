@@ -432,7 +432,37 @@ export default function CreateDelivery({ user }) {
         <AnimatePresence mode="wait">
           {busy === 'loading' ? <Stage key="loading"><div className="v-create-loading"><LoaderCircle className="v-spin" size={25} /><strong>Opening your draft…</strong></div></Stage> : step === 1 ? <Stage key="brief">
             <StageHead eyebrow="01 / The photographer's context" title="Tell Veylo what this shoot is about." copy="Give Veylo the facts it cannot learn from the photographs alone. This is where the personal details come from." />
-            <form className="v-create-form" onSubmit={startDraft}><label>Client name<input value={brief.clientName} onChange={event => setBrief(current => ({ ...current, clientName: event.target.value }))} maxLength={100} required placeholder="Ada" /></label><label>Type of shoot<select value={brief.shootType} onChange={event => setBrief(current => ({ ...current, shootType: event.target.value }))} required><option value="" disabled>Choose the type of shoot</option>{SHOOT_TYPES.map(type => <option key={type} value={type}>{type}</option>)}</select></label><label className="is-wide">What should Veylo know?<textarea value={brief.brief} onChange={event => setBrief(current => ({ ...current, brief: event.target.value }))} minLength={20} maxLength={2000} required rows={7} placeholder="Tell us what the shoot was for, who it celebrates, the mood on set, outfits or moments that matter, and anything the client should feel when they open it." /><small>{brief.brief.length} / 2,000</small></label><button className="v-create-primary" disabled={Boolean(busy)}>Add the finished photographs<ArrowRight size={17} /></button></form>
+            <form className="v-create-form" onSubmit={startDraft}>
+              <label>Client name
+                <input value={brief.clientName} onChange={event => setBrief(current => ({ ...current, clientName: event.target.value }))} maxLength={100} required placeholder="Ada" />
+              </label>
+              <label>Type of shoot
+                <select value={brief.shootType} onChange={event => setBrief(current => ({ ...current, shootType: event.target.value }))} required>
+                  <option value="" disabled>Choose the type of shoot</option>
+                  {SHOOT_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
+                </select>
+              </label>
+              <div className="v-create-field is-wide">
+                <div className="v-create-field-header">
+                  <label htmlFor="shoot-brief">What should Veylo know?</label>
+                  <small>{brief.brief.length} / 2,000</small>
+                </div>
+                <p className="v-create-field-hint">
+                  Tell us what the shoot celebrates, outfits or moments that matter, the mood on set, and anything the client should feel when opening their photos.
+                </p>
+                <textarea
+                  id="shoot-brief"
+                  value={brief.brief}
+                  onChange={event => setBrief(current => ({ ...current, brief: event.target.value }))}
+                  minLength={20}
+                  maxLength={2000}
+                  required
+                  rows={6}
+                  placeholder="e.g. Ada’s 30th birthday studio session in Lagos. She wore a tailored green velvet suit. The mood was poised, joyous, and celebratory."
+                />
+              </div>
+              <button className="v-create-primary" disabled={Boolean(busy)}>Add the finished photographs<ArrowRight size={17} /></button>
+            </form>
           </Stage> : step === 2 ? <Stage key="upload">
             <StageHead eyebrow="02 / Finished photographs" title="Add the files your client will receive." copy={`Upload the final edited photographs. Veylo will study the complete set without changing your retouching or colour grade.`} />
             <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={event => addPhotos(event.target.files)} />

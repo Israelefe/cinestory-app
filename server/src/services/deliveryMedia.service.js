@@ -19,7 +19,7 @@ export function createUploadSignature({ userId, deliveryId, resourceType = 'imag
   const folder = deliveryFolder(userId, deliveryId);
   const publicId = crypto.randomUUID();
   const params = resourceType === 'image'
-    ? { timestamp, folder, public_id: publicId, type: 'authenticated', overwrite: false, unique_filename: false, allowed_formats: ['jpg', 'jpeg', 'png', 'webp'], eager: 'c_limit,w_1600/f_auto,q_auto:good|c_fill,w_480,h_600,g_auto/f_auto,q_auto:eco' }
+    ? { timestamp, folder, public_id: publicId, type: 'authenticated', overwrite: false, unique_filename: false, allowed_formats: ['jpg', 'jpeg', 'png', 'webp'], eager: 'c_limit,w_1600/f_auto,q_auto:good|c_fill,w_800,h_1000,g_auto/f_auto,q_auto:good' }
     : { timestamp, folder: `${folder}/audio`, public_id: publicId, type: 'authenticated', overwrite: false, unique_filename: false, allowed_formats: ['mp3', 'wav', 'm4a', 'ogg', 'aac'] };
   return { ...params, signature: cloudinary.utils.api_sign_request(params, process.env.CLOUDINARY_API_SECRET), apiKey: process.env.CLOUDINARY_API_KEY, cloudName: process.env.CLOUDINARY_CLOUD_NAME, resourceType };
 }
@@ -43,14 +43,15 @@ export async function confirmUploadedAsset({ userId, deliveryId, publicId, versi
   return cloudinary.api.resource(publicId, { resource_type: resourceType, type: 'authenticated' });
 }
 
-export function signedImageUrl(publicId, { width = 1600, thumbnail = false, attachment = false, original = false, resourceType = 'image' } = {}) {
+export function signedImageUrl(publicId, { width = 1600, thumbnail = false, attachment = false, original = false, resourceType = 'image', format } = {}) {
   ready();
   const transformation = resourceType !== 'image' ? undefined : original
     ? undefined
     : thumbnail
-      ? [{ crop: 'fill', width: 480, height: 600, gravity: 'auto', quality: 'auto:eco', fetch_format: 'auto' }]
+      ? [{ crop: 'fill', width: 800, height: 1000, gravity: 'auto', quality: 'auto:good', fetch_format: 'auto' }]
       : [{ crop: 'limit', width, quality: 'auto:good', fetch_format: 'auto' }];
-  return cloudinary.url(publicId, { secure: true, resource_type: resourceType, type: 'authenticated', sign_url: true, transformation, flags: attachment ? 'attachment' : undefined });
+  const audioFormat = resourceType === 'video' ? (format || 'mp3') : format;
+  return cloudinary.url(publicId, { secure: true, resource_type: resourceType, type: 'authenticated', sign_url: true, transformation, flags: attachment ? 'attachment' : undefined, format: audioFormat });
 }
 
 export function signedArchiveUrl(publicIds, filename = 'veylo-gallery', prefix = '') {
