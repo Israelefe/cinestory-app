@@ -91,9 +91,9 @@ app.use((error, req, res, next) => {
   res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
 });
 
-connectDB().then(connection => {
+connectDB().then(async connection => {
   if (!connection && process.env.NODE_ENV === 'production') process.exit(1);
-  seedAdminFromEnv();
+  await seedAdminFromEnv();
   app.listen(PORT, () => {
     console.log(`[Veylo] Server running at http://localhost:${PORT}`);
     checkCloudinaryConnection().then(result => {

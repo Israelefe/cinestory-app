@@ -9,7 +9,33 @@ export async function adminLogin(req, res) {
     }
 
     const normalized = String(username).trim().toLowerCase();
-    const admin = await AdminUser.findOne({ username: normalized }).select('+password');
+    let admin = await AdminUser.findOne({ username: normalized }).select('+password');
+
+    const envUsername = String(process.env.ADMIN_USERNAME || process.env.ADMIN_INITIAL_USERNAME || '').trim().toLowerCase();
+    const envPassword = process.env.ADMIN_PASSWORD || process.env.ADMIN_INITIAL_PASSWORD;
+
+    // If credentials match the server environment variables, ensure account exists and password is in sync
+    if (envUsername && envPassword && normalized === envUsername && password === envPassword) {
+      if (!admin) {
+        admin = new AdminUser({
+          username: normalized,
+          name: process.env.ADMIN_NAME || 'Veylo Administrator',
+          password: envPassword,
+          role: 'superadmin',
+          accountStatus: 'active'
+        });
+        await admin.save();
+        console.info(`[admin] Created admin "${normalized}" from environment credentials on login.`);
+      } else {
+        const isMatch = await admin.comparePassword(password);
+        if (!isMatch) {
+          admin.password = envPassword;
+          admin.accountStatus = 'active';
+          await admin.save();
+          console.info(`[admin] Updated admin password for "${normalized}" to match environment credentials.`);
+        }
+      }
+    }
 
     if (!admin || admin.accountStatus !== 'active') {
       return res.status(401).json({ success: false, message: 'Invalid username or password.' });
@@ -34,7 +60,6 @@ export async function adminLogin(req, res) {
       { expiresIn: '14d', issuer: 'veylo-api', audience: 'veylo-admin' }
     );
 
-    // Set secure cookie as well for same-origin or partitioned access
     res.cookie('veylo_admin_token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

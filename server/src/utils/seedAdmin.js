@@ -6,6 +6,7 @@ export async function seedAdminFromEnv() {
   const name = process.env.ADMIN_NAME || 'Veylo Administrator';
 
   if (!username || !password) {
+    console.info('[admin] No ADMIN_USERNAME or ADMIN_PASSWORD set in environment. Skipping auto-provision.');
     return;
   }
 
@@ -23,12 +24,16 @@ export async function seedAdminFromEnv() {
       });
       await admin.save();
       console.info(`[admin] Auto-created administrator "${normalized}" from environment variables.`);
-    } else if (process.env.ADMIN_FORCE_SYNC === 'true') {
-      admin.password = password;
-      admin.name = name;
-      admin.accountStatus = 'active';
-      await admin.save();
-      console.info(`[admin] Synchronized credentials for administrator "${normalized}".`);
+    } else {
+      const isMatch = await admin.comparePassword(password);
+      if (!isMatch) {
+        admin.password = password;
+        admin.accountStatus = 'active';
+        await admin.save();
+        console.info(`[admin] Synchronized administrator password for "${normalized}" from environment variables.`);
+      } else {
+        console.info(`[admin] Administrator "${normalized}" verified and ready.`);
+      }
     }
   } catch (error) {
     console.error('[admin/seed]', error.message);
