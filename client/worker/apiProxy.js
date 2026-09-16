@@ -1,19 +1,17 @@
 /**
  * Reverse proxy for `/api/*` to the Render-hosted Express API.
  *
- * Replaces the `rewrites` rule in `client/vercel.json`. Keeping the API on the
- * site's own origin is deliberate, not incidental: the client calls it with
- * `withCredentials: true` and the API issues SameSite=Lax cookies, which
- * browsers only attach to same-site requests. Pointing `VITE_API_URL` straight
- * at Render instead would require switching the cookies to SameSite=None.
+ * Keeping the API on the site's own origin is deliberate, not incidental: the
+ * client calls it with `withCredentials: true` and the API issues SameSite=Lax
+ * cookies, which browsers only attach to same-site requests. Pointing
+ * `VITE_API_URL` straight at Render instead would require SameSite=None.
  */
 const DEFAULT_API_ORIGIN = 'https://veylo-api-ptk3.onrender.com';
 
 const EDGE_KEY_HEADER = 'x-veylo-edge-key';
 const EDGE_CLIENT_IP_HEADER = 'x-veylo-client-ip';
 
-export async function onRequest(context) {
-  const { request, env } = context;
+export function handleApiProxy(request, env) {
   const apiOrigin = (env?.VEYLO_API_ORIGIN || DEFAULT_API_ORIGIN).replace(/\/+$/, '');
 
   const incoming = new URL(request.url);

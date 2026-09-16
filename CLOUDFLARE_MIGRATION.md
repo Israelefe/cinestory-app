@@ -1,15 +1,17 @@
-# Moving the client and admin to Cloudflare Pages
+# Moving the client and admin to Cloudflare
 
-The API stays on Render. Only the two frontends move, from Vercel to Cloudflare Pages.
+The API stays on Render. Only the two frontends move, from Vercel to Cloudflare.
 
-The apps are plain Vite + React SPAs, so the port is small: one Vercel function was
-rewritten as a Pages Function, one rewrite rule became a proxy Function, and a header
-became a `_headers` file.
+The apps are plain Vite + React SPAs, so the port is small: one Vercel function became a
+small Worker script, one rewrite rule became a route handler, and the COOP header carried
+straight over. Two `server/` changes came with it, both of which the edge depends on.
 
-Two small `server/` changes came with it, both of which the edge depends on: a
-`*.pages.dev` CORS allowance so preview deploys can authenticate, and a client-IP fix so
-the API stops resolving every visitor to Cloudflare's egress IP. See
-[Rate limiting and `req.ip`](#rate-limiting-and-reqip).
+> **Workers, not Pages.** Cloudflare's dashboard now steers new projects to Workers with
+> static assets, and the Pages flow these files were first written against is no longer
+> offered in every account. The config here is the Workers shape: a `main` script plus an
+> `[assets]` block. `_headers` and `_redirects` are still honoured from the asset
+> directory, and `not_found_handling = "single-page-application"` reproduces the Pages SPA
+> fallback, so nothing is lost by being on Workers.
 
 ## What was added
 
@@ -17,33 +19,30 @@ the API stops resolving every visitor to Cloudflare's egress IP. See
 
 | File | Purpose |
 | --- | --- |
-| `client/functions/api/[[path]].js` | Reverse-proxies `/api/*` to Render (replaces the `rewrites` entry in `vercel.json`) |
-| `client/functions/d/[publicId].js` | Link-preview shell for `/d/:publicId` (port of `client/api/delivery-share.js`) |
+| `client/worker/index.js` | Router. Only `/api/*` and `/d/*` reach it |
+| `client/worker/apiProxy.js` | Reverse-proxies `/api/*` to Render |
+| `client/worker/deliveryShell.js` | Link-preview shell for `/d/:publicId` |
 | `client/public/_headers` | The `Cross-Origin-Opener-Policy` header Vercel set on `/(.*)` |
-| `client/wrangler.toml` | Pages project config + local dev |
+| `client/wrangler.toml` | Project config: `main`, `[assets]`, `run_worker_first` |
 | `client/scripts/verify-share-meta.mjs` | Tests the link-preview rewriting against the real `index.html` |
 
 **Admin**
 
 | File | Purpose |
 | --- | --- |
-| `admin/wrangler.toml` | Pages project config + local dev |
+| `admin/wrangler.toml` | Assets-only config — no Worker script, since the admin has no dynamic routes |
 
 **Server**
 
 | File | Purpose |
 | --- | --- |
-| `server/src/middleware/clientIp.middleware.js` | Resolves `req.ip` to the real visitor for edge traffic (see [below](#rate-limiting-and-reqip)) |
+| `server/src/middleware/clientIp.middleware.js` | Resolves `req.ip` to the real visitor (see [below](#rate-limiting-and-reqip)) |
 | `server/scripts/verify-client-ip.mjs` | Tests that resolution, including the spoofing cases |
-| `server/server.js` | Mounts the middleware; allows `*.pages.dev` origins so preview deploys can log in |
-
-The Vercel configs (`client/vercel.json`, `client/api/`, `admin/vercel.json`) are
-deliberately left in place so the current deployment keeps serving during cutover.
-Delete them once Cloudflare is verified — see [Cleanup](#cleanup).
+| `server/server.js` | Mounts the middleware; allows `*.pages.dev` / `*.workers.dev` origins so preview deploys can log in |
 
 ## Dashboard setup
 
-Two separate Pages projects, both connected to this repo.
+Two separate Workers, both connected to this repo.
 
 ### `veylo-client`
 
@@ -51,21 +50,22 @@ Two separate Pages projects, both connected to this repo.
 | --- | --- |
 | Root directory | `client` |
 | Build command | `npm ci && npm run build` |
-| Build output directory | `dist` |
+| Deploy command | `npx wrangler deploy` (the default — leave it) |
 
 Environment variables:
 
 | Variable | Notes |
 | --- | --- |
-| `VITE_API_URL` | Leave **unset** in production. The production fallback is `/api`, which routes through the proxy Function. Setting it to the Render URL directly would make every request cross-origin and break the auth cookies. |
+| `VITE_API_URL` | Leave **unset**. The production fallback is `/api`, which routes through the Worker. Setting it to the Render URL directly makes every request cross-origin and breaks the auth cookies. |
 | `VITE_APP_URL` | `https://veylo.com.ng` |
 | `VITE_TURNSTILE_SITE_KEY` | From the Turnstile dashboard |
 | `VITE_GOOGLE_CLIENT_ID` | Must list the production origin as an authorised JS origin |
-| `VEYLO_API_ORIGIN` | `https://veylo-api-ptk3.onrender.com` (read by the Functions) |
-| `VEYLO_WEB_ORIGIN` | `https://veylo.com.ng` (read by the Functions) |
+| `VEYLO_EDGE_KEY` | Same value as Render's — see [Rate limiting](#rate-limiting-and-reqip) |
+| `VEYLO_API_ORIGIN` | `https://veylo-api-ptk3.onrender.com` |
+| `VEYLO_WEB_ORIGIN` | `https://veylo.com.ng` |
 
-`VEYLO_*` variables are read at **request time** via `context.env`, not inlined at build
-time like the `VITE_*` ones. Changing them needs no rebuild.
+`VEYLO_*` variables are read at **request time** from `env`, not inlined at build time like
+the `VITE_*` ones. Changing them needs no rebuild.
 
 ### `veylo-admin`
 
@@ -73,60 +73,71 @@ time like the `VITE_*` ones. Changing them needs no rebuild.
 | --- | --- |
 | Root directory | `admin` |
 | Build command | `npm ci && npm run build` |
-| Build output directory | `dist` |
-| `VITE_API_URL` | Leave unset for the deployed admin if it is served from the same origin; otherwise the Render URL, and update `ALLOWED_ORIGINS` on Render to match. |
+| Deploy command | `npx wrangler deploy` |
+| `VITE_API_URL` | Whatever the Vercel admin project uses today. The admin has no `/api` proxy — `admin/vercel.json` never had one — so it talks to Render directly, as before. |
 
 Both `wrangler.toml` files pin a `name`. Change it if you create the projects under
-different names, or `wrangler pages deploy` will target the wrong project.
+different names, or the deploy will target the wrong Worker.
 
 ## How routes resolve
 
+`assets.run_worker_first = ["/api", "/api/*", "/d/*"]` sends only those paths to the
+Worker. Everything else is served by the asset layer, so a page view or an image costs no
+Worker invocation at all.
+
 | Route | Handled by |
 | --- | --- |
-| `/api/*` | `functions/api/[[path]].js` → `https://veylo-api-ptk3.onrender.com/api/*` |
-| `/d/:publicId` | `functions/d/[publicId].js` → `index.html` with the delivery's OG tags swapped in |
-| everything else | Static assets in `dist`, falling back to `index.html` for unmatched paths |
+| `/api/*` | `worker/index.js` → `worker/apiProxy.js` → `https://veylo-api-ptk3.onrender.com/api/*` |
+| `/d/:publicId` | `worker/index.js` → `worker/deliveryShell.js` → `index.html` with the delivery's OG tags swapped in |
+| everything else | Static assets, falling back to `index.html` via `not_found_handling = "single-page-application"` |
 
-There is intentionally **no `_redirects` file**. SPA fallback is the documented Pages
-default — "Pages' default single-page application behavior matches all incoming paths to
-the root (`/`)" — and it applies here because the project has no top-level `404.html`. So
-there is nothing to configure, and a `/* /index.html 200` catch-all would buy nothing
-while risking a shadow over the Functions. Don't add one.
+The SPA fallback is a config value now, not a `_redirects` file, so there is no catch-all
+rule that could shadow the Worker's routes. If you ever need to add redirects, put a
+`_redirects` file in `client/public/` and it will be honoured from `dist`.
 
 ## Verifying before you cut over
 
-Everything below runs against `*.pages.dev`, so DNS is untouched until you are happy.
-
-```bash
-cd client && npm run build && npx wrangler pages dev
-```
+Everything below runs against the `*.workers.dev` URL, so DNS is untouched until you are
+happy.
 
 - [ ] `node scripts/verify-share-meta.mjs` — 20 checks over the OG rewriting. Runs in plain Node, no Cloudflare account needed.
+- [ ] `npm run verify:client-ip` in `server/` — 8 checks over client IP resolution, including the spoofing cases.
 - [ ] Deep link: open `/dashboard` directly and reload. It must render the app, not 404.
-- [ ] Proxy: `curl -i localhost:8788/api/health` returns the API's health JSON, not HTML.
-- [ ] Link preview: open a real `/d/<publicId>` in the dev server, **view source**, and confirm `og:title`, `og:description`, `og:image` and `og:url` are the delivery's, not Veylo's defaults.
-- [ ] Auth cookies: sign in, reload. `withCredentials: true` only works because `/api/*` is same-origin — if the session drops, check that `Set-Cookie` survived the proxy intact (the function returns the upstream response untouched precisely so repeated `Set-Cookie` headers are not collapsed).
+- [ ] Proxy: `curl -i <worker-url>/api/health` returns the API's health JSON, not HTML.
+- [ ] Link preview: open a real `/d/<publicId>`, **view source**, and confirm `og:title`, `og:description`, `og:image` and `og:url` are the delivery's, not Veylo's defaults.
+- [ ] Auth cookies: sign in, reload. `withCredentials: true` only works because `/api/*` is same-origin — if the session drops, check that `Set-Cookie` survived the proxy intact (the handler returns the upstream response untouched precisely so repeated `Set-Cookie` headers are not collapsed).
 - [ ] Downloads: request a photo download and confirm the browser still receives the 3xx to the signed Cloudinary URL (the proxy sets `redirect: 'manual'` for this).
-- [ ] Google sign-in: the popup must complete. `_headers` carries the COOP value it needs, and the `/d/:publicId` function sets it too so it applies on delivery links.
-- [ ] Sign in from the `*.pages.dev` URL itself. That origin is only permitted because of the `pages.dev` rule added to `isAllowedOrigin`; without it, preview deploys pass CORS on nothing and login fails with a 403.
+- [ ] Google sign-in: the popup must complete. `public/_headers` carries the COOP value, and the `/d/:publicId` route sets it too so it applies on delivery links.
+- [ ] Sign in from the `*.workers.dev` URL itself. That origin is only permitted because of the `workers.dev` rule in `isAllowedOrigin`; without it, preview deploys fail CORS at login with a 403.
+
+Local development with the Worker wired up exactly as production:
+
+```bash
+cd client && npm run build && npx wrangler dev
+```
 
 ## Domain and DNS
 
 Keep the existing hostnames. If `veylo.com.ng` is already on Cloudflare DNS, adding a
-Pages custom domain is a CNAME and nothing else changes — Google OAuth authorised
-origins, and Render's `CLIENT_URL`, `ADMIN_URL` and `ALLOWED_ORIGINS`, all stay valid.
-Moving DNS from elsewhere means changing nameservers, which is the only slow part.
+custom domain is a CNAME and nothing else changes — Google OAuth authorised origins, and
+Render's `CLIENT_URL`, `ADMIN_URL` and `ALLOWED_ORIGINS`, all stay valid. Moving DNS from
+elsewhere means changing nameservers, which is the only slow part.
 
 Because the hostnames don't change, no server-side configuration needs touching.
 
 ## Things worth knowing
 
-**Every API call is now a Function invocation.** The static hosting is unmetered, but
-`/api/*` requests pass through `functions/api/[[path]].js`, so they count against the
-Workers/Pages request allowance (100k/day on the free plan, $5/mo for 10M on paid). Worth
-checking against real API volume if the app polls. Uploads are unaffected — they go
-straight from the browser to `api.cloudinary.com` (`client/src/utils/storageUpload.js:16`),
-never through the proxy, so the 25 MiB Pages request-body limit doesn't come into play.
+**Worker invocations are now the metered thing.** Static hosting is free and unmetered, and
+because `run_worker_first` is scoped to two route patterns, page views and image loads cost
+no invocation. Only `/api/*` and `/d/*` do — the free plan is 100k/day, $5/mo for 10M.
+Uploads never touch the Worker: they go straight from the browser to `api.cloudinary.com`
+(`client/src/utils/storageUpload.js:16`).
+
+**`/d/:publicId` responses are edge-cached for 300s** via the Cache API, standing in for the
+`s-maxage` the original Vercel function asked for (Cloudflare doesn't apply `s-maxage` to a
+Worker response on its own). Cached per public ID, and the body is identical for every
+visitor — the PIN token lives in `sessionStorage` on the client, so nothing user-specific is
+cached.
 
 ### Rate limiting and `req.ip`
 
@@ -149,8 +160,8 @@ limiting, the same wrong address was handed to the Turnstile check
 This was already true on Vercel — identical two-hop shape — so the move didn't cause it,
 but the port is where it surfaced.
 
-**The fix, now in place.** `functions/api/[[path]].js` sends `X-Veylo-Client-IP` (taken
-from Cloudflare's own `cf-connecting-ip`) alongside `X-Veylo-Edge-Key`, and
+**The fix, now in place.** `worker/apiProxy.js` sends `X-Veylo-Client-IP` (taken from
+Cloudflare's own `cf-connecting-ip`) alongside `X-Veylo-Edge-Key`, and
 `server/src/middleware/clientIp.middleware.js` rewrites `X-Forwarded-For` to that single
 trusted value when the secret matches. Two properties are load-bearing:
 
@@ -162,7 +173,7 @@ trusted value when the secret matches. Two properties are load-bearing:
   unset on the server, behaviour is byte-for-byte what it was before.
 
 **To enable it:** Render generates `VEYLO_EDGE_KEY` (declared in `render.yaml`). Copy the
-generated value into both Pages projects' environment variables as `VEYLO_EDGE_KEY`.
+generated value into both Workers' environment variables as `VEYLO_EDGE_KEY`.
 
 The limits this restores, tightest first:
 
@@ -176,15 +187,6 @@ A wedding's worth of guests opening one link in a quarter-hour is precisely the 
 exhausts `publicAccessLimit`. It stays at 80, but from now on it means 80 *per guest*
 rather than 80 for the whole platform.
 
-`node scripts/verify-client-ip.mjs` covers the chain — including that a forged secret and
-a spoofed `X-Forwarded-For` both fail to win.
-
-**`/d/:publicId` responses are edge-cached for 300s** via the Cache API, standing in for
-the `s-maxage` the Vercel function asked for (Cloudflare doesn't apply `s-maxage` to a
-Function response on its own). Cached per public ID, and the body is identical for every
-visitor — the PIN token lives in `sessionStorage` on the client, so nothing user-specific
-is cached.
-
 ## Cleanup
 
 Once the Cloudflare deployment is verified:
@@ -194,7 +196,7 @@ git rm client/vercel.json client/api/delivery-share.js admin/vercel.json
 ```
 
 Then drop the now-dead `*.vercel.app` branch from `isAllowedOrigin` in `server/server.js`.
-Leave the `*.pages.dev` rule in place for as long as you want preview deploys to work, and
-remove it when you no longer do.
+Leave the `*.workers.dev` / `*.pages.dev` rules in place for as long as you want preview
+deploys to work, and remove them when you no longer do.
 
 `render.yaml` needs no change beyond the `VEYLO_EDGE_KEY` already declared there.

@@ -7,7 +7,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-import { applyShareMeta } from '../functions/d/[publicId].js';
+import { applyShareMeta } from '../worker/deliveryShell.js';
 
 const shellPath = fileURLToPath(new URL('../index.html', import.meta.url));
 

@@ -1,7 +1,14 @@
-# Cloudflare Pages project config.
+# Cloudflare Workers project config.
 #
-# `name` must match the Pages project name in the Cloudflare dashboard — update
-# it if you create the project under a different name.
+# The admin is a pure SPA with no dynamic routes, so there is no Worker script —
+# just static assets and the SPA fallback.
+#
+# `name` must match the project name in the Cloudflare dashboard — update it if
+# you create the project under a different name.
 name = "veylo-admin"
-compatibility_date = "2026-09-16"
-pages_build_output_dir = "dist"
+compatibility_date = "2026-09-17"
+
+[assets]
+directory = "./dist"
+# Reproduces the SPA fallback: unmatched paths get index.html.
+not_found_handling = "single-page-application"

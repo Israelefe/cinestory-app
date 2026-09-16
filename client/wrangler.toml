@@ -1,13 +1,23 @@
-# Cloudflare Pages project config.
+# Cloudflare Workers project config (static assets + a small Worker script).
 #
-# `name` must match the Pages project name in the Cloudflare dashboard — update
-# it if you create the project under a different name.
+# `name` must match the project name in the Cloudflare dashboard — update it if
+# you create the project under a different name.
 name = "veylo-client"
-compatibility_date = "2026-09-16"
-pages_build_output_dir = "dist"
+main = "worker/index.js"
+compatibility_date = "2026-09-17"
 
-# Lets `npx wrangler pages dev` serve the built app with the Functions in
-# `functions/` wired up exactly as they will run in production.
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+# Reproduces the SPA fallback: unmatched paths get index.html.
+not_found_handling = "single-page-application"
+# Only these routes invoke the Worker. Static assets and SPA routes are served
+# by the asset layer without a Worker invocation. The Worker handles `/api` and
+# `/d/*` fully, so nothing falls through.
+run_worker_first = ["/api", "/api/*", "/d/*"]
+
+# Local development values. In production these come from the dashboard's
+# environment variables; the code falls back to the same values either way.
 [vars]
 VEYLO_API_ORIGIN = "https://veylo-api-ptk3.onrender.com"
 VEYLO_WEB_ORIGIN = "https://veylo.com.ng"

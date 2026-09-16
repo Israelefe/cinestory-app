@@ -66,9 +66,9 @@ function isAllowedOrigin(origin) {
   const clean = origin.replace(/\/$/, '');
   if (allowedOrigins.has(clean)) return true;
   if (/^https:\/\/[a-zA-Z0-9_.-]+\.vercel\.app$/.test(clean)) return true;
-  // Preview deployments while the frontends move to Cloudflare Pages. Drop this
-  // once the cutover is done and the *.vercel.app line above with it.
-  if (/^https:\/\/[a-zA-Z0-9_.-]+\.pages\.dev$/.test(clean)) return true;
+  // Preview deployments while the frontends move to Cloudflare. Drop this once
+  // the cutover is done, and the *.vercel.app line above with it.
+  if (/^https:\/\/[a-zA-Z0-9_.-]+\.(pages\.dev|workers\.dev)$/.test(clean)) return true;
   return false;
 }
 

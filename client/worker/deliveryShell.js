@@ -1,25 +1,21 @@
 /**
  * Link-preview shell for `/d/:publicId` delivery links.
  *
- * Cloudflare Pages port of `client/api/delivery-share.js` (the Vercel function
- * that `client/vercel.json` rewired this route to). Crawlers do not run the SPA,
- * so this serves `index.html` with the delivery's title, description and cover
- * image swapped into the Open Graph and Twitter tags; the app then boots
- * normally and renders the real delivery client-side.
+ * Crawlers do not run the SPA, so this serves `index.html` with the delivery's
+ * title, description and cover image swapped into the Open Graph and Twitter
+ * tags; the app then boots normally and renders the real delivery client-side.
  */
 const DEFAULT_API_ORIGIN = 'https://veylo-api-ptk3.onrender.com';
 const DEFAULT_WEB_ORIGIN = 'https://veylo.com.ng';
 
 const PUBLIC_ID_PATTERN = /^[A-Za-z0-9_-]{20,80}$/;
 
-// Mirrors the `s-maxage=300, stale-while-revalidate=600` the Vercel function
-// asked for. Cloudflare does not apply `s-maxage` to a Function response on its
-// own, so the edge cache is written explicitly below.
+// Mirrors the `s-maxage=300, stale-while-revalidate=600` the original Vercel
+// function asked for. Cloudflare does not apply `s-maxage` to a Worker response
+// on its own, so the edge cache is written explicitly below.
 const CACHE_SECONDS = 300;
 
-export async function onRequest(context) {
-  const { request, env } = context;
-  const publicId = String(context.params?.publicId || '');
+export async function handleDeliveryShell(request, env, ctx, publicId) {
   if (!PUBLIC_ID_PATTERN.test(publicId)) return plain('Delivery not found.', 404);
 
   const cache = globalThis.caches?.default;
@@ -35,7 +31,7 @@ export async function onRequest(context) {
 
   let html = '';
   try {
-    html = await shellHtml(context);
+    html = await shellHtml(request, env);
     const meta = await shareMeta(env, publicId);
     const canonical = `${webOrigin(env)}/d/${publicId}`;
     const response = new Response(applyShareMeta(html, meta, canonical), {
@@ -43,12 +39,13 @@ export async function onRequest(context) {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': `public, max-age=${CACHE_SECONDS}, stale-while-revalidate=600`,
-        // Matches the COOP header the Vercel config set on /(.*). Without it the
-        // Google sign-in popup in the delivery header cannot post back.
+        // `_headers` covers the static assets, but this route is served by the
+        // Worker, so the COOP value the Google sign-in popup needs is set here
+        // too. Keeping it consistent across the origin matters.
         'Cross-Origin-Opener-Policy': 'same-origin-allow-popups'
       }
     });
-    if (cache) context.waitUntil(cache.put(cacheKey, response.clone()).catch(() => {}));
+    if (cache && ctx?.waitUntil) ctx.waitUntil(cache.put(cacheKey, response.clone()).catch(() => {}));
     return response;
   } catch {
     // Fall back to the un-personalised shell so the link still opens; only give
@@ -58,18 +55,11 @@ export async function onRequest(context) {
   }
 }
 
-/** Reads the built `index.html` from the Pages static assets. */
-async function shellHtml(context) {
-  const { request, env, next } = context;
-  if (env?.ASSETS?.fetch) {
-    const response = await env.ASSETS.fetch(new Request(new URL('/index.html', request.url)));
-    if (response.ok) return response.text();
-  }
-  // `next()` only resolves to the shell when Pages' SPA fallback is active, so
-  // it is a backup here rather than the primary path.
-  const fallback = await next();
-  if (fallback.ok) return fallback.text();
-  throw new Error('App shell unavailable.');
+/** Reads the built `index.html` from the static assets binding. */
+async function shellHtml(request, env) {
+  const response = await env.ASSETS.fetch(new Request(new URL('/index.html', request.url)));
+  if (!response.ok) throw new Error('App shell unavailable.');
+  return response.text();
 }
 
 async function shareMeta(env, publicId) {
