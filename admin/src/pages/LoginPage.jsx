@@ -39,9 +39,9 @@ export default function LoginPage({ onLoginSuccess }) {
       let message = err.response?.data?.message;
       if (!message) {
         if (!err.response) {
-          message = `Unable to reach the backend at "${api.defaults.baseURL || 'unknown'}". Please ensure your Render backend is running and VITE_API_URL is set on Vercel.`;
+          message = `Unable to reach the backend at "${api.defaults.baseURL || 'unknown'}". Please ensure your Render backend is running and VITE_API_URL is set on Cloudflare Pages.`;
         } else if (err.response.status === 404) {
-          message = `API route not found (404) at ${api.defaults.baseURL}. Check your VITE_API_URL in Vercel.`;
+          message = `API route not found (404) at ${api.defaults.baseURL}. Check your VITE_API_URL in Cloudflare Pages.`;
         } else if (err.response.status === 403) {
           message = `Access rejected (403): ${err.response.data?.message || 'CORS origin blocked by backend.'}`;
         } else {

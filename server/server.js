@@ -13,6 +13,7 @@ import deliveryRoutes from './src/routes/delivery.routes.js';
 import storageRoutes from './src/routes/storage.routes.js';
 import portfolioRoutes from './src/routes/portfolio.routes.js';
 import { paystackWebhook } from './src/controllers/billing.controller.js';
+import { resolveEdgeClientIp } from './src/middleware/clientIp.middleware.js';
 import { checkCloudinaryConnection } from './src/services/cloudinary.service.js';
 import { startDeliveryWorker } from './src/services/deliveryWorker.service.js';
 import { startRetentionWorker } from './src/services/retention.service.js';
@@ -53,6 +54,9 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 app.set('trust proxy', 1);
+// Must run before anything that reads `req.ip` — the rate limiters, the
+// Turnstile check and the session audit trail all depend on it.
+app.use(resolveEdgeClientIp);
 app.disable('x-powered-by');
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 // Paystack signs the exact request bytes. This route must stay above express.json().
@@ -62,6 +66,9 @@ function isAllowedOrigin(origin) {
   const clean = origin.replace(/\/$/, '');
   if (allowedOrigins.has(clean)) return true;
   if (/^https:\/\/[a-zA-Z0-9_.-]+\.vercel\.app$/.test(clean)) return true;
+  // Preview deployments while the frontends move to Cloudflare Pages. Drop this
+  // once the cutover is done and the *.vercel.app line above with it.
+  if (/^https:\/\/[a-zA-Z0-9_.-]+\.pages\.dev$/.test(clean)) return true;
   return false;
 }
 

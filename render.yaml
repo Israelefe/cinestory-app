@@ -30,6 +30,11 @@ services:
         generateValue: true
       - key: OTP_SECRET
         generateValue: true
+      # Shared with the Cloudflare Pages project of the same name so the edge can
+      # vouch for the visitor's IP. Copy the generated value into the Pages
+      # environment variables. Leave unset to keep the previous (coarse) behaviour.
+      - key: VEYLO_EDGE_KEY
+        generateValue: true
       - key: RESEND_API_KEY
         sync: false
       - key: RESEND_FROM_EMAIL

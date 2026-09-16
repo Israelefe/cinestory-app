@@ -1,0 +1,7 @@
+# Cloudflare Pages project config.
+#
+# `name` must match the Pages project name in the Cloudflare dashboard — update
+# it if you create the project under a different name.
+name = "veylo-admin"
+compatibility_date = "2026-09-16"
+pages_build_output_dir = "dist"

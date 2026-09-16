@@ -1,0 +1,13 @@
+# Cloudflare Pages project config.
+#
+# `name` must match the Pages project name in the Cloudflare dashboard — update
+# it if you create the project under a different name.
+name = "veylo-client"
+compatibility_date = "2026-09-16"
+pages_build_output_dir = "dist"
+
+# Lets `npx wrangler pages dev` serve the built app with the Functions in
+# `functions/` wired up exactly as they will run in production.
+[vars]
+VEYLO_API_ORIGIN = "https://veylo-api-ptk3.onrender.com"
+VEYLO_WEB_ORIGIN = "https://veylo.com.ng"
