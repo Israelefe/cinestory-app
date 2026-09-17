@@ -65,10 +65,10 @@ function isAllowedOrigin(origin) {
   if (!origin) return true;
   const clean = origin.replace(/\/$/, '');
   if (allowedOrigins.has(clean)) return true;
-  // Cloudflare preview deployments. These are wildcards, so any *.workers.dev or
-  // *.pages.dev deployment is granted credentialed CORS access — remove them once
-  // the production hostnames are set on both frontends and previews are no longer
-  // in use.
+  // The admin is served from a *.workers.dev URL — it has no domain of its own — so
+  // this is load-bearing, not a temporary preview allowance. It does grant
+  // credentialed CORS to any *.workers.dev deployment; to narrow it, set ADMIN_URL
+  // to the exact admin URL and delete this line.
   if (/^https:\/\/[a-zA-Z0-9_.-]+\.(pages\.dev|workers\.dev)$/.test(clean)) return true;
   return false;
 }

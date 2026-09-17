@@ -198,10 +198,14 @@ is gone from `isAllowedOrigin`.
 | `admin/vercel.json` | Once the admin was deployed and verified. It was the admin's SPA catch-all, so removing it while the admin was still on Vercel would have 404'd every admin deep link. |
 | `*.vercel.app` in `isAllowedOrigin` (`server/server.js`) | Same point |
 
-**One thing left, when you're ready.** The `*.workers.dev` / `*.pages.dev` wildcard in
-`isAllowedOrigin` is still there so preview deploys can authenticate. It is a wildcard, so
-*any* `*.workers.dev` deployment is granted credentialed CORS access to the API. Once the
-production hostnames are set on both frontends and you no longer need previews, delete that
-line too.
+**The `*.workers.dev` wildcard stays, on purpose.** The admin is served from
+`veylo-admin.<subdomain>.workers.dev` and has no domain of its own, so that rule is what
+lets it authenticate — it is load-bearing, not a leftover preview allowance.
+
+Worth knowing: it grants credentialed CORS to *any* `*.workers.dev` deployment, since
+anyone can register a worker subdomain. In practice the exposure is small — client sessions
+are `SameSite=Lax` cookies scoped to `veylo.com.ng`, and admin sessions are a
+`localStorage` bearer token, neither of which a third-party origin can read — but if you
+want it tight, set `ADMIN_URL` on Render to the exact admin URL and delete that line.
 
 `render.yaml` needs no change beyond the `VEYLO_EDGE_KEY` already declared there.
