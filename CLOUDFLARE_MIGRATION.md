@@ -189,14 +189,26 @@ rather than 80 for the whole platform.
 
 ## Cleanup
 
-Once the Cloudflare deployment is verified:
+**Done — the client's Vercel files are gone.** `client/vercel.json` and
+`client/api/delivery-share.js` were deleted once `veylo.com.ng` was confirmed to be serving
+the Worker (identical responses and ETags to the `*.workers.dev` URL, and `max-age=300` on
+`/d/*`, which is the Worker's value — the old Vercel function used `s-maxage`).
+
+**Still pending, deliberately.** These depend on the admin moving, and deleting them early
+would break the admin while it is still live on Vercel:
+
+| Item | Remove when |
+| --- | --- |
+| `admin/vercel.json` | The admin is deployed to Cloudflare and verified. It is the SPA catch-all — without it, a hard refresh on any admin route 404s. |
+| The `*.vercel.app` branch in `isAllowedOrigin` (`server/server.js`) | Same point. It predates this port and exists so Vercel preview deployments can authenticate; the admin still needs it. |
+
+After the admin is ported:
 
 ```bash
-git rm client/vercel.json client/api/delivery-share.js admin/vercel.json
+git rm admin/vercel.json
 ```
 
-Then drop the now-dead `*.vercel.app` branch from `isAllowedOrigin` in `server/server.js`.
-Leave the `*.workers.dev` / `*.pages.dev` rules in place for as long as you want preview
-deploys to work, and remove them when you no longer do.
+Then drop the `*.vercel.app` branch. Keep the `*.workers.dev` / `*.pages.dev` rules for as
+long as you want preview deploys to work, and remove them when you no longer do.
 
 `render.yaml` needs no change beyond the `VEYLO_EDGE_KEY` already declared there.
