@@ -189,26 +189,19 @@ rather than 80 for the whole platform.
 
 ## Cleanup
 
-**Done — the client's Vercel files are gone.** `client/vercel.json` and
-`client/api/delivery-share.js` were deleted once `veylo.com.ng` was confirmed to be serving
-the Worker (identical responses and ETags to the `*.workers.dev` URL, and `max-age=300` on
-`/d/*`, which is the Worker's value — the old Vercel function used `s-maxage`).
+**Vercel is out of the stack.** All three files are deleted and the `*.vercel.app` branch
+is gone from `isAllowedOrigin`.
 
-**Still pending, deliberately.** These depend on the admin moving, and deleting them early
-would break the admin while it is still live on Vercel:
-
-| Item | Remove when |
+| Removed | When |
 | --- | --- |
-| `admin/vercel.json` | The admin is deployed to Cloudflare and verified. It is the SPA catch-all — without it, a hard refresh on any admin route 404s. |
-| The `*.vercel.app` branch in `isAllowedOrigin` (`server/server.js`) | Same point. It predates this port and exists so Vercel preview deployments can authenticate; the admin still needs it. |
+| `client/vercel.json`, `client/api/delivery-share.js` | Once `veylo.com.ng` was confirmed to be serving the Worker — identical response headers and ETags to the `*.workers.dev` URL, and `max-age=300` on `/d/*` where the old Vercel function used `s-maxage` |
+| `admin/vercel.json` | Once the admin was deployed and verified. It was the admin's SPA catch-all, so removing it while the admin was still on Vercel would have 404'd every admin deep link. |
+| `*.vercel.app` in `isAllowedOrigin` (`server/server.js`) | Same point |
 
-After the admin is ported:
-
-```bash
-git rm admin/vercel.json
-```
-
-Then drop the `*.vercel.app` branch. Keep the `*.workers.dev` / `*.pages.dev` rules for as
-long as you want preview deploys to work, and remove them when you no longer do.
+**One thing left, when you're ready.** The `*.workers.dev` / `*.pages.dev` wildcard in
+`isAllowedOrigin` is still there so preview deploys can authenticate. It is a wildcard, so
+*any* `*.workers.dev` deployment is granted credentialed CORS access to the API. Once the
+production hostnames are set on both frontends and you no longer need previews, delete that
+line too.
 
 `render.yaml` needs no change beyond the `VEYLO_EDGE_KEY` already declared there.

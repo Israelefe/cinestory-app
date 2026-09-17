@@ -65,9 +65,10 @@ function isAllowedOrigin(origin) {
   if (!origin) return true;
   const clean = origin.replace(/\/$/, '');
   if (allowedOrigins.has(clean)) return true;
-  if (/^https:\/\/[a-zA-Z0-9_.-]+\.vercel\.app$/.test(clean)) return true;
-  // Preview deployments while the frontends move to Cloudflare. Drop this once
-  // the cutover is done, and the *.vercel.app line above with it.
+  // Cloudflare preview deployments. These are wildcards, so any *.workers.dev or
+  // *.pages.dev deployment is granted credentialed CORS access — remove them once
+  // the production hostnames are set on both frontends and previews are no longer
+  // in use.
   if (/^https:\/\/[a-zA-Z0-9_.-]+\.(pages\.dev|workers\.dev)$/.test(clean)) return true;
   return false;
 }
