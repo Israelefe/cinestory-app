@@ -16,6 +16,6 @@ const VIEWERS = {
 
 export function DeliveryFormatViewer({ format = 'photo-story', ...props }) {
   const Viewer = VIEWERS[format] || StoryViewer;
-  if (format === 'photo-story') return <Viewer delivery={props.delivery} />;
+  if (format === 'photo-story') return <Viewer {...props} />;
   return <Viewer {...props} />;
 }

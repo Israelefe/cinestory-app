@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useReducedMotion, useScroll, useTransform } fr
 import { ArrowLeft, BookOpen, Check, ChevronLeft, ChevronRight, Download, Grid2X2, Heart, Images, LoaderCircle, RotateCcw, Volume2, VolumeX, X } from 'lucide-react';
 import { Photo } from '../components/PublicDesign.jsx';
 import { useDialogFocus } from '../components/useDialogFocus.js';
+import ClientGallery from '../components/delivery/ClientGallery.jsx';
 import '../styles/format-demos.css';
 
 export const editorialPhotos = Array.from({ length: 5 }, (_, index) => ({ name: `demo-ada-${index + 1}`, alt: `Ada's fashion portrait ${index + 1}` }));
@@ -153,7 +154,7 @@ export function DemoHeader({ format, client, sectionId, onGallery, light = false
   </header>;
 }
 
-export function DemoGallery({ photos, title, onClose, initialIndex = null, liked, onLike, onDownload, onDownloadAll, busy, delivery }) {
+function LegacyDemoGallery({ photos, title, onClose, initialIndex = null, liked, onLike, onDownload, onDownloadAll, busy, delivery }) {
   const [selected, setSelected] = useState(initialIndex);
   const panel = useRef(null);
   useDialogFocus(true, panel, onClose);
@@ -278,6 +279,8 @@ export function DemoGallery({ photos, title, onClose, initialIndex = null, liked
     </motion.section>
   </motion.div>;
 }
+
+export const DemoGallery = ClientGallery;
 
 function EditorialPhoto({ photo, className = '', caption, sizes, direction = 1, horizontal = false }) {
   const ref = useRef(null);
@@ -742,11 +745,12 @@ export const chapters = [
   }
 ];
 
-export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio }) {
+export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, narrationRef }) {
   const [openIndex, setOpenIndex] = useState(null);
   const [visited, setVisited] = useState([]);
   const [gallery, setGallery] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(null);
+  const [narrationChapter, setNarrationChapter] = useState(null);
   const reduced = useReducedMotion();
 
   const photos = normalizeDeliveryPhotos(delivery, weddingPhotos);
@@ -785,6 +789,27 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio }
     setVisited(value => value.includes(index) ? value : [...value, index]);
     setOpenIndex(index);
   };
+  useEffect(() => {
+    const narration = narrationRef?.current;
+    const segments = delivery?.narration?.segments || [];
+    if (!narration || !segments.length || !chaptersData.length) return undefined;
+    const syncChapter = () => {
+      const time = narration.currentTime;
+      const segmentIndex = segments.findIndex(segment => time >= Number(segment.startSec || 0) && time < Number(segment.endSec || 0));
+      if (segmentIndex < 0) return;
+      const segment = segments[segmentIndex];
+      const matchedIndex = segment.sectionId ? (delivery.creativeDirection?.sections || []).findIndex(section => section.id === segment.sectionId) : -1;
+      const nextIndex = matchedIndex >= 0 ? Math.min(matchedIndex, chaptersData.length - 1) : Math.min(chaptersData.length - 1, Math.floor((segmentIndex / Math.max(1, segments.length)) * chaptersData.length));
+      setNarrationChapter(nextIndex);
+      setVisited(value => value.includes(nextIndex) ? value : [...value, nextIndex]);
+      setOpenIndex(current => current === nextIndex ? current : nextIndex);
+    };
+    const finish = () => setNarrationChapter(null);
+    narration.addEventListener('timeupdate', syncChapter);
+    narration.addEventListener('ended', finish);
+    narration.addEventListener('pause', finish);
+    return () => { narration.removeEventListener('timeupdate', syncChapter); narration.removeEventListener('ended', finish); narration.removeEventListener('pause', finish); };
+  }, [narrationRef, delivery?.narration?.segments, delivery?.creativeDirection?.sections, chaptersData]);
   const openPhoto = photo => {
     const photoIdx = photos.findIndex(item => (photo.assetId ? item.assetId === photo.assetId : item.name === photo.name));
     setGalleryIndex(photoIdx >= 0 ? photoIdx : 0);
@@ -801,7 +826,7 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio }
           <p>{delivery?.creativeDirection?.openingLine || `We arranged your ${photos.length} finished portraits into ${chaptersData.length} chapters. Open whichever one you want first.`}</p>
           <div><strong>0{chaptersData.length}</strong><span>CHAPTERS</span><strong>{String(photos.length).padStart(2, '0')}</strong><span>PORTRAITS</span></div>
         </header>
-        <section className={`fd-chapter-directory-board ${chaptersData.length > 3 ? 'is-grid-layout' : ''}`} aria-label={`${clientName}'s chapters`}>{chaptersData.map((item, index) => <motion.button type="button" key={item.name} className={`is-card-${(index % 3) + 1}${visited.includes(index) ? ' is-visited' : ''}`} onClick={() => openChapter(index)} initial={reduced ? false : { opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .65, delay: reduced ? 0 : .12 + index * .1, ease: [0.22, 1, 0.36, 1] }} whileHover={reduced ? undefined : { y: -5 }} whileTap={reduced ? undefined : { scale: .985 }}>
+        <section className={`fd-chapter-directory-board ${chaptersData.length > 3 ? 'is-grid-layout' : ''}`} aria-label={`${clientName}'s chapters`}>{chaptersData.map((item, index) => <motion.button type="button" key={item.name} className={`is-card-${(index % 3) + 1}${visited.includes(index) ? ' is-visited' : ''}${narrationChapter === index ? ' is-narrating' : ''}`} onClick={() => openChapter(index)} initial={reduced ? false : { opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .65, delay: reduced ? 0 : .12 + index * .1, ease: [0.22, 1, 0.36, 1] }} whileHover={reduced ? undefined : { y: -5 }} whileTap={reduced ? undefined : { scale: .985 }}>
           <motion.span className="fd-chapter-directory-photo" animate={reduced ? undefined : { scale: [1.01, 1.055], x: index % 2 ? ['0%', '-1%'] : ['-1%', '1%'] }} transition={{ duration: 9 + index, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={item.photos[0].name} url={item.photos[0].url} alt={`${item.name} chapter cover`} eager={index === 0} sizes="(max-width: 767px) 64vw, 34vw" /></motion.span>
           <span className="fd-chapter-directory-shade" />
           <span className="fd-chapter-directory-number">0{index + 1}</span>
@@ -809,10 +834,11 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio }
           {visited.includes(index) && <span className="fd-chapter-directory-viewed"><Check size={12} />Viewed</span>}
         </motion.button>)}</section>
         <footer><span>Take your time. You can return here or open your complete gallery whenever you want.</span><button type="button" onClick={() => { setGalleryIndex(null); setGallery(true); }}>View all {photos.length} portraits<Images size={16} /></button></footer>
-      </motion.main> : <motion.main key={'chapter-room-' + openIndex} className="fd-chapter-room" style={{ '--chapter-accent': openChapterData.accent }} initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+      </motion.main> : <motion.main key={'chapter-room-' + openIndex} className={`fd-chapter-room${narrationChapter === openIndex ? ' is-narrating' : ''}`} style={{ '--chapter-accent': openChapterData.accent }} initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
         <aside className="fd-chapter-room-copy">
           <button type="button" onClick={() => setOpenIndex(null)}><ArrowLeft size={16} />All chapters</button>
           <span>{openChapterData.kicker}</span>
+          {narrationChapter === openIndex && <div className="fd-chapter-narration"><Volume2 size={14} />Narrating this chapter</div>}
           <div className="fd-chapter-room-count">0{openIndex + 1} / 0{chaptersData.length}</div>
           <h1>{openChapterData.name}</h1>
           <p>{openChapterData.note}</p>

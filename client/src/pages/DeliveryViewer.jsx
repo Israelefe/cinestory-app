@@ -62,7 +62,7 @@ function preloadImage(url, cleanup) {
       if (ok && image.decode) await image.decode().catch(() => {});
       resolve(ok);
     };
-    const timeout = window.setTimeout(() => finish(false), 15000);
+    const timeout = window.setTimeout(() => finish(false), 20000);
     image.onload = () => finish(true);
     image.onerror = () => finish(false);
     image.decoding = 'async';
@@ -90,9 +90,8 @@ function preloadAudio(url, cleanup) {
       audio.onerror = null;
       resolve(ok);
     };
-    const timeout = window.setTimeout(() => finish(false), 15000);
+    const timeout = window.setTimeout(() => finish(false), 60000);
     audio.preload = 'auto';
-    audio.oncanplay = () => finish(true);
     audio.oncanplaythrough = () => finish(true);
     audio.onerror = () => finish(false);
     audio.src = url;
@@ -108,9 +107,8 @@ function preloadAudio(url, cleanup) {
 
 function DeliveryReadiness({ delivery, onReady }) {
   const sortedAssets = [...(delivery.assets || [])].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
-  const openingAssets = sortedAssets.slice(0, 4);
   const totals = {
-    photo: openingAssets.length,
+    photo: sortedAssets.length,
     soundtrack: delivery.soundtrack?.url ? 1 : 0,
     narration: delivery.narration?.url ? 1 : 0
   };
@@ -130,25 +128,25 @@ function DeliveryReadiness({ delivery, onReady }) {
     let active = true;
     const slowTimer = window.setTimeout(() => { if (active) setSlow(true); }, 9000);
     const tasks = [
-      ...openingAssets.map(asset => ({ kind: 'photo', run: () => preloadImage(displayAssetUrl(asset), cleanup) })),
       ...(delivery.soundtrack?.url ? [{ kind: 'soundtrack', run: () => preloadAudio(delivery.soundtrack.url, cleanup) }] : []),
-      ...(delivery.narration?.url ? [{ kind: 'narration', run: () => preloadAudio(apiMediaUrl(delivery.narration.url), cleanup) }] : [])
+      ...(delivery.narration?.url ? [{ kind: 'narration', run: () => preloadAudio(apiMediaUrl(delivery.narration.url), cleanup) }] : []),
+      ...sortedAssets.map(asset => ({ kind: 'photo', run: () => preloadImage(displayAssetUrl(asset, window.innerWidth >= 1025 ? 1600 : 960), cleanup) }))
     ];
 
     if (!tasks.length) {
       const readyTimer = window.setTimeout(open, 250);
       cleanup.push(() => window.clearTimeout(readyTimer));
     } else {
-      Promise.all(tasks.map(async task => {
-        const ok = await task.run();
-        if (!active) return;
-        setLoaded(current => ({
-          ...current,
-          [task.kind]: current[task.kind] + 1,
-          total: current.total + 1,
-          failed: current.failed + (ok ? 0 : 1)
-        }));
-      })).then(() => {
+      const queue = [...tasks];
+      const worker = async () => {
+        while (active && queue.length) {
+          const task = queue.shift();
+          const ok = await task.run();
+          if (!active) return;
+          setLoaded(current => ({ ...current, [task.kind]: current[task.kind] + 1, total: current.total + 1, failed: current.failed + (ok ? 0 : 1) }));
+        }
+      };
+      Promise.all(Array.from({ length: Math.min(4, tasks.length) }, worker)).then(() => {
         if (!active) return;
         window.clearTimeout(slowTimer);
         const readyTimer = window.setTimeout(open, 350);
@@ -165,7 +163,7 @@ function DeliveryReadiness({ delivery, onReady }) {
 
   const percent = Math.min(100, Math.round((loaded.total / total) * 100));
   const stage = loaded.photo < totals.photo
-    ? 'Preparing the opening photographs'
+    ? `Preparing photograph ${Math.min(loaded.photo + 1, totals.photo)} of ${totals.photo}`
     : loaded.soundtrack < totals.soundtrack
       ? 'Buffering the soundtrack'
       : loaded.narration < totals.narration
@@ -180,11 +178,11 @@ function DeliveryReadiness({ delivery, onReady }) {
       <img src={delivery.branding?.logoUrl || '/veylo/veylo-mark.svg'} alt="" />
       <p>{delivery.branding?.name || 'Veylo'} · PRIVATE DELIVERY</p>
       <h1>Preparing {delivery.clientName ? `${delivery.clientName}’s` : 'your'} photographs.</h1>
-      <span>We’re getting the opening photographs, music, and narration ready before the experience begins.</span>
+      <span>We’re preparing every photograph, the music, and the narration before the experience begins.</span>
       <div className="vd-readiness-progress" aria-label={`${percent}% prepared`} aria-valuemin="0" aria-valuemax="100" aria-valuenow={percent} role="progressbar"><i style={{ transform: `scaleX(${percent / 100})` }} /></div>
       <div className="vd-readiness-stage"><LoaderCircle className="v-spin" size={17} /><strong>{stage}</strong><b>{percent}%</b></div>
       <ul>
-        <li className={loaded.photo >= totals.photo ? 'is-ready' : ''}>{loaded.photo >= totals.photo ? <Check size={15} /> : <Image size={15} />}<span>Opening photographs</span></li>
+        <li className={loaded.photo >= totals.photo ? 'is-ready' : ''}>{loaded.photo >= totals.photo ? <Check size={15} /> : <Image size={15} />}<span>All photographs · {loaded.photo}/{totals.photo}</span></li>
         {Boolean(totals.soundtrack) && <li className={loaded.soundtrack >= totals.soundtrack ? 'is-ready' : ''}>{loaded.soundtrack >= totals.soundtrack ? <Check size={15} /> : <Music2 size={15} />}<span>Soundtrack</span></li>}
         {Boolean(totals.narration) && <li className={loaded.narration >= totals.narration ? 'is-ready' : ''}>{loaded.narration >= totals.narration ? <Check size={15} /> : <Mic2 size={15} />}<span>Narration</span></li>}
       </ul>
@@ -456,7 +454,8 @@ export default function DeliveryViewer() {
     delivery,
     galleryProps,
     audioState,
-    toggleAudio
+    toggleAudio,
+    narrationRef
   };
 
   const content = <DeliveryFormatViewer format={format} {...sharedProps} />;

@@ -1,7 +1,7 @@
 import express from 'express';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { aiGenerationLimit, clientDeliveryEmailLimit, mediaSignatureLimit, publicAccessLimit, publicMediaLimit } from '../middleware/rateLimit.middleware.js';
-import { addLibraryAssets, archiveDelivery, confirmDeliveryUpload, confirmSoundtrackUpload, createDelivery, createShareGrant, deleteDelivery, deleteDeliveryAsset, deleteSoundtrack, emailClientDelivery, getDelivery, getDeliveryJob, getDeliveryQr, getDeliveryShareMeta, getGalleryDownload, getPhotoDownload, getPublicDelivery, getPublicSoundtrack, listDeliveries, listDeliverySoundtracks, listShareGrants, publishDelivery, queueAnalysis, queueDirection, queueNarration, queueRevision, restoreDelivery, retryDeliveryJob, revokeShareGrant, selectCuratedSoundtrack, signDeliveryUpload, signSoundtrackUpload, streamDeliverySoundtrack, togglePhotoLike, unlockDelivery, updateDeliveryDetails, updateDeliveryReview } from '../controllers/delivery.controller.js';
+import { addLibraryAssets, archiveDelivery, confirmDeliveryUpload, confirmSoundtrackUpload, createDelivery, createShareGrant, deleteDelivery, deleteDeliveryAsset, deleteSoundtrack, emailClientDelivery, getDelivery, getDeliveryJob, getDeliveryQr, getDeliveryShareMeta, getGalleryDownload, getPhotoDownload, getPublicDelivery, getPublicSoundtrack, listDeliveries, listDeliverySoundtracks, listNarrationVoices, listShareGrants, publishDelivery, queueAnalysis, queueDirection, queueNarration, queueRevision, restoreDelivery, retryDeliveryJob, revokeShareGrant, selectCuratedSoundtrack, signDeliveryUpload, signSoundtrackUpload, streamDeliverySoundtrack, togglePhotoLike, unlockDelivery, updateDeliveryDetails, updateDeliveryReview } from '../controllers/delivery.controller.js';
 
 const router = express.Router();
 
@@ -18,6 +18,7 @@ router.use(authMiddleware);
 router.get('/', listDeliveries);
 router.post('/', createDelivery);
 router.get('/soundtracks', listDeliverySoundtracks);
+router.get('/narration/voices', listNarrationVoices);
 router.get('/:id', getDelivery);
 router.patch('/:id/details', updateDeliveryDetails);
 router.post('/:id/archive', archiveDelivery);

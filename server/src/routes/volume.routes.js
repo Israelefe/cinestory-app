@@ -1,7 +1,7 @@
 import express from 'express';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { emailCodeLimit, publicAccessLimit, publicMediaLimit } from '../middleware/rateLimit.middleware.js';
-import { addVolumeSubjects, assignVolumePhotos, createVolumeJob, getVolumeGallery, getVolumeJob, listVolumeJobs, publishVolumeJob, requestVolumeCode, verifyVolumeCode } from '../controllers/volume.controller.js';
+import { addVolumeSubjects, assignVolumePhotos, autoAssignVolumePhotos, createVolumeJob, getVolumeGallery, getVolumeJob, listVolumeJobs, publishVolumeJob, requestVolumeCode, verifyVolumeCode } from '../controllers/volume.controller.js';
 
 const router = express.Router();
 
@@ -14,6 +14,7 @@ router.get('/', listVolumeJobs);
 router.post('/', createVolumeJob);
 router.get('/:id', getVolumeJob);
 router.post('/:id/subjects', addVolumeSubjects);
+router.post('/:id/auto-assign', autoAssignVolumePhotos);
 router.put('/:id/subjects/:subjectId/assets', assignVolumePhotos);
 router.post('/:id/publish', publishVolumeJob);
 

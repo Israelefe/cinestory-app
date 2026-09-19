@@ -5,10 +5,28 @@ import { createNarrationScript } from './alibabaCreativeDirector.service.js';
 import { DEFAULT_NARRATION_VOICE_ID, narrationVoice } from '../constants/narrationVoices.js';
 
 const MODEL_ID = 'eleven_multilingual_v2';
-const VOICE_SETTINGS = Object.freeze({ stability: 0.72, similarity_boost: 0.8, style: 0.08, speed: 0.9, use_speaker_boost: true });
+const VOICE_SETTINGS = Object.freeze({ stability: 0.68, similarity_boost: 0.78, style: 0.05, speed: 0.88, use_speaker_boost: true });
+let voiceCatalogueCache = { expiresAt: 0, value: null };
 
 function cleanLine(value, max = 360) {
-  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+  return String(value || '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+export async function getNarrationVoiceCatalogue() {
+  if (voiceCatalogueCache.value && voiceCatalogueCache.expiresAt > Date.now()) return voiceCatalogueCache.value;
+  const apiKey = String(process.env.ELEVENLABS_API_KEY || '').trim();
+  if (!apiKey) return NARRATION_VOICES.map(voice => ({ ...voice, available: false, previewUrl: '' }));
+  const catalogue = await Promise.all(NARRATION_VOICES.map(async voice => {
+    try {
+      const response = await fetch(`https://api.elevenlabs.io/v1/voices/${encodeURIComponent(voice.id)}`, { headers: { 'xi-api-key': apiKey, Accept: 'application/json' }, signal: AbortSignal.timeout(10_000) });
+      if (!response.ok) return { ...voice, available: false, previewUrl: '' };
+      const data = await response.json();
+      const previewUrl = /^https:\/\//i.test(String(data.preview_url || '')) ? data.preview_url : '';
+      return { ...voice, available: true, previewUrl, providerName: cleanLine(data.name, 80), accent: cleanLine(data.labels?.accent, 80), useCase: cleanLine(data.labels?.use_case, 80) };
+    } catch { return { ...voice, available: false, previewUrl: '' }; }
+  }));
+  voiceCatalogueCache = { expiresAt: Date.now() + 15 * 60 * 1000, value: catalogue };
+  return catalogue;
 }
 
 function fallbackNarrationText(delivery) {
@@ -60,13 +78,15 @@ async function synthesize({ apiKey, voiceId, text }) {
 }
 
 function segmentTimings(segments, alignment) {
+  const characters = Array.isArray(alignment?.characters) ? alignment.characters.join('') : '';
   const starts = alignment?.character_start_times_seconds || [];
   const ends = alignment?.character_end_times_seconds || [];
-  let offset = 0;
+  let cursor = 0;
   return segments.map(segment => {
-    const startIndex = offset;
+    const found = characters.indexOf(segment.text, cursor);
+    const startIndex = found >= 0 ? found : cursor;
     const endIndex = Math.max(startIndex, startIndex + segment.text.length - 1);
-    offset += segment.text.length + 1;
+    cursor = endIndex + 1;
     return { ...segment, startSec: Number(starts[startIndex] || 0), endSec: Number(ends[Math.min(endIndex, ends.length - 1)] || starts[startIndex] || 0) };
   });
 }
@@ -91,7 +111,8 @@ export async function generateNarration(delivery, options = {}) {
   if (!text) throw Object.assign(new Error('Review the story text before creating narration.'), { code: 'NARRATION_TEXT_REQUIRED' });
 
   const segments = narrationSegments(text, delivery);
-  const speech = await synthesize({ apiKey, voiceId, text });
+  const speechText = segments.map(segment => segment.text).join(' <break time="1.1s" /> ');
+  const speech = await synthesize({ apiKey, voiceId, text: speechText });
   const uploaded = await uploadAudio(speech.buffer, delivery);
-  return { publicId: uploaded.public_id, resourceType: 'video', format: uploaded.format, bytes: uploaded.bytes, duration: uploaded.duration, transcript: text, voiceId, voiceName: voice.name, modelId: MODEL_ID, settings: VOICE_SETTINGS, approvedAt: new Date(), segments: segmentTimings(segments, speech.alignment) };
+  return { publicId: uploaded.public_id, resourceType: 'video', format: uploaded.format, bytes: uploaded.bytes, duration: uploaded.duration, transcript: text, voiceId, voiceName: voice.name, modelId: MODEL_ID, settings: VOICE_SETTINGS, pauseSeconds: 1.1, approvedAt: new Date(), segments: segmentTimings(segments, speech.alignment) };
 }

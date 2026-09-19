@@ -20,6 +20,7 @@ import { sendStoryReadyEmail } from '../services/email.service.js';
 import QRCode from 'qrcode';
 import { NARRATION_VOICES } from '../constants/narrationVoices.js';
 import { DELIVERY_SOUNDTRACKS, deliverySoundtrack, deliverySoundtrackFile } from '../constants/deliverySoundtracks.js';
+import { getNarrationVoiceCatalogue } from '../services/narration.service.js';
 
 const createSchema = z.object({ clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().min(2).max(80), brief: z.string().trim().min(20).max(2000) }).strict();
 const confirmSchema = z.object({ publicId: z.string().min(5).max(500), version: z.union([z.string(), z.number()]), signature: z.string().min(20).max(200), resourceType: z.enum(['image']).default('image'), originalFilename: z.string().trim().max(180).default('photograph') }).strict();
@@ -36,6 +37,10 @@ const reviewSchema = z.object({
   title: z.string().trim().min(2).max(80),
   openingLine: z.string().trim().min(2).max(140),
   closingLine: z.string().trim().min(2).max(160),
+  palette: z.object({ background: z.string().regex(/^#[0-9a-f]{6}$/i), surface: z.string().regex(/^#[0-9a-f]{6}$/i), text: z.string().regex(/^#[0-9a-f]{6}$/i), accent: z.string().regex(/^#[0-9a-f]{6}$/i) }).strict(),
+  typography: z.object({ display: z.enum(['editorial-serif', 'clean-sans', 'condensed-sans', 'soft-serif']), body: z.enum(['clean-sans', 'editorial-serif']) }).strict(),
+  pace: z.enum(['measured', 'warm', 'energetic']),
+  sections: z.array(z.object({ id: z.string().regex(/^[a-z0-9-]{1,32}$/), title: z.string().trim().min(1).max(60), subtitle: z.string().trim().max(120), layout: z.enum(['hero', 'single', 'pair', 'triptych', 'grid', 'strip', 'spread', 'cluster', 'chapter-cover']) }).strict()).min(1).max(12),
   frames: z.array(z.object({ assetId: z.string().min(1).max(100), headline: z.string().trim().max(70), caption: z.string().trim().max(180) }).strict()).min(1).max(500),
   assetOrder: z.array(z.string().min(1).max(100)).min(1).max(500)
 }).strict();
@@ -43,6 +48,7 @@ const shareGrantSchema = z.object({
   role: z.enum(['organizer', 'vendor', 'guest']),
   label: z.string().trim().min(2).max(100),
   assetIds: z.array(z.string().min(1).max(100)).max(500).default([]),
+  sectionIds: z.array(z.string().regex(/^[a-z0-9-]{1,32}$/)).max(12).default([]),
   allowIndividualDownloads: z.boolean().default(false),
   allowDownloadAll: z.boolean().default(false),
   usageTerms: z.string().trim().max(1000).default(''),
@@ -103,6 +109,16 @@ export function listDeliverySoundtracks(req, res) {
   }));
   res.set('Cache-Control', 'private, max-age=300');
   res.json({ success: true, data });
+}
+
+export async function listNarrationVoices(req, res) {
+  try {
+    const data = await getNarrationVoiceCatalogue();
+    res.set('Cache-Control', 'private, max-age=300');
+    res.json({ success: true, data });
+  } catch {
+    res.status(503).json({ success: false, message: 'Narrator previews are temporarily unavailable.' });
+  }
 }
 
 export async function streamDeliverySoundtrack(req, res) {
@@ -225,8 +241,12 @@ export async function createShareGrant(req, res) {
     if (!delivery || delivery.status !== 'published' || !['event-coverage', 'campaign'].includes(delivery.format)) return res.status(404).json({ success: false, message: 'Publish an Event Coverage or Campaign delivery before creating role links.' });
     const allowedAssets = new Set(delivery.assets.map(asset => asset.assetId));
     if (parsed.data.assetIds.some(assetId => !allowedAssets.has(assetId))) return res.status(400).json({ success: false, message: 'One or more selected photographs are not in this delivery.' });
+    const sections = delivery.creativeDirection?.sections || [];
+    const knownSections = new Map(sections.map(section => [section.id, section]));
+    if (parsed.data.sectionIds.some(sectionId => !knownSections.has(sectionId))) return res.status(400).json({ success: false, message: 'One or more selected scenes are not in this delivery.' });
+    const scopedAssetIds = [...new Set([...parsed.data.assetIds, ...parsed.data.sectionIds.flatMap(sectionId => knownSections.get(sectionId)?.assetIds || [])])];
     const token = crypto.randomBytes(32).toString('base64url');
-    const grant = await DeliveryShareGrant.create({ deliveryId: delivery._id, userId: req.user.id, ...parsed.data, expiresAt: parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : undefined, tokenDigest: tokenDigest(token) });
+    const grant = await DeliveryShareGrant.create({ deliveryId: delivery._id, userId: req.user.id, ...parsed.data, assetIds: scopedAssetIds, expiresAt: parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : undefined, tokenDigest: tokenDigest(token) });
     const url = `${String(process.env.CLIENT_URL || 'https://veylo.com.ng').replace(/\/$/, '')}/d/${delivery.publicId}?share=${encodeURIComponent(token)}`;
     res.status(201).json({ success: true, data: { ...grant.toObject(), url } });
   } catch (error) {
@@ -472,6 +492,12 @@ export async function selectCuratedSoundtrack(req, res) {
       energy: track.energy,
       narrationFit: track.narrationFit,
       tags: track.tags,
+      storyFunction: track.storyFunction,
+      bestFor: track.bestFor,
+      avoidFor: track.avoidFor,
+      editingPace: track.editingPace,
+      instrumentationCue: track.instrumentationCue,
+      contentIdGuidance: track.contentIdGuidance,
       duration: track.durationSec,
       source: 'curated',
       sourceProvider: 'Pixabay',
@@ -584,6 +610,10 @@ export async function updateDeliveryReview(req, res) {
     delivery.creativeDirection.title = parsed.data.title;
     delivery.creativeDirection.openingLine = parsed.data.openingLine;
     delivery.creativeDirection.closingLine = parsed.data.closingLine;
+    delivery.creativeDirection.palette = parsed.data.palette;
+    delivery.creativeDirection.typography = parsed.data.typography;
+    delivery.creativeDirection.pace = parsed.data.pace;
+    delivery.creativeDirection.sections = parsed.data.sections.map(section => ({ ...section, assetIds: delivery.creativeDirection.sections.find(current => current.id === section.id)?.assetIds || [] }));
     delivery.creativeDirection.frames = delivery.creativeDirection.frames.map(frame => ({ ...frame, headline: frameEdits.get(frame.assetId).headline, caption: frameEdits.get(frame.assetId).caption }));
     const positions = new Map(parsed.data.assetOrder.map((id, index) => [id, index]));
     delivery.assets.forEach(asset => { asset.sortOrder = positions.get(asset.assetId); });
@@ -690,6 +720,8 @@ async function publicPayload(delivery, grant = null) {
   delete object.access?.pinDigest;
   object.assets = grantAssets(delivery, grant).map(ownerAsset);
   if (grant) {
+    const visibleAssets = new Set(object.assets.map(asset => asset.assetId));
+    if (object.creativeDirection?.sections) object.creativeDirection.sections = object.creativeDirection.sections.map(section => ({ ...section, assetIds: (section.assetIds || []).filter(assetId => visibleAssets.has(assetId)) })).filter(section => section.assetIds.length);
     object.access.allowIndividualDownloads = Boolean(grant.allowIndividualDownloads);
     object.access.allowDownloadAll = Boolean(grant.allowDownloadAll);
     object.access.allowLikes = false;

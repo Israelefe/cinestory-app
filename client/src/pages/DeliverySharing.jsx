@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
 import './DeliverySharing.css';
+import './DeliverySharingV2.css';
 
 const INITIAL_FORM = {
   role: 'organizer',
@@ -12,6 +13,7 @@ const INITIAL_FORM = {
   allowDownloadAll: false,
   usageTerms: '',
   assetIds: [],
+  sectionIds: [],
   expiresAt: ''
 };
 
@@ -30,6 +32,7 @@ export default function DeliverySharing() {
     () => (delivery?.assets || []).filter(asset => asset.resourceType !== 'video'),
     [delivery]
   );
+  const scenes = useMemo(() => (delivery?.creativeDirection?.sections || []).filter(section => section.assetIds?.length), [delivery]);
 
   async function load() {
     if (!deliveryId) {
@@ -56,7 +59,13 @@ export default function DeliverySharing() {
 
   function chooseScope(scope) {
     setPhotoScope(scope);
-    if (scope === 'all') setForm(current => ({ ...current, assetIds: [] }));
+    if (scope === 'all') setForm(current => ({ ...current, assetIds: [], sectionIds: [] }));
+    if (scope === 'scenes') setForm(current => ({ ...current, assetIds: [] }));
+    if (scope === 'selected') setForm(current => ({ ...current, sectionIds: [] }));
+  }
+
+  function toggleScene(sectionId) {
+    setForm(current => ({ ...current, sectionIds: current.sectionIds.includes(sectionId) ? current.sectionIds.filter(id => id !== sectionId) : [...current.sectionIds, sectionId] }));
   }
 
   function togglePhotograph(assetId) {
@@ -70,8 +79,8 @@ export default function DeliverySharing() {
 
   async function create(event) {
     event.preventDefault();
-    if (photoScope === 'selected' && !form.assetIds.length) {
-      setError('Choose at least one photograph for this link.');
+    if ((photoScope === 'selected' && !form.assetIds.length) || (photoScope === 'scenes' && !form.sectionIds.length)) {
+      setError(photoScope === 'scenes' ? 'Choose at least one event scene for this link.' : 'Choose at least one photograph for this link.');
       return;
     }
     setBusy(true);
@@ -81,6 +90,7 @@ export default function DeliverySharing() {
       const response = await api.post(`/v1/deliveries/${deliveryId}/share-grants`, {
         ...form,
         assetIds: photoScope === 'selected' ? form.assetIds : [],
+        sectionIds: photoScope === 'scenes' ? form.sectionIds : [],
         expiresAt: form.expiresAt ? new Date(`${form.expiresAt}T23:59:59`).toISOString() : ''
       });
       setCreatedUrl(response.data.data.url);
@@ -148,8 +158,10 @@ export default function DeliverySharing() {
               <legend>Which photographs can they see?</legend>
               <div className="ds-scope-options">
                 <label><input type="radio" name="photo-scope" checked={photoScope === 'all'} onChange={() => chooseScope('all')} />Every photograph</label>
+                {scenes.length > 0 && <label><input type="radio" name="photo-scope" checked={photoScope === 'scenes'} onChange={() => chooseScope('scenes')} />Selected event scenes</label>}
                 <label><input type="radio" name="photo-scope" checked={photoScope === 'selected'} onChange={() => chooseScope('selected')} />Selected photographs</label>
               </div>
+              {photoScope === 'scenes' && <div className="ds-scene-picker">{scenes.map((scene, index) => { const selected = form.sectionIds.includes(scene.id); return <button type="button" key={scene.id} className={selected ? 'is-selected' : ''} onClick={() => toggleScene(scene.id)}><span>{String(index + 1).padStart(2, '0')}</span><strong>{scene.title}</strong><small>{scene.assetIds.length} photographs</small>{selected && <Check size={15} />}</button>; })}</div>}
               {photoScope === 'selected' && <div className="ds-photo-picker">
                 <div className="ds-photo-picker-head">
                   <span>{form.assetIds.length} of {photographs.length} selected</span>
@@ -197,7 +209,7 @@ export default function DeliverySharing() {
             {grants.length ? grants.map(grant => <article key={grant._id}>
               <div>
                 <strong>{grant.label}</strong>
-                <span>{grant.role} · {grant.assetIds?.length ? `${grant.assetIds.length} selected photographs` : 'every photograph'}</span>
+                <span>{grant.role} · {grant.sectionIds?.length ? `${grant.sectionIds.length} selected scene${grant.sectionIds.length === 1 ? '' : 's'}` : grant.assetIds?.length ? `${grant.assetIds.length} selected photographs` : 'every photograph'}</span>
                 <span>{grant.allowDownloadAll ? 'permitted gallery download' : grant.allowIndividualDownloads ? 'individual downloads' : 'view only'}</span>
                 {grant.expiresAt && <small>Expires {new Date(grant.expiresAt).toLocaleDateString('en-NG')}</small>}
               </div>

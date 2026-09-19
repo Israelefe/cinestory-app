@@ -7,6 +7,7 @@ const deliveryShareGrantSchema = new mongoose.Schema({
   label: { type: String, required: true, trim: true, maxlength: 100 },
   tokenDigest: { type: String, required: true, unique: true, select: false },
   assetIds: { type: [String], default: [], validate: value => value.length <= 500 },
+  sectionIds: { type: [String], default: [], validate: value => value.length <= 12 },
   allowIndividualDownloads: { type: Boolean, default: false },
   allowDownloadAll: { type: Boolean, default: false },
   usageTerms: { type: String, trim: true, maxlength: 1000, default: '' },

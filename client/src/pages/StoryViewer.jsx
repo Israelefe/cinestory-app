@@ -6,6 +6,7 @@ import { toast } from 'react-toastify';
 import api from '../services/api.js';
 import { DEMO_PRESETS } from '../constants/demoStories.js';
 import { useDialogFocus } from '../components/useDialogFocus.js';
+import ClientGallery from '../components/delivery/ClientGallery.jsx';
 export { DEMO_PRESETS } from '../constants/demoStories.js';
 
 function getFontFamily(type, fallback = "'Playfair Display', Georgia, serif") {
@@ -44,7 +45,7 @@ function fadeAudioVolume(element, target, duration = 420) {
  };
  volumeRamps.set(element, requestAnimationFrame(tick));
 }
-function GalleryDialog({ photos, clientName, demoId, onClose, onDownload, downloading, onDownloadAll, allDownloading }) {
+function LegacyGalleryDialog({ photos, clientName, demoId, onClose, onDownload, downloading, onDownloadAll, allDownloading }) {
  const panel = useRef(null);
  const [selected, setSelected] = useState(null);
  useDialogFocus(true, panel, onClose);
@@ -120,7 +121,7 @@ function StoryScene({ demo, demoId, photos, photo, index, mode, started, finishe
   <SceneTransition kind={transitionKind} accent={accent} reduced={reduced} />
  </motion.div></AnimatePresence>;
 }
-export default function StoryViewer({ demoMode = false, delivery: deliveryProp = null }) {
+export default function StoryViewer({ demoMode = false, delivery: deliveryProp = null, galleryProps = null }) {
  const { storyId } = useParams();
  const [params] = useSearchParams();
  const location = useLocation();
@@ -444,6 +445,6 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   </main>
   {story.soundtrack?.audioUrl && <audio ref={audio} src={mediaUrl(story.soundtrack.audioUrl)} loop preload="metadata" onWaiting={() => { if (started && !muted) setAudioLoading(true); }} onStalled={() => { if (started && !muted) setAudioLoading(true); }} onPlaying={() => { setAudioLoading(false); setAudioPlaying(true); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioPlaying(false); setAudioLoading(false); toast.info('The soundtrack could not load. The story will continue without it.'); }} />}
   {deliveryProp?.narration?.url && <audio ref={narrationRef} src={mediaUrl(deliveryProp.narration.url)} preload="metadata" onWaiting={() => { if (started && !muted) setNarrationLoading(true); }} onStalled={() => { if (started && !muted) setNarrationLoading(true); }} onPlaying={() => { setNarrationLoading(false); setNarrationPlaying(true); }} onEnded={handleNarrationEnded} onError={() => { setNarrationPlaying(false); setNarrationLoading(false); fadeAudioVolume(audio.current, 1); toast.info('The narration could not load. The story will continue without it.'); }} />}
-  <AnimatePresence>{gallery && <GalleryDialog photos={photos} clientName={story.clientName} demoId={demo ? demoId : null} onClose={() => setGallery(false)} onDownload={download} downloading={downloading} onDownloadAll={downloadAll} allDownloading={allDownloading} />}</AnimatePresence>
+  <AnimatePresence>{gallery && <ClientGallery photos={photos} title={story.clientName || story.title} demoId={demo ? demoId : null} delivery={deliveryProp} onClose={() => setGallery(false)} liked={galleryProps?.liked} onLike={galleryProps?.onLike} onDownload={galleryProps?.onDownload || ((_key, photoIndex) => download(photoIndex))} busy={galleryProps?.busy} downloading={downloading} onDownloadAll={galleryProps?.onDownloadAll || downloadAll} allDownloading={allDownloading} />}</AnimatePresence>
   </div>;
 }

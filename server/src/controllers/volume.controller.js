@@ -111,11 +111,53 @@ export async function assignVolumePhotos(req, res) {
   }
 }
 
+export async function autoAssignVolumePhotos(req, res) {
+  try {
+    const job = await ownedJob(req.params.id, req.user.id);
+    if (!job || job.status !== 'draft') return res.status(404).json({ success: false, message: 'This draft is not available.' });
+    const [subjects, assets] = await Promise.all([
+      VolumeSubject.find({ jobId: job._id, userId: req.user.id }).sort({ recipientCode: 1 }),
+      StorageAsset.find({ userId: req.user.id }).select('assetId originalFilename').lean()
+    ]);
+    if (!subjects.length || !assets.length) return res.status(400).json({ success: false, message: 'Add recipients and upload the named photographs to your library first.' });
+
+    const matchers = subjects.map(subject => {
+      const escaped = subject.recipientCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return { subject, pattern: new RegExp(`(^|[^A-Z0-9])${escaped}([^A-Z0-9]|$)`, 'i') };
+    });
+    const matches = new Map(subjects.map(subject => [String(subject._id), []]));
+    const ambiguousFiles = [];
+    for (const asset of assets) {
+      const filename = String(asset.originalFilename || '').toUpperCase();
+      const owners = matchers.filter(item => item.pattern.test(filename)).map(item => item.subject);
+      if (owners.length === 1) matches.get(String(owners[0]._id)).push(asset.assetId);
+      if (owners.length > 1) ambiguousFiles.push(asset.originalFilename || asset.assetId);
+    }
+
+    const assignments = subjects.map(subject => {
+      const matched = [...new Set(matches.get(String(subject._id)))].slice(0, 500);
+      return { subject, matched: matched.length > 0, assetIds: matched.length ? matched : subject.assetIds };
+    });
+    const assignedPhotoCount = assignments.reduce((total, item) => total + item.assetIds.length, 0);
+    if (assignedPhotoCount > 5000) return res.status(403).json({ success: false, message: 'The filename matches exceed the 5,000 assignment limit. Split this into two volume deliveries.' });
+    await VolumeSubject.bulkWrite(assignments.map(item => ({ updateOne: { filter: { _id: item.subject._id, jobId: job._id }, update: { $set: { assetIds: item.assetIds } } } })));
+    job.assignedPhotoCount = assignedPhotoCount;
+    await job.save();
+    const unmatchedRecipients = assignments.filter(item => !item.matched).map(item => ({ recipientCode: item.subject.recipientCode, displayName: item.subject.displayName, existingAssignments: item.subject.assetIds.length }));
+    res.json({ success: true, data: { matchedRecipients: assignments.filter(item => item.matched).length, totalRecipients: assignments.length, assignedPhotoCount, unmatchedRecipients, ambiguousFiles: ambiguousFiles.slice(0, 100) } });
+  } catch (error) {
+    console.error('[volume/auto-assign]', error.message);
+    res.status(500).json({ success: false, message: 'We could not match the filenames to recipients.' });
+  }
+}
+
 export async function publishVolumeJob(req, res) {
   try {
     const job = await ownedJob(req.params.id, req.user.id);
     if (!job || job.status !== 'draft') return res.status(404).json({ success: false, message: 'This draft is not available.' });
     if (!job.subjectCount || !job.assignedPhotoCount) return res.status(400).json({ success: false, message: 'Add recipients and assign photographs before publishing.' });
+    const recipientsWithoutPhotos = await VolumeSubject.countDocuments({ jobId: job._id, userId: req.user.id, 'assetIds.0': { $exists: false } });
+    if (recipientsWithoutPhotos) return res.status(409).json({ success: false, message: `${recipientsWithoutPhotos} recipient${recipientsWithoutPhotos === 1 ? '' : 's'} still need photographs before publishing.` });
     job.status = 'published';
     job.publishedAt = new Date();
     await job.save();

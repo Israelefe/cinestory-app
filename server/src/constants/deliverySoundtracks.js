@@ -87,9 +87,42 @@ const CATEGORY_PROFILES = Object.freeze({
   }
 });
 
+const CATEGORY_DECISIONS = Object.freeze({
+  wedding: { storyFunction: 'ceremony, vows, couple portraits and a gentle closing', avoidFor: ['fast dance-floor recap', 'hard-edged fashion campaign'], editingPace: 'long holds and soft transitions' },
+  celebration: { storyFunction: 'arrivals, entrances, crowd energy and party highlights', avoidFor: ['quiet newborn story', 'memorial or reflective biography'], editingPace: 'quick sequences and energetic scene changes' },
+  afrobeat: { storyFunction: 'Nigeria-first celebration, fashion confidence and social-event movement', avoidFor: ['spoken biography', 'quiet worship sequence'], editingPace: 'rhythmic cuts with room for strong hero frames' },
+  'calm-acoustic': { storyFunction: 'intimate portraits, family connection and unhurried documentary moments', avoidFor: ['high-energy entrance', 'nightlife campaign'], editingPace: 'measured holds and natural transitions' },
+  fashion: { storyFunction: 'lookbook, beauty, runway and commercial attitude', avoidFor: ['solemn ceremony', 'soft newborn gallery'], editingPace: 'confident cuts, repeatable visual beats and clean reveals' },
+  corporate: { storyFunction: 'conference, team, property, product and brand handoff', avoidFor: ['romantic vows', 'high-emotion memorial'], editingPace: 'clear sections and steady forward movement' },
+  faith: { storyFunction: 'worship, thanksgiving, dedication and reflective community scenes', avoidFor: ['party dance floor', 'edgy fashion sequence'], editingPace: 'patient holds and respectful transitions' },
+  cinematic: { storyFunction: 'biography, milestone, graduation and emotionally structured Photo Stories', avoidFor: ['casual rapid gallery browsing', 'playful children party recap'], editingPace: 'slow opening, gradual build and resolved ending' },
+  maternity: { storyFunction: 'motherhood, newborn, family tenderness and quiet anticipation', avoidFor: ['corporate conference', 'fast nightlife recap'], editingPace: 'soft, slow and spacious' },
+  birthday: { storyFunction: 'birthday portraits, cake, entrance and milestone celebration', avoidFor: ['solemn service', 'formal corporate handoff'], editingPace: 'bright openings and upbeat highlight runs' }
+});
+
+function titleListedInstrumentation(title) {
+  const value = String(title).toLowerCase();
+  const cues = [['piano', 'Piano'], ['organ', 'Organ'], ['choir', 'Choir'], ['orchestra', 'Orchestral'], ['marimba', 'Marimba'], ['acoustic', 'Acoustic'], ['reggae', 'Reggae-influenced'], ['house', 'House'], ['jazz', 'Jazz-influenced']].filter(([word]) => value.includes(word)).map(([, label]) => label);
+  return cues.length ? cues.join(', ') : 'Not specified in the Pixabay listing title';
+}
+
+function trackDecision(track, profile) {
+  const decision = CATEGORY_DECISIONS[track.category];
+  const durationShape = track.durationSec < 100 ? 'compact' : track.durationSec > 210 ? 'extended' : 'standard';
+  return {
+    storyFunction: decision.storyFunction,
+    bestFor: profile.tags.slice(0, 6),
+    avoidFor: decision.avoidFor,
+    editingPace: `${decision.editingPace}; ${durationShape} ${Math.floor(track.durationSec / 60)}:${String(track.durationSec % 60).padStart(2, '0')} runtime`,
+    instrumentationCue: titleListedInstrumentation(track.title),
+    contentIdGuidance: track.contentIdRegistered ? 'Pixabay marks this track as Content ID registered; keep the source page and licence record with the delivery.' : 'Not marked as Content ID registered in the verified catalogue record.'
+  };
+}
+
 export const DELIVERY_SOUNDTRACKS = Object.freeze(rawCatalogue.map((track, index) => {
   const profile = CATEGORY_PROFILES[track.category];
   if (!profile) throw new Error(`Unknown soundtrack category: ${track.category}`);
+  const decision = trackDecision(track, profile);
   return Object.freeze({
     id: `pixabay_${track.pixabayId}`,
     sortOrder: index,
@@ -103,6 +136,12 @@ export const DELIVERY_SOUNDTRACKS = Object.freeze(rawCatalogue.map((track, index
     narrationFit: profile.narrationFit,
     durationSec: track.durationSec,
     tags: Object.freeze(profile.tags),
+    storyFunction: decision.storyFunction,
+    bestFor: Object.freeze(decision.bestFor),
+    avoidFor: Object.freeze(decision.avoidFor),
+    editingPace: decision.editingPace,
+    instrumentationCue: decision.instrumentationCue,
+    contentIdGuidance: decision.contentIdGuidance,
     source: 'pixabay',
     sourcePageUrl: track.sourcePageUrl,
     contentIdRegistered: track.contentIdRegistered,
@@ -130,7 +169,7 @@ export function recommendSoundtracks(context, limit = 18) {
   return DELIVERY_SOUNDTRACKS
     .map(track => ({
       track,
-      score: track.tags.reduce((total, tag) => total + String(tag).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).reduce((tagScore, word) => tagScore + (words.has(word) ? 2 : 0), 0), 0)
+      score: [...track.tags, ...track.bestFor, track.storyFunction, track.instrumentationCue].reduce((total, tag) => total + String(tag).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).reduce((tagScore, word) => tagScore + (words.has(word) ? 2 : 0), 0), 0)
         + (words.has(track.category) ? 4 : 0)
     }))
     .sort((left, right) => right.score - left.score || left.track.sortOrder - right.track.sortOrder)
