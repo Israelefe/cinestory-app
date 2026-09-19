@@ -28,10 +28,12 @@ const demoLinks = {
   'photo-reveal': ['/demo/reveal', 'Begin the live Photo Reveal'],
   canvas: ['/demo/canvas', 'Explore the live Canvas'],
   chapters: ['/demo/chapters', 'Open the live Chapters experience'],
-  album: ['/demo/album', 'Turn through the live Album']
+  album: ['/demo/album', 'Turn through the live Album'],
+  'event-coverage': ['/demo/event-coverage', 'Browse the live Event Coverage'],
+  campaign: ['/demo/campaign', 'Open the live Campaign Delivery']
 };
 
-const romanNumerals = ['I', 'II', 'III', 'IV', 'V', 'VI'];
+const romanNumerals = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
 
 const audiences = [
   {
@@ -175,13 +177,13 @@ export default function LandingPage() {
     </div></ScrollSection>
 
     <ScrollSection id="formats" className="v-section v-formats-section"><div className="v-wrap">
-      <Reveal className="v-section-head"><div><Eyebrow number="02">Six delivery formats</Eyebrow><h2 className="v-heading">The same photographs.<br /><em>Different ways to deliver them.</em></h2></div><p className="v-copy">Each format changes how the client first meets the shoot. The original photographs and complete downloadable gallery remain the same.</p></Reveal>
+      <Reveal className="v-section-head"><div><Eyebrow number="02">Eight delivery formats</Eyebrow><h2 className="v-heading">The same photographs.<br /><em>Different ways to deliver them.</em></h2></div><p className="v-copy">Each format changes how the client first meets the shoot. The original photographs and complete downloadable gallery remain the same.</p></Reveal>
       <div className="v-format-ledger">{DELIVERY_FORMATS.map((format, i) => <article className={'v-format-row format-' + format.id} id={format.id} key={format.id}>
         <Reveal className="v-format-copy"><div className="v-format-tag"><span className="v-index">{format.roman || format.number}</span><span className="v-format-sep" aria-hidden="true">·</span><span className="v-format-verb">{format.verb}</span></div><h3>{format.name}</h3><p>{format.line}</p><TextLink to={demoLinks[format.id][0]} onClick={event => keepFormatAsBackDestination(event, format.id)}>{demoLinks[format.id][1]}</TextLink></Reveal>
         <Reveal className="v-format-art" delay={Math.min(i * .03, .12)}><DeliveryFormatVisual format={format} /></Reveal>
       </article>)}</div>
       <Reveal className="v-formats-explore">
-        <div><span>All six formats</span><p>See what each one does and which shoots it suits.</p></div>
+        <div><span>All eight formats</span><p>See what each one does and which shoots it suits.</p></div>
         <Action to="/formats" onClick={event => keepFormatAsBackDestination(event, 'album')}>Explore all formats</Action>
       </Reveal>
     </div></ScrollSection>
@@ -257,7 +259,7 @@ export default function LandingPage() {
     </div></ScrollSection>
 
     <ScrollSection id="pricing" className="v-section v-workflow"><div className="v-wrap">
-      <Reveal className="v-section-head"><div><Eyebrow number="07">Plans in naira</Eyebrow><h2 className="v-heading">Start with three deliveries.<br /><em>Move to Pro when you need more.</em></h2></div><p className="v-copy">Both plans include all six delivery formats. The difference is delivery volume, storage, portfolio access, and whose branding your client sees.</p></Reveal>
+      <Reveal className="v-section-head"><div><Eyebrow number="07">Plans in naira</Eyebrow><h2 className="v-heading">Start with three deliveries.<br /><em>Move to Pro when you need more.</em></h2></div><p className="v-copy">Both plans include all eight showcase formats. The difference is delivery volume, storage, portfolio access, and whose branding your client sees.</p></Reveal>
       <div className="v-home-plan-preview">
         <Reveal className="v-home-plan-card">
           <div className="v-home-plan-card-top"><span>FREE</span><small>For trying Veylo with client work</small></div>

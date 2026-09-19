@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion, useScroll, useTransform } from 'framer-motion';
-import { ArrowLeft, BookOpen, Check, ChevronLeft, ChevronRight, Download, Grid2X2, Heart, Images, RotateCcw, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowLeft, BookOpen, Check, ChevronLeft, ChevronRight, Download, Grid2X2, Heart, Images, LoaderCircle, RotateCcw, Volume2, VolumeX, X } from 'lucide-react';
 import { Photo } from '../components/PublicDesign.jsx';
 import { useDialogFocus } from '../components/useDialogFocus.js';
 import '../styles/format-demos.css';
@@ -70,7 +70,7 @@ export function normalizeDeliveryPhotos(delivery, fallbackPhotos) {
   return fallbackPhotos;
 }
 
-export function DemoHeader({ format, client, sectionId, onGallery, light = false, delivery, audioState, toggleAudio }) {
+export function DemoHeader({ format, client, sectionId, onGallery, light = false, delivery, audioState, toggleAudio, hideSoundtrack = false }) {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -101,6 +101,8 @@ export function DemoHeader({ format, client, sectionId, onGallery, light = false
   };
 
   const brandName = delivery?.branding?.name || 'Veylo';
+  const soundtrackLoading = audioState?.loading === 'soundtrack';
+  const narrationLoading = audioState?.loading === 'narration';
 
   return <header className={'fd-header ' + (light ? 'is-light' : '')}>
     {delivery ? (
@@ -120,27 +122,29 @@ export function DemoHeader({ format, client, sectionId, onGallery, light = false
     <div className="fd-header-title"><span>{format}</span><strong>{client}</strong></div>
 
     <div className="fd-header-actions">
-      {audioState && toggleAudio && delivery?.soundtrack?.url && (
+      {audioState && toggleAudio && delivery?.soundtrack?.url && !hideSoundtrack && (
         <button
           type="button"
-          className={`fd-header-audio-btn ${audioState.playing === 'soundtrack' ? 'is-active' : ''}`}
+          className={`fd-header-audio-btn ${audioState.playing === 'soundtrack' ? 'is-active' : ''} ${soundtrackLoading ? 'is-loading' : ''}`}
           onClick={() => toggleAudio('soundtrack')}
-          aria-label={audioState.playing === 'soundtrack' ? 'Pause soundtrack' : 'Play soundtrack'}
+          aria-label={soundtrackLoading ? 'Cancel loading soundtrack' : audioState.playing === 'soundtrack' ? 'Pause soundtrack' : 'Play soundtrack'}
+          aria-busy={soundtrackLoading}
         >
-          {audioState.playing === 'soundtrack' ? <Volume2 size={16} /> : <VolumeX size={16} />}
-          <span className="fd-audio-label">{audioState.playing === 'soundtrack' ? 'Sound on' : 'Sound off'}</span>
+          {soundtrackLoading ? <LoaderCircle className="v-spin" size={16} /> : audioState.playing === 'soundtrack' ? <Volume2 size={16} /> : <VolumeX size={16} />}
+          <span className="fd-audio-label" aria-live="polite">{soundtrackLoading ? 'Loading music…' : audioState.playing === 'soundtrack' ? 'Sound on' : 'Sound off'}</span>
         </button>
       )}
 
       {audioState && toggleAudio && delivery?.narration?.url && (
         <button
           type="button"
-          className={`fd-header-audio-btn ${audioState.playing === 'narration' ? 'is-active' : ''}`}
+          className={`fd-header-audio-btn ${audioState.playing === 'narration' ? 'is-active' : ''} ${narrationLoading ? 'is-loading' : ''}`}
           onClick={() => toggleAudio('narration')}
-          aria-label={audioState.playing === 'narration' ? 'Pause narration' : 'Play narration'}
+          aria-label={narrationLoading ? 'Cancel loading narration' : audioState.playing === 'narration' ? 'Pause narration' : 'Play narration'}
+          aria-busy={narrationLoading}
         >
-          <Volume2 size={16} />
-          <span className="fd-audio-label">Narration</span>
+          {narrationLoading ? <LoaderCircle className="v-spin" size={16} /> : <Volume2 size={16} />}
+          <span className="fd-audio-label" aria-live="polite">{narrationLoading ? 'Loading voice…' : 'Narration'}</span>
         </button>
       )}
 
@@ -195,7 +199,7 @@ export function DemoGallery({ photos, title, onClose, initialIndex = null, liked
         const photoKey = photo.assetId || photo.name || index;
         return <figure key={photoKey}>
           <button type="button" onClick={() => setSelected(index)} aria-label={`Open photograph ${index + 1}`}>
-            <Photo name={photo.name} url={photo.url} alt={photo.alt} sizes="(max-width: 640px) 46vw, (max-width: 1024px) 30vw, 22vw" />
+            <Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt} sizes="(max-width: 640px) 46vw, (max-width: 1024px) 30vw, 22vw" />
           </button>
           <figcaption>
             <span>{String(index + 1).padStart(2, '0')}</span>
@@ -440,6 +444,8 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio }) 
   const [gallery, setGallery] = useState(false);
   const [uncovered, setUncovered] = useState(false);
   const [muted, setMuted] = useState(false);
+  const [audioLoading, setAudioLoading] = useState(false);
+  const [audioFailed, setAudioFailed] = useState(false);
   const reduced = useReducedMotion();
   const touchStart = useRef(null);
   const audio = useRef(null);
@@ -452,6 +458,16 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio }) 
   const studioName = delivery?.branding?.name ? `${delivery.branding.name.toUpperCase()} / LAGOS` : 'STUDIO LUMIÈRE / LAGOS';
   const closingLine = delivery?.creativeDirection?.closingLine || 'Your complete finished session is ready to view and download.';
   const audioTrack = delivery?.soundtrack?.url || '/audio/soundtrack-3.mp3';
+
+  const playSoundtrack = () => {
+    if (!audio.current) return;
+    setAudioLoading(true);
+    setAudioFailed(false);
+    audio.current.play().catch(() => {
+      setAudioLoading(false);
+      setAudioFailed(true);
+    });
+  };
 
   const next = () => {
     setUncovered(false);
@@ -467,15 +483,21 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio }) 
     setStarted(true);
     if (audio.current && !muted) {
       audio.current.volume = .52;
-      audio.current.play().catch(() => {});
+      playSoundtrack();
     }
   };
   const toggleSound = () => {
+    if (audioFailed) {
+      setMuted(false);
+      playSoundtrack();
+      return;
+    }
     const nextMuted = !muted;
     setMuted(nextMuted);
     if (!audio.current) return;
     audio.current.muted = nextMuted;
-    if (!nextMuted && started && !gallery) audio.current.play().catch(() => {});
+    if (nextMuted) setAudioLoading(false);
+    if (!nextMuted && started && !gallery) playSoundtrack();
   };
   const restart = () => {
     setStarted(false);
@@ -501,7 +523,7 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio }) 
     const player = audio.current;
     if (!player) return;
     if (gallery) player.pause();
-    else if (started && !muted) player.play().catch(() => {});
+    else if (started && !muted) playSoundtrack();
   }, [gallery, started, muted]);
 
   useEffect(() => () => audio.current?.pause(), []);
@@ -531,8 +553,8 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio }) 
   });
 
   return <div className="fd-page fd-reveal" style={themeStyles} onTouchStart={event => { touchStart.current = event.changedTouches[0].clientX; }} onTouchEnd={event => { if (touchStart.current === null || !started || finished || !uncovered) return; const distance = event.changedTouches[0].clientX - touchStart.current; touchStart.current = null; if (Math.abs(distance) > 45) distance < 0 ? next() : previous(); }}>
-    <audio ref={audio} src={audioTrack} loop preload="metadata" muted={muted} />
-    <DemoHeader format="Photo Reveal" client={client} sectionId="photo-reveal" onGallery={() => setGallery(true)} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
+    <audio ref={audio} src={audioTrack} loop preload="metadata" muted={muted} onWaiting={() => setAudioLoading(true)} onStalled={() => setAudioLoading(true)} onPlaying={() => { setAudioLoading(false); setAudioFailed(false); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioLoading(false); setAudioFailed(true); }} />
+    <DemoHeader format="Photo Reveal" client={client} sectionId="photo-reveal" onGallery={() => setGallery(true)} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} hideSoundtrack />
     {!started ? <main className="fd-reveal-opening">
       <motion.div className="fd-reveal-opening-photo" initial={reduced ? false : { scale: 1.14 }} animate={{ scale: 1.08 }} transition={{ duration: reduced ? 0 : 7, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={photos[0].name} url={photos[0].url} alt="A concealed preview of Sharon's finished studio portraits" eager /></motion.div>
       <div className="fd-reveal-opening-shade" />
@@ -555,7 +577,7 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio }) 
         <div className="fd-reveal-finale-copy"><span>{clientName.toUpperCase()} / ALL {photos.length} REVEALED</span><h1>These portraits<br />are yours.</h1><p>{closingLine}</p><div><button type="button" onClick={() => setGallery(true)}>View full gallery<Images size={17} /></button><button type="button" onClick={restart}><RotateCcw size={16} />Start again</button></div></div>
       </motion.section>}
     </main>}
-    {started && <button className="fd-reveal-sound" type="button" onClick={toggleSound} aria-label={muted ? 'Turn soundtrack on' : 'Mute soundtrack'}>{muted ? <VolumeX size={17} /> : <Volume2 size={17} />}<span>{muted ? 'Sound off' : 'Sound on'}</span></button>}
+    {started && <button className={`fd-reveal-sound ${audioLoading ? 'is-loading' : ''} ${audioFailed ? 'is-error' : ''}`} type="button" onClick={toggleSound} aria-label={audioLoading ? 'Stop loading soundtrack' : audioFailed ? 'Try soundtrack again' : muted ? 'Turn soundtrack on' : 'Mute soundtrack'} aria-busy={audioLoading}>{audioLoading ? <LoaderCircle className="v-spin" size={17} /> : muted || audioFailed ? <VolumeX size={17} /> : <Volume2 size={17} />}<span aria-live="polite">{audioLoading ? 'Loading music…' : audioFailed ? 'Try music again' : muted ? 'Sound off' : 'Sound on'}</span></button>}
     <AnimatePresence>{gallery && <DemoGallery photos={photos} title={client} onClose={() => setGallery(false)} delivery={delivery} {...galleryProps} />}</AnimatePresence>
   </div>;
 }
@@ -857,6 +879,8 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio }) {
   const [direction, setDirection] = useState(1);
   const [gallery, setGallery] = useState(false);
   const [muted, setMuted] = useState(false);
+  const [audioLoading, setAudioLoading] = useState(false);
+  const [audioFailed, setAudioFailed] = useState(false);
   const touchStart = useRef(null);
   const audio = useRef(null);
   const reduced = useReducedMotion();
@@ -869,6 +893,16 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio }) {
   const studioName = delivery?.branding?.name ? `${delivery.branding.name.toUpperCase()} PRESENTS` : 'VEYLO MEDIA PRESENTS';
   const albumTitle = delivery?.creativeDirection?.title || 'Family Album';
   const audioTrack = delivery?.soundtrack?.url || '/audio/soundtrack-2.mp3';
+
+  const playSoundtrack = () => {
+    if (!audio.current) return;
+    setAudioLoading(true);
+    setAudioFailed(false);
+    audio.current.play().catch(() => {
+      setAudioLoading(false);
+      setAudioFailed(true);
+    });
+  };
 
   const spreadsData = useMemo(() => {
     if (delivery && photos.length) {
@@ -922,7 +956,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio }) {
     setPage(0);
     if (audio.current && !muted) {
       audio.current.volume = .32;
-      audio.current.play().catch(() => {});
+      playSoundtrack();
     }
   };
   const next = () => {
@@ -940,18 +974,24 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio }) {
     setPage(value => value - 1);
   };
   const toggleSound = () => {
+    if (audioFailed) {
+      setMuted(false);
+      playSoundtrack();
+      return;
+    }
     const nextMuted = !muted;
     setMuted(nextMuted);
     if (!audio.current) return;
     audio.current.muted = nextMuted;
-    if (!nextMuted && started && !gallery) audio.current.play().catch(() => {});
+    if (nextMuted) setAudioLoading(false);
+    if (!nextMuted && started && !gallery) playSoundtrack();
   };
 
   useEffect(() => {
     const player = audio.current;
     if (!player) return;
     if (gallery) player.pause();
-    else if (started && !muted) player.play().catch(() => {});
+    else if (started && !muted) playSoundtrack();
   }, [gallery, started, muted]);
 
   useEffect(() => {
@@ -974,8 +1014,8 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio }) {
   });
 
   return <div className="fd-page fd-album" style={themeStyles}>
-    <audio ref={audio} src={audioTrack} loop preload="metadata" muted={muted} />
-    <DemoHeader format="Album" client={client} sectionId="album" onGallery={() => setGallery(true)} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
+    <audio ref={audio} src={audioTrack} loop preload="metadata" muted={muted} onWaiting={() => setAudioLoading(true)} onStalled={() => setAudioLoading(true)} onPlaying={() => { setAudioLoading(false); setAudioFailed(false); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioLoading(false); setAudioFailed(true); }} />
+    <DemoHeader format="Album" client={client} sectionId="album" onGallery={() => setGallery(true)} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} hideSoundtrack />
     {!started ? <main className="fd-album-cover">
       <motion.figure initial={reduced ? false : { scale: 1.01 }} animate={{ scale: reduced ? 1 : 1.035 }} transition={{ duration: reduced ? 0 : 10, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={photos[0].name} url={photos[0].url} alt={`${clientName} cover photograph`} eager sizes="100vw" /></motion.figure>
       <div className="fd-album-cover-shade" />
@@ -1015,9 +1055,16 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio }) {
         </button>
       </footer>
     </main>}
-    {started && <button className="fd-album-sound" type="button" onClick={toggleSound} aria-label={muted ? 'Turn album soundtrack on' : 'Mute album soundtrack'}>{muted ? <VolumeX size={17} /> : <Volume2 size={17} />}<span>{muted ? 'Sound off' : 'Sound on'}</span></button>}
+    {started && <button className={`fd-album-sound ${audioLoading ? 'is-loading' : ''} ${audioFailed ? 'is-error' : ''}`} type="button" onClick={toggleSound} aria-label={audioLoading ? 'Stop loading album soundtrack' : audioFailed ? 'Try album soundtrack again' : muted ? 'Turn album soundtrack on' : 'Mute album soundtrack'} aria-busy={audioLoading}>{audioLoading ? <LoaderCircle className="v-spin" size={17} /> : muted || audioFailed ? <VolumeX size={17} /> : <Volume2 size={17} />}<span aria-live="polite">{audioLoading ? 'Loading music…' : audioFailed ? 'Try music again' : muted ? 'Sound off' : 'Sound on'}</span></button>}
     <AnimatePresence>{gallery && <DemoGallery photos={photos} title={client} onClose={() => setGallery(false)} delivery={delivery} {...galleryProps} />}</AnimatePresence>
   </div>;
+}
+
+const AsyncEventCoverageViewer = React.lazy(() => import('../components/delivery/EventCampaignViewers.jsx').then(module => ({ default: module.EventCoverageViewer })));
+const AsyncCampaignDeliveryViewer = React.lazy(() => import('../components/delivery/EventCampaignViewers.jsx').then(module => ({ default: module.CampaignDeliveryViewer })));
+
+function NewFormatDemo({ children }) {
+  return <React.Suspense fallback={<div className="vd-state">Opening the delivery…</div>}>{children}</React.Suspense>;
 }
 
 export default function FormatDemo() {
@@ -1029,5 +1076,7 @@ export default function FormatDemo() {
   if (formatId === 'canvas') return <CanvasDemo />;
   if (formatId === 'chapters') return <ChaptersDemo />;
   if (formatId === 'album') return <AlbumDemo />;
+  if (formatId === 'event-coverage') return <NewFormatDemo><AsyncEventCoverageViewer /></NewFormatDemo>;
+  if (formatId === 'campaign') return <NewFormatDemo><AsyncCampaignDeliveryViewer /></NewFormatDemo>;
   return <Navigate to="/#formats" replace />;
 }

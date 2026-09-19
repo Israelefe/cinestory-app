@@ -9,7 +9,7 @@ export function Reveal({ children, className = '', delay = 0, ...props }) {
   return <motion.div className={className} initial={reduced ? false : { opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.14, margin: "-30px 0px" }} transition={{ duration: reduced ? 0 : 0.65, delay: reduced ? 0 : delay, ease: [0.22, 1, 0.36, 1] }} {...props}>{children}</motion.div>;
 }
 
-export function Photo({ name, url, thumbnailUrl, alt, className = '', eager = false, sizes = '(max-width: 640px) 100vw, (max-width: 1024px) 60vw, 50vw', ...props }) {
+export function Photo({ name, url, thumbnailUrl, srcSet, alt, className = '', eager = false, sizes = '(max-width: 640px) 100vw, (max-width: 1024px) 60vw, 50vw', ...props }) {
   const imageRef = React.useRef(null);
   const [loaded, setLoaded] = React.useState(false);
   const [nearViewport, setNearViewport] = React.useState(eager);
@@ -36,6 +36,7 @@ export function Photo({ name, url, thumbnailUrl, alt, className = '', eager = fa
     return <img
       ref={imageRef}
       src={url}
+      srcSet={srcSet}
       sizes={sizes}
       alt={alt || ''}
       loading={eager ? 'eager' : 'lazy'}
@@ -90,7 +91,7 @@ export function EndNote({ title = 'Your next shoot.', accent = 'Give it a proper
 }
 
 export const questions = [
-  { q: 'What does Veylo deliver?', a: 'Veylo presents the same finished shoot in one of six formats: Photo Story, Editorial Page, Photo Reveal, Canvas, Chapters, or Album. Every format leads to the complete gallery and downloads.' },
+  { q: 'What does Veylo deliver?', a: 'Veylo presents a finished shoot as a Photo Story, Editorial Page, Photo Reveal, Canvas, Chapters, Album, Event Coverage, or Campaign Delivery. Every format leads to the same complete gallery and downloads.' },
   { q: 'What should I upload?', a: 'Upload the final edited photographs your client is meant to receive. Add the client’s name and explain what the shoot is about so the presentation has the right context.' },
   { q: 'Does Veylo change my photographs?', a: 'No. Veylo designs the presentation around your photographs. It does not replace an image, retouch a face, or alter your colour grade.' },
   { q: 'Do I choose a template?', a: 'No fixed template decides how the shoot looks. Veylo studies the photographs and proposes the layout, colours, type, order, motion, and pacing. You review the result before publishing.' },
@@ -103,9 +104,9 @@ export function Questions({ items = questions }) {
 }
 
 export function Plans() {
-  const free = ['3 final photo deliveries each month', 'Up to 100 photos in each delivery', 'All six formats with Veylo branding'];
+  const free = ['3 final photo deliveries each month', 'Up to 100 photos in each delivery', 'All eight formats with Veylo branding'];
   const pro = ['Unlimited deliveries under fair use', 'Up to 500 photos in each delivery', 'Studio branding, Portfolio, and 50 GB storage'];
-  return <div className="v-plans"><Reveal className="v-plan"><div className="v-plan-number"><span>01</span><small>FREE</small></div><div className="v-plan-top"><Camera size={22} /><span className="v-eyebrow">For trying Veylo with real client work</span></div><h3>Veylo Free</h3><p className="v-price">₦0<span>/ month</span></p><p className="v-copy">Deliver up to three finished shoots each month. Any delivery can use any of Veylo’s six formats.</p><p className="v-plan-format-note"><Check size={15} />Choose any format for every delivery</p><ul>{free.map(x => <li key={x}><Check size={17} /><span>{x}</span></li>)}</ul><Action to="/signup">Start free</Action><p className="v-fine">No payment card needed. Your three deliveries reset monthly.</p></Reveal><Reveal className="v-plan v-plan-pro" delay={0.08}><div className="v-plan-number"><span>02</span><small>PRO</small></div><div className="v-plan-top"><BadgeCheck size={22} /><span className="v-eyebrow">For regular client delivery</span></div><h3>Veylo Pro</h3><p className="v-price">₦25,000<span>/ month</span></p><p className="v-copy">For photographers and studios delivering work every week and wanting their own name across the experience.</p><p className="v-plan-format-note"><Check size={15} />Choose any format for every delivery</p><ul>{pro.map(x => <li key={x}><Check size={17} /><span>{x}</span></li>)}</ul><Action to="/billing">Choose Pro</Action><p className="v-fine">Billed monthly. Unlimited delivery is covered by the fair use policy.</p></Reveal></div>;
+  return <div className="v-plans"><Reveal className="v-plan"><div className="v-plan-number"><span>01</span><small>FREE</small></div><div className="v-plan-top"><Camera size={22} /><span className="v-eyebrow">For trying Veylo with real client work</span></div><h3>Veylo Free</h3><p className="v-price">₦0<span>/ month</span></p><p className="v-copy">Deliver up to three finished shoots each month. Any delivery can use any of Veylo’s eight formats.</p><p className="v-plan-format-note"><Check size={15} />Choose any format for every delivery</p><ul>{free.map(x => <li key={x}><Check size={17} /><span>{x}</span></li>)}</ul><Action to="/signup">Start free</Action><p className="v-fine">No payment card needed. Your three deliveries reset monthly.</p></Reveal><Reveal className="v-plan v-plan-pro" delay={0.08}><div className="v-plan-number"><span>02</span><small>PRO</small></div><div className="v-plan-top"><BadgeCheck size={22} /><span className="v-eyebrow">For regular client delivery</span></div><h3>Veylo Pro</h3><p className="v-price">₦25,000<span>/ month</span></p><p className="v-copy">For photographers and studios delivering work every week and wanting their own name across the experience.</p><p className="v-plan-format-note"><Check size={15} />Choose any format for every delivery</p><ul>{pro.map(x => <li key={x}><Check size={17} /><span>{x}</span></li>)}</ul><Action to="/billing">Choose Pro</Action><p className="v-fine">Billed monthly. Unlimited delivery is covered by the fair use policy.</p></Reveal></div>;
 }
 
 export function TextLink({ to, children, ...props }) {

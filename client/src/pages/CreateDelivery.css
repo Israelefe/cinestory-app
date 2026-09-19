@@ -41,21 +41,27 @@
 .v-soundtrack-tabs{display:flex;gap:8px;padding-bottom:18px;border-bottom:1px solid rgba(255,255,255,0.1)}
 .v-soundtrack-tabs button{display:inline-flex;align-items:center;gap:8px;min-height:42px;padding:9px 16px;border:1px solid rgba(255,255,255,0.16);color:#aba49d;font-size:13px;font-weight:600;transition:background .2s,color .2s,border-color .2s}
 .v-soundtrack-tabs button.is-active{border-color:#ff9b8e;background:rgba(255,90,71,0.12);color:#ffd0c8}
-.v-soundtrack-curated-list{display:grid;gap:10px;margin-top:18px}
-.v-soundtrack-item{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:14px;padding:14px;border:1px solid rgba(255,255,255,0.12);background:#121217;transition:border-color .2s,background .2s}
+.v-soundtrack-catalogue-tools{display:grid;gap:12px;margin-top:18px}.v-soundtrack-catalogue-tools>label{display:flex;align-items:center;gap:9px;min-height:48px;padding:0 13px;border:1px solid rgba(255,255,255,.14);background:#0a0a0d;color:#8f8881}.v-soundtrack-catalogue-tools input{width:100%;min-width:0;border:0;background:transparent;color:#f2ece6;outline:0}.v-soundtrack-catalogue-tools>div{display:flex;gap:7px;padding-bottom:4px;overflow-x:auto;scrollbar-width:thin}.v-soundtrack-catalogue-tools>div button{min-height:38px;padding:8px 11px;border:1px solid rgba(255,255,255,.14);color:#a9a19a;font-size:11px;text-transform:capitalize;white-space:nowrap;transition:transform .18s ease,border-color .18s ease,color .18s ease}.v-soundtrack-catalogue-tools>div button:hover{transform:translateY(-1px);border-color:rgba(255,155,142,.5);color:#eee5de}.v-soundtrack-catalogue-tools>div button.is-active{border-color:#ff9b8e;background:rgba(255,90,71,.1);color:#ffd0c8}.v-soundtrack-curated-list{display:grid;gap:10px;margin-top:18px;max-height:560px;padding-right:5px;overflow-y:auto;overscroll-behavior:contain}.v-soundtrack-empty{padding:32px 12px;text-align:center;color:#8f8881;font-size:12px}
+.v-soundtrack-item{position:relative;display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:14px;padding:14px;overflow:hidden;border:1px solid rgba(255,255,255,0.12);background:#121217;transition:border-color .2s,background .2s}
 .v-soundtrack-item:hover{border-color:rgba(255,255,255,0.28);background:#16161d}
 .v-soundtrack-item.is-selected{border-color:rgba(255,155,142,0.6);background:rgba(255,90,71,0.06)}
+.v-soundtrack-item.is-loading{border-color:rgba(255,155,142,.48);background:linear-gradient(90deg,rgba(255,90,71,.08),#141419 45%)}
+.v-soundtrack-item.is-loading::after{content:'';position:absolute;left:0;bottom:0;width:38%;height:2px;background:linear-gradient(90deg,transparent,#ff9b8e 48%,transparent);transform:translate3d(-120%,0,0);animation:v-soundtrack-buffer 1.15s ease-in-out infinite;will-change:transform}
 .v-soundtrack-play{display:grid;place-items:center;width:44px;height:44px;border:1px solid rgba(255,255,255,0.2);border-radius:50%;background:#09090c;color:#f2ece6;transition:transform .18s,background .2s,color .2s}
 .v-soundtrack-play:hover{background:#ff5a47;color:#100b0a;transform:scale(1.05)}
 .v-soundtrack-play.is-playing{border-color:#ff9b8e;background:#ff5a47;color:#100b0a}
+.v-soundtrack-play.is-loading{border-color:rgba(255,155,142,.65);background:rgba(255,90,71,.1);color:#ffb4aa}
 .v-soundtrack-meta{min-width:0}
 .v-soundtrack-meta strong{display:block;font-size:14px;font-weight:650;color:#f0e8e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v-soundtrack-meta em{display:block;margin-top:3px;color:#77716c;font-size:10px;font-style:normal;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v-soundtrack-meta em.is-loading{color:#ffb4aa}
 .v-soundtrack-meta span{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:4px;color:#8f8881;font-size:12px}
 .v-soundtrack-meta b{font-weight:500;color:#d5cdc6}
 .v-soundtrack-meta i{font-style:normal;padding:2px 7px;border-radius:4px;background:rgba(255,255,255,0.07);color:#ff9b8e;font-size:11px}
 .v-soundtrack-select-btn{display:inline-flex;align-items:center;gap:7px;min-height:42px;padding:9px 15px;border:1px solid rgba(255,255,255,0.18);color:#dcd4cd;font-size:13px;font-weight:650;white-space:nowrap;transition:all .18s}
 .v-soundtrack-select-btn:hover{border-color:#ff5a47;color:#ff9b8e}
 .v-soundtrack-item.is-selected .v-soundtrack-select-btn{border-color:#6fc28d;background:rgba(111,194,141,0.12);color:#8bd6a4}
+@keyframes v-soundtrack-buffer{0%{transform:translate3d(-120%,0,0)}100%{transform:translate3d(365%,0,0)}}
 
 /* Shoot Type Select Dropdown */
 .v-create-form select{appearance:none;width:100%;min-height:50px;padding:13px 15px;padding-right:42px;border:1px solid #ffffff1c;background:#101014;color:#f2ece6;font-size:14px;outline:none;cursor:pointer;transition:border-color .2s,background .2s;background-image:url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");background-repeat:no-repeat;background-position:right 14px center}
@@ -76,3 +82,5 @@
 .v-create-form textarea{font-family:inherit;font-size:14px;font-weight:400!important;line-height:1.65;color:#f2ece6}
 .v-create-form textarea::placeholder{color:#69635d;font-weight:400!important;font-style:normal;opacity:1}
 .v-create-form input::placeholder{color:#69635d;font-weight:400!important;font-style:normal;opacity:1}
+@media(max-width:639px){.v-soundtrack-manager{padding:16px}.v-soundtrack-tabs{display:grid;grid-template-columns:1fr}.v-soundtrack-tabs button{justify-content:center}.v-soundtrack-item{grid-template-columns:42px minmax(0,1fr);gap:11px}.v-soundtrack-select-btn{grid-column:1/-1;justify-content:center;width:100%}.v-soundtrack-meta span i{display:none}.v-soundtrack-curated-list{max-height:68dvh}}
+@media(prefers-reduced-motion:reduce){.v-soundtrack-catalogue-tools button,.v-soundtrack-item,.v-soundtrack-play,.v-soundtrack-select-btn{transition:none!important}.v-soundtrack-item.is-loading::after{width:100%;transform:none;animation:none!important;opacity:.65}.v-soundtrack-play.is-loading .v-spin{animation:none!important}}

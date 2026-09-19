@@ -24,7 +24,7 @@ export default function DeliveryFormatVisual({ format, compact = false, paused =
     <span className="v-visual-format-icon"><Film size={17} /></span>
   </div>;
 
-  if (format.id === 'editorial-page') return <div ref={visualRef} className={visualClass('is-editorial')}>
+  if (format.id === 'editorial-page' || format.id === 'campaign') return <div ref={visualRef} className={visualClass('is-editorial')}>
     <div className="v-editorial-mast"><span>{format.editorialMast || 'THE PORTRAIT ISSUE'}</span><b>{format.editorialIssue || '01'}</b></div>
     <motion.div className="v-editorial-main" {...move(pauseMotion, { y: ['0%', '-2.5%'] }, 8.5)}><Photo name={photos[0]} alt={format.photoAlt || "Fashion photograph in an editorial page layout"} /></motion.div>
     <motion.div className="v-editorial-detail" {...move(pauseMotion, { y: ['2%', '-2%'], rotate: [-2, 0] }, 7)}><Photo name={photos[1]} alt={format.detailAlt || "Editorial fashion detail"} /></motion.div>

@@ -1,0 +1,5 @@
+.v-narration-voice{display:grid;gap:8px;margin-top:15px}
+.v-narration-voice>span{color:#d7cfc8;font-size:12px;font-weight:700}
+.v-narration-voice select{width:100%;min-height:48px;padding:11px 36px 11px 13px;border:1px solid #ffffff20;background:#101014;color:#f2ece6;font:inherit;outline:none;color-scheme:dark}
+.v-narration-voice select:focus{border-color:#ff9b8e70}
+.v-narration-voice>small{margin-top:0!important}

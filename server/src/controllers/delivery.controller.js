@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import { createReadStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
@@ -6,6 +8,7 @@ import Delivery from '../models/Delivery.js';
 import DeliveryJob from '../models/DeliveryJob.js';
 import PhotoLike from '../models/PhotoLike.js';
 import DeliveryView from '../models/DeliveryView.js';
+import DeliveryShareGrant from '../models/DeliveryShareGrant.js';
 import Portfolio from '../models/Portfolio.js';
 import User from '../models/User.js';
 import StorageAsset from '../models/StorageAsset.js';
@@ -15,11 +18,17 @@ import { reservePublishSlot, resolveEntitlements } from '../services/entitlement
 import { tokenDigest } from '../utils/auth.js';
 import { sendStoryReadyEmail } from '../services/email.service.js';
 import QRCode from 'qrcode';
+import { NARRATION_VOICES } from '../constants/narrationVoices.js';
+import { DELIVERY_SOUNDTRACKS, deliverySoundtrack, deliverySoundtrackFile } from '../constants/deliverySoundtracks.js';
 
 const createSchema = z.object({ clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().min(2).max(80), brief: z.string().trim().min(20).max(2000) }).strict();
 const confirmSchema = z.object({ publicId: z.string().min(5).max(500), version: z.union([z.string(), z.number()]), signature: z.string().min(20).max(200), resourceType: z.enum(['image']).default('image'), originalFilename: z.string().trim().max(180).default('photograph') }).strict();
 const soundtrackSchema = z.object({ publicId: z.string().min(5).max(500), version: z.union([z.string(), z.number()]), signature: z.string().min(20).max(200), originalFilename: z.string().trim().max(180), title: z.string().trim().min(1).max(100), rightsConfirmed: z.literal(true) }).strict();
 const formatSchema = z.object({ format: z.enum(creativeDirectorAllowlist.formats) }).strict();
+const narrationSchema = z.object({
+  voiceId: z.enum(NARRATION_VOICES.map(voice => voice.id)),
+  transcript: z.string().trim().min(20).max(2200).optional()
+}).strict();
 const revisionSchema = z.object({ scope: z.enum(['selected', 'full']), instruction: z.string().trim().min(8).max(600), assetIds: z.array(z.string().min(1).max(100)).max(100).default([]) }).strict();
 const libraryAssetsSchema = z.object({ assetIds: z.array(z.string().min(8).max(100)).min(1).max(20) }).strict();
 const accessSchema = z.object({ pin: z.string().regex(/^\d{6}$/).optional().or(z.literal('')), expiresAt: z.string().datetime().optional().or(z.literal('')), allowIndividualDownloads: z.boolean().default(true), allowDownloadAll: z.boolean().default(true), allowLikes: z.boolean().default(true) }).strict();
@@ -29,6 +38,15 @@ const reviewSchema = z.object({
   closingLine: z.string().trim().min(2).max(160),
   frames: z.array(z.object({ assetId: z.string().min(1).max(100), headline: z.string().trim().max(70), caption: z.string().trim().max(180) }).strict()).min(1).max(500),
   assetOrder: z.array(z.string().min(1).max(100)).min(1).max(500)
+}).strict();
+const shareGrantSchema = z.object({
+  role: z.enum(['organizer', 'vendor', 'guest']),
+  label: z.string().trim().min(2).max(100),
+  assetIds: z.array(z.string().min(1).max(100)).max(500).default([]),
+  allowIndividualDownloads: z.boolean().default(false),
+  allowDownloadAll: z.boolean().default(false),
+  usageTerms: z.string().trim().max(1000).default(''),
+  expiresAt: z.string().datetime().optional().or(z.literal(''))
 }).strict();
 
 async function ownedDelivery(id, userId, selectPin = false) {
@@ -42,7 +60,67 @@ function failValidation(res, parsed) {
 }
 
 function ownerAsset(asset) {
-  return { ...asset.toObject(), url: signedImageUrl(asset.publicId), thumbnailUrl: signedImageUrl(asset.publicId, { thumbnail: true }) };
+  return { ...asset.toObject(), url: signedImageUrl(asset.publicId), thumbnailUrl: signedImageUrl(asset.publicId, { thumbnail: true }), srcSet: [480, 960, 1600].map(width => `${signedImageUrl(asset.publicId, { width })} ${width}w`).join(', ') };
+}
+
+function curatedPreviewUrl(trackId) {
+  return `/api/v1/deliveries/soundtracks/${encodeURIComponent(trackId)}/audio`;
+}
+
+async function streamAudioFile(req, res, filePath) {
+  const details = await stat(filePath);
+  const range = String(req.get('range') || '');
+  res.set({
+    'Accept-Ranges': 'bytes',
+    'Content-Type': 'audio/mpeg',
+    'Cache-Control': 'private, max-age=3600',
+    'X-Content-Type-Options': 'nosniff'
+  });
+  if (!range) {
+    res.set('Content-Length', String(details.size));
+    return createReadStream(filePath).pipe(res);
+  }
+  const match = range.match(/^bytes=(\d*)-(\d*)$/);
+  if (!match) return res.status(416).set('Content-Range', `bytes */${details.size}`).end();
+  const start = match[1] ? Number(match[1]) : 0;
+  const end = match[2] ? Math.min(Number(match[2]), details.size - 1) : details.size - 1;
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start || start >= details.size) {
+    return res.status(416).set('Content-Range', `bytes */${details.size}`).end();
+  }
+  res.status(206).set({ 'Content-Range': `bytes ${start}-${end}/${details.size}`, 'Content-Length': String(end - start + 1) });
+  return createReadStream(filePath, { start, end }).pipe(res);
+}
+
+export function listDeliverySoundtracks(req, res) {
+  const previewToken = jwt.sign(
+    { userId: String(req.user.id), scope: 'soundtrack-preview' },
+    process.env.JWT_SECRET,
+    { expiresIn: '2h', issuer: 'veylo-api', audience: 'veylo-catalog-media' }
+  );
+  const data = DELIVERY_SOUNDTRACKS.map(({ filename, sha256, bytes, ...track }) => ({
+    ...track,
+    previewUrl: `${curatedPreviewUrl(track.id)}?token=${encodeURIComponent(previewToken)}`
+  }));
+  res.set('Cache-Control', 'private, max-age=300');
+  res.json({ success: true, data });
+}
+
+export async function streamDeliverySoundtrack(req, res) {
+  try {
+    try {
+      const payload = jwt.verify(String(req.query.token || ''), process.env.JWT_SECRET, { issuer: 'veylo-api', audience: 'veylo-catalog-media' });
+      if (payload.scope !== 'soundtrack-preview' || !payload.userId) throw new Error('Invalid preview token.');
+    } catch {
+      return res.status(403).json({ success: false, message: 'This soundtrack preview has expired.' });
+    }
+    const filePath = deliverySoundtrackFile(req.params.trackId);
+    if (!filePath) return res.status(404).json({ success: false, message: 'Soundtrack not found.' });
+    return await streamAudioFile(req, res, filePath);
+  } catch (error) {
+    if (error.code === 'ENOENT') return res.status(404).json({ success: false, message: 'Soundtrack file not found.' });
+    console.error('[deliveries/soundtrack-stream]', error.message);
+    return res.status(500).json({ success: false, message: 'We could not play that soundtrack.' });
+  }
 }
 
 export async function createDelivery(req, res) {
@@ -85,12 +163,85 @@ export async function updateDeliveryDetails(req, res) {
 
 export async function listDeliveries(req, res) {
   try {
-    const deliveries = await Delivery.find({ userId: req.user.id }).sort({ updatedAt: -1 }).lean();
+    const includeArchived = req.query.scope === 'archived';
+    const deliveries = await Delivery.find({ userId: req.user.id, status: includeArchived ? 'archived' : { $ne: 'archived' } }).sort({ updatedAt: -1 }).lean();
     const data = deliveries.map(delivery => ({ ...delivery, assets: delivery.assets?.slice(0, 1).map(asset => ({ ...asset, thumbnailUrl: signedImageUrl(asset.publicId, { thumbnail: true }) })) }));
     res.json({ success: true, data });
   } catch (error) {
     console.error('[deliveries/list]', error.message);
     res.status(500).json({ success: false, message: 'We could not open your deliveries.' });
+  }
+}
+
+export async function archiveDelivery(req, res) {
+  try {
+    const delivery = await ownedDelivery(req.params.id, req.user.id);
+    if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    if (delivery.status === 'archived') return res.json({ success: true, data: delivery });
+    if (['analyzing', 'directing'].includes(delivery.status)) return res.status(409).json({ success: false, message: 'Wait for the current delivery task to finish before archiving it.' });
+    delivery.archivedFromStatus = delivery.status;
+    delivery.status = 'archived';
+    delivery.archivedAt = new Date();
+    await delivery.save();
+    res.json({ success: true, data: delivery, message: 'Delivery archived. Its client link is now closed.' });
+  } catch (error) {
+    console.error('[deliveries/archive]', error.message);
+    res.status(500).json({ success: false, message: 'We could not archive this delivery.' });
+  }
+}
+
+export async function restoreDelivery(req, res) {
+  try {
+    const delivery = await ownedDelivery(req.params.id, req.user.id);
+    if (!delivery || delivery.status !== 'archived') return res.status(404).json({ success: false, message: 'Archived delivery not found.' });
+    const restoreStatus = ['draft', 'review', 'published'].includes(delivery.archivedFromStatus) ? delivery.archivedFromStatus : 'draft';
+    delivery.status = restoreStatus;
+    delivery.archivedAt = undefined;
+    delivery.archivedFromStatus = undefined;
+    await delivery.save();
+    res.json({ success: true, data: delivery, message: restoreStatus === 'published' ? 'Delivery restored. Its client link works again.' : 'Delivery restored to your drafts.' });
+  } catch (error) {
+    console.error('[deliveries/restore]', error.message);
+    res.status(500).json({ success: false, message: 'We could not restore this delivery.' });
+  }
+}
+
+export async function listShareGrants(req, res) {
+  try {
+    const delivery = await ownedDelivery(req.params.id, req.user.id);
+    if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    const grants = await DeliveryShareGrant.find({ deliveryId: delivery._id, userId: req.user.id, revokedAt: null }).sort({ createdAt: -1 }).lean();
+    res.json({ success: true, data: grants });
+  } catch {
+    res.status(500).json({ success: false, message: 'We could not open the sharing links.' });
+  }
+}
+
+export async function createShareGrant(req, res) {
+  try {
+    const parsed = shareGrantSchema.safeParse(req.body);
+    if (!parsed.success) return failValidation(res, parsed);
+    const delivery = await ownedDelivery(req.params.id, req.user.id);
+    if (!delivery || delivery.status !== 'published' || !['event-coverage', 'campaign'].includes(delivery.format)) return res.status(404).json({ success: false, message: 'Publish an Event Coverage or Campaign delivery before creating role links.' });
+    const allowedAssets = new Set(delivery.assets.map(asset => asset.assetId));
+    if (parsed.data.assetIds.some(assetId => !allowedAssets.has(assetId))) return res.status(400).json({ success: false, message: 'One or more selected photographs are not in this delivery.' });
+    const token = crypto.randomBytes(32).toString('base64url');
+    const grant = await DeliveryShareGrant.create({ deliveryId: delivery._id, userId: req.user.id, ...parsed.data, expiresAt: parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : undefined, tokenDigest: tokenDigest(token) });
+    const url = `${String(process.env.CLIENT_URL || 'https://veylo.com.ng').replace(/\/$/, '')}/d/${delivery.publicId}?share=${encodeURIComponent(token)}`;
+    res.status(201).json({ success: true, data: { ...grant.toObject(), url } });
+  } catch (error) {
+    console.error('[deliveries/share-grant]', error.message);
+    res.status(500).json({ success: false, message: 'We could not create that sharing link.' });
+  }
+}
+
+export async function revokeShareGrant(req, res) {
+  try {
+    const grant = await DeliveryShareGrant.findOneAndUpdate({ _id: req.params.grantId, deliveryId: req.params.id, userId: req.user.id, revokedAt: null }, { revokedAt: new Date() }, { new: true });
+    if (!grant) return res.status(404).json({ success: false, message: 'Sharing link not found.' });
+    res.json({ success: true, message: 'Sharing link closed.' });
+  } catch {
+    res.status(500).json({ success: false, message: 'We could not close that sharing link.' });
   }
 }
 
@@ -100,6 +251,9 @@ export async function getDelivery(req, res) {
     if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
     const data = delivery.toObject();
     data.assets = delivery.assets.map(ownerAsset);
+    if (data.soundtrack?.catalogId && data.soundtrack?.source === 'curated') {
+      data.soundtrack.url = curatedPreviewUrl(data.soundtrack.catalogId);
+    }
     if (data.soundtrack?.publicId && !data.soundtrack.url) {
       data.soundtrack.url = signedImageUrl(data.soundtrack.publicId, { resourceType: 'video' });
     }
@@ -125,7 +279,7 @@ export async function deleteDelivery(req, res) {
       await portfolio.save();
     }
     await removeDeliveryMedia(req.user.id, delivery._id);
-    await Promise.all([DeliveryJob.deleteMany({ deliveryId: delivery._id }), PhotoLike.deleteMany({ deliveryId: delivery._id }), DeliveryView.deleteMany({ deliveryId: delivery._id }), Delivery.deleteOne({ _id: delivery._id, userId: req.user.id })]);
+    await Promise.all([DeliveryJob.deleteMany({ deliveryId: delivery._id }), DeliveryShareGrant.deleteMany({ deliveryId: delivery._id }), PhotoLike.deleteMany({ deliveryId: delivery._id }), DeliveryView.deleteMany({ deliveryId: delivery._id }), Delivery.deleteOne({ _id: delivery._id, userId: req.user.id })]);
     res.json({ success: true, message: 'Delivery deleted and its client link disabled.' });
   } catch (error) {
     console.error('[deliveries/delete]', error.message);
@@ -301,23 +455,35 @@ export async function deleteSoundtrack(req, res) {
 
 export async function selectCuratedSoundtrack(req, res) {
   try {
-    const { title, url, genre, mood, durationSec } = req.body || {};
-    if (!title || !url) return res.status(400).json({ success: false, message: 'Track title and audio URL are required.' });
+    const parsed = z.object({ trackId: z.string().trim().min(3).max(80) }).strict().safeParse(req.body);
+    if (!parsed.success) return failValidation(res, parsed);
+    const track = deliverySoundtrack(parsed.data.trackId);
+    if (!track) return res.status(404).json({ success: false, message: 'That soundtrack is not in Veylo’s approved library.' });
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This delivery is not available for audio selection.' });
     if (delivery.soundtrack?.publicId) await removeDeliveryAudio(delivery.soundtrack.publicId).catch(() => {});
     delivery.soundtrack = {
-      title: String(title).slice(0, 100),
-      url: String(url).slice(0, 500),
-      genre: genre ? String(genre).slice(0, 50) : '',
-      mood: mood ? String(mood).slice(0, 50) : '',
-      duration: Number(durationSec) || 120,
+      catalogId: track.id,
+      title: track.title,
+      creator: track.creator,
+      genre: track.genre,
+      mood: track.mood,
+      tempo: track.tempo,
+      energy: track.energy,
+      narrationFit: track.narrationFit,
+      tags: track.tags,
+      duration: track.durationSec,
       source: 'curated',
+      sourceProvider: 'Pixabay',
+      sourcePageUrl: track.sourcePageUrl,
+      contentIdRegistered: track.contentIdRegistered,
+      license: track.license,
+      licenseUrl: track.licenseUrl,
       rightsConfirmedAt: new Date()
     };
     delivery.markModified('soundtrack');
     await delivery.save();
-    res.status(200).json({ success: true, data: delivery.soundtrack });
+    res.status(200).json({ success: true, data: { ...delivery.soundtrack, url: curatedPreviewUrl(track.id) } });
   } catch (error) {
     console.error('[deliveries/soundtrack-select]', error.message);
     res.status(500).json({ success: false, message: 'We could not attach that soundtrack.' });
@@ -365,11 +531,13 @@ export async function queueDirection(req, res) {
 export async function queueNarration(req, res) {
   try {
     if (process.env.DELIVERY_PIPELINE_ENABLED !== 'true') return res.status(503).json({ success: false, message: 'Narration is not available yet.' });
+    const parsed = narrationSchema.safeParse(req.body);
+    if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery?.creativeDirection || !['photo-story', 'chapters'].includes(delivery.format)) return res.status(409).json({ success: false, message: 'Narration is available after directing a Photo Story or Chapters delivery.' });
     const running = await DeliveryJob.findOne({ deliveryId: delivery._id, status: { $in: ['queued', 'running'] } });
     if (running) return res.status(409).json({ success: false, message: 'Veylo is already working on this delivery.' });
-    const job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'narrate', stage: 'queued' });
+    const job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'narrate', stage: 'queued', input: parsed.data });
     res.status(202).json({ success: true, data: job });
   } catch (error) {
     console.error('[deliveries/narrate]', error.message);
@@ -501,25 +669,77 @@ function hasPublicAccess(req, delivery) {
   return accessTokenValid(req.get('x-delivery-access'), delivery._id);
 }
 
-async function publicPayload(delivery) {
+async function shareGrant(req, delivery) {
+  const token = String(req.get('x-delivery-grant') || '');
+  if (!token) return null;
+  return DeliveryShareGrant.findOne({ deliveryId: delivery._id, tokenDigest: tokenDigest(token), revokedAt: null, $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }] });
+}
+
+function grantAssets(delivery, grant) {
+  if (!grant?.assetIds?.length) return delivery.assets;
+  const allowed = new Set(grant.assetIds);
+  return delivery.assets.filter(asset => allowed.has(asset.assetId));
+}
+
+async function publicPayload(delivery, grant = null) {
   const owner = delivery.userId;
   const entitlements = await resolveEntitlements(owner, { includeUsage: false });
   const studioBrand = entitlements.features.branding === 'studio';
   const object = delivery.toObject();
   delete object.userId;
   delete object.access?.pinDigest;
-  object.assets = delivery.assets.map(ownerAsset);
+  object.assets = grantAssets(delivery, grant).map(ownerAsset);
+  if (grant) {
+    object.access.allowIndividualDownloads = Boolean(grant.allowIndividualDownloads);
+    object.access.allowDownloadAll = Boolean(grant.allowDownloadAll);
+    object.access.allowLikes = false;
+    object.viewer = { role: grant.role, label: grant.label, usageTerms: grant.usageTerms || '' };
+  }
   if (object.narration?.publicId) object.narration.url = signedImageUrl(object.narration.publicId, { resourceType: 'video' });
   if (object.soundtrack?.publicId) object.soundtrack.url = signedImageUrl(object.soundtrack.publicId, { resourceType: 'video' });
+  if (object.soundtrack?.catalogId && object.soundtrack?.source === 'curated') {
+    const mediaToken = jwt.sign(
+      { deliveryId: String(delivery._id), catalogId: object.soundtrack.catalogId, scope: 'soundtrack' },
+      process.env.JWT_SECRET,
+      { expiresIn: '12h', issuer: 'veylo-api', audience: 'veylo-delivery-media' }
+    );
+    object.soundtrack.url = `/api/v1/deliveries/public/${encodeURIComponent(delivery.publicId)}/soundtrack?token=${encodeURIComponent(mediaToken)}`;
+  }
   object.branding = studioBrand ? { type: 'studio', name: owner.studio?.name || owner.name, logoUrl: owner.studio?.logoUrl || owner.avatar || '' } : { type: 'veylo', name: 'Veylo', logoUrl: '/veylo/veylo-mark.svg' };
   return object;
+}
+
+export async function getPublicSoundtrack(req, res) {
+  try {
+    const delivery = await publicDelivery(req.params.publicId);
+    if (!delivery || expired(delivery) || delivery.soundtrack?.source !== 'curated' || !delivery.soundtrack?.catalogId) {
+      return res.status(404).json({ success: false, message: 'Soundtrack not found.' });
+    }
+    let payload;
+    try {
+      payload = jwt.verify(String(req.query.token || ''), process.env.JWT_SECRET, { issuer: 'veylo-api', audience: 'veylo-delivery-media' });
+    } catch {
+      return res.status(403).json({ success: false, message: 'This soundtrack link has expired.' });
+    }
+    if (payload.scope !== 'soundtrack' || payload.deliveryId !== String(delivery._id) || payload.catalogId !== delivery.soundtrack.catalogId) {
+      return res.status(403).json({ success: false, message: 'This soundtrack link is not valid.' });
+    }
+    const filePath = deliverySoundtrackFile(delivery.soundtrack.catalogId);
+    if (!filePath) return res.status(404).json({ success: false, message: 'Soundtrack not found.' });
+    return await streamAudioFile(req, res, filePath);
+  } catch (error) {
+    if (error.code === 'ENOENT') return res.status(404).json({ success: false, message: 'Soundtrack file not found.' });
+    console.error('[deliveries/public-soundtrack]', error.message);
+    return res.status(500).json({ success: false, message: 'We could not play that soundtrack.' });
+  }
 }
 
 export async function getPublicDelivery(req, res) {
   try {
     const delivery = await publicDelivery(req.params.publicId);
     if (!delivery || expired(delivery)) return res.status(404).json({ success: false, message: 'This delivery is no longer available.' });
-    if (!hasPublicAccess(req, delivery)) {
+    const grant = await shareGrant(req, delivery);
+    if (!grant && !hasPublicAccess(req, delivery)) {
       const owner = delivery.userId;
       const entitlements = await resolveEntitlements(owner, { includeUsage: false });
       const branding = entitlements.features.branding === 'studio' ? { type: 'studio', name: owner.studio?.name || owner.name, logoUrl: owner.studio?.logoUrl || owner.avatar || '' } : { type: 'veylo', name: 'Veylo', logoUrl: '/veylo/veylo-mark.svg' };
@@ -529,7 +749,7 @@ export async function getPublicDelivery(req, res) {
       await DeliveryView.create({ deliveryId: delivery._id, visitorDigest: tokenDigest(visitorId(req, res)) });
       await Delivery.updateOne({ _id: delivery._id }, { $inc: { viewsCount: 1 } });
     } catch (error) { if (error.code !== 11000) throw error; }
-    res.json({ success: true, data: await publicPayload(delivery) });
+    res.json({ success: true, data: await publicPayload(delivery, grant) });
   } catch (error) {
     console.error('[deliveries/public]', error.message);
     res.status(500).json({ success: false, message: 'We could not open this delivery.' });
@@ -572,7 +792,9 @@ function visitorId(req, res) {
 export async function togglePhotoLike(req, res) {
   try {
     const delivery = await publicDelivery(req.params.publicId);
-    if (!delivery || expired(delivery) || !hasPublicAccess(req, delivery)) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
+    const grant = delivery ? await shareGrant(req, delivery) : null;
+    if (!delivery || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
+    if (grant) return res.status(403).json({ success: false, message: 'Likes are not available on this role link.' });
     if (!delivery.access?.allowLikes) return res.status(403).json({ success: false, message: 'Photo likes are turned off for this delivery.' });
     if (!delivery.assets.some(asset => asset.assetId === req.params.assetId)) return res.status(404).json({ success: false, message: 'Photograph not found.' });
     const query = { deliveryId: delivery._id, assetId: req.params.assetId, visitorDigest: tokenDigest(visitorId(req, res)) };
@@ -590,9 +812,10 @@ export async function togglePhotoLike(req, res) {
 export async function getPhotoDownload(req, res) {
   try {
     const delivery = await publicDelivery(req.params.publicId);
-    if (!delivery || expired(delivery) || !hasPublicAccess(req, delivery)) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
-    if (!delivery.access?.allowIndividualDownloads) return res.status(403).json({ success: false, message: 'Individual downloads are turned off for this delivery.' });
-    const asset = delivery.assets.find(item => item.assetId === req.params.assetId);
+    const grant = delivery ? await shareGrant(req, delivery) : null;
+    if (!delivery || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
+    if (grant ? !grant.allowIndividualDownloads : !delivery.access?.allowIndividualDownloads) return res.status(403).json({ success: false, message: 'Individual downloads are turned off for this link.' });
+    const asset = grantAssets(delivery, grant).find(item => item.assetId === req.params.assetId);
     if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
     await Delivery.updateOne({ _id: delivery._id }, { $inc: { downloadsCount: 1 } });
     res.json({ success: true, data: { url: signedImageUrl(asset.publicId, { original: true, attachment: true }) } });
@@ -602,9 +825,11 @@ export async function getPhotoDownload(req, res) {
 export async function getGalleryDownload(req, res) {
   try {
     const delivery = await publicDelivery(req.params.publicId);
-    if (!delivery || expired(delivery) || !hasPublicAccess(req, delivery)) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
-    if (!delivery.access?.allowDownloadAll) return res.status(403).json({ success: false, message: 'Full gallery download is turned off for this delivery.' });
-    const url = signedArchiveUrl(delivery.assets.map(asset => asset.publicId), `${delivery.clientName || 'client'}-photographs`, deliveryFolder(delivery.userId._id, delivery._id));
+    const grant = delivery ? await shareGrant(req, delivery) : null;
+    if (!delivery || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
+    if (grant ? !grant.allowDownloadAll : !delivery.access?.allowDownloadAll) return res.status(403).json({ success: false, message: 'Full gallery download is turned off for this link.' });
+    const selectedAssets = grantAssets(delivery, grant);
+    const url = signedArchiveUrl(selectedAssets.map(asset => asset.publicId), `${delivery.clientName || 'client'}-photographs`, grant?.assetIds?.length ? '' : deliveryFolder(delivery.userId._id, delivery._id));
     await Delivery.updateOne({ _id: delivery._id }, { $inc: { downloadsCount: 1 } });
     res.json({ success: true, data: { url } });
   } catch (error) {

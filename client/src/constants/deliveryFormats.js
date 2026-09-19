@@ -1,6 +1,7 @@
 export const DELIVERY_FORMATS = [
   {
     id: 'photo-story',
+    value: 'photo-story',
     number: '01',
     roman: 'I',
     name: 'Photo Story',
@@ -13,6 +14,7 @@ export const DELIVERY_FORMATS = [
   },
   {
     id: 'editorial-page',
+    value: 'editorial',
     number: '02',
     roman: 'II',
     name: 'Editorial Page',
@@ -25,6 +27,7 @@ export const DELIVERY_FORMATS = [
   },
   {
     id: 'photo-reveal',
+    value: 'photo-reveal',
     number: '03',
     roman: 'III',
     name: 'Photo Reveal',
@@ -37,6 +40,7 @@ export const DELIVERY_FORMATS = [
   },
   {
     id: 'canvas',
+    value: 'canvas',
     number: '04',
     roman: 'IV',
     name: 'Canvas',
@@ -49,6 +53,7 @@ export const DELIVERY_FORMATS = [
   },
   {
     id: 'chapters',
+    value: 'chapters',
     number: '05',
     roman: 'V',
     name: 'Chapters',
@@ -61,6 +66,7 @@ export const DELIVERY_FORMATS = [
   },
   {
     id: 'album',
+    value: 'album',
     number: '06',
     roman: 'VI',
     name: 'Album',
@@ -70,6 +76,32 @@ export const DELIVERY_FORMATS = [
     bestFor: 'Traditional weddings, white weddings, anniversaries, maternity, family sessions, and milestone celebrations.',
     clientMindset: 'Turn through my photos.',
     photos: ['demo-album-fa-source', 'demo-album-fa-3', 'demo-album-fa-5']
+  },
+  {
+    id: 'event-coverage',
+    value: 'event-coverage',
+    number: '07',
+    roman: 'VII',
+    name: 'Event Coverage',
+    verb: 'Browse',
+    line: 'A complete event organised around the scenes, people, and shifts in the day.',
+    description: 'Built for conferences, church services, owambe celebrations, and gatherings where no single person is the subject. The delivery opens with highlights, then lets guests browse every scene and the complete gallery.',
+    bestFor: 'Conferences, church services, social gatherings, corporate events, concerts, and community celebrations.',
+    clientMindset: 'Browse what happened.',
+    photos: ['demo-wedding-1', 'demo-wedding-2', 'demo-wedding-3']
+  },
+  {
+    id: 'campaign',
+    value: 'campaign',
+    number: '08',
+    roman: 'VIII',
+    name: 'Campaign Delivery',
+    verb: 'Use',
+    line: 'A commercial showcase followed by an organised handoff of final assets.',
+    description: 'The client sees the campaign as a considered presentation, then moves into clearly named asset sets, variants, download sizes, and photographer-supplied usage terms.',
+    bestFor: 'Lookbooks, product campaigns, hospitality, food, property, personal branding, and corporate libraries.',
+    clientMindset: 'See the campaign, then use the files.',
+    photos: ['demo-ada-1', 'demo-ada-3']
   }
 ];
 
@@ -82,7 +114,7 @@ export const DELIVERY_PROCESS = [
 
 export const CURATED_DELIVERY_SOUNDTRACKS = [
   {
-    id: 'track_birthday_1',
+    id: 'current_birthday',
     title: "Ada's Celebration Groove",
     artist: 'Veylo Studio Master',
     url: '/audio/ada-birthday.mp3',
@@ -93,7 +125,7 @@ export const CURATED_DELIVERY_SOUNDTRACKS = [
     tags: ['Birthday', 'Milestone', 'Owambe', 'Party']
   },
   {
-    id: 'track_acoustic_1',
+    id: 'current_ambient',
     title: 'Golden Hour Reverie',
     artist: 'Veylo Acoustic Studio',
     url: '/audio/soundtrack-1.mp3',
@@ -104,7 +136,7 @@ export const CURATED_DELIVERY_SOUNDTRACKS = [
     tags: ['Wedding', 'Pre-Wedding', 'Sunset', 'Romance']
   },
   {
-    id: 'track_strings_1',
+    id: 'current_acoustic',
     title: 'Velvet Acoustic Strings',
     artist: 'Lumina Studio Orchestra',
     url: '/audio/soundtrack-2.mp3',
@@ -115,7 +147,7 @@ export const CURATED_DELIVERY_SOUNDTRACKS = [
     tags: ['Portrait', 'Studio', 'Quiet', 'Maternity']
   },
   {
-    id: 'track_soul_1',
+    id: 'current_soul',
     title: 'Lagos Sunset Horizon',
     artist: 'Veylo Soundscapes',
     url: '/audio/soundtrack-3.mp3',
@@ -124,28 +156,5 @@ export const CURATED_DELIVERY_SOUNDTRACKS = [
     tempo: 'mid',
     durationSec: 148,
     tags: ['Fashion', 'Editorial', 'Lookbook', 'Creative']
-  },
-  {
-    id: 'track_piano_1',
-    title: 'Whispering Horizons',
-    artist: 'Serenity Audio Lab',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
-    genre: 'Piano & Strings',
-    mood: 'Cinematic Warmth',
-    tempo: 'slow',
-    durationSec: 180,
-    tags: ['Wedding', 'Fine Art', 'Family', 'Album']
-  },
-  {
-    id: 'track_hope_1',
-    title: 'New Dawn Serenade',
-    artist: 'Velvet Horizon Studio',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
-    genre: 'Contemporary Acoustic',
-    mood: 'Reflective & Pure',
-    tempo: 'mid',
-    durationSec: 175,
-    tags: ['Graduation', 'Milestone', 'Achievement', 'Portraits']
   }
 ];
-

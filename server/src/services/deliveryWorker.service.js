@@ -4,6 +4,7 @@ import DeliveryJob from '../models/DeliveryJob.js';
 import { analyzeImageBatch, createFrameBatch, createGlobalDirection, recommendFormats } from './alibabaCreativeDirector.service.js';
 import { signedImageUrl } from './deliveryMedia.service.js';
 import { generateNarration } from './narration.service.js';
+import { deliverySoundtrack } from '../constants/deliverySoundtracks.js';
 
 const workerId = `${os.hostname()}:${process.pid}`;
 let timer;
@@ -89,15 +90,38 @@ async function direct(job, delivery) {
   const sections = direction.sections.map(section => ({ ...section, assetIds: frames.filter(frame => frame.sectionId === section.id).map(frame => frame.assetId) })).filter(section => section.assetIds.length);
   delivery.title = direction.title;
   delivery.creativeDirection = { ...direction, sections, frames };
+  if (!delivery.soundtrack && direction.music?.trackId) {
+    const track = deliverySoundtrack(direction.music.trackId);
+    if (track) delivery.soundtrack = {
+      catalogId: track.id,
+      title: track.title,
+      creator: track.creator,
+      genre: track.genre,
+      mood: track.mood,
+      tempo: track.tempo,
+      energy: track.energy,
+      narrationFit: track.narrationFit,
+      tags: track.tags,
+      duration: track.durationSec,
+      source: 'curated',
+      sourceProvider: 'Pixabay',
+      sourcePageUrl: track.sourcePageUrl,
+      contentIdRegistered: track.contentIdRegistered,
+      license: track.license,
+      licenseUrl: track.licenseUrl,
+      selectedBy: 'creative-director'
+    };
+  }
   delivery.status = 'review';
   delivery.markModified('creativeDirection');
+  delivery.markModified('soundtrack');
   await delivery.save();
   await saveJob(job, { status: 'review', stage: 'ready-to-review', progress: 100, result: { direction, frames }, completedAt: new Date() });
 }
 
 async function narrate(job, delivery) {
   await saveJob(job, { stage: 'recording-narration', progress: 20 });
-  delivery.narration = await generateNarration(delivery);
+  delivery.narration = await generateNarration(delivery, job.input || {});
   delivery.markModified('narration');
   await delivery.save();
   await saveJob(job, { status: 'review', stage: 'narration-ready', progress: 100, result: { narration: delivery.narration }, completedAt: new Date() });

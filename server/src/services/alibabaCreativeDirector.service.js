@@ -1,6 +1,7 @@
 import { z } from 'zod';
+import { DELIVERY_SOUNDTRACKS, recommendSoundtracks } from '../constants/deliverySoundtracks.js';
 
-const FORMATS = ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album'];
+const FORMATS = ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign'];
 const MOTIONS = ['slow-push', 'slow-pull', 'pan-left', 'pan-right', 'float', 'still'];
 const TRANSITIONS = ['fade', 'crossfade', 'wipe', 'slide', 'reveal', 'cut'];
 const LAYOUTS = ['hero', 'single', 'pair', 'triptych', 'grid', 'strip', 'spread', 'cluster', 'chapter-cover'];
@@ -127,6 +128,7 @@ const directionSchema = z.object({
   }),
   pace: z.preprocess(val => ['measured', 'warm', 'energetic'].includes(val) ? val : 'warm', z.enum(['measured', 'warm', 'energetic'])),
   music: z.object({
+    trackId: z.preprocess(val => DELIVERY_SOUNDTRACKS.some(track => track.id === val) ? val : DELIVERY_SOUNDTRACKS[0].id, z.enum(DELIVERY_SOUNDTRACKS.map(track => track.id))),
     mood: z.preprocess(val => String(val || '').trim().slice(0, 80) || 'Cinematic Warmth', z.string().min(2).max(80)),
     genre: z.preprocess(val => String(val || '').trim().slice(0, 80) || 'Ambient Acoustic', z.string().min(2).max(80)),
     tempo: z.preprocess(val => ['slow', 'mid', 'upbeat'].includes(val) ? val : 'mid', z.enum(['slow', 'mid', 'upbeat']))
@@ -451,16 +453,18 @@ export async function recommendFormats({ brief, shootType, clientName, imageInsi
     { "format": "photo-reveal", "score": <1-100>, "reason": "..." },
     { "format": "canvas", "score": <1-100>, "reason": "..." },
     { "format": "chapters", "score": <1-100>, "reason": "..." },
-    { "format": "album", "score": <1-100>, "reason": "..." }
+    { "format": "album", "score": <1-100>, "reason": "..." },
+    { "format": "event-coverage", "score": <1-100>, "reason": "..." },
+    { "format": "campaign", "score": <1-100>, "reason": "..." }
   ]
 }
-Rank all six delivery formats exactly once.`;
+Rank all eight delivery formats exactly once.`;
 
   return completion({
     model: provider.creativeModel,
     messages: [
-      { role: 'system', content: `You are Veylo’s senior creative director. Decide how a finished shoot should be delivered. Rank all six formats exactly once. ${voiceRules}\n\n${schemaInstructions}` },
-      { role: 'user', content: JSON.stringify({ task: 'Understand this complete shoot and rank the six delivery formats', clientName, shootType, photographerBrief: brief, formats: FORMATS, photographs: compact }) }
+      { role: 'system', content: `You are Veylo’s senior creative director. Decide how a finished shoot should be delivered. Rank all eight formats exactly once. ${voiceRules}\n\n${schemaInstructions}` },
+      { role: 'user', content: JSON.stringify({ task: 'Understand this complete shoot and rank the eight delivery formats', clientName, shootType, photographerBrief: brief, formats: FORMATS, photographs: compact }) }
     ],
     schema: recommendationSchema,
     repairLabel: 'format recommendation',
@@ -481,7 +485,7 @@ export async function createGlobalDirection({ format, brief, shootType, clientNa
   "palette": { "background": "<#hex>", "surface": "<#hex>", "text": "<#hex>", "accent": "<#hex>" },
   "typography": { "display": "editorial-serif" | "clean-sans" | "condensed-sans" | "soft-serif", "body": "clean-sans" | "editorial-serif" },
   "pace": "measured" | "warm" | "energetic",
-  "music": { "mood": "<mood title, 2-80 chars>", "genre": "<genre title, 2-80 chars>", "tempo": "slow" | "mid" | "upbeat" },
+  "music": { "trackId": "<one approved track id>", "mood": "<mood title, 2-80 chars>", "genre": "<genre title, 2-80 chars>", "tempo": "slow" | "mid" | "upbeat" },
   "narrationRecommended": boolean,
   "sections": [
     { "id": "<kebab-case-id>", "title": "<section title>", "subtitle": "<section subtitle>", "layout": "hero" | "single" | "pair" | "triptych" | "grid" | "strip" | "spread" | "cluster" | "chapter-cover" }
@@ -491,8 +495,21 @@ export async function createGlobalDirection({ format, brief, shootType, clientNa
   return completion({
     model: provider.creativeModel,
     messages: [
-      { role: 'system', content: `You are Veylo’s senior creative director. Design one ${format} presentation around the actual finished shoot. The format must feel structurally distinct from the other five formats. Photo Story is paced and sequential. Editorial is a scrollable publication. Photo Reveal is client-paced and suspenseful. Canvas is spatial and freely explored. Chapters is a non-linear moment selector. Album uses deliberate page turns and spreads. ${voiceRules}\n\n${schemaInstructions}` },
-      { role: 'user', content: JSON.stringify({ task: revisionInstruction ? 'Revise the complete art direction and section plan' : 'Create the complete art direction and section plan', format, clientName, shootType, photographerBrief: brief, collectionAnalysis, currentDirection, photographerRevision: revisionInstruction, photographs: compact }) }
+      { role: 'system', content: `You are Veylo’s senior creative director. Design one ${format} presentation around the actual finished shoot. The format must have its own structure. Photo Story is paced and sequential. Editorial is a scrollable publication. Photo Reveal is client-paced and suspenseful. Canvas is spatial and freely explored. Chapters is a non-linear moment selector. Album uses deliberate page turns and spreads. Event Coverage is documentary browsing organised into scenes for many subjects. Campaign is a commercial showcase followed by practical asset sets. ${voiceRules}\n\n${schemaInstructions}` },
+      { role: 'user', content: JSON.stringify({
+        task: revisionInstruction ? 'Revise the complete art direction and section plan' : 'Create the complete art direction and section plan',
+        format,
+        clientName,
+        shootType,
+        photographerBrief: brief,
+        collectionAnalysis,
+        currentDirection,
+        photographerRevision: revisionInstruction,
+        approvedSoundtrackCatalogue: DELIVERY_SOUNDTRACKS.map(track => ({ trackId: track.id, title: track.title, creator: track.creator, category: track.category, genre: track.genre, mood: track.mood, tempo: track.tempo, energy: track.energy, narrationFit: track.narrationFit, durationSec: track.durationSec, tags: track.tags })),
+        strongestSoundtrackMatches: recommendSoundtracks(`${shootType} ${brief} ${JSON.stringify(collectionAnalysis || {})}`, 18).map(track => ({ trackId: track.id, title: track.title, creator: track.creator, genre: track.genre, mood: track.mood, tempo: track.tempo, energy: track.energy, narrationFit: track.narrationFit, durationSec: track.durationSec, tags: track.tags })),
+        soundtrackInstruction: 'Consider the complete 100-track catalogue, use the strongest matches as a focused shortlist, and choose the exact trackId that best fits the photographs, occasion, pace, format and narration. Use only an approved trackId.',
+        photographs: compact
+      }) }
     ],
     schema: directionSchema,
     repairLabel: 'creative direction',

@@ -8,7 +8,7 @@ export const PLAN_DEFINITIONS = Object.freeze({
     monthlyPriceNaira: 0,
     deliveriesPerMonth: 3,
     photosPerDelivery: 100,
-    formats: ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album'],
+    formats: ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign'],
     branding: 'veylo',
     portfolio: false,
     personalStorageBytes: 0
@@ -19,7 +19,7 @@ export const PLAN_DEFINITIONS = Object.freeze({
     monthlyPriceNaira: PRO_PRICE_NAIRA,
     deliveriesPerMonth: null,
     photosPerDelivery: 500,
-    formats: ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album'],
+    formats: ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign'],
     branding: 'studio',
     portfolio: true,
     personalStorageBytes: 50 * 1024 * 1024 * 1024

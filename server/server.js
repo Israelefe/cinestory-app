@@ -12,6 +12,7 @@ import billingRoutes from './src/routes/billing.routes.js';
 import deliveryRoutes from './src/routes/delivery.routes.js';
 import storageRoutes from './src/routes/storage.routes.js';
 import portfolioRoutes from './src/routes/portfolio.routes.js';
+import volumeRoutes from './src/routes/volume.routes.js';
 import { paystackWebhook } from './src/controllers/billing.controller.js';
 import { resolveEdgeClientIp } from './src/middleware/clientIp.middleware.js';
 import { checkCloudinaryConnection } from './src/services/cloudinary.service.js';
@@ -34,7 +35,7 @@ if (process.env.NODE_ENV === 'production') {
     if (billingMissing.length) throw new Error(`Missing billing configuration: ${billingMissing.join(', ')}`);
   }
   if (process.env.DELIVERY_PIPELINE_ENABLED === 'true') {
-    const deliveryMissing = ['ALIBABA_MODEL_STUDIO_API_KEY', 'ALIBABA_WORKSPACE_ID', 'DEEPGRAM_API_KEY'].filter(name => !process.env[name]);
+    const deliveryMissing = ['ALIBABA_MODEL_STUDIO_API_KEY', 'ALIBABA_WORKSPACE_ID', 'ELEVENLABS_API_KEY'].filter(name => !process.env[name]);
     if (deliveryMissing.length) throw new Error(`Missing delivery pipeline configuration: ${deliveryMissing.join(', ')}`);
   }
 }
@@ -98,6 +99,7 @@ app.use('/api/v1/billing', billingRoutes);
 app.use('/api/v1/deliveries', deliveryRoutes);
 app.use('/api/v1/storage', storageRoutes);
 app.use('/api/v1/portfolios', portfolioRoutes);
+app.use('/api/v1/volume-jobs', volumeRoutes);
 app.use('/api/v1/admin', adminRoutes);
 
 app.use((error, req, res, next) => {

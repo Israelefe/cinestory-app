@@ -1,27 +1,20 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, ChevronUp, Clapperboard, Eye, Film, Image, LayoutTemplate, ListChecks, ListTree, LoaderCircle, LockKeyhole, Mail, Move, Music2, Newspaper, Pause, Play, QrCode, RefreshCw, Share2, Trash2, Upload, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronUp, Clapperboard, Image, LayoutTemplate, ListChecks, LoaderCircle, LockKeyhole, Mail, Music2, Pause, Play, QrCode, RefreshCw, Search, Share2, Trash2, Upload, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
-import { APP_URL } from '../config/env.js';
+import { API_BASE_URL, APP_URL } from '../config/env.js';
 import { uploadDeliveryPhotos, uploadDeliverySoundtrack } from '../utils/deliveryUpload.js';
-import { CURATED_DELIVERY_SOUNDTRACKS } from '../constants/deliveryFormats.js';
 import { SHOOT_TYPES } from '../constants/shootTypes.js';
+import { FORMAT_REGISTRY, formatName } from '../constants/formatRegistry.jsx';
+import { DEFAULT_NARRATION_VOICE_ID, NARRATION_VOICES } from '../constants/narrationVoices.js';
 import './CreateDelivery.css';
+import './CreateDeliveryNarration.css';
 
-const formats = [
-  { id: 'photo-story', name: 'Photo Story', verb: 'Watch', icon: Film, copy: 'A paced sequence with a clear opening, rhythm, and ending.' },
-  { id: 'editorial', name: 'Editorial Page', verb: 'Explore', icon: Newspaper, copy: 'A scrollable publication built around the character of the shoot.' },
-  { id: 'photo-reveal', name: 'Photo Reveal', verb: 'Discover', icon: Eye, copy: 'A first viewing that moves only when the client is ready.' },
-  { id: 'canvas', name: 'Canvas', verb: 'Move through', icon: Move, copy: 'A spatial arrangement the client can explore freely.' },
-  { id: 'chapters', name: 'Chapters', verb: 'Choose', icon: ListTree, copy: 'Natural parts of a large shoot, ready to open in any order.' },
-  { id: 'album', name: 'Album', verb: 'Turn through', icon: BookOpen, copy: 'Deliberate page turns and spreads composed from the photographs.' }
-];
+const formats = FORMAT_REGISTRY.map(format => ({ ...format, copy: format.line }));
 
 const steps = ['Tell us about the shoot', 'Add finished photos', 'Choose the format', 'Review every detail', 'Publish and share'];
-
-function formatName(id) { return formats.find(item => item.id === id)?.name || 'Delivery'; }
 
 function Stage({ children }) {
   const reduced = useReducedMotion();
@@ -131,12 +124,17 @@ export default function CreateDelivery({ user }) {
   const [error, setError] = useState('');
   const [failedJob, setFailedJob] = useState(null);
   const [reviewPage, setReviewPage] = useState(0);
-  const [access, setAccess] = useState({ pinEnabled: false, pin: '', expiresAt: '', allowIndividualDownloads: true, allowDownloadAll: true, allowLikes: true, narration: false });
+  const [access, setAccess] = useState({ pinEnabled: false, pin: '', expiresAt: '', allowIndividualDownloads: true, allowDownloadAll: true, allowLikes: true, narration: false, narrationVoiceId: DEFAULT_NARRATION_VOICE_ID });
   const [audioRights, setAudioRights] = useState(false);
   const [audioTitle, setAudioTitle] = useState('');
   const [soundtrackTab, setSoundtrackTab] = useState('curated');
+  const [curatedSoundtracks, setCuratedSoundtracks] = useState([]);
+  const [soundtrackSearch, setSoundtrackSearch] = useState('');
+  const [soundtrackCategory, setSoundtrackCategory] = useState('all');
   const [previewTrackId, setPreviewTrackId] = useState(null);
+  const [previewLoadingId, setPreviewLoadingId] = useState(null);
   const previewAudioRef = useRef(null);
+  const previewRequestedIdRef = useRef(null);
   const [revisionIds, setRevisionIds] = useState([]);
   const [revisionInstruction, setRevisionInstruction] = useState('');
   const [clientEmail, setClientEmail] = useState('');
@@ -146,10 +144,22 @@ export default function CreateDelivery({ user }) {
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [selectedFormat, setSelectedFormat] = useState(null);
 
+  const soundtrackCategories = useMemo(() => ['all', ...new Set(curatedSoundtracks.map(track => track.category))], [curatedSoundtracks]);
+  const filteredSoundtracks = useMemo(() => {
+    const query = soundtrackSearch.trim().toLowerCase();
+    return curatedSoundtracks.filter(track => {
+      const inCategory = soundtrackCategory === 'all' || track.category === soundtrackCategory;
+      const searchable = `${track.title} ${track.creator} ${track.genre} ${track.mood} ${(track.tags || []).join(' ')}`.toLowerCase();
+      return inCategory && (!query || searchable.includes(query));
+    });
+  }, [curatedSoundtracks, soundtrackCategory, soundtrackSearch]);
+
   useEffect(() => {
     return () => {
       if (previewAudioRef.current) {
         previewAudioRef.current.pause();
+        previewAudioRef.current.removeAttribute('src');
+        previewAudioRef.current.load();
       }
     };
   }, []);
@@ -157,6 +167,7 @@ export default function CreateDelivery({ user }) {
   const draftId = params.get('draft');
   useEffect(() => {
     api.get('/v1/billing/status').then(response => setLimits(response.data.data.limits)).catch(() => {});
+    api.get('/v1/deliveries/soundtracks').then(response => setCuratedSoundtracks(response.data.data || [])).catch(() => setError('We could not open the soundtrack catalogue.'));
   }, []);
   useEffect(() => {
     if (!draftId) return;
@@ -225,7 +236,7 @@ export default function CreateDelivery({ user }) {
     setBusy('analyze'); setError(''); setFailedJob(null); setProgress({ value: 2, stage: 'Preparing the photographs…' });
     try {
       const response = await api.post(`/v1/deliveries/${delivery._id}/analyze`);
-      await waitForJob(delivery._id, response.data.data._id, job => setProgress({ value: job.progress, stage: job.stage === 'reading-photographs' ? 'Reading the complete shoot…' : 'Comparing the six delivery formats…' }));
+      await waitForJob(delivery._id, response.data.data._id, job => setProgress({ value: job.progress, stage: job.stage === 'reading-photographs' ? 'Reading the complete shoot…' : 'Comparing the eight delivery formats…' }));
       await refreshDelivery(); setStep(3);
     } catch (requestError) { setError(requestError.message || apiMessage(requestError, 'Veylo could not analyze this shoot.')); if (requestError.jobId) setFailedJob({ id: requestError.jobId, type: requestError.jobType }); }
     finally { setBusy(''); }
@@ -276,7 +287,7 @@ export default function CreateDelivery({ user }) {
     try {
       if (access.narration && ['photo-story', 'chapters'].includes(delivery.format) && !delivery.narration) {
         setProgress({ value: 5, stage: 'Recording the approved narration…' });
-        const narration = await api.post(`/v1/deliveries/${delivery._id}/narrate`);
+        const narration = await api.post(`/v1/deliveries/${delivery._id}/narrate`, { voiceId: access.narrationVoiceId });
         await waitForJob(delivery._id, narration.data.data._id, job => setProgress({ value: job.progress, stage: 'Recording the approved narration…' }));
       }
       const response = await api.post(`/v1/deliveries/${delivery._id}/publish`, { pin: access.pinEnabled ? access.pin : '', expiresAt: access.expiresAt ? new Date(access.expiresAt).toISOString() : '', allowIndividualDownloads: access.allowIndividualDownloads, allowDownloadAll: access.allowDownloadAll, allowLikes: access.allowLikes });
@@ -310,15 +321,48 @@ export default function CreateDelivery({ user }) {
   function togglePreviewTrack(track) {
     if (previewTrackId === track.id) {
       previewAudioRef.current?.pause();
+      previewRequestedIdRef.current = null;
       setPreviewTrackId(null);
+      setPreviewLoadingId(null);
     } else {
       if (!previewAudioRef.current) {
         previewAudioRef.current = new Audio();
-        previewAudioRef.current.onended = () => setPreviewTrackId(null);
+        previewAudioRef.current.preload = 'auto';
+        previewAudioRef.current.onloadstart = () => {
+          if (previewRequestedIdRef.current) setPreviewLoadingId(previewRequestedIdRef.current);
+        };
+        previewAudioRef.current.onwaiting = () => {
+          if (previewRequestedIdRef.current) setPreviewLoadingId(previewRequestedIdRef.current);
+        };
+        previewAudioRef.current.onplaying = () => setPreviewLoadingId(null);
+        previewAudioRef.current.onended = () => {
+          previewRequestedIdRef.current = null;
+          setPreviewTrackId(null);
+          setPreviewLoadingId(null);
+        };
+        previewAudioRef.current.onerror = () => {
+          if (!previewRequestedIdRef.current) return;
+          previewRequestedIdRef.current = null;
+          setPreviewTrackId(null);
+          setPreviewLoadingId(null);
+          toast.error('This preview could not load. Check your connection and try again.');
+        };
       }
-      previewAudioRef.current.src = track.url;
-      previewAudioRef.current.play().catch(() => {});
+      const source = track.previewUrl || track.url;
+      previewAudioRef.current.pause();
+      previewRequestedIdRef.current = track.id;
       setPreviewTrackId(track.id);
+      setPreviewLoadingId(track.id);
+      previewAudioRef.current.src = source?.startsWith('/api/') ? `${API_BASE_URL.replace(/\/$/, '')}${source.slice(4)}` : source;
+      previewAudioRef.current.load();
+      previewAudioRef.current.play().catch(playError => {
+        if (playError?.name === 'AbortError') return;
+        if (previewRequestedIdRef.current !== track.id) return;
+        previewRequestedIdRef.current = null;
+        setPreviewTrackId(null);
+        setPreviewLoadingId(null);
+        toast.error('This preview could not play. Tap the track to try again.');
+      });
     }
   }
 
@@ -327,11 +371,7 @@ export default function CreateDelivery({ user }) {
     setError('');
     try {
       const response = await api.post(`/v1/deliveries/${delivery._id}/soundtrack/select`, {
-        title: track.title,
-        url: track.url,
-        genre: track.genre,
-        mood: track.mood,
-        durationSec: track.durationSec
+        trackId: track.id
       });
       setDelivery(current => ({ ...current, soundtrack: response.data.data }));
       toast.success(`Attached "${track.title}" to delivery.`);
@@ -507,7 +547,7 @@ export default function CreateDelivery({ user }) {
                   <div className="v-soundtrack-manager">
                     <div className="v-soundtrack-tabs">
                       <button type="button" className={soundtrackTab === 'curated' ? 'is-active' : ''} onClick={() => setSoundtrackTab('curated')}>
-                        Curated soundtracks ({CURATED_DELIVERY_SOUNDTRACKS.length})
+                        Curated soundtracks ({curatedSoundtracks.length})
                       </button>
                       <button type="button" className={soundtrackTab === 'custom' ? 'is-active' : ''} onClick={() => setSoundtrackTab('custom')}>
                         Upload your own audio
@@ -515,16 +555,26 @@ export default function CreateDelivery({ user }) {
                     </div>
 
                     {soundtrackTab === 'curated' ? (
-                      <div className="v-soundtrack-curated-list">
-                        {CURATED_DELIVERY_SOUNDTRACKS.map(track => {
-                          const isPlaying = previewTrackId === track.id;
+                      <div className="v-soundtrack-catalogue">
+                        <div className="v-soundtrack-catalogue-tools">
+                          <label><Search size={15} /><input value={soundtrackSearch} onChange={event => setSoundtrackSearch(event.target.value)} placeholder="Search mood, occasion or creator" /></label>
+                          <div role="group" aria-label="Soundtrack categories">
+                            {soundtrackCategories.map(category => <button type="button" key={category} className={soundtrackCategory === category ? 'is-active' : ''} onClick={() => setSoundtrackCategory(category)}>{category === 'all' ? 'All' : category.replace('-', ' ')}</button>)}
+                          </div>
+                        </div>
+                        <div className="v-soundtrack-curated-list">
+                        {filteredSoundtracks.map(track => {
+                          const isLoading = previewLoadingId === track.id;
+                          const isPlaying = previewTrackId === track.id && !isLoading;
+                          const isActive = previewTrackId === track.id;
                           return (
-                            <div key={track.id} className="v-soundtrack-item">
-                              <button type="button" className={`v-soundtrack-play ${isPlaying ? 'is-playing' : ''}`} onClick={() => togglePreviewTrack(track)} aria-label={isPlaying ? 'Pause preview' : 'Play preview'}>
-                                {isPlaying ? <Pause size={14} /> : <Play size={14} />}
+                            <div key={track.id} className={`v-soundtrack-item ${isLoading ? 'is-loading' : ''}`}>
+                              <button type="button" className={`v-soundtrack-play ${isPlaying ? 'is-playing' : ''} ${isLoading ? 'is-loading' : ''}`} onClick={() => togglePreviewTrack(track)} aria-label={isLoading ? 'Cancel loading preview' : isPlaying ? 'Pause preview' : 'Play preview'} aria-busy={isLoading}>
+                                {isLoading ? <LoaderCircle className="v-spin" size={15} /> : isPlaying ? <Pause size={14} /> : <Play size={14} />}
                               </button>
                               <div className="v-soundtrack-meta">
                                 <strong>{track.title}</strong>
+                                <em className={isLoading ? 'is-loading' : ''} aria-live="polite">{isLoading ? 'Loading preview…' : `by ${track.creator} via Pixabay`}</em>
                                 <span>
                                   <b>{track.genre}</b>
                                   <i>{track.mood}</i>
@@ -532,11 +582,13 @@ export default function CreateDelivery({ user }) {
                                 </span>
                               </div>
                               <button type="button" className="v-soundtrack-select-btn" onClick={() => selectCuratedTrack(track)} disabled={Boolean(busy)}>
-                                Use track
+                                {isActive ? 'Use this track' : 'Use track'}
                               </button>
                             </div>
                           );
                         })}
+                        {!filteredSoundtracks.length && <p className="v-soundtrack-empty">No tracks match that search.</p>}
+                        </div>
                       </div>
                     ) : (
                       <div className="v-soundtrack-custom">
@@ -556,7 +608,7 @@ export default function CreateDelivery({ user }) {
                   </div>
                 )}
               </div>
-              <div className="v-publish-settings"><Toggle icon={LockKeyhole} label="Six-digit PIN" copy="Ask for a PIN before showing the client name, title, or photographs." checked={access.pinEnabled} onChange={value => setAccess(current => ({ ...current, pinEnabled: value }))}>{access.pinEnabled && <input value={access.pin} onChange={event => setAccess(current => ({ ...current, pin: event.target.value.replace(/\D/g, '').slice(0, 6) }))} inputMode="numeric" placeholder="000000" aria-label="Six-digit delivery PIN" />}</Toggle><label className="v-publish-expiry"><span>Link expiry</span><small>Leave empty when the delivery should stay open.</small><input type="date" value={access.expiresAt} min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)} onChange={event => setAccess(current => ({ ...current, expiresAt: event.target.value }))} /></label><Toggle icon={Image} label="Individual photo downloads" copy="Let the client download one photograph at a time." checked={access.allowIndividualDownloads} onChange={value => setAccess(current => ({ ...current, allowIndividualDownloads: value }))} /><Toggle icon={Clapperboard} label="Download the full gallery" copy="Let the client download every delivered photograph together." checked={access.allowDownloadAll} onChange={value => setAccess(current => ({ ...current, allowDownloadAll: value }))} /><Toggle icon={Check} label="Photo likes" copy="Let the client mark the photographs they love." checked={access.allowLikes} onChange={value => setAccess(current => ({ ...current, allowLikes: value }))} />{['photo-story', 'chapters'].includes(delivery?.format) && <Toggle icon={Play} label="Optional narration" copy="Use Deepgram to read the approved story lines in the delivery." checked={access.narration} onChange={value => setAccess(current => ({ ...current, narration: value }))} />}</div>
+              <div className="v-publish-settings"><Toggle icon={LockKeyhole} label="Six-digit PIN" copy="Ask for a PIN before showing the client name, title, or photographs." checked={access.pinEnabled} onChange={value => setAccess(current => ({ ...current, pinEnabled: value }))}>{access.pinEnabled && <input value={access.pin} onChange={event => setAccess(current => ({ ...current, pin: event.target.value.replace(/\D/g, '').slice(0, 6) }))} inputMode="numeric" placeholder="000000" aria-label="Six-digit delivery PIN" />}</Toggle><label className="v-publish-expiry"><span>Link expiry</span><small>Leave empty when the delivery should stay open.</small><input type="date" value={access.expiresAt} min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)} onChange={event => setAccess(current => ({ ...current, expiresAt: event.target.value }))} /></label><Toggle icon={Image} label="Individual photo downloads" copy="Let the client download one photograph at a time." checked={access.allowIndividualDownloads} onChange={value => setAccess(current => ({ ...current, allowIndividualDownloads: value }))} /><Toggle icon={Clapperboard} label="Download the full gallery" copy="Let the client download every delivered photograph together." checked={access.allowDownloadAll} onChange={value => setAccess(current => ({ ...current, allowDownloadAll: value }))} /><Toggle icon={Check} label="Photo likes" copy="Let the client mark the photographs they love." checked={access.allowLikes} onChange={value => setAccess(current => ({ ...current, allowLikes: value }))} />{['photo-story', 'chapters'].includes(delivery?.format) && <Toggle icon={Play} label="Optional narration" copy="Use a calm Nigerian English narrator for the approved story lines." checked={access.narration} onChange={value => setAccess(current => ({ ...current, narration: value }))}>{access.narration && <label className="v-narration-voice"><span>Narrator</span><select value={access.narrationVoiceId} onChange={event => setAccess(current => ({ ...current, narrationVoiceId: event.target.value }))}>{NARRATION_VOICES.map(voice => <option value={voice.id} key={voice.id}>{voice.name} — {voice.presentation}</option>)}</select><small>{NARRATION_VOICES.find(voice => voice.id === access.narrationVoiceId)?.tone}</small></label>}</Toggle>}</div>
               {busy === 'publish' && progress.stage && <Progress value={progress.value} label={progress.stage} />}
               <div className="v-create-footer"><button type="button" onClick={() => setStep(4)}><ArrowLeft size={16} />Back to review</button><button type="button" className="v-create-primary" onClick={publish} disabled={Boolean(busy)}>{busy === 'publish' ? 'Preparing the client link…' : 'Publish client delivery'}<ArrowRight size={17} /></button></div>
             </>}

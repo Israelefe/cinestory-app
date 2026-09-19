@@ -375,7 +375,7 @@ function OtherFormats({ item }) {
             <Link to={to} className="v-niche-option-link"><span>Open the live demo</span><ArrowRight size={16} aria-hidden="true" /></Link>
           </Reveal>)}
         </div>
-        <Reveal className="v-niche-all-formats"><TextLink to="/formats">Compare all six delivery formats</TextLink></Reveal>
+        <Reveal className="v-niche-all-formats"><TextLink to="/formats">Compare all eight delivery formats</TextLink></Reveal>
       </div>
     </section>
   );

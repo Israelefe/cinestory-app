@@ -14,6 +14,9 @@ const Dashboard = lazyWithRecovery(() => import('./pages/Dashboard.jsx'), 'dashb
 const CreateDelivery = lazyWithRecovery(() => import('./pages/CreateDelivery.jsx'), 'create-delivery');
 const StoryViewer = lazyWithRecovery(() => import('./pages/StoryViewer.jsx'), 'photo-story');
 const DeliveryViewer = lazyWithRecovery(() => import('./pages/DeliveryViewer.jsx'), 'client-delivery');
+const VolumeGallery = lazyWithRecovery(() => import('./pages/VolumeGallery.jsx'), 'volume-gallery');
+const VolumeManager = lazyWithRecovery(() => import('./pages/VolumeManager.jsx'), 'volume-manager');
+const DeliverySharing = lazyWithRecovery(() => import('./pages/DeliverySharing.jsx'), 'delivery-sharing');
 const FormatDemo = lazyWithRecovery(() => import('./pages/FormatDemo.jsx'), 'format-demo');
 const PrivacyPolicy = lazyWithRecovery(() => import('./pages/PrivacyPolicy.jsx'), 'privacy');
 const TermsOfService = lazyWithRecovery(() => import('./pages/TermsOfService.jsx'), 'terms');
@@ -78,7 +81,11 @@ function RoutePosition() {
     return () => { stopped = true; window.cancelAnimationFrame(frame); };
   }, [pathname, hash, key, navigationType]);
   useEffect(() => {
-    const names = { '/': 'Photo delivery for finished shoots', '/formats': 'Six delivery formats', '/portfolio': 'Veylo Portfolio', '/pricing': 'Plans and pricing', '/signup': 'Create your account', '/signin': 'Sign in', '/verify-email': 'Verify your email', '/forgot-password': 'Reset your password', '/reset-password': 'Choose a new password', '/onboarding': 'Set up your studio', '/settings': 'Account settings', '/about': 'About us', '/client-experience': 'The client experience', '/contact': 'Get in touch', '/privacy': 'Privacy policy', '/terms': 'Terms of use', '/fair-use': 'Fair use', '/changelog': 'Product updates', '/create': 'Create a delivery', '/demo': 'Watch a Photo Story', '/demo/editorial': 'Explore an Editorial Page', '/demo/reveal': 'Begin a Photo Reveal', '/demo/canvas': 'Explore a Canvas', '/demo/chapters': 'Choose a chapter', '/demo/album': 'Turn through an Album' };
+    const names = { '/': 'Photo delivery for finished shoots', '/formats': 'Eight delivery formats', '/portfolio': 'Veylo Portfolio', '/pricing': 'Plans and pricing', '/signup': 'Create your account', '/signin': 'Sign in', '/verify-email': 'Verify your email', '/forgot-password': 'Reset your password', '/reset-password': 'Choose a new password', '/onboarding': 'Set up your studio', '/settings': 'Account settings', '/about': 'About us', '/client-experience': 'The client experience', '/contact': 'Get in touch', '/privacy': 'Privacy policy', '/terms': 'Terms of use', '/fair-use': 'Fair use', '/changelog': 'Product updates', '/create': 'Create a delivery', '/demo': 'Watch a Photo Story', '/demo/editorial': 'Explore an Editorial Page', '/demo/reveal': 'Begin a Photo Reveal', '/demo/canvas': 'Explore a Canvas', '/demo/chapters': 'Choose a chapter', '/demo/album': 'Turn through an Album', '/demo/event-coverage': 'Browse Event Coverage', '/demo/campaign': 'Open a Campaign Delivery' };
+    names['/formats'] = 'Eight delivery formats';
+    names['/volume-deliveries'] = 'Volume delivery';
+    names['/demo/event-coverage'] = 'Browse Event Coverage';
+    names['/demo/campaign'] = 'Open a Campaign Delivery';
     if (pathname === '/billing') names[pathname] = 'Plan and billing';
     if (pathname === '/library') names[pathname] = 'Personal image library';
     if (pathname === '/portfolio/manage') names[pathname] = 'Manage portfolio';
@@ -112,9 +119,9 @@ function VerificationRoute({ user, loading, children }) {
   return children;
 }
 
-const focusedRoutes = new Set(['/signup', '/signin', '/verify-email', '/forgot-password', '/reset-password', '/onboarding', '/dashboard', '/create', '/settings', '/billing', '/library', '/portfolio/manage']);
+const focusedRoutes = new Set(['/signup', '/signin', '/verify-email', '/forgot-password', '/reset-password', '/onboarding', '/dashboard', '/create', '/sharing', '/volume-deliveries', '/settings', '/billing', '/library', '/portfolio/manage']);
 const authRoutes = new Set(['/signup', '/signin', '/verify-email', '/forgot-password', '/reset-password']);
-const productRoutes = new Set(['/dashboard', '/create', '/settings', '/billing', '/library', '/portfolio/manage']);
+const productRoutes = new Set(['/dashboard', '/create', '/sharing', '/volume-deliveries', '/settings', '/billing', '/library', '/portfolio/manage']);
 
 function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountDeleted, onPlanChanged }) {
   const { pathname } = useLocation();
@@ -128,6 +135,8 @@ function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountD
       <Route path="/" element={<LandingPage />} />
       <Route path="/dashboard" element={<ProtectedRoute user={user} loading={authLoading}><Dashboard user={user} onLogout={onLogout} /></ProtectedRoute>} />
       <Route path="/create" element={<ProtectedRoute user={user} loading={authLoading}><CreateDelivery user={user} /></ProtectedRoute>} />
+      <Route path="/volume-deliveries" element={<ProtectedRoute user={user} loading={authLoading}><VolumeManager user={user} /></ProtectedRoute>} />
+      <Route path="/sharing" element={<ProtectedRoute user={user} loading={authLoading}><DeliverySharing /></ProtectedRoute>} />
       <Route path="/formats" element={<DeliveryFormats />} /><Route path="/portfolio" element={<PortfolioPage />} /><Route path="/pricing" element={<PricingPage />} />
       <Route path="/signup" element={<GuestOnlyRoute user={user} loading={authLoading}><SignupPage onAuthenticated={onAuthenticated} /></GuestOnlyRoute>} />
       <Route path="/signin" element={<GuestOnlyRoute user={user} loading={authLoading}><SigninPage onAuthenticated={onAuthenticated} /></GuestOnlyRoute>} />
@@ -177,6 +186,7 @@ export default function App() {
   return <MotionConfig reducedMotion="user"><BrowserRouter><RoutePosition /><CookiePreferences /><ToastContainer position="top-right" theme="dark" autoClose={3000} /><Suspense fallback={<div className="v-page-loading" role="status">Opening Veylo…</div>}><Routes>
     <Route path="/story/:storyId" element={<StoryViewer />} />
     <Route path="/d/:publicId" element={<DeliveryViewer />} />
+    <Route path="/volume/:publicId" element={<VolumeGallery />} />
     <Route path="/@:handle" element={<PublicStudioPortfolio />} />
     <Route path="/demo" element={<StoryViewer demoMode />} />
     <Route path="/demo/:formatId" element={<FormatDemo />} />

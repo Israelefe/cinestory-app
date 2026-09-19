@@ -4,6 +4,8 @@ import {
   ArrowDown,
   ArrowUpRight,
   BookOpen,
+  BriefcaseBusiness,
+  CalendarRange,
   Check,
   Clapperboard,
   Download,
@@ -118,6 +120,42 @@ const formats = [
     clientAction: 'Your client opens a cover and turns through a set order of designed pages. Each photograph gets space to be seen before the complete gallery opens.',
     direction: 'Veylo proposes the cover, page order, image pairings, full-page portraits, spacing, typography, short captions, page transitions, and closing spread.',
     bestFor: 'Traditional weddings, white weddings, anniversaries, maternity, family sessions, and milestone celebrations.'
+  },
+  {
+    id: 'event-coverage',
+    numeral: 'VII',
+    role: 'Browse',
+    name: 'Event Coverage',
+    tagline: 'A complete event organised by scenes, people, and shifts in the day.',
+    icon: CalendarRange,
+    demo: '/demo/event-coverage',
+    demoLabel: 'Browse the Event Coverage demo',
+    photos: ['demo-wedding-1', 'demo-wedding-2', 'demo-wedding-3'],
+    chapterNames: ['Arrivals', 'The gathering', 'People and details'],
+    chapterLines: ['The room filling up and the first greetings.', 'The main programme and the moments around it.', 'Guests, atmosphere, and details worth keeping.'],
+    clientAction: 'Guests and organisers begin with highlights, then browse the event by scene or open the complete gallery.',
+    direction: 'Veylo identifies event scenes, selects the highlights, groups related photographs, and keeps navigation clear even when no single person is the subject.',
+    bestFor: 'Conferences, church services, corporate events, concerts, owambe celebrations, and community gatherings.'
+  },
+  {
+    id: 'campaign',
+    numeral: 'VIII',
+    role: 'Use',
+    name: 'Campaign Delivery',
+    tagline: 'A commercial presentation followed by an organised asset handoff.',
+    icon: BriefcaseBusiness,
+    demo: '/demo/campaign',
+    demoLabel: 'Open the Campaign Delivery demo',
+    photos: ['demo-ada-1', 'demo-ada-3'],
+    editorialMast: 'APPROVED CAMPAIGN',
+    editorialIssue: '08',
+    editorialTag: 'FINAL ASSET DELIVERY',
+    editorialTitle: <>Present.<br />Approve.<br /><em>Use.</em></>,
+    photoAlt: 'Approved fashion campaign portrait',
+    detailAlt: 'A second approved photograph from the campaign',
+    clientAction: 'The client reviews the approved work, opens named asset sets, reads the photographer’s usage terms, and downloads the final files.',
+    direction: 'Veylo proposes the campaign hierarchy, asset sets, typography, colour, lead images, and handoff structure while the photographer controls usage terms.',
+    bestFor: 'Lookbooks, product campaigns, hospitality, food, property, personal branding, and corporate image libraries.'
   }
 ];
 
@@ -338,7 +376,7 @@ export default function DeliveryFormats() {
           viewport={{ once: true, amount: 0.2 }}
           transition={reduced ? { duration: 0 } : { duration: 0.72, ease: [0.22, 1, 0.36, 1] }}
         >
-          <Eyebrow>Six formats · One complete gallery</Eyebrow>
+          <Eyebrow>Eight formats · One complete gallery</Eyebrow>
           <h2>Choose how the photographs arrive.<br /><em>Let the shoot shape everything else.</em></h2>
           <p>Start with the finished photographs and the story behind them. Review Veylo’s proposed direction before your client sees a thing.</p>
           <div className="v-actions">

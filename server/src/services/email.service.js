@@ -72,3 +72,14 @@ export function sendPasswordChangedEmail({ to, name }) {
 export async function sendStoryReadyEmail({ to, clientName, storyTitle, storyUrl }) {
   return send('story-ready', { to, subject: `Your photographs are ready — ${storyTitle}`, text: `${clientName}, your photographs are ready: ${storyUrl}`, html: shell(`<h1 style="margin:0 0 16px;font-size:30px;font-weight:500">Your photographs are ready.</h1><p style="color:#b8b1aa;line-height:1.75">${escapeHtml(clientName)}, your photographer has prepared ${escapeHtml(storyTitle)} for you.</p><a href="${escapeHtml(storyUrl)}" style="display:inline-block;margin-top:24px;background:#ff5a47;color:#100c0b;padding:14px 22px;text-decoration:none;font-size:13px;font-weight:700">Open your delivery</a>`) });
 }
+
+export function sendVolumeAccessEmail({ to, name, code, organisation }) {
+  const safeName = escapeHtml(String(name || 'there').split(' ')[0]);
+  const safeOrganisation = escapeHtml(organisation || 'your photo delivery');
+  return send('volume-access', {
+    to,
+    subject: `${code} opens your private photo gallery`,
+    text: `Hi ${name}, use ${code} to open your private ${organisation} photo gallery. It expires in 10 minutes.`,
+    html: shell(`<h1 style="margin:0 0 16px;font-size:30px;font-weight:500">Open your private gallery</h1><p style="color:#b8b1aa;line-height:1.75">Hi ${safeName}, enter this code to see the photographs assigned to you from ${safeOrganisation}.</p><p style="margin:30px 0;padding:20px;border:1px solid #ff9b8e55;background:#ff9b8e0b;color:#fff;font-size:34px;font-weight:700;letter-spacing:10px;text-align:center">${code}</p><p style="color:#8f8983;font-size:13px;line-height:1.7">The code expires in 10 minutes. Do not forward it to anyone else.</p>`)
+  });
+}

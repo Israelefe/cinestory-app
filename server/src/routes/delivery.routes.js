@@ -1,22 +1,30 @@
 import express from 'express';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { aiGenerationLimit, clientDeliveryEmailLimit, mediaSignatureLimit, publicAccessLimit, publicMediaLimit } from '../middleware/rateLimit.middleware.js';
-import { addLibraryAssets, confirmDeliveryUpload, confirmSoundtrackUpload, createDelivery, deleteDelivery, deleteDeliveryAsset, deleteSoundtrack, emailClientDelivery, getDelivery, getDeliveryJob, getDeliveryQr, getDeliveryShareMeta, getGalleryDownload, getPhotoDownload, getPublicDelivery, listDeliveries, publishDelivery, queueAnalysis, queueDirection, queueNarration, queueRevision, retryDeliveryJob, selectCuratedSoundtrack, signDeliveryUpload, signSoundtrackUpload, togglePhotoLike, unlockDelivery, updateDeliveryDetails, updateDeliveryReview } from '../controllers/delivery.controller.js';
+import { addLibraryAssets, archiveDelivery, confirmDeliveryUpload, confirmSoundtrackUpload, createDelivery, createShareGrant, deleteDelivery, deleteDeliveryAsset, deleteSoundtrack, emailClientDelivery, getDelivery, getDeliveryJob, getDeliveryQr, getDeliveryShareMeta, getGalleryDownload, getPhotoDownload, getPublicDelivery, getPublicSoundtrack, listDeliveries, listDeliverySoundtracks, listShareGrants, publishDelivery, queueAnalysis, queueDirection, queueNarration, queueRevision, restoreDelivery, retryDeliveryJob, revokeShareGrant, selectCuratedSoundtrack, signDeliveryUpload, signSoundtrackUpload, streamDeliverySoundtrack, togglePhotoLike, unlockDelivery, updateDeliveryDetails, updateDeliveryReview } from '../controllers/delivery.controller.js';
 
 const router = express.Router();
 
 router.get('/public/:publicId', publicAccessLimit, getPublicDelivery);
 router.get('/public/:publicId/share-meta', publicAccessLimit, getDeliveryShareMeta);
+router.get('/public/:publicId/soundtrack', publicMediaLimit, getPublicSoundtrack);
 router.post('/public/:publicId/unlock', publicAccessLimit, unlockDelivery);
 router.post('/public/:publicId/photos/:assetId/like', publicMediaLimit, togglePhotoLike);
 router.get('/public/:publicId/photos/:assetId/download', publicMediaLimit, getPhotoDownload);
 router.get('/public/:publicId/download-all', publicMediaLimit, getGalleryDownload);
+router.get('/soundtracks/:trackId/audio', publicMediaLimit, streamDeliverySoundtrack);
 
 router.use(authMiddleware);
 router.get('/', listDeliveries);
 router.post('/', createDelivery);
+router.get('/soundtracks', listDeliverySoundtracks);
 router.get('/:id', getDelivery);
 router.patch('/:id/details', updateDeliveryDetails);
+router.post('/:id/archive', archiveDelivery);
+router.post('/:id/restore', restoreDelivery);
+router.get('/:id/share-grants', listShareGrants);
+router.post('/:id/share-grants', createShareGrant);
+router.delete('/:id/share-grants/:grantId', revokeShareGrant);
 router.delete('/:id', deleteDelivery);
 router.post('/:id/uploads/sign', mediaSignatureLimit, signDeliveryUpload);
 router.post('/:id/uploads/confirm', confirmDeliveryUpload);
