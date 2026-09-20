@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { applyShareMeta } from '../worker/deliveryShell.js';
 
 const shellPath = fileURLToPath(new URL('../index.html', import.meta.url));
+const headersPath = fileURLToPath(new URL('../public/_headers', import.meta.url));
 
 const checks = [];
 function check(name, condition, detail) {
@@ -22,6 +23,10 @@ function contentOf(html, property, attribute = 'property') {
 }
 
 const html = await readFile(shellPath, 'utf8');
+const headers = await readFile(headersPath, 'utf8');
+
+check('app shell is not cached across deployments', headers.includes('/index.html') && headers.includes('Cache-Control: no-store'));
+check('hashed assets remain cacheable', headers.includes('/assets/*') && headers.includes('Cache-Control: public, max-age=31536000, immutable'));
 
 // Plain text on purpose — the escaping pass gets its own explicit case below.
 const meta = {

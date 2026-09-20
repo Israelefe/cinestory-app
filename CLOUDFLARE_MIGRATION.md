@@ -50,7 +50,7 @@ Two separate Workers, both connected to this repo.
 | --- | --- |
 | Root directory | `client` |
 | Build command | `npm ci && npm run build` |
-| Deploy command | `npx wrangler deploy` (the default — leave it) |
+| Deploy command | `npm run deploy` (builds the Vite app before uploading it) |
 
 Environment variables:
 
@@ -133,11 +133,12 @@ no invocation. Only `/api/*` and `/d/*` do — the free plan is 100k/day, $5/mo 
 Uploads never touch the Worker: they go straight from the browser to `api.cloudinary.com`
 (`client/src/utils/storageUpload.js:16`).
 
-**`/d/:publicId` responses are edge-cached for 300s** via the Cache API, standing in for the
-`s-maxage` the original Vercel function asked for (Cloudflare doesn't apply `s-maxage` to a
-Worker response on its own). Cached per public ID, and the body is identical for every
-visitor — the PIN token lives in `sessionStorage` on the client, so nothing user-specific is
-cached.
+**`/d/:publicId` shells are deliberately not cached.** The HTML references Vite's
+content-hashed JavaScript files, so serving an older shell after a deploy can strand a
+client on the startup error screen when that bundle has been replaced. The shell is small
+and is revalidated on every visit; the hashed assets themselves remain immutable and cacheable.
+The body is identical for every visitor — the PIN token lives in `sessionStorage` on the
+client, so nothing user-specific is stored in the shell.
 
 ### Rate limiting and `req.ip`
 

@@ -10,24 +10,8 @@ const DEFAULT_WEB_ORIGIN = 'https://veylo.com.ng';
 
 const PUBLIC_ID_PATTERN = /^[A-Za-z0-9_-]{20,80}$/;
 
-// Mirrors the `s-maxage=300, stale-while-revalidate=600` the original Vercel
-// function asked for. Cloudflare does not apply `s-maxage` to a Worker response
-// on its own, so the edge cache is written explicitly below.
-const CACHE_SECONDS = 300;
-
 export async function handleDeliveryShell(request, env, ctx, publicId) {
   if (!PUBLIC_ID_PATTERN.test(publicId)) return plain('Delivery not found.', 404);
-
-  const cache = globalThis.caches?.default;
-  const cacheKey = new Request(new URL(`/d/${publicId}`, request.url).toString(), { method: 'GET' });
-  if (cache) {
-    try {
-      const hit = await cache.match(cacheKey);
-      if (hit) return hit;
-    } catch {
-      // A cache read must never be the reason a delivery link fails to open.
-    }
-  }
 
   let html = '';
   try {
@@ -38,14 +22,16 @@ export async function handleDeliveryShell(request, env, ctx, publicId) {
       status: 200,
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': `public, max-age=${CACHE_SECONDS}, stale-while-revalidate=600`,
+        'Cache-Control': 'no-store, max-age=0, must-revalidate',
         // `_headers` covers the static assets, but this route is served by the
         // Worker, so the COOP value the Google sign-in popup needs is set here
         // too. Keeping it consistent across the origin matters.
         'Cross-Origin-Opener-Policy': 'same-origin-allow-popups'
       }
     });
-    if (cache && ctx?.waitUntil) ctx.waitUntil(cache.put(cacheKey, response.clone()).catch(() => {}));
+    // Do not populate the edge cache with an HTML shell that can outlive the
+    // bundle it references. The static asset layer still caches content-hashed
+    // JavaScript and CSS files safely.
     return response;
   } catch {
     // Fall back to the un-personalised shell so the link still opens; only give

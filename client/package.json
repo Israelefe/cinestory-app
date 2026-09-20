@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "deploy": "npm run build && npx wrangler deploy",
     "preview": "vite preview",
     "verify:share-meta": "node scripts/verify-share-meta.mjs",
     "verify:delivery-v2": "node scripts/verify-delivery-v2.mjs",
