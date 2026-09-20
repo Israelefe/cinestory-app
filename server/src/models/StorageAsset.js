@@ -11,7 +11,8 @@ const storageAssetSchema = new mongoose.Schema({
   height: { type: Number, min: 1 },
   bytes: { type: Number, min: 1 },
   folder: { type: String, trim: true, maxlength: 100, default: 'All photographs' },
-  tags: [{ type: String, trim: true, maxlength: 40 }]
+  tags: [{ type: String, trim: true, maxlength: 40 }],
+  caption: { type: String, trim: true, maxlength: 180, default: '' }
 }, { timestamps: true });
 
 storageAssetSchema.index({ userId: 1, createdAt: -1 });

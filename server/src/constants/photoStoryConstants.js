@@ -4,7 +4,7 @@ import { DELIVERY_SOUNDTRACKS } from './deliverySoundtracks.js';
 // used by Delivery V2. No client-provided music URL is trusted here.
 export const CURATED_SOUNDTRACKS = DELIVERY_SOUNDTRACKS.map(track => ({
   ...track,
-  audioUrl: track.url,
+  audioUrl: `/api/v1/deliveries/soundtracks/${encodeURIComponent(track.id)}/audio`,
   bestFor: track.tags
 }));
 

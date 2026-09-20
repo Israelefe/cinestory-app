@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronUp, Clapperboard, Image, LayoutTemplate, ListChecks, LoaderCircle, LockKeyhole, Mail, Music2, Pause, Play, QrCode, RefreshCw, Search, Share2, Trash2, Upload, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronUp, Clapperboard, ExternalLink, Image, LayoutTemplate, ListChecks, LoaderCircle, LockKeyhole, Mail, Music2, Pause, Play, QrCode, RefreshCw, Search, Share2, Trash2, Upload, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
 import { API_BASE_URL, APP_URL } from '../config/env.js';
@@ -10,7 +10,7 @@ import { SHOOT_TYPES } from '../constants/shootTypes.js';
 import { FORMAT_REGISTRY, formatName } from '../constants/formatRegistry.jsx';
 import { DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
 import DeliveryDirectionStudio from '../components/delivery/DeliveryDirectionStudio.jsx';
-import { DeliveryFormatViewer } from '../components/delivery/viewerRegistry.jsx';
+import ClientDeliveryPreview from '../components/delivery/ClientDeliveryPreview.jsx';
 import './CreateDelivery.css';
 import './CreateDeliveryNarration.css';
 import './CreateDeliveryMusicV2.css';
@@ -281,7 +281,7 @@ export default function CreateDelivery({ user }) {
   }
 
   function editFrame(assetId, field, value) {
-    setDelivery(current => ({ ...current, creativeDirection: { ...current.creativeDirection, frames: current.creativeDirection.frames.map(frame => frame.assetId === assetId ? { ...frame, [field]: value } : frame) } }));
+    setDelivery(current => ({ ...current, ...(field === 'caption' ? { narration: undefined } : {}), creativeDirection: { ...current.creativeDirection, frames: current.creativeDirection.frames.map(frame => frame.assetId === assetId ? { ...frame, [field]: value } : frame) } }));
   }
 
   function movePhoto(assetId, offset) {
@@ -291,7 +291,7 @@ export default function CreateDelivery({ user }) {
       const target = index + offset;
       if (target < 0 || target >= assets.length) return current;
       [assets[index], assets[target]] = [assets[target], assets[index]];
-      return { ...current, assets: assets.map((asset, sortOrder) => ({ ...asset, sortOrder })) };
+      return { ...current, narration: undefined, assets: assets.map((asset, sortOrder) => ({ ...asset, sortOrder })) };
     });
   }
 
@@ -299,7 +299,7 @@ export default function CreateDelivery({ user }) {
     setBusy('save'); setError('');
     try {
       const ordered = [...delivery.assets].sort((a, b) => a.sortOrder - b.sortOrder);
-      const missingCaption = delivery.creativeDirection.frames.find(frame => String(frame.caption || '').trim().length < 8);
+      const missingCaption = delivery.creativeDirection.frames.find(frame => String(frame.caption || '').trim().length < 18);
       if (missingCaption) throw new Error('Every photograph needs a meaningful caption before you approve this delivery.');
       const response = await api.patch(`/v1/deliveries/${delivery._id}/review`, { title: delivery.creativeDirection.title, openingLine: delivery.creativeDirection.openingLine, closingLine: delivery.creativeDirection.closingLine, palette: delivery.creativeDirection.palette, typography: delivery.creativeDirection.typography, pace: delivery.creativeDirection.pace, variation: delivery.creativeDirection.variation, sections: (delivery.creativeDirection.sections || []).map(({ id, title, subtitle, layout }) => ({ id, title, subtitle: subtitle || '', layout })), frames: delivery.creativeDirection.frames.map(({ assetId, headline, caption }) => ({ assetId, headline: headline || '', caption: caption.trim() })), assetOrder: ordered.map(asset => asset.assetId) });
       setDelivery(response.data.data); setStep(5); toast.success('Delivery review saved');
@@ -316,7 +316,7 @@ export default function CreateDelivery({ user }) {
         const narration = await api.post(`/v1/deliveries/${delivery._id}/narrate`, { voiceId: DEFAULT_NARRATION_VOICE_ID });
         await waitForJob(delivery._id, narration.data.data._id, job => setProgress({ value: job.progress, stage: 'Recording the approved narration…' }));
       }
-      const response = await api.post(`/v1/deliveries/${delivery._id}/publish`, { pin: access.pinEnabled ? access.pin : '', expiresAt: access.expiresAt ? new Date(access.expiresAt).toISOString() : '', allowIndividualDownloads: access.allowIndividualDownloads, allowDownloadAll: access.allowDownloadAll, allowLikes: access.allowLikes });
+      const response = await api.post(`/v1/deliveries/${delivery._id}/publish`, { pin: access.pinEnabled ? access.pin : '', expiresAt: access.expiresAt ? new Date(access.expiresAt).toISOString() : '', allowIndividualDownloads: access.allowIndividualDownloads, allowDownloadAll: access.allowDownloadAll, allowLikes: access.allowLikes, narration: access.narration });
       setDelivery(current => ({ ...current, status: 'published', publishedUrl: response.data.data.url }));
       setParams({}, { replace: true }); toast.success('Client delivery published');
     } catch (requestError) { setError(apiMessage(requestError, requestError.message || 'We could not publish this delivery.')); if (requestError.jobId) setFailedJob({ id: requestError.jobId, type: requestError.jobType }); }
@@ -553,7 +553,7 @@ export default function CreateDelivery({ user }) {
              <DeliveryDirectionStudio delivery={delivery} assets={orderedAssets} frameMap={frameMap} onDirectionChange={editDirectionSetting} onSectionChange={editSection} />
              <section className="v-client-format-preview" aria-label="Exact client format preview">
                <header><div><p>EXACT CLIENT VIEW</p><h2>Open the same format your client will receive.</h2><span>This preview uses the selected format, order, captions, colour direction, and typography. It is the final viewer inside the studio.</span></div><span className="v-client-format-preview-badge">{formatName(delivery?.format)}</span></header>
-               <div className="v-client-format-preview-frame"><DeliveryFormatViewer format={delivery?.format} delivery={delivery} /></div>
+              <div className="v-client-format-preview-frame"><ClientDeliveryPreview delivery={delivery} narrationEnabled={access.narration} accessPin={access.pinEnabled ? access.pin : ''} access={access} /></div>
              </section>
             <div className="v-review-revision"><div><ListChecks size={19} /><span><strong>Ask for another direction</strong><small>Choose photographs below for a focused change, or ask Veylo to rethink the complete delivery.</small></span></div><textarea value={revisionInstruction} onChange={event => setRevisionInstruction(event.target.value)} maxLength={600} placeholder="For example: make these captions warmer and keep the focus on her confidence in the second look." /><footer><span>{revisionIds.length} photograph{revisionIds.length === 1 ? '' : 's'} selected</span><button type="button" onClick={() => requestRevision('selected')} disabled={Boolean(busy) || !revisionIds.length}>Revise selected</button><button type="button" onClick={() => requestRevision('full')} disabled={Boolean(busy)}>Rethink full direction</button></footer>{busy === 'revise' && <Progress value={progress.value} label={progress.stage} />}</div>
             <div className="v-review-grid">{pageAssets.map((asset, localIndex) => { const index = reviewPage * 18 + localIndex; const frame = frameMap.get(asset.assetId) || {}; return <article key={asset.assetId}><button type="button" className={`v-review-select ${revisionIds.includes(asset.assetId) ? 'is-selected' : ''}`} onClick={() => toggleRevisionAsset(asset.assetId)}><Check size={13} />{revisionIds.includes(asset.assetId) ? 'Selected for revision' : 'Select for revision'}</button><div><img src={asset.thumbnailUrl || asset.url} alt="" /><span>{String(index + 1).padStart(2, '0')}</span><div><button type="button" onClick={() => movePhoto(asset.assetId, -1)} disabled={index === 0} aria-label="Move photograph earlier"><ChevronUp size={15} /></button><button type="button" onClick={() => movePhoto(asset.assetId, 1)} disabled={index === orderedAssets.length - 1} aria-label="Move photograph later"><ChevronDown size={15} /></button></div></div><label>Heading<input value={frame.headline || ''} onChange={event => editFrame(asset.assetId, 'headline', event.target.value)} maxLength={70} /></label><label>Caption<textarea value={frame.caption || ''} onChange={event => editFrame(asset.assetId, 'caption', event.target.value)} maxLength={180} rows={4} /></label><small>{frame.motion?.replaceAll('-', ' ')} · {frame.transition}</small></article>; })}</div>
@@ -618,6 +618,7 @@ export default function CreateDelivery({ user }) {
                                   {track.contentIdRegistered && <i>Content ID registered</i>}
                                   <small>{Math.floor(track.durationSec / 60)}:{String(track.durationSec % 60).padStart(2, '0')}</small>
                                 </span>
+                                <details className="v-soundtrack-details"><summary>Track notes</summary><div><p><strong>Best for</strong> {(track.bestFor || []).join(' · ')}</p><p><strong>Avoid for</strong> {(track.avoidFor || []).join(' · ')}</p><p><strong>Sound</strong> {track.instrumentationCue} · {track.editingPace}</p><p><strong>Selection</strong> {track.selectionNote}</p><p><strong>Narration</strong> {track.narrationFit} fit. {track.contentIdGuidance}</p><p><strong>Metadata</strong> {track.metadataConfidence}</p><a href={track.sourcePageUrl} target="_blank" rel="noreferrer">Open Pixabay source <ExternalLink size={13} /></a></div></details>
                               </div>
                               <button type="button" className="v-soundtrack-select-btn" onClick={() => selectCuratedTrack(track)} disabled={Boolean(busy)}>
                                 {isActive ? 'Use this track' : 'Use track'}

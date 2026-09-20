@@ -103,7 +103,12 @@ const CATEGORY_DECISIONS = Object.freeze({
 function titleListedInstrumentation(title) {
   const value = String(title).toLowerCase();
   const cues = [['piano', 'Piano'], ['organ', 'Organ'], ['choir', 'Choir'], ['orchestra', 'Orchestral'], ['marimba', 'Marimba'], ['acoustic', 'Acoustic'], ['reggae', 'Reggae-influenced'], ['house', 'House'], ['jazz', 'Jazz-influenced']].filter(([word]) => value.includes(word)).map(([, label]) => label);
-  return cues.length ? cues.join(', ') : 'Not specified in the Pixabay listing title';
+  return cues.length ? `Pixabay title cue only: ${cues.join(', ')}` : 'No instrumentation stated in the Pixabay listing title';
+}
+
+function titleSignals(title) {
+  const words = String(title).toLowerCase().split(/[^a-z0-9]+/).filter(word => word.length > 2);
+  return [...new Set(words)].slice(0, 12);
 }
 
 function trackDecision(track, profile) {
@@ -115,6 +120,9 @@ function trackDecision(track, profile) {
     avoidFor: decision.avoidFor,
     editingPace: `${decision.editingPace}; ${durationShape} ${Math.floor(track.durationSec / 60)}:${String(track.durationSec % 60).padStart(2, '0')} runtime`,
     instrumentationCue: titleListedInstrumentation(track.title),
+    titleSignals: titleSignals(track.title),
+    selectionNote: `Selected from the ${track.category} group using the Pixabay title, source record, runtime, narration fit, and intended delivery use.`,
+    metadataConfidence: 'source-and-file-verified; instrumentation cue is not a claim about the recording',
     contentIdGuidance: track.contentIdRegistered ? 'Pixabay marks this track as Content ID registered; keep the source page and licence record with the delivery.' : 'Not marked as Content ID registered in the verified catalogue record.'
   };
 }
@@ -141,12 +149,16 @@ export const DELIVERY_SOUNDTRACKS = Object.freeze(rawCatalogue.map((track, index
     avoidFor: Object.freeze(decision.avoidFor),
     editingPace: decision.editingPace,
     instrumentationCue: decision.instrumentationCue,
+    titleSignals: Object.freeze(decision.titleSignals),
+    selectionNote: decision.selectionNote,
+    metadataConfidence: decision.metadataConfidence,
     contentIdGuidance: decision.contentIdGuidance,
     source: 'pixabay',
     sourcePageUrl: track.sourcePageUrl,
     contentIdRegistered: track.contentIdRegistered,
     license: track.license,
     licenseUrl: track.licenseUrl,
+    verifiedAt: track.verifiedAt,
     filename: track.filename,
     bytes: track.bytes,
     sha256: track.sha256

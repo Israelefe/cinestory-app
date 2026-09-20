@@ -68,28 +68,12 @@ async function direct(job, delivery) {
     const batch = insights.slice(offset, offset + 20);
     const result = await createFrameBatch({ format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction, imageInsights: batch, revisionInstruction: job.input?.instruction || '', currentFrames: job.type === 'revise' ? (delivery.creativeDirection?.frames || []).filter(frame => batch.some(item => item.assetId === frame.assetId)) : [] });
     const frameMap = new Map((result.frames || []).map(frame => [frame.assetId, frame]));
-    const fallbackCaption = insight => {
-      const name = String(delivery.clientName || 'you').trim();
-      const occasion = String(delivery.shootType || 'this shoot').trim().toLowerCase();
-      const moment = String(insight?.moment || insight?.expression || '').replace(/[<>]/g, '').trim().replace(/[.!?]+$/, '');
-      if (moment) return `${name}, this ${moment.toLowerCase()} carries what your ${occasion} was really about.`.slice(0, 180);
-      return `${name}, this frame keeps a little of the feeling you brought to your ${occasion}.`.slice(0, 180);
-    };
     const alignedFrames = batch.map((item, index) => {
-      const frame = frameMap.get(item.assetId) || result.frames?.[index] || {
-        assetId: item.assetId,
-        sectionId: defaultSectionId,
-        role: 'supporting',
-        headline: '',
-        caption: fallbackCaption(item),
-        motion: 'slow-push',
-        transition: 'crossfade',
-        duration: 4.5,
-        emphasis: 5
-      };
+      const frame = frameMap.get(item.assetId);
+      if (!frame) throw Object.assign(new Error(`No approved caption was returned for photograph ${item.assetId}.`), { code: 'CAPTIONS_REQUIRED' });
       if (!sectionIds.has(frame.sectionId)) frame.sectionId = defaultSectionId;
       frame.assetId = item.assetId;
-      if (typeof frame.caption !== 'string' || frame.caption.trim().length < 8) frame.caption = fallbackCaption(item);
+      if (typeof frame.caption !== 'string' || frame.caption.trim().length < 18) throw Object.assign(new Error(`Caption is missing for photograph ${item.assetId}.`), { code: 'CAPTIONS_REQUIRED' });
       return frame;
     });
     frames.push(...alignedFrames);
@@ -156,6 +140,7 @@ async function revise(job, delivery) {
   const replacements = new Map(result.frames.map(frame => [frame.assetId, frame]));
   delivery.creativeDirection.frames = delivery.creativeDirection.frames.map(frame => replacements.get(frame.assetId) || frame);
   delivery.creativeDirection.sections = delivery.creativeDirection.sections.map(section => ({ ...section, assetIds: delivery.creativeDirection.frames.filter(frame => frame.sectionId === section.id).map(frame => frame.assetId) })).filter(section => section.assetIds.length);
+  delivery.narration = undefined;
   delivery.status = 'review'; delivery.reviewApprovedAt = undefined; delivery.markModified('creativeDirection'); await delivery.save();
   await saveJob(job, { status: 'review', stage: 'revision-ready', progress: 100, result: { frames: result.frames }, completedAt: new Date() });
 }

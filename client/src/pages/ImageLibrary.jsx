@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Download, FolderOpen, HardDrive, Image, Search, Tag, Trash2, Upload, X } from 'lucide-react';
+import { Download, FolderOpen, HardDrive, Image, MessageSquareText, Search, Tag, Trash2, Upload, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
 import { uploadLibraryPhotos } from '../utils/storageUpload.js';
@@ -30,6 +30,7 @@ export default function ImageLibrary() {
   const [active, setActive] = useState(null);
   const [activeFolder, setActiveFolder] = useState('');
   const [activeTags, setActiveTags] = useState('');
+  const [activeCaption, setActiveCaption] = useState('');
   const [serverFolders, setServerFolders] = useState([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
@@ -91,12 +92,12 @@ export default function ImageLibrary() {
     } catch (error) { toast.error(apiMessage(error, 'We could not remove that photograph.')); }
   }
 
-  function openAsset(asset) { setActive(asset); setActiveFolder(asset.folder || 'All photographs'); setActiveTags((asset.tags || []).join(', ')); }
+  function openAsset(asset) { setActive(asset); setActiveFolder(asset.folder || 'All photographs'); setActiveTags((asset.tags || []).join(', ')); setActiveCaption(asset.caption || ''); }
 
   async function saveAssetDetails() {
     try {
       const tags = activeTags.split(',').map(tag => tag.trim()).filter(Boolean).slice(0, 12);
-      const { data } = await api.patch(`/v1/storage/${active._id}`, { folder: activeFolder.trim() || 'All photographs', tags });
+      const { data } = await api.patch(`/v1/storage/${active._id}`, { folder: activeFolder.trim() || 'All photographs', tags, caption: activeCaption.trim() });
       setAssets(current => current.map(item => item._id === active._id ? data.data : item)); setActive(data.data); toast.success('Photograph details saved.');
     } catch (error) { toast.error(apiMessage(error, 'We could not save those details.')); }
   }
@@ -123,6 +124,6 @@ export default function ImageLibrary() {
       </>}
     </div>
 
-    <AnimatePresence>{active && <motion.div className="v-library-lightbox" role="presentation" onMouseDown={event => event.target === event.currentTarget && setActive(null)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><motion.section role="dialog" aria-modal="true" aria-label={active.originalFilename || 'Stored photograph'} initial={reduced ? false : { opacity: 0, y: 18, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10 }}><button className="v-library-close" type="button" aria-label="Close photograph" onClick={() => setActive(null)}><X size={18} /></button><div className="v-library-preview"><img src={active.url} alt={active.originalFilename || 'Stored photograph'} /></div><aside><p>{active.folder}</p><h2>{active.originalFilename || 'Stored photograph'}</h2><span>{active.width} × {active.height} · {bytes(active.bytes)}</span>{access === 'read-write' && <div className="v-library-details"><label><FolderOpen size={14} /><input value={activeFolder} onChange={event => setActiveFolder(event.target.value)} maxLength={100} placeholder="Folder" /></label><label><Tag size={14} /><input value={activeTags} onChange={event => setActiveTags(event.target.value)} maxLength={500} placeholder="Tags, separated by commas" /></label><button type="button" onClick={saveAssetDetails}>Save folder and tags</button></div>}<div><button type="button" onClick={() => download(active)}><Download size={16} />Download original</button><button type="button" onClick={() => remove(active)}><Trash2 size={16} />Remove</button></div></aside></motion.section></motion.div>}</AnimatePresence>
+    <AnimatePresence>{active && <motion.div className="v-library-lightbox" role="presentation" onMouseDown={event => event.target === event.currentTarget && setActive(null)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><motion.section role="dialog" aria-modal="true" aria-label={active.originalFilename || 'Stored photograph'} initial={reduced ? false : { opacity: 0, y: 18, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10 }}><button className="v-library-close" type="button" aria-label="Close photograph" onClick={() => setActive(null)}><X size={18} /></button><div className="v-library-preview"><img src={active.url} alt={active.originalFilename || 'Stored photograph'} /></div><aside><p>{active.folder}</p><h2>{active.originalFilename || 'Stored photograph'}</h2><span>{active.width} × {active.height} · {bytes(active.bytes)}</span>{active.caption && <blockquote className="v-library-caption">{active.caption}</blockquote>}{access === 'read-write' && <div className="v-library-details"><label><FolderOpen size={14} /><input value={activeFolder} onChange={event => setActiveFolder(event.target.value)} maxLength={100} placeholder="Folder" /></label><label><Tag size={14} /><input value={activeTags} onChange={event => setActiveTags(event.target.value)} maxLength={500} placeholder="Tags, separated by commas" /></label><label><MessageSquareText size={14} /><textarea value={activeCaption} onChange={event => setActiveCaption(event.target.value)} maxLength={180} rows={3} placeholder="Caption used in recipient galleries" /></label><button type="button" onClick={saveAssetDetails}>Save folder, tags, and caption</button></div>}<div><button type="button" onClick={() => download(active)}><Download size={16} />Download original</button><button type="button" onClick={() => remove(active)}><Trash2 size={16} />Remove</button></div></aside></motion.section></motion.div>}</AnimatePresence>
   </div>;
 }

@@ -45,7 +45,7 @@ function OpeningPhoto({ photo, alt }) {
   return <Photo name={photo?.name} url={photo?.url} srcSet={photo?.srcSet} alt={photo?.alt || alt} eager sizes="100vw" />;
 }
 
-export function EventCoverageViewer({ delivery, galleryProps, audioState, toggleAudio }) {
+export function EventCoverageViewer({ delivery, galleryProps, audioState, toggleAudio, onNarrationNavigate }) {
   const reduced = useReducedMotion();
   const [gallery, setGallery] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(null);
@@ -59,9 +59,10 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
   const openPhoto = photo => {
     setGalleryIndex(Math.max(0, photos.indexOf(photo)));
     setGallery(true);
+    onNarrationNavigate?.(photo.assetId);
   };
 
-  return <div className="fd-page vec-viewer vec-event" data-composition={styles['--fd-composition']} style={styles}>
+  return <div className="fd-page vec-viewer vec-event" data-composition={styles['--fd-composition']} data-accent-placement={styles['--fd-accent-placement']} style={styles}>
     <DemoHeader format="Event Coverage" client={title} sectionId="event-coverage" onGallery={() => { setGalleryIndex(null); setGallery(true); }} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     <main>
       <section className="vec-event-hero">
@@ -103,7 +104,7 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
   </div>;
 }
 
-export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, toggleAudio }) {
+export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, toggleAudio, onNarrationNavigate }) {
   const reduced = useReducedMotion();
   const [gallery, setGallery] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(null);
@@ -118,9 +119,10 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
   const openPhoto = photo => {
     setGalleryIndex(Math.max(0, photos.indexOf(photo)));
     setGallery(true);
+    onNarrationNavigate?.(photo.assetId);
   };
 
-  return <div className="fd-page vec-viewer vec-campaign" data-composition={styles['--fd-composition']} style={styles}>
+  return <div className="fd-page vec-viewer vec-campaign" data-composition={styles['--fd-composition']} data-accent-placement={styles['--fd-accent-placement']} style={styles}>
     <DemoHeader format="Campaign Delivery" client={title} sectionId="campaign" onGallery={() => { setGalleryIndex(null); setGallery(true); }} light delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     <main>
       <section className="vec-campaign-hero">

@@ -96,3 +96,4 @@
 .v-narration-voice-note{display:block;margin-top:10px;color:#aaa19a;font-size:11px;line-height:1.55}
 @media(max-width:640px){.v-client-format-preview{padding:16px}.v-client-format-preview>header{display:block}.v-client-format-preview-badge{display:inline-block!important;margin-top:14px!important}.v-client-format-preview-frame{height:72dvh;min-height:500px}}
 @media(min-width:768px){.v-client-format-preview{padding:30px}.v-client-format-preview-frame{min-height:640px}}
+.v-create-page button:focus-visible,.v-create-page a:focus-visible,.v-create-page input:focus-visible,.v-create-page select:focus-visible,.v-create-page textarea:focus-visible{outline:2px solid #ff9b8e;outline-offset:3px}

@@ -16,7 +16,7 @@ function accessHeaders(publicId) {
 }
 
 const volumeRamps = new WeakMap();
-function apiMediaUrl(value) {
+export function apiMediaUrl(value) {
   if (typeof value !== 'string') return value;
   return value.startsWith('/api/') ? `${API_BASE_URL.replace(/\/$/, '')}${value.slice(4)}` : value;
 }
@@ -48,67 +48,60 @@ function displayAssetUrl(asset, targetWidth = 960) {
   return (candidates.find(candidate => candidate.width >= targetWidth) || candidates.at(-1))?.url || asset?.thumbnailUrl || asset?.url || '';
 }
 
+async function preloadBlob(url, cleanup, kind) {
+  if (!url) return { ok: false, url: '' };
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), kind === 'audio' ? 120000 : 60000);
+  let objectUrl = '';
+  try {
+    const response = await fetch(url, { cache: 'force-cache', signal: controller.signal });
+    if (!response.ok) return { ok: false, url: '' };
+    const blob = await response.blob();
+    if (!blob.size) return { ok: false, url: '' };
+    objectUrl = URL.createObjectURL(blob);
+    if (kind === 'image') {
+      const image = new window.Image();
+      image.decoding = 'async';
+      image.src = objectUrl;
+      if (image.decode) await image.decode();
+    } else {
+      const audio = new Audio();
+      audio.preload = 'auto';
+      audio.src = objectUrl;
+      await new Promise((resolve, reject) => {
+        const done = () => { audio.oncanplay = null; audio.oncanplaythrough = null; audio.onerror = null; resolve(); };
+        audio.oncanplay = done;
+        audio.oncanplaythrough = done;
+        audio.onerror = reject;
+        audio.load();
+      });
+    }
+    cleanup.push(() => URL.revokeObjectURL(objectUrl));
+    return { ok: true, url: objectUrl };
+  } catch {
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    return { ok: false, url: '' };
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 function preloadImage(url, cleanup) {
-  return new Promise(resolve => {
-    if (!url) return resolve(false);
-    const image = new window.Image();
-    let settled = false;
-    const finish = async ok => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timeout);
-      image.onload = null;
-      image.onerror = null;
-      if (ok && image.decode) await image.decode().catch(() => {});
-      resolve(ok);
-    };
-    const timeout = window.setTimeout(() => finish(false), 20000);
-    image.onload = () => finish(true);
-    image.onerror = () => finish(false);
-    image.decoding = 'async';
-    image.src = url;
-    cleanup.push(() => {
-      window.clearTimeout(timeout);
-      image.onload = null;
-      image.onerror = null;
-      image.src = '';
-    });
-  });
+  return preloadBlob(url, cleanup, 'image');
 }
 
 function preloadAudio(url, cleanup) {
-  return new Promise(resolve => {
-    if (!url) return resolve(false);
-    const audio = new Audio();
-    let settled = false;
-    const finish = ok => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timeout);
-      audio.oncanplay = null;
-      audio.oncanplay = null;
-      audio.oncanplaythrough = null;
-      audio.onerror = null;
-      resolve(ok);
-    };
-    const timeout = window.setTimeout(() => finish(false), 60000);
-    audio.preload = 'auto';
-    audio.oncanplay = () => finish(true);
-    audio.oncanplaythrough = () => finish(true);
-    audio.onerror = () => finish(false);
-    audio.src = url;
-    audio.load();
-    cleanup.push(() => {
-      window.clearTimeout(timeout);
-      audio.pause();
-      audio.removeAttribute('src');
-      audio.load();
-    });
-  });
+  return preloadBlob(url, cleanup, 'audio');
 }
 
-function DeliveryReadiness({ delivery, onReady }) {
+export function DeliveryReadiness({ delivery, onReady }) {
   const sortedAssets = [...(delivery.assets || [])].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+  const mediaKey = [
+    delivery.publicId || delivery._id || 'draft',
+    delivery.soundtrack?.url || '',
+    delivery.narration?.url || '',
+    ...sortedAssets.map(asset => `${asset.assetId}:${asset.url || ''}`)
+  ].join('|');
   const totals = {
     photo: sortedAssets.length,
     soundtrack: delivery.soundtrack?.url ? 1 : 0,
@@ -119,26 +112,30 @@ function DeliveryReadiness({ delivery, onReady }) {
   const [blocked, setBlocked] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const openedRef = useRef(false);
+  const preloadedRef = useRef({ assets: {}, soundtrack: '', narration: '' });
 
   const open = () => {
     if (openedRef.current) return;
     openedRef.current = true;
-    onReady();
+    onReady(preloadedRef.current);
   };
 
   useEffect(() => {
     const cleanup = [];
     let active = true;
+    let transferred = false;
+    const preloaded = { assets: {}, soundtrack: '', narration: '' };
+    preloadedRef.current = preloaded;
     setLoaded({ photo: 0, soundtrack: 0, narration: 0, total: 0, failed: 0 });
     setBlocked(false);
     const tasks = [
-      ...(delivery.soundtrack?.url ? [{ kind: 'soundtrack', run: () => preloadAudio(delivery.soundtrack.url, cleanup) }] : []),
+      ...(delivery.soundtrack?.url ? [{ kind: 'soundtrack', run: () => preloadAudio(apiMediaUrl(delivery.soundtrack.url), cleanup) }] : []),
       ...(delivery.narration?.url ? [{ kind: 'narration', run: () => preloadAudio(apiMediaUrl(delivery.narration.url), cleanup) }] : []),
-      ...sortedAssets.map(asset => ({ kind: 'photo', run: () => preloadImage(displayAssetUrl(asset, window.innerWidth >= 1025 ? 1600 : 960), cleanup) }))
+      ...sortedAssets.map(asset => ({ kind: 'photo', key: asset.assetId, run: () => preloadImage(apiMediaUrl(asset.url), cleanup) }))
     ];
 
     if (!tasks.length) {
-      const readyTimer = window.setTimeout(open, 250);
+      const readyTimer = window.setTimeout(() => { transferred = true; open(); }, 250);
       cleanup.push(() => window.clearTimeout(readyTimer));
     } else {
       const queue = [...tasks];
@@ -146,10 +143,14 @@ function DeliveryReadiness({ delivery, onReady }) {
         const results = [];
         while (active && queue.length) {
           const task = queue.shift();
-          const ok = await task.run();
+          const result = await task.run();
           if (!active) return;
+          const ok = Boolean(result?.ok);
+          if (ok && task.kind === 'photo') preloaded.assets[task.key] = result.url;
+          if (ok && task.kind === 'soundtrack') preloaded.soundtrack = result.url;
+          if (ok && task.kind === 'narration') preloaded.narration = result.url;
           results.push({ kind: task.kind, ok });
-          setLoaded(current => ({ ...current, [task.kind]: current[task.kind] + 1, total: current.total + 1, failed: current.failed + (ok ? 0 : 1) }));
+          setLoaded(current => ({ ...current, [task.kind]: current[task.kind] + (ok ? 1 : 0), total: current.total + (ok ? 1 : 0), failed: current.failed + (ok ? 0 : 1) }));
         }
         return results;
       };
@@ -160,26 +161,26 @@ function DeliveryReadiness({ delivery, onReady }) {
           setBlocked(true);
           return;
         }
-        const readyTimer = window.setTimeout(open, 350);
+        const readyTimer = window.setTimeout(() => { transferred = true; open(); }, 350);
         cleanup.push(() => window.clearTimeout(readyTimer));
       });
     }
 
     return () => {
       active = false;
-      cleanup.forEach(dispose => dispose());
+      if (!transferred) cleanup.forEach(dispose => dispose());
     };
-  }, [delivery.publicId, attempt]);
+  }, [mediaKey, attempt]);
 
   const percent = Math.min(100, Math.round((loaded.total / total) * 100));
-  const stage = loaded.photo < totals.photo
-    ? `Preparing photograph ${Math.min(loaded.photo + 1, totals.photo)} of ${totals.photo}`
-    : loaded.soundtrack < totals.soundtrack
-      ? 'Buffering the soundtrack'
-      : loaded.narration < totals.narration
-        ? 'Preparing the narration'
-        : loaded.failed
-          ? 'A file needs another try'
+  const stage = loaded.failed
+    ? 'A file needs another try'
+    : loaded.photo < totals.photo
+      ? `Preparing photograph ${Math.min(loaded.photo + 1, totals.photo)} of ${totals.photo}`
+      : loaded.soundtrack < totals.soundtrack
+        ? 'Buffering the soundtrack'
+        : loaded.narration < totals.narration
+          ? 'Preparing the narration'
           : 'Your delivery is ready';
 
   return <main className="vd-readiness" role="status" aria-live="polite">
@@ -212,11 +213,13 @@ export default function DeliveryViewer() {
   const [liked, setLiked] = useState(new Set());
   const [busy, setBusy] = useState('');
   const [experienceReady, setExperienceReady] = useState(false);
+  const [preloadedMedia, setPreloadedMedia] = useState({ assets: {}, soundtrack: '', narration: '' });
 
   const [audioState, setAudioState] = useState({ playing: '', loading: '' });
   const [narrationCue, setNarrationCue] = useState(null);
   const soundtrackRef = useRef(null);
   const narrationRef = useRef(null);
+  const narrationInteractionRef = useRef(false);
 
   async function load() {
     setLoading(true);
@@ -232,6 +235,7 @@ export default function DeliveryViewer() {
       } else {
         const current = response.data.data;
         setDelivery(current.soundtrack?.url ? { ...current, soundtrack: { ...current.soundtrack, url: apiMediaUrl(current.soundtrack.url) } } : current);
+        setPreloadedMedia({ assets: {}, soundtrack: '', narration: '' });
         setExperienceReady(false);
         setLocked(false);
         document.title = `${response.data.data.title} · Veylo`;
@@ -248,6 +252,32 @@ export default function DeliveryViewer() {
     if (grant && /^[A-Za-z0-9_-]{30,100}$/.test(grant)) sessionStorage.setItem(`veylo_delivery_grant_${publicId}`, grant);
     load();
   }, [publicId]);
+
+  useEffect(() => () => {
+    Object.values(preloadedMedia.assets || {}).forEach(url => { if (String(url).startsWith('blob:')) URL.revokeObjectURL(url); });
+    [preloadedMedia.soundtrack, preloadedMedia.narration].forEach(url => { if (String(url).startsWith('blob:')) URL.revokeObjectURL(url); });
+  }, [preloadedMedia]);
+
+  useEffect(() => {
+    narrationInteractionRef.current = false;
+  }, [delivery?.publicId]);
+
+  useEffect(() => {
+    if (!experienceReady || !delivery?.narration?.url || delivery.format === 'photo-story') return undefined;
+    const startNarration = event => {
+      if (narrationInteractionRef.current || event.target?.closest?.('input, textarea, select')) return;
+      narrationInteractionRef.current = true;
+      toggleAudio('narration');
+      window.removeEventListener('pointerdown', startNarration, { capture: true });
+      window.removeEventListener('keydown', startNarration, { capture: true });
+    };
+    window.addEventListener('pointerdown', startNarration, { capture: true });
+    window.addEventListener('keydown', startNarration, { capture: true });
+    return () => {
+      window.removeEventListener('pointerdown', startNarration, { capture: true });
+      window.removeEventListener('keydown', startNarration, { capture: true });
+    };
+  }, [experienceReady, delivery?.publicId, delivery?.format, delivery?.narration?.url, toggleAudio]);
 
   useEffect(() => {
     if (!delivery || !experienceReady || !delivery.assets?.length) return undefined;
@@ -344,6 +374,15 @@ export default function DeliveryViewer() {
     const time = Number(event.currentTarget.currentTime || 0);
     const cue = (delivery?.narration?.segments || []).find(segment => time >= Number(segment.startSec || 0) && time < Number(segment.endSec || 0));
     setNarrationCue(cue || null);
+  };
+
+  const seekNarrationToAssets = assetIds => {
+    const narration = narrationRef.current;
+    const wanted = new Set((Array.isArray(assetIds) ? assetIds : [assetIds]).map(String));
+    const segment = (delivery?.narration?.segments || []).find(item => (item.assetIds || []).some(id => wanted.has(String(id))));
+    if (!narration || !segment) return;
+    narration.currentTime = Number(segment.startSec || 0);
+    if (audioState.playing === 'narration') narration.play().catch(() => {});
   };
 
   async function handleLike(assetId) {
@@ -455,10 +494,19 @@ export default function DeliveryViewer() {
   }
 
   if (!experienceReady) {
-    return <DeliveryReadiness delivery={delivery} onReady={() => setExperienceReady(true)} />;
+    return <DeliveryReadiness delivery={delivery} onReady={media => { setPreloadedMedia(media); setExperienceReady(true); }} />;
   }
 
   const format = delivery.format || 'photo-story';
+  const playbackDelivery = {
+    ...delivery,
+    assets: (delivery.assets || []).map(asset => {
+      const url = preloadedMedia.assets?.[asset.assetId] || asset.url;
+      return { ...asset, url, thumbnailUrl: url, srcSet: undefined };
+    }),
+    soundtrack: delivery.soundtrack?.url ? { ...delivery.soundtrack, url: preloadedMedia.soundtrack || delivery.soundtrack.url } : delivery.soundtrack,
+    narration: delivery.narration?.url ? { ...delivery.narration, url: preloadedMedia.narration || apiMediaUrl(delivery.narration.url) } : delivery.narration
+  };
   const galleryProps = {
     liked,
     onLike: handleLike,
@@ -472,18 +520,19 @@ export default function DeliveryViewer() {
     galleryProps,
     audioState,
     toggleAudio,
-    narrationRef
+    narrationRef,
+    onNarrationNavigate: seekNarrationToAssets
   };
 
-  const content = <DeliveryFormatViewer format={format} {...sharedProps} />;
+  const content = <DeliveryFormatViewer format={format} {...sharedProps} delivery={playbackDelivery} />;
 
   return (
     <>
-      {delivery.soundtrack?.url && !['photo-reveal', 'album', 'photo-story'].includes(format) && (
+      {playbackDelivery.soundtrack?.url && !['photo-reveal', 'album', 'photo-story'].includes(format) && (
         <audio
           ref={soundtrackRef}
-          src={delivery.soundtrack.url}
-          preload="metadata"
+          src={playbackDelivery.soundtrack.url}
+          preload="auto"
           loop
           onWaiting={() => handleAudioWaiting('soundtrack')}
           onStalled={() => handleAudioWaiting('soundtrack')}
@@ -492,11 +541,11 @@ export default function DeliveryViewer() {
           onEnded={() => setAudioState({ playing: '', loading: '' })}
         />
       )}
-      {delivery.narration?.url && !['photo-story'].includes(format) && (
+      {playbackDelivery.narration?.url && !['photo-story'].includes(format) && (
         <audio
           ref={narrationRef}
-          src={delivery.narration.url}
-          preload="metadata"
+          src={playbackDelivery.narration.url}
+          preload="auto"
           onWaiting={() => handleAudioWaiting('narration')}
           onStalled={() => handleAudioWaiting('narration')}
           onPlaying={() => handleAudioPlaying('narration')}

@@ -66,11 +66,7 @@ function isAllowedOrigin(origin) {
   if (!origin) return true;
   const clean = origin.replace(/\/$/, '');
   if (allowedOrigins.has(clean)) return true;
-  // The admin is served from a *.workers.dev URL — it has no domain of its own — so
-  // this is load-bearing, not a temporary preview allowance. It does grant
-  // credentialed CORS to any *.workers.dev deployment; to narrow it, set ADMIN_URL
-  // to the exact admin URL and delete this line.
-  if (/^https:\/\/[a-zA-Z0-9_.-]+\.(pages\.dev|workers\.dev)$/.test(clean)) return true;
+  // Only explicitly configured origins may send credentialed requests.
   return false;
 }
 
@@ -104,7 +100,7 @@ app.use('/api/v1/admin', adminRoutes);
 
 app.use((error, req, res, next) => {
   if (error?.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ success: false, message: 'The image must be 5 MB or smaller.' });
-  if (error?.message === 'Origin is not allowed.') return res.status(403).json({ success: false, message: 'This request origin is not allowed.' });
+  if (error?.message === 'Origin is not allowed.' || /^Origin .+ is not allowed\.$/.test(error?.message || '')) return res.status(403).json({ success: false, message: 'This request origin is not allowed.' });
   console.error('[server]', error.message);
   res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
 });

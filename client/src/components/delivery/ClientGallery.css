@@ -4,3 +4,5 @@
 @media(prefers-reduced-motion:reduce){.client-gallery *{scroll-behavior:auto!important;animation:none!important;transition-duration:.01ms!important}}
 .client-gallery-grid figcaption{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px}
 .client-gallery-grid figcaption p{min-width:0;margin:0;color:rgba(255,255,255,.72);font-size:10px;font-weight:var(--fd-caption-weight,500);letter-spacing:0;line-height:1.45;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.client-gallery-lightbox-caption{max-width:720px;margin:0 auto;color:rgba(255,255,255,.82);font-family:'Playfair Display',Georgia,serif;font-size:clamp(16px,4vw,24px);line-height:1.35;text-align:center}
+.client-gallery button:focus-visible,.client-gallery a:focus-visible{outline:2px solid #ff9b8e;outline-offset:3px}

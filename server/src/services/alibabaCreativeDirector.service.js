@@ -177,7 +177,7 @@ const frameSchema = z.preprocess(raw => {
   sectionId: z.preprocess(val => String(val || '').toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 32) || 'section-1', z.string()),
   role: z.preprocess(val => ['opening', 'hero', 'supporting', 'detail', 'pair', 'finale'].includes(val) ? val : 'supporting', z.enum(['opening', 'hero', 'supporting', 'detail', 'pair', 'finale'])),
   headline: z.preprocess(val => String(val || '').trim().slice(0, 70), z.string().max(70)),
-  caption: z.preprocess(val => String(val || '').trim().slice(0, 180), z.string().min(8).max(180)),
+  caption: z.preprocess(val => String(val || '').trim().slice(0, 180), z.string().min(18).max(180)),
   motion: z.preprocess(val => MOTIONS.includes(val) ? val : 'slow-push', z.enum(MOTIONS)),
   transition: z.preprocess(val => TRANSITIONS.includes(val) ? val : 'crossfade', z.enum(TRANSITIONS)),
   duration: z.preprocess(val => Math.min(12, Math.max(2, Number(val) || 4.5)), z.number().min(2).max(12)),
@@ -513,8 +513,8 @@ export async function createGlobalDirection({ format, brief, shootType, clientNa
         collectionAnalysis,
         currentDirection,
         photographerRevision: revisionInstruction,
-        approvedSoundtrackCatalogue: DELIVERY_SOUNDTRACKS.map(track => ({ trackId: track.id, title: track.title, creator: track.creator, category: track.category, genre: track.genre, mood: track.mood, tempo: track.tempo, energy: track.energy, narrationFit: track.narrationFit, durationSec: track.durationSec, tags: track.tags, storyFunction: track.storyFunction, bestFor: track.bestFor, avoidFor: track.avoidFor, editingPace: track.editingPace, instrumentationCue: track.instrumentationCue, contentIdRegistered: track.contentIdRegistered })),
-        strongestSoundtrackMatches: recommendSoundtracks(`${shootType} ${brief} ${JSON.stringify(collectionAnalysis || {})}`, 18).map(track => ({ trackId: track.id, title: track.title, creator: track.creator, genre: track.genre, mood: track.mood, tempo: track.tempo, energy: track.energy, narrationFit: track.narrationFit, durationSec: track.durationSec, tags: track.tags, storyFunction: track.storyFunction, bestFor: track.bestFor, avoidFor: track.avoidFor, editingPace: track.editingPace, instrumentationCue: track.instrumentationCue, contentIdRegistered: track.contentIdRegistered })),
+        approvedSoundtrackCatalogue: DELIVERY_SOUNDTRACKS.map(track => ({ trackId: track.id, title: track.title, creator: track.creator, category: track.category, genre: track.genre, mood: track.mood, tempo: track.tempo, energy: track.energy, narrationFit: track.narrationFit, durationSec: track.durationSec, tags: track.tags, storyFunction: track.storyFunction, bestFor: track.bestFor, avoidFor: track.avoidFor, editingPace: track.editingPace, instrumentationCue: track.instrumentationCue, titleSignals: track.titleSignals, selectionNote: track.selectionNote, metadataConfidence: track.metadataConfidence, contentIdRegistered: track.contentIdRegistered, contentIdGuidance: track.contentIdGuidance, sourcePageUrl: track.sourcePageUrl, license: track.license, licenseUrl: track.licenseUrl, verifiedAt: track.verifiedAt })),
+        strongestSoundtrackMatches: recommendSoundtracks(`${shootType} ${brief} ${JSON.stringify(collectionAnalysis || {})}`, 18).map(track => ({ trackId: track.id, title: track.title, creator: track.creator, genre: track.genre, mood: track.mood, tempo: track.tempo, energy: track.energy, narrationFit: track.narrationFit, durationSec: track.durationSec, tags: track.tags, storyFunction: track.storyFunction, bestFor: track.bestFor, avoidFor: track.avoidFor, editingPace: track.editingPace, instrumentationCue: track.instrumentationCue, titleSignals: track.titleSignals, selectionNote: track.selectionNote, metadataConfidence: track.metadataConfidence, contentIdRegistered: track.contentIdRegistered, contentIdGuidance: track.contentIdGuidance, sourcePageUrl: track.sourcePageUrl, license: track.license, licenseUrl: track.licenseUrl, verifiedAt: track.verifiedAt })),
         soundtrackInstruction: 'Consider the complete 100-track catalogue, use the strongest matches as a focused shortlist, and choose the exact trackId that best fits the photographs, occasion, pace, format and narration. Use only an approved trackId.',
         photographs: compact
       }) }
@@ -566,26 +566,42 @@ Return one frame per photograph in the supplied order.`;
     sections: (direction?.sections || []).map(s => ({ id: s.id, title: s.title }))
   };
 
-  const fallbackCaption = (insight) => {
-    const name = String(clientName || 'you').trim();
-    const occasion = String(shootType || 'this shoot').trim().toLowerCase();
-    const moment = String(insight?.moment || insight?.expression || '').replace(/[<>]/g, '').trim().replace(/[.!?]+$/, '');
-    if (moment) return `${name}, this ${moment.toLowerCase()} carries what your ${occasion} was really about.`.slice(0, 180);
-    return `${name}, this frame keeps a little of the feeling you brought to your ${occasion}.`.slice(0, 180);
-  };
+  const captionFormatRules = {
+    'event-coverage': `This is multi-subject event coverage. Do not address one named client and do not assume a private celebration. Write each caption as a useful, human record of the people, scene, purpose, or atmosphere the photographer described. Use plural or neutral language where appropriate. Explain why the moment matters to the event, not only what is visible.`,
+    campaign: `This is a campaign handoff. Write for the brand, campaign objective, audience, and approved usage described in the brief. Captions should clarify the role of each frame in the campaign or asset set without inventing claims, sales copy, product specifications, or a private-person celebration.`,
+    'photo-story': `This is a personal Photo Story. Address the named client naturally and connect each caption to the milestone, relationship, or purpose in the photographer's brief. Keep the voice intimate and reflective without becoming sentimental or generic.`,
+    editorial: `This is an editorial delivery. Use the brief to give each frame a clear point of view and editorial role. Address the subject or story naturally, but do not write generic praise or describe pixels as alt text.`,
+    'photo-reveal': `This is a reveal sequence. Make each caption build the approved story and explain the significance of the frame in the brief. Keep the writing concise enough to read during a reveal.`,
+    canvas: `This is a browsable canvas. Give each frame a distinct, meaningful line tied to the brief so the collection does not read like a repeated template.`,
+    chapters: `This is a chaptered delivery. Tie each caption to its chapter's purpose and keep the language varied across the sequence.`,
+    album: `This is an album delivery. Write captions that feel like considered album notes: specific to the brief, calm, and useful to the person receiving the finished photographs.`
+  }[format] || `Use the photographer's brief and the supplied photograph context to write a meaningful caption for this delivery.`;
 
   const alignFrames = (rawFrames = []) => {
     const byAssetId = new Map(rawFrames.map(f => [String(f.assetId || ''), f]));
+    if (rawFrames.length !== expectedAssetIds.length) {
+      throw Object.assign(new Error(`The creative director returned ${rawFrames.length} captions for ${expectedAssetIds.length} photographs.`), { code: 'INVALID_MODEL_OUTPUT' });
+    }
+    const seenCaptions = new Set();
     return expectedAssetIds.map((id, index) => {
-      const matched = byAssetId.get(id) || rawFrames[index];
-      const frame = matched ? { ...matched } : {};
+      const matched = byAssetId.get(id);
+      if (!matched) {
+        throw Object.assign(new Error(`The creative director did not return a caption for photograph ${id}.`), { code: 'INVALID_MODEL_OUTPUT' });
+      }
+      const frame = { ...matched };
       frame.assetId = id;
       if (!validSectionIds.includes(frame.sectionId)) frame.sectionId = defaultSectionId;
       if (!['opening', 'hero', 'supporting', 'detail', 'pair', 'finale'].includes(frame.role)) {
         frame.role = index === 0 ? 'hero' : 'supporting';
       }
       if (typeof frame.headline !== 'string') frame.headline = '';
-      if (typeof frame.caption !== 'string' || frame.caption.trim().length < 8) frame.caption = fallbackCaption(imageInsights[index]);
+      const caption = typeof frame.caption === 'string' ? frame.caption.replace(/[<>]/g, '').replace(/\s+/g, ' ').trim() : '';
+      const normalizedCaption = caption.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      if (caption.length < 18 || caption.split(/\s+/).filter(Boolean).length < 4 || /^(a finished|a final|this frame|a photograph|photograph from the shoot)\b/i.test(caption) || seenCaptions.has(normalizedCaption)) {
+        throw Object.assign(new Error(`The creative director returned an unusable caption for photograph ${id}.`), { code: 'INVALID_MODEL_OUTPUT' });
+      }
+      seenCaptions.add(normalizedCaption);
+      frame.caption = caption.slice(0, 180);
       if (!MOTIONS.includes(frame.motion)) frame.motion = 'slow-push';
       if (!TRANSITIONS.includes(frame.transition)) frame.transition = 'crossfade';
       frame.duration = Math.min(12, Math.max(2, Number(frame.duration) || 4.5));
@@ -607,13 +623,16 @@ THE PHOTOGRAPHER SAYS THIS SHOOT IS ABOUT:
 
 THIS IS YOUR PRIMARY DIRECTIVE: Every headline and caption must celebrate what this shoot represents — the occasion, the milestone, the person. Speak directly to ${clientName || 'the client'} with warmth.
 
-You have minimal context about each photo (the type of moment it captures and its visual weight). Use that to vary your writing — but NEVER describe what you see. Never write alt-text. Never mention clothing, backdrops, poses, or lighting.
+Use the supplied visual analysis and photographer's brief to anchor each caption in the actual moment or subject shown. The writing should add meaning, not read like mechanical alt-text: avoid camera jargon, pixel-level description, invented facts, or details that are not supported by the analysis or brief.
 
 Assign every photograph to one existing section (${validSectionIds.join(', ')}). Choose cinematic motions and transitions that suit the emotional rhythm.
 
-${voiceRules}
+ ${voiceRules}
 
-${schemaInstructions}`
+ FORMAT-SPECIFIC DIRECTION (this overrides any generic personal-portrait wording above):
+ ${captionFormatRules}
+
+ ${schemaInstructions}`
         },
         {
           role: 'user',
@@ -635,9 +654,8 @@ ${schemaInstructions}`
 
     return { frames: alignFrames(result?.frames || []) };
   } catch (error) {
-    console.warn('[createFrameBatch] Directing model returned invalid output, falling back to structured frames:', error.message);
-    if (error.code === 'AI_NOT_CONFIGURED' || error.code === 'MODEL_NOT_AVAILABLE') throw error;
-    return { frames: alignFrames([]) };
+    console.warn('[createFrameBatch] Directing model did not return a complete captioned batch:', error.message);
+    throw error;
   }
 }
 

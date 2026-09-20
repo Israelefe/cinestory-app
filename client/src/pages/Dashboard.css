@@ -210,3 +210,4 @@
     animation: none;
   }
 }
+.v-dashboard-page button:focus-visible,.v-dashboard-page a:focus-visible,.v-dashboard-page input:focus-visible{outline:2px solid #ff9b8e;outline-offset:3px}

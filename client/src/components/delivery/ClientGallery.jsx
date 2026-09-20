@@ -51,13 +51,14 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
         const isLiked = liked?.has(key);
         return <motion.figure key={key} initial={reduced ? false : { opacity: 0, y: 15 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .12 }} transition={{ delay: reduced ? 0 : Math.min(index * .025, .2) }}>
           <button className="client-gallery-photo" type="button" onClick={() => setSelected(index)} aria-label={`Open photograph ${index + 1}`}><Photo name={photo.name} url={photo.thumbnailUrl || photo.url} srcSet={photo.srcSet} alt={photo.alt || photo.caption || `Photograph ${index + 1}`} sizes="(max-width: 640px) 48vw, (max-width: 1024px) 31vw, 24vw" /></button>
-          <figcaption><span>{String(index + 1).padStart(2, '0')}</span><p>{photo.caption || `A finished moment from ${title}.`}</p><div>
+          <figcaption><span>{String(index + 1).padStart(2, '0')}</span><p>{photo.caption || ''}</p><div>
             {allowLikes && <button className={isLiked ? 'is-liked' : ''} type="button" onClick={() => runLike(photo, index)} aria-label={isLiked ? 'Remove from favourites' : 'Add to favourites'}><Heart size={16} fill={isLiked ? 'currentColor' : 'none'} /></button>}
             {allowIndividualDownloads && <button type="button" onClick={() => runDownload(photo, index)} disabled={resolvedBusy === key || resolvedBusy === 'all'} aria-label={`Download photograph ${index + 1}`}>{resolvedBusy === key ? <LoaderCircle className="client-gallery-spin" size={16} /> : <Download size={16} />}</button>}
           </div></figcaption>
         </motion.figure>;
       })}</div> : <div className="client-gallery-lightbox">
         <AnimatePresence mode="wait"><motion.img key={activeKey} src={imageUrl(activePhoto)} alt={activePhoto?.alt || activePhoto?.caption || `Photograph ${selected + 1}`} initial={reduced ? false : { opacity: 0, scale: .99 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .24 }} /></AnimatePresence>
+        <p className="client-gallery-lightbox-caption">{activePhoto?.caption || ''}</p>
         <div className="client-gallery-lightbox-actions">
           <button className="client-gallery-icon" type="button" onClick={() => setSelected(value => Math.max(0, value - 1))} disabled={selected === 0} aria-label="Previous photograph"><ChevronLeft size={21} /></button>
           <button className="client-gallery-back" type="button" onClick={() => setSelected(null)}><ArrowLeft size={16} /><span>All photographs</span></button>

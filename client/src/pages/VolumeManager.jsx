@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Archive, AlertCircle, ArrowRight, Check, Download, FileUp, Folder, LoaderCircle, Plus, Pencil, ScanSearch, Send, Trash2, Users } from 'lucide-react';
+import { Archive, AlertCircle, ArrowRight, Check, Copy, Download, ExternalLink, FileUp, Folder, LoaderCircle, Plus, Pencil, ScanSearch, Send, Trash2, Users } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
 import './VolumeManager.css';
@@ -35,6 +35,7 @@ export default function VolumeManager({ user }) {
   const [busy, setBusy] = useState('loading');
   const [error, setError] = useState('');
   const [matchReport, setMatchReport] = useState(null);
+  const [publishedLink, setPublishedLink] = useState(null);
   const isPro = ['pro', 'studio'].includes(user?.plan);
 
   async function loadJobs() {
@@ -146,8 +147,25 @@ export default function VolumeManager({ user }) {
 
   async function publish() {
     setBusy('publish'); setError('');
-    try { const response = await api.post(`/v1/volume-jobs/${active._id}/publish`); await navigator.clipboard.writeText(response.data.data.url); toast.success('Published. The recipient link was copied.'); await loadJobs(); setActive(null); }
-    catch (requestError) { setError(apiMessage(requestError, 'We could not publish this volume delivery.')); setBusy(''); }
+    try {
+      const response = await api.post(`/v1/volume-jobs/${active._id}/publish`);
+      const url = response.data.data.url || active.shareUrl || `/volume/${active.publicId}`;
+      setPublishedLink({ title: active.title, url });
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success('Published. The recipient link was copied.');
+      } catch {
+        toast.info('Published. Copy the recipient link from the confirmation card.');
+      }
+      await loadJobs(); setActive(null);
+    }
+    catch (requestError) { setError(apiMessage(requestError, 'We could not publish this volume delivery.')); }
+    finally { setBusy(''); }
+  }
+
+  async function copyLink(url) {
+    try { await navigator.clipboard.writeText(url); toast.success('Recipient link copied.'); }
+    catch { toast.info('Copy is not available here. Select the link and copy it.'); }
   }
 
   if (!isPro) return <main className="vm-page"><section className="vm-upgrade"><Users size={29} /><span>VOLUME DELIVERY BETA</span><h1>Private galleries for schools, teams, and large groups.</h1><p>Each recipient uses their code and email to receive a short-lived access code. Face recognition is not used.</p><a href="/billing">View Veylo Pro<ArrowRight size={17} /></a></section></main>;
@@ -157,6 +175,7 @@ export default function VolumeManager({ user }) {
     <main className="vm-page">
       <header><span>VOLUME DELIVERY / PRO BETA</span><h1>One shoot.<br />Many private recipients.</h1><p>Set up as many as 1,000 recipient galleries and 5,000 photo assignments. Use codes supplied by the school, team, or organiser.</p></header>
       {error && <div className="vm-error" role="alert">{error}</div>}
+      {publishedLink && <aside className="vm-published-link" role="status"><div><span>RECIPIENT LINK READY</span><strong>{publishedLink.title}</strong><p>The delivery is live. Clipboard access is optional; the link remains here until you dismiss it.</p></div><div><input readOnly value={publishedLink.url} aria-label="Published recipient link" onFocus={event => event.currentTarget.select()} /><button type="button" onClick={() => copyLink(publishedLink.url)}><Copy size={15} />Copy link</button><a href={publishedLink.url} target="_blank" rel="noreferrer"><ExternalLink size={15} />Open</a><button type="button" className="vm-published-dismiss" onClick={() => setPublishedLink(null)} aria-label="Dismiss published link"><Trash2 size={15} /></button></div></aside>}
       {active ? (
         <section className="vm-workspace">
           <button className="vm-back" type="button" onClick={() => setActive(null)}>Back to volume deliveries</button>
@@ -179,16 +198,16 @@ export default function VolumeManager({ user }) {
           <div className="vm-steps">
             <article>
               <span>01 / RECIPIENTS</span><h3>Add the private galleries.</h3><p>Upload a CSV or paste one row per person: recipient code, full name, email address.</p>
-              <label className="vm-csv"><FileUp size={17} /><span><strong>Choose recipient CSV</strong><small>Header row optional / up to 2 MB</small></span><input type="file" accept=".csv,text/csv" onChange={event => readRecipientFile(event.target.files?.[0])} /></label>
-              <textarea value={rows} onChange={event => setRows(event.target.value)} rows={7} placeholder={'STU-1042, Amaka Okoro, amaka@example.com\nSTU-1043, Tunde Bello, tunde@example.com'} />
-              <footer><small>{parsedRows.length} rows ready</small><button type="button" onClick={importRecipients} disabled={busy === 'subjects'}>{busy === 'subjects' ? <LoaderCircle className="v-spin" size={16} /> : <Plus size={16} />}Add recipients</button></footer>
+              <label className={`vm-csv${active.status !== 'draft' ? ' is-disabled' : ''}`}><FileUp size={17} /><span><strong>{active.status === 'draft' ? 'Choose recipient CSV' : 'Recipients are locked after publishing'}</strong><small>Header row optional / up to 2 MB</small></span><input type="file" accept=".csv,text/csv" onChange={event => readRecipientFile(event.target.files?.[0])} disabled={active.status !== 'draft'} /></label>
+              <textarea value={rows} onChange={event => setRows(event.target.value)} rows={7} placeholder={'STU-1042, Amaka Okoro, amaka@example.com\nSTU-1043, Tunde Bello, tunde@example.com'} disabled={active.status !== 'draft'} />
+              <footer><small>{parsedRows.length} rows ready</small><button type="button" onClick={importRecipients} disabled={busy === 'subjects' || active.status !== 'draft'}>{busy === 'subjects' ? <LoaderCircle className="v-spin" size={16} /> : <Plus size={16} />}Add recipients</button></footer>
             </article>
             <article>
               <span>02 / ASSIGNMENT</span><h3>Match filenames, then review exceptions.</h3>
               {active.subjects?.length ? <>
-                <button type="button" className="vm-auto" onClick={autoAssign} disabled={busy === 'auto-assign'}>{busy === 'auto-assign' ? <LoaderCircle className="v-spin" size={16} /> : <ScanSearch size={16} />}Match recipient codes in filenames</button>
+                <button type="button" className="vm-auto" onClick={autoAssign} disabled={busy === 'auto-assign' || active.status !== 'draft'}>{busy === 'auto-assign' ? <LoaderCircle className="v-spin" size={16} /> : <ScanSearch size={16} />}{active.status === 'draft' ? 'Match recipient codes in filenames' : 'Filename matching is locked after publishing'}</button>
                 {matchReport && <div className="vm-match-report" role="status"><strong>{matchReport.matchedRecipients} of {matchReport.totalRecipients} recipients matched</strong><span>{matchReport.assignedPhotoCount} photo assignments prepared</span>{Boolean(matchReport.unmatchedRecipients?.length) && <p><AlertCircle size={14} />{matchReport.unmatchedRecipients.length} recipient{matchReport.unmatchedRecipients.length === 1 ? '' : 's'} need manual assignment.</p>}</div>}
-                <select value={subjectId} onChange={event => chooseSubject(event.target.value)}><option value="">Choose recipient to review</option>{active.subjects.map(subject => <option key={subject._id} value={subject._id}>{subject.recipientCode} — {subject.displayName} ({subject.assetIds.length})</option>)}</select>
+                <select value={subjectId} onChange={event => chooseSubject(event.target.value)} disabled={active.status !== 'draft'}><option value="">Choose recipient to review</option>{active.subjects.map(subject => <option key={subject._id} value={subject._id}>{subject.recipientCode} — {subject.displayName} ({subject.assetIds.length})</option>)}</select>
               </> : <p className="vm-note">Add recipients before assigning photographs.</p>}
               {subjectId && <>
                 <div className="vm-subject-toolbar"><span>{selectedSubject?.displayName}</span><div><button type="button" onClick={() => setSubjectEdit({ ...emptySubjectEdit, recipientCode: selectedSubject.recipientCode, displayName: selectedSubject.displayName, email: selectedSubject.email || '' })} disabled={active.status !== 'draft'}><Pencil size={14} />Edit</button><button type="button" onClick={removeSubject} disabled={active.status !== 'draft' || Boolean(busy)}><Trash2 size={14} />Remove</button></div></div>
@@ -198,8 +217,8 @@ export default function VolumeManager({ user }) {
                   <label>Email<input type="email" value={subjectEdit.email} onChange={event => setSubjectEdit(current => ({ ...current, email: event.target.value }))} maxLength={254} required /></label>
                   <div className="vm-inline-actions"><button type="submit" disabled={busy === 'subject-save'}>{busy === 'subject-save' ? <LoaderCircle className="v-spin" size={15} /> : <Check size={15} />}Save recipient</button><button type="button" onClick={() => setSubjectEdit(null)}>Cancel</button></div>
                 </form>}
-                <div className="vm-library">{library.map(asset => { const selected = selectedAssets.includes(asset.assetId); return <button type="button" key={asset.assetId} className={selected ? 'is-selected' : ''} onClick={() => setSelectedAssets(current => selected ? current.filter(id => id !== asset.assetId) : [...current, asset.assetId])}><img src={asset.thumbnailUrl || asset.url} alt="" loading="lazy" />{selected && <i><Check size={14} /></i>}</button>; })}</div>
-                <footer><small>{selectedAssets.length} photographs selected</small><button type="button" onClick={saveAssignment} disabled={busy === 'assign'}>Save recipient gallery</button></footer>
+                <div className="vm-library">{library.map(asset => { const selected = selectedAssets.includes(asset.assetId); return <button type="button" key={asset.assetId} className={selected ? 'is-selected' : ''} onClick={() => setSelectedAssets(current => selected ? current.filter(id => id !== asset.assetId) : [...current, asset.assetId])} disabled={active.status !== 'draft'}><img src={asset.thumbnailUrl || asset.url} alt="" loading="lazy" />{selected && <i><Check size={14} /></i>}</button>; })}</div>
+                <footer><small>{selectedAssets.length} photographs selected</small><button type="button" onClick={saveAssignment} disabled={busy === 'assign' || active.status !== 'draft'}>Save recipient gallery</button></footer>
               </>}
             </article>
           </div>

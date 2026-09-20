@@ -37,7 +37,8 @@ async function requirePro(userId) {
 export async function listVolumeJobs(req, res) {
   try {
     const jobs = await VolumeJob.find({ userId: req.user.id, status: { $ne: 'archived' } }).sort({ updatedAt: -1 }).lean();
-    res.json({ success: true, data: jobs, limits: { subjects: 1000, assignedPhotos: 5000 } });
+    const clientBase = String(process.env.CLIENT_URL || '').replace(/\/$/, '');
+    res.json({ success: true, data: jobs.map(job => ({ ...job, shareUrl: clientBase ? `${clientBase}/volume/${job.publicId}` : `/volume/${job.publicId}` })), limits: { subjects: 1000, assignedPhotos: 5000 } });
   } catch {
     res.status(500).json({ success: false, message: 'We could not open your volume deliveries.' });
   }
@@ -60,8 +61,9 @@ export async function getVolumeJob(req, res) {
   try {
     const job = await ownedJob(req.params.id, req.user.id);
     if (!job) return res.status(404).json({ success: false, message: 'Volume delivery not found.' });
-    const subjects = await VolumeSubject.find({ jobId: job._id, userId: req.user.id }).select('-email').sort({ displayName: 1 }).lean();
-    res.json({ success: true, data: { ...job.toObject(), subjects }, limits: { subjects: 1000, assignedPhotos: 5000 } });
+    const subjects = await VolumeSubject.find({ jobId: job._id, userId: req.user.id }).select('+email').sort({ displayName: 1 }).lean();
+    const clientBase = String(process.env.CLIENT_URL || '').replace(/\/$/, '');
+    res.json({ success: true, data: { ...job.toObject(), shareUrl: clientBase ? `${clientBase}/volume/${job.publicId}` : `/volume/${job.publicId}`, subjects }, limits: { subjects: 1000, assignedPhotos: 5000 } });
   } catch {
     res.status(500).json({ success: false, message: 'We could not open this volume delivery.' });
   }
@@ -330,7 +332,7 @@ export async function getVolumeGallery(req, res) {
     if (!job || !subject) return res.status(403).json({ success: false, message: 'Open this gallery with a new access code.' });
     const assets = await StorageAsset.find({ userId: job.userId._id, assetId: { $in: subject.assetIds } }).lean();
     const byId = new Map(assets.map(asset => [asset.assetId, asset]));
-    const photos = subject.assetIds.map(assetId => byId.get(assetId)).filter(Boolean).map(asset => ({ assetId: asset.assetId, url: signedImageUrl(asset.publicId), thumbnailUrl: signedImageUrl(asset.publicId, { thumbnail: true }), width: asset.width, height: asset.height }));
+    const photos = subject.assetIds.map(assetId => byId.get(assetId)).filter(Boolean).map(asset => ({ assetId: asset.assetId, url: signedImageUrl(asset.publicId), downloadUrl: signedImageUrl(asset.publicId, { width: 8000, attachment: true }), thumbnailUrl: signedImageUrl(asset.publicId, { thumbnail: true }), caption: asset.caption || '', width: asset.width, height: asset.height }));
     res.json({ success: true, data: { title: job.title, organisation: job.organisation, recipientName: subject.displayName, studio: job.userId.studio?.name || job.userId.name, photos } });
   } catch {
     res.status(403).json({ success: false, message: 'Open this gallery with a new access code.' });

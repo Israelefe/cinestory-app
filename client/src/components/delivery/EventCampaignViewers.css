@@ -13,3 +13,51 @@
 @media(min-width:1024px){.vec-viewer main{padding-top:72px}.vec-event-hero{min-height:calc(100dvh - 72px)}.vec-event-hero>div{left:max(5vw,60px);bottom:72px}.vec-event-scenes{padding:125px 44px}.vec-scene-grid.is-count-4{grid-template-columns:1.5fr .75fr .75fr}.vec-scene-grid.is-count-4 button:first-child{grid-row:span 2}.vec-scene-grid.is-count-4 button:nth-child(4){grid-column:2/4}.vec-campaign-hero{min-height:calc(100dvh - 72px);padding:60px max(4vw,45px) 45px;gap:50px}.vec-campaign-sets{padding:120px 44px}.vec-campaign-sets>div{grid-template-columns:repeat(4,minmax(0,1fr))}.vec-campaign-handoff{padding:90px max(4vw,48px);gap:22px}.vec-campaign-handoff>div,.vec-campaign-handoff>aside{padding:42px}.vec-campaign-note{padding:75px max(5vw,70px)}}
 @media(prefers-reduced-motion:reduce){.vec-viewer *{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}}
 .vec-photo-caption{display:block;margin:10px 0 0;color:color-mix(in srgb,var(--fd-text,#f4efe8) 70%,transparent);font-size:12px;line-height:1.55}
+
+/* Event Coverage and Campaign honour the same composition direction as the
+   personal formats, but keep their crowd and commercial reading order. */
+.vec-event[data-composition="split"] .vec-event-hero{min-height:78dvh}
+.vec-event[data-composition="split"] .vec-event-hero>div{max-width:680px}
+.vec-event[data-composition="layered"] .vec-event-summary{background:color-mix(in srgb,var(--fd-accent) 7%,var(--fd-bg))}
+.vec-event[data-composition="layered"] .vec-scene-grid button{box-shadow:12px 15px 0 color-mix(in srgb,var(--fd-accent) 18%,transparent)}
+.vec-event[data-composition="grid"] .vec-scene-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.vec-event[data-composition="portrait-led"] .vec-event-hero>figure{inset-inline:10%;width:80%}
+.vec-event[data-composition="portrait-led"] .vec-event-hero>div{left:10%;right:10%;max-width:620px}
+.vec-event[data-composition="wide-led"] .vec-event-hero>figure{height:64%;inset-block:auto 0}
+.vec-event[data-composition="wide-led"] .vec-event-hero{background:var(--fd-bg)}
+.vec-campaign[data-composition="split"] .vec-campaign-hero{grid-template-columns:1fr}
+.vec-campaign[data-composition="split"] .vec-campaign-hero>figure{min-height:42dvh;max-height:58dvh}
+.vec-campaign[data-composition="layered"] .vec-campaign-sets article>button{box-shadow:15px 17px 0 color-mix(in srgb,var(--fd-accent) 16%,transparent)}
+.vec-campaign[data-composition="grid"] .vec-campaign-sets>div{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.vec-campaign[data-composition="grid"] .vec-campaign-sets article>button{aspect-ratio:1/1}
+.vec-campaign[data-composition="portrait-led"] .vec-campaign-hero>figure{max-width:520px;margin-inline:auto}
+.vec-campaign[data-composition="wide-led"] .vec-campaign-hero>figure{min-height:42dvh;max-height:54dvh}
+.vec-campaign[data-composition="wide-led"] .vec-campaign-sets>div{grid-template-columns:1fr}
+.vec-campaign[data-composition="wide-led"] .vec-campaign-sets article>button{aspect-ratio:16/9}
+
+.vec-viewer[data-accent-placement="corners"]{position:relative}
+.vec-viewer[data-accent-placement="corners"]::before,.vec-viewer[data-accent-placement="corners"]::after{content:'';position:absolute;z-index:110;width:34px;height:34px;border-color:var(--fd-accent);pointer-events:none}
+.vec-viewer[data-accent-placement="corners"]::before{inset:80px auto auto 14px;border-top:2px solid;border-left:2px solid}
+.vec-viewer[data-accent-placement="corners"]::after{inset:auto 14px 14px auto;border-right:2px solid;border-bottom:2px solid}
+.vec-viewer[data-accent-placement="labels"] .vec-event-hero>div>span,.vec-viewer[data-accent-placement="labels"] .vec-campaign-hero>div>span{padding:5px 7px;background:color-mix(in srgb,var(--fd-accent) 18%,transparent)}
+.vec-viewer[data-accent-placement="type"] h1,.vec-viewer[data-accent-placement="type"] h2{letter-spacing:.01em;text-transform:uppercase}
+.vec-viewer[data-accent-placement="rules"] .vec-event-summary,.vec-viewer[data-accent-placement="rules"] .vec-event-scenes article,.vec-viewer[data-accent-placement="rules"] .vec-campaign-note{border-color:color-mix(in srgb,var(--fd-accent) 55%,transparent)}
+
+@media(min-width:768px){
+  .vec-event[data-composition="grid"] .vec-scene-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .vec-event[data-composition="portrait-led"] .vec-event-hero>figure{inset-inline:24%;width:52%}
+  .vec-event[data-composition="portrait-led"] .vec-event-hero>div{left:7vw;right:7vw}
+  .vec-event[data-composition="wide-led"] .vec-event-hero>figure{height:72%;inset-inline:5%;width:90%}
+  .vec-event[data-composition="wide-led"] .vec-event-hero>div{left:7vw;right:7vw;bottom:5vh}
+  .vec-campaign[data-composition="split"] .vec-campaign-hero{grid-template-columns:minmax(0,.9fr) minmax(340px,1.1fr)}
+  .vec-campaign[data-composition="split"] .vec-campaign-hero>figure{min-height:70dvh;max-height:none}
+  .vec-campaign[data-composition="grid"] .vec-campaign-sets>div{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .vec-campaign[data-composition="wide-led"] .vec-campaign-sets>div{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+@media(max-width:430px){
+  .vec-viewer[data-accent-placement="corners"]::before{inset:76px auto auto 9px}
+  .vec-viewer[data-accent-placement="corners"]::after{right:9px;bottom:9px}
+  .vec-campaign[data-composition="grid"] .vec-campaign-sets>div{grid-template-columns:1fr}
+}
+.vec-viewer button:focus-visible,.vec-viewer a:focus-visible,.vec-viewer input:focus-visible{outline:2px solid var(--fd-accent);outline-offset:3px}

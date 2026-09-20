@@ -31,7 +31,7 @@ const narrationSchema = z.object({
 }).strict();
 const revisionSchema = z.object({ scope: z.enum(['selected', 'full']), instruction: z.string().trim().min(8).max(600), assetIds: z.array(z.string().min(1).max(100)).max(100).default([]) }).strict();
 const libraryAssetsSchema = z.object({ assetIds: z.array(z.string().min(8).max(100)).min(1).max(20) }).strict();
-const accessSchema = z.object({ pin: z.string().regex(/^\d{6}$/).optional().or(z.literal('')), expiresAt: z.string().datetime().optional().or(z.literal('')), allowIndividualDownloads: z.boolean().default(true), allowDownloadAll: z.boolean().default(true), allowLikes: z.boolean().default(true) }).strict();
+const accessSchema = z.object({ pin: z.string().regex(/^\d{6}$/).optional().or(z.literal('')), expiresAt: z.string().datetime().optional().or(z.literal('')), allowIndividualDownloads: z.boolean().default(true), allowDownloadAll: z.boolean().default(true), allowLikes: z.boolean().default(true), narration: z.boolean().default(true) }).strict();
 const reviewSchema = z.object({
   title: z.string().trim().min(2).max(80),
   openingLine: z.string().trim().min(2).max(140),
@@ -47,7 +47,7 @@ const reviewSchema = z.object({
     accentPlacement: z.enum(['corners', 'rules', 'labels', 'type'])
   }).strict().default({ composition: 'quiet', density: 'balanced', imageTreatment: 'natural', captionTreatment: 'editorial', accentPlacement: 'rules' }),
   sections: z.array(z.object({ id: z.string().regex(/^[a-z0-9-]{1,32}$/), title: z.string().trim().min(1).max(60), subtitle: z.string().trim().max(120), layout: z.enum(['hero', 'single', 'pair', 'triptych', 'grid', 'strip', 'spread', 'cluster', 'chapter-cover']) }).strict()).min(1).max(12),
-  frames: z.array(z.object({ assetId: z.string().min(1).max(100), headline: z.string().trim().max(70), caption: z.string().trim().min(8).max(180) }).strict()).min(1).max(500),
+  frames: z.array(z.object({ assetId: z.string().min(1).max(100), headline: z.string().trim().max(70), caption: z.string().trim().min(18).max(180) }).strict()).min(1).max(500),
   assetOrder: z.array(z.string().min(1).max(100)).min(1).max(500)
 }).strict();
 const shareGrantSchema = z.object({
@@ -503,6 +503,9 @@ export async function selectCuratedSoundtrack(req, res) {
       avoidFor: track.avoidFor,
       editingPace: track.editingPace,
       instrumentationCue: track.instrumentationCue,
+      titleSignals: track.titleSignals,
+      selectionNote: track.selectionNote,
+      metadataConfidence: track.metadataConfidence,
       contentIdGuidance: track.contentIdGuidance,
       duration: track.durationSec,
       source: 'curated',
@@ -511,6 +514,9 @@ export async function selectCuratedSoundtrack(req, res) {
       contentIdRegistered: track.contentIdRegistered,
       license: track.license,
       licenseUrl: track.licenseUrl,
+      verifiedAt: track.verifiedAt,
+      catalogueSha256: track.sha256,
+      catalogueBytes: track.bytes,
       rightsConfirmedAt: new Date()
     };
     delivery.markModified('soundtrack');
@@ -621,6 +627,8 @@ export async function updateDeliveryReview(req, res) {
     delivery.creativeDirection.pace = parsed.data.pace;
     delivery.creativeDirection.sections = parsed.data.sections.map(section => ({ ...section, assetIds: delivery.creativeDirection.sections.find(current => current.id === section.id)?.assetIds || [] }));
     delivery.creativeDirection.frames = delivery.creativeDirection.frames.map(frame => ({ ...frame, headline: frameEdits.get(frame.assetId).headline, caption: frameEdits.get(frame.assetId).caption }));
+    // Captions and order are the narration source of truth. Any review save makes old audio unsafe to reuse.
+    delivery.narration = undefined;
     const positions = new Map(parsed.data.assetOrder.map((id, index) => [id, index]));
     delivery.assets.forEach(asset => { asset.sortOrder = positions.get(asset.assetId); });
     delivery.markModified('creativeDirection');
@@ -661,6 +669,7 @@ export async function publishDelivery(req, res) {
     delivery.access.allowLikes = parsed.data.allowLikes;
     delivery.access.expiresAt = parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : undefined;
     delivery.access.pinDigest = parsed.data.pin ? await bcrypt.hash(parsed.data.pin, 12) : undefined;
+    if (!parsed.data.narration) delivery.narration = undefined;
     delivery.status = 'published';
     delivery.publishedAt = new Date();
     await delivery.save();
@@ -712,7 +721,11 @@ async function shareGrant(req, delivery) {
 }
 
 function grantAssets(delivery, grant) {
-  if (!grant?.assetIds?.length) return delivery.assets;
+  if (!grant) return delivery.assets;
+  // An empty, unscoped grant means every photograph. An explicit role scope
+  // with no matching assets must stay empty; it must never fall back to the
+  // full delivery.
+  if (!grant.assetIds?.length && !grant.sectionIds?.length) return delivery.assets;
   const allowed = new Set(grant.assetIds);
   return delivery.assets.filter(asset => allowed.has(asset.assetId));
 }
@@ -724,10 +737,23 @@ async function publicPayload(delivery, grant = null) {
   const object = delivery.toObject();
   delete object.userId;
   delete object.access?.pinDigest;
-  object.assets = grantAssets(delivery, grant).map(ownerAsset);
+  const visibleDeliveryAssets = grantAssets(delivery, grant);
+  const visibleAssets = new Set(visibleDeliveryAssets.map(asset => asset.assetId));
+  const fullAssetIds = new Set(delivery.assets.map(asset => asset.assetId));
+  const scoped = Boolean(grant && visibleAssets.size < fullAssetIds.size);
+  object.assets = visibleDeliveryAssets.map(ownerAsset);
   if (grant) {
-    const visibleAssets = new Set(object.assets.map(asset => asset.assetId));
-    if (object.creativeDirection?.sections) object.creativeDirection.sections = object.creativeDirection.sections.map(section => ({ ...section, assetIds: (section.assetIds || []).filter(assetId => visibleAssets.has(assetId)) })).filter(section => section.assetIds.length);
+    if (object.creativeDirection) {
+      object.creativeDirection = { ...object.creativeDirection };
+      if (Array.isArray(object.creativeDirection.frames)) object.creativeDirection.frames = object.creativeDirection.frames.filter(frame => visibleAssets.has(frame.assetId));
+      if (Array.isArray(object.creativeDirection.sections)) object.creativeDirection.sections = object.creativeDirection.sections.map(section => ({ ...section, assetIds: (section.assetIds || []).filter(assetId => visibleAssets.has(assetId)) })).filter(section => section.assetIds.length);
+    }
+    if (Array.isArray(object.presentationOrder)) object.presentationOrder = object.presentationOrder.filter(assetId => visibleAssets.has(assetId));
+    if (Array.isArray(object.galleryOrder)) object.galleryOrder = object.galleryOrder.filter(assetId => visibleAssets.has(assetId));
+    // The narration audio is generated for the complete approved order. Do
+    // not expose a full-track transcript or audio file on a restricted role
+    // link where the recipient cannot see every photograph.
+    if (scoped) delete object.narration;
     object.access.allowIndividualDownloads = Boolean(grant.allowIndividualDownloads);
     object.access.allowDownloadAll = Boolean(grant.allowDownloadAll);
     object.access.allowLikes = false;
@@ -867,6 +893,7 @@ export async function getGalleryDownload(req, res) {
     if (!delivery || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
     if (grant ? !grant.allowDownloadAll : !delivery.access?.allowDownloadAll) return res.status(403).json({ success: false, message: 'Full gallery download is turned off for this link.' });
     const selectedAssets = grantAssets(delivery, grant);
+    if (!selectedAssets.length) return res.status(404).json({ success: false, message: 'No photographs are available on this link.' });
     const url = signedArchiveUrl(selectedAssets.map(asset => asset.publicId), `${delivery.clientName || 'client'}-photographs`, grant?.assetIds?.length ? '' : deliveryFolder(delivery.userId._id, delivery._id));
     await Delivery.updateOne({ _id: delivery._id }, { $inc: { downloadsCount: 1 } });
     res.json({ success: true, data: { url } });

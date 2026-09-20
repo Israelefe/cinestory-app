@@ -46,8 +46,10 @@ export function getFormatThemeStyles(delivery, fallback = {}) {
   const displayFont = getFontFamily(typography.display || typography.displayFont, fallback.fontDisplay || "'Playfair Display', Georgia, serif");
   const bodyFont = getFontFamily(typography.body || typography.bodyFont, fallback.fontBody || "'Plus Jakarta Sans', sans-serif");
   const variation = cd?.variation || {};
-  const imageTreatment = variation.imageTreatment || 'natural';
-  const imageFilter = imageTreatment === 'warm' ? 'saturate(.92) sepia(.08)' : imageTreatment === 'contrast' ? 'contrast(1.08) saturate(.9)' : imageTreatment === 'monochrome' ? 'grayscale(.9) contrast(1.04)' : 'none';
+  // A delivery must never recolour or re-grade the photographer's finished files.
+  // The selected treatment remains available to the art direction record, while the
+  // viewer always renders the supplied photograph faithfully.
+  const imageFilter = 'none';
   const densityGap = variation.density === 'spacious' ? '1.28' : variation.density === 'layered' ? '.84' : '1';
 
   return {
@@ -74,7 +76,7 @@ export function normalizeDeliveryPhotos(delivery, fallbackPhotos) {
       name: a.assetId,
       assetId: a.assetId,
       alt: a.originalFilename || `Photograph ${i + 1}`,
-      caption: frames.get(String(a.assetId))?.caption || `A finished moment from ${delivery.clientName || 'this collection'}.`,
+      caption: frames.get(String(a.assetId))?.caption || '',
       headline: frames.get(String(a.assetId))?.headline || '',
       duration: frames.get(String(a.assetId))?.duration,
       motion: frames.get(String(a.assetId))?.motion,
@@ -82,7 +84,7 @@ export function normalizeDeliveryPhotos(delivery, fallbackPhotos) {
       thumbnailUrl: a.thumbnailUrl || a.url
     }));
   }
-  return fallbackPhotos.map((photo, index) => ({ ...photo, caption: photo.caption || `A finished frame from this collection, held for a little longer.` }));
+  return fallbackPhotos.map(photo => ({ ...photo, caption: photo.caption || '' }));
 }
 
 export function DemoHeader({ format, client, sectionId, onGallery, light = false, delivery, audioState, toggleAudio, hideSoundtrack = false }) {
@@ -257,6 +259,7 @@ function LegacyDemoGallery({ photos, title, onClose, initialIndex = null, liked,
             exit={{ opacity: 0 }}
           />
         </AnimatePresence>
+        <p className="fd-lightbox-caption">{activePhoto?.caption || ''}</p>
         <div className="fd-lightbox-controls">
           <button type="button" onClick={() => setSelected(value => Math.max(0, value - 1))} disabled={selected === 0} aria-label="Previous photograph">
             <ChevronLeft size={20} />
@@ -296,14 +299,14 @@ function LegacyDemoGallery({ photos, title, onClose, initialIndex = null, liked,
 
 export const DemoGallery = ClientGallery;
 
-function EditorialPhoto({ photo, className = '', caption, sizes, direction = 1, horizontal = false }) {
+function EditorialPhoto({ photo, className = '', caption, sizes, direction = 1, horizontal = false, onNarrationNavigate }) {
   const ref = useRef(null);
   const reduced = useReducedMotion();
   const { scrollYProgress } = useScroll({ target: ref, offset: ['start end', 'end start'] });
   const y = useTransform(scrollYProgress, [0, 1], direction > 0 ? [-24, 24] : [24, -24]);
   const x = useTransform(scrollYProgress, [0, 1], direction > 0 ? [-18, 18] : [18, -18]);
   const scale = useTransform(scrollYProgress, [0, .5, 1], [1.07, 1.025, 1.07]);
-  return <motion.figure ref={ref} className={className} initial={reduced ? false : { opacity: .72, clipPath: horizontal ? 'inset(0 18% 0 0)' : 'inset(0 0 18% 0)' }} whileInView={{ opacity: 1, clipPath: 'inset(0 0 0% 0)' }} viewport={{ once: true, amount: .08 }} transition={{ duration: reduced ? 0 : .95, ease: [0.22, 1, 0.36, 1] }}>
+  return <motion.figure ref={ref} className={className} initial={reduced ? false : { opacity: .72, clipPath: horizontal ? 'inset(0 18% 0 0)' : 'inset(0 0 18% 0)' }} whileInView={{ opacity: 1, clipPath: 'inset(0 0 0% 0)' }} viewport={{ once: true, amount: .08 }} onViewportEnter={() => onNarrationNavigate?.(photo?.assetId)} transition={{ duration: reduced ? 0 : .95, ease: [0.22, 1, 0.36, 1] }}>
     <motion.div className="fd-ed-photo-motion" style={reduced ? undefined : { y: horizontal ? 0 : y, x: horizontal ? x : 0, scale }}>
       <Photo name={photo.name} url={photo.url} alt={photo.alt} sizes={sizes} />
     </motion.div>
@@ -311,7 +314,7 @@ function EditorialPhoto({ photo, className = '', caption, sizes, direction = 1, 
   </motion.figure>;
 }
 
-export function EditorialDemo({ delivery, galleryProps, audioState, toggleAudio }) {
+export function EditorialDemo({ delivery, galleryProps, audioState, toggleAudio, onNarrationNavigate }) {
   const [gallery, setGallery] = useState(false);
   const reduced = useReducedMotion();
   const { scrollYProgress } = useScroll();
@@ -350,7 +353,7 @@ export function EditorialDemo({ delivery, galleryProps, audioState, toggleAudio 
   const frame3 = frames.get(photo3?.assetId) || {};
   const frame4 = frames.get(photo4?.assetId) || {};
 
-  return <div className="fd-page fd-editorial" data-composition={themeStyles['--fd-composition']} style={themeStyles}>
+  return <div className="fd-page fd-editorial" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} style={themeStyles}>
     <DemoHeader format="Editorial Page" client={client} sectionId="editorial-page" onGallery={() => setGallery(true)} light delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     <motion.div className="fd-ed-scroll-progress" style={reduced ? undefined : { scaleX: scrollYProgress }} aria-hidden="true" />
     <main>
@@ -372,7 +375,7 @@ export function EditorialDemo({ delivery, galleryProps, audioState, toggleAudio 
       </section>
 
       <section className="fd-ed-spread">
-        <EditorialPhoto photo={photo2} sizes="(max-width: 767px) 92vw, 48vw" caption={frame2.caption || frame2.headline || "02 / The suit, held with quiet confidence."} direction={-1} />
+        <EditorialPhoto photo={photo2} sizes="(max-width: 767px) 92vw, 48vw" caption={frame2.caption || frame2.headline || "02 / The suit, held with quiet confidence."} direction={-1} onNarrationNavigate={onNarrationNavigate} />
         <motion.div className="fd-ed-quote" {...reveal(.08)}>
           <span>{frame2.headline ? 'KEY FRAME' : 'THE GREEN SUIT'}</span>
           <blockquote>
@@ -381,12 +384,12 @@ export function EditorialDemo({ delivery, galleryProps, audioState, toggleAudio 
           </blockquote>
           <motion.p {...reveal(.24)}>{frame2.caption || 'The ivory telephone gave Ada something to play with. She did the rest.'}</motion.p>
         </motion.div>
-        <EditorialPhoto photo={photo3} className="fd-ed-tall" sizes="(max-width: 767px) 84vw, 35vw" caption={frame3.caption || frame3.headline || "03 / A quieter moment with the phone."} direction={1} horizontal />
+        <EditorialPhoto photo={photo3} className="fd-ed-tall" sizes="(max-width: 767px) 84vw, 35vw" caption={frame3.caption || frame3.headline || "03 / A quieter moment with the phone."} direction={1} horizontal onNarrationNavigate={onNarrationNavigate} />
       </section>
 
       <section className="fd-ed-number">
         <motion.span aria-hidden="true" initial={reduced ? false : { opacity: 0, x: 100 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, amount: .2 }} transition={{ duration: reduced ? 0 : 1, ease: [0.22, 1, 0.36, 1] }}>04</motion.span>
-        <EditorialPhoto photo={photo4} sizes="100vw" direction={-1} horizontal />
+        <EditorialPhoto photo={photo4} sizes="100vw" direction={-1} horizontal onNarrationNavigate={onNarrationNavigate} />
         <motion.div>
           <motion.small {...reveal()}>{frame4.headline ? 'HIGHLIGHT' : 'THE FULL LOOK'}</motion.small>
           <h2>
@@ -415,7 +418,7 @@ export function EditorialDemo({ delivery, galleryProps, audioState, toggleAudio 
                 </div>
                 <figcaption>
                   <span>{String(idx + 5).padStart(2, '0')}</span>
-                  <p>{frames.get(p.assetId)?.headline || frames.get(p.assetId)?.caption || 'Finished portrait'}</p>
+                  <p>{frames.get(p.assetId)?.headline || frames.get(p.assetId)?.caption || ''}</p>
                 </figcaption>
               </motion.figure>
             ))}
@@ -424,7 +427,7 @@ export function EditorialDemo({ delivery, galleryProps, audioState, toggleAudio 
       )}
 
       <section className="fd-ed-close">
-        <EditorialPhoto photo={lastPhoto} sizes="(max-width: 767px) 88vw, 46vw" direction={1} />
+        <EditorialPhoto photo={lastPhoto} sizes="(max-width: 767px) 88vw, 46vw" direction={1} onNarrationNavigate={onNarrationNavigate} />
         <div>
           <motion.span {...reveal()}>THE COMPLETE SESSION</motion.span>
           <h2>
@@ -454,7 +457,7 @@ export const revealMotions = [
   { initial: { clipPath: 'inset(100% 0 0 0)', scale: 1.06, filter: 'blur(5px)' }, animate: { clipPath: 'inset(0% 0 0 0)', scale: 1, filter: 'blur(0px)' } }
 ];
 
-export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio }) {
+export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio, onNarrationNavigate }) {
   const [started, setStarted] = useState(false);
   const [index, setIndex] = useState(0);
   const [finished, setFinished] = useState(false);
@@ -474,7 +477,7 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio }) 
   const clientName = delivery?.clientName || 'Sharon';
   const studioName = delivery?.branding?.name ? `${delivery.branding.name.toUpperCase()} / LAGOS` : 'STUDIO LUMIÈRE / LAGOS';
   const closingLine = delivery?.creativeDirection?.closingLine || 'Your complete finished session is ready to view and download.';
-  const audioTrack = delivery?.soundtrack?.url || '/audio/soundtrack-3.mp3';
+  const audioTrack = delivery?.soundtrack?.url || '';
 
   const playSoundtrack = () => {
     if (!audio.current) return;
@@ -489,12 +492,20 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio }) 
   const next = () => {
     setUncovered(false);
     if (index === photos.length - 1) setFinished(true);
-    else setIndex(value => value + 1);
+    else {
+      const nextIndex = index + 1;
+      setIndex(nextIndex);
+      onNarrationNavigate?.(photos[nextIndex]?.assetId);
+    }
   };
   const previous = () => {
     setUncovered(false);
     if (finished) setFinished(false);
-    else setIndex(value => Math.max(0, value - 1));
+    else {
+      const nextIndex = Math.max(0, index - 1);
+      setIndex(nextIndex);
+      onNarrationNavigate?.(photos[nextIndex]?.assetId);
+    }
   };
   const beginReveal = () => {
     setStarted(true);
@@ -569,8 +580,8 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio }) 
     accent: '#ff9b8e'
   });
 
-  return <div className="fd-page fd-reveal" style={themeStyles} onTouchStart={event => { touchStart.current = event.changedTouches[0].clientX; }} onTouchEnd={event => { if (touchStart.current === null || !started || finished || !uncovered) return; const distance = event.changedTouches[0].clientX - touchStart.current; touchStart.current = null; if (Math.abs(distance) > 45) distance < 0 ? next() : previous(); }}>
-    <audio ref={audio} src={audioTrack} loop preload="metadata" muted={muted} onWaiting={() => setAudioLoading(true)} onStalled={() => setAudioLoading(true)} onPlaying={() => { setAudioLoading(false); setAudioFailed(false); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioLoading(false); setAudioFailed(true); }} />
+  return <div className="fd-page fd-reveal" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} style={themeStyles} onTouchStart={event => { touchStart.current = event.changedTouches[0].clientX; }} onTouchEnd={event => { if (touchStart.current === null || !started || finished || !uncovered) return; const distance = event.changedTouches[0].clientX - touchStart.current; touchStart.current = null; if (Math.abs(distance) > 45) distance < 0 ? next() : previous(); }}>
+    {audioTrack && <audio ref={audio} src={audioTrack} loop preload="auto" muted={muted} onWaiting={() => setAudioLoading(true)} onStalled={() => setAudioLoading(true)} onPlaying={() => { setAudioLoading(false); setAudioFailed(false); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioLoading(false); setAudioFailed(true); }} />}
     <DemoHeader format="Photo Reveal" client={client} sectionId="photo-reveal" onGallery={() => setGallery(true)} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} hideSoundtrack />
     {!started ? <main className="fd-reveal-opening">
       <motion.div className="fd-reveal-opening-photo" initial={reduced ? false : { scale: 1.14 }} animate={{ scale: 1.08 }} transition={{ duration: reduced ? 0 : 7, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={photos[0].name} url={photos[0].url} alt="A concealed preview of Sharon's finished studio portraits" eager /></motion.div>
@@ -594,7 +605,7 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio }) 
         <div className="fd-reveal-finale-copy"><span>{clientName.toUpperCase()} / ALL {photos.length} REVEALED</span><h1>These portraits<br />are yours.</h1><p>{closingLine}</p><div><button type="button" onClick={() => setGallery(true)}>View full gallery<Images size={17} /></button><button type="button" onClick={restart}><RotateCcw size={16} />Start again</button></div></div>
       </motion.section>}
     </main>}
-    {started && <button className={`fd-reveal-sound ${audioLoading ? 'is-loading' : ''} ${audioFailed ? 'is-error' : ''}`} type="button" onClick={toggleSound} aria-label={audioLoading ? 'Stop loading soundtrack' : audioFailed ? 'Try soundtrack again' : muted ? 'Turn soundtrack on' : 'Mute soundtrack'} aria-busy={audioLoading}>{audioLoading ? <LoaderCircle className="v-spin" size={17} /> : muted || audioFailed ? <VolumeX size={17} /> : <Volume2 size={17} />}<span aria-live="polite">{audioLoading ? 'Loading music…' : audioFailed ? 'Try music again' : muted ? 'Sound off' : 'Sound on'}</span></button>}
+    {started && audioTrack && <button className={`fd-reveal-sound ${audioLoading ? 'is-loading' : ''} ${audioFailed ? 'is-error' : ''}`} type="button" onClick={toggleSound} aria-label={audioLoading ? 'Stop loading soundtrack' : audioFailed ? 'Try soundtrack again' : muted ? 'Turn soundtrack on' : 'Mute soundtrack'} aria-busy={audioLoading}>{audioLoading ? <LoaderCircle className="v-spin" size={17} /> : muted || audioFailed ? <VolumeX size={17} /> : <Volume2 size={17} />}<span aria-live="polite">{audioLoading ? 'Loading music…' : audioFailed ? 'Try music again' : muted ? 'Sound off' : 'Sound on'}</span></button>}
     <AnimatePresence>{gallery && <DemoGallery photos={photos} title={client} onClose={() => setGallery(false)} delivery={delivery} {...galleryProps} />}</AnimatePresence>
   </div>;
 }
@@ -646,7 +657,7 @@ export function CanvasFocus({ photos, index, onSelect, onClose, reduced, clientN
   </motion.div>;
 }
 
-export function CanvasDemo({ delivery, galleryProps, audioState, toggleAudio }) {
+export function CanvasDemo({ delivery, galleryProps, audioState, toggleAudio, onNarrationNavigate }) {
   const [gallery, setGallery] = useState(false);
   const [selected, setSelected] = useState(null);
   const [activeCluster, setActiveCluster] = useState(null);
@@ -690,6 +701,10 @@ export function CanvasDemo({ delivery, galleryProps, audioState, toggleAudio }) 
     });
   };
   const resetDepth = () => wall.current?.querySelectorAll('.fd-wall-depth').forEach(node => { node.style.transform = 'translate3d(0,0,0)'; });
+  const selectPhoto = index => {
+    setSelected(index);
+    onNarrationNavigate?.(wallPhotos[index]?.assetId);
+  };
   const moveCluster = direction => {
     if (activeCluster === null) setActiveCluster(direction > 0 ? 0 : clusters.length - 1);
     else setActiveCluster(value => Math.max(0, Math.min(clusters.length - 1, value + direction)));
@@ -702,7 +717,7 @@ export function CanvasDemo({ delivery, galleryProps, audioState, toggleAudio }) 
     accent: '#764831'
   });
 
-  return <div className="fd-page fd-canvas" data-composition={themeStyles['--fd-composition']} style={themeStyles}>
+  return <div className="fd-page fd-canvas" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} style={themeStyles}>
     <DemoHeader format="Canvas" client={client} sectionId="canvas" onGallery={() => setGallery(true)} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     <main className="fd-wall-shell">
       <header className="fd-wall-intro"><div><span>{clientName.toUpperCase()} · CANVAS</span><strong>{cluster ? cluster.name : 'The complete canvas'}</strong></div><AnimatePresence mode="wait"><motion.p key={cluster?.name || 'overview'} initial={reduced ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .35 }}>{cluster ? cluster.note : 'Every finished portrait is here. Choose a group, or open any photograph.'}</motion.p></AnimatePresence>{activeCluster !== null && <button type="button" onClick={() => setActiveCluster(null)}><Grid2X2 size={15} />See the whole canvas</button>}</header>
@@ -717,14 +732,14 @@ export function CanvasDemo({ delivery, galleryProps, audioState, toggleAudio }) 
             const place = clusterIndex >= 0 ? clusters[clusterIndex].photos.indexOf(index) : 0;
             const inCluster = activeCluster === clusterIndex;
             const dimmed = activeCluster !== null && !inCluster;
-            return <motion.button layout layoutId={`canvas-photo-${index}`} type="button" key={photo.url || photo.name} className={`fd-wall-card is-card-${index + 1}${inCluster ? ` is-in-cluster is-place-${place + 1}` : ''}${dimmed ? ' is-dimmed' : ''}`} onClick={() => setSelected(index)} initial={reduced ? false : { opacity: 0, scale: .86, ...canvasEntrances[index] }} animate={{ opacity: dimmed ? .16 : 1, scale: dimmed ? .88 : 1, x: 0, y: 0, rotate: 0 }} whileHover={reduced ? undefined : { scale: 1.025, y: -6 }} transition={{ layout: { type: 'spring', damping: 28, stiffness: 190 }, opacity: { duration: reduced ? 0 : .35 }, delay: reduced ? 0 : index * .055 }} aria-label={`Open photograph ${index + 1}`}><div className="fd-wall-depth"><motion.span animate={reduced ? undefined : { scale: [1.01, 1.05], x: index % 2 ? ['0%', '-1.2%'] : ['-1%', '1%'] }} transition={{ duration: 9 + index, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={photo.name} url={photo.url} alt={photo.alt || photo.caption} eager={index < 3} sizes="(max-width: 640px) 45vw, (max-width: 1024px) 34vw, 25vw" /></motion.span><i>{String(index + 1).padStart(2, '0')}</i><small className="fd-wall-caption">{photo.caption}</small></div></motion.button>;
+            return <motion.button layout layoutId={`canvas-photo-${index}`} type="button" key={photo.url || photo.name} className={`fd-wall-card is-card-${index + 1}${inCluster ? ` is-in-cluster is-place-${place + 1}` : ''}${dimmed ? ' is-dimmed' : ''}`} onClick={() => selectPhoto(index)} initial={reduced ? false : { opacity: 0, scale: .86, ...canvasEntrances[index] }} animate={{ opacity: dimmed ? .16 : 1, scale: dimmed ? .88 : 1, x: 0, y: 0, rotate: 0 }} whileHover={reduced ? undefined : { scale: 1.025, y: -6 }} transition={{ layout: { type: 'spring', damping: 28, stiffness: 190 }, opacity: { duration: reduced ? 0 : .35 }, delay: reduced ? 0 : index * .055 }} aria-label={`Open photograph ${index + 1}`}><div className="fd-wall-depth"><motion.span animate={reduced ? undefined : { scale: [1.01, 1.05], x: index % 2 ? ['0%', '-1.2%'] : ['-1%', '1%'] }} transition={{ duration: 9 + index, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={photo.name} url={photo.url} alt={photo.alt || photo.caption} eager={index < 3} sizes="(max-width: 640px) 45vw, (max-width: 1024px) 34vw, 25vw" /></motion.span><i>{String(index + 1).padStart(2, '0')}</i><small className="fd-wall-caption">{photo.caption}</small></div></motion.button>;
           })}
           <AnimatePresence>{cluster && <motion.div className="fd-wall-focus-label" key={cluster.name} initial={reduced ? false : { opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ delay: reduced ? 0 : .28 }}><span>0{activeCluster + 1} / 0{clusters.length}</span><strong>{cluster.name}</strong><p>{cluster.note}</p></motion.div>}</AnimatePresence>
         </div>
       </section>
       <footer className="fd-wall-controls"><span>Choose a group</span><nav aria-label="Canvas groups">{clusters.map((item, index) => <button type="button" key={item.name} className={activeCluster === index ? 'is-active' : ''} onClick={() => setActiveCluster(index)}><i>0{index + 1}</i><strong>{item.name}</strong></button>)}</nav><div className="fd-wall-arrows"><button type="button" onClick={() => moveCluster(-1)} disabled={activeCluster === 0} aria-label="Previous group"><ChevronLeft size={18} /></button><button type="button" onClick={() => moveCluster(1)} disabled={activeCluster === clusters.length - 1} aria-label="Next group"><ChevronRight size={18} /></button></div></footer>
     </main>
-    <AnimatePresence>{selected !== null && <CanvasFocus photos={wallPhotos} index={selected} onSelect={setSelected} onClose={() => setSelected(null)} reduced={reduced} clientName={clientName} frames={frames} />}</AnimatePresence>
+    <AnimatePresence>{selected !== null && <CanvasFocus photos={wallPhotos} index={selected} onSelect={selectPhoto} onClose={() => setSelected(null)} reduced={reduced} clientName={clientName} frames={frames} />}</AnimatePresence>
     <AnimatePresence>{gallery && <DemoGallery photos={photos} title={client} onClose={() => setGallery(false)} delivery={delivery} {...galleryProps} />}</AnimatePresence>
   </div>;
 }
@@ -759,7 +774,7 @@ export const chapters = [
   }
 ];
 
-export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, narrationRef }) {
+export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, narrationRef, onNarrationNavigate }) {
   const [openIndex, setOpenIndex] = useState(null);
   const [visited, setVisited] = useState([]);
   const [gallery, setGallery] = useState(false);
@@ -784,7 +799,7 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
         note: section.subtitle || delivery?.creativeDirection?.openingLine || 'Explore every frame.',
         accent: accents[idx % accents.length],
         photos: section.assetIds.map(id => photos.find(p => p.assetId === id)).filter(Boolean),
-        captions: section.assetIds.map(id => frames.get(id)?.caption || frames.get(id)?.headline || 'Finished portrait')
+        captions: section.assetIds.map(id => frames.get(id)?.caption || frames.get(id)?.headline || '')
       })).filter(ch => ch.photos.length > 0);
     }
     return chapters;
@@ -802,6 +817,7 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
   const openChapter = index => {
     setVisited(value => value.includes(index) ? value : [...value, index]);
     setOpenIndex(index);
+    onNarrationNavigate?.(chaptersData[index]?.photos?.map(photo => photo.assetId) || []);
   };
   useEffect(() => {
     const narration = narrationRef?.current;
@@ -828,9 +844,10 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
     const photoIdx = photos.findIndex(item => (photo.assetId ? item.assetId === photo.assetId : item.name === photo.name));
     setGalleryIndex(photoIdx >= 0 ? photoIdx : 0);
     setGallery(true);
+    onNarrationNavigate?.(photo.assetId);
   };
 
-  return <div className="fd-page fd-chapters" data-composition={themeStyles['--fd-composition']} style={{ ...themeStyles, '--chapter-accent': openChapterData?.accent || themeStyles['--fd-accent'] }}>
+  return <div className="fd-page fd-chapters" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} style={{ ...themeStyles, '--chapter-accent': openChapterData?.accent || themeStyles['--fd-accent'] }}>
     <DemoHeader format="Chapters" client={client} sectionId="chapters" onGallery={() => { setGalleryIndex(null); setGallery(true); }} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
 
     <AnimatePresence mode="wait">
@@ -861,7 +878,7 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
         <section className={'fd-chapter-room-art ' + (openChapterData.photos.length === 1 ? 'is-single' : 'is-pair')}>
           <span className="fd-chapter-room-number" aria-hidden="true">0{openIndex + 1}</span>
           <div className="fd-chapter-room-photos">{openChapterData.photos.map((photo, index) => {
-            const caption = openChapterData.captions?.[index] || frames.get(photo.assetId)?.caption || frames.get(photo.assetId)?.headline || 'Finished portrait';
+            const caption = openChapterData.captions?.[index] || frames.get(photo.assetId)?.caption || frames.get(photo.assetId)?.headline || '';
             return <motion.button type="button" key={photo.url || photo.name} onClick={() => openPhoto(photo)} initial={reduced ? false : { opacity: 0, y: 38, clipPath: 'inset(0 0 14% 0)' }} animate={{ opacity: 1, y: 0, clipPath: 'inset(0 0 0% 0)' }} transition={{ duration: reduced ? 0 : .78, delay: reduced ? 0 : .14 + index * .12, ease: [0.22, 1, 0.36, 1] }} aria-label={`Open ${caption}`}><motion.div animate={reduced ? undefined : { scale: [1.015, 1.06], x: index % 2 ? ['0%', '-1%'] : ['-1%', '1%'] }} transition={{ duration: 10 + index, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={photo.name} url={photo.url} alt={photo.alt} eager sizes="(max-width: 767px) 92vw, 48vw" /></motion.div><span>0{index + 1}</span><p>{caption}</p></motion.button>;
           })}</div>
           <footer><button type="button" onClick={() => setOpenIndex(null)}>All chapters<Grid2X2 size={17} /></button><button type="button" onClick={() => { setGalleryIndex(null); setGallery(true); }}>View full gallery<Images size={17} /></button></footer>
@@ -913,7 +930,7 @@ export function AlbumSpread({ spread, index, reduced, onGallery }) {
   </section>;
 }
 
-export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio }) {
+export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onNarrationNavigate }) {
   const [started, setStarted] = useState(false);
   const [page, setPage] = useState(0);
   const [direction, setDirection] = useState(1);
@@ -932,7 +949,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio }) {
   const clientName = delivery?.clientName || 'The Adeyemi Family';
   const studioName = delivery?.branding?.name ? `${delivery.branding.name.toUpperCase()} PRESENTS` : 'VEYLO MEDIA PRESENTS';
   const albumTitle = delivery?.creativeDirection?.title || 'Family Album';
-  const audioTrack = delivery?.soundtrack?.url || '/audio/soundtrack-2.mp3';
+  const audioTrack = delivery?.soundtrack?.url || '';
 
   const playSoundtrack = () => {
     if (!audio.current) return;
@@ -964,8 +981,8 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio }) {
         list.push({
           id: 'together',
           label: `SPREAD ${String(i).padStart(2, '0')}`,
-          title: f.headline || 'When everyone relaxed.',
-          copy: f.caption || 'The photograph where every smile felt easy.',
+          title: f.headline || '',
+          copy: f.caption || '',
           photo1: p
         });
       }
@@ -977,7 +994,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio }) {
         id: 'finale',
         label: 'SAVED FOR THE END',
         title: fFinal.headline || `${clientName}, these are the photographs you will keep coming back to.`,
-        copy: delivery.creativeDirection?.closingLine || 'Your complete family gallery is ready whenever you want to see every finished portrait.',
+        copy: delivery.creativeDirection?.closingLine || '',
         photo1: finaleP1,
         photo2: finaleP2
       });
@@ -994,6 +1011,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio }) {
   const openAlbum = () => {
     setStarted(true);
     setPage(0);
+    onNarrationNavigate?.([spreadsData[0]?.photo1?.assetId, spreadsData[0]?.photo2?.assetId].filter(Boolean));
     if (audio.current && !muted) {
       audio.current.volume = .32;
       playSoundtrack();
@@ -1002,7 +1020,9 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio }) {
   const next = () => {
     if (page >= spreadsData.length - 1) return;
     setDirection(1);
-    setPage(value => value + 1);
+    const nextPage = page + 1;
+    setPage(nextPage);
+    onNarrationNavigate?.([spreadsData[nextPage]?.photo1?.assetId, spreadsData[nextPage]?.photo2?.assetId].filter(Boolean));
   };
   const previous = () => {
     if (page === 0) {
@@ -1011,7 +1031,9 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio }) {
       return;
     }
     setDirection(-1);
-    setPage(value => value - 1);
+    const previousPage = page - 1;
+    setPage(previousPage);
+    onNarrationNavigate?.([spreadsData[previousPage]?.photo1?.assetId, spreadsData[previousPage]?.photo2?.assetId].filter(Boolean));
   };
   const toggleSound = () => {
     if (audioFailed) {
@@ -1053,8 +1075,8 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio }) {
     accent: '#ef8969'
   });
 
-  return <div className="fd-page fd-album" data-composition={themeStyles['--fd-composition']} style={themeStyles}>
-    <audio ref={audio} src={audioTrack} loop preload="metadata" muted={muted} onWaiting={() => setAudioLoading(true)} onStalled={() => setAudioLoading(true)} onPlaying={() => { setAudioLoading(false); setAudioFailed(false); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioLoading(false); setAudioFailed(true); }} />
+  return <div className="fd-page fd-album" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} style={themeStyles}>
+    {audioTrack && <audio ref={audio} src={audioTrack} loop preload="auto" muted={muted} onWaiting={() => setAudioLoading(true)} onStalled={() => setAudioLoading(true)} onPlaying={() => { setAudioLoading(false); setAudioFailed(false); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioLoading(false); setAudioFailed(true); }} />}
     <DemoHeader format="Album" client={client} sectionId="album" onGallery={() => setGallery(true)} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} hideSoundtrack />
     {!started ? <main className="fd-album-cover">
       <motion.figure initial={reduced ? false : { scale: 1.01 }} animate={{ scale: reduced ? 1 : 1.035 }} transition={{ duration: reduced ? 0 : 10, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={photos[0].name} url={photos[0].url} alt={`${clientName} cover photograph`} eager sizes="100vw" /></motion.figure>
@@ -1095,7 +1117,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio }) {
         </button>
       </footer>
     </main>}
-    {started && <button className={`fd-album-sound ${audioLoading ? 'is-loading' : ''} ${audioFailed ? 'is-error' : ''}`} type="button" onClick={toggleSound} aria-label={audioLoading ? 'Stop loading album soundtrack' : audioFailed ? 'Try album soundtrack again' : muted ? 'Turn album soundtrack on' : 'Mute album soundtrack'} aria-busy={audioLoading}>{audioLoading ? <LoaderCircle className="v-spin" size={17} /> : muted || audioFailed ? <VolumeX size={17} /> : <Volume2 size={17} />}<span aria-live="polite">{audioLoading ? 'Loading music…' : audioFailed ? 'Try music again' : muted ? 'Sound off' : 'Sound on'}</span></button>}
+    {started && audioTrack && <button className={`fd-album-sound ${audioLoading ? 'is-loading' : ''} ${audioFailed ? 'is-error' : ''}`} type="button" onClick={toggleSound} aria-label={audioLoading ? 'Stop loading album soundtrack' : audioFailed ? 'Try album soundtrack again' : muted ? 'Turn album soundtrack on' : 'Mute album soundtrack'} aria-busy={audioLoading}>{audioLoading ? <LoaderCircle className="v-spin" size={17} /> : muted || audioFailed ? <VolumeX size={17} /> : <Volume2 size={17} />}<span aria-live="polite">{audioLoading ? 'Loading music…' : audioFailed ? 'Try music again' : muted ? 'Sound off' : 'Sound on'}</span></button>}
     <AnimatePresence>{gallery && <DemoGallery photos={photos} title={client} onClose={() => setGallery(false)} delivery={delivery} {...galleryProps} />}</AnimatePresence>
   </div>;
 }

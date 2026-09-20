@@ -7,7 +7,7 @@ import { resolveEntitlements } from '../services/entitlement.service.js';
 import { confirmStorageUpload, createStorageUploadSignature, removeStorageAsset, storageAssetUrls } from '../services/storageMedia.service.js';
 
 const confirmSchema = z.object({ publicId: z.string().min(5).max(500), version: z.union([z.string(), z.number()]), signature: z.string().min(20).max(200), originalFilename: z.string().trim().max(180).default('photograph'), folder: z.string().trim().max(100).default('All photographs'), tags: z.array(z.string().trim().min(1).max(40)).max(12).default([]) }).strict();
-const editSchema = z.object({ folder: z.string().trim().min(1).max(100), tags: z.array(z.string().trim().min(1).max(40)).max(12) }).strict();
+const editSchema = z.object({ folder: z.string().trim().min(1).max(100), tags: z.array(z.string().trim().min(1).max(40)).max(12), caption: z.string().trim().max(180).default('') }).strict();
 
 function escaped(value) { return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
@@ -76,7 +76,7 @@ export async function editStorageAsset(req, res) {
     if (entitlements.features.storageMode !== 'read-write') return res.status(403).json({ success: false, code: 'READ_ONLY_STORAGE', message: 'Your retained library is read-only. Download or remove photographs, or renew Pro to organise it.' });
     const parsed = editSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ success: false, message: parsed.error.issues[0].message });
-    const asset = await StorageAsset.findOneAndUpdate({ _id: req.params.id, userId: req.user.id }, { folder: parsed.data.folder, tags: [...new Set(parsed.data.tags.map(tag => tag.toLowerCase()))] }, { new: true });
+    const asset = await StorageAsset.findOneAndUpdate({ _id: req.params.id, userId: req.user.id }, { folder: parsed.data.folder, tags: [...new Set(parsed.data.tags.map(tag => tag.toLowerCase()))], caption: parsed.data.caption }, { new: true });
     if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
     res.json({ success: true, data: output(asset) });
   } catch { res.status(500).json({ success: false, message: 'We could not update that photograph.' }); }

@@ -12,7 +12,9 @@ export default function Dashboard({ user }) {
   const reduced = useReducedMotion();
   const [stories, setStories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [partialError, setPartialError] = useState('');
   const [openMenu, setOpenMenu] = useState('');
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
@@ -22,19 +24,43 @@ export default function Dashboard({ user }) {
     try {
       setLoading(true);
       setLoadError('');
-      const [legacy, current, archived] = await Promise.allSettled([api.get('/v1/stories/my-stories'), api.get('/v1/deliveries'), api.get('/v1/deliveries', { params: { scope: 'archived' } })]);
-      if (legacy.status === 'rejected' && current.status === 'rejected' && archived.status === 'rejected') throw current.reason;
-      const legacyItems = legacy.status === 'fulfilled' && legacy.value.data?.success ? legacy.value.data.data || [] : [];
-      const currentItems = current.status === 'fulfilled' && current.value.data?.success ? current.value.data.data || [] : [];
-      const archivedItems = archived.status === 'fulfilled' && archived.value.data?.success ? archived.value.data.data || [] : [];
+      setPartialError('');
+      const requests = [
+        { key: 'legacy', label: 'older Photo Stories', promise: api.get('/v1/stories/my-stories') },
+        { key: 'current', label: 'current deliveries', promise: api.get('/v1/deliveries') },
+        { key: 'archived', label: 'archived deliveries', promise: api.get('/v1/deliveries', { params: { scope: 'archived' } }) }
+      ];
+      const results = await Promise.allSettled(requests.map(request => request.promise));
+      const failed = [];
+      const successful = new Map();
+      results.forEach((result, index) => {
+        const request = requests[index];
+        if (result.status === 'fulfilled' && result.value.data?.success && Array.isArray(result.value.data.data)) {
+          successful.set(request.key, result.value.data.data);
+          return;
+        }
+        const reason = result.status === 'rejected' ? apiMessage(result.reason, '') : result.value?.data?.message;
+        failed.push({ label: request.label, reason });
+      });
+      if (!successful.size) {
+        const detail = failed.map(item => item.reason).filter(Boolean)[0];
+        throw new Error(detail || 'We could not load any of your delivery lists.');
+      }
+      if (failed.length) {
+        setPartialError(`Some delivery lists could not be loaded: ${failed.map(item => item.label).join(', ')}. The list below may be incomplete.`);
+      }
+      const legacyItems = successful.get('legacy') || [];
+      const currentItems = successful.get('current') || [];
+      const archivedItems = successful.get('archived') || [];
       const normalized = [...currentItems, ...archivedItems].map(item => ({ ...item, storyId: item.publicId, photos: item.assets, _deliveryType: 'current' }));
       const combined = [...normalized, ...legacyItems];
       const unique = [...new Map(combined.map(item => [`${item._deliveryType || 'legacy'}:${item._id}`, item])).values()];
       setStories(unique.sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt)));
     } catch (error) {
-      setLoadError(apiMessage(error, 'We could not open your deliveries.'));
+      setLoadError(apiMessage(error, error?.message || 'We could not open your deliveries.'));
     } finally {
       setLoading(false);
+      setHasLoaded(true);
     }
   }
 
@@ -107,6 +133,7 @@ export default function Dashboard({ user }) {
   const latestPublished = activeStories.find(story => story.status === 'published');
   const publishedCount = activeStories.filter(story => story.status === 'published').length;
   const averageViews = publishedCount ? Math.round(totalViews / publishedCount) : 0;
+  const dataUnavailable = Boolean(loadError || partialError);
   const filteredStories = stories.filter(story => {
     const searchText = `${story.clientName || ''} ${story.title || ''} ${story.shootType || story.occasion || ''}`.toLowerCase();
     const matchesQuery = searchText.includes(query.trim().toLowerCase());
@@ -130,32 +157,36 @@ export default function Dashboard({ user }) {
       </motion.header>
 
       <motion.section className="v-dashboard-overview" aria-label="Studio overview" initial={reduced ? false : { opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .5, delay: .08 }}>
-        <article><div><span>DELIVERIES</span><strong>{activeStories.length}</strong></div><Film size={20} /></article>
-        <article><div><span>CLIENT VIEWS</span><strong>{totalViews}</strong></div><Eye size={20} /></article>
-        <article><div><span>NEEDS ACTION</span><strong>{needsAction}</strong></div><Clock3 size={20} /></article>
-        <article><div><span>AVG. VIEWS</span><strong>{averageViews}</strong></div><Users size={20} /></article>
+        <article><div><span>DELIVERIES</span><strong>{dataUnavailable ? '—' : activeStories.length}</strong></div><Film size={20} /></article>
+        <article><div><span>CLIENT VIEWS</span><strong>{dataUnavailable ? '—' : totalViews}</strong></div><Eye size={20} /></article>
+        <article><div><span>NEEDS ACTION</span><strong>{dataUnavailable ? '—' : needsAction}</strong></div><Clock3 size={20} /></article>
+        <article><div><span>AVG. VIEWS</span><strong>{dataUnavailable ? '—' : averageViews}</strong></div><Users size={20} /></article>
       </motion.section>
 
       <motion.section className="v-studio-command" initial={reduced ? false : { opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .5, delay: .14 }}>
         <div className="v-studio-command-main">
           <p>WHAT NEEDS YOUR ATTENTION</p>
-          {actionStories.length ? <><h2>{needsAction} delivery {needsAction === 1 ? 'is' : 'are'} waiting for you.</h2><div className="v-studio-action-list">{actionStories.map(story => <Link key={story._id} to={`/create?draft=${story._id}`}><span>{story.status === 'review' ? 'Ready to review' : 'Draft'}</span><strong>{story.clientName || story.title || 'Untitled delivery'}</strong><small>{story.status === 'review' ? 'Check the direction and prepare the client link.' : 'Continue from where you stopped.'}</small><ArrowRight size={17} /></Link>)}</div></> : <><h2>Your studio is clear.</h2><span className="v-studio-command-copy">Start a delivery when the next finished shoot is ready.</span><Link to="/create" className="v-dashboard-command-primary"><Plus size={17} />Create a client delivery</Link></>}
+          {dataUnavailable ? <><h2>Some studio information is unavailable.</h2><span className="v-studio-command-copy">We will not call your studio clear until every delivery list responds.</span><button type="button" className="v-dashboard-command-primary" onClick={fetchStories}><RefreshCw size={17} />Try loading the lists again</button></> : actionStories.length ? <><h2>{needsAction} delivery {needsAction === 1 ? 'is' : 'are'} waiting for you.</h2><div className="v-studio-action-list">{actionStories.map(story => <Link key={story._id} to={`/create?draft=${story._id}`}><span>{story.status === 'review' ? 'Ready to review' : 'Draft'}</span><strong>{story.clientName || story.title || 'Untitled delivery'}</strong><small>{story.status === 'review' ? 'Check the direction and prepare the client link.' : 'Continue from where you stopped.'}</small><ArrowRight size={17} /></Link>)}</div></> : <><h2>Your studio is clear.</h2><span className="v-studio-command-copy">Start a delivery when the next finished shoot is ready.</span><Link to="/create" className="v-dashboard-command-primary"><Plus size={17} />Create a client delivery</Link></>}
         </div>
         <aside className="v-studio-quick">
           <p>STUDIO SHORTCUTS</p>
           <Link to="/create"><Plus size={17} /><span><strong>New delivery</strong><small>Start with a finished shoot</small></span><ArrowRight size={16} /></Link>
           <Link to="/library"><Images size={17} /><span><strong>Image library</strong><small>Reuse stored photographs</small></span><ArrowRight size={16} /></Link>
           <Link to="/portfolio/manage"><Camera size={17} /><span><strong>Studio portfolio</strong><small>Choose what prospective clients see</small></span><ArrowRight size={16} /></Link>
-          {latestPublished && <button type="button" onClick={() => shareWhatsApp(latestPublished)}><Send size={17} /><span><strong>Send latest delivery</strong><small>{latestPublished.clientName || latestPublished.title}</small></span><ArrowRight size={16} /></button>}
+          {latestPublished && !dataUnavailable && <button type="button" onClick={() => shareWhatsApp(latestPublished)}><Send size={17} /><span><strong>Send latest delivery</strong><small>{latestPublished.clientName || latestPublished.title}</small></span><ArrowRight size={16} /></button>}
         </aside>
       </motion.section>
 
       <section className="v-dashboard-deliveries">
-        <header><div><h2>Client deliveries</h2><span>{stories.length > 0 ? `${totalDownloads} downloads across your active deliveries.` : 'Your finished shoots will appear here.'}</span></div><div className="v-dashboard-head-actions">{isPro && <Link to="/volume-deliveries" className="v-dashboard-volume"><Users size={16} />Volume delivery</Link>}{stories.length > 0 && <Link to="/create" className="v-dashboard-new"><Plus size={16} />New delivery</Link>}</div></header>
+        <header><div><h2>Client deliveries</h2><span>{dataUnavailable ? 'Some delivery data is unavailable. Check the status below before making decisions.' : stories.length > 0 ? `${totalDownloads} downloads across your active deliveries.` : 'Your finished shoots will appear here.'}</span></div><div className="v-dashboard-head-actions">{isPro && <Link to="/volume-deliveries" className="v-dashboard-volume"><Users size={16} />Volume delivery</Link>}{stories.length > 0 && <Link to="/create" className="v-dashboard-new"><Plus size={16} />New delivery</Link>}</div></header>
+
+        {loading && hasLoaded && <div className="v-dashboard-data-banner is-loading" role="status"><RefreshCw className="v-spin" size={17} /><span>Refreshing your delivery lists…</span></div>}
+        {!loading && partialError && <div className="v-dashboard-data-banner" role="alert"><Folder size={17} /><span>{partialError}</span><button type="button" onClick={fetchStories}>Try again</button></div>}
+        {!loading && loadError && stories.length > 0 && <div className="v-dashboard-data-banner is-error" role="alert"><Folder size={17} /><span>{loadError} Existing deliveries are still shown, but this list may be out of date.</span><button type="button" onClick={fetchStories}>Try again</button></div>}
 
         {stories.length > 0 && <div className="v-dashboard-tools"><label><Search size={17} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search client, title, or shoot" aria-label="Search deliveries" /></label><div role="group" aria-label="Filter deliveries">{[['all', 'All'], ['published', 'Published'], ['action', `Needs action${needsAction ? ` (${needsAction})` : ''}`], ['archived', 'Archived']].map(([value, label]) => <button type="button" key={value} className={filter === value ? 'is-active' : ''} onClick={() => setFilter(value)}>{label}</button>)}</div><div className="v-dashboard-view" role="group" aria-label="Delivery layout"><button type="button" className={viewMode === 'grid' ? 'is-active' : ''} onClick={() => setViewMode('grid')} aria-label="Grid view"><Grid2X2 size={16} /></button><button type="button" className={viewMode === 'list' ? 'is-active' : ''} onClick={() => setViewMode('list')} aria-label="List view"><List size={17} /></button></div></div>}
 
-        {loading ? <div className="v-dashboard-state"><RefreshCw className="v-spin" size={27} /><strong>Opening your studio…</strong><span>Loading your latest deliveries.</span></div> : loadError ? <div className="v-dashboard-state v-dashboard-error"><Folder size={27} /><strong>Your deliveries did not load.</strong><span>{loadError}</span><button type="button" onClick={fetchStories}>Try again</button></div> : stories.length === 0 ? <motion.div className="v-dashboard-empty" initial={reduced ? false : { opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
+        {loading && !hasLoaded ? <div className="v-dashboard-state"><RefreshCw className="v-spin" size={27} /><strong>Opening your studio…</strong><span>Loading your latest deliveries.</span></div> : !loading && loadError && stories.length === 0 ? <div className="v-dashboard-state v-dashboard-error"><Folder size={27} /><strong>Your deliveries are unavailable.</strong><span>{loadError}</span><button type="button" onClick={fetchStories}>Try again</button></div> : !loading && partialError && stories.length === 0 ? <div className="v-dashboard-state v-dashboard-error"><Folder size={27} /><strong>Some deliveries are unavailable.</strong><span>{partialError}</span><button type="button" onClick={fetchStories}>Try again</button></div> : !loading && !dataUnavailable && stories.length === 0 ? <motion.div className="v-dashboard-empty" initial={reduced ? false : { opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
           <div className="v-dashboard-empty-copy"><p>YOUR FIRST DELIVERY</p><h3>No deliveries<br />here yet.</h3><span>When your next finished shoot is ready, start here. Veylo will guide you through the rest.</span><Link to="/create" className="v-button"><Plus size={17} />Create your first delivery<ArrowRight size={17} /></Link></div>
           <div className="v-dashboard-empty-preview" aria-hidden="true"><i /><i /><div><Image size={25} /><span>FIRST CLIENT DELIVERY</span><strong>Ready when the photographs are.</strong></div></div>
         </motion.div> : filteredStories.length === 0 ? <div className="v-dashboard-state"><Search size={27} /><strong>No matching deliveries.</strong><span>Try another search or choose a different status.</span></div> : <div className={`v-delivery-grid is-${viewMode}`}><AnimatePresence>{filteredStories.map((story, index) => <motion.article key={story._id} className="v-delivery-card" initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: .97 }} transition={{ duration: .42, delay: Math.min(index * .05, .25) }}>
