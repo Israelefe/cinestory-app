@@ -16,6 +16,7 @@ const volumeRoutes = await read('src/routes/volume.routes.js');
 const volumeController = await read('src/controllers/volume.controller.js');
 const storageModel = await read('src/models/StorageAsset.js');
 const deliveryController = await read('src/controllers/delivery.controller.js');
+const entitlement = await read('src/services/entitlement.service.js');
 
 const delivery = {
   clientName: 'Amaka',
@@ -63,6 +64,8 @@ assert.match(legacyStoryController, /caption: z\.string\(\)\.trim\(\)\.min\(18\)
 assert.match(deliveryController, /caption: z\.string\(\)\.trim\(\)\.min\(18\)/, 'Review API must reject short or empty captions');
 assert.match(deliveryController, /narration: z\.boolean\(\)\.default\(true\)/, 'Publishing must keep narration enabled by default');
 assert.match(deliveryController, /old audio unsafe to reuse/, 'Review edits must invalidate stale narration');
+assert.match(entitlement, /\['pro',\s*'studio'\]\.includes\(user\?\.plan\)/, 'Paid Pro users must receive studio branding entitlements');
+assert.match(deliveryController, /object\.branding = studioBrand/, 'Public deliveries must send their resolved studio brand');
 for (const route of ['/auto-assign', '/export.csv', '/archive', 'subjects/:subjectId']) assert.match(volumeRoutes, new RegExp(route.replace('.', '\\.'), 'i'), `Missing volume route: ${route}`);
 assert.match(volumeController, /ClientGallery|caption: asset\.caption/, 'Recipient gallery payload must carry approved captions');
 assert.match(volumeController, /downloadUrl: signedImageUrl/, 'Recipient gallery payload must carry the protected download URL');

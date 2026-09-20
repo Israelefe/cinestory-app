@@ -838,16 +838,16 @@ export async function getDeliveryShareMeta(req, res) {
     const brandName = studioBrand ? delivery.userId.studio?.name || delivery.userId.name : 'Veylo';
     const locked = Boolean(delivery.access?.pinDigest);
     const app = String(process.env.CLIENT_URL || 'https://veylo.com.ng').replace(/\/$/, '');
-    const logo = studioBrand ? delivery.userId.studio?.logoUrl || delivery.userId.avatar : `${app}/veylo/veylo-logo.jpg`;
+    const logo = studioBrand ? delivery.userId.studio?.logoUrl || delivery.userId.avatar || '' : `${app}/veylo/veylo-logo.jpg`;
     res.set('Cache-Control', 'public, max-age=120, s-maxage=300');
     res.json({ success: true, data: locked ? {
       title: `A private photo delivery from ${brandName}`,
       description: 'Open the private link and enter the six-digit PIN from your photographer.',
-      image: logo || `${app}/veylo/veylo-logo.jpg`, brandName, locked: true
+      ...(logo ? { image: logo } : {}), brandName, locked: true
     } : {
       title: `${delivery.title || `${delivery.clientName}'s photographs`} — ${brandName}`,
       description: `${delivery.clientName}, your finished photographs are ready to experience and download.`,
-      image: delivery.assets[0]?.publicId ? signedOgImageUrl(delivery.assets[0].publicId) : logo,
+      ...(delivery.assets[0]?.publicId || logo ? { image: delivery.assets[0]?.publicId ? signedOgImageUrl(delivery.assets[0].publicId) : logo } : {}),
       brandName, locked: false
     } });
   } catch { res.status(500).json({ success: false, message: 'We could not prepare that link preview.' }); }

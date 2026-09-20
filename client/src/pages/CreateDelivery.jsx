@@ -121,6 +121,9 @@ export default function CreateDelivery({ user }) {
   const [step, setStep] = useState(1);
   const [delivery, setDelivery] = useState(null);
   const [limits, setLimits] = useState({ photosPerDelivery: user?.plan === 'pro' ? 500 : 100 });
+  const [previewBranding, setPreviewBranding] = useState(() => user?.plan === 'pro' || user?.plan === 'studio'
+    ? { type: 'studio', name: user?.studio?.name || user?.name || 'Studio', logoUrl: user?.studio?.logoUrl || user?.avatar || '' }
+    : { type: 'veylo', name: 'Veylo', logoUrl: '/veylo/veylo-mark.svg' });
   const [brief, setBrief] = useState({ clientName: '', shootType: '', brief: '' });
   const [busy, setBusy] = useState('');
   const [progress, setProgress] = useState({ value: 0, stage: '' });
@@ -178,9 +181,15 @@ export default function CreateDelivery({ user }) {
 
   const draftId = params.get('draft');
   useEffect(() => {
-    api.get('/v1/billing/status').then(response => setLimits(response.data.data.limits)).catch(() => {});
+    api.get('/v1/billing/status').then(response => {
+      const data = response.data.data;
+      setLimits(data.limits);
+      setPreviewBranding(data.features?.branding === 'studio'
+        ? { type: 'studio', name: user?.studio?.name || user?.name || 'Studio', logoUrl: user?.studio?.logoUrl || user?.avatar || '' }
+        : { type: 'veylo', name: 'Veylo', logoUrl: '/veylo/veylo-mark.svg' });
+    }).catch(() => {});
     api.get('/v1/deliveries/soundtracks').then(response => setCuratedSoundtracks(response.data.data || [])).catch(() => setError('We could not open the soundtrack catalogue.'));
-  }, []);
+  }, [user?.plan, user?.name, user?.avatar, user?.studio?.name, user?.studio?.logoUrl]);
   useEffect(() => {
     if (!draftId) return;
     let active = true;
@@ -578,7 +587,7 @@ export default function CreateDelivery({ user }) {
              <DeliveryDirectionStudio delivery={delivery} assets={orderedAssets} frameMap={frameMap} onDirectionChange={editDirectionSetting} onSectionChange={editSection} />
              <section className="v-client-format-preview" aria-label="Exact client format preview">
                <header><div><p>EXACT CLIENT VIEW</p><h2>Open the same format your client will receive.</h2><span>This preview uses the selected format, order, captions, colour direction, and typography. It is the final viewer inside the studio.</span></div><span className="v-client-format-preview-badge">{formatName(delivery?.format)}</span></header>
-              <div className="v-client-format-preview-frame"><ClientDeliveryPreview delivery={delivery} narrationEnabled={access.narration} accessPin={access.pinEnabled ? access.pin : ''} access={access} /></div>
+              <div className="v-client-format-preview-frame"><ClientDeliveryPreview delivery={delivery ? { ...delivery, branding: delivery.branding || previewBranding } : delivery} narrationEnabled={access.narration} accessPin={access.pinEnabled ? access.pin : ''} access={access} /></div>
              </section>
             <div className="v-review-revision"><div><ListChecks size={19} /><span><strong>Ask for another direction</strong><small>Choose photographs below for a focused change, or ask Veylo to rethink the complete delivery.</small></span></div><textarea value={revisionInstruction} onChange={event => setRevisionInstruction(event.target.value)} maxLength={600} placeholder="For example: make these captions warmer and keep the focus on her confidence in the second look." /><footer><span>{revisionIds.length} photograph{revisionIds.length === 1 ? '' : 's'} selected</span><button type="button" onClick={() => requestRevision('selected')} disabled={Boolean(busy) || !revisionIds.length}>Revise selected</button><button type="button" onClick={() => requestRevision('full')} disabled={Boolean(busy)}>Rethink full direction</button></footer>{busy === 'revise' && <Progress value={progress.value} label={progress.stage} />}</div>
             <div className="v-review-grid">{pageAssets.map((asset, localIndex) => { const index = reviewPage * 18 + localIndex; const frame = frameMap.get(asset.assetId) || {}; return <article key={asset.assetId}><button type="button" className={`v-review-select ${revisionIds.includes(asset.assetId) ? 'is-selected' : ''}`} onClick={() => toggleRevisionAsset(asset.assetId)}><Check size={13} />{revisionIds.includes(asset.assetId) ? 'Selected for revision' : 'Select for revision'}</button><div><img src={asset.thumbnailUrl || asset.url} alt="" /><span>{String(index + 1).padStart(2, '0')}</span><div><button type="button" onClick={() => movePhoto(asset.assetId, -1)} disabled={index === 0} aria-label="Move photograph earlier"><ChevronUp size={15} /></button><button type="button" onClick={() => movePhoto(asset.assetId, 1)} disabled={index === orderedAssets.length - 1} aria-label="Move photograph later"><ChevronDown size={15} /></button></div></div><label>Heading<input value={frame.headline || ''} onChange={event => editFrame(asset.assetId, 'headline', event.target.value)} maxLength={70} /></label><label>Caption<textarea value={frame.caption || ''} onChange={event => editFrame(asset.assetId, 'caption', event.target.value)} maxLength={180} rows={4} /></label><small>{frame.motion?.replaceAll('-', ' ')} · {frame.transition}</small></article>; })}</div>
@@ -676,7 +685,7 @@ export default function CreateDelivery({ user }) {
                 <Toggle icon={LockKeyhole} label="Six-digit PIN" copy="Ask for a PIN before showing the client name, title, or photographs." checked={access.pinEnabled} onChange={value => setAccess(current => ({ ...current, pinEnabled: value }))}>{access.pinEnabled && <input value={access.pin} onChange={event => setAccess(current => ({ ...current, pin: event.target.value.replace(/\D/g, '').slice(0, 6) }))} inputMode="numeric" placeholder="000000" aria-label="Six-digit delivery PIN" />}</Toggle>
                 <label className="v-publish-expiry"><span>Link expiry</span><small>Leave empty when the delivery should stay open.</small><input type="date" value={access.expiresAt} min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)} onChange={event => setAccess(current => ({ ...current, expiresAt: event.target.value }))} /></label>
                 <Toggle icon={Image} label="Individual photo downloads" copy="Let the client download one photograph at a time." checked={access.allowIndividualDownloads} onChange={value => setAccess(current => ({ ...current, allowIndividualDownloads: value }))} />
-                <Toggle icon={Clapperboard} label="Download the full gallery" copy="Let the client download every delivered photograph together." checked={access.allowDownloadAll} onChange={value => setAccess(current => ({ ...current, allowDownloadAll: value }))} />
+                <Toggle icon={Clapperboard} label="Download all photographs" copy="Let the client start the photographs one by one from the gallery." checked={access.allowDownloadAll} onChange={value => setAccess(current => ({ ...current, allowDownloadAll: value }))} />
                 <Toggle icon={Check} label="Photo likes" copy="Let the client mark the photographs they love." checked={access.allowLikes} onChange={value => setAccess(current => ({ ...current, allowLikes: value }))} />
                 <Toggle icon={Play} label="Narration with Hannah" copy="On by default. Deepgram Flux reads the approved captions in a calm, measured voice." checked={access.narration} onChange={value => setAccess(current => ({ ...current, narration: value }))}>{access.narration && <small className="v-narration-voice-note">Deepgram Flux · Hannah · captions are read in photograph order.</small>}</Toggle>
               </div>

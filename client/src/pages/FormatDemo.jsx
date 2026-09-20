@@ -206,7 +206,7 @@ function LegacyDemoGallery({ photos, title, onClose, initialIndex = null, liked,
               disabled={Boolean(busy)}
             >
               <Download size={15} />
-              <span>{busy === 'all' ? 'Preparing…' : 'Download all'}</span>
+              <span>{busy === 'all' ? 'Starting...' : 'Download all photos'}</span>
             </button>
           )}
           <button type="button" onClick={onClose} aria-label="Close gallery"><X size={20} /></button>

@@ -7,6 +7,7 @@ import api from '../services/api.js';
 import { DEMO_PRESETS } from '../constants/demoStories.js';
 import { useDialogFocus } from '../components/useDialogFocus.js';
 import ClientGallery from '../components/delivery/ClientGallery.jsx';
+import DeliveryBrandMark from '../components/delivery/DeliveryBrandMark.jsx';
 export { DEMO_PRESETS } from '../constants/demoStories.js';
 
 function getFontFamily(type, fallback = "'Playfair Display', Georgia, serif") {
@@ -162,9 +163,11 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
  const [narrationLoading, setNarrationLoading] = useState(false);
  const [captions, setCaptions] = useState(true);
  const [gallery, setGallery] = useState(false);
- const [holding, setHolding] = useState(false);
- const [downloading, setDownloading] = useState(null);
- const [allDownloading, setAllDownloading] = useState(false);
+  const [holding, setHolding] = useState(false);
+  const [downloading, setDownloading] = useState(null);
+  const [allDownloading, setAllDownloading] = useState(false);
+  const [downloadNotice, setDownloadNotice] = useState('');
+  const [downloadProgress, setDownloadProgress] = useState(null);
  const [hidden, setHidden] = useState(document.hidden);
  const audio = useRef(null);
  const narrationRef = useRef(null);
@@ -198,6 +201,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
         url: asset.url, // Original photographer upload quality preserved
         thumbnailUrl: asset.thumbnailUrl || asset.url,
         srcSet: asset.srcSet,
+        originalFilename: asset.originalFilename,
         caption: frame.caption || frame.headline || '',
         chapterTitle: frame.headline || '',
         duration: Math.max(2, Number(frame.duration) || 5.5),
@@ -212,6 +216,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
       title: deliveryProp.title,
       clientName: deliveryProp.clientName,
       studioName: deliveryProp.branding?.name || 'Veylo Studio',
+      branding: deliveryProp.branding,
       occasion: deliveryProp.shootType || 'Finished photographs',
       photos: mappedPhotos,
       soundtrack: deliveryProp.soundtrack?.url ? { audioUrl: deliveryProp.soundtrack.url, title: deliveryProp.soundtrack.title || 'Soundtrack' } : null,
@@ -349,6 +354,26 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   const download = async (i, quiet = false) => {
    setDownloading(i);
    try {
+    if (deliveryProp?.publicId) {
+      const assetId = photos[i]?.id || photos[i]?.assetId;
+      if (!assetId) throw new Error('Photograph not found');
+      const token = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(`veylo_delivery_${deliveryProp.publicId}`) : null;
+      const grant = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(`veylo_delivery_grant_${deliveryProp.publicId}`) : null;
+      const headers = { ...(token ? { 'X-Delivery-Access': token } : {}), ...(grant ? { 'X-Delivery-Grant': grant } : {}) };
+      const response = await api.get(`/v1/deliveries/public/${deliveryProp.publicId}/photos/${encodeURIComponent(assetId)}/download`, { headers });
+      const original = String(photos[i]?.originalFilename || '').trim();
+      const filename = original && original.includes('.')
+        ? original.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 180)
+        : `${(story.clientName || 'photographs').replace(/[^a-z0-9_-]/gi, '_').slice(0, 60) || 'photographs'}-${String(i + 1).padStart(2, '0')}.jpg`;
+      const link = document.createElement('a');
+      link.href = response.data?.data?.url;
+      link.download = filename;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link); link.click(); link.remove();
+      if (!quiet) { setDownloadNotice('On iPhone or iPad, use Share then Save to Files if Safari opens the photograph instead.'); toast.info('Download started. Check your Downloads or Files app.'); }
+      return true;
+    }
     const url = mediaUrl(photos[i].url); if (!url) throw new Error('Invalid image');
     const response = await fetch(url); if (!response.ok) throw new Error('Download failed');
     const blob = await response.blob(); if (!blob.type.startsWith('image/')) throw new Error('Unsupported file');
@@ -364,39 +389,24 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   const downloadAll = async () => {
    if (allDownloading) return;
    setAllDownloading(true);
-   if (deliveryProp?.publicId) {
-     try {
-       const token = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(`veylo_delivery_${deliveryProp.publicId}`) : null;
-       const response = await api.get(
-         `/v1/deliveries/public/${deliveryProp.publicId}/download-all`,
-         token ? { headers: { 'X-Delivery-Access': token } } : {}
-       );
-       const url = response.data.data.url;
-       const a = document.createElement('a');
-       a.href = url;
-       a.target = '_blank';
-       a.rel = 'noopener noreferrer';
-       a.download = `${(story.clientName || 'gallery').replace(/[^a-z0-9_-]/gi, '_')}-photographs.zip`;
-       document.body.appendChild(a);
-       a.click();
-       a.remove();
-       toast.info('Gallery download started. Check your browser downloads.');
-     } catch {
-       toast.error('We could not prepare the full gallery download.');
-     } finally {
-       setAllDownloading(false);
-     }
-     return;
-   }
+   setDownloadNotice(deliveryProp?.publicId
+     ? 'Each photograph downloads separately. Android may ask you to allow multiple downloads. On iPhone or iPad, Safari may stop after one; use the individual Download buttons if that happens.'
+     : 'Each photograph downloads separately. Your browser may ask you to allow multiple downloads.');
+   setDownloadProgress({ current: 0, total: photos.length, failed: 0 });
+   let failed = 0;
    try {
      for (let i = 0; i < photos.length; i++) {
-       if (!await download(i, true)) return;
+       if (!await download(i, true)) failed += 1;
+       setDownloadProgress({ current: i + 1, total: photos.length, failed });
        await new Promise(r => setTimeout(r, 250));
      }
-     toast.success('Downloads requested. Check your browser downloads.');
+     const started = photos.length - failed;
+     setDownloadNotice(failed ? `${started} download${started === 1 ? '' : 's'} started. ${failed} need another tap.` : 'Downloads started one at a time. Check your Downloads or Files app.');
+     toast.success(failed ? `${started} downloads started. Try the remaining photographs individually.` : 'Downloads started. Check your Downloads or Files app.');
      if (!demo && storyId) api.post('/v1/stories/public/' + encodeURIComponent(storyId) + '/track-download').catch(() => {});
    } finally {
      setAllDownloading(false);
+     setDownloadProgress(null);
    }
   };
   const start = () => {
@@ -443,7 +453,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
    <StoryScene demo={demo} demoId={demoId} photos={photos} photo={photo} index={index} mode={layoutMode} started={started} finished={finished} reduced={reduced} displaySrc={displaySrc} displaySet={displaySet} motionForPhoto={motionForPhoto} accent={photo?.colorAccent || story.theme?.accentColor || '#ff5a47'} />
    <div className="v-story-shade" aria-hidden="true" />
    <div className="v-story-progress" role="progressbar" aria-label="Photo Story progress" aria-valuemin={1} aria-valuemax={photos.length} aria-valuenow={index + 1}>{photos.map((_, i) => <span key={i} className={i < index ? 'is-done' : i === index ? 'is-current' : ''}><i ref={i === index ? progress : null} /></span>)}</div>
-   <header className="v-story-top"><div className="v-story-studio"><Link to={backDestination} onClick={handleBack} className="v-story-mark" aria-label={demo ? (isFromFormats ? 'Back to Photo Story on the formats page' : isFromNiche ? 'Back to the page you opened this story from' : 'Back to the Photo Story section on the homepage') : 'Veylo home'}><img src="/veylo/veylo-mark.svg" alt="" /></Link><div><strong style={{ fontFamily: 'var(--story-font-display)' }}>{story.clientName || story.title}</strong><span style={{ fontFamily: 'var(--story-font-body)' }}>{story.studioName || story.occasion}</span></div></div><div className="v-story-top-actions"><button onClick={() => setMuted(value => !value)} aria-label={muted ? 'Turn sound on' : 'Turn sound off'}>{muted ? <VolumeX size={17} /> : <Volume2 size={17} />}</button><button onClick={share} aria-label="Share story"><Share2 size={17} /></button></div></header>
+   <header className="v-story-top"><div className="v-story-studio"><Link to={backDestination} onClick={handleBack} className="v-story-mark" aria-label={demo ? (isFromFormats ? 'Back to Photo Story on the formats page' : isFromNiche ? 'Back to the page you opened this story from' : 'Back to the Photo Story section on the homepage') : `${story.studioName || 'Studio'} home`}><DeliveryBrandMark branding={story.branding} /></Link><div><strong style={{ fontFamily: 'var(--story-font-display)' }}>{story.clientName || story.title}</strong><span style={{ fontFamily: 'var(--story-font-body)' }}>{story.studioName || story.occasion}</span></div></div><div className="v-story-top-actions"><button onClick={() => setMuted(value => !value)} aria-label={muted ? 'Turn sound on' : 'Turn sound off'}>{muted ? <VolumeX size={17} /> : <Volume2 size={17} />}</button><button onClick={share} aria-label="Share story"><Share2 size={17} /></button></div></header>
    {!started ? <section className="v-story-cover"><p className="v-story-kicker">{opening.eyebrow || (demo ? 'A Veylo Photo Story' : 'Your photographs are ready')}</p><h1 style={{ fontFamily: 'var(--story-font-display)' }}>{opening.headline || story.clientName || story.title}</h1><p className="v-story-cover-occasion">{story.occasion}</p><p className="v-story-summary">{opening.copy || story.storySummary || 'Your finished photographs, brought together for you.'}</p><button className="v-story-primary" onClick={start}><Play size={18} fill="currentColor" />{opening.buttonLabel || 'Begin the story'}</button><p className="v-story-hint">{opening.hint || 'Turn your sound on. Tap either side to move through the story.'}</p></section> : <>
     <button className="v-story-tap v-story-tap-left" onClick={() => go(-1)} disabled={index === 0} aria-label="Previous photograph" />
     <button className="v-story-tap v-story-tap-right" onClick={() => go(1)} disabled={index === photos.length - 1} aria-label="Next photograph" />
@@ -454,6 +464,6 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   </main>
   {story.soundtrack?.audioUrl && <audio ref={audio} src={mediaUrl(story.soundtrack.audioUrl)} loop preload="metadata" onWaiting={() => { if (started && !muted) setAudioLoading(true); }} onStalled={() => { if (started && !muted) setAudioLoading(true); }} onPlaying={() => { setAudioLoading(false); setAudioPlaying(true); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioPlaying(false); setAudioLoading(false); toast.info('The soundtrack could not load. The story will continue without it.'); }} />}
   {deliveryProp?.narration?.url && <audio ref={narrationRef} src={mediaUrl(deliveryProp.narration.url)} preload="metadata" onWaiting={() => { if (started && !muted) setNarrationLoading(true); }} onStalled={() => { if (started && !muted) setNarrationLoading(true); }} onPlaying={() => { setNarrationLoading(false); setNarrationPlaying(true); }} onEnded={handleNarrationEnded} onError={() => { setNarrationPlaying(false); setNarrationLoading(false); fadeAudioVolume(audio.current, 1); toast.info('The narration could not load. The story will continue without it.'); }} />}
-  <AnimatePresence>{gallery && <ClientGallery photos={photos} title={story.clientName || story.title} demoId={demo ? demoId : null} delivery={deliveryProp} onClose={() => setGallery(false)} liked={galleryProps?.liked} onLike={galleryProps?.onLike} onDownload={galleryProps?.onDownload || ((_key, photoIndex) => download(photoIndex))} busy={galleryProps?.busy} downloading={downloading} onDownloadAll={galleryProps?.onDownloadAll || downloadAll} allDownloading={allDownloading} />}</AnimatePresence>
+  <AnimatePresence>{gallery && <ClientGallery photos={photos} title={story.clientName || story.title} demoId={demo ? demoId : null} delivery={deliveryProp} onClose={() => setGallery(false)} liked={galleryProps?.liked} onLike={galleryProps?.onLike} onDownload={galleryProps?.onDownload || ((_key, photoIndex) => download(photoIndex))} busy={galleryProps?.busy} downloading={downloading} onDownloadAll={galleryProps?.onDownloadAll || downloadAll} allDownloading={allDownloading} downloadNotice={galleryProps?.downloadNotice || downloadNotice} downloadProgress={galleryProps?.downloadProgress || downloadProgress} />}</AnimatePresence>
   </div>;
 }

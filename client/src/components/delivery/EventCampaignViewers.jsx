@@ -142,7 +142,7 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
       </section>
 
       <section className="vec-campaign-handoff">
-        <div><span>03 / HANDOFF</span><h2>Ready for the team.</h2><p>{photos.length} final photographs are available in the complete gallery.</p>{galleryProps?.onDownloadAll && delivery?.access?.allowDownloadAll !== false && <button type="button" onClick={galleryProps.onDownloadAll} disabled={Boolean(galleryProps.busy)}>{galleryProps.busy === 'all' ? 'Preparing files…' : 'Download all files'}<Download size={17} /></button>}</div>
+        <div><span>03 / HANDOFF</span><h2>Ready for the team.</h2><p>{photos.length} final photographs are available in the complete gallery.</p>{galleryProps?.onDownloadAll && delivery?.access?.allowDownloadAll !== false && <button type="button" onClick={galleryProps.onDownloadAll} disabled={Boolean(galleryProps.busy)}>{galleryProps.busy === 'all' ? 'Starting downloads...' : 'Download all photos'}<Download size={17} /></button>}</div>
         <aside><FileCheck2 size={23} /><span>USAGE TERMS</span><p>{usage}</p></aside>
       </section>
 

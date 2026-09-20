@@ -91,7 +91,7 @@ function GalleryScreen() {
     <div className="v-ce-gallery-grid">
       {['look-1', 'look-2', 'look-3', 'look-4'].map((name, index) => <Photo key={name} name={name} alt={`Finished portrait ${index + 1} from Zainab’s session`} eager />)}
     </div>
-    <div className="v-ce-gallery-bar"><div><ImageIcon size={14} /><span>Full gallery</span></div><span><Download size={14} /> Download all</span></div>
+    <div className="v-ce-gallery-bar"><div><ImageIcon size={14} /><span>Full gallery</span></div><span><Download size={14} /> Download photographs</span></div>
   </div>;
 }
 

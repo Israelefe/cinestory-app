@@ -8,7 +8,7 @@ import './ClientGallery.css';
 const photoKey = (photo, index) => photo?.assetId || photo?.id || photo?.name || index;
 const imageUrl = (photo, width = 1440) => photo?.url || (typeof photo === 'string' && (photo.startsWith('http') || photo.startsWith('/')) ? photo : `/veylo/web/${photo?.name || photo}-${width}.webp`);
 
-export default function ClientGallery({ photos = [], title = 'Your photographs', eyebrow = 'The complete collection', onClose, initialIndex = null, liked, onLike, onDownload, onDownloadAll, busy, downloading = null, allDownloading = false, delivery, demoId }) {
+export default function ClientGallery({ photos = [], title = 'Your photographs', eyebrow = 'The complete collection', onClose, initialIndex = null, liked, onLike, onDownload, onDownloadAll, busy, downloading = null, allDownloading = false, downloadNotice = '', downloadProgress = null, delivery, demoId }) {
   const reduced = useReducedMotion();
   const panel = useRef(null);
   const [selected, setSelected] = useState(initialIndex);
@@ -41,10 +41,11 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
       <header className="client-gallery-header">
         <div><p>{eyebrow} · {photos.length} {photos.length === 1 ? 'photograph' : 'photographs'}</p><h2 id="client-gallery-title">{selected === null ? title : `Photograph ${selected + 1}`}</h2></div>
         <div className="client-gallery-header-actions">
-          {selected === null && allowDownloadAll && onDownloadAll && <button className="client-gallery-download-all" type="button" onClick={onDownloadAll} disabled={Boolean(resolvedBusy)}>{resolvedBusy === 'all' ? <LoaderCircle className="client-gallery-spin" size={16} /> : <Download size={16} />}<span>{resolvedBusy === 'all' ? 'Preparing…' : 'Download all'}</span></button>}
+          {selected === null && allowDownloadAll && onDownloadAll && <button className="client-gallery-download-all" type="button" onClick={onDownloadAll} disabled={Boolean(resolvedBusy)}>{resolvedBusy === 'all' ? <LoaderCircle className="client-gallery-spin" size={16} /> : <Download size={16} />}<span>{resolvedBusy === 'all' && downloadProgress ? `Starting ${downloadProgress.current}/${downloadProgress.total}` : resolvedBusy === 'all' ? 'Starting...' : 'Download all photos'}</span></button>}
           <button className="client-gallery-icon" type="button" onClick={onClose} aria-label="Close gallery"><X size={21} /></button>
         </div>
       </header>
+      {downloadNotice && <p className="client-gallery-download-tip" role="status">{downloadNotice}</p>}
 
       {selected === null ? <div className="client-gallery-grid">{resolvedPhotos.map((photo, index) => {
         const key = photoKey(photo, index);

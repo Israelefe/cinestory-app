@@ -151,8 +151,8 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
       if (next.has(assetId)) next.delete(assetId); else next.add(assetId);
       return next;
     }),
-    onDownload: () => toast.info('Downloads will be active on the published client link.'),
-    onDownloadAll: () => toast.info('The full gallery download will be active on the published client link.')
+    onDownload: () => toast.info('Individual photo downloads will be active on the published client link.'),
+    onDownloadAll: () => toast.info('The published link will download each photograph separately.')
   };
   const sharedProps = {
     delivery: playbackDelivery,

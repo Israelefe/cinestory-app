@@ -26,7 +26,10 @@ export function subscriptionGrantsPro(subscription, now = new Date()) {
 
 export async function resolveEntitlements(user, { includeUsage = true, now = new Date() } = {}) {
   const subscription = await Subscription.findOne({ userId: user._id }).sort({ createdAt: -1 });
-  const pro = user?.plan === 'studio' || overrideIsPro(user, now) || subscriptionGrantsPro(subscription, now);
+  // Both the paid Pro plan and the legacy Studio plan receive studio branding.
+  // Billing writes `pro` to User.plan, so treating only `studio` as paid made
+  // current Pro deliveries fall back to the Veylo mark.
+  const pro = ['pro', 'studio'].includes(user?.plan) || overrideIsPro(user, now) || subscriptionGrantsPro(subscription, now);
   const plan = pro ? PLAN_DEFINITIONS.pro : PLAN_DEFINITIONS.free;
   const { start, end } = lagosMonthWindow(now);
   let usedThisMonth = 0;

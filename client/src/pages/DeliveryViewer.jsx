@@ -5,6 +5,7 @@ import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
 import { API_BASE_URL } from '../config/env.js';
 import { DeliveryFormatViewer } from '../components/delivery/viewerRegistry.jsx';
+import DeliveryBrandMark from '../components/delivery/DeliveryBrandMark.jsx';
 import '../styles/format-demos.css';
 import './DeliveryViewer.css';
 import './DeliveryViewerRole.css';
@@ -46,6 +47,25 @@ function displayAssetUrl(asset, targetWidth = 960) {
     .filter(Boolean)
     .sort((a, b) => a.width - b.width);
   return (candidates.find(candidate => candidate.width >= targetWidth) || candidates.at(-1))?.url || asset?.thumbnailUrl || asset?.url || '';
+}
+
+function downloadFilename(asset, index, clientName = 'photographs') {
+  const original = String(asset?.originalFilename || '').trim();
+  if (original && original.includes('.')) return original.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 180);
+  const base = String(clientName || 'photographs').replace(/[^a-z0-9_-]/gi, '_').slice(0, 60) || 'photographs';
+  return `${base}-${String(index + 1).padStart(2, '0')}.jpg`;
+}
+
+function startBrowserDownload(url, filename) {
+  if (!url) throw new Error('The download link was empty.');
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }
 
 async function preloadBlob(url, cleanup, kind, maxAttempts = 3) {
@@ -193,7 +213,7 @@ export function DeliveryReadiness({ delivery, onReady }) {
   return <main className="vd-readiness" role="status" aria-live="polite">
     <div className="vd-readiness-ambient" aria-hidden="true" />
     <section>
-      <img src={delivery.branding?.logoUrl || '/veylo/veylo-mark.svg'} alt="" />
+      <DeliveryBrandMark branding={delivery.branding} />
       <p>{delivery.branding?.name || 'Veylo'} · PRIVATE DELIVERY</p>
       <h1>Preparing {delivery.clientName ? `${delivery.clientName}’s` : 'your'} photographs.</h1>
       <span>We’re preparing every photograph, the music, and the narration before the experience begins.</span>
@@ -219,6 +239,8 @@ export default function DeliveryViewer() {
   const [error, setError] = useState('');
   const [liked, setLiked] = useState(new Set());
   const [busy, setBusy] = useState('');
+  const [downloadProgress, setDownloadProgress] = useState(null);
+  const [downloadNotice, setDownloadNotice] = useState('');
   const [experienceReady, setExperienceReady] = useState(false);
   const [preloadedMedia, setPreloadedMedia] = useState({ assets: {}, soundtrack: '', narration: '' });
 
@@ -409,22 +431,25 @@ export default function DeliveryViewer() {
     }
   }
 
-  async function handleDownload(assetId) {
+  const deliveryAssets = [...(delivery?.assets || [])].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+
+  async function requestPhotoDownload(asset, index) {
+    const assetId = asset?.assetId;
+    if (!assetId) throw new Error('Photograph not found.');
+    const response = await api.get(
+      `/v1/deliveries/public/${delivery.publicId}/photos/${assetId}/download`,
+      { headers: accessHeaders(delivery.publicId) }
+    );
+    startBrowserDownload(response.data?.data?.url, downloadFilename(asset, index, delivery.clientName));
+  }
+
+  async function handleDownload(assetId, index = 0) {
+    const asset = deliveryAssets.find(item => String(item.assetId) === String(assetId)) || deliveryAssets[index];
     setBusy(assetId);
+    setDownloadNotice('The photograph is downloading on its own. On iPhone or iPad, use Share then Save to Files if Safari opens it instead.');
     try {
-      const response = await api.get(
-        `/v1/deliveries/public/${delivery.publicId}/photos/${assetId}/download`,
-        { headers: accessHeaders(delivery.publicId) }
-      );
-      const url = response.data.data.url;
-      const a = document.createElement('a');
-      a.href = url;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      a.download = `photo-${assetId}.jpg`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      await requestPhotoDownload(asset, deliveryAssets.indexOf(asset) >= 0 ? deliveryAssets.indexOf(asset) : index);
+      toast.info('Download started. Check your Downloads or Files app.');
     } catch (err) {
       toast.error(apiMessage(err, 'We could not prepare that download.'));
     } finally {
@@ -433,26 +458,29 @@ export default function DeliveryViewer() {
   }
 
   async function handleDownloadAll() {
+    if (busy === 'all' || downloadProgress) return;
+    const assets = deliveryAssets;
+    if (!assets.length) return;
+    let failed = 0;
     setBusy('all');
+    setDownloadProgress({ current: 0, total: assets.length, failed: 0 });
+    setDownloadNotice('Each photograph downloads separately. Android may ask you to allow multiple downloads. On iPhone or iPad, Safari may stop after one; use the individual Download buttons if that happens.');
     try {
-      const response = await api.get(
-        `/v1/deliveries/public/${delivery.publicId}/download-all`,
-        { headers: accessHeaders(delivery.publicId) }
-      );
-      const url = response.data.data.url;
-      const a = document.createElement('a');
-      a.href = url;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      a.download = `${(delivery.clientName || 'gallery').replace(/[^a-z0-9_-]/gi, '_')}-photographs.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      toast.info('Gallery download started. Check your browser downloads.');
-    } catch (err) {
-      toast.error(apiMessage(err, 'We could not prepare the full gallery.'));
+      for (let index = 0; index < assets.length; index += 1) {
+        try {
+          await requestPhotoDownload(assets[index], index);
+        } catch {
+          failed += 1;
+        }
+        setDownloadProgress({ current: index + 1, total: assets.length, failed });
+        if (index < assets.length - 1) await new Promise(resolve => window.setTimeout(resolve, 350));
+      }
+      const started = assets.length - failed;
+      setDownloadNotice(failed ? `${started} download${started === 1 ? '' : 's'} started. ${failed} need another tap.` : 'Downloads started one at a time. Check your Downloads or Files app.');
+      toast.info(failed ? `${started} downloads started. Try the remaining photographs individually.` : 'Downloads started. Check your Downloads or Files app.');
     } finally {
       setBusy('');
+      setDownloadProgress(null);
     }
   }
 
@@ -468,7 +496,7 @@ export default function DeliveryViewer() {
   if (locked) {
     return (
       <div className="vd-gate">
-        <img src={lockedBrand?.logoUrl || '/veylo/veylo-mark.svg'} alt="" />
+        <DeliveryBrandMark branding={lockedBrand} />
         <p>{lockedBrand?.name ? `${lockedBrand.name.toUpperCase()} · PRIVATE DELIVERY` : 'PRIVATE CLIENT DELIVERY'}</p>
         <h1>Enter the six-digit PIN.</h1>
         <span>The photographer protected this delivery. Use the PIN sent with your link.</span>
@@ -523,7 +551,9 @@ export default function DeliveryViewer() {
     onLike: handleLike,
     onDownload: handleDownload,
     onDownloadAll: handleDownloadAll,
-    busy
+    busy,
+    downloadNotice,
+    downloadProgress
   };
 
   const sharedProps = {
