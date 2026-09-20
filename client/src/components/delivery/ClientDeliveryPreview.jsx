@@ -135,6 +135,10 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
     </section>;
   }
 
+  if (!delivery?.assets?.length) {
+    return <section className="v-client-preview-empty"><strong>No photographs have been added yet.</strong><span>Add the finished files before reviewing the client experience.</span></section>;
+  }
+
   if (!experienceReady) {
     return <DeliveryReadiness delivery={delivery} onReady={media => { setPreloadedMedia(media); setExperienceReady(true); }} />;
   }

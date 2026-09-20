@@ -30,29 +30,28 @@ function StageHead({ eyebrow, title, copy }) {
 
 function DeliveryProgress({ type, value, stage, clientName, shootType }) {
   const milestoneSteps = [
-    { label: 'Reading your finished photographs', min: 0, max: 40 },
-    { label: 'Understanding the complete shoot', min: 40, max: 70 },
-    { label: 'Writing headlines and laying out the presentation', min: 70, max: 100 }
+    { label: 'Photographs checked', min: 0, max: 40 },
+    { label: 'Shoot details understood', min: 40, max: 70 },
+    { label: 'Presentation prepared', min: 70, max: 100 }
   ];
 
   const title =
-    type === 'analyze' ? 'Reading the Complete Shoot' :
-    type === 'direct' ? 'Creating Your Presentation' :
-    type === 'revise' ? 'Applying Your Changes' :
-    'Preparing Your Delivery';
+    type === 'analyze' ? 'Preparing the delivery' :
+    type === 'direct' ? 'Building the presentation' :
+    type === 'revise' ? 'Applying your edits' :
+    'Preparing the private link';
 
   const clampedVal = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
 
   return (
     <div className="v-delivery-progress-overlay" role="status" aria-live="polite">
       <div className="v-delivery-progress-card">
-        <div className="v-delivery-progress-glow" aria-hidden="true" />
         <div className="v-delivery-progress-header">
           <div className="v-delivery-progress-icon">
-            <LoaderCircle className="v-spin" size={24} />
+            <Clapperboard size={22} />
           </div>
           <div>
-            <small>VEYLO AT WORK</small>
+            <small>PREPARING YOUR DELIVERY</small>
             <h3>{title}</h3>
             <p>{clientName ? `${clientName} · ` : ''}{shootType || 'Finished photographs'}</p>
           </div>
@@ -66,8 +65,8 @@ function DeliveryProgress({ type, value, stage, clientName, shootType }) {
         </div>
 
         <div className="v-delivery-progress-status">
-          <span className="v-delivery-pulse-dot" />
-          <span>{stage || 'Processing with original resolution preserved…'}</span>
+          <LoaderCircle className="v-spin" size={16} aria-hidden="true" />
+          <span>{stage || 'Preparing the files without changing the originals.'}</span>
         </div>
 
         <div className="v-delivery-progress-milestones">
@@ -86,7 +85,7 @@ function DeliveryProgress({ type, value, stage, clientName, shootType }) {
         </div>
 
         <div className="v-delivery-progress-footer">
-          <small>Original photo retouching and color grades are 100% preserved. No pixels are altered.</small>
+          <small>Your original retouching and colour grade stay untouched. Veylo only prepares the presentation around your photographs.</small>
         </div>
       </div>
     </div>
@@ -118,6 +117,7 @@ export default function CreateDelivery({ user }) {
   const [params, setParams] = useSearchParams();
   const inputRef = useRef(null);
   const audioInputRef = useRef(null);
+  const returnStepRef = useRef(2);
   const [step, setStep] = useState(1);
   const [delivery, setDelivery] = useState(null);
   const [limits, setLimits] = useState({ photosPerDelivery: user?.plan === 'pro' ? 500 : 100 });
@@ -149,6 +149,7 @@ export default function CreateDelivery({ user }) {
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [selectedFormat, setSelectedFormat] = useState(null);
   const [draggingPhotos, setDraggingPhotos] = useState(false);
+  const [uploadQueue, setUploadQueue] = useState([]);
 
   const soundtrackCategories = useMemo(() => ['all', ...new Set(curatedSoundtracks.map(track => track.category))], [curatedSoundtracks]);
   const filteredSoundtracks = useMemo(() => {
@@ -207,12 +208,21 @@ export default function CreateDelivery({ user }) {
     event.preventDefault();
     setBusy('draft'); setError('');
     try {
+      const existingDelivery = delivery;
+      const detailsChanged = Boolean(existingDelivery) && (
+        existingDelivery.clientName !== brief.clientName
+        || existingDelivery.shootType !== brief.shootType
+        || existingDelivery.brief !== brief.brief
+      );
       const response = delivery
         ? await api.patch(`/v1/deliveries/${delivery._id}/details`, brief)
         : await api.post('/v1/deliveries', brief);
-      setDelivery(response.data.data);
+      const nextDelivery = existingDelivery && !detailsChanged
+        ? { ...response.data.data, assets: existingDelivery.assets, creativeDirection: existingDelivery.creativeDirection || response.data.data.creativeDirection, narration: existingDelivery.narration }
+        : response.data.data;
+      setDelivery(nextDelivery);
       setParams({ draft: response.data.data._id }, { replace: true });
-      setStep(2);
+      setStep(existingDelivery && !detailsChanged ? Math.max(2, returnStepRef.current) : 2);
     } catch (requestError) { setError(apiMessage(requestError, 'We could not start this delivery.')); }
     finally { setBusy(''); }
   }
@@ -233,13 +243,23 @@ export default function CreateDelivery({ user }) {
     const remaining = limits.photosPerDelivery - (delivery?.assets?.length || 0);
     if (!valid.length) return toast.error('Choose JPEG, PNG, or WebP photographs up to 50 MB each.');
     if (valid.length > remaining) return toast.error(`You can add ${remaining} more photograph${remaining === 1 ? '' : 's'} to this delivery.`);
+    setUploadQueue(valid.map(file => ({ name: file.name, size: file.size, status: 'starting', progress: 0 })));
     setBusy('upload'); setError(''); setProgress({ value: 0, stage: `Uploading ${valid.length} finished photograph${valid.length === 1 ? '' : 's'}…` });
     try {
-      await uploadDeliveryPhotos(delivery._id, valid, value => setProgress(current => ({ ...current, value })));
+      await uploadDeliveryPhotos(delivery._id, valid, (value, meta) => {
+        setProgress(current => ({ ...current, value }));
+        if (meta?.index === undefined) return;
+        setUploadQueue(current => current.map((item, index) => index === meta.index
+          ? { ...item, status: meta.status || item.status, progress: meta.total ? Math.round((meta.loaded / meta.total) * 100) : item.progress }
+          : item));
+      });
       const current = await refreshDelivery();
       toast.success(`${valid.length} photograph${valid.length === 1 ? '' : 's'} added`);
       setProgress({ value: 100, stage: `${current.assets.length} photographs ready` });
-    } catch (requestError) { setError(apiMessage(requestError, requestError.message || 'We could not upload those photographs.')); }
+    } catch (requestError) {
+      setUploadQueue(current => current.map(item => item.status === 'complete' ? item : { ...item, status: 'failed' }));
+      setError(apiMessage(requestError, requestError.message || 'We could not upload those photographs.'));
+    }
     finally { setBusy(''); if (inputRef.current) inputRef.current.value = ''; }
   }
 
@@ -247,7 +267,7 @@ export default function CreateDelivery({ user }) {
     setBusy('analyze'); setError(''); setFailedJob(null); setProgress({ value: 2, stage: 'Preparing the photographs…' });
     try {
       const response = await api.post(`/v1/deliveries/${delivery._id}/analyze`);
-      await waitForJob(delivery._id, response.data.data._id, job => setProgress({ value: job.progress, stage: job.stage === 'reading-photographs' ? 'Reading the complete shoot…' : 'Comparing the eight delivery formats…' }));
+      await waitForJob(delivery._id, response.data.data._id, job => setProgress({ value: job.progress, stage: job.stage === 'reading-photographs' ? 'Checking every finished photograph…' : 'Finding the right way to present the set…' }));
       await refreshDelivery(); setStep(3);
     } catch (requestError) { setError(requestError.message || apiMessage(requestError, 'Veylo could not analyze this shoot.')); if (requestError.jobId) setFailedJob({ id: requestError.jobId, type: requestError.jobType }); }
     finally { setBusy(''); }
@@ -257,7 +277,7 @@ export default function CreateDelivery({ user }) {
     setBusy('direct'); setError(''); setFailedJob(null); setProgress({ value: 2, stage: `Directing the ${formatName(format)}…` });
     try {
       const response = await api.post(`/v1/deliveries/${delivery._id}/direct`, { format });
-      await waitForJob(delivery._id, response.data.data._id, job => setProgress({ value: job.progress, stage: job.stage === 'setting-direction' ? 'Setting the colors, type, and structure…' : 'Directing every photograph…' }));
+      await waitForJob(delivery._id, response.data.data._id, job => setProgress({ value: job.progress, stage: job.stage === 'setting-direction' ? 'Choosing the type, colour, and structure…' : 'Placing every photograph in order…' }));
       await refreshDelivery(); setStep(4);
     } catch (requestError) { setError(requestError.message || apiMessage(requestError, 'Veylo could not direct this format.')); if (requestError.jobId) setFailedJob({ id: requestError.jobId, type: requestError.jobType }); }
     finally { setBusy(''); }
@@ -497,7 +517,7 @@ export default function CreateDelivery({ user }) {
     <div className="v-create-glow" aria-hidden="true" />
     <header className="v-create-top"><div><Link to="/dashboard"><ArrowLeft size={16} />Back to deliveries</Link><span>{delivery ? `${brief.clientName} · ${brief.shootType}` : 'New client delivery'}</span></div><small>{limits.photosPerDelivery} photos per delivery · Veylo {user?.plan === 'pro' ? 'Pro' : 'Free'}</small></header>
     <div className="v-create-layout">
-      <aside className="v-create-steps" aria-label="Creation progress">{steps.map((label, index) => <button key={label} type="button" className={`${step === index + 1 ? 'is-current' : ''} ${step > index + 1 ? 'is-complete' : ''}`} onClick={() => { if (index + 1 < step) setStep(index + 1); }} disabled={index + 1 > step}><span>{step > index + 1 ? <Check size={14} /> : String(index + 1).padStart(2, '0')}</span><small>{label}</small></button>)}</aside>
+       <aside className="v-create-steps" aria-label="Creation progress">{steps.map((label, index) => <button key={label} type="button" className={`${step === index + 1 ? 'is-current' : ''} ${step > index + 1 ? 'is-complete' : ''}`} onClick={() => { if (index + 1 < step) { if (index + 1 === 1) returnStepRef.current = step; setStep(index + 1); } }} disabled={index + 1 > step}><span>{step > index + 1 ? <Check size={14} /> : String(index + 1).padStart(2, '0')}</span><small>{label}</small></button>)}</aside>
       <main className="v-create-workspace">
         {error && <div className="v-create-error" role="alert"><span>{error}{failedJob && <button type="button" className="v-create-retry" onClick={retryFailedJob} disabled={Boolean(busy)}><RefreshCw size={14} />Retry this step</button>}</span><button type="button" onClick={() => { setError(''); setFailedJob(null); }}><X size={16} /></button></div>}
         <AnimatePresence mode="wait">
@@ -538,6 +558,11 @@ export default function CreateDelivery({ user }) {
             <StageHead eyebrow="02 / Finished photographs" title="Add the files your client will receive." copy={`Upload the final edited photographs. Veylo will study the complete set without changing your retouching or colour grade.`} />
             <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={event => addPhotos(event.target.files)} />
             <button type="button" className={`v-create-drop${draggingPhotos ? ' is-dragging' : ''}`} onClick={() => inputRef.current?.click()} onDragEnter={event => { event.preventDefault(); setDraggingPhotos(true); }} onDragOver={event => { event.preventDefault(); setDraggingPhotos(true); }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget)) setDraggingPhotos(false); }} onDrop={event => { event.preventDefault(); setDraggingPhotos(false); if (!busy) addPhotos(event.dataTransfer.files); }} disabled={Boolean(busy)}><span><Upload size={25} /></span><strong>{busy === 'upload' ? progress.stage : draggingPhotos ? 'Drop the finished photographs here' : 'Choose or drop finished photographs'}</strong><small>JPEG, PNG, or WebP · up to 50 MB each · {delivery?.assets?.length || 0} of {limits.photosPerDelivery}</small>{busy === 'upload' && <i><b style={{ transform: `scaleX(${progress.value / 100})` }} /></i>}</button>
+            {busy === 'upload' && uploadQueue.length > 0 && <section className="v-upload-queue" aria-live="polite" aria-label="Upload progress">
+              <header><strong>Sending your photographs</strong><span>{uploadQueue.filter(item => item.status === 'complete').length} of {uploadQueue.length} confirmed</span></header>
+              <div>{uploadQueue.slice(0, 8).map((item, index) => <article key={`${item.name}-${index}`} className={`is-${item.status}`}><span>{item.status === 'complete' ? <Check size={14} /> : item.status === 'failed' ? <X size={14} /> : <LoaderCircle className="v-spin" size={14} />}</span><div><strong title={item.name}>{item.name}</strong><small>{item.status === 'complete' ? 'Added to this delivery' : item.status === 'failed' ? 'Upload stopped — try again' : item.status === 'starting' ? 'Preparing upload' : `Uploading ${item.progress}%`}</small></div><b>{item.status === 'complete' ? 'Done' : `${item.progress}%`}</b></article>)}</div>
+              {uploadQueue.length > 8 && <small className="v-upload-queue-more">Showing the first 8 files while the rest continue.</small>}
+            </section>}
             {limits.personalStorageBytes > 0 && <button type="button" className="v-create-library-open" onClick={openLibrary} disabled={Boolean(busy)}><Image size={17} /><span><strong>Choose from your Pro library</strong><small>Reuse finished photographs without uploading them from your device again.</small></span><ArrowRight size={16} /></button>}
             {orderedAssets.length > 0 && <div className="v-create-thumbs">{orderedAssets.slice(0, 24).map((asset, index) => <div key={asset.assetId}><img src={asset.thumbnailUrl || asset.url} alt="" /><span>{String(index + 1).padStart(2, '0')}</span><button type="button" onClick={() => removePhoto(asset.assetId)} disabled={Boolean(busy)} aria-label={`Remove photograph ${index + 1}`}><Trash2 size={13} /></button></div>)}{orderedAssets.length > 24 && <div className="v-create-more">+{orderedAssets.length - 24}</div>}</div>}
             <div className="v-create-footer"><button type="button" onClick={() => setStep(1)}><ArrowLeft size={16} />Edit shoot details</button><button type="button" className="v-create-primary" onClick={analyzeShoot} disabled={!orderedAssets.length || Boolean(busy)}>{busy === 'analyze' ? progress.stage : 'Analyze the complete shoot'}{busy === 'analyze' ? <LoaderCircle className="v-spin" size={17} /> : <ArrowRight size={17} />}</button></div>

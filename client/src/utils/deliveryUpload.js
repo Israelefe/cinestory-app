@@ -14,8 +14,16 @@ async function pool(items, concurrency, task) {
 }
 
 export async function uploadDeliveryPhotos(deliveryId, files, onProgress = () => {}) {
+  const totalBytes = files.reduce((sum, file) => sum + Number(file.size || 0), 0) || files.length;
+  const loadedBytes = new Array(files.length).fill(0);
+  const report = (index, loaded) => {
+    loadedBytes[index] = Math.max(0, Math.min(Number(files[index].size || 0), loaded));
+    const uploaded = loadedBytes.reduce((sum, value) => sum + value, 0);
+    onProgress(Math.round((uploaded / totalBytes) * 100), { index, loaded: loadedBytes[index], total: Number(files[index].size || 0) });
+  };
   let completed = 0;
-  return pool(files, 3, async file => {
+  return pool(files, 3, async (file, index) => {
+    onProgress(Math.round((loadedBytes.reduce((sum, value) => sum + value, 0) / totalBytes) * 100), { index, file, status: 'starting', loaded: 0, total: file.size });
     const signResponse = await api.post(`/v1/deliveries/${deliveryId}/uploads/sign`);
     const signature = signResponse.data.data;
     const form = new FormData();
@@ -30,13 +38,38 @@ export async function uploadDeliveryPhotos(deliveryId, files, onProgress = () =>
     form.append('unique_filename', String(signature.unique_filename));
     if (signature.allowed_formats) form.append('allowed_formats', signature.allowed_formats.join(','));
     if (signature.eager) form.append('eager', signature.eager);
-    const response = await fetch(`https://api.cloudinary.com/v1_1/${signature.cloudName}/image/upload`, { method: 'POST', body: form });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result?.error?.message || `Upload failed for ${file.name}.`);
-    const confirmed = await api.post(`/v1/deliveries/${deliveryId}/uploads/confirm`, { publicId: result.public_id, version: result.version, signature: result.signature, resourceType: 'image', originalFilename: file.name });
+    const result = await uploadToCloudinary(`https://api.cloudinary.com/v1_1/${signature.cloudName}/image/upload`, form, progress => {
+      const transferProgress = Math.min(progress, Math.max(0, file.size * 0.98));
+      report(index, transferProgress);
+      onProgress(Math.round((loadedBytes.reduce((sum, value) => sum + value, 0) / totalBytes) * 100), { index, file, status: 'uploading', loaded: transferProgress, total: file.size });
+    });
+    const response = result.response;
+    const payload = result.body;
+    if (!response.ok) throw new Error(payload?.error?.message || `Upload failed for ${file.name}.`);
+    const confirmed = await api.post(`/v1/deliveries/${deliveryId}/uploads/confirm`, { publicId: payload.public_id, version: payload.version, signature: payload.signature, resourceType: 'image', originalFilename: file.name });
+    report(index, file.size);
     completed += 1;
-    onProgress(Math.round((completed / files.length) * 100));
+    onProgress(Math.round((loadedBytes.reduce((sum, value) => sum + value, 0) / totalBytes) * 100), { index, file, status: 'complete', loaded: file.size, total: file.size, completed, count: files.length });
     return confirmed.data.data;
+  });
+}
+
+function uploadToCloudinary(url, form, onProgress) {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('POST', url);
+    request.timeout = 120000;
+    request.responseType = 'json';
+    request.upload.onprogress = event => {
+      if (event.lengthComputable) onProgress(event.loaded);
+    };
+    request.onerror = () => reject(new Error('The upload connection was interrupted.'));
+    request.ontimeout = () => reject(new Error('The upload took too long.'));
+    request.onload = () => {
+      const body = request.response || (() => { try { return JSON.parse(request.responseText || '{}'); } catch { return {}; } })();
+      resolve({ response: request, body });
+    };
+    request.send(form);
   });
 }
 

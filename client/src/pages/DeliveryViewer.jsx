@@ -48,42 +48,45 @@ function displayAssetUrl(asset, targetWidth = 960) {
   return (candidates.find(candidate => candidate.width >= targetWidth) || candidates.at(-1))?.url || asset?.thumbnailUrl || asset?.url || '';
 }
 
-async function preloadBlob(url, cleanup, kind) {
+async function preloadBlob(url, cleanup, kind, maxAttempts = 3) {
   if (!url) return { ok: false, url: '' };
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), kind === 'audio' ? 120000 : 60000);
-  let objectUrl = '';
-  try {
-    const response = await fetch(url, { cache: 'force-cache', signal: controller.signal });
-    if (!response.ok) return { ok: false, url: '' };
-    const blob = await response.blob();
-    if (!blob.size) return { ok: false, url: '' };
-    objectUrl = URL.createObjectURL(blob);
-    if (kind === 'image') {
-      const image = new window.Image();
-      image.decoding = 'async';
-      image.src = objectUrl;
-      if (image.decode) await image.decode();
-    } else {
-      const audio = new Audio();
-      audio.preload = 'auto';
-      audio.src = objectUrl;
-      await new Promise((resolve, reject) => {
-        const done = () => { audio.oncanplay = null; audio.oncanplaythrough = null; audio.onerror = null; resolve(); };
-        audio.oncanplay = done;
-        audio.oncanplaythrough = done;
-        audio.onerror = reject;
-        audio.load();
-      });
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), kind === 'audio' ? 120000 : 60000);
+    let objectUrl = '';
+    try {
+      const response = await fetch(url, { cache: attempt ? 'no-store' : 'force-cache', signal: controller.signal });
+      if (!response.ok) throw new Error(`Media request returned ${response.status}.`);
+      const blob = await response.blob();
+      if (!blob.size) throw new Error('The media file was empty.');
+      objectUrl = URL.createObjectURL(blob);
+      if (kind === 'image') {
+        const image = new window.Image();
+        image.decoding = 'async';
+        image.src = objectUrl;
+        if (image.decode) await image.decode();
+      } else {
+        const audio = new Audio();
+        audio.preload = 'auto';
+        audio.src = objectUrl;
+        await new Promise((resolve, reject) => {
+          const done = () => { audio.oncanplay = null; audio.oncanplaythrough = null; audio.onerror = null; resolve(); };
+          audio.oncanplaythrough = done;
+          audio.oncanplay = done;
+          audio.onerror = reject;
+          audio.load();
+        });
+      }
+      cleanup.push(() => URL.revokeObjectURL(objectUrl));
+      return { ok: true, url: objectUrl };
+    } catch {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      if (attempt + 1 < maxAttempts) await new Promise(resolve => window.setTimeout(resolve, 450 * (attempt + 1)));
+    } finally {
+      window.clearTimeout(timeout);
     }
-    cleanup.push(() => URL.revokeObjectURL(objectUrl));
-    return { ok: true, url: objectUrl };
-  } catch {
-    if (objectUrl) URL.revokeObjectURL(objectUrl);
-    return { ok: false, url: '' };
-  } finally {
-    window.clearTimeout(timeout);
   }
+  return { ok: false, url: '' };
 }
 
 function preloadImage(url, cleanup) {
@@ -110,6 +113,7 @@ export function DeliveryReadiness({ delivery, onReady }) {
   const total = Math.max(1, totals.photo + totals.soundtrack + totals.narration);
   const [loaded, setLoaded] = useState({ photo: 0, soundtrack: 0, narration: 0, total: 0, failed: 0 });
   const [blocked, setBlocked] = useState(false);
+  const [failedItems, setFailedItems] = useState([]);
   const [attempt, setAttempt] = useState(0);
   const openedRef = useRef(false);
   const preloadedRef = useRef({ assets: {}, soundtrack: '', narration: '' });
@@ -124,14 +128,16 @@ export function DeliveryReadiness({ delivery, onReady }) {
     const cleanup = [];
     let active = true;
     let transferred = false;
+    openedRef.current = false;
     const preloaded = { assets: {}, soundtrack: '', narration: '' };
     preloadedRef.current = preloaded;
     setLoaded({ photo: 0, soundtrack: 0, narration: 0, total: 0, failed: 0 });
     setBlocked(false);
+    setFailedItems([]);
     const tasks = [
-      ...(delivery.soundtrack?.url ? [{ kind: 'soundtrack', run: () => preloadAudio(apiMediaUrl(delivery.soundtrack.url), cleanup) }] : []),
-      ...(delivery.narration?.url ? [{ kind: 'narration', run: () => preloadAudio(apiMediaUrl(delivery.narration.url), cleanup) }] : []),
-      ...sortedAssets.map(asset => ({ kind: 'photo', key: asset.assetId, run: () => preloadImage(apiMediaUrl(asset.url), cleanup) }))
+      ...(delivery.soundtrack?.url ? [{ kind: 'soundtrack', label: 'Soundtrack', run: () => preloadAudio(apiMediaUrl(delivery.soundtrack.url), cleanup) }] : []),
+      ...(delivery.narration?.url ? [{ kind: 'narration', label: 'Narration', run: () => preloadAudio(apiMediaUrl(delivery.narration.url), cleanup) }] : []),
+      ...sortedAssets.map((asset, index) => ({ kind: 'photo', key: asset.assetId, label: asset.originalFilename || asset.filename || `Photograph ${index + 1}`, run: () => preloadImage(apiMediaUrl(asset.url), cleanup) }))
     ];
 
     if (!tasks.length) {
@@ -149,6 +155,7 @@ export function DeliveryReadiness({ delivery, onReady }) {
           if (ok && task.kind === 'photo') preloaded.assets[task.key] = result.url;
           if (ok && task.kind === 'soundtrack') preloaded.soundtrack = result.url;
           if (ok && task.kind === 'narration') preloaded.narration = result.url;
+          if (!ok) setFailedItems(current => [...current.filter(item => item !== task.label), task.label]);
           results.push({ kind: task.kind, ok });
           setLoaded(current => ({ ...current, [task.kind]: current[task.kind] + (ok ? 1 : 0), total: current.total + (ok ? 1 : 0), failed: current.failed + (ok ? 0 : 1) }));
         }
@@ -197,7 +204,7 @@ export function DeliveryReadiness({ delivery, onReady }) {
         {Boolean(totals.soundtrack) && <li className={loaded.soundtrack >= totals.soundtrack ? 'is-ready' : ''}>{loaded.soundtrack >= totals.soundtrack ? <Check size={15} /> : <Music2 size={15} />}<span>Soundtrack</span></li>}
         {Boolean(totals.narration) && <li className={loaded.narration >= totals.narration ? 'is-ready' : ''}>{loaded.narration >= totals.narration ? <Check size={15} /> : <Mic2 size={15} />}<span>Narration</span></li>}
       </ul>
-      {blocked && <div className="vd-readiness-slow"><p>We could not finish every file, so the delivery is still locked. Try again when your connection is steadier.</p><button type="button" onClick={() => setAttempt(value => value + 1)}><RefreshCw size={16} />Try loading again</button></div>}
+      {blocked && <div className="vd-readiness-slow"><p>We could not finish {failedItems.length ? failedItems.join(', ') : 'every file'} yet. Nothing is opened until the complete delivery is ready.</p><button type="button" onClick={() => setAttempt(value => value + 1)}><RefreshCw size={16} />Try loading again</button></div>}
     </section>
   </main>;
 }
@@ -220,6 +227,35 @@ export default function DeliveryViewer() {
   const soundtrackRef = useRef(null);
   const narrationRef = useRef(null);
   const narrationInteractionRef = useRef(false);
+
+  const toggleAudio = async kind => {
+    const selected = kind === 'narration' ? narrationRef.current : soundtrackRef.current;
+    const other = kind === 'narration' ? soundtrackRef.current : narrationRef.current;
+    if (!selected) return;
+    if (audioState.playing === kind || audioState.loading === kind) {
+      selected.pause();
+      if (kind === 'narration' && soundtrackRef.current && !soundtrackRef.current.paused) {
+        fadeAudioVolume(soundtrackRef.current, 1);
+        setAudioState({ playing: 'soundtrack', loading: '' });
+      } else {
+        setAudioState({ playing: '', loading: '' });
+      }
+      return;
+    }
+    try {
+      if (kind === 'narration' && soundtrackRef.current && !soundtrackRef.current.paused) {
+        fadeAudioVolume(soundtrackRef.current, .16, 520);
+      } else {
+        other?.pause();
+      }
+      setAudioState(current => ({ ...current, loading: kind }));
+      await selected.play();
+      setAudioState({ playing: kind, loading: '' });
+    } catch {
+      setAudioState({ playing: '', loading: '' });
+      toast.info(`The ${kind === 'narration' ? 'narration' : 'music'} did not load. Check your connection and try again.`);
+    }
+  };
 
   async function load() {
     setLoading(true);
@@ -320,35 +356,6 @@ export default function DeliveryViewer() {
       setLoading(false);
     }
   }
-
-  const toggleAudio = async kind => {
-    const selected = kind === 'narration' ? narrationRef.current : soundtrackRef.current;
-    const other = kind === 'narration' ? soundtrackRef.current : narrationRef.current;
-    if (!selected) return;
-    if (audioState.playing === kind || audioState.loading === kind) {
-      selected.pause();
-      if (kind === 'narration' && soundtrackRef.current && !soundtrackRef.current.paused) {
-        fadeAudioVolume(soundtrackRef.current, 1);
-        setAudioState({ playing: 'soundtrack', loading: '' });
-      } else {
-        setAudioState({ playing: '', loading: '' });
-      }
-      return;
-    }
-    try {
-      if (kind === 'narration' && soundtrackRef.current && !soundtrackRef.current.paused) {
-        fadeAudioVolume(soundtrackRef.current, .16, 520);
-      } else {
-        other?.pause();
-      }
-      setAudioState(current => ({ ...current, loading: kind }));
-      await selected.play();
-      setAudioState({ playing: kind, loading: '' });
-    } catch {
-      setAudioState({ playing: '', loading: '' });
-      toast.info(`The ${kind === 'narration' ? 'narration' : 'music'} did not load. Check your connection and try again.`);
-    }
-  };
 
   const handleAudioWaiting = kind => {
     setAudioState(current => (
@@ -491,6 +498,10 @@ export default function DeliveryViewer() {
         <span>{error}</span>
       </div>
     );
+  }
+
+  if (!Array.isArray(delivery.assets) || delivery.assets.length === 0) {
+    return <div className="vd-state"><Image size={28} /><strong>No photographs are available in this view.</strong><span>The photographer's access link does not include any finished photographs.</span></div>;
   }
 
   if (!experienceReady) {

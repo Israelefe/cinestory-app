@@ -362,7 +362,7 @@ const voiceRules = `You are writing directly to the client. Your PRIMARY source 
 
 STRICT RULES:
 1. Every headline and caption must celebrate the OCCASION and the CLIENT. Ask yourself: "What does this shoot mean to this person?" That answer drives every word you write.
-2. ABSOLUTELY NEVER describe what you see in the image. Never write alt-text. Banned phrases: "A photograph of", "The subject is wearing", "Visible in this image", "captured in", "posing against", "standing in", "studio backdrop", "floral arrangement", "emerald dress", "wearing a", "holding a". If it sounds like you are describing a photo to a blind person, delete it immediately.
+2. Use the supplied visual analysis to anchor each caption in the actual moment, people, setting, or detail. Do not write mechanical alt-text, camera jargon, or a detached inventory of pixels. A specific visual detail is welcome when it helps explain why the frame matters to this client or event.
 3. Write short, confident, warm. Sound like a real human speaking to a friend about their big day — not a robot cataloguing visual data.
 4. Never invent names, relationships, or events the photographer did not mention.
 5. Never use AI clichés: elevate, unlock, seamlessly, tapestry, symphony, beacon, testament, crescendo, delve, journey, essence, timeless, radiance, pure grace, grand finale, curated.
@@ -610,8 +610,10 @@ Return one frame per photograph in the supplied order.`;
     });
   };
 
-  try {
-    const result = await completion({
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const result = await completion({
       model: provider.creativeModel,
       messages: [
         {
@@ -643,7 +645,10 @@ Assign every photograph to one existing section (${validSectionIds.join(', ')}).
             deliveryDirection: minimalDirection,
             photographerRevision: revisionInstruction,
             currentFrames: (currentFrames || []).slice(0, 20),
-            photographs: minimalInsights
+            photographs: minimalInsights,
+            completenessInstruction: attempt
+              ? `A previous response was incomplete or unusable. Return exactly ${expectedAssetIds.length} unique frames, one for each assetId, in this exact order: ${expectedAssetIds.join(', ')}. Do not omit, merge, or duplicate photographs.`
+              : `Return exactly ${expectedAssetIds.length} unique frames, one for each supplied assetId.`
           })
         }
       ],
@@ -652,11 +657,14 @@ Assign every photograph to one existing section (${validSectionIds.join(', ')}).
       schemaHint: schemaInstructions
     });
 
-    return { frames: alignFrames(result?.frames || []) };
-  } catch (error) {
-    console.warn('[createFrameBatch] Directing model did not return a complete captioned batch:', error.message);
-    throw error;
+      return { frames: alignFrames(result?.frames || []) };
+    } catch (error) {
+      lastError = error;
+      if (['AI_NOT_CONFIGURED', 'MODEL_NOT_AVAILABLE'].includes(error?.code) || attempt >= 2) break;
+      console.warn(`[createFrameBatch] Caption batch attempt ${attempt + 1} did not complete; retrying the complete batch:`, error.message);
+    }
   }
+  throw lastError;
 }
 
 export async function createNarrationScript({ clientName, shootType, brief, direction, format }) {

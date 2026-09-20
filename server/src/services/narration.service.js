@@ -121,6 +121,33 @@ function timingToken(value) {
   return String(value || '').toLocaleLowerCase('en').replace(/[^\p{L}\p{N}]+/gu, '');
 }
 
+function tokenDistance(left, right) {
+  const a = timingToken(left);
+  const b = timingToken(right);
+  if (!a || !b) return Number.POSITIVE_INFINITY;
+  const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= a.length; row += 1) {
+    let diagonal = previous[0];
+    previous[0] = row;
+    for (let column = 1; column <= b.length; column += 1) {
+      const above = previous[column];
+      const cost = a[row - 1] === b[column - 1] ? 0 : 1;
+      previous[column] = Math.min(previous[column] + 1, previous[column - 1] + 1, diagonal + cost);
+      diagonal = above;
+    }
+  }
+  return previous[b.length];
+}
+
+function timingTokenMatches(expected, actual) {
+  const left = timingToken(expected);
+  const right = timingToken(actual);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  if (left.length >= 4 && (left.startsWith(right) || right.startsWith(left))) return true;
+  return tokenDistance(left, right) <= Math.max(1, Math.floor(Math.max(left.length, right.length) * 0.24));
+}
+
 export function timedSegments(segments, words) {
   let cursor = 0;
   return segments.map(segment => {
@@ -130,14 +157,28 @@ export function timedSegments(segments, words) {
     let last = null;
     for (const target of targetWords) {
       let match = -1;
-      for (let index = cursor; index < Math.min(words.length, cursor + 5); index += 1) {
+      const searchEnd = Math.min(words.length, cursor + Math.max(16, targetWords.length + 8));
+      // Prefer exact matches so repeated short words do not drift the cue.
+      for (let index = cursor; index < searchEnd; index += 1) {
         if (timingToken(words[index].word) === target) { match = index; break; }
       }
-      if (match < 0) throw Object.assign(new Error(`Deepgram timing could not be aligned to caption ${segment.id}.`), { code: 'NARRATION_TIMING_FAILED' });
+      // Deepgram can spell a name, contraction, or inflected word slightly
+      // differently even when the generated audio is correct. Use a bounded
+      // fuzzy match, but never invent a timestamp from word counts.
+      if (match < 0) {
+        for (let index = cursor; index < searchEnd; index += 1) {
+          if (timingTokenMatches(target, words[index].word)) { match = index; break; }
+        }
+      }
+      // A missed transcript token should not invalidate the whole delivery.
+      // The segment still receives boundaries from the neighbouring measured
+      // words. We only fail when Deepgram measured no word for the caption.
+      if (match < 0) continue;
       if (first === null) first = match;
       last = match;
       cursor = match + 1;
     }
+    if (first === null || last === null) throw Object.assign(new Error(`Deepgram timing could not be aligned to caption ${segment.id}.`), { code: 'NARRATION_TIMING_FAILED' });
     return {
       ...segment,
       startSec: Number(words[first].start.toFixed(3)),
@@ -198,9 +239,11 @@ export async function generateNarration(delivery) {
       endSec: Number((segment.endSec + offset).toFixed(3))
     }));
     measuredSegments.push(...chunkSegments);
-    const measuredDuration = Number.isFinite(timing.duration) && timing.duration > 0
-      ? timing.duration
-      : (timing.words.at(-1)?.end || 0);
+    const lastWordEnd = Number(timing.words.at(-1)?.end || 0);
+    const measuredDuration = Math.max(
+      lastWordEnd,
+      Number.isFinite(timing.duration) && timing.duration > 0 ? timing.duration : 0
+    );
     offset += Math.max(0, measuredDuration);
     audioBuffers.push(chunkAudio);
   }

@@ -64,8 +64,11 @@ async function direct(job, delivery) {
   }
   const sectionIds = new Set(direction.sections.map(section => section.id));
   const defaultSectionId = direction.sections[0]?.id || 'section-1';
-  for (let offset = job.cursor || 0; offset < insights.length; offset += 20) {
-    const batch = insights.slice(offset, offset + 20);
+  // Keep caption requests small enough that the model can return every frame;
+  // a twenty-photo response was previously truncated halfway through.
+  const frameBatchSize = 8;
+  for (let offset = job.cursor || 0; offset < insights.length; offset += frameBatchSize) {
+    const batch = insights.slice(offset, offset + frameBatchSize);
     const result = await createFrameBatch({ format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction, imageInsights: batch, revisionInstruction: job.input?.instruction || '', currentFrames: job.type === 'revise' ? (delivery.creativeDirection?.frames || []).filter(frame => batch.some(item => item.assetId === frame.assetId)) : [] });
     const frameMap = new Map((result.frames || []).map(frame => [frame.assetId, frame]));
     const alignedFrames = batch.map((item, index) => {

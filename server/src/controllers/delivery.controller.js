@@ -165,14 +165,23 @@ export async function updateDeliveryDetails(req, res) {
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This draft is not available for editing.' });
+    const detailsChanged = delivery.clientName !== parsed.data.clientName
+      || delivery.shootType !== parsed.data.shootType
+      || delivery.brief !== parsed.data.brief;
     delivery.clientName = parsed.data.clientName;
     delivery.shootType = parsed.data.shootType;
     delivery.brief = parsed.data.brief;
-    delivery.collectionAnalysis = undefined;
-    delivery.formatRecommendations = [];
-    delivery.creativeDirection = undefined;
-    delivery.reviewApprovedAt = undefined;
-    delivery.status = 'draft';
+    // Returning to the brief is navigation, not a request to throw away work.
+    // Only a real change to the photographer's context requires fresh analysis
+    // and direction; unchanged details preserve the review the photographer was
+    // already working on.
+    if (detailsChanged) {
+      delivery.collectionAnalysis = undefined;
+      delivery.formatRecommendations = [];
+      delivery.creativeDirection = undefined;
+      delivery.reviewApprovedAt = undefined;
+      delivery.status = 'draft';
+    }
     await delivery.save();
     const data = delivery.toObject();
     data.assets = delivery.assets.map(ownerAsset);
