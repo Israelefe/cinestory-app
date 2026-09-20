@@ -32,6 +32,7 @@ assert.match(viewer, /response = await fetch\(url/, 'Readiness must download eac
 assert.match(viewer, /URL\.createObjectURL\(blob\)/, 'Readiness must reuse downloaded media in the viewer');
 assert.match(viewer, /current\[task\.kind\] \+ \(ok \? 1 : 0\)/, 'Failed media must not count as ready');
 assert.match(viewer, /playbackDelivery/, 'Viewer must render the same preloaded media it checked');
+assert.match(await read('src/pages/StoryViewer.jsx'), /url\.protocol === 'blob:'/ , 'Photo Story must accept the blob URLs produced by the full-media readiness gate');
 assert.match(viewer, /Try loading again/, 'Viewer must offer a retry instead of opening with missing files');
 assert.match(viewer, /onTimeUpdate={syncNarrationCue}/, 'Narration must expose the approved caption that is currently being read');
 assert.match(viewer, /READING THE APPROVED CAPTION/, 'Non-story formats must show the narration cue in sync with captions');

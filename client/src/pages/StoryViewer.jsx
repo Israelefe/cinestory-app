@@ -26,7 +26,7 @@ function getFontFamily(type, fallback = "'Playfair Display', Georgia, serif") {
 
 function mediaUrl(value) {
  if (typeof value !== 'string' || !value) return '';
- try { const url = new URL(value, window.location.origin); return url.protocol === 'https:' || (url.origin === window.location.origin && url.protocol === 'http:') ? url.href : ''; } catch { return ''; }
+ try { const url = new URL(value, window.location.origin); return url.protocol === 'blob:' || url.protocol === 'https:' || (url.origin === window.location.origin && url.protocol === 'http:') ? url.href : ''; } catch { return ''; }
 }
 
 const volumeRamps = new WeakMap();
