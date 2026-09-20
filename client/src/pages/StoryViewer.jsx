@@ -198,7 +198,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
         url: asset.url, // Original photographer upload quality preserved
         thumbnailUrl: asset.thumbnailUrl || asset.url,
         srcSet: asset.srcSet,
-        caption: frame.caption || frame.headline || '',
+        caption: frame.caption || frame.headline || `${deliveryProp.clientName || 'This collection'} — a finished moment from the ${deliveryProp.shootType || 'shoot'}.`,
         chapterTitle: frame.headline || '',
         duration: Math.max(2, Number(frame.duration) || 5.5),
         motion: frame.motion || 'zoom_in',

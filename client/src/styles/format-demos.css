@@ -136,6 +136,17 @@
 @media(max-width:374px){.fd-album-cover>section{bottom:28px}.fd-album-cover>section h1{font-size:42px}.fd-album-cover>section p{font-size:10px}.fd-album-reader-head>span:last-child{display:none}.fd-album-reader-head{grid-template-columns:1fr auto}.fd-album-spread.is-opening>article{padding:15px}.fd-album-spread.is-opening article h1{font-size:21px}.fd-album-spread.is-opening article small{left:15px;bottom:8px}.fd-album-spread.is-finale figure.is-mother{height:35%}.fd-album-spread.is-finale article h1{font-size:20px}.fd-album-controls>button span{display:none}.fd-album-sound span{display:none}.fd-album-sound{width:40px;padding:0}}
 @media(max-height:700px){.fd-album-cover>section h1{font-size:44px}.fd-album-cover>section p{display:none}.fd-album-cover>section button{margin-top:14px}.fd-album-reader{grid-template-rows:36px minmax(0,1fr) 54px}.fd-album-stage{padding-block:7px}.fd-album-spread.is-opening>article{padding-block:13px}.fd-album-spread.is-opening>article>p{display:block;font-size:10px;line-height:1.5}.fd-album-spread.is-opening article small{display:none}.fd-album-spread.is-finale article p{display:none}.fd-album-spread.is-finale article>div>button{margin-top:8px}.fd-album-sound{top:74px}}
 @media(prefers-reduced-motion:reduce){.fd-album-cover>figure,.fd-album-stage>div,.fd-album-spread figure>div{transform:none!important}.fd-album-controls button,.fd-album-sound{transition:none!important}}
+
+/* Each directed delivery supplies its own treatment variables. Keep the format
+   structure recognisable while letting the photographs, spacing, and captions
+   carry a distinct visual voice. */
+.fd-page .v-photo{filter:var(--fd-image-filter,none)}
+.fd-page figure figcaption,.fd-page .fd-ed-preview-card figcaption,.fd-page .fd-reveal-caption p,.fd-page .fd-chapter-room-photos p{font-weight:var(--fd-caption-weight,500)}
+.fd-page .fd-ed-spread,.fd-page .fd-ed-gallery-preview,.fd-page .fd-chapter-room-photos{gap:calc(24px * var(--fd-density-gap,1))}
+.fd-page[data-composition="grid"] .fd-wall-card{border-radius:4px}
+.fd-page[data-composition="layered"] .fd-wall-card{box-shadow:0 28px 70px #0007}
+.fd-page[data-composition="wide-led"] .fd-wall-title{max-width:42%}
+.fd-page[data-composition="portrait-led"] .fd-wall-title{max-width:28%}
 @media(min-width:1024px){.fd-album-cover-shade{top:74px}}
 .fd-album-cover>section h1{max-width:100%;font-size:clamp(42px,12vw,102px)}
 @media(max-width:639px){.fd-album-cover>figure .v-photo{object-fit:contain;object-position:center top;background:#061426}}
@@ -405,3 +416,4 @@
 
 .fd-chapter-narration{display:flex;align-items:center;gap:7px;width:max-content;margin-top:14px;padding:7px 10px;border:1px solid color-mix(in srgb,var(--chapter-accent) 55%,transparent);border-radius:999px;background:color-mix(in srgb,var(--chapter-accent) 10%,transparent);color:var(--chapter-accent);font-size:10px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}.fd-chapter-room.is-narrating .fd-chapter-room-photos{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--chapter-accent) 32%,transparent)}.fd-chapter-directory-board button.is-narrating{outline:2px solid var(--chapter-accent);outline-offset:4px}
 @media(prefers-reduced-motion:reduce){.fd-chapter-room.is-narrating .fd-chapter-room-photos{box-shadow:none}.fd-chapter-directory-board button.is-narrating{outline-offset:2px}}
+.fd-wall-caption{position:absolute;left:10px;right:10px;bottom:10px;z-index:2;color:#fff; font-size:10px;line-height:1.35;text-align:left;text-shadow:0 2px 12px #000;letter-spacing:0;font-weight:var(--fd-caption-weight,500)}

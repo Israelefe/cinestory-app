@@ -68,13 +68,20 @@ async function direct(job, delivery) {
     const batch = insights.slice(offset, offset + 20);
     const result = await createFrameBatch({ format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction, imageInsights: batch, revisionInstruction: job.input?.instruction || '', currentFrames: job.type === 'revise' ? (delivery.creativeDirection?.frames || []).filter(frame => batch.some(item => item.assetId === frame.assetId)) : [] });
     const frameMap = new Map((result.frames || []).map(frame => [frame.assetId, frame]));
+    const fallbackCaption = insight => {
+      const name = String(delivery.clientName || 'you').trim();
+      const occasion = String(delivery.shootType || 'this shoot').trim().toLowerCase();
+      const moment = String(insight?.moment || insight?.expression || '').replace(/[<>]/g, '').trim().replace(/[.!?]+$/, '');
+      if (moment) return `${name}, this ${moment.toLowerCase()} carries what your ${occasion} was really about.`.slice(0, 180);
+      return `${name}, this frame keeps a little of the feeling you brought to your ${occasion}.`.slice(0, 180);
+    };
     const alignedFrames = batch.map((item, index) => {
       const frame = frameMap.get(item.assetId) || result.frames?.[index] || {
         assetId: item.assetId,
         sectionId: defaultSectionId,
         role: 'supporting',
         headline: '',
-        caption: '',
+        caption: fallbackCaption(item),
         motion: 'slow-push',
         transition: 'crossfade',
         duration: 4.5,
@@ -82,6 +89,7 @@ async function direct(job, delivery) {
       };
       if (!sectionIds.has(frame.sectionId)) frame.sectionId = defaultSectionId;
       frame.assetId = item.assetId;
+      if (typeof frame.caption !== 'string' || frame.caption.trim().length < 8) frame.caption = fallbackCaption(item);
       return frame;
     });
     frames.push(...alignedFrames);

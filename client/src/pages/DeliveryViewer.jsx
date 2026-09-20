@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { ArrowRight, Check, Image, LoaderCircle, Mic2, Music2 } from 'lucide-react';
+import { ArrowRight, Check, Image, LoaderCircle, Mic2, Music2, RefreshCw } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
 import { API_BASE_URL } from '../config/env.js';
@@ -86,12 +86,14 @@ function preloadAudio(url, cleanup) {
       settled = true;
       window.clearTimeout(timeout);
       audio.oncanplay = null;
+      audio.oncanplay = null;
       audio.oncanplaythrough = null;
       audio.onerror = null;
       resolve(ok);
     };
     const timeout = window.setTimeout(() => finish(false), 60000);
     audio.preload = 'auto';
+    audio.oncanplay = () => finish(true);
     audio.oncanplaythrough = () => finish(true);
     audio.onerror = () => finish(false);
     audio.src = url;
@@ -114,7 +116,8 @@ function DeliveryReadiness({ delivery, onReady }) {
   };
   const total = Math.max(1, totals.photo + totals.soundtrack + totals.narration);
   const [loaded, setLoaded] = useState({ photo: 0, soundtrack: 0, narration: 0, total: 0, failed: 0 });
-  const [slow, setSlow] = useState(false);
+  const [blocked, setBlocked] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const openedRef = useRef(false);
 
   const open = () => {
@@ -126,7 +129,8 @@ function DeliveryReadiness({ delivery, onReady }) {
   useEffect(() => {
     const cleanup = [];
     let active = true;
-    const slowTimer = window.setTimeout(() => { if (active) setSlow(true); }, 9000);
+    setLoaded({ photo: 0, soundtrack: 0, narration: 0, total: 0, failed: 0 });
+    setBlocked(false);
     const tasks = [
       ...(delivery.soundtrack?.url ? [{ kind: 'soundtrack', run: () => preloadAudio(delivery.soundtrack.url, cleanup) }] : []),
       ...(delivery.narration?.url ? [{ kind: 'narration', run: () => preloadAudio(apiMediaUrl(delivery.narration.url), cleanup) }] : []),
@@ -139,16 +143,23 @@ function DeliveryReadiness({ delivery, onReady }) {
     } else {
       const queue = [...tasks];
       const worker = async () => {
+        const results = [];
         while (active && queue.length) {
           const task = queue.shift();
           const ok = await task.run();
           if (!active) return;
+          results.push({ kind: task.kind, ok });
           setLoaded(current => ({ ...current, [task.kind]: current[task.kind] + 1, total: current.total + 1, failed: current.failed + (ok ? 0 : 1) }));
         }
+        return results;
       };
-      Promise.all(Array.from({ length: Math.min(4, tasks.length) }, worker)).then(() => {
+      Promise.all(Array.from({ length: Math.min(4, tasks.length) }, worker)).then(workerResults => {
         if (!active) return;
-        window.clearTimeout(slowTimer);
+        const failed = workerResults.flat().filter(result => !result.ok).length;
+        if (failed) {
+          setBlocked(true);
+          return;
+        }
         const readyTimer = window.setTimeout(open, 350);
         cleanup.push(() => window.clearTimeout(readyTimer));
       });
@@ -156,10 +167,9 @@ function DeliveryReadiness({ delivery, onReady }) {
 
     return () => {
       active = false;
-      window.clearTimeout(slowTimer);
       cleanup.forEach(dispose => dispose());
     };
-  }, [delivery.publicId]);
+  }, [delivery.publicId, attempt]);
 
   const percent = Math.min(100, Math.round((loaded.total / total) * 100));
   const stage = loaded.photo < totals.photo
@@ -169,7 +179,7 @@ function DeliveryReadiness({ delivery, onReady }) {
       : loaded.narration < totals.narration
         ? 'Preparing the narration'
         : loaded.failed
-          ? 'Finishing the delivery'
+          ? 'A file needs another try'
           : 'Your delivery is ready';
 
   return <main className="vd-readiness" role="status" aria-live="polite">
@@ -186,7 +196,7 @@ function DeliveryReadiness({ delivery, onReady }) {
         {Boolean(totals.soundtrack) && <li className={loaded.soundtrack >= totals.soundtrack ? 'is-ready' : ''}>{loaded.soundtrack >= totals.soundtrack ? <Check size={15} /> : <Music2 size={15} />}<span>Soundtrack</span></li>}
         {Boolean(totals.narration) && <li className={loaded.narration >= totals.narration ? 'is-ready' : ''}>{loaded.narration >= totals.narration ? <Check size={15} /> : <Mic2 size={15} />}<span>Narration</span></li>}
       </ul>
-      {slow && <div className="vd-readiness-slow"><p>This connection is taking a little longer. You can keep waiting for the smoothest opening, or open the delivery while the remaining files load.</p><button type="button" onClick={open}>Open delivery<ArrowRight size={16} /></button></div>}
+      {blocked && <div className="vd-readiness-slow"><p>We could not finish every file, so the delivery is still locked. Try again when your connection is steadier.</p><button type="button" onClick={() => setAttempt(value => value + 1)}><RefreshCw size={16} />Try loading again</button></div>}
     </section>
   </main>;
 }
@@ -204,6 +214,7 @@ export default function DeliveryViewer() {
   const [experienceReady, setExperienceReady] = useState(false);
 
   const [audioState, setAudioState] = useState({ playing: '', loading: '' });
+  const [narrationCue, setNarrationCue] = useState(null);
   const soundtrackRef = useRef(null);
   const narrationRef = useRef(null);
 
@@ -327,6 +338,12 @@ export default function DeliveryViewer() {
         ? { playing: '', loading: '' }
         : current
     ));
+  };
+
+  const syncNarrationCue = event => {
+    const time = Number(event.currentTarget.currentTime || 0);
+    const cue = (delivery?.narration?.segments || []).find(segment => time >= Number(segment.startSec || 0) && time < Number(segment.endSec || 0));
+    setNarrationCue(cue || null);
   };
 
   async function handleLike(assetId) {
@@ -483,8 +500,10 @@ export default function DeliveryViewer() {
           onWaiting={() => handleAudioWaiting('narration')}
           onStalled={() => handleAudioWaiting('narration')}
           onPlaying={() => handleAudioPlaying('narration')}
+          onTimeUpdate={syncNarrationCue}
           onError={() => handleAudioError('narration')}
           onEnded={() => {
+            setNarrationCue(null);
             if (soundtrackRef.current && !soundtrackRef.current.paused) {
               fadeAudioVolume(soundtrackRef.current, 1);
               setAudioState({ playing: 'soundtrack', loading: '' });
@@ -496,6 +515,7 @@ export default function DeliveryViewer() {
       )}
 
       {delivery.viewer && <aside className="vd-role-notice"><strong>{delivery.viewer.label}</strong><span>{delivery.viewer.role} access</span>{delivery.viewer.usageTerms && <p>{delivery.viewer.usageTerms}</p>}</aside>}
+      {format !== 'photo-story' && audioState.playing === 'narration' && narrationCue?.text && <aside className="vd-narration-cue" aria-live="polite"><span>READING THE APPROVED CAPTION</span><p>{narrationCue.text}</p></aside>}
       {content}
     </>
   );

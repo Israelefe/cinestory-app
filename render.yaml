@@ -69,7 +69,7 @@ services:
         value: qwen3.7-flash
       - key: ALIBABA_CREATIVE_MODEL
         value: deepseek-v4.1-flash
-      - key: ELEVENLABS_API_KEY
+      - key: DEEPGRAM_API_KEY
         sync: false
       - key: DELIVERY_PIPELINE_ENABLED
-        value: "false"
+        value: "true"

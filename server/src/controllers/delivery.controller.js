@@ -18,7 +18,7 @@ import { reservePublishSlot, resolveEntitlements } from '../services/entitlement
 import { tokenDigest } from '../utils/auth.js';
 import { sendStoryReadyEmail } from '../services/email.service.js';
 import QRCode from 'qrcode';
-import { NARRATION_VOICES } from '../constants/narrationVoices.js';
+import { DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
 import { DELIVERY_SOUNDTRACKS, deliverySoundtrack, deliverySoundtrackFile } from '../constants/deliverySoundtracks.js';
 import { getNarrationVoiceCatalogue } from '../services/narration.service.js';
 
@@ -27,8 +27,7 @@ const confirmSchema = z.object({ publicId: z.string().min(5).max(500), version: 
 const soundtrackSchema = z.object({ publicId: z.string().min(5).max(500), version: z.union([z.string(), z.number()]), signature: z.string().min(20).max(200), originalFilename: z.string().trim().max(180), title: z.string().trim().min(1).max(100), rightsConfirmed: z.literal(true) }).strict();
 const formatSchema = z.object({ format: z.enum(creativeDirectorAllowlist.formats) }).strict();
 const narrationSchema = z.object({
-  voiceId: z.enum(NARRATION_VOICES.map(voice => voice.id)),
-  transcript: z.string().trim().min(20).max(2200).optional()
+  voiceId: z.literal(DEFAULT_NARRATION_VOICE_ID).optional().default(DEFAULT_NARRATION_VOICE_ID)
 }).strict();
 const revisionSchema = z.object({ scope: z.enum(['selected', 'full']), instruction: z.string().trim().min(8).max(600), assetIds: z.array(z.string().min(1).max(100)).max(100).default([]) }).strict();
 const libraryAssetsSchema = z.object({ assetIds: z.array(z.string().min(8).max(100)).min(1).max(20) }).strict();
@@ -40,8 +39,15 @@ const reviewSchema = z.object({
   palette: z.object({ background: z.string().regex(/^#[0-9a-f]{6}$/i), surface: z.string().regex(/^#[0-9a-f]{6}$/i), text: z.string().regex(/^#[0-9a-f]{6}$/i), accent: z.string().regex(/^#[0-9a-f]{6}$/i) }).strict(),
   typography: z.object({ display: z.enum(['editorial-serif', 'clean-sans', 'condensed-sans', 'soft-serif']), body: z.enum(['clean-sans', 'editorial-serif']) }).strict(),
   pace: z.enum(['measured', 'warm', 'energetic']),
+  variation: z.object({
+    composition: z.enum(['quiet', 'split', 'layered', 'grid', 'portrait-led', 'wide-led']),
+    density: z.enum(['spacious', 'balanced', 'layered']),
+    imageTreatment: z.enum(['natural', 'warm', 'contrast', 'monochrome']),
+    captionTreatment: z.enum(['quiet', 'editorial', 'bold']),
+    accentPlacement: z.enum(['corners', 'rules', 'labels', 'type'])
+  }).strict().default({ composition: 'quiet', density: 'balanced', imageTreatment: 'natural', captionTreatment: 'editorial', accentPlacement: 'rules' }),
   sections: z.array(z.object({ id: z.string().regex(/^[a-z0-9-]{1,32}$/), title: z.string().trim().min(1).max(60), subtitle: z.string().trim().max(120), layout: z.enum(['hero', 'single', 'pair', 'triptych', 'grid', 'strip', 'spread', 'cluster', 'chapter-cover']) }).strict()).min(1).max(12),
-  frames: z.array(z.object({ assetId: z.string().min(1).max(100), headline: z.string().trim().max(70), caption: z.string().trim().max(180) }).strict()).min(1).max(500),
+  frames: z.array(z.object({ assetId: z.string().min(1).max(100), headline: z.string().trim().max(70), caption: z.string().trim().min(8).max(180) }).strict()).min(1).max(500),
   assetOrder: z.array(z.string().min(1).max(100)).min(1).max(500)
 }).strict();
 const shareGrantSchema = z.object({
@@ -560,7 +566,7 @@ export async function queueNarration(req, res) {
     const parsed = narrationSchema.safeParse(req.body);
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
-    if (!delivery?.creativeDirection || !['photo-story', 'chapters'].includes(delivery.format)) return res.status(409).json({ success: false, message: 'Narration is available after directing a Photo Story or Chapters delivery.' });
+    if (!delivery?.creativeDirection) return res.status(409).json({ success: false, message: 'Narration is available after the delivery has been directed.' });
     const running = await DeliveryJob.findOne({ deliveryId: delivery._id, status: { $in: ['queued', 'running'] } });
     if (running) return res.status(409).json({ success: false, message: 'Veylo is already working on this delivery.' });
     const job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'narrate', stage: 'queued', input: parsed.data });

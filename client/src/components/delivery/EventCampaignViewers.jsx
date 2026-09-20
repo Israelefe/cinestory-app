@@ -61,7 +61,7 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
     setGallery(true);
   };
 
-  return <div className="fd-page vec-viewer vec-event" style={styles}>
+  return <div className="fd-page vec-viewer vec-event" data-composition={styles['--fd-composition']} style={styles}>
     <DemoHeader format="Event Coverage" client={title} sectionId="event-coverage" onGallery={() => { setGalleryIndex(null); setGallery(true); }} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     <main>
       <section className="vec-event-hero">
@@ -89,7 +89,8 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
           <div className="vec-scene-copy"><span>{String(sectionIndex + 1).padStart(2, '0')}</span><div><h3>{section.title}</h3>{section.copy && <p>{section.copy}</p>}</div><b>{section.photos.length} photos</b></div>
           <div className={`vec-scene-grid is-count-${Math.min(section.photos.length, 4)}`}>
             {section.photos.slice(0, 4).map((photo, index) => <button type="button" key={photo.assetId || photo.name || index} onClick={() => openPhoto(photo)} aria-label={`Open ${section.title} photograph ${index + 1}`}>
-              <Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || ''} sizes="(max-width: 640px) 92vw, (max-width: 1024px) 46vw, 31vw" />
+              <Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || photo.caption || ''} sizes="(max-width: 640px) 92vw, (max-width: 1024px) 46vw, 31vw" />
+              <small className="vec-photo-caption">{photo.caption}</small>
               {index === 3 && section.photos.length > 4 && <span>+{section.photos.length - 4} more</span>}
             </button>)}
           </div>
@@ -119,7 +120,7 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
     setGallery(true);
   };
 
-  return <div className="fd-page vec-viewer vec-campaign" style={styles}>
+  return <div className="fd-page vec-viewer vec-campaign" data-composition={styles['--fd-composition']} style={styles}>
     <DemoHeader format="Campaign Delivery" client={title} sectionId="campaign" onGallery={() => { setGalleryIndex(null); setGallery(true); }} light delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     <main>
       <section className="vec-campaign-hero">
@@ -134,7 +135,7 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
         <header><span>02 / APPROVED WORK</span><h2>Asset sets</h2><p>Each set keeps related photographs together, so the client can find the right file without searching through a loose folder.</p></header>
         <div>{sets.map((set, setIndex) => <motion.article key={set.id} initial={reduced ? false : { opacity: 0, y: 28 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .14 }} transition={{ duration: reduced ? 0 : .55, delay: reduced ? 0 : setIndex * .04 }}>
           <button type="button" onClick={() => openPhoto(set.photos[0])} aria-label={`Open ${set.title}`}><Photo name={set.photos[0]?.name} url={set.photos[0]?.url} srcSet={set.photos[0]?.srcSet} alt={set.photos[0]?.alt || ''} sizes="(max-width: 640px) 92vw, (max-width: 1024px) 46vw, 31vw" /><span>{String(setIndex + 1).padStart(2, '0')}</span></button>
-          <div><h3>{set.title}</h3>{set.copy && <p>{set.copy}</p>}<span>{set.photos.length} approved files</span></div>
+           <div><h3>{set.title}</h3>{set.copy && <p>{set.copy}</p>}<p className="vec-photo-caption">{set.photos[0]?.caption}</p><span>{set.photos.length} approved files</span></div>
         </motion.article>)}</div>
       </section>
 

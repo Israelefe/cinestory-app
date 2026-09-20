@@ -51,7 +51,7 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
         const isLiked = liked?.has(key);
         return <motion.figure key={key} initial={reduced ? false : { opacity: 0, y: 15 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .12 }} transition={{ delay: reduced ? 0 : Math.min(index * .025, .2) }}>
           <button className="client-gallery-photo" type="button" onClick={() => setSelected(index)} aria-label={`Open photograph ${index + 1}`}><Photo name={photo.name} url={photo.thumbnailUrl || photo.url} srcSet={photo.srcSet} alt={photo.alt || photo.caption || `Photograph ${index + 1}`} sizes="(max-width: 640px) 48vw, (max-width: 1024px) 31vw, 24vw" /></button>
-          <figcaption><span>{String(index + 1).padStart(2, '0')}</span><div>
+          <figcaption><span>{String(index + 1).padStart(2, '0')}</span><p>{photo.caption || `A finished moment from ${title}.`}</p><div>
             {allowLikes && <button className={isLiked ? 'is-liked' : ''} type="button" onClick={() => runLike(photo, index)} aria-label={isLiked ? 'Remove from favourites' : 'Add to favourites'}><Heart size={16} fill={isLiked ? 'currentColor' : 'none'} /></button>}
             {allowIndividualDownloads && <button type="button" onClick={() => runDownload(photo, index)} disabled={resolvedBusy === key || resolvedBusy === 'all'} aria-label={`Download photograph ${index + 1}`}>{resolvedBusy === key ? <LoaderCircle className="client-gallery-spin" size={16} /> : <Download size={16} />}</button>}
           </div></figcaption>

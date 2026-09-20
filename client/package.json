@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "verify:share-meta": "node scripts/verify-share-meta.mjs"
+    "verify:share-meta": "node scripts/verify-share-meta.mjs",
+    "verify:delivery-v2": "node scripts/verify-delivery-v2.mjs",
+    "verify:responsive": "node scripts/verify-responsive-contract.mjs"
   },
   "dependencies": {
     "axios": "^1.6.8",

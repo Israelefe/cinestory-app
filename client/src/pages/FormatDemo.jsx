@@ -45,6 +45,10 @@ export function getFormatThemeStyles(delivery, fallback = {}) {
   const text = palette.text || palette.textColor || fallback.text || '#f2eee8';
   const displayFont = getFontFamily(typography.display || typography.displayFont, fallback.fontDisplay || "'Playfair Display', Georgia, serif");
   const bodyFont = getFontFamily(typography.body || typography.bodyFont, fallback.fontBody || "'Plus Jakarta Sans', sans-serif");
+  const variation = cd?.variation || {};
+  const imageTreatment = variation.imageTreatment || 'natural';
+  const imageFilter = imageTreatment === 'warm' ? 'saturate(.92) sepia(.08)' : imageTreatment === 'contrast' ? 'contrast(1.08) saturate(.9)' : imageTreatment === 'monochrome' ? 'grayscale(.9) contrast(1.04)' : 'none';
+  const densityGap = variation.density === 'spacious' ? '1.28' : variation.density === 'layered' ? '.84' : '1';
 
   return {
     '--fd-accent': accent,
@@ -53,22 +57,32 @@ export function getFormatThemeStyles(delivery, fallback = {}) {
     '--fd-surface': surface,
     '--fd-text': text,
     '--fd-font-display': displayFont,
-    '--fd-font-body': bodyFont
+    '--fd-font-body': bodyFont,
+    '--fd-image-filter': imageFilter,
+    '--fd-density-gap': densityGap,
+    '--fd-caption-weight': variation.captionTreatment === 'bold' ? '650' : variation.captionTreatment === 'quiet' ? '400' : '500',
+    '--fd-accent-placement': variation.accentPlacement || 'rules',
+    '--fd-composition': variation.composition || 'quiet'
   };
 }
 
 export function normalizeDeliveryPhotos(delivery, fallbackPhotos) {
   if (delivery?.assets?.length) {
+    const frames = new Map((delivery.creativeDirection?.frames || []).map(frame => [String(frame.assetId), frame]));
     return delivery.assets.map((a, i) => ({
       ...a,
       name: a.assetId,
       assetId: a.assetId,
       alt: a.originalFilename || `Photograph ${i + 1}`,
+      caption: frames.get(String(a.assetId))?.caption || `A finished moment from ${delivery.clientName || 'this collection'}.`,
+      headline: frames.get(String(a.assetId))?.headline || '',
+      duration: frames.get(String(a.assetId))?.duration,
+      motion: frames.get(String(a.assetId))?.motion,
       url: a.url, // Original photographer upload quality preserved
       thumbnailUrl: a.thumbnailUrl || a.url
     }));
   }
-  return fallbackPhotos;
+  return fallbackPhotos.map((photo, index) => ({ ...photo, caption: photo.caption || `A finished frame from this collection, held for a little longer.` }));
 }
 
 export function DemoHeader({ format, client, sectionId, onGallery, light = false, delivery, audioState, toggleAudio, hideSoundtrack = false }) {
@@ -336,7 +350,7 @@ export function EditorialDemo({ delivery, galleryProps, audioState, toggleAudio 
   const frame3 = frames.get(photo3?.assetId) || {};
   const frame4 = frames.get(photo4?.assetId) || {};
 
-  return <div className="fd-page fd-editorial" style={themeStyles}>
+  return <div className="fd-page fd-editorial" data-composition={themeStyles['--fd-composition']} style={themeStyles}>
     <DemoHeader format="Editorial Page" client={client} sectionId="editorial-page" onGallery={() => setGallery(true)} light delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     <motion.div className="fd-ed-scroll-progress" style={reduced ? undefined : { scaleX: scrollYProgress }} aria-hidden="true" />
     <main>
@@ -688,7 +702,7 @@ export function CanvasDemo({ delivery, galleryProps, audioState, toggleAudio }) 
     accent: '#764831'
   });
 
-  return <div className="fd-page fd-canvas" style={themeStyles}>
+  return <div className="fd-page fd-canvas" data-composition={themeStyles['--fd-composition']} style={themeStyles}>
     <DemoHeader format="Canvas" client={client} sectionId="canvas" onGallery={() => setGallery(true)} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     <main className="fd-wall-shell">
       <header className="fd-wall-intro"><div><span>{clientName.toUpperCase()} · CANVAS</span><strong>{cluster ? cluster.name : 'The complete canvas'}</strong></div><AnimatePresence mode="wait"><motion.p key={cluster?.name || 'overview'} initial={reduced ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .35 }}>{cluster ? cluster.note : 'Every finished portrait is here. Choose a group, or open any photograph.'}</motion.p></AnimatePresence>{activeCluster !== null && <button type="button" onClick={() => setActiveCluster(null)}><Grid2X2 size={15} />See the whole canvas</button>}</header>
@@ -703,7 +717,7 @@ export function CanvasDemo({ delivery, galleryProps, audioState, toggleAudio }) 
             const place = clusterIndex >= 0 ? clusters[clusterIndex].photos.indexOf(index) : 0;
             const inCluster = activeCluster === clusterIndex;
             const dimmed = activeCluster !== null && !inCluster;
-            return <motion.button layout layoutId={`canvas-photo-${index}`} type="button" key={photo.url || photo.name} className={`fd-wall-card is-card-${index + 1}${inCluster ? ` is-in-cluster is-place-${place + 1}` : ''}${dimmed ? ' is-dimmed' : ''}`} onClick={() => setSelected(index)} initial={reduced ? false : { opacity: 0, scale: .86, ...canvasEntrances[index] }} animate={{ opacity: dimmed ? .16 : 1, scale: dimmed ? .88 : 1, x: 0, y: 0, rotate: 0 }} whileHover={reduced ? undefined : { scale: 1.025, y: -6 }} transition={{ layout: { type: 'spring', damping: 28, stiffness: 190 }, opacity: { duration: reduced ? 0 : .35 }, delay: reduced ? 0 : index * .055 }} aria-label={`Open photograph ${index + 1}`}><div className="fd-wall-depth"><motion.span animate={reduced ? undefined : { scale: [1.01, 1.05], x: index % 2 ? ['0%', '-1.2%'] : ['-1%', '1%'] }} transition={{ duration: 9 + index, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={photo.name} url={photo.url} alt={photo.alt} eager={index < 3} sizes="(max-width: 640px) 45vw, (max-width: 1024px) 34vw, 25vw" /></motion.span><i>{String(index + 1).padStart(2, '0')}</i></div></motion.button>;
+            return <motion.button layout layoutId={`canvas-photo-${index}`} type="button" key={photo.url || photo.name} className={`fd-wall-card is-card-${index + 1}${inCluster ? ` is-in-cluster is-place-${place + 1}` : ''}${dimmed ? ' is-dimmed' : ''}`} onClick={() => setSelected(index)} initial={reduced ? false : { opacity: 0, scale: .86, ...canvasEntrances[index] }} animate={{ opacity: dimmed ? .16 : 1, scale: dimmed ? .88 : 1, x: 0, y: 0, rotate: 0 }} whileHover={reduced ? undefined : { scale: 1.025, y: -6 }} transition={{ layout: { type: 'spring', damping: 28, stiffness: 190 }, opacity: { duration: reduced ? 0 : .35 }, delay: reduced ? 0 : index * .055 }} aria-label={`Open photograph ${index + 1}`}><div className="fd-wall-depth"><motion.span animate={reduced ? undefined : { scale: [1.01, 1.05], x: index % 2 ? ['0%', '-1.2%'] : ['-1%', '1%'] }} transition={{ duration: 9 + index, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={photo.name} url={photo.url} alt={photo.alt || photo.caption} eager={index < 3} sizes="(max-width: 640px) 45vw, (max-width: 1024px) 34vw, 25vw" /></motion.span><i>{String(index + 1).padStart(2, '0')}</i><small className="fd-wall-caption">{photo.caption}</small></div></motion.button>;
           })}
           <AnimatePresence>{cluster && <motion.div className="fd-wall-focus-label" key={cluster.name} initial={reduced ? false : { opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ delay: reduced ? 0 : .28 }}><span>0{activeCluster + 1} / 0{clusters.length}</span><strong>{cluster.name}</strong><p>{cluster.note}</p></motion.div>}</AnimatePresence>
         </div>
@@ -816,7 +830,7 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
     setGallery(true);
   };
 
-  return <div className="fd-page fd-chapters" style={{ ...themeStyles, '--chapter-accent': openChapterData?.accent || themeStyles['--fd-accent'] }}>
+  return <div className="fd-page fd-chapters" data-composition={themeStyles['--fd-composition']} style={{ ...themeStyles, '--chapter-accent': openChapterData?.accent || themeStyles['--fd-accent'] }}>
     <DemoHeader format="Chapters" client={client} sectionId="chapters" onGallery={() => { setGalleryIndex(null); setGallery(true); }} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
 
     <AnimatePresence mode="wait">
@@ -1039,7 +1053,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio }) {
     accent: '#ef8969'
   });
 
-  return <div className="fd-page fd-album" style={themeStyles}>
+  return <div className="fd-page fd-album" data-composition={themeStyles['--fd-composition']} style={themeStyles}>
     <audio ref={audio} src={audioTrack} loop preload="metadata" muted={muted} onWaiting={() => setAudioLoading(true)} onStalled={() => setAudioLoading(true)} onPlaying={() => { setAudioLoading(false); setAudioFailed(false); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioLoading(false); setAudioFailed(true); }} />
     <DemoHeader format="Album" client={client} sectionId="album" onGallery={() => setGallery(true)} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} hideSoundtrack />
     {!started ? <main className="fd-album-cover">

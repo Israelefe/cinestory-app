@@ -12,7 +12,9 @@ import { signedImageUrl } from '../services/deliveryMedia.service.js';
 import { codeDigest, normalizeEmail, safeEqual } from '../utils/auth.js';
 
 const createSchema = z.object({ title: z.string().trim().min(3).max(120), organisation: z.string().trim().min(2).max(120), category: z.enum(['school', 'sports', 'corporate', 'other']) }).strict();
+const updateSchema = createSchema.partial().strict();
 const subjectsSchema = z.object({ subjects: z.array(z.object({ recipientCode: z.string().trim().min(3).max(40).regex(/^[a-z0-9_-]+$/i), displayName: z.string().trim().min(2).max(100), email: z.email().max(254) }).strict()).min(1).max(1000) }).strict();
+const subjectUpdateSchema = z.object({ recipientCode: z.string().trim().min(3).max(40).regex(/^[a-z0-9_-]+$/i), displayName: z.string().trim().min(2).max(100), email: z.email().max(254) }).strict();
 const assignmentSchema = z.object({ assetIds: z.array(z.string().uuid()).max(500) }).strict();
 const requestSchema = z.object({ recipientCode: z.string().trim().min(3).max(40), email: z.email().max(254) }).strict();
 const verifySchema = requestSchema.extend({ code: z.string().regex(/^\d{6}$/) }).strict();
@@ -65,6 +67,50 @@ export async function getVolumeJob(req, res) {
   }
 }
 
+export async function updateVolumeJob(req, res) {
+  try {
+    const parsed = updateSchema.safeParse(req.body);
+    if (!parsed.success) return validation(res, parsed);
+    const job = await ownedJob(req.params.id, req.user.id);
+    if (!job || job.status !== 'draft') return res.status(404).json({ success: false, message: 'Only draft volume deliveries can be edited.' });
+    Object.assign(job, parsed.data);
+    await job.save();
+    res.json({ success: true, data: job });
+  } catch (error) {
+    console.error('[volume/update]', error.message);
+    res.status(500).json({ success: false, message: 'We could not save those job details.' });
+  }
+}
+
+export async function archiveVolumeJob(req, res) {
+  try {
+    const job = await ownedJob(req.params.id, req.user.id);
+    if (!job) return res.status(404).json({ success: false, message: 'Volume delivery not found.' });
+    job.status = 'archived';
+    job.archivedAt = new Date();
+    job.accessVersion = Number(job.accessVersion || 1) + 1;
+    await job.save();
+    res.json({ success: true, message: 'Volume delivery archived.' });
+  } catch {
+    res.status(500).json({ success: false, message: 'We could not archive this volume delivery.' });
+  }
+}
+
+export async function deleteVolumeJob(req, res) {
+  try {
+    const job = await ownedJob(req.params.id, req.user.id);
+    if (!job || job.status !== 'draft') return res.status(404).json({ success: false, message: 'Only draft volume deliveries can be deleted.' });
+    await Promise.all([
+      VolumeSubject.deleteMany({ jobId: job._id, userId: req.user.id }),
+      VolumeAccessCode.deleteMany({ jobId: job._id }),
+      VolumeJob.deleteOne({ _id: job._id, userId: req.user.id })
+    ]);
+    res.json({ success: true, message: 'Draft volume delivery deleted.' });
+  } catch {
+    res.status(500).json({ success: false, message: 'We could not delete this volume delivery.' });
+  }
+}
+
 export async function addVolumeSubjects(req, res) {
   try {
     const parsed = subjectsSchema.safeParse(req.body);
@@ -84,6 +130,41 @@ export async function addVolumeSubjects(req, res) {
   } catch (error) {
     console.error('[volume/subjects]', error.message);
     res.status(500).json({ success: false, message: 'We could not add those recipients.' });
+  }
+}
+
+export async function updateVolumeSubject(req, res) {
+  try {
+    const parsed = subjectUpdateSchema.safeParse(req.body);
+    if (!parsed.success) return validation(res, parsed);
+    const job = await ownedJob(req.params.id, req.user.id);
+    if (!job || job.status !== 'draft') return res.status(404).json({ success: false, message: 'This draft is not available.' });
+    const normalized = { ...parsed.data, recipientCode: parsed.data.recipientCode.toUpperCase(), email: normalizeEmail(parsed.data.email) };
+    const conflict = await VolumeSubject.exists({ jobId: job._id, _id: { $ne: req.params.subjectId }, recipientCode: normalized.recipientCode });
+    if (conflict) return res.status(409).json({ success: false, message: 'That recipient code is already in this delivery.' });
+    const subject = await VolumeSubject.findOneAndUpdate({ _id: req.params.subjectId, jobId: job._id, userId: req.user.id }, normalized, { new: true, runValidators: true }).select('-email');
+    if (!subject) return res.status(404).json({ success: false, message: 'Recipient not found.' });
+    await VolumeAccessCode.deleteMany({ subjectId: subject._id });
+    res.json({ success: true, data: subject });
+  } catch (error) {
+    console.error('[volume/subject-update]', error.message);
+    res.status(500).json({ success: false, message: 'We could not update that recipient.' });
+  }
+}
+
+export async function deleteVolumeSubject(req, res) {
+  try {
+    const job = await ownedJob(req.params.id, req.user.id);
+    if (!job || job.status !== 'draft') return res.status(404).json({ success: false, message: 'This draft is not available.' });
+    const subject = await VolumeSubject.findOneAndDelete({ _id: req.params.subjectId, jobId: job._id, userId: req.user.id });
+    if (!subject) return res.status(404).json({ success: false, message: 'Recipient not found.' });
+    await VolumeAccessCode.deleteMany({ subjectId: subject._id });
+    job.subjectCount = Math.max(0, job.subjectCount - 1);
+    job.assignedPhotoCount = Math.max(0, job.assignedPhotoCount - subject.assetIds.length);
+    await job.save();
+    res.json({ success: true, data: { subjectCount: job.subjectCount, assignedPhotoCount: job.assignedPhotoCount } });
+  } catch {
+    res.status(500).json({ success: false, message: 'We could not remove that recipient.' });
   }
 }
 
@@ -167,6 +248,29 @@ export async function publishVolumeJob(req, res) {
   }
 }
 
+function csvCell(value) {
+  const raw = String(value ?? '');
+  const text = /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+export async function exportVolumeJob(req, res) {
+  try {
+    const job = await ownedJob(req.params.id, req.user.id);
+    if (!job) return res.status(404).json({ success: false, message: 'Volume delivery not found.' });
+    const subjects = await VolumeSubject.find({ jobId: job._id, userId: req.user.id }).select('+email').sort({ displayName: 1 }).lean();
+    const rows = [
+      ['recipient_code', 'name', 'email', 'photograph_count'],
+      ...subjects.map(subject => [subject.recipientCode, subject.displayName, subject.email, subject.assetIds.length])
+    ];
+    const csv = rows.map(row => row.map(csvCell).join(',')).join('\r\n');
+    res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${job.title.replace(/[^a-z0-9_-]+/gi, '-').slice(0, 80) || 'volume-delivery'}.csv"`, 'Cache-Control': 'private, no-store' });
+    res.send(csv);
+  } catch {
+    res.status(500).json({ success: false, message: 'We could not export this volume delivery.' });
+  }
+}
+
 async function publicSubject(publicId, recipientCode, email) {
   const job = await VolumeJob.findOne({ publicId, status: 'published' });
   if (!job) return {};
@@ -211,7 +315,7 @@ export async function verifyVolumeCode(req, res) {
     }
     access.usedAt = new Date();
     await access.save();
-    const accessToken = jwt.sign({ jobId: String(job._id), subjectId: String(subject._id) }, process.env.JWT_SECRET, { expiresIn: '12h', issuer: 'veylo-api', audience: 'veylo-volume' });
+    const accessToken = jwt.sign({ jobId: String(job._id), subjectId: String(subject._id), accessVersion: job.accessVersion || 1 }, process.env.JWT_SECRET, { expiresIn: '12h', issuer: 'veylo-api', audience: 'veylo-volume' });
     res.json({ success: true, data: { accessToken } });
   } catch {
     res.status(500).json({ success: false, message: 'We could not verify that code.' });
@@ -222,7 +326,7 @@ export async function getVolumeGallery(req, res) {
   try {
     const payload = jwt.verify(req.get('x-volume-access') || '', process.env.JWT_SECRET, { issuer: 'veylo-api', audience: 'veylo-volume' });
     const job = await VolumeJob.findOne({ _id: payload.jobId, publicId: req.params.publicId, status: 'published' }).populate('userId', 'name studio avatar');
-    const subject = job ? await VolumeSubject.findOne({ _id: payload.subjectId, jobId: job._id }) : null;
+    const subject = job && Number(payload.accessVersion || 1) === Number(job.accessVersion || 1) ? await VolumeSubject.findOne({ _id: payload.subjectId, jobId: job._id }) : null;
     if (!job || !subject) return res.status(403).json({ success: false, message: 'Open this gallery with a new access code.' });
     const assets = await StorageAsset.find({ userId: job.userId._id, assetId: { $in: subject.assetIds } }).lean();
     const byId = new Map(assets.map(asset => [asset.assetId, asset]));

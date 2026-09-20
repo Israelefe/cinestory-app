@@ -11,7 +11,8 @@ const volumeJobSchema = new mongoose.Schema({
   subjectCount: { type: Number, default: 0, min: 0, max: 1000 },
   assignedPhotoCount: { type: Number, default: 0, min: 0, max: 5000 },
   publishedAt: Date,
-  archivedAt: Date
+  archivedAt: Date,
+  accessVersion: { type: Number, default: 1, min: 1 }
 }, { timestamps: true });
 
 volumeJobSchema.index({ userId: 1, updatedAt: -1 });

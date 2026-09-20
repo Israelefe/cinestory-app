@@ -127,6 +127,13 @@ const directionSchema = z.object({
     body: z.preprocess(val => ['editorial-serif', 'clean-sans'].includes(val) ? val : 'clean-sans', z.enum(['clean-sans', 'editorial-serif']))
   }),
   pace: z.preprocess(val => ['measured', 'warm', 'energetic'].includes(val) ? val : 'warm', z.enum(['measured', 'warm', 'energetic'])),
+  variation: z.object({
+    composition: z.preprocess(val => ['quiet', 'split', 'layered', 'grid', 'portrait-led', 'wide-led'].includes(val) ? val : 'quiet', z.enum(['quiet', 'split', 'layered', 'grid', 'portrait-led', 'wide-led'])),
+    density: z.preprocess(val => ['spacious', 'balanced', 'layered'].includes(val) ? val : 'balanced', z.enum(['spacious', 'balanced', 'layered'])),
+    imageTreatment: z.preprocess(val => ['natural', 'warm', 'contrast', 'monochrome'].includes(val) ? val : 'natural', z.enum(['natural', 'warm', 'contrast', 'monochrome'])),
+    captionTreatment: z.preprocess(val => ['quiet', 'editorial', 'bold'].includes(val) ? val : 'editorial', z.enum(['quiet', 'editorial', 'bold'])),
+    accentPlacement: z.preprocess(val => ['corners', 'rules', 'labels', 'type'].includes(val) ? val : 'rules', z.enum(['corners', 'rules', 'labels', 'type']))
+  }).default({ composition: 'quiet', density: 'balanced', imageTreatment: 'natural', captionTreatment: 'editorial', accentPlacement: 'rules' }),
   music: z.object({
     trackId: z.preprocess(val => DELIVERY_SOUNDTRACKS.some(track => track.id === val) ? val : DELIVERY_SOUNDTRACKS[0].id, z.enum(DELIVERY_SOUNDTRACKS.map(track => track.id))),
     mood: z.preprocess(val => String(val || '').trim().slice(0, 80) || 'Cinematic Warmth', z.string().min(2).max(80)),
@@ -170,7 +177,7 @@ const frameSchema = z.preprocess(raw => {
   sectionId: z.preprocess(val => String(val || '').toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 32) || 'section-1', z.string()),
   role: z.preprocess(val => ['opening', 'hero', 'supporting', 'detail', 'pair', 'finale'].includes(val) ? val : 'supporting', z.enum(['opening', 'hero', 'supporting', 'detail', 'pair', 'finale'])),
   headline: z.preprocess(val => String(val || '').trim().slice(0, 70), z.string().max(70)),
-  caption: z.preprocess(val => String(val || '').trim().slice(0, 180), z.string().max(180)),
+  caption: z.preprocess(val => String(val || '').trim().slice(0, 180), z.string().min(8).max(180)),
   motion: z.preprocess(val => MOTIONS.includes(val) ? val : 'slow-push', z.enum(MOTIONS)),
   transition: z.preprocess(val => TRANSITIONS.includes(val) ? val : 'crossfade', z.enum(TRANSITIONS)),
   duration: z.preprocess(val => Math.min(12, Math.max(2, Number(val) || 4.5)), z.number().min(2).max(12)),
@@ -360,7 +367,7 @@ STRICT RULES:
 4. Never invent names, relationships, or events the photographer did not mention.
 5. Never use AI clichés: elevate, unlock, seamlessly, tapestry, symphony, beacon, testament, crescendo, delve, journey, essence, timeless, radiance, pure grace, grand finale, curated.
 6. No hashtags, emojis, or corporate jargon.
-7. Leave captions empty when a photograph speaks for itself.
+7. Every photograph must have a meaningful caption. Never return an empty caption. If a frame is quiet, write about what the moment means to the client rather than describing the pixels.
 
 GOOD examples for a 30th birthday shoot for Ada:
   - Headline: "The Start of a New Decade" / Caption: "Ada, this is the one you will keep coming back to."
@@ -485,6 +492,7 @@ export async function createGlobalDirection({ format, brief, shootType, clientNa
   "palette": { "background": "<#hex>", "surface": "<#hex>", "text": "<#hex>", "accent": "<#hex>" },
   "typography": { "display": "editorial-serif" | "clean-sans" | "condensed-sans" | "soft-serif", "body": "clean-sans" | "editorial-serif" },
   "pace": "measured" | "warm" | "energetic",
+  "variation": { "composition": "quiet" | "split" | "layered" | "grid" | "portrait-led" | "wide-led", "density": "spacious" | "balanced" | "layered", "imageTreatment": "natural" | "warm" | "contrast" | "monochrome", "captionTreatment": "quiet" | "editorial" | "bold", "accentPlacement": "corners" | "rules" | "labels" | "type" },
   "music": { "trackId": "<one approved track id>", "mood": "<mood title, 2-80 chars>", "genre": "<genre title, 2-80 chars>", "tempo": "slow" | "mid" | "upbeat" },
   "narrationRecommended": boolean,
   "sections": [
@@ -532,7 +540,7 @@ export async function createFrameBatch({ format, brief, shootType, clientName, d
       "sectionId": "<one of: ${validSectionIds.join(', ')}>",
       "role": "opening" | "hero" | "supporting" | "detail" | "pair" | "finale",
       "headline": "<brief evocative headline under 70 chars, or empty>",
-      "caption": "<natural human caption under 180 chars, or empty>",
+      "caption": "<required natural human caption under 180 chars, written for this client and occasion>",
       "motion": "slow-push" | "slow-pull" | "pan-left" | "pan-right" | "float" | "still",
       "transition": "fade" | "crossfade" | "wipe" | "slide" | "reveal" | "cut",
       "duration": <number between 2 and 12 seconds>,
@@ -544,6 +552,10 @@ Return one frame per photograph in the supplied order.`;
 
   const minimalInsights = (imageInsights || []).map(insight => ({
     assetId: String(insight.assetId || ''),
+    summary: insight.summary || '',
+    subjects: insight.subjects || [],
+    expression: insight.expression || '',
+    setting: insight.setting || '',
     moment: insight.moment || '',
     visualWeight: insight.visualWeight || 5,
     orientation: insight.orientation || 'landscape'
@@ -552,6 +564,14 @@ Return one frame per photograph in the supplied order.`;
   const minimalDirection = {
     title: direction?.title || 'Photo Story',
     sections: (direction?.sections || []).map(s => ({ id: s.id, title: s.title }))
+  };
+
+  const fallbackCaption = (insight) => {
+    const name = String(clientName || 'you').trim();
+    const occasion = String(shootType || 'this shoot').trim().toLowerCase();
+    const moment = String(insight?.moment || insight?.expression || '').replace(/[<>]/g, '').trim().replace(/[.!?]+$/, '');
+    if (moment) return `${name}, this ${moment.toLowerCase()} carries what your ${occasion} was really about.`.slice(0, 180);
+    return `${name}, this frame keeps a little of the feeling you brought to your ${occasion}.`.slice(0, 180);
   };
 
   const alignFrames = (rawFrames = []) => {
@@ -565,7 +585,7 @@ Return one frame per photograph in the supplied order.`;
         frame.role = index === 0 ? 'hero' : 'supporting';
       }
       if (typeof frame.headline !== 'string') frame.headline = '';
-      if (typeof frame.caption !== 'string') frame.caption = '';
+      if (typeof frame.caption !== 'string' || frame.caption.trim().length < 8) frame.caption = fallbackCaption(imageInsights[index]);
       if (!MOTIONS.includes(frame.motion)) frame.motion = 'slow-push';
       if (!TRANSITIONS.includes(frame.transition)) frame.transition = 'crossfade';
       frame.duration = Math.min(12, Math.max(2, Number(frame.duration) || 4.5));
@@ -622,6 +642,9 @@ ${schemaInstructions}`
 }
 
 export async function createNarrationScript({ clientName, shootType, brief, direction, format }) {
+  throw Object.assign(new Error('Narration script generation is disabled. Deepgram reads the approved delivery captions.'), { code: 'NARRATION_CAPTIONS_ONLY' });
+}
+/*
   const provider = config();
   const sections = direction?.sections || [];
   const frames = direction?.frames || [];
@@ -679,6 +702,7 @@ ${schemaInstructions}`
   return result.script;
 }
 
+*/
 export async function createPortfolioDirection({ studioName, bio, location, items, imageInsights }) {
   const provider = config();
   const schemaInstructions = `Return a JSON object matching this schema:
