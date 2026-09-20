@@ -45,7 +45,12 @@ export async function uploadDeliveryPhotos(deliveryId, files, onProgress = () =>
     });
     const response = result.response;
     const payload = result.body;
-    if (!response.ok) throw new Error(payload?.error?.message || `Upload failed for ${file.name}.`);
+    // uploadToCloudinary uses XMLHttpRequest, which exposes `status` rather
+    // than fetch's boolean `ok`. Checking response.ok made every successful
+    // 2xx upload look like a failure and prevented confirmation from running.
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(payload?.error?.message || payload?.message || `Upload failed for ${file.name}.`);
+    }
     const confirmed = await api.post(`/v1/deliveries/${deliveryId}/uploads/confirm`, { publicId: payload.public_id, version: payload.version, signature: payload.signature, resourceType: 'image', originalFilename: file.name });
     report(index, file.size);
     completed += 1;

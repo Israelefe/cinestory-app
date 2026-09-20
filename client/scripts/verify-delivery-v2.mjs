@@ -25,6 +25,7 @@ const formatCss = await read('src/styles/format-demos.css');
 const eventCss = await read('src/components/delivery/EventCampaignViewers.css');
 const directionStudio = await read('src/components/delivery/DeliveryDirectionStudio.jsx');
 const createMusic = await read('src/pages/CreateDelivery.jsx');
+const deliveryUpload = await read('src/utils/deliveryUpload.js');
 
 for (const format of ['photo-story', 'editorial-page', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign']) {
   assert.match(formats, new RegExp(`id: '${format}'`), `Missing format: ${format}`);
@@ -44,6 +45,8 @@ assert.match(gallery, /Download all photos/, 'Gallery must describe individual p
 assert.match(gallery, /downloadNotice/, 'Gallery must show mobile download guidance');
 assert.match(galleryCss, /header-actions>\.client-gallery-icon/, 'Gallery close control must have an explicit centered layout');
 assert.match(brandMark, /delivery-brand-mark-initials/, 'Pro deliveries without a logo must still show studio identity');
+assert.match(deliveryUpload, /response\.status < 200 \|\| response\.status >= 300/, 'Delivery uploads must check XMLHttpRequest status codes');
+assert.doesNotMatch(deliveryUpload, /const response = result\.response;[\s\S]{0,180}if \(!response\.ok\)/, 'Delivery uploads must not treat XMLHttpRequest like fetch');
 assert.match(viewer, /onTimeUpdate={syncNarrationCue}/, 'Narration must expose the approved caption that is currently being read');
 assert.match(viewer, /READING THE APPROVED CAPTION/, 'Non-story formats must show the narration cue in sync with captions');
 assert.match(viewer, /narrationInteractionRef/, 'Narration must start after the client opening interaction');
