@@ -318,24 +318,28 @@ export async function deleteDelivery(req, res) {
     // leave an owned draft or published delivery stuck in the dashboard.
     const removed = await Delivery.findOneAndDelete({ _id: delivery._id, userId: req.user.id });
     if (!removed) return res.status(404).json({ success: false, message: 'Delivery not found.' });
-    const cleanup = [
-      (async () => {
+    const cleanupTasks = [
+      async () => {
         if (!removedIds.size) return;
         const portfolio = await Portfolio.findOne({ userId: req.user.id, 'items.publicId': { $in: [...removedIds] } });
         if (!portfolio) return;
         portfolio.items = portfolio.items.filter(item => !removedIds.has(item.publicId));
         if (portfolio.status === 'published' && portfolio.items.length < 4) { portfolio.status = 'draft'; portfolio.publishedAt = undefined; }
         await portfolio.save();
-      })(),
-      DeliveryJob.deleteMany({ deliveryId: delivery._id }),
-      DeliveryShareGrant.deleteMany({ deliveryId: delivery._id }),
-      PhotoLike.deleteMany({ deliveryId: delivery._id }),
-      DeliveryView.deleteMany({ deliveryId: delivery._id }),
-      removeDeliveryMedia(req.user.id, delivery._id)
+      },
+      () => DeliveryJob.deleteMany({ deliveryId: delivery._id }),
+      () => DeliveryShareGrant.deleteMany({ deliveryId: delivery._id }),
+      () => PhotoLike.deleteMany({ deliveryId: delivery._id }),
+      () => DeliveryView.deleteMany({ deliveryId: delivery._id }),
+      () => removeDeliveryMedia(req.user.id, delivery._id)
     ];
-    const cleanupResults = await Promise.allSettled(cleanup);
-    cleanupResults.filter(result => result.status === 'rejected').forEach(result => {
-      console.error('[deliveries/delete-cleanup]', result.reason?.message || result.reason);
+    // Respond as soon as the owned database record is gone. Cloudinary and
+    // secondary collection cleanup can be slow or temporarily unavailable;
+    // neither should make the photographer wait or report a failed delete.
+    void Promise.allSettled(cleanupTasks.map(task => Promise.resolve().then(task))).then(results => {
+      results.filter(result => result.status === 'rejected').forEach(result => {
+        console.error('[deliveries/delete-cleanup]', result.reason?.message || result.reason);
+      });
     });
     res.json({ success: true, message: 'Delivery deleted and its client link disabled.' });
   } catch (error) {
