@@ -1,15 +1,28 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Instagram, MapPin, MessageCircle } from 'lucide-react';
-import { useParams } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
 import api, { apiMessage } from '../services/api.js';
 import './PublicStudioPortfolio.css';
 
+function pathHandle(pathname) {
+  const value = pathname.replace(/^\/@/, '').split('/')[0] || '';
+  try { return decodeURIComponent(value); } catch { return value; }
+}
+
 export default function PublicStudioPortfolio() {
-  const { handle } = useParams();
+  const { handle: routeHandle } = useParams();
+  const location = useLocation();
+  const handle = String(routeHandle || pathHandle(location.pathname)).replace(/^@/, '');
   const [portfolio, setPortfolio] = useState(null);
   const [error, setError] = useState('');
   const [category, setCategory] = useState('All');
-  useEffect(() => { api.get(`/v1/portfolios/public/${encodeURIComponent(handle)}`).then(({ data }) => { setPortfolio(data.data); document.title = `${data.data.studioName} — Portfolio`; }).catch(err => setError(apiMessage(err, 'That portfolio is not available.'))); }, [handle]);
+  useEffect(() => {
+    if (!handle) { setError('That portfolio address is incomplete.'); return undefined; }
+    setError('');
+    setPortfolio(null);
+    api.get(`/v1/portfolios/public/${encodeURIComponent(handle)}`).then(({ data }) => { setPortfolio(data.data); document.title = `${data.data.studioName} — Portfolio`; }).catch(err => setError(apiMessage(err, 'That portfolio is not available.')));
+    return undefined;
+  }, [handle]);
   const categories = useMemo(() => ['All', ...new Set((portfolio?.items || []).map(item => item.category))], [portfolio]);
   const items = category === 'All' ? portfolio?.items || [] : portfolio.items.filter(item => item.category === category);
   if (error) return <div className="v-public-portfolio-state"><img src="/veylo/veylo-mark.svg" alt="" /><h1>Portfolio unavailable.</h1><p>{error}</p><a href="/">Go to Veylo</a></div>;

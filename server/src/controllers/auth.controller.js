@@ -33,6 +33,17 @@ const codeSchema = z.object({ email, code: z.string().regex(/^\d{6}$/) });
 const challengedCodeSchema = codeSchema.extend({ turnstileToken: z.string().optional() });
 const loginSchema = z.object({ email, password: z.string().min(1).max(128), remember: z.boolean().optional().default(true), turnstileToken: z.string().optional() });
 const resetSchema = z.object({ resetToken: z.string().min(20), password, confirmPassword: z.string() }).refine(data => data.password === data.confirmPassword, { path: ['confirmPassword'], message: 'The passwords do not match.' });
+const profileSpecialties = ['Portraits', 'Weddings', 'Birthdays', 'Fashion and editorial', 'Commercial and branding', 'Maternity', 'Graduation', 'Events', 'Other'];
+const profileSchema = z.object({
+  name: z.string().trim().min(2, 'Enter your name.').max(100),
+  studioName: z.string().trim().min(2, 'Enter your studio name.').max(100),
+  businessType: z.enum(['individual', 'studio']),
+  city: z.string().trim().min(2, 'Enter your city.').max(80),
+  state: z.string().trim().min(2, 'Enter your state.').max(80),
+  specialties: z.array(z.enum(profileSpecialties)).min(1, 'Choose at least one kind of work.').max(profileSpecialties.length),
+  instagram: z.string().trim().max(80).default(''),
+  whatsapp: z.string().trim().max(30).default('')
+}).strict();
 
 function validationFailure(res, parsed) {
   const issue = parsed.error.issues[0];
@@ -264,6 +275,33 @@ export async function getMe(req, res) {
   } catch (error) {
     console.error('[auth/me]', error.message);
     res.status(500).json({ success: false, message: 'We could not open your account. Please try again.' });
+  }
+}
+
+export async function updateProfile(req, res) {
+  try {
+    const parsed = profileSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      return res.status(400).json({ success: false, code: 'VALIDATION_ERROR', field: issue.path[0], message: issue.message });
+    }
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
+    user.name = parsed.data.name;
+    user.studio = user.studio || {};
+    user.studio.name = parsed.data.studioName;
+    user.studio.businessType = parsed.data.businessType;
+    user.studio.city = parsed.data.city;
+    user.studio.state = parsed.data.state;
+    user.studio.country = 'Nigeria';
+    user.studio.specialties = parsed.data.specialties;
+    user.studio.instagram = parsed.data.instagram.replace(/^@/, '');
+    user.studio.whatsapp = parsed.data.whatsapp;
+    await user.save();
+    res.json({ success: true, user: publicUser(user), message: 'Your account details were saved.' });
+  } catch (error) {
+    console.error('[auth/profile]', error.message);
+    res.status(500).json({ success: false, message: 'We could not save your account details. Please try again.' });
   }
 }
 

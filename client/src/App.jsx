@@ -122,6 +122,7 @@ const productRoutes = new Set(['/dashboard', '/create', '/sharing', '/settings',
 
 function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountDeleted, onPlanChanged }) {
   const { pathname } = useLocation();
+  if (/^\/@[^/]+\/?$/.test(pathname)) return <PublicStudioPortfolio />;
   const showPublicHeader = !focusedRoutes.has(pathname);
   return <div className="min-h-screen bg-[#070709] text-white">
     {showPublicHeader && <Navbar user={user} onLogout={onLogout} />}
@@ -140,7 +141,7 @@ function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountD
       <Route path="/forgot-password" element={<GuestOnlyRoute user={user} loading={authLoading}><ForgotPasswordPage /></GuestOnlyRoute>} />
       <Route path="/reset-password" element={<GuestOnlyRoute user={user} loading={authLoading}><ResetPasswordPage /></GuestOnlyRoute>} />
       <Route path="/onboarding" element={<ProtectedRoute user={user} loading={authLoading}><OnboardingPage user={user} onAuthenticated={onAuthenticated} onLogout={onLogout} /></ProtectedRoute>} />
-      <Route path="/settings" element={<ProtectedRoute user={user} loading={authLoading}><AccountSettings user={user} onAccountDeleted={onAccountDeleted} /></ProtectedRoute>} />
+      <Route path="/settings" element={<ProtectedRoute user={user} loading={authLoading}><AccountSettings user={user} onUserUpdated={onAuthenticated} onAccountDeleted={onAccountDeleted} /></ProtectedRoute>} />
       <Route path="/billing" element={<ProtectedRoute user={user} loading={authLoading}><BillingPage onPlanChanged={onPlanChanged} /></ProtectedRoute>} />
       <Route path="/library" element={<ProtectedRoute user={user} loading={authLoading}><ImageLibrary /></ProtectedRoute>} />
       <Route path="/portfolio/manage" element={<ProtectedRoute user={user} loading={authLoading}><ManagePortfolio /></ProtectedRoute>} />
@@ -184,7 +185,6 @@ export default function App() {
     <Route path="/d/:publicId" element={<DeliveryViewer />} />
     <Route path="/volume-deliveries" element={<Navigate to="/dashboard" replace />} />
     <Route path="/volume/:publicId" element={<Navigate to="/" replace />} />
-    <Route path="/@:handle" element={<PublicStudioPortfolio />} />
     <Route path="/demo" element={<StoryViewer demoMode />} />
     <Route path="/demo/:formatId" element={<FormatDemo />} />
     <Route path="*" element={<WebsiteShell user={user} authLoading={authLoading} onAuthenticated={handleAuthenticated} onLogout={handleLogout} onAccountDeleted={handleAccountDeleted} onPlanChanged={handlePlanChanged} />} />
