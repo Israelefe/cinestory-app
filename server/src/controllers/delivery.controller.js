@@ -147,8 +147,11 @@ export async function streamDeliverySoundtrack(req, res) {
     }
     const filePath = deliverySoundtrackFile(req.params.trackId);
     if (!filePath) return res.status(404).json({ success: false, message: 'Soundtrack not found.' });
+    recordAnalyticsEventAsync({ name: 'soundtrack.preview.started', source: 'server', actorType: 'photographer', status: 'started', metadata: { trackId: req.params.trackId } });
+    res.once('finish', () => recordAnalyticsEventAsync({ name: 'soundtrack.preview.completed', source: 'server', actorType: 'photographer', status: 'completed', metadata: { trackId: req.params.trackId } }));
     return await streamAudioFile(req, res, filePath);
   } catch (error) {
+    recordAnalyticsEventAsync({ name: 'soundtrack.preview.failed', source: 'server', actorType: 'photographer', status: 'failed', errorCode: error.code || 'SOUNDTRACK_PREVIEW_FAILED', metadata: { trackId: req.params.trackId } });
     if (error.code === 'ENOENT') return res.status(404).json({ success: false, message: 'Soundtrack file not found.' });
     console.error('[deliveries/soundtrack-stream]', error.message);
     return res.status(500).json({ success: false, message: 'We could not play that soundtrack.' });
@@ -586,6 +589,7 @@ export async function selectCuratedSoundtrack(req, res) {
     if (!track) return res.status(404).json({ success: false, message: 'That soundtrack is not in Veylo’s approved library.' });
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This delivery is not available for audio selection.' });
+    const previousTrackId = delivery.soundtrack?.catalogId || null;
     if (delivery.soundtrack?.publicId) await removeDeliveryAudio(delivery.soundtrack.publicId).catch(() => {});
     delivery.soundtrack = {
       catalogId: track.id,
@@ -623,6 +627,7 @@ export async function selectCuratedSoundtrack(req, res) {
     };
     delivery.markModified('soundtrack');
     await delivery.save();
+    recordAnalyticsEventAsync({ name: previousTrackId && previousTrackId !== track.id ? 'soundtrack.replaced' : 'soundtrack.selected', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: delivery._id, format: delivery.format, status: 'selected', metadata: { trackId: track.id, previousTrackId, selectionType: 'photographer' } });
     res.status(200).json({ success: true, data: { ...delivery.soundtrack, url: curatedPreviewUrl(track.id, soundtrackPreviewToken(req.user.id)) } });
   } catch (error) {
     console.error('[deliveries/soundtrack-select]', error.message);
@@ -908,8 +913,11 @@ export async function getPublicSoundtrack(req, res) {
     }
     const filePath = deliverySoundtrackFile(delivery.soundtrack.catalogId);
     if (!filePath) return res.status(404).json({ success: false, message: 'Soundtrack not found.' });
+    recordAnalyticsEventAsync({ name: 'soundtrack.playback.started', source: 'server', actorType: 'client', deliveryId: delivery._id, status: 'started', metadata: { trackId: delivery.soundtrack.catalogId } });
+    res.once('finish', () => recordAnalyticsEventAsync({ name: 'soundtrack.playback.completed', source: 'server', actorType: 'client', deliveryId: delivery._id, status: 'completed', metadata: { trackId: delivery.soundtrack.catalogId } }));
     return await streamAudioFile(req, res, filePath);
   } catch (error) {
+    recordAnalyticsEventAsync({ name: 'soundtrack.playback.failed', source: 'server', actorType: 'client', deliveryId: typeof delivery !== 'undefined' ? delivery?._id : undefined, status: 'failed', errorCode: error.code || 'SOUNDTRACK_PLAYBACK_FAILED', metadata: { trackId: req.params.publicId } });
     if (error.code === 'ENOENT') return res.status(404).json({ success: false, message: 'Soundtrack file not found.' });
     console.error('[deliveries/public-soundtrack]', error.message);
     return res.status(500).json({ success: false, message: 'We could not play that soundtrack.' });

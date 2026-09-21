@@ -34,6 +34,7 @@ import {
   adminDeleteVolumeJob,
   getStorageOverview,
   scanStorageReferences,
+  getMusicNarrationOverview,
   getAllStories,
   getAllDeliveries,
   getPayments,
@@ -135,6 +136,7 @@ router.post('/volume/:id/restore', adminRestoreVolumeJob);
 router.delete('/volume/:id', adminDeleteVolumeJob);
 router.get('/storage', getStorageOverview);
 router.post('/storage/scan', scanStorageReferences);
+router.get('/music-narration', getMusicNarrationOverview);
 router.get('/payments', getPayments);
 router.delete('/stories/:id', adminDeleteStory);
 router.post('/payments/:id/refund', billingActionLimit, refundPayment);

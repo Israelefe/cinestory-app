@@ -152,9 +152,9 @@ function timingTokenMatches(expected, actual) {
   return tokenDistance(left, right) <= Math.max(1, Math.floor(Math.max(left.length, right.length) * 0.24));
 }
 
-export function timedSegments(segments, words) {
+export function timedSegments(segments, words, duration = 0) {
   let cursor = 0;
-  return segments.map(segment => {
+  const matches = segments.map(segment => {
     const targetWords = segment.text.split(/\s+/).map(timingToken).filter(Boolean);
     if (!targetWords.length) throw Object.assign(new Error(`Caption ${segment.id} has no measurable words.`), { code: 'NARRATION_TIMING_FAILED' });
     let first = null;
@@ -182,13 +182,35 @@ export function timedSegments(segments, words) {
       last = match;
       cursor = match + 1;
     }
-    if (first === null || last === null) throw Object.assign(new Error(`Deepgram timing could not be aligned to caption ${segment.id}.`), { code: 'NARRATION_TIMING_FAILED' });
-    return {
-      ...segment,
-      startSec: Number(words[first].start.toFixed(3)),
-      endSec: Number(words[last].end.toFixed(3))
-    };
+    return { segment, first, last };
   });
+  if (!matches.some(item => item.first !== null && item.last !== null)) throw Object.assign(new Error('Deepgram timing could not be aligned to any approved caption.'), { code: 'NARRATION_TIMING_FAILED' });
+  const measuredDuration = Math.max(Number(duration) || 0, Number(words.at(-1)?.end || 0));
+  const boundaries = matches.map(item => item.first === null ? null : { start: Number(words[item.first].start), end: Number(words[item.last].end) });
+  // A provider transcript can omit a name, contraction, or very short caption.
+  // Do not fall back to word-count estimates. Instead, split only the real
+  // measured audio gap between the nearest measured caption boundaries.
+  let index = 0;
+  while (index < boundaries.length) {
+    if (boundaries[index]) { index += 1; continue; }
+    const startIndex = index;
+    while (index < boundaries.length && !boundaries[index]) index += 1;
+    const endIndex = index;
+    const previousEnd = startIndex > 0 ? boundaries[startIndex - 1]?.end : Number(words[0]?.start || 0);
+    const nextStart = endIndex < boundaries.length ? boundaries[endIndex]?.start : measuredDuration;
+    const gapStart = Number.isFinite(previousEnd) ? previousEnd : 0;
+    const gapEnd = Number.isFinite(nextStart) && nextStart > gapStart ? nextStart : Math.max(gapStart + 0.25 * (endIndex - startIndex), measuredDuration);
+    const step = Math.max(0.12, (gapEnd - gapStart) / Math.max(1, endIndex - startIndex));
+    for (let missing = startIndex; missing < endIndex; missing += 1) {
+      const start = gapStart + step * (missing - startIndex);
+      boundaries[missing] = { start, end: Math.max(start + 0.12, Math.min(gapEnd, start + step)) };
+    }
+  }
+  return matches.map((item, itemIndex) => ({
+    ...item.segment,
+    startSec: Number(Math.max(0, boundaries[itemIndex].start).toFixed(3)),
+    endSec: Number(Math.max(boundaries[itemIndex].start + 0.12, boundaries[itemIndex].end).toFixed(3))
+  }));
 }
 
 function splitNarration(segments, maxCharacters = 2600) {
@@ -239,7 +261,7 @@ export async function generateNarration(delivery) {
     }).join('\n\n');
     const chunkAudio = await synthesize({ apiKey, text: chunkText });
     const timing = await transcribeWordTimings({ apiKey, audio: chunkAudio });
-    const chunkSegments = timedSegments(chunk, timing.words).map(segment => ({
+    const chunkSegments = timedSegments(chunk, timing.words, timing.duration).map(segment => ({
       ...segment,
       startSec: Number((segment.startSec + offset).toFixed(3)),
       endSec: Number((segment.endSec + offset).toFixed(3))
@@ -264,6 +286,9 @@ export async function generateNarration(delivery) {
     resourceType: 'video',
     format: uploaded.format,
     bytes: uploaded.bytes,
+    contentHash: uploaded.etag || undefined,
+    hashAlgorithm: uploaded.etag ? 'cloudinary-etag' : undefined,
+    hashVerifiedAt: uploaded.etag ? new Date() : undefined,
     duration,
     transcript,
     voiceId: DEFAULT_NARRATION_VOICE_ID,

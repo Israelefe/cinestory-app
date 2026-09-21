@@ -169,6 +169,8 @@ async function run(job) {
     else if (job.type === 'direct') await direct(job, delivery);
     else if (job.type === 'revise') await revise(job, delivery);
     else if (job.type === 'narrate') await narrate(job, delivery);
+    if (job.type === 'direct' && delivery.soundtrack?.catalogId) recordAnalyticsEventAsync({ name: 'soundtrack.selected', source: 'system', actorType: 'system', userId: job.userId, deliveryId: job.deliveryId, format: delivery.format, status: 'selected', metadata: { trackId: delivery.soundtrack.catalogId, selectionType: 'creative-director' } });
+    if (job.type === 'narrate') recordAnalyticsEventAsync({ name: 'narration.generated', source: 'system', actorType: 'system', userId: job.userId, deliveryId: job.deliveryId, format: delivery.format, status: 'completed', durationMs: Date.now() - startedAt, metadata: { voiceId: delivery.narration?.voiceId || 'flux-hannah-en', provider: 'Deepgram Flux', renderVersion: delivery.narration?.renderVersion || null } });
     const latest = await DeliveryJob.findById(job._id).select('cancelRequestedAt status').lean();
     if (latest?.cancelRequestedAt || latest?.status === 'cancelled') {
       await DeliveryJob.updateOne({ _id: job._id }, { $set: { status: 'cancelled', stage: 'cancelled', cancelledAt: new Date(), completedAt: new Date(), providerLatencyMs: Date.now() - startedAt } });
@@ -199,6 +201,7 @@ async function run(job) {
       errorCode: error.code || 'GENERATION_FAILED',
       metadata: { jobType: job.type, worker: 'delivery', provider: job.provider || (job.type === 'narrate' ? 'Deepgram Flux' : CREATIVE_DIRECTOR_PROVIDER), promptVersion: job.promptVersion || CREATIVE_DIRECTOR_PROMPT_VERSION, renderVersion: job.renderVersion || null }
     });
+    if (job.type === 'narrate') recordAnalyticsEventAsync({ name: error.code === 'NARRATION_TIMING_FAILED' ? 'narration.timing.failed' : 'narration.failed', source: 'system', actorType: 'system', userId: job.userId, deliveryId: job.deliveryId, status: 'failed', durationMs: Date.now() - startedAt, errorCode: error.code || 'NARRATION_FAILED', metadata: { provider: 'Deepgram Flux', renderVersion: job.renderVersion || null } });
     console.error(`[delivery-worker/${job.type}]`, error.code || error.name, error.message);
   }
 }

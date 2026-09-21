@@ -16,6 +16,8 @@ import {
   LogOut,
   LockKeyhole,
   Mail,
+  Mic2,
+  Music2,
   ReceiptText,
   RefreshCw,
   Search,
@@ -142,6 +144,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const [storageOverview, setStorageOverview] = useState(null);
   const [storageScan, setStorageScan] = useState(null);
   const [storageScanLoading, setStorageScanLoading] = useState(false);
+  const [musicOverview, setMusicOverview] = useState(null);
   const [selectedVolume, setSelectedVolume] = useState(null);
   const [volumeDetailLoading, setVolumeDetailLoading] = useState(false);
   const [volumeCategoryFilter, setVolumeCategoryFilter] = useState('all');
@@ -181,7 +184,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       aiJobs: api.get('/v1/admin/ai/jobs', { params: { search, status: aiJobStatusFilter, type: aiJobTypeFilter } }),
       access: api.get('/v1/admin/client-access', { params: { search } }),
       volume: api.get('/v1/admin/volume', { params: { search, category: volumeCategoryFilter, status: volumeStatusFilter } }),
-      storage: api.get('/v1/admin/storage', { params: { search } })
+      storage: api.get('/v1/admin/storage', { params: { search } }),
+      musicNarration: api.get('/v1/admin/music-narration', { params: { search } })
     };
     const entries = Object.entries(requests);
     const results = await Promise.allSettled(entries.map(([, request]) => request));
@@ -199,6 +203,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         if (key === 'access') setAccessOverview(data || null);
         if (key === 'volume') setVolumeJobs(Array.isArray(data) ? data : []);
         if (key === 'storage') setStorageOverview(data || null);
+        if (key === 'musicNarration') setMusicOverview(data || null);
         return;
       }
       const error = result.status === 'rejected' ? result.reason : new Error(result.value?.data?.message || 'This panel is unavailable.');
@@ -549,9 +554,10 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       aiJobs: aiJobs.length,
       access: accessOverview?.deliveries?.length || 0,
       volume: volumeJobs.length,
-      storage: storageOverview?.accounts?.length || 0
+      storage: storageOverview?.accounts?.length || 0,
+      musicNarration: musicOverview?.catalogue?.filtered || 0
     }),
-    [accessOverview, aiJobs, deliveries, users, payments, volumeJobs, storageOverview]
+    [accessOverview, aiJobs, deliveries, users, payments, volumeJobs, storageOverview, musicOverview]
   );
 
   const runStorageScan = async () => {
@@ -698,7 +704,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         {/* Section Tabs & Search */}
         <section className="mt-10">
           <div className="flex flex-col gap-4 border-b border-white/10 pb-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5 sm:grid-cols-4 md:grid-cols-7">
+            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5 sm:grid-cols-4 md:grid-cols-8">
               {[
                 ['deliveries', Film, 'Deliveries'],
                 ['users', Users, 'Accounts'],
@@ -706,7 +712,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
                 ['aiJobs', Bot, 'AI jobs'],
                 ['access', Eye, 'Client access'],
                 ['volume', Users, 'Volume'],
-                ['storage', HardDrive, 'Storage']
+                ['storage', HardDrive, 'Storage'],
+                ['musicNarration', Music2, 'Music & voice']
               ].map(([key, Icon, label]) => (
                 <button
                   key={key}
@@ -903,6 +910,20 @@ export default function AdminDashboardPage({ admin, onLogout }) {
                 <div className="mb-5 rounded-2xl border border-white/10 bg-white/[.025] p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.14em] text-[#ff9b8e]">Volume access</p><h3 className="mt-1 text-lg font-medium">Recipient code activity</h3></div><span className="text-xs text-white/35">Last {number(accessOverview.windowDays)} days</span></div><div className="mt-4 grid gap-3 sm:grid-cols-4"><div><p className="text-xs text-white/40">Requests</p><p className="mt-1 text-xl font-medium">{number(accessOverview.totals?.volumeAccessCodeRequests)}</p></div><div><p className="text-xs text-white/40">Verified</p><p className="mt-1 text-xl font-medium">{number(accessOverview.totals?.volumeAccessCodeVerified)}</p></div><div><p className="text-xs text-white/40">Failures</p><p className="mt-1 text-xl font-medium">{number(accessOverview.totals?.volumeAccessCodeFailures)}</p></div><div><p className="text-xs text-white/40">Gallery opens</p><p className="mt-1 text-xl font-medium">{number(accessOverview.totals?.volumeGalleryOpens)}</p></div></div></div>
                 <div className="space-y-3">{(accessOverview.deliveries || []).map(item => <article key={item.id} className="rounded-2xl border border-white/10 bg-white/[.025] p-4 sm:p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><p className="text-[10px] uppercase tracking-[.14em] text-[#ff9b8e]">{formatNames[item.format] || item.format || 'Delivery'}</p><h3 className="mt-1 truncate text-sm font-semibold text-white">{item.title}</h3><p className="mt-1 truncate text-xs text-white/40">{item.photographer} · {item.publicId}</p></div><div className="flex items-center gap-2"><Status value={item.revoked ? 'revoked' : item.expired ? 'expired' : item.status} /><span className="text-xs text-white/35">{number(item.shareGrants?.active)} active grants</span></div></div><div className="mt-4 grid grid-cols-2 gap-3 text-xs text-white/55 sm:grid-cols-4 lg:grid-cols-8"><span>Opens <strong className="ml-1 text-white">{number(item.opens)}</strong></span><span>Unique <strong className="ml-1 text-white">{number(item.uniqueVisitors)}</strong></span><span>Repeat <strong className="ml-1 text-white">{number(item.repeatVisitors)}</strong></span><span>PIN fails <strong className="ml-1 text-white">{number(item.pinFailures)}</strong></span><span>Downloads <strong className="ml-1 text-white">{number(item.downloadsCompleted)}</strong></span><span>Likes <strong className="ml-1 text-white">{number(item.likes)}</strong></span><span>Grant opens <strong className="ml-1 text-white">{number(item.shareGrants?.opens)}</strong></span><span>Grant downloads <strong className="ml-1 text-white">{number(item.shareGrants?.downloads)}</strong></span></div></article>)}{!accessOverview.deliveries?.length && <p className="py-16 text-center text-sm text-white/45">No client access records match your search.</p>}</div>
               </> : <div className="py-16 text-center text-sm text-white/45">Client access activity is unavailable.</div>}
+            </div>
+          )}
+
+          {/* Music and narration tab */}
+          {!loading && tab === 'musicNarration' && (
+            <div className="mt-6 space-y-5">
+              {panelErrors.musicNarration && !musicOverview && <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-5 text-sm text-amber-100">Music and narration data is unavailable. {panelErrors.musicNarration}</div>}
+              {musicOverview && <>
+                <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><MetricCard icon={Music2} label="Approved tracks" value={number(musicOverview.catalogue?.total)} note={`${number(musicOverview.catalogue?.available)} files available and hash-verified`} /><MetricCard icon={TriangleAlert} label="Catalogue issues" value={number(Number(musicOverview.catalogue?.unavailable || 0) + Number(musicOverview.catalogue?.hashMismatches || 0))} note={`${number(musicOverview.catalogue?.contentIdRegistered)} tracks marked Content ID registered`} /><MetricCard icon={Mic2} label="Narration jobs" value={number(musicOverview.narration?.jobs?.total)} note={`${number(musicOverview.narration?.jobs?.completed)} completed · ${number(musicOverview.narration?.jobs?.failed)} failed`} /><MetricCard icon={Activity} label="Alignment failures" value={number(musicOverview.narration?.timingFailures)} note={`${number(musicOverview.narration?.staleDeliveries)} stale narration records`} /></section>
+                <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Audio health</p><h2 className="mt-1 text-xl font-medium">Can photographers and clients hear the right thing?</h2></div><span className="text-xs text-white/35">Updated {shortDate(musicOverview.generatedAt)}</span></div><div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><HealthCard icon={Music2} label="Soundtrack catalogue" health={musicOverview.health?.catalogue} /><HealthCard icon={Mic2} label="Deepgram Flux" health={musicOverview.health?.deepgram} /><HealthCard icon={Music2} label="Soundtrack playback" health={{ status: musicOverview.soundtrack?.playbackFailures ? 'attention' : 'healthy', reason: `${number(musicOverview.soundtrack?.playbackFailures)} playback failures · ${number(musicOverview.soundtrack?.previewFailures)} preview failures in the last ${number(musicOverview.windowDays)} days.` }} /><HealthCard icon={Mic2} label="Narration playback" health={{ status: musicOverview.narration?.playbackFailures ? 'attention' : 'healthy', reason: `${number(musicOverview.narration?.playbackFailures)} playback failures · ${number(musicOverview.narration?.jobs?.queued)} jobs queued or running.` }} /></div></section>
+                <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Narrator usage</p><h2 className="mt-1 text-xl font-medium">Voice and generation health</h2></div><span className="text-xs text-white/35">Default: {musicOverview.narration?.defaultVoiceId}</span></div><div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{(musicOverview.narration?.voices || []).map(voice => <article key={voice.id} className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><div className="flex items-center justify-between gap-3"><p className="text-sm font-semibold text-white">{voice.name}</p>{voice.id === musicOverview.narration?.defaultVoiceId && <Status value="active" />}</div><p className="mt-1 text-xs text-white/45">{voice.provider} · {voice.tone}</p><p className="mt-4 text-xs text-white/55">{number(voice.jobs)} jobs · {number(voice.deliveries)} deliveries</p><p className="mt-1 text-xs text-white/40">{voice.averageGenerationMs ? `${number(Math.round(voice.averageGenerationMs))}ms average generation` : 'No completed generation timing yet'}</p></article>)}</div></section>
+                <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Soundtrack catalogue</p><h2 className="mt-1 text-xl font-medium">Source, licence and selection records</h2><p className="mt-2 text-xs leading-5 text-white/45">Each row is checked against its private local file and the stored Pixabay SHA-256. Selection counts include photographer replacements and creative-director choices.</p></div><span className="text-xs text-white/35">{number(musicOverview.catalogue?.filtered)} shown</span></div><div className="mt-5 space-y-2">{(musicOverview.catalogue?.tracks || []).map(track => <article key={track.id} className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="text-[10px] font-semibold uppercase tracking-[.14em] text-[#ff9b8e]">{track.category}</span><Status value={track.file?.hashMatches ? 'verified' : track.file?.available ? 'hash mismatch' : 'unavailable'} /></div><h3 className="mt-1 truncate text-sm font-semibold text-white">{track.title}</h3><p className="mt-1 truncate text-xs text-white/40">{track.creator} · {track.genre} · {track.mood}</p></div><div className="flex shrink-0 items-center gap-2 text-xs text-white/45"><span>{number(track.usage?.lifetimeSelections)} selections</span><span>{track.contentIdRegistered ? 'Content ID marked' : 'No Content ID mark'}</span></div></div><div className="mt-3 grid gap-2 text-xs text-white/50 sm:grid-cols-2 lg:grid-cols-4"><span>{track.durationSec}s · {track.tempo} tempo</span><span>{track.narrationFit} narration fit</span><span>{number(track.usage?.photographerSelections)} photographer · {number(track.usage?.creativeDirectorSelections)} AI</span><span>{number(track.usage?.replacements)} replacements · {number(track.usage?.currentDeliveries)} live deliveries</span></div><div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-white/40"><a className="text-[#ff9b8e] hover:underline" href={track.sourcePageUrl} target="_blank" rel="noreferrer">Pixabay source</a><a className="text-[#ff9b8e] hover:underline" href={track.licenseUrl} target="_blank" rel="noreferrer">Licence</a><span>{track.file?.actualSha256 ? `SHA-256 ${track.file.actualSha256.slice(0, 16)}…` : 'No local hash'}</span>{track.usage?.neverSelected && <span className="text-amber-200">Never selected</span>}</div></article>)}{!musicOverview.catalogue?.tracks?.length && <p className="py-16 text-center text-sm text-white/45">No soundtrack records match this search.</p>}</div></section>
+                <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Audio events</p><h2 className="mt-1 text-xl font-medium">Preview, playback and timing errors</h2></div><div className="mt-5 space-y-2">{(musicOverview.events || []).map(item => <div key={`${item.name}-${item.status}-${item.errorCode}`} className="flex flex-col gap-1 rounded-xl border border-white/10 bg-white/[.025] p-3 sm:flex-row sm:items-center sm:justify-between"><span className="text-xs text-white/65">{item.name}{item.errorCode ? ` · ${item.errorCode}` : ''}</span><span className="text-xs text-white/40">{number(item.count)} events{item.averageMs ? ` · ${number(Math.round(item.averageMs))}ms average` : ''}</span></div>)}{!musicOverview.events?.length && <p className="text-sm text-white/45">No audio events in this window.</p>}</div></section>
+              </>}
             </div>
           )}
 

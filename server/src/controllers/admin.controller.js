@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import { createReadStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import PhotoStory from '../models/PhotoStory.js';
@@ -31,6 +33,8 @@ import { PLAN_DEFINITIONS, PRO_PRICE_KOBO } from '../config/plans.js';
 import { tokenDigest } from '../utils/auth.js';
 import { removeDeliveryMedia } from '../services/deliveryMedia.service.js';
 import { NARRATION_RENDER_VERSION } from '../services/narration.service.js';
+import { DELIVERY_SOUNDTRACKS, deliverySoundtrackFile } from '../constants/deliverySoundtracks.js';
+import { DEFAULT_NARRATION_VOICE_ID, NARRATION_VOICES } from '../constants/narrationVoices.js';
 
 function escaped(value) { return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
@@ -40,6 +44,40 @@ function safeReason(value, fallback = '') {
 
 function validId(value) {
   return mongoose.isValidObjectId(value) ? value : null;
+}
+
+let soundtrackVerificationCache = { expiresAt: 0, value: null, pending: null };
+
+function hashFile(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = createReadStream(filePath);
+    stream.on('data', chunk => hash.update(chunk));
+    stream.on('error', reject);
+    stream.on('end', () => resolve(hash.digest('hex')));
+  });
+}
+
+async function verifySoundtrackFiles() {
+  if (soundtrackVerificationCache.value && soundtrackVerificationCache.expiresAt > Date.now()) return soundtrackVerificationCache.value;
+  if (soundtrackVerificationCache.pending) return soundtrackVerificationCache.pending;
+  soundtrackVerificationCache.pending = Promise.all(DELIVERY_SOUNDTRACKS.map(async track => {
+    const filePath = deliverySoundtrackFile(track.id);
+    try {
+      const details = await stat(filePath);
+      const actualSha256 = await hashFile(filePath);
+      return { trackId: track.id, available: true, bytes: details.size, expectedBytes: track.bytes, actualSha256, expectedSha256: track.sha256, hashMatches: details.size === track.bytes && actualSha256.toLowerCase() === String(track.sha256).toLowerCase(), checkedAt: new Date() };
+    } catch (error) {
+      return { trackId: track.id, available: false, bytes: 0, expectedBytes: track.bytes, actualSha256: '', expectedSha256: track.sha256, hashMatches: false, errorCode: error.code || 'TRACK_FILE_UNAVAILABLE', checkedAt: new Date() };
+    }
+  })).then(value => {
+    soundtrackVerificationCache = { value, expiresAt: Date.now() + 10 * 60 * 1000, pending: null };
+    return value;
+  }).catch(error => {
+    soundtrackVerificationCache.pending = null;
+    throw error;
+  });
+  return soundtrackVerificationCache.pending;
 }
 
 function adminId(req) {
@@ -1101,6 +1139,71 @@ export async function scanStorageReferences(req, res) {
   } catch (error) {
     console.error('[admin/storage-scan]', error.message);
     res.status(500).json({ success: false, message: 'We could not scan Cloudinary references.' });
+  }
+}
+
+function musicHealth(ok, reason = '') {
+  return { status: ok ? 'healthy' : 'attention', reason: reason || (ok ? 'No recent audio failures reported.' : 'Audio needs review.') };
+}
+
+export async function getMusicNarrationOverview(req, res) {
+  const now = new Date();
+  const days = Math.min(90, Math.max(1, Number.parseInt(req.query.days, 10) || 30));
+  const since = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  const search = String(req.query.search || '').trim().slice(0, 100).toLowerCase();
+  try {
+    const verification = await verifySoundtrackFiles();
+    const verificationById = new Map(verification.map(item => [item.trackId, item]));
+    const eventNames = ['soundtrack.selected', 'soundtrack.replaced', 'soundtrack.preview.started', 'soundtrack.preview.completed', 'soundtrack.preview.failed', 'soundtrack.playback.failed', 'narration.played', 'narration.paused', 'narration.resumed', 'narration.failed', 'narration.timing.failed', 'audio.loading.failed'];
+    const [selectionEvents, recentAudioEvents, deliverySelections, storySelections, narrationJobs, narrationVoiceJobs, deliveryVoiceUsage, staleNarration] = await Promise.all([
+      AnalyticsEvent.aggregate([{ $match: { name: { $in: ['soundtrack.selected', 'soundtrack.replaced'] } } }, { $group: { _id: { trackId: '$metadata.trackId', event: '$name', selectionType: '$metadata.selectionType' }, count: { $sum: 1 }, lastAt: { $max: '$occurredAt' } } }]),
+      AnalyticsEvent.aggregate([{ $match: { name: { $in: eventNames }, occurredAt: { $gte: since } } }, { $group: { _id: { name: '$name', status: '$status', errorCode: '$errorCode' }, count: { $sum: 1 }, averageMs: { $avg: '$durationMs' } } }, { $sort: { count: -1 } }, { $limit: 100 }]),
+      Delivery.aggregate([{ $match: { 'soundtrack.catalogId': { $exists: true, $ne: '' } } }, { $group: { _id: '$soundtrack.catalogId', currentDeliveries: { $sum: 1 }, lastSelectedAt: { $max: '$updatedAt' } } }]),
+      PhotoStory.aggregate([{ $match: { 'soundtrack.id': { $exists: true, $ne: '' } } }, { $group: { _id: '$soundtrack.id', currentStories: { $sum: 1 } } }]),
+      DeliveryJob.aggregate([{ $match: { type: 'narrate' } }, { $group: { _id: null, total: { $sum: 1 }, queued: { $sum: { $cond: [{ $in: ['$status', ['queued', 'running']] }, 1, 0] } }, completed: { $sum: { $cond: [{ $eq: ['$status', 'review'] }, 1, 0] } }, failed: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } }, cancelled: { $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] } }, timingFailures: { $sum: { $ifNull: ['$timingFailures', 0] } }, averageGenerationMs: { $avg: { $cond: [{ $eq: ['$status', 'review'] }, '$providerLatencyMs', null] } }, lastCompletedAt: { $max: '$completedAt' } } }]),
+      DeliveryJob.aggregate([{ $match: { type: 'narrate' } }, { $group: { _id: { $ifNull: ['$input.voiceId', DEFAULT_NARRATION_VOICE_ID] }, jobs: { $sum: 1 }, averageGenerationMs: { $avg: '$providerLatencyMs' } } }]),
+      Delivery.aggregate([{ $match: { 'narration.voiceId': { $exists: true, $ne: '' } } }, { $group: { _id: '$narration.voiceId', deliveries: { $sum: 1 } } }]),
+      Delivery.countDocuments({ 'narration.renderVersion': { $exists: true, $ne: NARRATION_RENDER_VERSION } })
+    ]);
+    const selectionByTrack = new Map();
+    for (const item of selectionEvents) {
+      const trackId = item._id?.trackId;
+      if (!trackId) continue;
+      const current = selectionByTrack.get(trackId) || { total: 0, photographer: 0, creativeDirector: 0, replaced: 0, lastAt: null };
+      current.total += item.count;
+      if (item._id.event === 'soundtrack.replaced') current.replaced += item.count;
+      if (item._id.selectionType === 'creative-director') current.creativeDirector += item.count;
+      else current.photographer += item.count;
+      if (!current.lastAt || new Date(item.lastAt) > new Date(current.lastAt)) current.lastAt = item.lastAt;
+      selectionByTrack.set(trackId, current);
+    }
+    const currentByTrack = new Map();
+    for (const item of deliverySelections) currentByTrack.set(item._id, { ...(currentByTrack.get(item._id) || {}), currentDeliveries: item.currentDeliveries, lastSelectedAt: item.lastSelectedAt });
+    for (const item of storySelections) currentByTrack.set(item._id, { ...(currentByTrack.get(item._id) || {}), currentStories: item.currentStories });
+    const catalogue = DELIVERY_SOUNDTRACKS
+      .filter(track => !search || [track.id, track.title, track.creator, track.category, track.genre, track.mood, ...(track.tags || [])].join(' ').toLowerCase().includes(search))
+      .map(track => {
+        const usage = selectionByTrack.get(track.id) || { total: 0, photographer: 0, creativeDirector: 0, replaced: 0, lastAt: null };
+        const current = currentByTrack.get(track.id) || {};
+        const file = verificationById.get(track.id) || { available: false, hashMatches: false, bytes: 0 };
+        return { id: track.id, title: track.title, creator: track.creator, category: track.category, genre: track.genre, mood: track.mood, tempo: track.tempo, energy: track.energy, narrationFit: track.narrationFit, durationSec: track.durationSec, tags: track.tags, bestFor: track.bestFor, avoidFor: track.avoidFor, storyFunction: track.storyFunction, editingPace: track.editingPace, instrumentationCue: track.instrumentationCue, sourceDescription: track.sourceDescription, sourcePageUrl: track.sourcePageUrl, source: track.source, license: track.license, licenseUrl: track.licenseUrl, contentIdRegistered: Boolean(track.contentIdRegistered), contentIdGuidance: track.contentIdGuidance, metadataConfidence: track.metadataConfidence, verifiedAt: track.verifiedAt, expectedBytes: track.bytes, expectedSha256: track.sha256, file, usage: { lifetimeSelections: usage.total, photographerSelections: usage.photographer, creativeDirectorSelections: usage.creativeDirector, replacements: usage.replaced, currentDeliveries: current.currentDeliveries || 0, currentStories: current.currentStories || 0, lastSelectedAt: usage.lastAt || current.lastSelectedAt || null, neverSelected: usage.total === 0 && !current.currentDeliveries && !current.currentStories } };
+      });
+    const jobSummary = narrationJobs[0] || { total: 0, queued: 0, completed: 0, failed: 0, cancelled: 0, timingFailures: 0, averageGenerationMs: 0, lastCompletedAt: null };
+    const jobVoiceMap = Object.fromEntries(narrationVoiceJobs.map(item => [item._id, { jobs: item.jobs, averageGenerationMs: item.averageGenerationMs }]));
+    const deliveryVoiceMap = Object.fromEntries(deliveryVoiceUsage.map(item => [item._id, item.deliveries]));
+    const failureCount = recentAudioEvents.filter(item => ['soundtrack.preview.failed', 'soundtrack.playback.failed', 'narration.failed', 'narration.timing.failed', 'audio.loading.failed'].includes(item._id?.name)).reduce((sum, item) => sum + item.count, 0);
+    res.json({ success: true, data: {
+      generatedAt: now,
+      windowDays: days,
+      catalogue: { total: DELIVERY_SOUNDTRACKS.length, filtered: catalogue.length, available: verification.filter(item => item.available && item.hashMatches).length, unavailable: verification.filter(item => !item.available).length, hashMismatches: verification.filter(item => item.available && !item.hashMatches).length, contentIdRegistered: DELIVERY_SOUNDTRACKS.filter(track => track.contentIdRegistered).length, categories: [...new Set(DELIVERY_SOUNDTRACKS.map(track => track.category))], tracks: catalogue },
+      soundtrack: { selectionEvents: selectionEvents.reduce((sum, item) => sum + item.count, 0), replacementEvents: selectionEvents.filter(item => item._id.event === 'soundtrack.replaced').reduce((sum, item) => sum + item.count, 0), previewFailures: recentAudioEvents.filter(item => item._id.name === 'soundtrack.preview.failed').reduce((sum, item) => sum + item.count, 0), playbackFailures: recentAudioEvents.filter(item => item._id.name === 'soundtrack.playback.failed').reduce((sum, item) => sum + item.count, 0), topTracks: [...catalogue].sort((left, right) => right.usage.lifetimeSelections - left.usage.lifetimeSelections).slice(0, 12), neverSelected: catalogue.filter(track => track.usage.neverSelected).length },
+      narration: { provider: 'Deepgram Flux', defaultVoiceId: DEFAULT_NARRATION_VOICE_ID, renderVersion: NARRATION_RENDER_VERSION, jobs: jobSummary, voices: NARRATION_VOICES.map(voice => ({ ...voice, jobs: jobVoiceMap[voice.id]?.jobs || 0, averageGenerationMs: jobVoiceMap[voice.id]?.averageGenerationMs || 0, deliveries: deliveryVoiceMap[voice.id] || 0, configured: Boolean(process.env.DEEPGRAM_API_KEY) })), staleDeliveries: staleNarration, playbackFailures: recentAudioEvents.filter(item => item._id.name === 'narration.failed' || item._id.name === 'audio.loading.failed').reduce((sum, item) => sum + item.count, 0), timingFailures: jobSummary.timingFailures + recentAudioEvents.filter(item => item._id.name === 'narration.timing.failed').reduce((sum, item) => sum + item.count, 0) },
+      events: recentAudioEvents.map(item => ({ name: item._id.name, status: item._id.status, errorCode: item._id.errorCode, count: item.count, averageMs: item.averageMs })),
+      health: { catalogue: musicHealth(verification.every(item => item.available && item.hashMatches), `${verification.filter(item => !item.available).length} files unavailable; ${verification.filter(item => item.available && !item.hashMatches).length} hash mismatches.`), deepgram: musicHealth(Boolean(process.env.DEEPGRAM_API_KEY) && failureCount === 0, process.env.DEEPGRAM_API_KEY ? (failureCount ? `${failureCount} audio failures in the last ${days} days.` : 'Deepgram Flux is configured.') : 'DEEPGRAM_API_KEY is not configured.') }
+    } });
+  } catch (error) {
+    console.error('[admin/music-narration]', error.message);
+    res.status(500).json({ success: false, message: 'We could not load music and narration health.' });
   }
 }
 
