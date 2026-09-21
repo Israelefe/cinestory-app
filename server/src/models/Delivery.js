@@ -33,7 +33,7 @@ const deliverySchema = new mongoose.Schema({
   clientName: { type: String, trim: true, maxlength: 100, default: '' },
   title: { type: String, trim: true, maxlength: 120, default: '' },
   shootType: { type: String, trim: true, maxlength: 80, default: '' },
-  brief: { type: String, trim: true, maxlength: 2000, default: '' },
+  brief: { type: String, trim: true, required: true, default: '' },
   assets: { type: [assetSchema], default: [] },
   collectionAnalysis: { type: mongoose.Schema.Types.Mixed },
   formatRecommendations: { type: [mongoose.Schema.Types.Mixed], default: [] },

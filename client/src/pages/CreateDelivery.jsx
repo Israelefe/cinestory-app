@@ -545,7 +545,7 @@ export default function CreateDelivery({ user }) {
               <div className="v-create-field is-wide">
                 <div className="v-create-field-header">
                   <label htmlFor="shoot-brief">What should Veylo know?</label>
-                  <small>{brief.brief.length} / 2,000</small>
+                  <small>Required</small>
                 </div>
                 <p className="v-create-field-hint">
                   Tell us what the shoot celebrates, outfits or moments that matter, the mood on set, and anything the client should feel when opening their photos.
@@ -554,8 +554,6 @@ export default function CreateDelivery({ user }) {
                   id="shoot-brief"
                   value={brief.brief}
                   onChange={event => setBrief(current => ({ ...current, brief: event.target.value }))}
-                  minLength={20}
-                  maxLength={2000}
                   required
                   rows={6}
                   placeholder="e.g. Ada’s 30th birthday studio session in Lagos. She wore a tailored green velvet suit. The mood was poised, joyous, and celebratory."
