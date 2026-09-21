@@ -77,6 +77,7 @@ assert.match(deliveryController, /isLikelyBot/, 'Link previews must not inflate 
 assert.match(deliveryController, /collection\.findOne\(filter\)/, 'Owned deliveries must be found without document hydration');
 assert.match(deliveryController, /collection\.deleteOne\(\{ _id: removed\._id, userId: ownerId \}\)/, 'Owned deliveries must be deletable regardless of status');
 assert.match(deliveryController, /Promise\.allSettled\(cleanupTasks\.map/, 'Secondary cleanup failures must not block delivery deletion');
+assert.match(deliveryController, /DELIVERY_DELETE_/, 'Delivery deletion failures must identify the exact server stage without exposing database details');
 assert.match(deliveryRoutes, /photos\/:assetId\/downloaded/, 'Download analytics route must be registered');
 assert.match(storyController, /StoryView\.create/, 'Legacy Photo Story views must be deduplicated');
 assert.match(storyController, /isLikelyBot/, 'Legacy link previews must not inflate view counts');

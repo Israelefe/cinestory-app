@@ -309,6 +309,7 @@ export async function getDelivery(req, res) {
 }
 
 export async function deleteDelivery(req, res) {
+  let deleteStep = 'validate';
   try {
     const identifier = String(req.params.id || '').trim();
     if (!identifier || identifier.length > 200) return res.status(404).json({ success: false, message: 'Delivery not found.' });
@@ -320,10 +321,13 @@ export async function deleteDelivery(req, res) {
     // Read and delete through the native collection so older delivery records
     // are never hydrated or validated by Mongoose during a simple delete.
     const filter = { userId: ownerId, ...identifierQuery };
+    deleteStep = 'lookup';
     const removed = await Delivery.collection.findOne(filter);
     if (!removed) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    deleteStep = 'delete';
     const deleted = await Delivery.collection.deleteOne({ _id: removed._id, userId: ownerId });
     if (deleted.deletedCount !== 1) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    deleteStep = 'schedule-cleanup';
     const removedIds = new Set((Array.isArray(removed.assets) ? removed.assets : []).map(asset => asset?.publicId).filter(Boolean));
     const cleanupTasks = [
       async () => {
@@ -348,10 +352,12 @@ export async function deleteDelivery(req, res) {
         console.error('[deliveries/delete-cleanup]', result.reason?.message || result.reason);
       });
     });
+    deleteStep = 'respond';
     res.json({ success: true, message: 'Delivery deleted and its client link disabled.' });
   } catch (error) {
-    console.error('[deliveries/delete]', error.message);
-    res.status(error.status || 500).json({ success: false, message: 'We could not delete this delivery.' });
+    const failureCode = `DELIVERY_DELETE_${deleteStep.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`;
+    console.error('[deliveries/delete]', failureCode, error.name || 'Error', error.code || '', error.message);
+    res.status(error.status || 500).json({ success: false, code: failureCode, message: 'We could not delete this delivery.' });
   }
 }
 
