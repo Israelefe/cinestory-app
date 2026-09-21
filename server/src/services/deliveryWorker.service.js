@@ -23,9 +23,10 @@ async function analyze(job, delivery) {
   const startOffset = job.cursor || 0;
   const insights = startOffset > 0 && Array.isArray(job.result?.insights) ? [...job.result.insights] : [];
   for (let offset = startOffset; offset < assets.length; offset += 20) {
-    const batch = assets.slice(offset, offset + 20).map(asset => ({ assetId: asset.assetId, analysisUrl: signedImageUrl(asset.publicId, { width: 1024 }) }));
+    const batch = assets.slice(offset, offset + 20).map(asset => ({ assetId: asset.assetId, analysisUrl: signedImageUrl(asset.publicId, { width: 1024 }), photographerCaption: asset.libraryCaption || '', photographerTags: asset.libraryTags || [] }));
     const batchInsights = await analyzeImageBatch({ brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, assets: batch });
-    insights.push(...batchInsights);
+    const contextByAsset = new Map(batch.map(asset => [asset.assetId, asset]));
+    insights.push(...batchInsights.map(insight => ({ ...insight, photographerCaption: contextByAsset.get(insight.assetId)?.photographerCaption || '', photographerTags: contextByAsset.get(insight.assetId)?.photographerTags || [] })));
     await saveJob(job, { stage: 'reading-photographs', cursor: offset + batch.length, progress: Math.min(80, Math.round(((offset + batch.length) / assets.length) * 80)), result: { insights } });
   }
   const recommendation = await recommendFormats({ brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, imageInsights: insights });

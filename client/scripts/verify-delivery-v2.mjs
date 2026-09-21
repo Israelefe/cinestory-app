@@ -30,6 +30,7 @@ const deliveryUpload = await read('src/utils/deliveryUpload.js');
 const accountSettings = await read('src/pages/AccountSettings.jsx');
 const managePortfolio = await read('src/pages/ManagePortfolio.jsx');
 const publicPortfolio = await read('src/pages/PublicStudioPortfolio.jsx');
+const imageLibrary = await read('src/pages/ImageLibrary.jsx');
 
 for (const format of ['photo-story', 'editorial-page', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign']) {
   assert.match(formats, new RegExp(`id: '${format}'`), `Missing format: ${format}`);
@@ -126,6 +127,8 @@ assert.match(accountSettings, /window\.confirm/, 'Account settings must confirm 
 assert.match(managePortfolio, /handleNextChangeAt/, 'Portfolio management must show the portfolio-address change policy');
 assert.match(managePortfolio, /old portfolio address will redirect for 90 days/, 'Portfolio management must explain the old-address redirect window');
 assert.match(publicPortfolio, /history\.replaceState/, 'Old portfolio addresses must canonicalise to the current address');
+assert.match(imageLibrary, /Caption note for future deliveries/, 'Image library captions must explain their delivery purpose');
+assert.match(imageLibrary, /carried into the Creative Director/, 'Image library must explain how saved context is reused');
 for (const breakpoint of ['640px', '768px', '1024px']) {
   assert.match(`${viewerCss}\n${creationCss}`, new RegExp(`min-width:${breakpoint}`), `Missing responsive breakpoint: ${breakpoint}`);
 }

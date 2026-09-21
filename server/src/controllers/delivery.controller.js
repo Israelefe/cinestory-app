@@ -73,7 +73,10 @@ function failValidation(res, parsed) {
 }
 
 function ownerAsset(asset) {
-  return { ...asset.toObject(), url: signedImageUrl(asset.publicId), thumbnailUrl: signedImageUrl(asset.publicId, { thumbnail: true }), srcSet: [480, 960, 1600].map(width => `${signedImageUrl(asset.publicId, { width })} ${width}w`).join(', ') };
+  const data = asset.toObject();
+  delete data.libraryTags;
+  delete data.libraryCaption;
+  return { ...data, url: signedImageUrl(asset.publicId), thumbnailUrl: signedImageUrl(asset.publicId, { thumbnail: true }), srcSet: [480, 960, 1600].map(width => `${signedImageUrl(asset.publicId, { width })} ${width}w`).join(', ') };
 }
 
 function soundtrackPreviewToken(userId) {
@@ -471,7 +474,7 @@ export async function addLibraryAssets(req, res) {
       const source = byId.get(id);
       const resource = await copyStorageImageToDelivery({ sourceUrl: signedImageUrl(source.publicId, { width: 8000 }), userId: user._id, deliveryId: delivery._id });
       copied.push(resource.public_id);
-      newAssets.push({ assetId: crypto.randomUUID(), publicId: resource.public_id, resourceType: 'image', format: resource.format, width: resource.width, height: resource.height, bytes: resource.bytes, originalFilename: source.originalFilename, sortOrder: delivery.assets.length + newAssets.length });
+      newAssets.push({ assetId: crypto.randomUUID(), publicId: resource.public_id, resourceType: 'image', format: resource.format, width: resource.width, height: resource.height, bytes: resource.bytes, originalFilename: source.originalFilename, libraryTags: source.tags || [], libraryCaption: source.caption || '', sortOrder: delivery.assets.length + newAssets.length });
     }
     const updated = await Delivery.findOneAndUpdate({
       _id: delivery._id,

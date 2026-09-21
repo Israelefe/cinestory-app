@@ -10,6 +10,9 @@ const assetSchema = new mongoose.Schema({
   height: { type: Number, min: 1 },
   bytes: { type: Number, min: 0 },
   originalFilename: { type: String, trim: true, maxlength: 180 },
+  // Optional context carried over when a photograph is reused from the Pro library.
+  libraryTags: [{ type: String, trim: true, maxlength: 40 }],
+  libraryCaption: { type: String, trim: true, maxlength: 180 },
   sortOrder: { type: Number, default: 0 },
   analysis: { type: mongoose.Schema.Types.Mixed }
 }, { _id: false });

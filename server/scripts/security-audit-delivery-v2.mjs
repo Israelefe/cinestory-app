@@ -29,6 +29,9 @@ const authController = await readFile(join(serverRoot, 'src/controllers/auth.con
 const portfolioController = await readFile(join(serverRoot, 'src/controllers/portfolio.controller.js'), 'utf8');
 const portfolioModel = await readFile(join(serverRoot, 'src/models/Portfolio.js'), 'utf8');
 const profilePolicy = await readFile(join(serverRoot, 'src/constants/profilePolicy.js'), 'utf8');
+const deliveryModel = await readFile(join(serverRoot, 'src/models/Delivery.js'), 'utf8');
+const deliveryWorker = await readFile(join(serverRoot, 'src/services/deliveryWorker.service.js'), 'utf8');
+const creativeDirector = await readFile(join(serverRoot, 'src/services/alibabaCreativeDirector.service.js'), 'utf8');
 const serverEntry = await readFile(join(serverRoot, 'server.js'), 'utf8');
 const renderConfig = await readFile(join(projectRoot, 'render.yaml'), 'utf8');
 const clientFiles = await filesUnder(join(projectRoot, 'client/src'));
@@ -67,6 +70,10 @@ assert.match(portfolioModel, /previousHandles/, 'Portfolio model must store prev
 assert.match(profilePolicy, /30 \* 24 \* 60 \* 60 \* 1000/, 'Studio-name cooldown must remain 30 days');
 assert.match(profilePolicy, /90 \* 24 \* 60 \* 60 \* 1000/, 'Portfolio address cooldown and redirect must remain 90 days');
 assert.match(profilePolicy, /365 \* 24 \* 60 \* 60 \* 1000/, 'Previous portfolio addresses must remain reserved for one year');
+assert.match(deliveryController, /libraryCaption/, 'Library caption notes must be copied into reused delivery assets');
+assert.match(deliveryModel, /libraryTags|libraryCaption/, 'Delivery assets must retain reusable library context');
+assert.match(deliveryWorker, /photographerCaption/, 'Delivery direction must receive reusable library caption context');
+assert.match(creativeDirector, /Photographer-provided library context/, 'The creative director must be told how to use library context');
 assert.match(renderConfig, /key: DELIVERY_PIPELINE_ENABLED\s+value: "true"/, 'The production worker must be enabled for the configured delivery pipeline');
 assert.doesNotMatch(clientSource, /DEEPGRAM_API_KEY|JWT_SECRET|CLOUDINARY_API_SECRET|MONGODB_URI/, 'Private provider and database secrets must never reach the client bundle');
 assert.doesNotMatch(`${clientSource}\n${deliveryController}\n${serverEntry}`, /ELEVENLABS_API_KEY|elevenlabs/i, 'The previous narration provider must not remain in the delivery path');
