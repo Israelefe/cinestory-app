@@ -317,12 +317,13 @@ export async function deleteDelivery(req, res) {
       ? { $or: [{ _id: new mongoose.Types.ObjectId(identifier) }, { publicId: identifier }, { legacyStoryId: identifier }] }
       : { $or: [{ publicId: identifier }, { legacyStoryId: identifier }] };
     const ownerId = mongoose.isValidObjectId(req.user.id) ? new mongoose.Types.ObjectId(req.user.id) : req.user.id;
-    // Delete the owned record in one atomic operation without hydrating the
-    // document. Older deliveries can contain legacy asset shapes; hydration
-    // must not be able to turn a valid owner-scoped delete into a 500 response.
-    const rawResult = await Delivery.collection.findOneAndDelete({ userId: ownerId, ...identifierQuery });
-    const removed = rawResult && Object.prototype.hasOwnProperty.call(rawResult, 'value') ? rawResult.value : rawResult;
+    // Read and delete through the native collection so older delivery records
+    // are never hydrated or validated by Mongoose during a simple delete.
+    const filter = { userId: ownerId, ...identifierQuery };
+    const removed = await Delivery.collection.findOne(filter);
     if (!removed) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    const deleted = await Delivery.collection.deleteOne({ _id: removed._id, userId: ownerId });
+    if (deleted.deletedCount !== 1) return res.status(404).json({ success: false, message: 'Delivery not found.' });
     const removedIds = new Set((Array.isArray(removed.assets) ? removed.assets : []).map(asset => asset?.publicId).filter(Boolean));
     const cleanupTasks = [
       async () => {
