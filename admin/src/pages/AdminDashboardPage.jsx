@@ -139,6 +139,9 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const [aiSummary, setAiSummary] = useState(null);
   const [accessOverview, setAccessOverview] = useState(null);
   const [volumeJobs, setVolumeJobs] = useState([]);
+  const [storageOverview, setStorageOverview] = useState(null);
+  const [storageScan, setStorageScan] = useState(null);
+  const [storageScanLoading, setStorageScanLoading] = useState(false);
   const [selectedVolume, setSelectedVolume] = useState(null);
   const [volumeDetailLoading, setVolumeDetailLoading] = useState(false);
   const [volumeCategoryFilter, setVolumeCategoryFilter] = useState('all');
@@ -177,7 +180,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       payments: api.get('/v1/admin/payments', { params: { search } }),
       aiJobs: api.get('/v1/admin/ai/jobs', { params: { search, status: aiJobStatusFilter, type: aiJobTypeFilter } }),
       access: api.get('/v1/admin/client-access', { params: { search } }),
-      volume: api.get('/v1/admin/volume', { params: { search, category: volumeCategoryFilter, status: volumeStatusFilter } })
+      volume: api.get('/v1/admin/volume', { params: { search, category: volumeCategoryFilter, status: volumeStatusFilter } }),
+      storage: api.get('/v1/admin/storage', { params: { search } })
     };
     const entries = Object.entries(requests);
     const results = await Promise.allSettled(entries.map(([, request]) => request));
@@ -194,6 +198,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         if (key === 'aiJobs') { setAiJobs(Array.isArray(data) ? data : []); setAiSummary(result.value.data?.summary || null); }
         if (key === 'access') setAccessOverview(data || null);
         if (key === 'volume') setVolumeJobs(Array.isArray(data) ? data : []);
+        if (key === 'storage') setStorageOverview(data || null);
         return;
       }
       const error = result.status === 'rejected' ? result.reason : new Error(result.value?.data?.message || 'This panel is unavailable.');
@@ -543,10 +548,24 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       payments: payments.length,
       aiJobs: aiJobs.length,
       access: accessOverview?.deliveries?.length || 0,
-      volume: volumeJobs.length
+      volume: volumeJobs.length,
+      storage: storageOverview?.accounts?.length || 0
     }),
-    [accessOverview, aiJobs, deliveries, users, payments, volumeJobs]
+    [accessOverview, aiJobs, deliveries, users, payments, volumeJobs, storageOverview]
   );
+
+  const runStorageScan = async () => {
+    setStorageScanLoading(true);
+    try {
+      const response = await api.post('/v1/admin/storage/scan');
+      setStorageScan(response.data?.data || null);
+      toast.success('Cloudinary reference scan completed.');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'We could not scan Cloudinary references.');
+    } finally {
+      setStorageScanLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#070709] text-white">
@@ -679,14 +698,15 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         {/* Section Tabs & Search */}
         <section className="mt-10">
           <div className="flex flex-col gap-4 border-b border-white/10 pb-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5 sm:grid-cols-6">
+            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5 sm:grid-cols-4 md:grid-cols-7">
               {[
                 ['deliveries', Film, 'Deliveries'],
                 ['users', Users, 'Accounts'],
                 ['payments', ReceiptText, 'Payments'],
                 ['aiJobs', Bot, 'AI jobs'],
                 ['access', Eye, 'Client access'],
-                ['volume', Users, 'Volume']
+                ['volume', Users, 'Volume'],
+                ['storage', HardDrive, 'Storage']
               ].map(([key, Icon, label]) => (
                 <button
                   key={key}
@@ -883,6 +903,39 @@ export default function AdminDashboardPage({ admin, onLogout }) {
                 <div className="mb-5 rounded-2xl border border-white/10 bg-white/[.025] p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.14em] text-[#ff9b8e]">Volume access</p><h3 className="mt-1 text-lg font-medium">Recipient code activity</h3></div><span className="text-xs text-white/35">Last {number(accessOverview.windowDays)} days</span></div><div className="mt-4 grid gap-3 sm:grid-cols-4"><div><p className="text-xs text-white/40">Requests</p><p className="mt-1 text-xl font-medium">{number(accessOverview.totals?.volumeAccessCodeRequests)}</p></div><div><p className="text-xs text-white/40">Verified</p><p className="mt-1 text-xl font-medium">{number(accessOverview.totals?.volumeAccessCodeVerified)}</p></div><div><p className="text-xs text-white/40">Failures</p><p className="mt-1 text-xl font-medium">{number(accessOverview.totals?.volumeAccessCodeFailures)}</p></div><div><p className="text-xs text-white/40">Gallery opens</p><p className="mt-1 text-xl font-medium">{number(accessOverview.totals?.volumeGalleryOpens)}</p></div></div></div>
                 <div className="space-y-3">{(accessOverview.deliveries || []).map(item => <article key={item.id} className="rounded-2xl border border-white/10 bg-white/[.025] p-4 sm:p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><p className="text-[10px] uppercase tracking-[.14em] text-[#ff9b8e]">{formatNames[item.format] || item.format || 'Delivery'}</p><h3 className="mt-1 truncate text-sm font-semibold text-white">{item.title}</h3><p className="mt-1 truncate text-xs text-white/40">{item.photographer} · {item.publicId}</p></div><div className="flex items-center gap-2"><Status value={item.revoked ? 'revoked' : item.expired ? 'expired' : item.status} /><span className="text-xs text-white/35">{number(item.shareGrants?.active)} active grants</span></div></div><div className="mt-4 grid grid-cols-2 gap-3 text-xs text-white/55 sm:grid-cols-4 lg:grid-cols-8"><span>Opens <strong className="ml-1 text-white">{number(item.opens)}</strong></span><span>Unique <strong className="ml-1 text-white">{number(item.uniqueVisitors)}</strong></span><span>Repeat <strong className="ml-1 text-white">{number(item.repeatVisitors)}</strong></span><span>PIN fails <strong className="ml-1 text-white">{number(item.pinFailures)}</strong></span><span>Downloads <strong className="ml-1 text-white">{number(item.downloadsCompleted)}</strong></span><span>Likes <strong className="ml-1 text-white">{number(item.likes)}</strong></span><span>Grant opens <strong className="ml-1 text-white">{number(item.shareGrants?.opens)}</strong></span><span>Grant downloads <strong className="ml-1 text-white">{number(item.shareGrants?.downloads)}</strong></span></div></article>)}{!accessOverview.deliveries?.length && <p className="py-16 text-center text-sm text-white/45">No client access records match your search.</p>}</div>
               </> : <div className="py-16 text-center text-sm text-white/45">Client access activity is unavailable.</div>}
+            </div>
+          )}
+
+          {/* Storage and media tab */}
+          {!loading && tab === 'storage' && (
+            <div className="mt-6 space-y-5">
+              {panelErrors.storage && !storageOverview && <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-5 text-sm text-amber-100">Storage health is unavailable. {panelErrors.storage}</div>}
+              {storageOverview && <>
+                <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <MetricCard icon={HardDrive} label="Library" value={bytes(storageOverview.totals?.library?.bytes)} note={`${number(storageOverview.totals?.library?.files)} personal-library files`} />
+                  <MetricCard icon={Film} label="Delivery photos" value={bytes(storageOverview.totals?.deliveryPhotos?.bytes)} note={`${number(storageOverview.totals?.deliveryPhotos?.files)} delivery copies`} />
+                  <MetricCard icon={Cloud} label="Audio" value={bytes(Number(storageOverview.totals?.soundtrack?.bytes || 0) + Number(storageOverview.totals?.narration?.bytes || 0))} note={`${number(Number(storageOverview.totals?.soundtrack?.files || 0) + Number(storageOverview.totals?.narration?.files || 0))} soundtrack and narration files`} />
+                  <MetricCard icon={ShieldCheck} label="Hashes missing" value={number(storageOverview.hashes?.missing)} note={`${number(storageOverview.hashes?.verified)} files have a verified Cloudinary etag`} />
+                  <MetricCard icon={TriangleAlert} label="Failed uploads" value={number(storageOverview.failures?.uploadsLast24Hours)} note="Recorded in the last 24 hours" />
+                  <MetricCard icon={TriangleAlert} label="Failed deletes" value={number(storageOverview.failures?.deletesInWindow)} note={`Last ${number(storageOverview.windowDays)} days`} />
+                  <MetricCard icon={Database} label="Tracked media" value={bytes(storageOverview.totals?.allTrackedBytes)} note={`${number(storageOverview.totals?.allTrackedFiles)} database records`} />
+                  <MetricCard icon={Activity} label="Growth window" value={`${number(storageOverview.windowDays)} days`} note="Upload events grouped by day and surface" />
+                </section>
+
+                <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Storage health</p><h2 className="mt-1 text-xl font-medium">Are media and cleanup systems healthy?</h2></div><span className="text-xs text-white/35">Updated {shortDate(storageOverview.generatedAt)}</span></div>
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><HealthCard icon={Cloud} label="Cloudinary" health={storageOverview.health?.cloudinary} /><HealthCard icon={RefreshCw} label="Retention" health={storageOverview.health?.retention} /><HealthCard icon={Database} label="Database references" health={storageOverview.health?.databaseReferences} /><HealthCard icon={ShieldCheck} label="File hashes" health={storageOverview.health?.hashes} /></div>
+                </section>
+
+                <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Provider references</p><h2 className="mt-1 text-xl font-medium">Find orphaned or missing media</h2><p className="mt-2 max-w-2xl text-xs leading-5 text-white/45">This reads authenticated Cloudinary resources and compares them with Veylo records. It never deletes a file from this screen.</p></div><button type="button" onClick={runStorageScan} disabled={storageScanLoading} className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-white/15 px-4 text-xs font-semibold text-white/75 transition-colors hover:border-[#ff9b8e]/50 hover:text-white disabled:opacity-50"><RefreshCw size={14} className={storageScanLoading ? 'animate-spin' : ''} />{storageScanLoading ? 'Scanning…' : 'Run Cloudinary scan'}</button></div>
+                  {(storageScan || storageOverview.scan) && <div className="mt-5 grid gap-3 sm:grid-cols-2"><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Scan status</p><p className="mt-2 text-lg font-medium text-white">{(storageScan || storageOverview.scan).status}</p><p className="mt-1 text-xs leading-5 text-white/45">{(storageScan || storageOverview.scan).reason || (storageScan || storageOverview.scan).message || 'No scan has been run.'}</p></div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Reference results</p><p className="mt-2 text-xs leading-5 text-white/55">Images: <span className="text-white">{(storageScan || storageOverview.scan).orphaned?.image?.count ?? '—'} orphaned</span> · {(storageScan || storageOverview.scan).missingDatabaseRecords?.image?.count ?? '—'} missing records</p><p className="mt-1 text-xs leading-5 text-white/55">Audio: <span className="text-white">{(storageScan || storageOverview.scan).orphaned?.video?.count ?? '—'} orphaned</span> · {(storageScan || storageOverview.scan).missingDatabaseRecords?.video?.count ?? '—'} missing records</p></div></div>}
+                </section>
+
+                <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Account storage</p><h2 className="mt-1 text-xl font-medium">Who is using space?</h2></div><span className="text-xs text-white/35">Top {number(storageOverview.accounts?.length)} accounts</span></div><div className="mt-5 space-y-2">{(storageOverview.accounts || []).map(account => <div key={account.id} className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="truncate text-sm font-semibold text-white">{account.studio || account.name}</p><p className="truncate text-xs text-white/40">{account.email} · {account.plan}</p></div><span className="text-sm font-medium text-white">{bytes(account.storage?.reportedBytes)}{account.storage?.limitBytes ? <span className="ml-1 text-xs text-white/40">/ {bytes(account.storage.limitBytes)}</span> : null}</span></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10"><div className={`h-full rounded-full ${account.storage?.percent >= 80 ? 'bg-amber-300' : 'bg-[#ff7867]'}`} style={{ width: `${Math.min(100, account.storage?.percent || 0)}%` }} /></div><div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-white/40"><span>{number(account.storage?.libraryFiles)} library files</span><span>{bytes(account.storage?.deliveryBytes)} delivery media</span><span className={account.storage?.discrepancyBytes ? 'text-amber-200' : ''}>{account.storage?.discrepancyBytes ? `${bytes(Math.abs(account.storage.discrepancyBytes))} reported/recorded difference` : 'Usage reconciled'}</span></div></div>)}{!storageOverview.accounts?.length && <p className="py-10 text-center text-sm text-white/45">No accounts match this search.</p>}</div></section>
+
+                <section className="grid gap-5 lg:grid-cols-2"><div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Library formats</p><h2 className="mt-1 text-xl font-medium">File mix</h2></div><div className="mt-5 space-y-3">{(storageOverview.formats || []).map(item => <div key={item.format} className="flex items-center justify-between gap-3 text-xs"><span className="uppercase tracking-[.12em] text-white/55">{item.format}</span><span className="text-white/75">{number(item.files)} · {bytes(item.bytes)}</span></div>)}{!storageOverview.formats?.length && <p className="text-sm text-white/45">No library files yet.</p>}</div></div><div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Upload growth</p><h2 className="mt-1 text-xl font-medium">Recent media added</h2></div><div className="mt-5 space-y-2">{(storageOverview.growth || []).slice(-14).map(item => <div key={`${item.day}-${item.surface}`} className="flex items-center justify-between gap-3 text-xs"><span className="text-white/55">{item.day} · {item.surface}</span><span className="text-white/75">{number(item.files)} · {bytes(item.bytes)}</span></div>)}{!storageOverview.growth?.length && <p className="text-sm text-white/45">No upload events in this window.</p>}</div></div></section>
+              </>}
             </div>
           )}
 

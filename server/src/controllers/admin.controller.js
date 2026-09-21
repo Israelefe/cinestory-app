@@ -26,7 +26,7 @@ import PhotoLike from '../models/PhotoLike.js';
 import DeliveryShareGrant from '../models/DeliveryShareGrant.js';
 import { paystackRequest } from '../services/paystack.service.js';
 import { billingConfigured } from '../services/paystack.service.js';
-import { checkCloudinaryConnection } from '../services/cloudinary.service.js';
+import { checkCloudinaryConnection, cloudinary, configureCloudinary } from '../services/cloudinary.service.js';
 import { PLAN_DEFINITIONS, PRO_PRICE_KOBO } from '../config/plans.js';
 import { tokenDigest } from '../utils/auth.js';
 import { removeDeliveryMedia } from '../services/deliveryMedia.service.js';
@@ -972,6 +972,135 @@ export async function getClientAccessOverview(req, res) {
   } catch (error) {
     console.error('[admin/client-access]', error.message);
     res.status(500).json({ success: false, message: 'We could not load client access activity.' });
+  }
+}
+
+function storageStatus(ok, reason = '') {
+  return { status: ok ? 'healthy' : 'attention', reason: reason || (ok ? 'No storage issues reported.' : 'Storage needs review.') };
+}
+
+function safeStorageNumber(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? number : 0;
+}
+
+async function scanCloudinaryReferences() {
+  const startedAt = new Date();
+  if (!configureCloudinary()) return { status: 'unavailable', reason: 'Cloudinary credentials are not configured.', startedAt, completedAt: new Date(), orphaned: null, missingDatabaseRecords: null };
+  const discovered = { image: new Set(), video: new Set() };
+  const pages = { image: 0, video: 0 };
+  let truncated = false;
+  try {
+    for (const resourceType of ['image', 'video']) {
+      let nextCursor;
+      do {
+        const response = await cloudinary.api.resources({ resource_type: resourceType, type: 'authenticated', prefix: 'veylo/users/', max_results: 500, ...(nextCursor ? { next_cursor: nextCursor } : {}) });
+        for (const resource of response.resources || []) if (resource.public_id) discovered[resourceType].add(resource.public_id);
+        nextCursor = response.next_cursor;
+        pages[resourceType] += 1;
+        if (nextCursor && pages[resourceType] >= 20) { truncated = true; nextCursor = null; }
+      } while (nextCursor);
+    }
+
+    const [libraryRefs, deliveries] = await Promise.all([
+      StorageAsset.find({ publicId: /^veylo\/users\// }).select('publicId').lean(),
+      Delivery.find({ $or: [{ 'assets.publicId': /^veylo\/users\// }, { 'soundtrack.publicId': /^veylo\/users\// }, { 'narration.publicId': /^veylo\/users\// }] }).select('assets.publicId soundtrack.publicId narration.publicId').lean()
+    ]);
+    const dbRefs = { image: new Set(libraryRefs.map(asset => asset.publicId)), video: new Set() };
+    for (const delivery of deliveries) {
+      for (const asset of delivery.assets || []) if (asset.publicId?.startsWith('veylo/users/')) dbRefs.image.add(asset.publicId);
+      if (delivery.soundtrack?.publicId?.startsWith('veylo/users/')) dbRefs.video.add(delivery.soundtrack.publicId);
+      if (delivery.narration?.publicId?.startsWith('veylo/users/')) dbRefs.video.add(delivery.narration.publicId);
+    }
+    const result = { status: truncated ? 'partial' : 'complete', startedAt, completedAt: new Date(), truncated, pages, orphaned: {}, missingDatabaseRecords: {} };
+    for (const resourceType of ['image', 'video']) {
+      const orphaned = [...discovered[resourceType]].filter(publicId => !dbRefs[resourceType].has(publicId));
+      result.orphaned[resourceType] = { count: orphaned.length, sample: orphaned.slice(0, 20) };
+      result.missingDatabaseRecords[resourceType] = truncated
+        ? { count: null, sample: [], reason: 'The resource listing was capped; missing records need a complete scan.' }
+        : { count: [...dbRefs[resourceType]].filter(publicId => !discovered[resourceType].has(publicId)).length, sample: [...dbRefs[resourceType]].filter(publicId => !discovered[resourceType].has(publicId)).slice(0, 20) };
+    }
+    return result;
+  } catch (error) {
+    return { status: 'failed', reason: String(error?.message || 'Cloudinary resource listing failed').replace(/[A-Za-z0-9_-]{20,}/g, '[redacted]').slice(0, 180), startedAt, completedAt: new Date(), pages, orphaned: null, missingDatabaseRecords: null };
+  }
+}
+
+export async function getStorageOverview(req, res) {
+  const now = new Date();
+  const days = Math.min(90, Math.max(1, Number.parseInt(req.query.days, 10) || 30));
+  const since = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const search = String(req.query.search || '').trim().slice(0, 100);
+  try {
+    let accountQuery = {};
+    if (search) accountQuery = { $or: [{ name: { $regex: escaped(search), $options: 'i' } }, { email: { $regex: escaped(search), $options: 'i' } }, { 'studio.name': { $regex: escaped(search), $options: 'i' } }] };
+    const [libraryTotal, deliveryPhotoTotal, soundtrackTotal, narrationTotal, libraryFormats, libraryDimensions, hashTotals, deliveryHashTotals, audioHashTotals, accountLibrary, accountDelivery, accounts, uploadTrend, failureBreakdown, cloudinaryHealth, retentionHeartbeat, deliveryIntegrity] = await Promise.all([
+      StorageAsset.aggregate([{ $group: { _id: null, files: { $sum: 1 }, bytes: { $sum: { $ifNull: ['$bytes', 0] } } } }]),
+      Delivery.aggregate([{ $unwind: '$assets' }, { $group: { _id: null, files: { $sum: 1 }, bytes: { $sum: { $ifNull: ['$assets.bytes', 0] } } } }]),
+      Delivery.aggregate([{ $match: { 'soundtrack.publicId': { $exists: true, $ne: '' } } }, { $group: { _id: null, files: { $sum: 1 }, bytes: { $sum: { $ifNull: ['$soundtrack.bytes', 0] } } } }]),
+      Delivery.aggregate([{ $match: { 'narration.publicId': { $exists: true, $ne: '' } } }, { $group: { _id: null, files: { $sum: 1 }, bytes: { $sum: { $ifNull: ['$narration.bytes', 0] } } } }]),
+      StorageAsset.aggregate([{ $group: { _id: '$format', files: { $sum: 1 }, bytes: { $sum: { $ifNull: ['$bytes', 0] } } } }, { $sort: { bytes: -1 } }, { $limit: 20 }]),
+      StorageAsset.aggregate([{ $match: { width: { $gt: 0 }, height: { $gt: 0 } } }, { $group: { _id: { width: '$width', height: '$height' }, files: { $sum: 1 } } }, { $sort: { files: -1 } }, { $limit: 12 }]),
+      StorageAsset.aggregate([{ $group: { _id: null, files: { $sum: 1 }, verified: { $sum: { $cond: [{ $and: [{ $ne: ['$contentHash', null] }, { $ne: ['$contentHash', ''] }] }, 1, 0] } } } }]),
+      Delivery.aggregate([{ $unwind: '$assets' }, { $group: { _id: null, files: { $sum: 1 }, verified: { $sum: { $cond: [{ $and: [{ $ne: ['$assets.contentHash', null] }, { $ne: ['$assets.contentHash', ''] }] }, 1, 0] } } } }]),
+      Delivery.aggregate([{ $group: { _id: null, files: { $sum: { $cond: [{ $ne: ['$soundtrack.publicId', null] }, 1, 0] } }, verified: { $sum: { $cond: [{ $and: [{ $ne: ['$soundtrack.publicId', null] }, { $ne: ['$soundtrack.contentHash', null] }, { $ne: ['$soundtrack.contentHash', ''] }] }, 1, 0] } } } }]),
+      StorageAsset.aggregate([{ $group: { _id: '$userId', files: { $sum: 1 }, bytes: { $sum: { $ifNull: ['$bytes', 0] } } } }]),
+      Delivery.aggregate([{ $unwind: '$assets' }, { $group: { _id: '$userId', files: { $sum: 1 }, bytes: { $sum: { $ifNull: ['$assets.bytes', 0] } } } }]),
+      User.find(accountQuery).select('name email plan planOverride studio.name storageUsedBytes createdAt').sort({ storageUsedBytes: -1 }).limit(100).lean(),
+      AnalyticsEvent.aggregate([{ $match: { name: 'upload.completed', occurredAt: { $gte: since } } }, { $project: { day: { $dateToString: { format: '%Y-%m-%d', date: '$occurredAt' } }, surface: { $ifNull: ['$metadata.surface', 'unknown'] }, bytes: { $ifNull: ['$bytes', 0] }, count: { $ifNull: ['$count', 1] } } }, { $group: { _id: { day: '$day', surface: '$surface' }, bytes: { $sum: '$bytes' }, files: { $sum: '$count' } } }, { $sort: { '_id.day': 1 } }]),
+      AnalyticsEvent.aggregate([{ $match: { name: { $in: ['upload.failed', 'storage.delete.failed', 'storage.retention.failed'] }, occurredAt: { $gte: since } } }, { $group: { _id: { name: '$name', errorCode: '$errorCode' }, count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 50 }]),
+      checkCloudinaryConnection(),
+      WorkerHeartbeat.findOne({ workerName: 'retention' }).sort({ heartbeatAt: -1 }).lean(),
+      Delivery.aggregate([{ $unwind: '$assets' }, { $group: { _id: null, missingPublicId: { $sum: { $cond: [{ $or: [{ $eq: ['$assets.publicId', null] }, { $eq: ['$assets.publicId', ''] }] }, 1, 0] } }, missingBytes: { $sum: { $cond: [{ $or: [{ $eq: ['$assets.bytes', null] }, { $lte: ['$assets.bytes', 0] }] }, 1, 0] } } } }])
+    ]);
+    const library = libraryTotal[0] || { files: 0, bytes: 0 };
+    const deliveryPhotos = deliveryPhotoTotal[0] || { files: 0, bytes: 0 };
+    const soundtrack = soundtrackTotal[0] || { files: 0, bytes: 0 };
+    const narration = narrationTotal[0] || { files: 0, bytes: 0 };
+    const libraryHash = hashTotals[0] || { files: 0, verified: 0 };
+    const deliveryHash = deliveryHashTotals[0] || { files: 0, verified: 0 };
+    const audioHash = audioHashTotals[0] || { files: 0, verified: 0 };
+    const libraryByAccount = new Map(accountLibrary.map(item => [String(item._id), item]));
+    const deliveryByAccount = new Map(accountDelivery.map(item => [String(item._id), item]));
+    const accountsData = accounts.map(account => {
+      const id = String(account._id);
+      const libraryData = libraryByAccount.get(id) || { files: 0, bytes: 0 };
+      const deliveryData = deliveryByAccount.get(id) || { files: 0, bytes: 0 };
+      const limit = account.plan === 'pro' || account.plan === 'studio' || account.planOverride?.plan === 'pro' ? PLAN_DEFINITIONS.pro.personalStorageBytes : 0;
+      const reported = safeStorageNumber(account.storageUsedBytes);
+      return { id: account._id, name: account.name || 'Unnamed account', email: account.email || '', studio: account.studio?.name || '', plan: account.plan || 'free', storage: { reportedBytes: reported, libraryBytes: safeStorageNumber(libraryData.bytes), deliveryBytes: safeStorageNumber(deliveryData.bytes), libraryFiles: libraryData.files || 0, deliveryFiles: deliveryData.files || 0, limitBytes: limit, percent: limit ? Math.round((reported / limit) * 1000) / 10 : 0, discrepancyBytes: reported - safeStorageNumber(libraryData.bytes) } };
+    });
+    const retentionAt = retentionHeartbeat?.heartbeatAt ? new Date(retentionHeartbeat.heartbeatAt) : null;
+    const retentionFresh = retentionAt && now.getTime() - retentionAt.getTime() < 8 * 60 * 60 * 1000;
+    const failedUploads = await AnalyticsEvent.countDocuments({ name: 'upload.failed', occurredAt: { $gte: dayAgo } });
+    const failedDeletes = await AnalyticsEvent.countDocuments({ name: 'storage.delete.failed', occurredAt: { $gte: since } });
+    res.json({ success: true, data: {
+      generatedAt: now,
+      windowDays: days,
+      totals: { library: { files: library.files, bytes: library.bytes }, deliveryPhotos: { files: deliveryPhotos.files, bytes: deliveryPhotos.bytes }, soundtrack: { files: soundtrack.files, bytes: soundtrack.bytes }, narration: { files: narration.files, bytes: narration.bytes }, allTrackedBytes: safeStorageNumber(library.bytes) + safeStorageNumber(deliveryPhotos.bytes) + safeStorageNumber(soundtrack.bytes) + safeStorageNumber(narration.bytes), allTrackedFiles: library.files + deliveryPhotos.files + soundtrack.files + narration.files },
+      accounts: accountsData,
+      formats: libraryFormats.map(item => ({ format: item._id || 'unknown', files: item.files, bytes: item.bytes })),
+      dimensions: libraryDimensions.map(item => ({ width: item._id?.width, height: item._id?.height, files: item.files })),
+      hashes: { verified: libraryHash.verified + deliveryHash.verified + audioHash.verified, missing: Math.max(0, libraryHash.files + deliveryHash.files + audioHash.files - libraryHash.verified - deliveryHash.verified - audioHash.verified), algorithm: 'cloudinary-etag' },
+      growth: uploadTrend.map(item => ({ day: item._id.day, surface: item._id.surface, bytes: item.bytes, files: item.files })),
+      failures: { uploadsLast24Hours: failedUploads, deletesInWindow: failedDeletes, breakdown: failureBreakdown.map(item => ({ name: item._id.name, errorCode: item._id.errorCode || 'unknown', count: item.count })) },
+      health: { cloudinary: storageStatus(cloudinaryHealth.ok, cloudinaryHealth.reason), retention: { status: retentionFresh ? (retentionHeartbeat.status || 'idle') : retentionAt ? 'stale' : 'not-started', heartbeatAt: retentionHeartbeat?.heartbeatAt || null, stage: retentionHeartbeat?.stage || 'not started' }, databaseReferences: storageStatus(!deliveryIntegrity[0]?.missingPublicId && !deliveryIntegrity[0]?.missingBytes, deliveryIntegrity[0] ? `${deliveryIntegrity[0].missingPublicId || 0} delivery files have no public ID; ${deliveryIntegrity[0].missingBytes || 0} have no byte count.` : ''), hashes: storageStatus((libraryHash.files + deliveryHash.files + audioHash.files) === (libraryHash.verified + deliveryHash.verified + audioHash.verified), `${Math.max(0, libraryHash.files + deliveryHash.files + audioHash.files - libraryHash.verified - deliveryHash.verified - audioHash.verified)} media records still need a provider hash.`) },
+      scan: { status: 'not-run', message: 'Cloudinary reference scanning is manual because it lists provider resources.' }
+    } });
+  } catch (error) {
+    console.error('[admin/storage]', error.message);
+    res.status(500).json({ success: false, message: 'We could not load storage health.' });
+  }
+}
+
+export async function scanStorageReferences(req, res) {
+  try {
+    const data = await scanCloudinaryReferences();
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('[admin/storage-scan]', error.message);
+    res.status(500).json({ success: false, message: 'We could not scan Cloudinary references.' });
   }
 }
 

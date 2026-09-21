@@ -9,6 +9,9 @@ const assetSchema = new mongoose.Schema({
   width: { type: Number, min: 1 },
   height: { type: Number, min: 1 },
   bytes: { type: Number, min: 0 },
+  contentHash: { type: String, trim: true, maxlength: 200 },
+  hashAlgorithm: { type: String, enum: ['cloudinary-etag', 'sha256'] },
+  hashVerifiedAt: Date,
   originalFilename: { type: String, trim: true, maxlength: 180 },
   // Optional context carried over when a photograph is reused from the Pro library.
   libraryTags: [{ type: String, trim: true, maxlength: 40 }],

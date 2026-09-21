@@ -430,7 +430,7 @@ export async function confirmDeliveryUpload(req, res) {
       error.status = 400;
       throw error;
     }
-    const asset = { assetId: crypto.randomUUID(), publicId: resource.public_id, resourceType: 'image', format: resource.format, width: resource.width, height: resource.height, bytes: resource.bytes, originalFilename: parsed.data.originalFilename, sortOrder: delivery.assets.length };
+    const asset = { assetId: crypto.randomUUID(), publicId: resource.public_id, resourceType: 'image', format: resource.format, width: resource.width, height: resource.height, bytes: resource.bytes, contentHash: resource.etag || undefined, hashAlgorithm: resource.etag ? 'cloudinary-etag' : undefined, hashVerifiedAt: resource.etag ? new Date() : undefined, originalFilename: parsed.data.originalFilename, sortOrder: delivery.assets.length };
     const updated = await Delivery.findOneAndUpdate({
       _id: delivery._id,
       userId: req.user.id,
@@ -478,7 +478,7 @@ export async function addLibraryAssets(req, res) {
       const source = byId.get(id);
       const resource = await copyStorageImageToDelivery({ sourceUrl: signedImageUrl(source.publicId, { width: 8000 }), userId: user._id, deliveryId: delivery._id });
       copied.push(resource.public_id);
-      newAssets.push({ assetId: crypto.randomUUID(), publicId: resource.public_id, resourceType: 'image', format: resource.format, width: resource.width, height: resource.height, bytes: resource.bytes, originalFilename: source.originalFilename, libraryTags: source.tags || [], libraryCaption: source.caption || '', sortOrder: delivery.assets.length + newAssets.length });
+      newAssets.push({ assetId: crypto.randomUUID(), publicId: resource.public_id, resourceType: 'image', format: resource.format, width: resource.width, height: resource.height, bytes: resource.bytes, contentHash: resource.etag || undefined, hashAlgorithm: resource.etag ? 'cloudinary-etag' : undefined, hashVerifiedAt: resource.etag ? new Date() : undefined, originalFilename: source.originalFilename, libraryTags: source.tags || [], libraryCaption: source.caption || '', sortOrder: delivery.assets.length + newAssets.length });
     }
     const updated = await Delivery.findOneAndUpdate({
       _id: delivery._id,
@@ -523,6 +523,7 @@ export async function deleteDeliveryAsset(req, res) {
     await delivery.save();
     res.json({ success: true, message: 'Photograph removed.', data: delivery });
   } catch (error) {
+    recordAnalyticsEventAsync({ name: 'storage.delete.failed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'failed', errorCode: error.code || 'DELIVERY_PHOTO_DELETE_FAILED', metadata: { surface: 'delivery' } });
     console.error('[deliveries/photo-delete]', error.message);
     res.status(error.status || 500).json({ success: false, message: 'We could not remove that photograph.' });
   }
@@ -550,7 +551,7 @@ export async function confirmSoundtrackUpload(req, res) {
     uploadedPublicId = resource.public_id;
     if (!['mp3', 'wav', 'm4a', 'ogg', 'aac'].includes(String(resource.format).toLowerCase()) || resource.bytes > 20 * 1024 * 1024 || Number(resource.duration || 0) > 20 * 60) throw Object.assign(new Error('Use an MP3, WAV, M4A, OGG, or AAC track no larger than 20 MB and no longer than 20 minutes.'), { status: 400 });
     if (delivery.soundtrack?.publicId && delivery.soundtrack.publicId !== resource.public_id) await removeDeliveryAudio(delivery.soundtrack.publicId).catch(() => {});
-    delivery.soundtrack = { publicId: resource.public_id, title: parsed.data.title, originalFilename: parsed.data.originalFilename, format: resource.format, bytes: resource.bytes, duration: resource.duration, source: 'photographer', rightsConfirmedAt: new Date() };
+    delivery.soundtrack = { publicId: resource.public_id, title: parsed.data.title, originalFilename: parsed.data.originalFilename, format: resource.format, bytes: resource.bytes, duration: resource.duration, contentHash: resource.etag || undefined, hashAlgorithm: resource.etag ? 'cloudinary-etag' : undefined, hashVerifiedAt: resource.etag ? new Date() : undefined, source: 'photographer', rightsConfirmedAt: new Date() };
     delivery.markModified('soundtrack');
     await delivery.save();
     recordAnalyticsEventAsync({ name: 'upload.completed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'completed', bytes: resource.bytes, metadata: { surface: 'soundtrack', resourceType: 'audio' } });
@@ -571,7 +572,10 @@ export async function deleteSoundtrack(req, res) {
     delivery.markModified('soundtrack');
     await delivery.save();
     res.json({ success: true, message: 'Soundtrack removed.' });
-  } catch { res.status(500).json({ success: false, message: 'We could not remove that soundtrack.' }); }
+  } catch (error) {
+    recordAnalyticsEventAsync({ name: 'storage.delete.failed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'failed', errorCode: error.code || 'SOUNDTRACK_DELETE_FAILED', metadata: { surface: 'soundtrack' } });
+    res.status(500).json({ success: false, message: 'We could not remove that soundtrack.' });
+  }
 }
 
 export async function selectCuratedSoundtrack(req, res) {

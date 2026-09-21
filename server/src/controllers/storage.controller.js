@@ -62,7 +62,7 @@ export async function confirmStorageAsset(req, res) {
     if (!user) { await removeStorageAsset(resource.public_id); return res.status(403).json({ success: false, code: 'STORAGE_LIMIT_REACHED', message: 'This upload would take your personal storage above 50 GB.' }); }
     reserved = true;
     reservedBytes = resource.bytes;
-    const asset = await StorageAsset.create({ userId: user._id, publicId: resource.public_id, originalFilename: parsed.data.originalFilename, format: resource.format, width: resource.width, height: resource.height, bytes: resource.bytes, folder: parsed.data.folder || 'All photographs', tags: [...new Set(parsed.data.tags.map(tag => tag.toLowerCase()))] });
+    const asset = await StorageAsset.create({ userId: user._id, publicId: resource.public_id, originalFilename: parsed.data.originalFilename, format: resource.format, width: resource.width, height: resource.height, bytes: resource.bytes, contentHash: resource.etag || undefined, hashAlgorithm: resource.etag ? 'cloudinary-etag' : undefined, hashVerifiedAt: resource.etag ? new Date() : undefined, folder: parsed.data.folder || 'All photographs', tags: [...new Set(parsed.data.tags.map(tag => tag.toLowerCase()))] });
     recordAnalyticsEventAsync({ name: 'upload.completed', source: 'server', actorType: 'photographer', userId: req.user?.id, status: 'completed', bytes: resource.bytes, metadata: { surface: 'library', format: resource.format } });
     res.status(201).json({ success: true, data: output(asset), usage: { usedBytes: user.storageUsedBytes, limitBytes: PLAN_DEFINITIONS.pro.personalStorageBytes } });
   } catch (error) {
@@ -104,8 +104,12 @@ export async function deleteStorageAsset(req, res) {
       { _id: req.user.id },
       [{ $set: { storageUsedBytes: { $max: [0, { $subtract: [{ $ifNull: ['$storageUsedBytes', 0] }, asset.bytes] }] } } }]
     );
+    recordAnalyticsEventAsync({ name: 'storage.delete.completed', source: 'server', actorType: 'photographer', userId: req.user?.id, status: 'completed', bytes: asset.bytes, metadata: { surface: 'library' } });
     res.json({ success: true, message: 'Photograph removed from your library.' });
-  } catch { res.status(500).json({ success: false, message: 'We could not remove that photograph.' }); }
+  } catch (error) {
+    recordAnalyticsEventAsync({ name: 'storage.delete.failed', source: 'server', actorType: 'photographer', userId: req.user?.id, status: 'failed', errorCode: error.code || 'LIBRARY_DELETE_FAILED', metadata: { surface: 'library', assetId: String(req.params.id || '').slice(0, 80) } });
+    res.status(error.status || 500).json({ success: false, message: 'We could not remove that photograph.' });
+  }
 }
 
 export async function downloadStorageAsset(req, res) {

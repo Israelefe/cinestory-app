@@ -6,6 +6,7 @@ import Delivery from '../models/Delivery.js';
 import { removeStorageAsset } from './storageMedia.service.js';
 import { cloudinary, configureCloudinary } from './cloudinary.service.js';
 import { recordWorkerHeartbeat } from './workerHeartbeat.service.js';
+import { recordAnalyticsEventAsync } from './analytics.service.js';
 
 let timer;
 let running = false;
@@ -70,7 +71,10 @@ export async function purgeExpiredProData(now = new Date()) {
     const users = await User.find({ proRetentionUntil: { $lte: now } }).select('_id').limit(50).lean();
     for (const user of users) {
       const assets = await StorageAsset.find({ userId: user._id }).select('publicId').lean();
-      for (const asset of assets) await removeStorageAsset(asset.publicId).catch(error => console.error('[retention/cloudinary]', error.http_code || error.message));
+      for (const asset of assets) await removeStorageAsset(asset.publicId).catch(error => {
+        recordAnalyticsEventAsync({ name: 'storage.delete.failed', source: 'system', actorType: 'system', userId: user._id, status: 'failed', errorCode: error.code || 'RETENTION_LIBRARY_DELETE_FAILED', metadata: { surface: 'retention', publicId: String(asset.publicId).slice(0, 180) } });
+        console.error('[retention/cloudinary]', error.http_code || error.message);
+      });
       await Promise.all([
         StorageAsset.deleteMany({ userId: user._id }),
         Portfolio.deleteMany({ userId: user._id }),
@@ -80,6 +84,7 @@ export async function purgeExpiredProData(now = new Date()) {
     await purgeOrphanedUploads(now);
   } catch (error) {
     console.error('[retention]', error.message);
+    recordAnalyticsEventAsync({ name: 'storage.retention.failed', source: 'system', actorType: 'system', status: 'failed', errorCode: error.code || 'RETENTION_FAILED', metadata: { surface: 'retention' } });
     await recordWorkerHeartbeat('retention', { status: 'error', stage: 'retention-scan', details: { errorCode: error.code || 'RETENTION_FAILED' } });
   }
   finally {
