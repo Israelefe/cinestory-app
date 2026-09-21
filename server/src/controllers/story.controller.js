@@ -1,4 +1,5 @@
 import PhotoStory from '../models/PhotoStory.js';
+import mongoose from 'mongoose';
 import crypto from 'crypto';
 import { generateAiPhotoStory } from '../services/photoStoryAi.service.js';
 import User from '../models/User.js';
@@ -157,16 +158,15 @@ export async function deleteStory(req, res) {
     if (!req.user?.id) {
       return res.status(401).json({ success: false, message: 'Authentication required.' });
     }
-    const story = await PhotoStory.findById(req.params.id);
-    if (!story) {
-      return res.status(404).json({ success: false, message: 'Story not found.' });
-    }
-    // Verify ownership or superadmin role
-    if (story.userId && story.userId.toString() !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You can only delete your own stories.' });
-    }
-    await PhotoStory.findByIdAndDelete(req.params.id);
-    await StoryView.deleteMany({ storyId: req.params.id }).catch(error => console.error('[stories/delete-views]', error.message));
+    const identifier = String(req.params.id || '').trim();
+    if (!identifier || identifier.length > 200) return res.status(404).json({ success: false, message: 'Story not found.' });
+    const identifierQuery = mongoose.isValidObjectId(identifier)
+      ? { $or: [{ _id: identifier }, { storyId: identifier }] }
+      : { storyId: identifier };
+    const ownerQuery = req.user.role === 'admin' ? {} : { userId: req.user.id };
+    const removed = await PhotoStory.findOneAndDelete({ ...ownerQuery, ...identifierQuery });
+    if (!removed) return res.status(404).json({ success: false, message: 'Story not found.' });
+    void StoryView.deleteMany({ storyId: removed._id }).catch(error => console.error('[stories/delete-views]', error.message));
     res.json({ success: true, message: 'Story deleted.' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
