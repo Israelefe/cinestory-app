@@ -16,6 +16,9 @@ const volumeRoutes = await read('src/routes/volume.routes.js');
 const volumeController = await read('src/controllers/volume.controller.js');
 const storageModel = await read('src/models/StorageAsset.js');
 const deliveryController = await read('src/controllers/delivery.controller.js');
+const deliveryRoutes = await read('src/routes/delivery.routes.js');
+const storyController = await read('src/controllers/story.controller.js');
+const storyView = await read('src/models/StoryView.js');
 const entitlement = await read('src/services/entitlement.service.js');
 
 const delivery = {
@@ -68,6 +71,15 @@ assert.match(legacyStoryController, /caption: z\.string\(\)\.trim\(\)\.min\(18\)
 assert.match(deliveryController, /caption: z\.string\(\)\.trim\(\)\.min\(18\)/, 'Review API must reject short or empty captions');
 assert.match(deliveryController, /narration: z\.boolean\(\)\.default\(true\)/, 'Publishing must keep narration enabled by default');
 assert.match(deliveryController, /NARRATION_REFRESH_REQUIRED/, 'Publishing must not reuse narration rendered with stale voice settings');
+assert.match(deliveryController, /export async function trackPhotoDownload/, 'Download analytics must have a post-download event endpoint');
+assert.match(deliveryController, /individualAllowed.*galleryAllowed/, 'Download all must work when only gallery downloads are enabled');
+assert.match(deliveryController, /isLikelyBot/, 'Link previews must not inflate delivery view counts');
+assert.match(deliveryController, /findOneAndDelete\(\{ _id: delivery\._id, userId: req\.user\.id \}\)/, 'Owned deliveries must be deletable regardless of status');
+assert.match(deliveryController, /deliveries\/delete-media/, 'Media cleanup failure must not block delivery deletion');
+assert.match(deliveryRoutes, /photos\/:assetId\/downloaded/, 'Download analytics route must be registered');
+assert.match(storyController, /StoryView\.create/, 'Legacy Photo Story views must be deduplicated');
+assert.match(storyController, /isLikelyBot/, 'Legacy link previews must not inflate view counts');
+assert.match(storyView, /storyId:.*PhotoStory/, 'Legacy view records must be scoped to the story');
 assert.match(deliveryController, /function soundtrackPreviewToken/, 'Curated soundtrack previews must use a scoped media token');
 assert.match(deliveryController, /data\.soundtrack\.url = curatedPreviewUrl\(data\.soundtrack\.catalogId, soundtrackPreviewToken\(req\.user\.id\)\)/, 'Exact client preview must receive an authorized curated soundtrack URL');
 assert.match(deliveryController, /old audio unsafe to reuse/, 'Review edits must invalidate stale narration');

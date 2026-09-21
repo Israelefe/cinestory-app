@@ -318,8 +318,23 @@ export async function deleteDelivery(req, res) {
       if (portfolio.status === 'published' && portfolio.items.length < 4) { portfolio.status = 'draft'; portfolio.publishedAt = undefined; }
       await portfolio.save();
     }
-    await removeDeliveryMedia(req.user.id, delivery._id);
-    await Promise.all([DeliveryJob.deleteMany({ deliveryId: delivery._id }), DeliveryShareGrant.deleteMany({ deliveryId: delivery._id }), PhotoLike.deleteMany({ deliveryId: delivery._id }), DeliveryView.deleteMany({ deliveryId: delivery._id }), Delivery.deleteOne({ _id: delivery._id, userId: req.user.id })]);
+    // Remove the database record first. A temporary Cloudinary outage must not
+    // leave an owned draft or published delivery stuck in the dashboard.
+    const removed = await Delivery.findOneAndDelete({ _id: delivery._id, userId: req.user.id });
+    if (!removed) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    await Promise.all([
+      DeliveryJob.deleteMany({ deliveryId: delivery._id }),
+      DeliveryShareGrant.deleteMany({ deliveryId: delivery._id }),
+      PhotoLike.deleteMany({ deliveryId: delivery._id }),
+      DeliveryView.deleteMany({ deliveryId: delivery._id })
+    ]);
+    try {
+      await removeDeliveryMedia(req.user.id, delivery._id);
+    } catch (mediaError) {
+      // The delivery is already inaccessible. Retention can remove orphaned
+      // media later if the provider is temporarily unavailable.
+      console.error('[deliveries/delete-media]', mediaError.message);
+    }
     res.json({ success: true, message: 'Delivery deleted and its client link disabled.' });
   } catch (error) {
     console.error('[deliveries/delete]', error.message);
@@ -714,6 +729,10 @@ async function publicDelivery(id) {
 
 function expired(delivery) { return delivery.access?.expiresAt && delivery.access.expiresAt <= new Date(); }
 
+function isLikelyBot(req) {
+  return /(bot|crawler|spider|preview|facebookexternalhit|whatsapp|slackbot|twitterbot|linkedinbot|discordbot)/i.test(String(req.get('user-agent') || ''));
+}
+
 export async function unlockDelivery(req, res) {
   try {
     const parsed = z.object({ pin: z.string().regex(/^\d{6}$/) }).strict().safeParse(req.body);
@@ -829,10 +848,15 @@ export async function getPublicDelivery(req, res) {
       const branding = entitlements.features.branding === 'studio' ? { type: 'studio', name: owner.studio?.name || owner.name, logoUrl: owner.studio?.logoUrl || owner.avatar || '' } : { type: 'veylo', name: 'Veylo', logoUrl: '/veylo/veylo-mark.svg' };
       return res.json({ success: true, data: { locked: true, publicId: delivery.publicId, branding } });
     }
-    try {
-      await DeliveryView.create({ deliveryId: delivery._id, visitorDigest: tokenDigest(visitorId(req, res)) });
-      await Delivery.updateOne({ _id: delivery._id }, { $inc: { viewsCount: 1 } });
-    } catch (error) { if (error.code !== 11000) throw error; }
+    // Link unfurlers and social previews are not client visits. Exclude them
+    // before the unique visitor record is written so dashboard views reflect
+    // people who actually opened the delivery.
+    if (!isLikelyBot(req)) {
+      try {
+        await DeliveryView.create({ deliveryId: delivery._id, visitorDigest: tokenDigest(visitorId(req, res)) });
+        await Delivery.updateOne({ _id: delivery._id }, { $inc: { viewsCount: 1 } });
+      } catch (error) { if (error.code !== 11000) throw error; }
+    }
     res.json({ success: true, data: await publicPayload(delivery, grant) });
   } catch (error) {
     console.error('[deliveries/public]', error.message);
@@ -898,12 +922,29 @@ export async function getPhotoDownload(req, res) {
     const delivery = await publicDelivery(req.params.publicId);
     const grant = delivery ? await shareGrant(req, delivery) : null;
     if (!delivery || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
-    if (grant ? !grant.allowIndividualDownloads : !delivery.access?.allowIndividualDownloads) return res.status(403).json({ success: false, message: 'Individual downloads are turned off for this link.' });
+    const individualAllowed = grant ? grant.allowIndividualDownloads : delivery.access?.allowIndividualDownloads;
+    const galleryAllowed = grant ? grant.allowDownloadAll : delivery.access?.allowDownloadAll;
+    if (!individualAllowed && !galleryAllowed) return res.status(403).json({ success: false, message: 'Downloads are turned off for this link.' });
     const asset = grantAssets(delivery, grant).find(item => item.assetId === req.params.assetId);
     if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
-    await Delivery.updateOne({ _id: delivery._id }, { $inc: { downloadsCount: 1 } });
     res.json({ success: true, data: { url: signedImageUrl(asset.publicId, { original: true, attachment: true }) } });
   } catch (error) { res.status(500).json({ success: false, message: 'We could not prepare that download.' }); }
+}
+
+export async function trackPhotoDownload(req, res) {
+  try {
+    const delivery = await publicDelivery(req.params.publicId);
+    const grant = delivery ? await shareGrant(req, delivery) : null;
+    if (!delivery || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
+    const individualAllowed = grant ? grant.allowIndividualDownloads : delivery.access?.allowIndividualDownloads;
+    const galleryAllowed = grant ? grant.allowDownloadAll : delivery.access?.allowDownloadAll;
+    if (!individualAllowed && !galleryAllowed) return res.status(403).json({ success: false, message: 'Downloads are turned off for this link.' });
+    if (!grantAssets(delivery, grant).some(asset => asset.assetId === req.params.assetId)) return res.status(404).json({ success: false, message: 'Photograph not found.' });
+    await Delivery.updateOne({ _id: delivery._id }, { $inc: { downloadsCount: 1 } });
+    res.json({ success: true, message: 'Download counted.' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'We could not record that download.' });
+  }
 }
 
 export async function getGalleryDownload(req, res) {

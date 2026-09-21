@@ -7,6 +7,7 @@ import AuthCode from '../models/AuthCode.js';
 import Session from '../models/Session.js';
 import PasswordResetToken from '../models/PasswordResetToken.js';
 import PhotoStory from '../models/PhotoStory.js';
+import StoryView from '../models/StoryView.js';
 import Subscription from '../models/Subscription.js';
 import Payment from '../models/Payment.js';
 import BillingEvent from '../models/BillingEvent.js';
@@ -345,6 +346,8 @@ export async function deleteAccount(req, res) {
     try {
       await transaction.withTransaction(async () => {
         const options = { session: transaction };
+        const storiesForViews = await PhotoStory.find({ userId: user._id }).select('_id').session(transaction);
+        await StoryView.deleteMany({ storyId: { $in: storiesForViews.map(item => item._id) } }, options);
         await PhotoStory.deleteMany({ userId: user._id }, options);
         await Session.deleteMany({ userId: user._id }, options);
         await AuthCode.deleteMany({ userId: user._id }, options);

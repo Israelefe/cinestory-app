@@ -30,6 +30,22 @@ function mediaUrl(value) {
  try { const url = new URL(value, window.location.origin); return url.protocol === 'blob:' || url.protocol === 'https:' || (url.origin === window.location.origin && url.protocol === 'http:') ? url.href : ''; } catch { return ''; }
 }
 
+async function prepareStoryShareFile(photo, index, clientName) {
+ const url = mediaUrl(photo?.url);
+ if (!url) throw new Error('Invalid image');
+ const response = await fetch(url, { credentials: 'omit', cache: 'force-cache' });
+ if (!response.ok) throw new Error(`Photograph returned ${response.status}.`);
+ const blob = await response.blob();
+ if (!blob.size || !blob.type.startsWith('image/')) throw new Error('Unsupported photograph');
+ const extension = ({ 'image/png': 'png', 'image/webp': 'webp', 'image/jpeg': 'jpg' })[blob.type] || 'jpg';
+ const base = String(clientName || 'Veylo').replace(/[^a-z0-9_-]/gi, '_').slice(0, 60) || 'Veylo';
+ return new File([blob], `${base}-${String(index + 1).padStart(2, '0')}.${extension}`, { type: blob.type });
+}
+
+function canShareStoryFiles(files) {
+ return typeof File !== 'undefined' && typeof navigator !== 'undefined' && typeof navigator.share === 'function' && typeof navigator.canShare === 'function' && navigator.canShare({ files });
+}
+
 const volumeRamps = new WeakMap();
 function fadeAudioVolume(element, target, duration = 420) {
  if (!element) return;
@@ -380,6 +396,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
       document.body.appendChild(link); link.click(); link.remove();
+      api.post(`/v1/deliveries/public/${deliveryProp.publicId}/photos/${encodeURIComponent(assetId)}/downloaded`, {}, { headers }).catch(() => {});
       if (!quiet) { setDownloadNotice('On iPhone or iPad, use Share then Save to Files if Safari opens the photograph instead.'); toast.info('Download started. Check your Downloads or Files app.'); }
       return true;
     }
@@ -390,7 +407,8 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
     const object = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = object; a.download = (story.clientName || 'Veylo').replace(/[^a-z0-9_-]/gi, '_').slice(0, 60) + '-' + (i + 1) + '.' + extension;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(object), 30000);
-    if (!quiet) { toast.success('Download requested. Check your browser’s downloads.'); if (!demo && storyId) api.post('/v1/stories/public/' + encodeURIComponent(storyId) + '/track-download').catch(() => {}); }
+    if (!demo && storyId) api.post('/v1/stories/public/' + encodeURIComponent(storyId) + '/track-download').catch(() => {});
+    if (!quiet) { toast.success('Download requested. Check your browser’s downloads.'); }
     return true;
    } catch { toast.error('Couldn’t download this photograph. Please try again.'); return false; }
    finally { setDownloading(null); }
@@ -404,6 +422,27 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
    setDownloadProgress({ current: 0, total: photos.length, failed: 0 });
    let failed = 0;
    try {
+     if (!deliveryProp?.publicId && photos.length <= 40) {
+      try {
+       const files = [];
+       for (let i = 0; i < photos.length; i += 1) {
+        files.push(await prepareStoryShareFile(photos[i], i, story.clientName));
+        setDownloadProgress({ current: i + 1, total: photos.length, failed });
+       }
+       if (canShareStoryFiles(files)) {
+        await navigator.share({ title: `${story.clientName || 'Client'} photographs`, files });
+        if (!demo && storyId) files.forEach(() => api.post('/v1/stories/public/' + encodeURIComponent(storyId) + '/track-download').catch(() => {}));
+        setDownloadNotice('Choose Save to Files or Photos in the share sheet to keep every photograph.');
+        toast.success('All photographs are ready in the share sheet.');
+        return;
+       }
+      } catch (shareError) {
+       if (shareError?.name === 'AbortError') {
+        setDownloadNotice('The share sheet was closed. Nothing was counted as downloaded.');
+        return;
+       }
+      }
+     }
      for (let i = 0; i < photos.length; i++) {
        if (!await download(i, true)) failed += 1;
        setDownloadProgress({ current: i + 1, total: photos.length, failed });
@@ -412,7 +451,6 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
      const started = photos.length - failed;
      setDownloadNotice(failed ? `${started} download${started === 1 ? '' : 's'} started. ${failed} need another tap.` : 'Downloads started one at a time. Check your Downloads or Files app.');
      toast.success(failed ? `${started} downloads started. Try the remaining photographs individually.` : 'Downloads started. Check your Downloads or Files app.');
-     if (!demo && storyId) api.post('/v1/stories/public/' + encodeURIComponent(storyId) + '/track-download').catch(() => {});
    } finally {
      setAllDownloading(false);
      setDownloadProgress(null);

@@ -1,7 +1,10 @@
 import PhotoStory from '../models/PhotoStory.js';
+import crypto from 'crypto';
 import { generateAiPhotoStory } from '../services/photoStoryAi.service.js';
 import User from '../models/User.js';
+import StoryView from '../models/StoryView.js';
 import { resolveEntitlements, reservePublishSlot } from '../services/entitlement.service.js';
+import { tokenDigest } from '../utils/auth.js';
 import { z } from 'zod';
 
 const legacyMediaUrl = z.string().trim().min(1).max(2000).refine(value => {
@@ -109,14 +112,16 @@ export async function createStory(req, res) {
 
 export async function getPublicStory(req, res) {
   try {
-    const story = await PhotoStory.findOneAndUpdate(
-      { storyId: req.params.storyId, status: 'published' },
-      { $inc: { viewsCount: 1 } },
-      { new: true }
-    ).lean();
+    const story = await PhotoStory.findOne({ storyId: req.params.storyId, status: 'published' }).lean();
 
     if (!story) {
       return res.status(404).json({ success: false, message: 'Photo Story not found.' });
+    }
+    if (!isLikelyBot(req)) {
+      try {
+        await StoryView.create({ storyId: story._id, visitorDigest: tokenDigest(visitorId(req, res)) });
+        await PhotoStory.updateOne({ _id: story._id }, { $inc: { viewsCount: 1 } });
+      } catch (error) { if (error.code !== 11000) throw error; }
     }
     const { userId, __v, ...publicStory } = story;
     res.json({ success: true, data: publicStory });
@@ -161,8 +166,22 @@ export async function deleteStory(req, res) {
       return res.status(403).json({ success: false, message: 'Unauthorized: You can only delete your own stories.' });
     }
     await PhotoStory.findByIdAndDelete(req.params.id);
+    await StoryView.deleteMany({ storyId: req.params.id }).catch(error => console.error('[stories/delete-views]', error.message));
     res.json({ success: true, message: 'Story deleted.' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
+}
+
+function isLikelyBot(req) {
+  return /(bot|crawler|spider|preview|facebookexternalhit|whatsapp|slackbot|twitterbot|linkedinbot|discordbot)/i.test(String(req.get('user-agent') || ''));
+}
+
+function visitorId(req, res) {
+  let id = req.cookies?.veylo_story_visitor;
+  if (!id || !/^[A-Za-z0-9_-]{30,100}$/.test(id)) {
+    id = crypto.randomBytes(32).toString('base64url');
+    res.cookie('veylo_story_visitor', id, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 365 * 24 * 60 * 60 * 1000, path: '/api/v1/stories/public' });
+  }
+  return id;
 }

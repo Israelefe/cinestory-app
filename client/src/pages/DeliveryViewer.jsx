@@ -61,11 +61,25 @@ function startBrowserDownload(url, filename) {
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
-  link.target = '_blank';
-  link.rel = 'noopener noreferrer';
+  if (!String(url).startsWith('blob:')) {
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+  }
   document.body.appendChild(link);
   link.click();
   link.remove();
+}
+
+async function prepareShareFile(item) {
+  const response = await fetch(item.url, { credentials: 'omit', cache: 'force-cache' });
+  if (!response.ok) throw new Error(`Photograph returned ${response.status}.`);
+  const blob = await response.blob();
+  if (!blob.size) throw new Error('The photograph was empty.');
+  return new File([blob], item.filename, { type: blob.type || 'image/jpeg' });
+}
+
+function canShareFiles(files) {
+  return typeof File !== 'undefined' && typeof navigator !== 'undefined' && typeof navigator.share === 'function' && typeof navigator.canShare === 'function' && navigator.canShare({ files });
 }
 
 async function preloadBlob(url, cleanup, kind, maxAttempts = 3) {
@@ -440,7 +454,16 @@ export default function DeliveryViewer() {
       `/v1/deliveries/public/${delivery.publicId}/photos/${assetId}/download`,
       { headers: accessHeaders(delivery.publicId) }
     );
-    startBrowserDownload(response.data?.data?.url, downloadFilename(asset, index, delivery.clientName));
+    return { assetId, url: response.data?.data?.url, filename: downloadFilename(asset, index, delivery.clientName) };
+  }
+
+  async function recordPhotoDownload(assetId) {
+    if (!assetId) return;
+    await api.post(
+      `/v1/deliveries/public/${delivery.publicId}/photos/${encodeURIComponent(assetId)}/downloaded`,
+      {},
+      { headers: accessHeaders(delivery.publicId) }
+    ).catch(() => {});
   }
 
   async function handleDownload(assetId, index = 0) {
@@ -448,7 +471,9 @@ export default function DeliveryViewer() {
     setBusy(assetId);
     setDownloadNotice('The photograph is downloading on its own. On iPhone or iPad, use Share then Save to Files if Safari opens it instead.');
     try {
-      await requestPhotoDownload(asset, deliveryAssets.indexOf(asset) >= 0 ? deliveryAssets.indexOf(asset) : index);
+      const prepared = await requestPhotoDownload(asset, deliveryAssets.indexOf(asset) >= 0 ? deliveryAssets.indexOf(asset) : index);
+      startBrowserDownload(prepared.url, prepared.filename);
+      void recordPhotoDownload(prepared.assetId);
       toast.info('Download started. Check your Downloads or Files app.');
     } catch (err) {
       toast.error(apiMessage(err, 'We could not prepare that download.'));
@@ -466,18 +491,61 @@ export default function DeliveryViewer() {
     setDownloadProgress({ current: 0, total: assets.length, failed: 0 });
     setDownloadNotice('Each photograph downloads separately. Android may ask you to allow multiple downloads. On iPhone or iPad, Safari may stop after one; use the individual Download buttons if that happens.');
     try {
+      const prepared = [];
       for (let index = 0; index < assets.length; index += 1) {
         try {
-          await requestPhotoDownload(assets[index], index);
+          prepared.push(await requestPhotoDownload(assets[index], index));
         } catch {
           failed += 1;
         }
         setDownloadProgress({ current: index + 1, total: assets.length, failed });
-        if (index < assets.length - 1) await new Promise(resolve => window.setTimeout(resolve, 350));
+      }
+      let shared = false;
+      let shareFiles = null;
+      if (prepared.length && prepared.length <= 40) {
+        try {
+          const files = [];
+          for (let index = 0; index < prepared.length; index += 1) {
+            files.push(await prepareShareFile(prepared[index]));
+            setDownloadProgress({ current: Math.min(assets.length, index + 1), total: assets.length, failed });
+          }
+          shareFiles = files;
+          if (canShareFiles(files)) {
+            await navigator.share({ title: `${delivery.clientName || 'Client'} photographs`, files });
+            prepared.forEach(item => { void recordPhotoDownload(item.assetId); });
+            shared = true;
+            setDownloadNotice('Choose Save to Files or Photos in the share sheet to keep every photograph.');
+          }
+        } catch (shareError) {
+          if (shareError?.name === 'AbortError') {
+            setDownloadNotice('The share sheet was closed. Nothing was counted as downloaded.');
+            return;
+          }
+        }
+      }
+      if (!shared) {
+        for (let index = 0; index < prepared.length; index += 1) {
+          const item = prepared[index];
+          try {
+            const file = shareFiles?.[index];
+            const browserUrl = file ? URL.createObjectURL(file) : item.url;
+            startBrowserDownload(browserUrl, item.filename);
+            if (file) window.setTimeout(() => URL.revokeObjectURL(browserUrl), 30000);
+            void recordPhotoDownload(item.assetId);
+          } catch {
+            failed += 1;
+          }
+          setDownloadProgress({ current: Math.min(assets.length, index + 1), total: assets.length, failed });
+          if (index < prepared.length - 1) await new Promise(resolve => window.setTimeout(resolve, 250));
+        }
       }
       const started = assets.length - failed;
-      setDownloadNotice(failed ? `${started} download${started === 1 ? '' : 's'} started. ${failed} need another tap.` : 'Downloads started one at a time. Check your Downloads or Files app.');
-      toast.info(failed ? `${started} downloads started. Try the remaining photographs individually.` : 'Downloads started. Check your Downloads or Files app.');
+      setDownloadNotice(shared && !failed
+        ? 'Choose Save to Files or Photos in the share sheet to keep every photograph.'
+        : failed
+          ? `${started} download${started === 1 ? '' : 's'} started. ${failed} need another tap.`
+          : 'Downloads started one at a time. Check your Downloads or Files app.');
+      toast.info(shared ? 'All photographs are ready in the share sheet.' : failed ? `${started} downloads started. Try the remaining photographs individually.` : 'Downloads started one at a time. Check your Downloads or Files app.');
     } finally {
       setBusy('');
       setDownloadProgress(null);

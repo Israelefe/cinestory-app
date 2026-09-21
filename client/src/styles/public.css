@@ -2180,3 +2180,23 @@
 @keyframes v-story-audio-pulse{0%{box-shadow:0 0 0 0 var(--story-glow,rgba(255,90,71,.45))}75%,100%{box-shadow:0 0 0 7px transparent}}
 @media(max-width:767px){.v-story-sound.is-loading{display:flex;left:50%;top:auto;bottom:max(84px,calc(env(safe-area-inset-bottom) + 74px));max-width:calc(100% - 36px);transform:translateX(-50%)}}
 @media(prefers-reduced-motion:reduce){.v-story-sound>span.is-loading{animation:none!important;box-shadow:0 0 0 4px var(--story-glow,rgba(255,90,71,.35))}}
+
+/* Profile and studio marks use the same circular treatment everywhere. */
+.v-account-avatar,.v-dashboard-avatar{border-radius:50%}
+
+/* Give the dashboard header a calmer, more useful mobile rhythm. */
+@media(max-width:639px){
+  .v-dashboard-page{padding-top:64px}
+  .v-dashboard-wrap{width:min(calc(100% - 32px),1320px);padding-top:18px}
+  .v-dashboard-hero{gap:20px;padding:14px 0 22px}
+  .v-dashboard-welcome .v-dashboard-studio{gap:10px;margin-bottom:24px}
+  .v-dashboard-avatar{width:42px;height:42px}
+  .v-dashboard-studio p{font-size:14px}
+  .v-dashboard-studio div>span{font-size:12px}
+  .v-dashboard-welcome h1{font-size:clamp(34px,10.8vw,48px);line-height:.98;letter-spacing:-.055em}
+  .v-dashboard-welcome>span{max-width:34rem;margin-top:14px;font-size:13px;line-height:1.65}
+  .v-dashboard-plan-summary{grid-template-columns:20px minmax(0,1fr);gap:10px;padding:14px}
+  .v-dashboard-plan-summary>a{grid-column:2;justify-self:start;margin-top:3px}
+  .v-dashboard-overview{margin-top:20px}
+  .v-dashboard-deliveries{padding-top:42px}
+}
