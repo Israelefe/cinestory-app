@@ -29,29 +29,31 @@ assert.match(serverEntry, /analyticsRoutes/);
 assert.match(serverEntry, /app\.use\('\/api\/v1\/analytics', analyticsRoutes\)/);
 assert.match(analyticsRoutes, /clientAnalyticsLimit/);
 assert.match(analyticsRoutes, /optionalAuthMiddleware/);
-assert.match(analyticsController, /x-veylo-analytics-consent/);
-assert.match(analyticsController, /isRuntimeFeatureEnabled\('optionalAnalytics'/);
 assert.match(analyticsController, /CLIENT_ANALYTICS_EVENT_SET\.has/);
-assert.match(analyticsController, /sessionDigest: digestSession/);
+assert.match(analyticsController, /sessionDigest: digestIdentity/);
+assert.match(analyticsController, /visitorDigest: digestIdentity/);
 assert.match(analyticsService, /sanitizeAnalyticsMetadata/);
 assert.match(analyticsService, /photo\|pixel\|audio\|keystroke/);
 assert.match(retentionService, /AnalyticsEvent\.deleteMany/);
 assert.match(runtimeConfig, /analyticsRetentionDays: 365/);
 assert.match(adminController, /analyticsRetentionDays/);
-assert.match(clientAnalytics, /getAnalyticsConsent\(\)/);
-assert.match(clientAnalytics, /X-Veylo-Analytics-Consent/);
 assert.match(clientAnalytics, /sessionStorage/);
+assert.match(clientAnalytics, /visitorId/);
 assert.match(clientAnalytics, /utmSource/);
+assert.match(clientAnalytics, /utmMedium/);
 assert.match(clientAnalytics, /referrerHost/);
-assert.match(cookiePreferences, /saved\?\.version === 2/);
-assert.match(cookiePreferences, /Only necessary/);
-assert.match(cookiePreferences, /Allow product analytics/);
-assert.match(privacyPolicy, /optional product analytics/);
+assert.match(clientAnalytics, /page\.scrolled/);
+assert.match(cookiePreferences, /saved\?\.version === 3/);
+assert.match(cookiePreferences, /First-party service analytics/);
+assert.match(cookiePreferences, /Got it/);
+assert.match(privacyPolicy, /first-party service analytics/);
 assert.match(privacyPolicy, /photograph pixels/);
 assert.match(privacyPolicy, /365 days by default/);
 assert.match(adminRoutes, /product-analytics.*requireAdminRoles\('superadmin', 'operations', 'analyst', 'read-only'\)/);
+assert.match(adminRoutes, /visitor-traffic.*requireAdminRoles\('superadmin', 'operations', 'analyst', 'read-only'\)/);
 assert.match(adminPage, /Product analytics/);
 assert.match(adminPage, /Journey checkpoints/);
+assert.match(adminPage, /Visitors &amp; traffic/);
 
 const sanitized = sanitizeAnalyticsMetadata({
   password: 'never store this',
@@ -64,4 +66,4 @@ const sanitized = sanitizeAnalyticsMetadata({
 });
 assert.deepEqual(sanitized, { safeCount: 4, nested: { format: 'photo-story' } }, 'Analytics metadata must remove private content recursively.');
 
-console.log(`Analytics privacy contract passed: ${CLIENT_ANALYTICS_EVENT_NAMES.length} allowed client events, consent gate, anonymised sessions, metadata filtering, admin reporting, and updated privacy copy.`);
+console.log(`Analytics privacy contract passed: ${CLIENT_ANALYTICS_EVENT_NAMES.length} allowed client events, always-on first-party collection, anonymised visitors and sessions, metadata filtering, traffic reporting, and updated privacy copy.`);

@@ -138,6 +138,7 @@ function HealthCard({ icon: Icon, label, health }) {
 }
 
 function ConfigToggle({ label, checked, onChange, note }) {
+  if (label === 'Optional analytics') return <div className="flex items-start justify-between gap-4 rounded-2xl border border-emerald-400/20 bg-emerald-400/[.06] p-4"><span><span className="block text-xs font-semibold text-white">First-party service analytics</span><span className="mt-1 block text-[11px] leading-5 text-white/45">Active by default for visitor, delivery, and reliability reporting. The service does not use advertising cookies.</span></span><Status value="active" /></div>;
   return <label className="flex cursor-pointer items-start justify-between gap-4 rounded-2xl border border-white/10 bg-white/[.025] p-4 transition-colors hover:border-white/20"><span className="min-w-0"><span className="block text-xs font-semibold text-white">{label}</span>{note && <span className="mt-1 block text-[11px] leading-5 text-white/40">{note}</span>}</span><input type="checkbox" checked={Boolean(checked)} onChange={(event) => onChange(event.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-[#ff7867]" /></label>;
 }
 
@@ -191,10 +192,10 @@ function ProductAnalyticsPanel({
     </section>
 
     <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <MetricCard icon={Activity} label="Recorded actions" value={number(totals.events)} note={`${number(totals.clientEvents)} came from opted-in product use`} />
+      <MetricCard icon={Activity} label="Recorded actions" value={number(totals.events)} note={`${number(totals.clientEvents)} came from first-party browser activity`} />
       <MetricCard icon={Users} label="Unique sessions" value={number(totals.uniqueSessions)} note="Anonymised browser sessions in this window" />
       <MetricCard icon={CheckCircle2} label="Successful outcomes" value={`${number(totals.successRate)}%`} note={`${number(totals.failedEvents)} failed or partial events`} />
-      <MetricCard icon={ShieldCheck} label="Consent events" value={number(data.collection?.consentEvents)} note={data.collection?.optionalAnalyticsEnabled ? 'Optional analytics is enabled' : 'Optional analytics is disabled'} />
+      <MetricCard icon={ShieldCheck} label="Analytics mode" value="Active" note="First-party service measurement is enabled" />
     </section>
 
     <section className="grid gap-5 xl:grid-cols-[1.15fr_.85fr]">
@@ -228,6 +229,67 @@ function ProductAnalyticsPanel({
   </div>;
 }
 
+function TrafficRows({ items = [], labelKey, valueLabel = 'Page views', empty = 'No data recorded in this window.' }) {
+  if (!items.length) return <p className="py-8 text-sm text-white/45">{empty}</p>;
+  const maximum = Math.max(1, ...items.map(item => Number(item.pageViews || item.sessions || item.events || 0)));
+  return <div className="mt-5 space-y-3">{items.slice(0, 10).map((item, index) => {
+    const value = Number(item.pageViews || item.sessions || item.events || 0);
+    const label = labelKey === 'source' ? `${item.source || 'direct'} / ${item.medium || 'direct'}` : (item[labelKey] || item.route || item.path || item.host || item.campaign || item.name || 'Unknown');
+    return <div key={`${label}-${index}`}>
+      <div className="flex items-center justify-between gap-3 text-xs"><span className="min-w-0 truncate text-white/70">{label}</span><span className="shrink-0 text-white/40">{number(value)}</span></div>
+      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-[#ff7867] transition-[width] duration-500" style={{ width: `${Math.max(2, value / maximum * 100)}%` }} /></div>
+      <p className="mt-1 text-[10px] text-white/30">{valueLabel}{item.sessions !== undefined ? ` · ${number(item.sessions)} sessions` : ''}{item.visitors !== undefined ? ` · ${number(item.visitors)} visitors` : ''}</p>
+    </div>;
+  })}</div>;
+}
+
+function TrafficAnalyticsPanel({ data, days, onDaysChange, error }) {
+  if (!data) return <div className="mt-6 rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-5 text-sm text-amber-100">Visitor and traffic analytics is unavailable for this role. {error || 'Try refreshing the workspace.'}</div>;
+  const totals = data.totals || {};
+  const daily = data.daily || [];
+  const maxDaily = Math.max(1, ...daily.map(item => Number(item.pageViews || 0)));
+  const duration = Number(totals.averageSessionDurationSeconds || 0);
+  const durationLabel = duration >= 60 ? `${Math.floor(duration / 60)}m ${duration % 60}s` : `${duration}s`;
+  const changeLabel = value => `${Number(value || 0) > 0 ? '+' : ''}${number(value || 0)}% vs previous window`;
+  const funnel = data.funnel || [];
+  const firstFunnel = Math.max(1, Number(funnel[0]?.events || 0));
+
+  return <div className="mt-6 space-y-5">
+    <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Visitors &amp; traffic</p><h2 className="mt-1 text-xl font-medium">Who visits Veylo and what they do</h2><p className="mt-2 max-w-3xl text-xs leading-5 text-white/45">First-party service analytics across public pages, photographer workspaces, portfolios, deliveries, and recipient galleries. Visitor and session identifiers are hashed before storage.</p></div>
+        <label className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/40 lg:min-w-48">Window<select value={days} onChange={event => onDaysChange(event.target.value)} className="mt-2 min-h-10 w-full rounded-xl border border-white/10 bg-[#141419] px-3 text-xs font-normal normal-case tracking-normal text-white outline-none focus:border-[#ff9b8e]/60"><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option></select></label>
+      </div>
+    </section>
+
+    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <MetricCard icon={Users} label="Visitors" value={number(totals.visitors)} note={`${number(totals.newVisitors)} new · ${number(totals.returningVisitors)} returning · ${changeLabel(totals.comparison?.visitors)}`} />
+      <MetricCard icon={Eye} label="Page views" value={number(totals.pageViews)} note={`${changeLabel(totals.comparison?.pageViews)} · ${number(totals.sessions)} sessions`} />
+      <MetricCard icon={Clock3} label="Avg session" value={durationLabel} note={`${number(totals.pagesPerSession)} pages per session · ${changeLabel(totals.comparison?.averageSessionDurationSeconds)}`} />
+      <MetricCard icon={CheckCircle2} label="Engagement" value={`${number(totals.engagementRate)}%`} note={`${number(totals.engagedSessions)} engaged sessions · ${number(totals.bounceRate)}% bounce`} />
+    </section>
+
+    <section className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
+      <div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Traffic trend</p><h2 className="mt-1 text-xl font-medium">Daily visitors and page views</h2></div><span className="text-xs text-white/35">{data.windowDays} days</span></div><div className="mt-6 space-y-3">{daily.slice(-14).map(item => <div key={item.day} className="grid grid-cols-[5.2rem_minmax(0,1fr)_4.5rem] items-center gap-3"><span className="text-[11px] text-white/40">{item.day}</span><div className="h-2 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-[#ff7867]" style={{ width: `${Math.max(2, Number(item.pageViews || 0) / maxDaily * 100)}%` }} /></div><span className="text-right text-[11px] text-white/45">{number(item.pageViews)} views</span></div>)}{!daily.length && <p className="py-8 text-sm text-white/45">No page views have been recorded yet.</p>}</div></div>
+      <div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Realtime</p><h2 className="mt-1 text-xl font-medium">Last 30 minutes</h2></div><Activity size={17} className="text-white/35" /></div><div className="mt-5 grid grid-cols-2 gap-3"><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Visitors</p><p className="mt-2 text-2xl font-medium text-white">{number(data.realtime?.visitors)}</p></div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Sessions</p><p className="mt-2 text-2xl font-medium text-white">{number(data.realtime?.sessions)}</p></div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Page views</p><p className="mt-2 text-2xl font-medium text-white">{number(data.realtime?.pageViews)}</p></div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Events</p><p className="mt-2 text-2xl font-medium text-white">{number(data.realtime?.events)}</p></div></div><p className="mt-4 text-xs leading-5 text-white/40">Counts refresh whenever this admin panel loads. No individual session identifiers are shown.</p></div>
+    </section>
+
+    <section className="grid gap-5 xl:grid-cols-2">
+      <div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Acquisition</p><h2 className="mt-1 text-xl font-medium">Source, medium, and campaign</h2><p className="mt-2 text-xs leading-5 text-white/45">UTM labels and referring hostnames are kept without full URLs or contact details.</p></div><TrafficRows items={data.trafficSources} labelKey="source" valueLabel="Page views" /><div className="mt-6 border-t border-white/10 pt-5"><p className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/35">Campaigns</p><TrafficRows items={data.campaigns} labelKey="campaign" valueLabel="Page views" empty="No campaign labels recorded yet." /></div></div>
+      <div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Pages</p><h2 className="mt-1 text-xl font-medium">Landing, top, and exit pages</h2></div><p className="mt-5 text-[10px] font-semibold uppercase tracking-[.14em] text-white/35">Landing pages</p><TrafficRows items={data.landingPages} labelKey="path" valueLabel="Page views" /><p className="mt-6 border-t border-white/10 pt-5 text-[10px] font-semibold uppercase tracking-[.14em] text-white/35">Top paths</p><TrafficRows items={data.topRoutes} labelKey="route" valueLabel="Page views" /><p className="mt-6 border-t border-white/10 pt-5 text-[10px] font-semibold uppercase tracking-[.14em] text-white/35">Exit pages</p><TrafficRows items={data.exitPages} labelKey="route" valueLabel="Sessions" empty="No session exits recorded yet." /></div>
+    </section>
+
+    <section className="grid gap-5 xl:grid-cols-[.9fr_1.1fr]">
+      <div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Audience technology</p><h2 className="mt-1 text-xl font-medium">Devices and browsers</h2></div><div className="mt-5 space-y-2">{(data.devices || []).slice(0, 12).map((item, index) => <div key={`${item.deviceType}-${item.browser}-${index}`} className="rounded-2xl border border-white/10 bg-white/[.025] p-3"><div className="flex items-center justify-between gap-3"><span className="text-xs font-semibold text-white">{item.deviceType} · {item.browser}</span><span className="text-xs text-white/45">{number(item.pageViews)} views</span></div><p className="mt-1 text-[11px] text-white/40">{item.operatingSystem} · {item.viewport} · {item.connection} · {number(item.sessions)} sessions</p></div>)}{!data.devices?.length && <p className="py-8 text-sm text-white/45">No device details recorded yet.</p>}</div></div>
+      <div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Conversion paths</p><h2 className="mt-1 text-xl font-medium">From first visit to delivery action</h2><p className="mt-2 text-xs leading-5 text-white/45">These are event counts and anonymised session counts, not individual identities.</p></div><div className="mt-5 space-y-3">{funnel.map(item => <div key={item.name}><div className="flex items-center justify-between gap-3 text-xs"><span className="truncate text-white/65">{item.name}</span><span className="shrink-0 text-white/40">{number(item.events)} events · {number(item.sessions)} sessions</span></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-[#ff7867]" style={{ width: `${Math.max(0, Math.min(100, Number(item.events || 0) / firstFunnel * 100))}%` }} /></div></div>)}</div></div>
+    </section>
+
+    <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Location</p><h2 className="mt-1 text-xl font-medium">Coarse country totals</h2><p className="mt-2 text-xs leading-5 text-white/45">Shown only when the hosting edge supplies a country code. Veylo never stores a raw IP address.</p></div><div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{(data.countries || []).filter(item => item.country !== 'unknown').slice(0, 12).map(item => <div key={item.country} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[.025] p-3"><span className="text-xs font-semibold text-white">{item.country}</span><span className="text-xs text-white/45">{number(item.visitors)} visitors</span></div>)}{!(data.countries || []).some(item => item.country !== 'unknown') && <p className="py-5 text-sm text-white/45">Country data is not supplied by the current hosting edge.</p>}</div></section>
+
+    <section className="grid gap-5 xl:grid-cols-2"><div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Public surfaces</p><h2 className="mt-1 text-xl font-medium">Who is using which part of Veylo</h2></div><div className="mt-5 space-y-2">{(data.actors || []).map(item => <div key={item.actorType} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[.025] p-3"><span className="text-xs capitalize text-white/70">{item.actorType}</span><span className="text-xs text-white/45">{number(item.pageViews)} page views · {number(item.events)} events</span></div>)}{!data.actors?.length && <p className="py-8 text-sm text-white/45">No audience activity recorded yet.</p>}</div></div><div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Collection health</p><h2 className="mt-1 text-xl font-medium">Data quality and privacy</h2></div><div className="mt-5 grid grid-cols-2 gap-3"><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Failed events</p><p className="mt-2 text-xl font-medium text-white">{number(totals.failedEvents)}</p></div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Location</p><p className="mt-2 text-xl font-medium text-white">{data.countries?.some(item => item.country !== 'unknown') ? 'Coarse' : 'Not supplied'}</p></div></div><p className="mt-4 text-xs leading-5 text-white/40">{data.collection?.firstParty ? 'First-party only.' : 'Collection source needs review.'} Raw IP addresses and private content are excluded. {data.definitions?.engagedSession}</p></div></section>
+  </div>;
+}
+
 export default function AdminDashboardPage({ admin, onLogout }) {
   const [tab, setTab] = useState('deliveries');
   const [analytics, setAnalytics] = useState(null);
@@ -255,6 +317,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const [productAnalyticsDays, setProductAnalyticsDays] = useState('30');
   const [productAnalyticsFormat, setProductAnalyticsFormat] = useState('all');
   const [productAnalyticsActor, setProductAnalyticsActor] = useState('all');
+  const [visitorTraffic, setVisitorTraffic] = useState(null);
+  const [visitorTrafficDays, setVisitorTrafficDays] = useState('30');
   const [securityActionLoading, setSecurityActionLoading] = useState(false);
   const [twoFactorSetup, setTwoFactorSetup] = useState(null);
   const [twoFactorCode, setTwoFactorCode] = useState('');
@@ -311,7 +375,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       support: api.get('/v1/admin/support/tickets', { params: { search } }),
       configuration: api.get('/v1/admin/configuration'),
       security: api.get('/v1/admin/security'),
-      productAnalytics: api.get('/v1/admin/product-analytics', { params: { days: productAnalyticsDays, format: productAnalyticsFormat, actorType: productAnalyticsActor } })
+      productAnalytics: api.get('/v1/admin/product-analytics', { params: { days: productAnalyticsDays, format: productAnalyticsFormat, actorType: productAnalyticsActor } }),
+      visitorTraffic: api.get('/v1/admin/visitor-traffic', { params: { days: visitorTrafficDays } })
     };
     const entries = Object.entries(requests);
     const results = await Promise.allSettled(entries.map(([, request]) => request));
@@ -335,16 +400,18 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         if (key === 'configuration') setRuntimeConfig(data || null);
         if (key === 'security') setSecurityOverview(data || null);
         if (key === 'productAnalytics') setProductAnalytics(data || null);
+        if (key === 'visitorTraffic') setVisitorTraffic(data || null);
         return;
       }
       const error = result.status === 'rejected' ? result.reason : new Error(result.value?.data?.message || 'This panel is unavailable.');
       if (key === 'productAnalytics') setProductAnalytics(null);
+      if (key === 'visitorTraffic') setVisitorTraffic(null);
       nextErrors[key] = error.response?.data?.message || error.message || 'This panel is unavailable.';
     });
     setPanelErrors(nextErrors);
     if (Object.keys(nextErrors).length === entries.length) toast.error('The administration service is unavailable. Try again shortly.');
     setLoading(false);
-  }, [accountPlanFilter, accountSourceFilter, accountStatusFilter, aiJobStatusFilter, aiJobTypeFilter, deliveryFormatFilter, deliveryStatusFilter, productAnalyticsActor, productAnalyticsDays, productAnalyticsFormat, search, volumeCategoryFilter, volumeStatusFilter]);
+  }, [accountPlanFilter, accountSourceFilter, accountStatusFilter, aiJobStatusFilter, aiJobTypeFilter, deliveryFormatFilter, deliveryStatusFilter, productAnalyticsActor, productAnalyticsDays, productAnalyticsFormat, search, visitorTrafficDays, volumeCategoryFilter, volumeStatusFilter]);
 
   useEffect(() => {
     const timer = window.setTimeout(fetchAdminData, 300);
@@ -723,9 +790,10 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       support: supportOverview?.tickets?.length || 0,
       configuration: runtimeConfig ? 1 : 0,
       security: securityOverview?.summary?.adminCount || 0,
-      productAnalytics: productAnalytics?.totals?.events || 0
+      productAnalytics: productAnalytics?.totals?.events || 0,
+      visitorTraffic: visitorTraffic?.totals?.visitors || 0
     }),
-    [accessOverview, aiJobs, deliveries, users, payments, volumeJobs, storageOverview, musicOverview, portfolioOverview, supportOverview, runtimeConfig, securityOverview, productAnalytics]
+    [accessOverview, aiJobs, deliveries, users, payments, volumeJobs, storageOverview, musicOverview, portfolioOverview, supportOverview, runtimeConfig, securityOverview, productAnalytics, visitorTraffic]
   );
 
   const runStorageScan = async () => {
@@ -1118,6 +1186,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
                 ['storage', HardDrive, 'Storage'],
                 ['musicNarration', Music2, 'Music & voice'],
                 ['productAnalytics', Activity, 'Product data'],
+                ['visitorTraffic', Globe2, 'Visitors & traffic'],
                 ['security', LockKeyhole, 'Security']
               ].map(([key, Icon, label]) => (
                 <button
@@ -1259,6 +1328,16 @@ export default function AdminDashboardPage({ admin, onLogout }) {
                 <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Support and moderation</p><h2 className="mt-1 text-xl font-medium">Requests that need a human reply</h2><p className="mt-2 text-xs leading-5 text-white/45">Every request has an owner, status, priority, response history, and moderation trail. Open one to reply, assign it, or make a reported delivery or portfolio private.</p></div><span className="text-xs text-white/35">Updated {shortDate(supportOverview.generatedAt)}</span></div><div className="mt-5 space-y-2">{(supportOverview.tickets || []).map(ticket => <button key={ticket.id} type="button" onClick={() => openSupportTicket(ticket)} className="w-full rounded-2xl border border-white/10 bg-white/[.025] p-4 text-left transition-colors hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff9b8e]/70"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><Status value={ticket.status} /><Status value={ticket.priority} /><span className="text-[10px] font-semibold uppercase tracking-[.12em] text-[#ff9b8e]">{ticket.category}</span><span className="font-mono text-[10px] text-white/35">{ticket.ticketNumber}</span></div><h3 className="mt-2 truncate text-sm font-semibold text-white">{ticket.subject}</h3><p className="mt-1 truncate text-xs text-white/40">{ticket.requester?.name || 'Requester'} · {ticket.requester?.email || 'No reply email'}{ticket.account?.studio ? ` · ${ticket.account.studio}` : ''}</p></div><span className="shrink-0 text-xs text-white/35">{shortDate(ticket.updatedAt)}</span></div><div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-white/40"><span>{number(ticket.messageCount)} messages</span><span>{number(ticket.internalNoteCount)} internal notes</span><span>{ticket.assignedAdmin?.name ? `Assigned to ${ticket.assignedAdmin.name}` : 'Unassigned'}</span>{ticket.delivery?.publicId && <span>Delivery {ticket.delivery.publicId}</span>}</div></button>)}{!supportOverview.tickets?.length && <p className="py-12 text-center text-sm text-white/45">No support requests match this search.</p>}</div></section>
               </>}
             </div>
+          )}
+
+          {/* Product analytics tab */}
+          {!loading && tab === 'visitorTraffic' && (
+            <TrafficAnalyticsPanel
+              data={visitorTraffic}
+              days={visitorTrafficDays}
+              onDaysChange={setVisitorTrafficDays}
+              error={panelErrors.visitorTraffic}
+            />
           )}
 
           {/* Product analytics tab */}

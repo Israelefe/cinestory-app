@@ -164,9 +164,14 @@ export default function App() {
   useEffect(() => { installAnalyticsListeners(); }, []);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('utm_source')) sessionStorage.setItem('veylo_utm_source', params.get('utm_source'));
-    if (params.get('utm_campaign')) sessionStorage.setItem('veylo_utm_campaign', params.get('utm_campaign'));
-    if (document.referrer && !document.referrer.startsWith(window.location.origin)) sessionStorage.setItem('veylo_referrer', document.referrer);
+    const attribution = [['utm_source', 'veylo_utm_source'], ['utm_medium', 'veylo_utm_medium'], ['utm_campaign', 'veylo_utm_campaign'], ['utm_term', 'veylo_utm_term'], ['utm_content', 'veylo_utm_content']];
+    attribution.forEach(([queryKey, storageKey]) => {
+      const value = params.get(queryKey);
+      if (value) sessionStorage.setItem(storageKey, value.slice(0, 120));
+    });
+    if (document.referrer && !document.referrer.startsWith(window.location.origin)) {
+      try { sessionStorage.setItem('veylo_referrer', document.referrer); sessionStorage.setItem('veylo_referrer_host', new URL(document.referrer).hostname.slice(0, 100)); } catch {}
+    }
   }, []);
   useEffect(() => {
     let active = true;
