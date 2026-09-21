@@ -318,13 +318,14 @@ export async function deleteDelivery(req, res) {
       ? { $or: [{ _id: new mongoose.Types.ObjectId(identifier) }, { publicId: identifier }, { legacyStoryId: identifier }] }
       : { $or: [{ publicId: identifier }, { legacyStoryId: identifier }] };
     const ownerId = mongoose.isValidObjectId(req.user.id) ? new mongoose.Types.ObjectId(req.user.id) : req.user.id;
+    const ownerIds = mongoose.isValidObjectId(req.user.id) ? [ownerId, String(req.user.id)] : [ownerId];
     // Read and delete through the native collection so older delivery records
     // are never hydrated or validated by Mongoose during a simple delete.
-    const filter = { userId: ownerId, ...identifierQuery };
+    const filter = { userId: { $in: ownerIds }, ...identifierQuery };
     deleteStep = 'lookup';
     const removed = await Delivery.collection.findOne(filter);
     if (!removed) return res.status(404).json({ success: false, message: 'Delivery not found.' });
-    const deleteFilter = { _id: removed._id, userId: ownerId };
+    const deleteFilter = { _id: removed._id, userId: removed.userId || ownerId };
     deleteStep = 'delete';
     let deleted;
     try {
