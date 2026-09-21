@@ -312,15 +312,18 @@ export async function deleteDelivery(req, res) {
   try {
     const identifier = String(req.params.id || '').trim();
     if (!identifier || identifier.length > 200) return res.status(404).json({ success: false, message: 'Delivery not found.' });
-    const identifierQuery = mongoose.isValidObjectId(identifier)
-      ? { $or: [{ _id: identifier }, { publicId: identifier }, { legacyStoryId: identifier }] }
+    const identifierIsObjectId = mongoose.isValidObjectId(identifier);
+    const identifierQuery = identifierIsObjectId
+      ? { $or: [{ _id: new mongoose.Types.ObjectId(identifier) }, { publicId: identifier }, { legacyStoryId: identifier }] }
       : { $or: [{ publicId: identifier }, { legacyStoryId: identifier }] };
-    // Delete the owned record in one atomic operation. This keeps the lookup
-    // and deletion tied to the same owner and works for drafts, published,
-    // and archived deliveries alike.
-    const removed = await Delivery.findOneAndDelete({ userId: req.user.id, ...identifierQuery });
+    const ownerId = mongoose.isValidObjectId(req.user.id) ? new mongoose.Types.ObjectId(req.user.id) : req.user.id;
+    // Delete the owned record in one atomic operation without hydrating the
+    // document. Older deliveries can contain legacy asset shapes; hydration
+    // must not be able to turn a valid owner-scoped delete into a 500 response.
+    const rawResult = await Delivery.collection.findOneAndDelete({ userId: ownerId, ...identifierQuery });
+    const removed = rawResult && Object.prototype.hasOwnProperty.call(rawResult, 'value') ? rawResult.value : rawResult;
     if (!removed) return res.status(404).json({ success: false, message: 'Delivery not found.' });
-    const removedIds = new Set((removed.assets || []).map(asset => asset.publicId).filter(Boolean));
+    const removedIds = new Set((Array.isArray(removed.assets) ? removed.assets : []).map(asset => asset?.publicId).filter(Boolean));
     const cleanupTasks = [
       async () => {
         if (!removedIds.size) return;
