@@ -140,6 +140,14 @@ function ConfigToggle({ label, checked, onChange, note }) {
   return <label className="flex cursor-pointer items-start justify-between gap-4 rounded-2xl border border-white/10 bg-white/[.025] p-4 transition-colors hover:border-white/20"><span className="min-w-0"><span className="block text-xs font-semibold text-white">{label}</span>{note && <span className="mt-1 block text-[11px] leading-5 text-white/40">{note}</span>}</span><input type="checkbox" checked={Boolean(checked)} onChange={(event) => onChange(event.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-[#ff7867]" /></label>;
 }
 
+function SecurityCreateAdminPanel({ value, onChange, onSubmit, disabled }) {
+  return <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Add an administrator</p><h2 className="mt-1 text-xl font-medium">Give a trusted teammate a scoped role</h2><p className="mt-2 max-w-2xl text-xs leading-5 text-white/45">Passwords are shown only in this form. Ask the new administrator to set up an authenticator on their first visit.</p></div><form onSubmit={onSubmit} className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><input required value={value.name} onChange={(event) => onChange({ ...value, name: event.target.value })} placeholder="Full name" className="min-h-10 rounded-xl border border-white/10 bg-black/20 px-3 text-xs text-white outline-none placeholder:text-white/25 focus:border-[#ff9b8e]/60" /><input required value={value.username} onChange={(event) => onChange({ ...value, username: event.target.value.replace(/\s/g, '') })} placeholder="Username" autoCapitalize="none" className="min-h-10 rounded-xl border border-white/10 bg-black/20 px-3 text-xs text-white outline-none placeholder:text-white/25 focus:border-[#ff9b8e]/60" /><input required minLength={12} value={value.password} onChange={(event) => onChange({ ...value, password: event.target.value })} placeholder="Temporary password (12+ chars)" type="password" className="min-h-10 rounded-xl border border-white/10 bg-black/20 px-3 text-xs text-white outline-none placeholder:text-white/25 focus:border-[#ff9b8e]/60" /><select value={value.role} onChange={(event) => onChange({ ...value, role: event.target.value })} className="min-h-10 rounded-xl border border-white/10 bg-[#141419] px-3 text-xs text-white outline-none focus:border-[#ff9b8e]/60"><option value="operations">Operations</option><option value="finance">Finance</option><option value="support">Support</option><option value="analyst">Analyst</option><option value="read-only">Read-only</option><option value="superadmin">Superadmin</option></select><button type="submit" disabled={disabled} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-white px-4 text-xs font-bold text-black disabled:opacity-50"><Users size={14} />Create account</button></form></section>;
+}
+
+function SecurityProviderPanel({ providers = {}, secretStatus = {}, admins = [], onStatusChange, disabled, currentAdminId }) {
+  return <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Provider and secret status</p><h2 className="mt-1 text-xl font-medium">Keys are never shown here</h2><p className="mt-2 text-xs leading-5 text-white/45">This panel only reports whether required providers are configured. It never returns a token, password, or API key.</p></div><div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{Object.entries(secretStatus).map(([key, configured]) => <div key={key} className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold capitalize text-white">{key}</span><Status value={configured ? 'active' : 'attention'} /></div><p className="mt-2 text-[11px] text-white/40">{configured ? 'Configured on the server' : 'Not configured'}</p></div>)}{Object.entries(providers).map(([key, provider]) => <div key={`provider-${key}`} className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><div className="flex items-center justify-between gap-2"><span className="truncate text-xs font-semibold text-white">{provider.provider || key}</span><Status value={provider.configured ? 'active' : 'attention'} /></div><p className="mt-2 truncate text-[11px] text-white/40">{provider.model || provider.from || 'Provider configuration'}</p></div>)}</div><div className="mt-6 border-t border-white/10 pt-5"><p className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/40">Account status</p><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{admins.map(adminRecord => <label key={adminRecord.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[.025] px-3 py-2.5 text-xs text-white/65"><span className="truncate">{adminRecord.name}</span><select value={adminRecord.accountStatus} disabled={disabled || String(adminRecord.id) === String(currentAdminId)} onChange={(event) => onStatusChange(adminRecord, event.target.value)} className="min-h-8 rounded-lg border border-white/10 bg-[#141419] px-2 text-[11px] text-white outline-none focus:border-[#ff9b8e]/60"><option value="active">Active</option><option value="suspended">Suspended</option></select></label>)}</div></div></section>;
+}
+
 export default function AdminDashboardPage({ admin, onLogout }) {
   const [tab, setTab] = useState('deliveries');
   const [analytics, setAnalytics] = useState(null);
@@ -162,6 +170,11 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const [supportOverview, setSupportOverview] = useState(null);
   const [runtimeConfig, setRuntimeConfig] = useState(null);
   const [runtimeConfigSaving, setRuntimeConfigSaving] = useState(false);
+  const [securityOverview, setSecurityOverview] = useState(null);
+  const [securityActionLoading, setSecurityActionLoading] = useState(false);
+  const [twoFactorSetup, setTwoFactorSetup] = useState(null);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [newAdmin, setNewAdmin] = useState({ username: '', name: '', password: '', role: 'support' });
   const [selectedSupportTicket, setSelectedSupportTicket] = useState(null);
   const [supportDetailLoading, setSupportDetailLoading] = useState(false);
   const [supportReply, setSupportReply] = useState('');
@@ -210,7 +223,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       musicNarration: api.get('/v1/admin/music-narration', { params: { search } }),
       portfolio: api.get('/v1/admin/portfolios', { params: { search } }),
       support: api.get('/v1/admin/support/tickets', { params: { search } }),
-      configuration: api.get('/v1/admin/configuration')
+      configuration: api.get('/v1/admin/configuration'),
+      security: api.get('/v1/admin/security')
     };
     const entries = Object.entries(requests);
     const results = await Promise.allSettled(entries.map(([, request]) => request));
@@ -232,6 +246,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         if (key === 'portfolio') setPortfolioOverview(data || null);
         if (key === 'support') setSupportOverview(data || null);
         if (key === 'configuration') setRuntimeConfig(data || null);
+        if (key === 'security') setSecurityOverview(data || null);
         return;
       }
       const error = result.status === 'rejected' ? result.reason : new Error(result.value?.data?.message || 'This panel is unavailable.');
@@ -586,9 +601,10 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       musicNarration: musicOverview?.catalogue?.filtered || 0,
       portfolio: portfolioOverview?.portfolios?.length || 0,
       support: supportOverview?.tickets?.length || 0,
-      configuration: runtimeConfig ? 1 : 0
+      configuration: runtimeConfig ? 1 : 0,
+      security: securityOverview?.summary?.adminCount || 0
     }),
-    [accessOverview, aiJobs, deliveries, users, payments, volumeJobs, storageOverview, musicOverview, portfolioOverview, supportOverview, runtimeConfig]
+    [accessOverview, aiJobs, deliveries, users, payments, volumeJobs, storageOverview, musicOverview, portfolioOverview, supportOverview, runtimeConfig, securityOverview]
   );
 
   const runStorageScan = async () => {
@@ -731,6 +747,111 @@ export default function AdminDashboardPage({ admin, onLogout }) {
     }
   };
 
+  const startTwoFactorSetup = async () => {
+    try {
+      setSecurityActionLoading(true);
+      const response = await api.post('/v1/admin/security/2fa/setup', {});
+      setTwoFactorSetup(response.data?.data || null);
+      setTwoFactorCode('');
+      toast.success('Authenticator setup is ready. Add the account, then verify the code.');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not start two-factor setup.');
+    } finally {
+      setSecurityActionLoading(false);
+    }
+  };
+
+  const enableTwoFactor = async () => {
+    if (!/^\d{6}$/.test(twoFactorCode)) return toast.error('Enter the six-digit code from your authenticator app.');
+    try {
+      setSecurityActionLoading(true);
+      await api.post('/v1/admin/security/2fa/enable', { code: twoFactorCode });
+      setTwoFactorSetup(null);
+      setTwoFactorCode('');
+      toast.success('Two-factor authentication is enabled.');
+      await fetchAdminData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not enable two-factor authentication.');
+    } finally {
+      setSecurityActionLoading(false);
+    }
+  };
+
+  const forceLogoutAdmin = async (adminRecord) => {
+    if (!adminRecord?.id || !window.confirm(`Sign out every active session for ${adminRecord.name || adminRecord.username}?`)) return;
+    try {
+      setSecurityActionLoading(true);
+      const response = await api.post(`/v1/admin/security/admins/${adminRecord.id}/force-logout`, { reason: 'Signed out from the security workspace.' });
+      toast.success(`${number(response.data?.data?.revokedSessions)} session(s) signed out.`);
+      await fetchAdminData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not sign out those sessions.');
+    } finally {
+      setSecurityActionLoading(false);
+    }
+  };
+
+  const updateAdminRole = async (adminRecord, role) => {
+    if (!adminRecord?.id || !role || role === adminRecord.role) return;
+    try {
+      setSecurityActionLoading(true);
+      await api.patch(`/v1/admin/security/admins/${adminRecord.id}`, { role });
+      toast.success('Administrator role updated.');
+      await fetchAdminData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not update that administrator role.');
+    } finally {
+      setSecurityActionLoading(false);
+    }
+  };
+
+  const updateAdminStatus = async (adminRecord, accountStatus) => {
+    if (!adminRecord?.id || !accountStatus || accountStatus === adminRecord.accountStatus) return;
+    try {
+      setSecurityActionLoading(true);
+      await api.patch(`/v1/admin/security/admins/${adminRecord.id}`, { accountStatus });
+      toast.success(accountStatus === 'active' ? 'Administrator reactivated.' : 'Administrator suspended and signed out.');
+      await fetchAdminData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not update that administrator status.');
+    } finally {
+      setSecurityActionLoading(false);
+    }
+  };
+
+  const createAdminAccount = async (event) => {
+    event.preventDefault();
+    if (newAdmin.name.trim().length < 2 || newAdmin.username.trim().length < 3 || newAdmin.password.length < 12) return toast.error('Use a name, a valid username, and a password of at least 12 characters.');
+    try {
+      setSecurityActionLoading(true);
+      await api.post('/v1/admin/security/admins', { ...newAdmin, username: newAdmin.username.trim().toLowerCase(), name: newAdmin.name.trim() });
+      setNewAdmin({ username: '', name: '', password: '', role: 'support' });
+      toast.success('Administrator account created.');
+      await fetchAdminData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not create that administrator account.');
+    } finally {
+      setSecurityActionLoading(false);
+    }
+  };
+
+  const exportAdminAudit = async () => {
+    try {
+      const response = await api.get('/v1/admin/security/audit/export?format=csv', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(response.data);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'veylo-admin-audit.csv';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Audit log export downloaded.');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not export the audit log.');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#070709] text-white">
       {/* Top Admin Navigation */}
@@ -862,7 +983,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         {/* Section Tabs & Search */}
         <section className="mt-10">
           <div className="flex flex-col gap-4 border-b border-white/10 pb-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5 sm:grid-cols-4 md:grid-cols-11">
+            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5 sm:grid-cols-4 md:grid-cols-12">
               {[
                 ['deliveries', Film, 'Deliveries'],
                 ['users', Users, 'Accounts'],
@@ -874,7 +995,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
                 ['access', Eye, 'Client access'],
                 ['volume', Users, 'Volume'],
                 ['storage', HardDrive, 'Storage'],
-                ['musicNarration', Music2, 'Music & voice']
+                ['musicNarration', Music2, 'Music & voice'],
+                ['security', LockKeyhole, 'Security']
               ].map(([key, Icon, label]) => (
                 <button
                   key={key}
@@ -1013,6 +1135,35 @@ export default function AdminDashboardPage({ admin, onLogout }) {
               {supportOverview && <>
                 <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><MetricCard icon={MessageCircle} label="All requests" value={number(supportOverview.summary?.total)} note="Support, privacy, and moderation queue" /><MetricCard icon={AlertCircle} label="Open" value={number(supportOverview.summary?.open)} note={`${number(supportOverview.summary?.urgent)} urgent requests`} /><MetricCard icon={Clock3} label="Pending" value={number(supportOverview.summary?.pending)} note={`${number(supportOverview.summary?.high)} high-priority requests`} /><MetricCard icon={ShieldCheck} label="Privacy" value={number(supportOverview.summary?.privacy)} note="Deletion and privacy requests" /><MetricCard icon={TriangleAlert} label="Reports" value={number(Number(supportOverview.summary?.abuse || 0) + Number(supportOverview.summary?.copyright || 0))} note={`${number(supportOverview.summary?.abuse)} abuse · ${number(supportOverview.summary?.copyright)} copyright`} /></section>
                 <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Support and moderation</p><h2 className="mt-1 text-xl font-medium">Requests that need a human reply</h2><p className="mt-2 text-xs leading-5 text-white/45">Every request has an owner, status, priority, response history, and moderation trail. Open one to reply, assign it, or make a reported delivery or portfolio private.</p></div><span className="text-xs text-white/35">Updated {shortDate(supportOverview.generatedAt)}</span></div><div className="mt-5 space-y-2">{(supportOverview.tickets || []).map(ticket => <button key={ticket.id} type="button" onClick={() => openSupportTicket(ticket)} className="w-full rounded-2xl border border-white/10 bg-white/[.025] p-4 text-left transition-colors hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff9b8e]/70"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><Status value={ticket.status} /><Status value={ticket.priority} /><span className="text-[10px] font-semibold uppercase tracking-[.12em] text-[#ff9b8e]">{ticket.category}</span><span className="font-mono text-[10px] text-white/35">{ticket.ticketNumber}</span></div><h3 className="mt-2 truncate text-sm font-semibold text-white">{ticket.subject}</h3><p className="mt-1 truncate text-xs text-white/40">{ticket.requester?.name || 'Requester'} · {ticket.requester?.email || 'No reply email'}{ticket.account?.studio ? ` · ${ticket.account.studio}` : ''}</p></div><span className="shrink-0 text-xs text-white/35">{shortDate(ticket.updatedAt)}</span></div><div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-white/40"><span>{number(ticket.messageCount)} messages</span><span>{number(ticket.internalNoteCount)} internal notes</span><span>{ticket.assignedAdmin?.name ? `Assigned to ${ticket.assignedAdmin.name}` : 'Unassigned'}</span>{ticket.delivery?.publicId && <span>Delivery {ticket.delivery.publicId}</span>}</div></button>)}{!supportOverview.tickets?.length && <p className="py-12 text-center text-sm text-white/45">No support requests match this search.</p>}</div></section>
+              </>}
+            </div>
+          )}
+
+          {/* Security and audit tab */}
+          {!loading && tab === 'security' && (
+            <div className="mt-6 space-y-5">
+              {securityOverview && <SecurityCreateAdminPanel value={newAdmin} onChange={setNewAdmin} onSubmit={createAdminAccount} disabled={securityActionLoading} />}
+              {securityOverview && <SecurityProviderPanel providers={securityOverview.providers} secretStatus={securityOverview.secretStatus} admins={securityOverview.admins} onStatusChange={updateAdminStatus} disabled={securityActionLoading} currentAdminId={admin?.id || admin?._id} />}
+              {panelErrors.security && !securityOverview && <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-5 text-sm text-amber-100">Security data is unavailable for this role. {panelErrors.security}</div>}
+              {securityOverview && <>
+                <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <MetricCard icon={Users} label="Administrators" value={number(securityOverview.summary?.adminCount)} note={`${number(securityOverview.summary?.activeAdminCount)} active accounts`} />
+                  <MetricCard icon={LockKeyhole} label="Two-factor" value={number(securityOverview.summary?.twoFactorEnabled)} note="Administrators using an authenticator" />
+                  <MetricCard icon={Activity} label="Active sessions" value={number(securityOverview.summary?.activeSessions)} note={`${number(securityOverview.summary?.failedLogins24h)} failed sign-ins in 24 hours`} />
+                  <MetricCard icon={ShieldCheck} label="Audit records" value={number(securityOverview.summary?.auditEvents)} note={`${number(securityOverview.summary?.hashedAuditEvents)} records carry an integrity hash`} />
+                </section>
+
+                <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Your sign-in protection</p><h2 className="mt-1 text-xl font-medium">Authenticator app</h2><p className="mt-2 max-w-2xl text-xs leading-5 text-white/45">Two-factor codes are checked before an administrator session is created. Veylo never stores the readable secret after setup.</p></div><Status value={securityOverview.admins?.find(item => String(item.id) === String(admin?.id || admin?._id))?.twoFactorEnabled ? 'active' : 'not enabled'} /></div>
+                  <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center"><button type="button" disabled={securityActionLoading} onClick={startTwoFactorSetup} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-white px-4 text-xs font-bold text-black transition-transform hover:-translate-y-0.5 active:scale-95 disabled:opacity-50"><KeyRound size={14} />{securityOverview.admins?.find(item => String(item.id) === String(admin?.id || admin?._id))?.twoFactorEnabled ? 'Replace authenticator' : 'Set up authenticator'}</button>{twoFactorSetup && <span className="text-xs text-amber-200">Keep this setup panel open until the code is verified.</span>}</div>
+                  {twoFactorSetup && <div className="mt-4 grid gap-3 lg:grid-cols-2"><div className="rounded-2xl border border-amber-300/20 bg-amber-300/[.05] p-4"><p className="text-[10px] font-semibold uppercase tracking-[.14em] text-amber-200/70">Secret (show once)</p><p className="mt-2 break-all font-mono text-sm tracking-[.12em] text-amber-100">{twoFactorSetup.secret}</p><p className="mt-3 break-all text-[11px] leading-5 text-amber-100/65">If your authenticator supports it, add this URI: {twoFactorSetup.otpauthUri}</p></div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><label className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/45">Verify the current code<input value={twoFactorCode} onChange={(event) => setTwoFactorCode(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="Six digits" className="mt-2 min-h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm tracking-[.25em] text-white outline-none focus:border-[#ff9b8e]/60" /></label><button type="button" disabled={securityActionLoading || !/^\d{6}$/.test(twoFactorCode)} onClick={enableTwoFactor} className="mt-3 min-h-10 w-full rounded-xl bg-[#ff5a47] px-4 text-xs font-bold text-[#160907] disabled:opacity-40">{securityActionLoading ? 'Checking…' : 'Enable two-factor'}</button></div></div>}
+                </section>
+
+                <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Admin accounts</p><h2 className="mt-1 text-xl font-medium">Who can change Veylo?</h2><p className="mt-2 text-xs leading-5 text-white/45">Roles limit configuration, finance, support, and operational actions. Suspended accounts cannot create sessions.</p></div><span className="text-xs text-white/35">Updated {shortDate(securityOverview.generatedAt)}</span></div><div className="mt-5 space-y-2">{(securityOverview.admins || []).map(adminRecord => <article key={adminRecord.id} className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-white">{adminRecord.name}</p><Status value={adminRecord.accountStatus} />{adminRecord.twoFactorEnabled && <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[.12em] text-emerald-300"><LockKeyhole size={12} />2FA</span>}</div><p className="mt-1 truncate text-xs text-white/40">@{adminRecord.username} · Last sign-in {shortDate(adminRecord.lastLoginAt)}</p></div><div className="flex flex-col gap-2 sm:flex-row sm:items-center"><select value={adminRecord.role === 'admin' ? 'superadmin' : adminRecord.role} disabled={securityActionLoading || String(adminRecord.id) === String(admin?.id || admin?._id)} onChange={(event) => updateAdminRole(adminRecord, event.target.value)} className="min-h-10 rounded-xl border border-white/10 bg-[#141419] px-3 text-xs text-white outline-none focus:border-[#ff9b8e]/60"><option value="superadmin">Superadmin</option><option value="operations">Operations</option><option value="finance">Finance</option><option value="support">Support</option><option value="analyst">Analyst</option><option value="read-only">Read-only</option></select><button type="button" disabled={securityActionLoading} onClick={() => forceLogoutAdmin(adminRecord)} className="min-h-10 rounded-xl border border-white/15 px-3 text-xs font-semibold text-white/70 transition-colors hover:border-amber-300/40 hover:text-amber-100 disabled:opacity-50">Sign out sessions</button></div></div></article>)}{!securityOverview.admins?.length && <p className="py-10 text-center text-sm text-white/45">No administrator accounts found.</p>}</div></section>
+
+                <section className="grid gap-5 lg:grid-cols-2"><div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Current sessions</p><h2 className="mt-1 text-xl font-medium">Device and network history</h2></div><span className="text-xs text-white/35">{number(securityOverview.sessions?.length)} active</span></div><div className="mt-5 space-y-2">{(securityOverview.sessions || []).slice(0, 12).map(session => <div key={session.id} className="rounded-2xl border border-white/10 bg-white/[.025] p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-xs font-semibold text-white">{session.admin?.name || 'Unknown administrator'} · {session.deviceLabel}</p><p className="mt-1 truncate text-[11px] text-white/40">{session.ipAddress || 'No IP'} · Last seen {shortDate(session.lastSeenAt)}</p></div>{session.twoFactorVerified && <Status value="verified" />}</div></div>)}{!securityOverview.sessions?.length && <p className="py-8 text-sm text-white/45">No active sessions.</p>}</div></div><div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Sign-in attempts</p><h2 className="mt-1 text-xl font-medium">Recent access checks</h2></div><span className="text-xs text-white/35">{number(securityOverview.loginAttempts?.length)} records</span></div><div className="mt-5 space-y-2">{(securityOverview.loginAttempts || []).slice(0, 12).map(item => <div key={item.id} className="flex items-start justify-between gap-3 rounded-2xl border border-white/10 bg-white/[.025] p-3"><div className="min-w-0"><p className="truncate text-xs font-semibold text-white">{item.username || 'Unknown username'} · {item.reason || 'attempt'}</p><p className="mt-1 truncate text-[11px] text-white/40">{item.ipAddress || 'No IP'} · {shortDate(item.createdAt)}</p></div><Status value={item.success ? 'success' : 'failed'} /></div>)}{!securityOverview.loginAttempts?.length && <p className="py-8 text-sm text-white/45">No sign-in attempts recorded.</p>}</div></div></section>
+
+                <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Immutable audit trail</p><h2 className="mt-1 text-xl font-medium">Every sensitive change has a record</h2><p className="mt-2 max-w-2xl text-xs leading-5 text-white/45">Records include the administrator, action, before-and-after values where available, IP/device context, and a chained integrity hash. Audit rows cannot be edited or deleted through the application.</p></div><button type="button" onClick={exportAdminAudit} className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-white/15 px-4 text-xs font-semibold text-white/70 transition-colors hover:border-[#ff9b8e]/50 hover:text-white"><FileDown size={14} />Export audit CSV</button></div><div className="mt-5 space-y-2">{(securityOverview.audit || []).slice(0, 20).map(item => <article key={item.id} className="rounded-2xl border border-white/10 bg-white/[.025] p-3"><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><p className="truncate text-xs font-semibold text-white">{item.action}</p><p className="mt-1 truncate text-[11px] text-white/40">{item.resourceType || 'Record'} {item.resourceId || ''} · {item.ipAddress || 'No IP'}</p></div><span className="shrink-0 text-[11px] text-white/35">{shortDate(item.createdAt)}</span></div><p className="mt-2 break-all font-mono text-[10px] text-white/25">{item.eventHash || 'Hash unavailable'}</p></article>)}{!securityOverview.audit?.length && <p className="py-10 text-center text-sm text-white/45">No audit records yet.</p>}</div></section>
               </>}
             </div>
           )}

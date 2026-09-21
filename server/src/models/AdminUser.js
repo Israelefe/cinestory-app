@@ -25,7 +25,7 @@ const adminUserSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['superadmin', 'admin'],
+    enum: ['superadmin', 'operations', 'finance', 'support', 'analyst', 'read-only', 'admin'],
     default: 'superadmin'
   },
   accountStatus: {
@@ -35,6 +35,18 @@ const adminUserSchema = new mongoose.Schema({
   },
   lastLoginAt: {
     type: Date
+  },
+  twoFactorEnabled: {
+    type: Boolean,
+    default: false
+  },
+  twoFactorSecretEncrypted: {
+    type: String,
+    select: false
+  },
+  twoFactorPendingSecretEncrypted: {
+    type: String,
+    select: false
   }
 }, { timestamps: true });
 

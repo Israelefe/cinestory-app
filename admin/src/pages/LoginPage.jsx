@@ -7,6 +7,7 @@ import api, { setAdminToken } from '../services/api.js';
 export default function LoginPage({ onLoginSuccess }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [twoFactorCode, setTwoFactorCode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -24,7 +25,8 @@ export default function LoginPage({ onLoginSuccess }) {
       setError('');
       const { data } = await api.post('/v1/admin/auth/login', {
         username: cleanUsername,
-        password
+        password,
+        ...(twoFactorCode.trim() ? { twoFactorCode: twoFactorCode.trim() } : {})
       });
 
       if (data.token) {
@@ -49,6 +51,9 @@ export default function LoginPage({ onLoginSuccess }) {
         }
       }
       setError(message);
+      if (err.response?.data?.code === 'ADMIN_2FA_REQUIRED' || err.response?.data?.code === 'ADMIN_2FA_INVALID') {
+        setTwoFactorCode('');
+      }
       toast.error(message);
     } finally {
       setLoading(false);
@@ -144,6 +149,23 @@ export default function LoginPage({ onLoginSuccess }) {
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-white/70">
+                Authenticator code <span className="font-normal normal-case tracking-normal text-white/35">(only if your account has 2FA)</span>
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                value={twoFactorCode}
+                onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="Six-digit code"
+                className="mt-2 w-full rounded-xl border border-white/10 bg-white/[.03] px-4 py-3 text-sm tracking-[.25em] text-white outline-none transition-colors placeholder:tracking-normal placeholder:text-white/30 focus:border-[#ff9b8e]/60 focus:bg-white/[.05]"
+              />
             </div>
 
             <button

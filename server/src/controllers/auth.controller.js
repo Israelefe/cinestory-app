@@ -11,7 +11,6 @@ import StoryView from '../models/StoryView.js';
 import Subscription from '../models/Subscription.js';
 import Payment from '../models/Payment.js';
 import BillingEvent from '../models/BillingEvent.js';
-import AdminAudit from '../models/AdminAudit.js';
 import AccountDeletionRequest from '../models/AccountDeletionRequest.js';
 import DeliveryUsage from '../models/DeliveryUsage.js';
 import Delivery from '../models/Delivery.js';
@@ -403,7 +402,8 @@ export async function deleteAccount(req, res) {
         await Subscription.deleteMany({ userId: user._id }, options);
         await Payment.deleteMany({ userId: user._id }, options);
         await BillingEvent.deleteMany({ userId: user._id }, options);
-        await AdminAudit.deleteMany({ userId: user._id }, options);
+        // Audit records are retained after account deletion. They are immutable
+        // operational evidence and must not disappear with the account data.
         await DeliveryUsage.deleteMany({ userId: user._id }, options);
         const deliveries = await Delivery.find({ userId: user._id }).select('_id').session(transaction);
         const deliveryIds = deliveries.map(item => item._id);
