@@ -4,6 +4,16 @@ import {
   getOperationsOverview,
   getAdminAnalytics,
   getAllUsers,
+  getAccountDetail,
+  updateAccountStatus,
+  forceLogoutAccount,
+  addAccountNote,
+  deleteAccountNote,
+  exportAccountData,
+  createSupportAccess,
+  exchangeSupportAccess,
+  getDeletionRequests,
+  updateDeletionRequest,
   updateUserPlan,
   getAllStories,
   getAllDeliveries,
@@ -75,6 +85,16 @@ router.get('/operations', getOperationsOverview);
 router.get('/analytics', getAdminAnalytics);
 router.get('/users', getAllUsers);
 router.patch('/users/:id/plan', updateUserPlan);
+router.get('/users/:id', getAccountDetail);
+router.patch('/users/:id/status', updateAccountStatus);
+router.post('/users/:id/force-logout', forceLogoutAccount);
+router.post('/users/:id/notes', addAccountNote);
+router.delete('/users/:id/notes/:noteId', deleteAccountNote);
+router.get('/users/:id/export', exportAccountData);
+router.post('/users/:id/support-access', createSupportAccess);
+router.post('/support-access/exchange', exchangeSupportAccess);
+router.get('/deletion-requests', getDeletionRequests);
+router.patch('/deletion-requests/:requestId', updateDeletionRequest);
 router.get('/stories', getAllStories);
 router.get('/deliveries', getAllDeliveries);
 router.get('/payments', getPayments);

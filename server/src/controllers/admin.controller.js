@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import PhotoStory from '../models/PhotoStory.js';
@@ -11,12 +12,89 @@ import BillingEvent from '../models/BillingEvent.js';
 import AnalyticsEvent from '../models/AnalyticsEvent.js';
 import WorkerHeartbeat from '../models/WorkerHeartbeat.js';
 import AdminAudit from '../models/AdminAudit.js';
+import AdminAccountNote from '../models/AdminAccountNote.js';
+import AccountDeletionRequest from '../models/AccountDeletionRequest.js';
+import SupportAccessGrant from '../models/SupportAccessGrant.js';
+import Session from '../models/Session.js';
+import Portfolio from '../models/Portfolio.js';
+import StorageAsset from '../models/StorageAsset.js';
+import DeliveryView from '../models/DeliveryView.js';
+import StoryView from '../models/StoryView.js';
 import { paystackRequest } from '../services/paystack.service.js';
 import { billingConfigured } from '../services/paystack.service.js';
 import { checkCloudinaryConnection } from '../services/cloudinary.service.js';
 import { PLAN_DEFINITIONS, PRO_PRICE_KOBO } from '../config/plans.js';
+import { tokenDigest } from '../utils/auth.js';
 
 function escaped(value) { return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+function safeReason(value, fallback = '') {
+  return String(value || fallback).replace(/[<>]/g, '').trim().slice(0, 240);
+}
+
+function validId(value) {
+  return mongoose.isValidObjectId(value) ? value : null;
+}
+
+function adminId(req) {
+  return req.admin?._id || req.admin?.id;
+}
+
+function accountSnapshot(user) {
+  if (!user) return null;
+  return {
+    _id: user._id,
+    id: user._id,
+    name: user.name,
+    email: user.email,
+    emailVerified: Boolean(user.emailVerifiedAt),
+    role: user.role,
+    plan: user.plan,
+    planOverride: user.planOverride ? {
+      plan: user.planOverride.plan,
+      expiresAt: user.planOverride.expiresAt || null,
+      reason: user.planOverride.reason || '',
+      grantedBy: user.planOverride.grantedBy || null
+    } : null,
+    accountStatus: user.accountStatus,
+    avatar: user.avatar || user.studio?.logoUrl || '',
+    studio: user.studio || {},
+    acquisition: user.acquisition || {},
+    onboardingStep: user.onboardingStep || 1,
+    onboardingCompletedAt: user.onboardingCompletedAt || null,
+    storageUsedBytes: Number(user.storageUsedBytes || 0),
+    storiesCount: Number(user.storiesCount || 0),
+    lastLoginAt: user.lastLoginAt || null,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt
+  };
+}
+
+function deliverySummary(delivery) {
+  const assets = Array.isArray(delivery.assets) ? delivery.assets : [];
+  return {
+    id: delivery._id,
+    publicId: delivery.publicId,
+    title: delivery.title || '',
+    clientName: delivery.clientName || '',
+    shootType: delivery.shootType || '',
+    format: delivery.format || '',
+    kind: delivery.kind || 'showcase',
+    status: delivery.status,
+    photoCount: assets.length,
+    fileBytes: assets.reduce((total, asset) => total + Number(asset.bytes || 0), 0),
+    captionCount: assets.filter(asset => String(asset.libraryCaption || asset.caption || '').trim()).length,
+    hasMusic: Boolean(delivery.soundtrack?.trackId || delivery.soundtrack?.audioUrl || delivery.soundtrack?.publicId),
+    hasNarration: Boolean(delivery.narration?.audioUrl || delivery.narration?.status === 'ready'),
+    viewsCount: Number(delivery.viewsCount || 0),
+    downloadsCount: Number(delivery.downloadsCount || 0),
+    likesCount: Number(delivery.likesCount || 0),
+    expiresAt: delivery.access?.expiresAt || null,
+    publishedAt: delivery.publishedAt || null,
+    updatedAt: delivery.updatedAt,
+    createdAt: delivery.createdAt
+  };
+}
 
 function health(ok, reason = '', details = {}) {
   return { status: ok ? 'healthy' : 'degraded', ok: Boolean(ok), reason: reason || undefined, ...details };
@@ -195,47 +273,306 @@ export async function getAdminAnalytics(req, res) {
 
 export async function getAllUsers(req, res) {
   try {
-    const { search, plan } = req.query;
+    const search = String(req.query.search || '').trim().slice(0, 100);
+    const plan = String(req.query.plan || 'all');
+    const accountStatus = String(req.query.status || 'all');
+    const acquisitionSource = String(req.query.acquisitionSource || 'all');
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 40));
     const query = {};
     if (search) {
       query.$or = [
         { name: { $regex: escaped(String(search).slice(0, 100)), $options: 'i' } },
-        { email: { $regex: escaped(String(search).slice(0, 100)), $options: 'i' } }
+        { email: { $regex: escaped(String(search).slice(0, 100)), $options: 'i' } },
+        { 'studio.name': { $regex: escaped(String(search).slice(0, 100)), $options: 'i' } },
+        { 'studio.city': { $regex: escaped(String(search).slice(0, 100)), $options: 'i' } }
       ];
     }
-    if (plan && plan !== 'all') query.plan = plan;
+    if (['free', 'pro', 'studio'].includes(plan)) query.plan = plan;
+    if (['pending', 'active', 'suspended'].includes(accountStatus)) query.accountStatus = accountStatus;
+    if (acquisitionSource && acquisitionSource !== 'all') query['acquisition.source'] = acquisitionSource.slice(0, 50);
 
-    const users = await User.find(query).select('-password').sort({ createdAt: -1 }).lean();
-    res.json({ success: true, data: users });
+    const [users, total] = await Promise.all([
+      User.find(query)
+        .select('name email role plan planOverride accountStatus emailVerifiedAt avatar studio acquisition onboardingStep onboardingCompletedAt storageUsedBytes storiesCount lastLoginAt createdAt updatedAt')
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      User.countDocuments(query)
+    ]);
+    res.json({ success: true, data: users.map(accountSnapshot), pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    console.error('[admin/users]', err.message);
+    res.status(500).json({ success: false, message: 'We could not load the accounts.' });
   }
 }
 
 export async function updateUserPlan(req, res) {
   try {
+    const accountId = validId(req.params.id);
+    if (!accountId) return res.status(400).json({ success: false, message: 'That account identifier is not valid.' });
     const { plan, role, reason, expiresAt } = req.body;
     const update = {};
     if (plan && !['free', 'pro'].includes(plan)) return res.status(400).json({ success: false, message: 'Choose Free or Pro.' });
     if (role && !['user', 'admin'].includes(role)) return res.status(400).json({ success: false, message: 'Choose a valid account role.' });
+    if (expiresAt && Number.isNaN(new Date(expiresAt).getTime())) return res.status(400).json({ success: false, message: 'Enter a valid Pro expiry date.' });
+    if (plan === 'pro' && expiresAt && new Date(expiresAt) <= new Date()) return res.status(400).json({ success: false, message: 'A Pro expiry date must be in the future.' });
     if (plan) {
       if (plan === 'free') {
-        const paid = await Subscription.exists({ userId: req.params.id, status: { $in: ['active', 'canceling', 'past_due'] }, $or: [{ paidThrough: { $gt: new Date() } }, { graceEndsAt: { $gt: new Date() } }] });
+        const paid = await Subscription.exists({ userId: accountId, status: { $in: ['active', 'canceling', 'past_due'] }, $or: [{ paidThrough: { $gt: new Date() } }, { graceEndsAt: { $gt: new Date() } }] });
         if (paid) return res.status(409).json({ success: false, message: 'This account still has paid Pro access. Cancel or resolve its subscription before removing Pro.' });
       }
       update.plan = plan;
       update.planOverride = plan === 'pro'
-        ? { plan: 'pro', expiresAt: expiresAt ? new Date(expiresAt) : null, reason: String(reason || 'Support grant').slice(0, 240), grantedBy: req.admin._id }
+        ? { plan: 'pro', expiresAt: expiresAt ? new Date(expiresAt) : null, reason: safeReason(reason, 'Support grant'), grantedBy: adminId(req) }
         : null;
     }
     if (role) update.role = role;
 
-    const user = await User.findByIdAndUpdate(req.params.id, update, { new: true }).select('-password');
+    const before = await User.findById(accountId).select('name email role plan planOverride accountStatus');
+    const user = await User.findByIdAndUpdate(accountId, update, { new: true, runValidators: true }).select('-password');
     if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
-    await AdminAudit.create({ adminId: req.admin._id, userId: user._id, action: 'account.plan_or_role_updated', resourceType: 'User', resourceId: String(user._id), details: { plan, role, reason, expiresAt } });
-    res.json({ success: true, data: user });
+    await AdminAudit.create({ adminId: adminId(req), userId: user._id, action: 'account.plan_or_role_updated', resourceType: 'User', resourceId: String(user._id), details: { before: accountSnapshot(before), after: accountSnapshot(user), reason: safeReason(reason), expiresAt: expiresAt || null } });
+    res.json({ success: true, data: accountSnapshot(user) });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    console.error('[admin/account-plan]', err.message);
+    res.status(500).json({ success: false, message: 'We could not update this account.' });
+  }
+}
+
+async function loadAccountDetail(accountId) {
+  const [user, subscriptions, deliveries, stories, volumeJobs, portfolio, storage, sessions, notes, deletionRequests, audit, events] = await Promise.all([
+    User.findById(accountId).select('name email role plan planOverride accountStatus emailVerifiedAt avatar studio acquisition onboardingStep onboardingCompletedAt storageUsedBytes storiesCount lastLoginAt createdAt updatedAt').lean(),
+    Subscription.find({ userId: accountId }).sort({ createdAt: -1 }).limit(50).select('provider status customerCode subscriptionCode planCode checkoutReference paidFrom paidThrough graceEndsAt cancelRequestedAt canceledAt lastPaymentAt lastPaymentReference createdAt updatedAt').lean(),
+    Delivery.find({ userId: accountId }).sort({ updatedAt: -1 }).limit(100).select('publicId title clientName shootType format kind status assets soundtrack narration access publishedAt viewsCount downloadsCount likesCount createdAt updatedAt').lean(),
+    PhotoStory.find({ userId: accountId }).sort({ updatedAt: -1 }).limit(100).select('storyId title clientName occasion status photos soundtrack viewsCount downloadsCount likesCount createdAt updatedAt').lean(),
+    VolumeJob.find({ userId: accountId }).sort({ updatedAt: -1 }).limit(100).select('publicId title status subjectCount assignedPhotoCount createdAt updatedAt publishedAt').lean(),
+    Portfolio.findOne({ userId: accountId }).select('handle previousHandles status studioName bio headline location items direction publishedAt createdAt updatedAt').lean(),
+    StorageAsset.aggregate([{ $match: { userId: new mongoose.Types.ObjectId(accountId) } }, { $group: { _id: null, count: { $sum: 1 }, bytes: { $sum: { $ifNull: ['$bytes', 0] } }, formats: { $addToSet: '$format' }, folders: { $addToSet: '$folder' } } }]),
+    Session.find({ userId: accountId }).sort({ createdAt: -1 }).limit(50).select('userAgent ipAddress persistent expiresAt revokedAt createdAt updatedAt').lean(),
+    AdminAccountNote.find({ userId: accountId }).sort({ createdAt: -1 }).limit(100).lean(),
+    AccountDeletionRequest.find({ userId: accountId }).sort({ requestedAt: -1 }).limit(20).lean(),
+    AdminAudit.find({ userId: accountId }).sort({ createdAt: -1 }).limit(50).select('adminId action resourceType resourceId details createdAt').lean(),
+    AnalyticsEvent.find({ userId: accountId }).sort({ occurredAt: -1 }).limit(50).select('name source status errorCode format route deviceType durationMs count bytes metadata occurredAt').lean()
+  ]);
+
+  if (!user) return null;
+  const storageSummary = storage[0] || { count: 0, bytes: 0, formats: [], folders: [] };
+  return {
+    account: accountSnapshot(user),
+    subscriptions,
+    deliveries: deliveries.map(deliverySummary),
+    legacyStories: stories.map(story => ({
+      id: story._id,
+      storyId: story.storyId,
+      title: story.title || '',
+      clientName: story.clientName || '',
+      occasion: story.occasion || '',
+      status: story.status,
+      photoCount: Array.isArray(story.photos) ? story.photos.length : 0,
+      viewsCount: Number(story.viewsCount || 0),
+      downloadsCount: Number(story.downloadsCount || 0),
+      likesCount: Number(story.likesCount || 0),
+      hasMusic: Boolean(story.soundtrack?.audioUrl),
+      createdAt: story.createdAt,
+      updatedAt: story.updatedAt
+    })),
+    volumeDeliveries: volumeJobs,
+    portfolio: portfolio ? {
+      id: portfolio._id,
+      handle: portfolio.handle,
+      previousHandles: portfolio.previousHandles || [],
+      status: portfolio.status,
+      studioName: portfolio.studioName,
+      bioPresent: Boolean(String(portfolio.bio || '').trim()),
+      itemCount: Array.isArray(portfolio.items) ? portfolio.items.length : 0,
+      direction: portfolio.direction || {},
+      publishedAt: portfolio.publishedAt || null,
+      createdAt: portfolio.createdAt,
+      updatedAt: portfolio.updatedAt
+    } : null,
+    storage: { count: Number(storageSummary.count || 0), bytes: Number(storageSummary.bytes || 0), formats: (storageSummary.formats || []).filter(Boolean).sort(), folders: (storageSummary.folders || []).filter(Boolean).sort() },
+    sessions,
+    notes,
+    deletionRequests,
+    audit,
+    recentEvents: events
+  };
+}
+
+export async function getAccountDetail(req, res) {
+  try {
+    const accountId = validId(req.params.id);
+    if (!accountId) return res.status(400).json({ success: false, message: 'That account identifier is not valid.' });
+    const detail = await loadAccountDetail(accountId);
+    if (!detail) return res.status(404).json({ success: false, message: 'Account not found.' });
+    res.json({ success: true, data: detail });
+  } catch (error) {
+    console.error('[admin/account-detail]', error.message);
+    res.status(500).json({ success: false, message: 'We could not load this account.' });
+  }
+}
+
+export async function updateAccountStatus(req, res) {
+  try {
+    const accountId = validId(req.params.id);
+    const status = String(req.body.status || '').trim();
+    if (!accountId || !['active', 'suspended'].includes(status)) return res.status(400).json({ success: false, message: 'Choose Active or Suspended.' });
+    const user = await User.findById(accountId).select('name email role plan planOverride accountStatus');
+    if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
+    const before = accountSnapshot(user);
+    user.accountStatus = status;
+    await user.save();
+    let revokedSessions = 0;
+    if (status === 'suspended') {
+      const result = await Session.updateMany({ userId: user._id, revokedAt: null }, { $set: { revokedAt: new Date() } });
+      revokedSessions = result.modifiedCount || 0;
+    }
+    await AdminAudit.create({ adminId: adminId(req), userId: user._id, action: status === 'suspended' ? 'account.suspended' : 'account.reactivated', resourceType: 'User', resourceId: String(user._id), details: { before, after: accountSnapshot(user), reason: safeReason(req.body.reason, status === 'suspended' ? 'Suspended by administrator' : 'Reactivated by administrator'), revokedSessions } });
+    res.json({ success: true, data: accountSnapshot(user), revokedSessions });
+  } catch (error) {
+    console.error('[admin/account-status]', error.message);
+    res.status(500).json({ success: false, message: 'We could not change this account status.' });
+  }
+}
+
+export async function forceLogoutAccount(req, res) {
+  try {
+    const accountId = validId(req.params.id);
+    if (!accountId) return res.status(400).json({ success: false, message: 'That account identifier is not valid.' });
+    const user = await User.findById(accountId).select('_id name email');
+    if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
+    const result = await Session.updateMany({ userId: user._id, revokedAt: null }, { $set: { revokedAt: new Date() } });
+    await AdminAudit.create({ adminId: adminId(req), userId: user._id, action: 'account.sessions_revoked', resourceType: 'User', resourceId: String(user._id), details: { revokedSessions: result.modifiedCount || 0, reason: safeReason(req.body.reason, 'Sessions revoked by administrator') } });
+    res.json({ success: true, revokedSessions: result.modifiedCount || 0 });
+  } catch (error) {
+    console.error('[admin/account-logout]', error.message);
+    res.status(500).json({ success: false, message: 'We could not sign this account out everywhere.' });
+  }
+}
+
+export async function addAccountNote(req, res) {
+  try {
+    const accountId = validId(req.params.id);
+    const note = String(req.body.note || '').replace(/[<>]/g, '').trim().slice(0, 2000);
+    const category = String(req.body.category || 'general');
+    if (!accountId || !note) return res.status(400).json({ success: false, message: 'Write a note before saving it.' });
+    if (!['general', 'support', 'billing', 'privacy', 'technical'].includes(category)) return res.status(400).json({ success: false, message: 'Choose a valid note category.' });
+    const user = await User.findById(accountId).select('_id');
+    if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
+    const created = await AdminAccountNote.create({ userId: user._id, adminId: adminId(req), category, note });
+    await AdminAudit.create({ adminId: adminId(req), userId: user._id, action: 'account.note_added', resourceType: 'AdminAccountNote', resourceId: String(created._id), details: { category } });
+    res.status(201).json({ success: true, data: created });
+  } catch (error) {
+    console.error('[admin/account-note]', error.message);
+    res.status(500).json({ success: false, message: 'We could not save this account note.' });
+  }
+}
+
+export async function deleteAccountNote(req, res) {
+  try {
+    const noteId = validId(req.params.noteId);
+    if (!noteId) return res.status(400).json({ success: false, message: 'That note identifier is not valid.' });
+    const note = await AdminAccountNote.findByIdAndDelete(noteId);
+    if (!note) return res.status(404).json({ success: false, message: 'Account note not found.' });
+    await AdminAudit.create({ adminId: adminId(req), userId: note.userId, action: 'account.note_deleted', resourceType: 'AdminAccountNote', resourceId: String(note._id), details: { category: note.category } });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[admin/account-note-delete]', error.message);
+    res.status(500).json({ success: false, message: 'We could not remove this account note.' });
+  }
+}
+
+export async function exportAccountData(req, res) {
+  try {
+    const accountId = validId(req.params.id);
+    if (!accountId) return res.status(400).json({ success: false, message: 'That account identifier is not valid.' });
+    const detail = await loadAccountDetail(accountId);
+    if (!detail) return res.status(404).json({ success: false, message: 'Account not found.' });
+    const payload = { exportedAt: new Date().toISOString(), exportVersion: 1, ...detail, sessions: detail.sessions.map(session => ({ ...session, ipAddress: session.ipAddress ? '[redacted in export]' : '' })) };
+    await AdminAudit.create({ adminId: adminId(req), userId: accountId, action: 'account.data_exported', resourceType: 'User', resourceId: String(accountId), details: { exportVersion: 1 } });
+    res.setHeader('Content-Disposition', `attachment; filename="veylo-account-${accountId}.json"`);
+    res.json({ success: true, data: payload });
+  } catch (error) {
+    console.error('[admin/account-export]', error.message);
+    res.status(500).json({ success: false, message: 'We could not export this account.' });
+  }
+}
+
+export async function createSupportAccess(req, res) {
+  try {
+    const accountId = validId(req.params.id);
+    const reason = safeReason(req.body.reason);
+    if (!accountId || reason.length < 8) return res.status(400).json({ success: false, message: 'Give a short reason for support access.' });
+    const user = await User.findById(accountId).select('_id name email accountStatus');
+    if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
+    const rawToken = crypto.randomBytes(32).toString('base64url');
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    await SupportAccessGrant.updateMany({ userId: user._id, status: 'active' }, { $set: { status: 'revoked', revokedAt: new Date() } });
+    const grant = await SupportAccessGrant.create({ userId: user._id, adminId: adminId(req), tokenDigest: tokenDigest(rawToken), reason, expiresAt, readOnly: true });
+    await AdminAudit.create({ adminId: adminId(req), userId: user._id, action: 'account.support_access_created', resourceType: 'SupportAccessGrant', resourceId: String(grant._id), details: { expiresAt, readOnly: true, reason } });
+    res.status(201).json({ success: true, data: { token: rawToken, expiresAt, readOnly: true, user: { id: user._id, name: user.name, email: user.email, accountStatus: user.accountStatus } } });
+  } catch (error) {
+    console.error('[admin/support-access]', error.message);
+    res.status(500).json({ success: false, message: 'We could not create support access.' });
+  }
+}
+
+export async function exchangeSupportAccess(req, res) {
+  try {
+    const rawToken = String(req.body.token || '').trim();
+    if (!rawToken || rawToken.length < 30) return res.status(400).json({ success: false, message: 'This support link is not valid.' });
+    const grant = await SupportAccessGrant.findOne({ tokenDigest: tokenDigest(rawToken), status: 'active', expiresAt: { $gt: new Date() } }).select('+tokenDigest');
+    if (!grant) return res.status(404).json({ success: false, message: 'This support link has expired or was already used.' });
+    const detail = await loadAccountDetail(grant.userId);
+    if (!detail) return res.status(404).json({ success: false, message: 'Account not found.' });
+    grant.status = 'used';
+    grant.usedAt = new Date();
+    await grant.save();
+    await AdminAudit.create({ adminId: grant.adminId, userId: grant.userId, action: 'account.support_access_used', resourceType: 'SupportAccessGrant', resourceId: String(grant._id), details: { readOnly: true } });
+    res.json({ success: true, data: { readOnly: true, expiresAt: grant.expiresAt, account: detail } });
+  } catch (error) {
+    console.error('[admin/support-access-exchange]', error.message);
+    res.status(500).json({ success: false, message: 'We could not open this support view.' });
+  }
+}
+
+export async function getDeletionRequests(req, res) {
+  try {
+    const status = String(req.query.status || 'all');
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 40));
+    const query = ['pending', 'approved', 'rejected', 'processing', 'completed'].includes(status) ? { status } : {};
+    const [requests, total] = await Promise.all([
+      AccountDeletionRequest.find(query).populate('userId', 'name email studio.name accountStatus').sort({ requestedAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+      AccountDeletionRequest.countDocuments(query)
+    ]);
+    res.json({ success: true, data: requests, pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
+  } catch (error) {
+    console.error('[admin/deletion-requests]', error.message);
+    res.status(500).json({ success: false, message: 'We could not load deletion requests.' });
+  }
+}
+
+export async function updateDeletionRequest(req, res) {
+  try {
+    const requestId = validId(req.params.requestId);
+    const status = String(req.body.status || '').trim();
+    if (!requestId || !['approved', 'rejected', 'processing', 'completed'].includes(status)) return res.status(400).json({ success: false, message: 'Choose a valid deletion request status.' });
+    const request = await AccountDeletionRequest.findById(requestId);
+    if (!request) return res.status(404).json({ success: false, message: 'Deletion request not found.' });
+    const before = { status: request.status, resolutionNote: request.resolutionNote || '' };
+    request.status = status;
+    request.resolutionNote = String(req.body.resolutionNote || '').replace(/[<>]/g, '').trim().slice(0, 1000);
+    request.resolvedBy = adminId(req);
+    request.resolvedAt = new Date();
+    await request.save();
+    await AdminAudit.create({ adminId: adminId(req), userId: request.userId, action: 'account.deletion_request_updated', resourceType: 'AccountDeletionRequest', resourceId: String(request._id), details: { before, after: { status, resolutionNote: request.resolutionNote } } });
+    res.json({ success: true, data: request });
+  } catch (error) {
+    console.error('[admin/deletion-request-update]', error.message);
+    res.status(500).json({ success: false, message: 'We could not update this deletion request.' });
   }
 }
 

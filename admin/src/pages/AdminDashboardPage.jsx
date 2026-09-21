@@ -10,16 +10,23 @@ import {
   Download,
   Eye,
   Film,
+  FileDown,
   HardDrive,
+  KeyRound,
   LogOut,
+  LockKeyhole,
   Mail,
   ReceiptText,
   RefreshCw,
   Search,
   Server,
   ShieldCheck,
+  StickyNote,
   TriangleAlert,
-  Users
+  UserCheck,
+  UserX,
+  Users,
+  X
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api from '../services/api.js';
@@ -135,6 +142,16 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const [refundNote, setRefundNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [panelErrors, setPanelErrors] = useState({});
+  const [accountPlanFilter, setAccountPlanFilter] = useState('all');
+  const [accountStatusFilter, setAccountStatusFilter] = useState('all');
+  const [accountSourceFilter, setAccountSourceFilter] = useState('all');
+  const [selectedAccount, setSelectedAccount] = useState(null);
+  const [accountDetailLoading, setAccountDetailLoading] = useState(false);
+  const [accountActionLoading, setAccountActionLoading] = useState(false);
+  const [accountNote, setAccountNote] = useState('');
+  const [accountNoteCategory, setAccountNoteCategory] = useState('general');
+  const [supportReason, setSupportReason] = useState('');
+  const [proExpiry, setProExpiry] = useState('');
 
   const fetchAdminData = useCallback(async () => {
     setLoading(true);
@@ -142,7 +159,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       operations: api.get('/v1/admin/operations'),
       analytics: api.get('/v1/admin/analytics'),
       deliveries: api.get('/v1/admin/deliveries', { params: { search } }),
-      users: api.get('/v1/admin/users', { params: { search } }),
+      users: api.get('/v1/admin/users', { params: { search, plan: accountPlanFilter, status: accountStatusFilter, acquisitionSource: accountSourceFilter } }),
       payments: api.get('/v1/admin/payments', { params: { search } })
     };
     const entries = Object.entries(requests);
@@ -165,7 +182,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
     setPanelErrors(nextErrors);
     if (Object.keys(nextErrors).length === entries.length) toast.error('The administration service is unavailable. Try again shortly.');
     setLoading(false);
-  }, [search]);
+  }, [accountPlanFilter, accountSourceFilter, accountStatusFilter, search]);
 
   useEffect(() => {
     const timer = window.setTimeout(fetchAdminData, 300);
@@ -182,6 +199,139 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       fetchAdminData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Could not change account plan.');
+    }
+  };
+
+  const openAccount = async (account) => {
+    setSelectedAccount({ account });
+    setAccountNote('');
+    setSupportReason('');
+    setProExpiry('');
+    setAccountDetailLoading(true);
+    try {
+      const response = await api.get(`/v1/admin/users/${account._id || account.id}`);
+      setSelectedAccount(response.data?.data || null);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not open this account.');
+      setSelectedAccount(null);
+    } finally {
+      setAccountDetailLoading(false);
+    }
+  };
+
+  const refreshSelectedAccount = async () => {
+    if (!selectedAccount?.account?._id && !selectedAccount?.account?.id && !selectedAccount?.account) return;
+    const id = selectedAccount.account?._id || selectedAccount.account?.id || selectedAccount.account;
+    try {
+      const response = await api.get(`/v1/admin/users/${id}`);
+      setSelectedAccount(response.data?.data || null);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not refresh this account.');
+    }
+  };
+
+  const accountId = selectedAccount?.account?.id || selectedAccount?.account?._id || selectedAccount?.account;
+
+  const changeAccountStatus = async (status) => {
+    if (!accountId) return;
+    try {
+      setAccountActionLoading(true);
+      await api.patch(`/v1/admin/users/${accountId}/status`, { status, reason: status === 'suspended' ? 'Suspended during account review' : 'Reactivated after account review' });
+      toast.success(status === 'suspended' ? 'Account suspended and sessions signed out.' : 'Account reactivated.');
+      await Promise.all([fetchAdminData(), refreshSelectedAccount()]);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not change this account status.');
+    } finally {
+      setAccountActionLoading(false);
+    }
+  };
+
+  const changeAccountPlan = async (plan, expiresAt = '') => {
+    if (!accountId) return;
+    try {
+      setAccountActionLoading(true);
+      await api.patch(`/v1/admin/users/${accountId}/plan`, { plan, expiresAt: plan === 'pro' ? (expiresAt || undefined) : undefined, reason: plan === 'pro' ? 'Granted by administrator' : 'Removed by administrator' });
+      toast.success(plan === 'pro' ? 'Pro access granted.' : 'Pro access removed.');
+      await Promise.all([fetchAdminData(), refreshSelectedAccount()]);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not change this account plan.');
+    } finally {
+      setAccountActionLoading(false);
+    }
+  };
+
+  const forceLogoutAccount = async () => {
+    if (!accountId) return;
+    try {
+      setAccountActionLoading(true);
+      const response = await api.post(`/v1/admin/users/${accountId}/force-logout`, { reason: 'Signed out by administrator during support review' });
+      toast.success(`${response.data?.revokedSessions || 0} session${response.data?.revokedSessions === 1 ? '' : 's'} signed out.`);
+      await refreshSelectedAccount();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not sign this account out.');
+    } finally {
+      setAccountActionLoading(false);
+    }
+  };
+
+  const saveAccountNote = async (event) => {
+    event.preventDefault();
+    if (!accountId || !accountNote.trim()) return;
+    try {
+      setAccountActionLoading(true);
+      await api.post(`/v1/admin/users/${accountId}/notes`, { note: accountNote.trim(), category: accountNoteCategory });
+      setAccountNote('');
+      toast.success('Account note saved.');
+      await refreshSelectedAccount();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not save this note.');
+    } finally {
+      setAccountActionLoading(false);
+    }
+  };
+
+  const exportAccount = async () => {
+    if (!accountId) return;
+    try {
+      const response = await api.get(`/v1/admin/users/${accountId}/export`, { responseType: 'blob' });
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `veylo-account-${accountId}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success('Account export downloaded.');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not export this account.');
+    }
+  };
+
+  const createSupportAccess = async () => {
+    if (!accountId || supportReason.trim().length < 8) return toast.error('Write a short support reason first.');
+    try {
+      setAccountActionLoading(true);
+      const response = await api.post(`/v1/admin/users/${accountId}/support-access`, { reason: supportReason.trim() });
+      const token = response.data?.data?.token;
+      if (token && navigator.clipboard) await navigator.clipboard.writeText(token);
+      setSupportReason('');
+      toast.success('One-time read-only support code created and copied.');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not create support access.');
+    } finally {
+      setAccountActionLoading(false);
+    }
+  };
+
+  const updateDeletionRequest = async (requestId, status) => {
+    try {
+      setAccountActionLoading(true);
+      await api.patch(`/v1/admin/deletion-requests/${requestId}`, { status, resolutionNote: `Marked ${status} from the account workspace.` });
+      toast.success('Deletion request updated.');
+      await refreshSelectedAccount();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not update this deletion request.');
+    } finally {
+      setAccountActionLoading(false);
     }
   };
 
@@ -438,50 +588,45 @@ export default function AdminDashboardPage({ admin, onLogout }) {
 
           {/* Accounts Tab */}
           {!loading && tab === 'users' && (
-            <div className="mt-6 overflow-hidden rounded-2xl border border-white/10 bg-white/[.025]">
-              <div className="divide-y divide-white/[.07]">
-                {users.map((account) => (
-                  <article
-                    key={account._id}
-                    className="grid gap-4 p-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center md:px-6"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="truncate font-medium text-white">{account.name}</h2>
-                        {account.role === 'admin' && (
-                          <span className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-[#ff9b8e]">
-                            <ShieldCheck size={12} /> Legacy Admin
-                          </span>
-                        )}
-                      </div>
-                      <p className="mt-1 truncate text-xs text-white/45">{account.email}</p>
-                      <p className="mt-2 text-xs text-white/30">
-                        Joined {shortDate(account.createdAt)}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <Status value={account.plan} />
-                      <label>
-                        <span className="sr-only">Change plan for {account.name}</span>
-                        <select
-                          value={account.plan === 'pro' ? 'pro' : 'free'}
-                          onChange={(e) => updatePlan(account._id, e.target.value)}
-                          className="min-h-10 rounded-xl border border-white/10 bg-[#0c0c10] px-3 text-xs text-white outline-none focus:border-[#ff9b8e]/60"
-                        >
-                          <option value="free">Free</option>
-                          <option value="pro">Pro</option>
-                        </select>
-                      </label>
-                    </div>
-                  </article>
-                ))}
+            <div className="mt-6">
+              <div className="mb-4 grid gap-3 sm:grid-cols-3">
+                <label className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/40">Plan
+                  <select value={accountPlanFilter} onChange={(event) => setAccountPlanFilter(event.target.value)} className="mt-2 min-h-10 w-full rounded-xl border border-white/10 bg-[#0c0c10] px-3 text-xs font-normal normal-case tracking-normal text-white outline-none focus:border-[#ff9b8e]/60">
+                    <option value="all">All plans</option><option value="free">Free</option><option value="pro">Pro</option><option value="studio">Studio</option>
+                  </select>
+                </label>
+                <label className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/40">Status
+                  <select value={accountStatusFilter} onChange={(event) => setAccountStatusFilter(event.target.value)} className="mt-2 min-h-10 w-full rounded-xl border border-white/10 bg-[#0c0c10] px-3 text-xs font-normal normal-case tracking-normal text-white outline-none focus:border-[#ff9b8e]/60">
+                    <option value="all">All statuses</option><option value="active">Active</option><option value="pending">Pending</option><option value="suspended">Suspended</option>
+                  </select>
+                </label>
+                <label className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/40">Acquisition source
+                  <input value={accountSourceFilter === 'all' ? '' : accountSourceFilter} onChange={(event) => setAccountSourceFilter(event.target.value || 'all')} placeholder="Any source" className="mt-2 min-h-10 w-full rounded-xl border border-white/10 bg-[#0c0c10] px-3 text-xs font-normal normal-case tracking-normal text-white outline-none placeholder:text-white/25 focus:border-[#ff9b8e]/60" />
+                </label>
               </div>
-              {!users.length && (
-                <p className="p-12 text-center text-sm text-white/45">
-                  No accounts match your search query.
-                </p>
-              )}
+              <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[.025]">
+                <div className="divide-y divide-white/[.07]">
+                  {users.map((account) => (
+                    <article key={account._id} className="grid gap-4 p-5 transition-colors hover:bg-white/[.035] sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center md:px-6">
+                      <button type="button" onClick={() => openAccount(account)} className="min-w-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-[#ff9b8e]/70">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h2 className="truncate font-medium text-white">{account.name}</h2>
+                          {account.role === 'admin' && <span className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-[#ff9b8e]"><ShieldCheck size={12} /> Legacy Admin</span>}
+                          <Status value={account.accountStatus || 'pending'} />
+                        </div>
+                        <p className="mt-1 truncate text-xs text-white/45">{account.email}</p>
+                        <p className="mt-2 truncate text-xs text-white/30">{account.studio?.name || 'Independent photographer'} · {account.acquisition?.source || 'Source not recorded'} · Joined {shortDate(account.createdAt)}</p>
+                      </button>
+                      <div className="flex items-center gap-3">
+                        <Status value={account.plan} />
+                        <label><span className="sr-only">Change plan for {account.name}</span><select value={account.plan === 'pro' ? 'pro' : 'free'} onChange={(e) => updatePlan(account._id, e.target.value)} className="min-h-10 rounded-xl border border-white/10 bg-[#0c0c10] px-3 text-xs text-white outline-none focus:border-[#ff9b8e]/60"><option value="free">Free</option><option value="pro">Pro</option></select></label>
+                        <button type="button" onClick={() => openAccount(account)} className="min-h-10 rounded-xl border border-white/10 px-3 text-xs font-semibold text-white/65 transition-colors hover:border-[#ff9b8e]/50 hover:text-white">View</button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+                {!users.length && <p className="p-12 text-center text-sm text-white/45">No accounts match your search query.</p>}
+              </div>
             </div>
           )}
 
@@ -554,6 +699,43 @@ export default function AdminDashboardPage({ admin, onLogout }) {
           )}
         </section>
       </main>
+
+      {/* Account detail drawer */}
+      {selectedAccount && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="account-detail-title" onMouseDown={(event) => { if (event.target === event.currentTarget && !accountActionLoading) setSelectedAccount(null); }}>
+          <motion.aside initial={{ opacity: 0, x: 28 }} animate={{ opacity: 1, x: 0 }} className="ml-auto flex h-full w-full max-w-2xl flex-col overflow-y-auto border-l border-white/10 bg-[#0c0c10] shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-white/10 bg-[#0c0c10]/95 p-5 backdrop-blur sm:p-7">
+              <div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Account workspace</p><h2 id="account-detail-title" className="mt-1 truncate text-2xl font-medium">{selectedAccount.account?.name || 'Account'}</h2><p className="mt-1 truncate text-xs text-white/45">{selectedAccount.account?.email || ''}</p></div>
+              <button type="button" aria-label="Close account details" onClick={() => setSelectedAccount(null)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/10 text-white/60 transition-colors hover:border-white/25 hover:text-white"><X size={18} /></button>
+            </div>
+            {accountDetailLoading && <div className="p-7 text-sm text-white/45">Loading the account history…</div>}
+            {!accountDetailLoading && selectedAccount.account && (
+              <div className="space-y-6 p-5 sm:p-7">
+                <section className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Status</p><div className="mt-2 flex items-center gap-2"><Status value={selectedAccount.account.accountStatus} /><Status value={selectedAccount.account.plan} /></div><p className="mt-3 text-xs text-white/45">{selectedAccount.account.emailVerified ? 'Email verified' : 'Email not verified'} · {selectedAccount.account.onboardingCompletedAt ? 'Onboarding complete' : `Onboarding step ${selectedAccount.account.onboardingStep || 1}`}</p></div>
+                  <div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Storage</p><p className="mt-2 text-xl font-medium">{bytes(selectedAccount.storage?.bytes || selectedAccount.account.storageUsedBytes)}</p><p className="mt-1 text-xs text-white/45">{number(selectedAccount.storage?.count)} library assets · {selectedAccount.account.studio?.name || 'Independent photographer'}</p></div>
+                </section>
+
+                <section className="flex flex-wrap gap-2">
+                  {selectedAccount.account.accountStatus === 'suspended' ? <button type="button" disabled={accountActionLoading} onClick={() => changeAccountStatus('active')} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-emerald-300 px-4 text-xs font-bold text-[#07130e] disabled:opacity-50"><UserCheck size={15} /> Reactivate</button> : <button type="button" disabled={accountActionLoading} onClick={() => changeAccountStatus('suspended')} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-amber-300/30 px-4 text-xs font-semibold text-amber-200 disabled:opacity-50"><UserX size={15} /> Suspend</button>}
+                  {selectedAccount.account.plan !== 'pro' && <label className="flex min-h-10 items-center gap-2 rounded-xl border border-white/10 px-3 text-[10px] text-white/45">Pro expiry <input type="date" value={proExpiry} onChange={(event) => setProExpiry(event.target.value)} className="min-w-0 bg-transparent text-xs text-white outline-none" /></label>}
+                  <button type="button" disabled={accountActionLoading} onClick={() => changeAccountPlan(selectedAccount.account.plan === 'pro' ? 'free' : 'pro', proExpiry)} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-white/15 px-4 text-xs font-semibold text-white/70 disabled:opacity-50"><ShieldCheck size={15} /> {selectedAccount.account.plan === 'pro' ? 'Remove Pro' : 'Grant Pro'}</button>
+                  <button type="button" disabled={accountActionLoading} onClick={forceLogoutAccount} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-white/15 px-4 text-xs font-semibold text-white/70 disabled:opacity-50"><LockKeyhole size={15} /> Sign out sessions</button>
+                  <button type="button" onClick={exportAccount} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-white/15 px-4 text-xs font-semibold text-white/70"><FileDown size={15} /> Export account</button>
+                </section>
+
+                <section className="rounded-2xl border border-white/10 bg-white/[.025] p-4 sm:p-5"><div className="flex items-center gap-2"><KeyRound size={15} className="text-[#ff9b8e]" /><h3 className="text-sm font-semibold">Read-only support access</h3></div><p className="mt-2 text-xs leading-5 text-white/45">Creates a one-time code that expires in 15 minutes. It cannot change the photographer’s account.</p><div className="mt-3 flex flex-col gap-2 sm:flex-row"><input value={supportReason} onChange={(event) => setSupportReason(event.target.value)} placeholder="Why does support need access?" className="min-h-10 min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 px-3 text-xs text-white outline-none placeholder:text-white/25 focus:border-[#ff9b8e]/60" /><button type="button" disabled={accountActionLoading || supportReason.trim().length < 8} onClick={createSupportAccess} className="min-h-10 rounded-xl bg-[#ff5a47] px-4 text-xs font-bold text-[#160907] disabled:opacity-40">Create code</button></div></section>
+
+                <section><div className="flex items-center gap-2"><StickyNote size={15} className="text-[#ff9b8e]" /><h3 className="text-sm font-semibold">Internal notes</h3></div><form onSubmit={saveAccountNote} className="mt-3 space-y-2"><div className="flex gap-2"><select value={accountNoteCategory} onChange={(event) => setAccountNoteCategory(event.target.value)} className="min-h-10 rounded-xl border border-white/10 bg-[#141419] px-3 text-xs text-white outline-none"><option value="general">General</option><option value="support">Support</option><option value="billing">Billing</option><option value="privacy">Privacy</option><option value="technical">Technical</option></select><button type="submit" disabled={accountActionLoading || !accountNote.trim()} className="min-h-10 rounded-xl bg-white px-4 text-xs font-bold text-black disabled:opacity-40">Save note</button></div><textarea value={accountNote} onChange={(event) => setAccountNote(event.target.value)} maxLength={2000} rows={3} placeholder="Write a note for the Veylo team…" className="w-full resize-y rounded-xl border border-white/10 bg-white/[.025] p-3 text-xs leading-5 text-white outline-none placeholder:text-white/25 focus:border-[#ff9b8e]/60" /></form><div className="mt-3 space-y-2">{(selectedAccount.notes || []).slice(0, 5).map(note => <div key={note._id} className="rounded-xl border border-white/10 bg-white/[.02] p-3"><div className="flex items-center justify-between gap-3"><Status value={note.category} /><span className="text-[10px] text-white/30">{shortDate(note.createdAt)}</span></div><p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-white/65">{note.note}</p></div>)}{!selectedAccount.notes?.length && <p className="text-xs text-white/35">No internal notes yet.</p>}</div></section>
+
+                <section><div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">Account history</h3><span className="text-xs text-white/35">{number((selectedAccount.deliveries || []).length)} deliveries · {number((selectedAccount.subscriptions || []).length)} subscriptions</span></div><div className="mt-3 grid gap-2">{(selectedAccount.deliveries || []).slice(0, 8).map(delivery => <div key={delivery.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[.02] p-3"><div className="min-w-0"><p className="truncate text-xs font-semibold text-white">{delivery.title || delivery.clientName || 'Untitled delivery'}</p><p className="mt-1 text-[11px] text-white/40">{formatNames[delivery.format] || delivery.format || 'Delivery'} · {number(delivery.photoCount)} photographs</p></div><Status value={delivery.status} /></div>)}{!selectedAccount.deliveries?.length && <p className="text-xs text-white/35">No delivery records yet.</p>}</div></section>
+
+                {(selectedAccount.deletionRequests || []).length > 0 && <section><h3 className="text-sm font-semibold">Deletion requests</h3><div className="mt-3 space-y-2">{selectedAccount.deletionRequests.map(request => <div key={request._id} className="flex flex-col gap-3 rounded-xl border border-amber-300/15 bg-amber-300/[.04] p-3 sm:flex-row sm:items-center sm:justify-between"><div><Status value={request.status} /><p className="mt-2 text-xs text-white/55">{request.reason || 'No reason provided.'}</p></div><select value={request.status} disabled={accountActionLoading || request.status === 'completed'} onChange={(event) => updateDeletionRequest(request._id, event.target.value)} className="min-h-10 rounded-xl border border-white/10 bg-[#141419] px-3 text-xs text-white outline-none"><option value={request.status}>{request.status}</option><option value="processing">Processing</option><option value="approved">Approve</option><option value="rejected">Reject</option><option value="completed">Complete</option></select></div>)}</div></section>}
+              </div>
+            )}
+          </motion.aside>
+        </div>
+      )}
 
       {/* Refund Modal */}
       {refund && (

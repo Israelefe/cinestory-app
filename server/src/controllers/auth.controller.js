@@ -12,6 +12,7 @@ import Subscription from '../models/Subscription.js';
 import Payment from '../models/Payment.js';
 import BillingEvent from '../models/BillingEvent.js';
 import AdminAudit from '../models/AdminAudit.js';
+import AccountDeletionRequest from '../models/AccountDeletionRequest.js';
 import DeliveryUsage from '../models/DeliveryUsage.js';
 import Delivery from '../models/Delivery.js';
 import DeliveryJob from '../models/DeliveryJob.js';
@@ -423,6 +424,19 @@ export async function deleteAccount(req, res) {
   } catch (error) {
     console.error('[auth/delete-account]', error.http_code || error.name || 'delete_error', error.message);
     res.status(500).json({ success: false, message: 'We could not delete the complete account. Your account is still available. Please try again.' });
+  }
+}
+
+export async function requestAccountDeletion(req, res) {
+  try {
+    const reason = String(req.body?.reason || '').replace(/[<>]/g, '').trim().slice(0, 1000);
+    const existing = await AccountDeletionRequest.findOne({ userId: req.user.id, status: { $in: ['pending', 'approved', 'processing'] } });
+    if (existing) return res.json({ success: true, data: existing, message: 'Your account deletion request is already with the Veylo team.' });
+    const request = await AccountDeletionRequest.create({ userId: req.user.id, source: 'user', reason });
+    res.status(201).json({ success: true, data: request, message: 'Your account deletion request has been sent to the Veylo team.' });
+  } catch (error) {
+    console.error('[auth/request-account-deletion]', error.message);
+    res.status(500).json({ success: false, message: 'We could not send this deletion request.' });
   }
 }
 
