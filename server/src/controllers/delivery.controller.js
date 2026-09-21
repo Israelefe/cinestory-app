@@ -3,6 +3,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import { z } from 'zod';
 import Delivery from '../models/Delivery.js';
 import DeliveryJob from '../models/DeliveryJob.js';
@@ -309,32 +310,33 @@ export async function getDelivery(req, res) {
 
 export async function deleteDelivery(req, res) {
   try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ success: false, message: 'Delivery not found.' });
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
-    const removedIds = new Set(delivery.assets.map(asset => asset.publicId));
-    const portfolio = await Portfolio.findOne({ userId: req.user.id, 'items.publicId': { $in: [...removedIds] } });
-    if (portfolio) {
-      portfolio.items = portfolio.items.filter(item => !removedIds.has(item.publicId));
-      if (portfolio.status === 'published' && portfolio.items.length < 4) { portfolio.status = 'draft'; portfolio.publishedAt = undefined; }
-      await portfolio.save();
-    }
+    const removedIds = new Set((delivery.assets || []).map(asset => asset.publicId).filter(Boolean));
     // Remove the database record first. A temporary Cloudinary outage must not
     // leave an owned draft or published delivery stuck in the dashboard.
     const removed = await Delivery.findOneAndDelete({ _id: delivery._id, userId: req.user.id });
     if (!removed) return res.status(404).json({ success: false, message: 'Delivery not found.' });
-    await Promise.all([
+    const cleanup = [
+      (async () => {
+        if (!removedIds.size) return;
+        const portfolio = await Portfolio.findOne({ userId: req.user.id, 'items.publicId': { $in: [...removedIds] } });
+        if (!portfolio) return;
+        portfolio.items = portfolio.items.filter(item => !removedIds.has(item.publicId));
+        if (portfolio.status === 'published' && portfolio.items.length < 4) { portfolio.status = 'draft'; portfolio.publishedAt = undefined; }
+        await portfolio.save();
+      })(),
       DeliveryJob.deleteMany({ deliveryId: delivery._id }),
       DeliveryShareGrant.deleteMany({ deliveryId: delivery._id }),
       PhotoLike.deleteMany({ deliveryId: delivery._id }),
-      DeliveryView.deleteMany({ deliveryId: delivery._id })
-    ]);
-    try {
-      await removeDeliveryMedia(req.user.id, delivery._id);
-    } catch (mediaError) {
-      // The delivery is already inaccessible. Retention can remove orphaned
-      // media later if the provider is temporarily unavailable.
-      console.error('[deliveries/delete-media]', mediaError.message);
-    }
+      DeliveryView.deleteMany({ deliveryId: delivery._id }),
+      removeDeliveryMedia(req.user.id, delivery._id)
+    ];
+    const cleanupResults = await Promise.allSettled(cleanup);
+    cleanupResults.filter(result => result.status === 'rejected').forEach(result => {
+      console.error('[deliveries/delete-cleanup]', result.reason?.message || result.reason);
+    });
     res.json({ success: true, message: 'Delivery deleted and its client link disabled.' });
   } catch (error) {
     console.error('[deliveries/delete]', error.message);
