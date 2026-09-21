@@ -79,7 +79,7 @@ export default function Dashboard({ user }) {
     try {
       const id = item?._id;
       if (!id) throw new Error('This delivery no longer exists in the studio list. Refresh the page and try again.');
-      const isCurrentDelivery = Boolean(item?.publicId);
+      const isCurrentDelivery = item?._deliveryType === 'current';
       await api.delete(isCurrentDelivery ? `/v1/deliveries/${encodeURIComponent(id)}` : `/v1/stories/${encodeURIComponent(id)}`);
       setStories(current => current.filter(story => story._id !== id));
       setOpenMenu('');
