@@ -5,7 +5,7 @@ import { DELIVERY_SOUNDTRACKS } from './deliverySoundtracks.js';
 export const CURATED_SOUNDTRACKS = DELIVERY_SOUNDTRACKS.map(track => ({
   ...track,
   audioUrl: `/api/v1/deliveries/soundtracks/${encodeURIComponent(track.id)}/audio`,
-  bestFor: track.tags
+  bestFor: track.bestFor
 }));
 
 export const THEME_PRESETS = {

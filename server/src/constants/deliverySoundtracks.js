@@ -114,14 +114,17 @@ function titleSignals(title) {
 function trackDecision(track, profile) {
   const decision = CATEGORY_DECISIONS[track.category];
   const durationShape = track.durationSec < 100 ? 'compact' : track.durationSec > 210 ? 'extended' : 'standard';
+  const sourceTags = Array.isArray(track.pixabayTags) ? track.pixabayTags.filter(Boolean) : [];
+  const bestFor = [...new Set([...profile.tags, ...sourceTags])].slice(0, 12);
   return {
     storyFunction: decision.storyFunction,
-    bestFor: profile.tags.slice(0, 6),
+    bestFor,
+    sourceTags,
     avoidFor: decision.avoidFor,
     editingPace: `${decision.editingPace}; ${durationShape} ${Math.floor(track.durationSec / 60)}:${String(track.durationSec % 60).padStart(2, '0')} runtime`,
     instrumentationCue: titleListedInstrumentation(track.title),
     titleSignals: titleSignals(track.title),
-    selectionNote: `Selected from the ${track.category} group using the Pixabay title, source record, runtime, narration fit, and intended delivery use.`,
+    selectionNote: `Selected from the ${track.category} group using the Pixabay title, source tags, source record, runtime, narration fit, and intended delivery use.`,
     metadataConfidence: 'source-and-file-verified; instrumentation cue is not a claim about the recording',
     contentIdGuidance: track.contentIdRegistered ? 'Pixabay marks this track as Content ID registered; keep the source page and licence record with the delivery.' : 'Not marked as Content ID registered in the verified catalogue record.'
   };
@@ -148,6 +151,9 @@ export const DELIVERY_SOUNDTRACKS = Object.freeze(rawCatalogue.map((track, index
     bestFor: Object.freeze(decision.bestFor),
     avoidFor: Object.freeze(decision.avoidFor),
     editingPace: decision.editingPace,
+    sourceTags: Object.freeze(decision.sourceTags),
+    sourceDescription: track.sourceDescription || null,
+    isAiGenerated: track.isAiGenerated === true,
     instrumentationCue: decision.instrumentationCue,
     titleSignals: Object.freeze(decision.titleSignals),
     selectionNote: decision.selectionNote,
