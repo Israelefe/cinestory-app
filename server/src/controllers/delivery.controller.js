@@ -324,9 +324,36 @@ export async function deleteDelivery(req, res) {
     deleteStep = 'lookup';
     const removed = await Delivery.collection.findOne(filter);
     if (!removed) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    const deleteFilter = { _id: removed._id, userId: ownerId };
     deleteStep = 'delete';
-    const deleted = await Delivery.collection.deleteOne({ _id: removed._id, userId: ownerId });
-    if (deleted.deletedCount !== 1) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    let deleted;
+    try {
+      deleted = await Delivery.collection.deleteOne(deleteFilter);
+    } catch (primaryError) {
+      // A network timeout can happen after MongoDB has accepted a write, and
+      // some older driver deployments do not expose deleteOne consistently.
+      // Retry with an atomic native operation, then verify the desired state.
+      deleteStep = 'delete-fallback';
+      try {
+        const fallback = await Delivery.collection.findOneAndDelete(deleteFilter);
+        const fallbackDocument = fallback && Object.prototype.hasOwnProperty.call(fallback, 'value') ? fallback.value : fallback;
+        if (fallbackDocument) deleted = { deletedCount: 1 };
+        else {
+          deleteStep = 'delete-verify';
+          const stillPresent = await Delivery.collection.findOne(deleteFilter);
+          if (stillPresent) throw primaryError;
+          deleted = { deletedCount: 1 };
+        }
+      } catch (fallbackError) {
+        fallbackError.primaryDeleteError = primaryError;
+        throw fallbackError;
+      }
+    }
+    if (!deleted || deleted.deletedCount !== 1) {
+      deleteStep = 'delete-verify';
+      const stillPresent = await Delivery.collection.findOne(deleteFilter);
+      if (stillPresent) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    }
     deleteStep = 'schedule-cleanup';
     const removedIds = new Set((Array.isArray(removed.assets) ? removed.assets : []).map(asset => asset?.publicId).filter(Boolean));
     const cleanupTasks = [
@@ -356,8 +383,13 @@ export async function deleteDelivery(req, res) {
     res.json({ success: true, message: 'Delivery deleted and its client link disabled.' });
   } catch (error) {
     const failureCode = `DELIVERY_DELETE_${deleteStep.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`;
-    console.error('[deliveries/delete]', failureCode, error.name || 'Error', error.code || '', error.message);
-    res.status(error.status || 500).json({ success: false, code: failureCode, message: 'We could not delete this delivery.' });
+    console.error('[deliveries/delete]', failureCode, error.name || 'Error', error.code || '', error.message, error.primaryDeleteError?.message || '');
+    const failureMessage = deleteStep === 'lookup'
+      ? 'We could not read this delivery right now. Please try again.'
+      : deleteStep.startsWith('delete')
+        ? 'We found this delivery, but the database did not complete its removal. Please try again.'
+        : 'We could not finish removing this delivery. Please try again.';
+    res.status(error.status || 500).json({ success: false, code: failureCode, message: failureMessage });
   }
 }
 
