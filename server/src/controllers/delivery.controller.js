@@ -20,7 +20,7 @@ import { sendStoryReadyEmail } from '../services/email.service.js';
 import QRCode from 'qrcode';
 import { DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
 import { DELIVERY_SOUNDTRACKS, deliverySoundtrack, deliverySoundtrackFile } from '../constants/deliverySoundtracks.js';
-import { getNarrationVoiceCatalogue } from '../services/narration.service.js';
+import { getNarrationVoiceCatalogue, NARRATION_RENDER_VERSION } from '../services/narration.service.js';
 
 const createSchema = z.object({ clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().min(2).max(80), brief: z.string().trim().min(1) }).strict();
 const confirmSchema = z.object({ publicId: z.string().min(5).max(500), version: z.union([z.string(), z.number()]), signature: z.string().min(20).max(200), resourceType: z.enum(['image']).default('image'), originalFilename: z.string().trim().max(180).default('photograph') }).strict();
@@ -75,8 +75,17 @@ function ownerAsset(asset) {
   return { ...asset.toObject(), url: signedImageUrl(asset.publicId), thumbnailUrl: signedImageUrl(asset.publicId, { thumbnail: true }), srcSet: [480, 960, 1600].map(width => `${signedImageUrl(asset.publicId, { width })} ${width}w`).join(', ') };
 }
 
-function curatedPreviewUrl(trackId) {
-  return `/api/v1/deliveries/soundtracks/${encodeURIComponent(trackId)}/audio`;
+function soundtrackPreviewToken(userId) {
+  return jwt.sign(
+    { userId: String(userId), scope: 'soundtrack-preview' },
+    process.env.JWT_SECRET,
+    { expiresIn: '2h', issuer: 'veylo-api', audience: 'veylo-catalog-media' }
+  );
+}
+
+function curatedPreviewUrl(trackId, token = '') {
+  const url = `/api/v1/deliveries/soundtracks/${encodeURIComponent(trackId)}/audio`;
+  return token ? `${url}?token=${encodeURIComponent(token)}` : url;
 }
 
 async function streamAudioFile(req, res, filePath) {
@@ -104,14 +113,10 @@ async function streamAudioFile(req, res, filePath) {
 }
 
 export function listDeliverySoundtracks(req, res) {
-  const previewToken = jwt.sign(
-    { userId: String(req.user.id), scope: 'soundtrack-preview' },
-    process.env.JWT_SECRET,
-    { expiresIn: '2h', issuer: 'veylo-api', audience: 'veylo-catalog-media' }
-  );
+  const previewToken = soundtrackPreviewToken(req.user.id);
   const data = DELIVERY_SOUNDTRACKS.map(({ filename, sha256, bytes, ...track }) => ({
     ...track,
-    previewUrl: `${curatedPreviewUrl(track.id)}?token=${encodeURIComponent(previewToken)}`
+    previewUrl: curatedPreviewUrl(track.id, previewToken)
   }));
   res.set('Cache-Control', 'private, max-age=300');
   res.json({ success: true, data });
@@ -287,7 +292,7 @@ export async function getDelivery(req, res) {
     const data = delivery.toObject();
     data.assets = delivery.assets.map(ownerAsset);
     if (data.soundtrack?.catalogId && data.soundtrack?.source === 'curated') {
-      data.soundtrack.url = curatedPreviewUrl(data.soundtrack.catalogId);
+      data.soundtrack.url = curatedPreviewUrl(data.soundtrack.catalogId, soundtrackPreviewToken(req.user.id));
     }
     if (data.soundtrack?.publicId && !data.soundtrack.url) {
       data.soundtrack.url = signedImageUrl(data.soundtrack.publicId, { resourceType: 'video' });
@@ -533,7 +538,7 @@ export async function selectCuratedSoundtrack(req, res) {
     };
     delivery.markModified('soundtrack');
     await delivery.save();
-    res.status(200).json({ success: true, data: { ...delivery.soundtrack, url: curatedPreviewUrl(track.id) } });
+    res.status(200).json({ success: true, data: { ...delivery.soundtrack, url: curatedPreviewUrl(track.id, soundtrackPreviewToken(req.user.id)) } });
   } catch (error) {
     console.error('[deliveries/soundtrack-select]', error.message);
     res.status(500).json({ success: false, message: 'We could not attach that soundtrack.' });
@@ -675,6 +680,9 @@ export async function publishDelivery(req, res) {
     const delivery = await ownedDelivery(req.params.id, req.user.id, true);
     if (!delivery || delivery.status !== 'review' || !delivery.creativeDirection || !delivery.reviewApprovedAt) return res.status(409).json({ success: false, message: 'Review and approve the complete delivery before publishing it.' });
     const user = await User.findById(req.user.id);
+    if (parsed.data.narration && delivery.narration?.renderVersion !== NARRATION_RENDER_VERSION) {
+      return res.status(409).json({ success: false, code: 'NARRATION_REFRESH_REQUIRED', message: 'Regenerate the approved narration before publishing this delivery.' });
+    }
     reservation = await reservePublishSlot(user, delivery.assets.length);
     delivery.access.allowIndividualDownloads = parsed.data.allowIndividualDownloads;
     delivery.access.allowDownloadAll = parsed.data.allowDownloadAll;

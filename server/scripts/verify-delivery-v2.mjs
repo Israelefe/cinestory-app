@@ -47,6 +47,10 @@ assert.equal(measured[0].endSec, 3.45, 'Narration must use measured segment end'
 assert.throws(() => timedSegments(segments, [{ word: 'unrelated', start: 0, end: 1 }]), /aligned/, 'Narration must fail when captions cannot be aligned');
 assert.match(narration, /flux-hannah-en/, 'Deepgram Flux Hannah must be the configured narrator');
 assert.match(narration, /captionsRead: true/, 'Narration metadata must state that approved captions were read');
+assert.match(narration, /speed: 0\.9/, 'Narration must use a measured but natural speaking speed');
+assert.match(narration, /expressivity: 0/, 'Narration must keep Flux natural expressivity');
+assert.match(narration, /renderVersion: NARRATION_RENDER_VERSION/, 'Narration must identify its rendering settings');
+assert.match(narration, /transcriptLines\.join\('\\n\\n'\)/, 'Narration must leave a breath between approved captions');
 assert.match(narration, /transcribeWordTimings/, 'Narration must measure generated audio word timings');
 assert.match(narration, /timedSegments/, 'Narration must align approved captions to measured timings');
 assert.match(narration, /splitNarration/, 'Narration must split long deliveries into bounded synthesis requests');
@@ -63,6 +67,9 @@ assert.match(legacyPhotoStory, /slides\.length === photoCount/, 'Legacy Photo St
 assert.match(legacyStoryController, /caption: z\.string\(\)\.trim\(\)\.min\(18\)/, 'Legacy Photo Story publishing must require a meaningful caption for every photograph');
 assert.match(deliveryController, /caption: z\.string\(\)\.trim\(\)\.min\(18\)/, 'Review API must reject short or empty captions');
 assert.match(deliveryController, /narration: z\.boolean\(\)\.default\(true\)/, 'Publishing must keep narration enabled by default');
+assert.match(deliveryController, /NARRATION_REFRESH_REQUIRED/, 'Publishing must not reuse narration rendered with stale voice settings');
+assert.match(deliveryController, /function soundtrackPreviewToken/, 'Curated soundtrack previews must use a scoped media token');
+assert.match(deliveryController, /data\.soundtrack\.url = curatedPreviewUrl\(data\.soundtrack\.catalogId, soundtrackPreviewToken\(req\.user\.id\)\)/, 'Exact client preview must receive an authorized curated soundtrack URL');
 assert.match(deliveryController, /old audio unsafe to reuse/, 'Review edits must invalidate stale narration');
 assert.match(entitlement, /\['pro',\s*'studio'\]\.includes\(user\?\.plan\)/, 'Paid Pro users must receive studio branding entitlements');
 assert.match(deliveryController, /object\.branding = studioBrand/, 'Public deliveries must send their resolved studio brand');

@@ -59,6 +59,10 @@ assert.match(create, /narration: access\.narration/, 'Publish must carry the pho
 assert.match(create, /field === 'caption' \? \{ narration: undefined \}/, 'Editing an approved caption must invalidate stale narration before preview');
 assert.match(create, /return \{ \.\.\.current, narration: undefined, assets:/, 'Changing approved photo order must invalidate stale narration before preview');
 assert.match(create, /ClientDeliveryPreview/, 'Creation review must use the shared client experience preview');
+assert.match(create, /CurrentSoundtrackPlayer/, 'Creation review must let photographers play the selected soundtrack before changing it');
+assert.match(creationCss, /v-review-soundtrack/, 'Creation review soundtrack control must have a dedicated responsive layout');
+assert.match(create, /renderVersion !== NARRATION_RENDER_VERSION/, 'Publishing must regenerate narration rendered with stale voice settings');
+assert.match(storyViewer, /const fraction =/, 'Photo Story progress must follow measured narration segment time');
 assert.match(preview, /DeliveryReadiness/, 'Creation preview must use the same full-media readiness gate');
 assert.match(preview, /playbackDelivery/, 'Creation preview must render the same preloaded media it checked');
 assert.match(preview, /onNarrationNavigate: seekNarrationToAssets/, 'Creation preview must seek narration from the approved photo order');

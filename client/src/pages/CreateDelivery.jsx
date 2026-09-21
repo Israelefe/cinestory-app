@@ -16,6 +16,7 @@ import './CreateDeliveryNarration.css';
 import './CreateDeliveryMusicV2.css';
 
 const formats = FORMAT_REGISTRY.map(format => ({ ...format, copy: format.line }));
+const NARRATION_RENDER_VERSION = 'flux-hannah-biography-v2';
 
 const steps = ['Tell us about the shoot', 'Add finished photos', 'Choose the format', 'Review every detail', 'Publish and share'];
 
@@ -98,6 +99,55 @@ function Progress({ value, label }) {
 
 function Toggle({ icon: Icon, label, copy, checked, onChange, children }) {
   return <article className="v-publish-toggle"><Icon size={20} /><div><strong>{label}</strong><small>{copy}</small>{children}</div><button type="button" className={checked ? 'is-on' : ''} onClick={() => onChange(!checked)} aria-pressed={checked} aria-label={`${checked ? 'Turn off' : 'Turn on'} ${label}`}><i /></button></article>;
+}
+
+function CurrentSoundtrackPlayer({ soundtrack }) {
+  const audioRef = useRef(null);
+  const [state, setState] = useState('');
+  const source = typeof soundtrack?.url === 'string' && soundtrack.url.startsWith('/api/')
+    ? `${API_BASE_URL.replace(/\/$/, '')}${soundtrack.url.slice(4)}`
+    : soundtrack?.url || '';
+
+  useEffect(() => {
+    audioRef.current?.pause();
+    setState('');
+  }, [source]);
+
+  if (!source) return null;
+
+  const toggle = async () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (state === 'playing' || state === 'loading') {
+      audio.pause();
+      setState('');
+      return;
+    }
+    setState('loading');
+    try {
+      await audio.play();
+      setState('playing');
+    } catch {
+      setState('');
+      toast.info('The current soundtrack could not play in this preview.');
+    }
+  };
+
+  return <section className="v-review-soundtrack" aria-label="Current soundtrack">
+    <div className="v-review-soundtrack-copy">
+      <span className="v-review-soundtrack-icon"><Music2 size={17} /></span>
+      <div>
+        <small>CURRENT SOUNDTRACK</small>
+        <strong>{soundtrack.title || 'Selected soundtrack'}</strong>
+        <span>{soundtrack.genre || soundtrack.sourceProvider || 'Attached to this delivery'}{soundtrack.creator ? ` · ${soundtrack.creator}` : ''}</span>
+      </div>
+    </div>
+    <button type="button" className="v-review-soundtrack-button" onClick={toggle} aria-label={state === 'playing' ? 'Pause current soundtrack' : 'Play current soundtrack'} aria-busy={state === 'loading'}>
+      {state === 'loading' ? <LoaderCircle className="v-spin" size={16} /> : state === 'playing' ? <Pause size={16} /> : <Play size={16} />}
+      <span>{state === 'playing' ? 'Pause' : state === 'loading' ? 'Loading' : 'Play current music'}</span>
+    </button>
+    <audio ref={audioRef} src={source} preload="auto" loop onWaiting={() => setState('loading')} onStalled={() => setState('loading')} onPlaying={() => setState('playing')} onPause={() => setState('')} onError={() => { setState(''); toast.info('The current soundtrack could not load.'); }} />
+  </section>;
 }
 
 async function waitForJob(deliveryId, jobId, onUpdate) {
@@ -340,7 +390,7 @@ export default function CreateDelivery({ user }) {
     if (access.pinEnabled && !/^\d{6}$/.test(access.pin)) return setError('Enter a six-digit PIN or turn the PIN off.');
     setBusy('publish'); setError(''); setFailedJob(null);
     try {
-      if (access.narration && !delivery.narration) {
+      if (access.narration && delivery.narration?.renderVersion !== NARRATION_RENDER_VERSION) {
         setProgress({ value: 5, stage: 'Recording the approved narration…' });
         const narration = await api.post(`/v1/deliveries/${delivery._id}/narrate`, { voiceId: DEFAULT_NARRATION_VOICE_ID });
         await waitForJob(delivery._id, narration.data.data._id, job => setProgress({ value: job.progress, stage: 'Recording the approved narration…' }));
@@ -583,6 +633,7 @@ export default function CreateDelivery({ user }) {
             <StageHead eyebrow={`04 / Review the ${formatName(delivery?.format)}`} title="Check the order. Read every line." copy="Veylo proposes the direction. You decide what reaches your client. Edit any line and move any photograph before you publish." />
             <div className="v-review-opening"><label>Delivery title<input value={delivery?.creativeDirection?.title || ''} onChange={event => editDirection('title', event.target.value)} maxLength={80} /></label><label>Opening line<textarea value={delivery?.creativeDirection?.openingLine || ''} onChange={event => editDirection('openingLine', event.target.value)} maxLength={140} rows={3} /></label><label>Closing line<textarea value={delivery?.creativeDirection?.closingLine || ''} onChange={event => editDirection('closingLine', event.target.value)} maxLength={160} rows={3} /></label></div>
              <DeliveryDirectionStudio delivery={delivery} assets={orderedAssets} frameMap={frameMap} onDirectionChange={editDirectionSetting} onSectionChange={editSection} />
+             <CurrentSoundtrackPlayer soundtrack={delivery?.soundtrack} />
              <section className="v-client-format-preview" aria-label="Exact client format preview">
                <header><div><p>EXACT CLIENT VIEW</p><h2>Open the same format your client will receive.</h2><span>This preview uses the selected format, order, captions, colour direction, and typography. It is the final viewer inside the studio.</span></div><span className="v-client-format-preview-badge">{formatName(delivery?.format)}</span></header>
               <div className="v-client-format-preview-frame"><ClientDeliveryPreview delivery={delivery ? { ...delivery, branding: delivery.branding || previewBranding } : delivery} narrationEnabled={access.narration} accessPin={access.pinEnabled ? access.pin : ''} access={access} /></div>

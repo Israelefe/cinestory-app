@@ -318,6 +318,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   const handleNarrationEnded = () => {
     setNarrationPlaying(false);
     setNarrationLoading(false);
+    if (progress.current) progress.current.style.transform = 'scaleX(1)';
     setFinished(true);
     fadeAudioVolume(audio.current, 1);
   };
@@ -340,10 +341,18 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
     const onTimeUpdate = () => {
       const time = narration.currentTime;
       const segmentIndex = segments.findIndex(segment => time >= Number(segment.startSec || 0) && time < Number(segment.endSec || 0));
-      if (segmentIndex < 0) return;
+      if (segmentIndex < 0) {
+        const previousSegment = [...segments].reverse().find(segment => time >= Number(segment.endSec || 0));
+        if (progress.current) progress.current.style.transform = previousSegment ? 'scaleX(1)' : 'scaleX(0)';
+        return;
+      }
       const segment = segments[segmentIndex];
       const referencedIndex = (segment.assetIds || []).map(assetId => photos.findIndex(item => String(item.id) === String(assetId))).find(value => value >= 0);
       const nextIndex = referencedIndex >= 0 ? referencedIndex : Math.min(photos.length - 1, Math.floor((segmentIndex / Math.max(1, segments.length)) * photos.length));
+      const start = Number(segment.startSec || 0);
+      const end = Number(segment.endSec || start);
+      const fraction = end > start ? Math.max(0, Math.min(1, (time - start) / (end - start))) : 1;
+      if (progress.current) progress.current.style.transform = `scaleX(${fraction})`;
       setFinished(false);
       setIndex(current => current === nextIndex ? current : nextIndex);
     };
