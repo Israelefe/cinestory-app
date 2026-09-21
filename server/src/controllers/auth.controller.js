@@ -25,6 +25,7 @@ import { verifyTurnstile } from '../services/turnstile.service.js';
 import { cloudinary, configureCloudinary } from '../services/cloudinary.service.js';
 import { decryptBillingToken, paystackRequest } from '../services/paystack.service.js';
 import { REFRESH_COOKIE, clearSessionCookies, codeDigest, createSession, normalizeEmail, publicUser, randomToken, safeEqual, setSessionCookies, tokenDigest } from '../utils/auth.js';
+import { STUDIO_NAME_CHANGE_COOLDOWN_MS, isoDate, nextChangeAt } from '../constants/profilePolicy.js';
 
 const email = z.string().trim().email().max(254).transform(normalizeEmail);
 const password = z.string().min(8, 'Use at least 8 characters.').max(128);
@@ -287,9 +288,14 @@ export async function updateProfile(req, res) {
     }
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
+    const previousStudioName = String(user.studio?.name || '').trim();
+    const studioName = parsed.data.studioName.trim();
+    const studioNameChanged = Boolean(previousStudioName) && previousStudioName !== studioName;
+    const studioNameNextChangeAt = nextChangeAt(user.studioNameChangedAt, STUDIO_NAME_CHANGE_COOLDOWN_MS);
+    if (studioNameChanged && studioNameNextChangeAt) return res.status(429).json({ success: false, code: 'STUDIO_NAME_COOLDOWN', nextChangeAt: isoDate(studioNameNextChangeAt), message: `Your studio name can be changed again on ${studioNameNextChangeAt.toLocaleDateString('en-NG', { dateStyle: 'medium' })}.` });
     user.name = parsed.data.name;
     user.studio = user.studio || {};
-    user.studio.name = parsed.data.studioName;
+    user.studio.name = studioName;
     user.studio.businessType = parsed.data.businessType;
     user.studio.city = parsed.data.city;
     user.studio.state = parsed.data.state;
@@ -297,7 +303,10 @@ export async function updateProfile(req, res) {
     user.studio.specialties = parsed.data.specialties;
     user.studio.instagram = parsed.data.instagram.replace(/^@/, '');
     user.studio.whatsapp = parsed.data.whatsapp;
-    await user.save();
+    if (studioNameChanged) user.studioNameChangedAt = new Date();
+    const portfolio = studioNameChanged ? await Portfolio.findOne({ userId: user._id }) : null;
+    if (portfolio && (!portfolio.studioName || portfolio.studioName.trim() === previousStudioName)) portfolio.studioName = studioName;
+    await Promise.all([user.save(), portfolio ? portfolio.save() : Promise.resolve()]);
     res.json({ success: true, user: publicUser(user), message: 'Your account details were saved.' });
   } catch (error) {
     console.error('[auth/profile]', error.message);

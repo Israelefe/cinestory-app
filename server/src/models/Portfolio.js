@@ -7,9 +7,17 @@ const itemSchema = new mongoose.Schema({
   sortOrder: { type: Number, min: 0, default: 0 }
 }, { _id: false });
 
+const previousHandleSchema = new mongoose.Schema({
+  handle: { type: String, required: true, lowercase: true, trim: true, maxlength: 40 },
+  redirectUntil: { type: Date, required: true },
+  reservedUntil: { type: Date, required: true }
+}, { _id: false });
+
 const portfolioSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true, index: true },
   handle: { type: String, required: true, unique: true, lowercase: true, trim: true, minlength: 3, maxlength: 40, index: true },
+  handleChangedAt: Date,
+  previousHandles: { type: [previousHandleSchema], default: [] },
   status: { type: String, enum: ['draft', 'published'], default: 'draft', index: true },
   studioName: { type: String, trim: true, maxlength: 100, default: '' },
   bio: { type: String, trim: true, maxlength: 600, default: '' },

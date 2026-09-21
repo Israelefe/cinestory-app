@@ -6,6 +6,7 @@ import User from '../models/User.js';
 import PortfolioJob from '../models/PortfolioJob.js';
 import { resolveEntitlements } from '../services/entitlement.service.js';
 import { signedImageUrl } from '../services/deliveryMedia.service.js';
+import { PORTFOLIO_HANDLE_CHANGE_COOLDOWN_MS, PORTFOLIO_HANDLE_REDIRECT_MS, PORTFOLIO_HANDLE_RESERVATION_MS, STUDIO_NAME_CHANGE_COOLDOWN_MS, isoDate, nextChangeAt } from '../constants/profilePolicy.js';
 
 const handleSchema = z.string().trim().toLowerCase().min(3).max(40).regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/, 'Use letters, numbers, and single hyphens.');
 const updateSchema = z.object({
@@ -33,6 +34,13 @@ function publicOutput(portfolio) {
   };
 }
 
+function changePolicy(user, portfolio) {
+  return {
+    studioNameNextChangeAt: isoDate(nextChangeAt(user?.studioNameChangedAt, STUDIO_NAME_CHANGE_COOLDOWN_MS)),
+    handleNextChangeAt: isoDate(nextChangeAt(portfolio?.handleChangedAt, PORTFOLIO_HANDLE_CHANGE_COOLDOWN_MS))
+  };
+}
+
 async function initialHandle(user) {
   const root = safeHandle(user.studio?.name || user.name);
   for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -56,7 +64,7 @@ export async function getMyPortfolio(req, res) {
     const entitlements = await resolveEntitlements(user, { includeUsage: false });
     let portfolio = await Portfolio.findOne({ userId: user._id });
     if (!portfolio) portfolio = await Portfolio.create({ userId: user._id, handle: await initialHandle(user), studioName: user.studio?.name || user.name, location: [user.studio?.city, user.studio?.state].filter(Boolean).join(', '), instagram: user.studio?.instagram || '', whatsapp: user.studio?.whatsapp || '' });
-    res.json({ success: true, data: publicOutput(portfolio), status: portfolio.status, access: entitlements.features.portfolioMode });
+    res.json({ success: true, data: publicOutput(portfolio), status: portfolio.status, access: entitlements.features.portfolioMode, changePolicy: changePolicy(user, portfolio) });
   } catch (error) { res.status(error.code === 11000 ? 409 : 500).json({ success: false, message: error.code === 11000 ? 'That portfolio address is already in use.' : 'We could not open your portfolio settings.' }); }
 }
 
@@ -87,9 +95,32 @@ export async function updateMyPortfolio(req, res) {
     if (entitlements.features.portfolioMode !== 'public') return res.status(403).json({ success: false, code: 'PRO_REQUIRED', message: 'Renew Pro to edit or publish your portfolio.' });
     const owned = await ownedPublicIds(user._id);
     if (parsed.data.items.some(item => !owned.has(item.publicId))) return res.status(403).json({ success: false, message: 'One of those photographs does not belong to your account.' });
+    const current = await Portfolio.findOne({ userId: user._id });
+    const now = new Date();
+    const studioNameChanged = Boolean(current?.studioName) && current.studioName.trim() !== parsed.data.studioName.trim();
+    const studioNameNextChangeAt = nextChangeAt(user.studioNameChangedAt, STUDIO_NAME_CHANGE_COOLDOWN_MS);
+    if (studioNameChanged && studioNameNextChangeAt) return res.status(429).json({ success: false, code: 'STUDIO_NAME_COOLDOWN', nextChangeAt: isoDate(studioNameNextChangeAt), message: `Your studio name can be changed again on ${studioNameNextChangeAt.toLocaleDateString('en-NG', { dateStyle: 'medium' })}.` });
+    const handleChanged = Boolean(current) && current.handle !== parsed.data.handle;
+    const handleNextChangeAt = nextChangeAt(current?.handleChangedAt, PORTFOLIO_HANDLE_CHANGE_COOLDOWN_MS);
+    if (handleChanged && handleNextChangeAt) return res.status(429).json({ success: false, code: 'PORTFOLIO_HANDLE_COOLDOWN', nextChangeAt: isoDate(handleNextChangeAt), message: `Your portfolio address can be changed again on ${handleNextChangeAt.toLocaleDateString('en-NG', { dateStyle: 'medium' })}.` });
     const items = parsed.data.items.map((item, sortOrder) => ({ ...item, sortOrder }));
-    const portfolio = await Portfolio.findOneAndUpdate({ userId: user._id }, { ...parsed.data, items }, { new: true, upsert: true, runValidators: true });
-    res.json({ success: true, data: publicOutput(portfolio), status: portfolio.status });
+    const update = { ...parsed.data, items };
+    if (handleChanged) {
+      const previousHandles = Array.isArray(current.previousHandles) ? current.previousHandles.filter(entry => entry.handle !== current.handle && new Date(entry.reservedUntil) > now) : [];
+      const ownReservedHandle = previousHandles.some(entry => entry.handle === parsed.data.handle && new Date(entry.reservedUntil) > now);
+      if (ownReservedHandle) return res.status(409).json({ success: false, code: 'PORTFOLIO_HANDLE_RESERVED', message: 'That portfolio address is still reserved after a previous change. Choose another address.' });
+      const conflict = await Portfolio.findOne({ _id: { $ne: current._id }, $or: [{ handle: parsed.data.handle }, { previousHandles: { $elemMatch: { handle: parsed.data.handle, reservedUntil: { $gt: now } } } }] }).select('_id').lean();
+      if (conflict) return res.status(409).json({ success: false, code: 'PORTFOLIO_HANDLE_IN_USE', message: 'That portfolio address is already in use or reserved. Choose another address.' });
+      previousHandles.push({ handle: current.handle, redirectUntil: new Date(now.getTime() + PORTFOLIO_HANDLE_REDIRECT_MS), reservedUntil: new Date(now.getTime() + PORTFOLIO_HANDLE_RESERVATION_MS) });
+      update.handleChangedAt = now;
+      update.previousHandles = previousHandles;
+    }
+    if (studioNameChanged) user.studioNameChangedAt = now;
+    const portfolio = current
+      ? await Portfolio.findOneAndUpdate({ _id: current._id }, { $set: update }, { new: true, runValidators: true })
+      : await Portfolio.create({ userId: user._id, ...update });
+    if (studioNameChanged) await user.save();
+    res.json({ success: true, data: publicOutput(portfolio), status: portfolio.status, changePolicy: changePolicy(user, portfolio) });
   } catch (error) { res.status(error.code === 11000 ? 409 : 500).json({ success: false, message: error.code === 11000 ? 'That portfolio address is already in use.' : 'We could not save those portfolio changes.' }); }
 }
 
@@ -137,11 +168,12 @@ export async function getPublicPortfolio(req, res) {
   try {
     const handle = handleSchema.safeParse(req.params.handle);
     if (!handle.success) return res.status(404).json({ success: false, message: 'Portfolio not found.' });
-    const portfolio = await Portfolio.findOne({ handle: handle.data, status: 'published' });
+    const now = new Date();
+    const portfolio = await Portfolio.findOne({ handle: handle.data, status: 'published' }) || await Portfolio.findOne({ status: 'published', previousHandles: { $elemMatch: { handle: handle.data, redirectUntil: { $gt: now } } } });
     if (!portfolio) return res.status(404).json({ success: false, message: 'Portfolio not found.' });
     const user = await User.findById(portfolio.userId);
     const entitlements = await resolveEntitlements(user, { includeUsage: false });
     if (entitlements.features.portfolioMode !== 'public') return res.status(404).json({ success: false, message: 'Portfolio not found.' });
-    res.json({ success: true, data: publicOutput(portfolio) });
+    res.json({ success: true, data: publicOutput(portfolio), redirectedFrom: portfolio.handle === handle.data ? null : handle.data });
   } catch { res.status(500).json({ success: false, message: 'We could not open that portfolio.' }); }
 }

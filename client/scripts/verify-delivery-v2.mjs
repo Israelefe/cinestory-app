@@ -27,6 +27,9 @@ const eventCss = await read('src/components/delivery/EventCampaignViewers.css');
 const directionStudio = await read('src/components/delivery/DeliveryDirectionStudio.jsx');
 const createMusic = await read('src/pages/CreateDelivery.jsx');
 const deliveryUpload = await read('src/utils/deliveryUpload.js');
+const accountSettings = await read('src/pages/AccountSettings.jsx');
+const managePortfolio = await read('src/pages/ManagePortfolio.jsx');
+const publicPortfolio = await read('src/pages/PublicStudioPortfolio.jsx');
 
 for (const format of ['photo-story', 'editorial-page', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign']) {
   assert.match(formats, new RegExp(`id: '${format}'`), `Missing format: ${format}`);
@@ -118,6 +121,11 @@ assert.match(volumeGallery, /ClientGallery/, 'Recipient galleries must use the s
 assert.match(volumeGallery, /Photo Story gallery to read captions/, 'Recipient galleries must explain the shared caption experience');
 assert.match(createMusic, /Track notes/, 'Photographers must be able to inspect soundtrack suitability notes');
 assert.match(createMusic, /Open Pixabay source/, 'Photographers must have the source record for a curated soundtrack');
+assert.match(accountSettings, /profileChangePolicy/, 'Account settings must show the public studio-name change policy');
+assert.match(accountSettings, /window\.confirm/, 'Account settings must confirm a public studio-name change');
+assert.match(managePortfolio, /handleNextChangeAt/, 'Portfolio management must show the portfolio-address change policy');
+assert.match(managePortfolio, /old portfolio address will redirect for 90 days/, 'Portfolio management must explain the old-address redirect window');
+assert.match(publicPortfolio, /history\.replaceState/, 'Old portfolio addresses must canonicalise to the current address');
 for (const breakpoint of ['640px', '768px', '1024px']) {
   assert.match(`${viewerCss}\n${creationCss}`, new RegExp(`min-width:${breakpoint}`), `Missing responsive breakpoint: ${breakpoint}`);
 }

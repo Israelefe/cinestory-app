@@ -19,3 +19,4 @@ export const clientDeliveryEmailLimit = limiter(60 * 60 * 1000, 20, 'Too many de
 export const publicMediaLimit = limiter(60 * 60 * 1000, 700, 'Too many delivery requests were made. Wait a while and try again.');
 export const mediaSignatureLimit = limiter(60 * 60 * 1000, 650, 'Too many uploads were started from this connection. Wait before starting more.');
 export const billingActionLimit = limiter(60 * 60 * 1000, 30, 'Too many billing requests were made. Wait a while and try again.');
+export const profileUpdateLimit = limiter(60 * 60 * 1000, 20, 'Too many profile changes were requested. Please try again later.');

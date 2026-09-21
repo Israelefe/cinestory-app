@@ -24,6 +24,11 @@ const deliveryController = await readFile(join(serverRoot, 'src/controllers/deli
 const volumeController = await readFile(join(serverRoot, 'src/controllers/volume.controller.js'), 'utf8');
 const storyController = await readFile(join(serverRoot, 'src/controllers/story.controller.js'), 'utf8');
 const storyRoutes = await readFile(join(serverRoot, 'src/routes/story.routes.js'), 'utf8');
+const authRoutes = await readFile(join(serverRoot, 'src/routes/auth.routes.js'), 'utf8');
+const authController = await readFile(join(serverRoot, 'src/controllers/auth.controller.js'), 'utf8');
+const portfolioController = await readFile(join(serverRoot, 'src/controllers/portfolio.controller.js'), 'utf8');
+const portfolioModel = await readFile(join(serverRoot, 'src/models/Portfolio.js'), 'utf8');
+const profilePolicy = await readFile(join(serverRoot, 'src/constants/profilePolicy.js'), 'utf8');
 const serverEntry = await readFile(join(serverRoot, 'server.js'), 'utf8');
 const renderConfig = await readFile(join(projectRoot, 'render.yaml'), 'utf8');
 const clientFiles = await filesUnder(join(projectRoot, 'client/src'));
@@ -54,6 +59,14 @@ assert.match(storyController, /const \{ userId, __v, \.\.\.publicStory \}/, 'Leg
 assert.match(storyRoutes, /publicMediaLimit, async/, 'Legacy audio proxy must be rate limited');
 assert.match(storyRoutes, /allowedHosts = new Set/, 'Legacy audio proxy must use an explicit host allowlist');
 assert.match(storyRoutes, /target\.protocol !== 'https:'/ , 'Legacy audio proxy must reject insecure or non-HTTP targets');
+assert.match(authRoutes, /router\.patch\('\/profile', authMiddleware, profileUpdateLimit, updateProfile\)/, 'Profile changes must be authenticated and rate limited');
+assert.match(authController, /STUDIO_NAME_COOLDOWN/, 'Account studio-name changes must enforce the cooldown');
+assert.match(portfolioController, /PORTFOLIO_HANDLE_COOLDOWN/, 'Portfolio address changes must enforce the cooldown');
+assert.match(portfolioController, /previousHandles/, 'Portfolio address changes must retain previous-address metadata');
+assert.match(portfolioModel, /previousHandles/, 'Portfolio model must store previous-address redirect and reservation metadata');
+assert.match(profilePolicy, /30 \* 24 \* 60 \* 60 \* 1000/, 'Studio-name cooldown must remain 30 days');
+assert.match(profilePolicy, /90 \* 24 \* 60 \* 60 \* 1000/, 'Portfolio address cooldown and redirect must remain 90 days');
+assert.match(profilePolicy, /365 \* 24 \* 60 \* 60 \* 1000/, 'Previous portfolio addresses must remain reserved for one year');
 assert.match(renderConfig, /key: DELIVERY_PIPELINE_ENABLED\s+value: "true"/, 'The production worker must be enabled for the configured delivery pipeline');
 assert.doesNotMatch(clientSource, /DEEPGRAM_API_KEY|JWT_SECRET|CLOUDINARY_API_SECRET|MONGODB_URI/, 'Private provider and database secrets must never reach the client bundle');
 assert.doesNotMatch(`${clientSource}\n${deliveryController}\n${serverEntry}`, /ELEVENLABS_API_KEY|elevenlabs/i, 'The previous narration provider must not remain in the delivery path');

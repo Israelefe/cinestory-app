@@ -2,6 +2,7 @@ import { z } from 'zod';
 import User from '../models/User.js';
 import { publicUser } from '../utils/auth.js';
 import { cloudinary, configureCloudinary } from '../services/cloudinary.service.js';
+import { STUDIO_NAME_CHANGE_COOLDOWN_MS, isoDate, nextChangeAt } from '../constants/profilePolicy.js';
 
 const specialties = ['Portraits', 'Weddings', 'Birthdays', 'Fashion and editorial', 'Commercial and branding', 'Maternity', 'Graduation', 'Events', 'Other'];
 const sources = ['Instagram', 'TikTok', 'YouTube', 'Google Search', 'WhatsApp', 'Another photographer', 'Friend or colleague', 'Event or workshop', 'Other', 'Prefer not to say'];
@@ -53,11 +54,17 @@ export async function updateOnboarding(req, res) {
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
     if (step === 1) {
-      user.studio.name = parsed.data.studioName;
+      const previousStudioName = String(user.studio?.name || '').trim();
+      const nextStudioName = parsed.data.studioName.trim();
+      const studioNameChanged = Boolean(previousStudioName) && previousStudioName !== nextStudioName;
+      const nextChange = nextChangeAt(user.studioNameChangedAt, STUDIO_NAME_CHANGE_COOLDOWN_MS);
+      if (studioNameChanged && nextChange) return res.status(429).json({ success: false, code: 'STUDIO_NAME_COOLDOWN', nextChangeAt: isoDate(nextChange), message: `Your studio name can be changed again on ${nextChange.toLocaleDateString('en-NG', { dateStyle: 'medium' })}.` });
+      user.studio.name = nextStudioName;
       user.studio.businessType = parsed.data.businessType;
       user.studio.city = parsed.data.city;
       user.studio.state = parsed.data.state;
       user.studio.country = 'Nigeria';
+      if (studioNameChanged) user.studioNameChangedAt = new Date();
     } else if (step === 2) {
       user.studio.specialties = parsed.data.specialties;
       user.studio.instagram = parsed.data.instagram.replace(/^@/, '');

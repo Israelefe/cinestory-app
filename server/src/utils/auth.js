@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import Session from '../models/Session.js';
+import { STUDIO_NAME_CHANGE_COOLDOWN_MS, isoDate, nextChangeAt } from '../constants/profilePolicy.js';
 
 export const ACCESS_COOKIE = 'veylo_access';
 export const REFRESH_COOKIE = 'veylo_refresh';
@@ -23,7 +24,7 @@ export function safeEqual(left, right) {
   return crypto.timingSafeEqual(Buffer.from(left), Buffer.from(right));
 }
 export function publicUser(user) {
-  return { id: user._id, name: user.name, email: user.email, emailVerified: Boolean(user.emailVerifiedAt), providers: user.providers || [], role: user.role, plan: user.plan, avatar: user.avatar || user.studio?.logoUrl || '', studio: user.studio || {}, acquisition: user.acquisition || {}, onboardingStep: user.onboardingStep || 1, onboardingComplete: Boolean(user.onboardingCompletedAt) };
+  return { id: user._id, name: user.name, email: user.email, emailVerified: Boolean(user.emailVerifiedAt), providers: user.providers || [], role: user.role, plan: user.plan, avatar: user.avatar || user.studio?.logoUrl || '', studio: user.studio || {}, acquisition: user.acquisition || {}, onboardingStep: user.onboardingStep || 1, onboardingComplete: Boolean(user.onboardingCompletedAt), profileChangePolicy: { studioNameNextChangeAt: isoDate(nextChangeAt(user.studioNameChangedAt, STUDIO_NAME_CHANGE_COOLDOWN_MS)) } };
 }
 function cookieBase() {
   return { secure: process.env.NODE_ENV === 'production', sameSite: process.env.COOKIE_SAME_SITE || 'lax', domain: process.env.COOKIE_DOMAIN || undefined };

@@ -20,6 +20,11 @@ function profileFromUser(user) {
   };
 }
 
+function changeDate(value) {
+  if (!value) return '';
+  try { return new Intl.DateTimeFormat('en-NG', { dateStyle: 'medium' }).format(new Date(value)); } catch { return ''; }
+}
+
 export default function AccountSettings({ user, onAccountDeleted, onUserUpdated }) {
   const [confirmation, setConfirmation] = useState('');
   const [password, setPassword] = useState('');
@@ -29,6 +34,7 @@ export default function AccountSettings({ user, onAccountDeleted, onUserUpdated 
   const logoInputRef = useRef(null);
   const usesPassword = user?.providers?.includes('password');
   const emailMatches = confirmation.trim().toLowerCase() === user?.email?.toLowerCase();
+  const studioNameLocked = Boolean(user?.profileChangePolicy?.studioNameNextChangeAt);
 
   useEffect(() => {
     setProfileForm(profileFromUser(user));
@@ -67,6 +73,9 @@ export default function AccountSettings({ user, onAccountDeleted, onUserUpdated 
   async function saveProfile(event) {
     event.preventDefault();
     if (profileStatus.saving || profileStatus.uploading) return;
+    const currentStudioName = String(user?.studio?.name || '').trim();
+    const studioNameChanged = Boolean(currentStudioName) && profileForm.studioName.trim() !== currentStudioName;
+    if (studioNameChanged && typeof window !== 'undefined' && !window.confirm('This changes the studio name clients see on your public pages and deliveries. Continue?')) return;
     setProfileStatus({ saving: true, uploading: false, error: '' });
     try {
       const { data } = await api.patch('/v1/auth/profile', profileForm);
@@ -128,7 +137,7 @@ export default function AccountSettings({ user, onAccountDeleted, onUserUpdated 
           <div className="v-profile-grid">
             <div className="v-field"><label htmlFor="profile-name">Your name</label><input id="profile-name" value={profileForm.name} onChange={event => updateProfileField('name', event.target.value)} maxLength={100} autoComplete="name" required /></div>
             <div className="v-field"><label htmlFor="profile-email">Email address</label><input id="profile-email" value={user?.email || ''} readOnly disabled /><small className="v-profile-help">Email changes need a separate verification step, so contact support if you need to change it.</small></div>
-            <div className="v-field"><label htmlFor="profile-studio-name">Studio name</label><input id="profile-studio-name" value={profileForm.studioName} onChange={event => updateProfileField('studioName', event.target.value)} maxLength={100} autoComplete="organization" required /></div>
+            <div className="v-field"><label htmlFor="profile-studio-name">Studio name</label><input id="profile-studio-name" value={profileForm.studioName} onChange={event => updateProfileField('studioName', event.target.value)} maxLength={100} autoComplete="organization" required disabled={studioNameLocked} />{studioNameLocked && <small className="v-profile-help">You can change the public studio name again on {changeDate(user.profileChangePolicy.studioNameNextChangeAt)}.</small>}</div>
             <div className="v-field"><label htmlFor="profile-business-type">How you work</label><select id="profile-business-type" value={profileForm.businessType} onChange={event => updateProfileField('businessType', event.target.value)}><option value="individual">I work on my own</option><option value="studio">I run a studio or team</option></select></div>
             <div className="v-field"><label htmlFor="profile-city">City</label><input id="profile-city" value={profileForm.city} onChange={event => updateProfileField('city', event.target.value)} maxLength={80} autoComplete="address-level2" required /></div>
             <div className="v-field"><label htmlFor="profile-state">State</label><input id="profile-state" value={profileForm.state} onChange={event => updateProfileField('state', event.target.value)} maxLength={80} autoComplete="address-level1" required /></div>

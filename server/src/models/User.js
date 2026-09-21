@@ -37,6 +37,9 @@ const userSchema = new mongoose.Schema({
     reason: { type: String, trim: true, maxlength: 240 },
     grantedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
   },
+  // Public studio names are intentionally not changed often. This timestamp
+  // is private bookkeeping used to enforce the rename cooldown.
+  studioNameChangedAt: { type: Date },
   storiesCount: { type: Number, default: 0, min: 0 },
   storageUsedBytes: { type: Number, default: 0, min: 0 },
   proRetentionUntil: Date,

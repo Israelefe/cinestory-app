@@ -20,7 +20,11 @@ export default function PublicStudioPortfolio() {
     if (!handle) { setError('That portfolio address is incomplete.'); return undefined; }
     setError('');
     setPortfolio(null);
-    api.get(`/v1/portfolios/public/${encodeURIComponent(handle)}`).then(({ data }) => { setPortfolio(data.data); document.title = `${data.data.studioName} — Portfolio`; }).catch(err => setError(apiMessage(err, 'That portfolio is not available.')));
+    api.get(`/v1/portfolios/public/${encodeURIComponent(handle)}`).then(({ data }) => {
+      if (data.data.handle && data.data.handle !== handle && typeof window !== 'undefined') window.history.replaceState({}, '', `/@${encodeURIComponent(data.data.handle)}`);
+      setPortfolio(data.data);
+      document.title = `${data.data.studioName} — Portfolio`;
+    }).catch(err => setError(apiMessage(err, 'That portfolio is not available.')));
     return undefined;
   }, [handle]);
   const categories = useMemo(() => ['All', ...new Set((portfolio?.items || []).map(item => item.category))], [portfolio]);
