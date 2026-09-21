@@ -26,6 +26,12 @@ import {
   adminRetryAiJob,
   adminCancelAiJob,
   getClientAccessOverview,
+  getVolumeJobs,
+  getVolumeJobDetail,
+  adminPublishVolumeJob,
+  adminArchiveVolumeJob,
+  adminRestoreVolumeJob,
+  adminDeleteVolumeJob,
   getAllStories,
   getAllDeliveries,
   getPayments,
@@ -119,6 +125,12 @@ router.get('/ai/jobs', getAiJobs);
 router.post('/ai/jobs/:jobId/retry', adminRetryAiJob);
 router.post('/ai/jobs/:jobId/cancel', adminCancelAiJob);
 router.get('/client-access', getClientAccessOverview);
+router.get('/volume', getVolumeJobs);
+router.get('/volume/:id', getVolumeJobDetail);
+router.post('/volume/:id/publish', adminPublishVolumeJob);
+router.post('/volume/:id/archive', adminArchiveVolumeJob);
+router.post('/volume/:id/restore', adminRestoreVolumeJob);
+router.delete('/volume/:id', adminDeleteVolumeJob);
 router.get('/payments', getPayments);
 router.delete('/stories/:id', adminDeleteStory);
 router.post('/payments/:id/refund', billingActionLimit, refundPayment);

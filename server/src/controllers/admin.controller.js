@@ -6,6 +6,8 @@ import Delivery from '../models/Delivery.js';
 import DeliveryJob from '../models/DeliveryJob.js';
 import PortfolioJob from '../models/PortfolioJob.js';
 import VolumeJob from '../models/VolumeJob.js';
+import VolumeSubject from '../models/VolumeSubject.js';
+import VolumeAccessCode from '../models/VolumeAccessCode.js';
 import Payment from '../models/Payment.js';
 import Subscription from '../models/Subscription.js';
 import BillingEvent from '../models/BillingEvent.js';
@@ -971,6 +973,136 @@ export async function getClientAccessOverview(req, res) {
     console.error('[admin/client-access]', error.message);
     res.status(500).json({ success: false, message: 'We could not load client access activity.' });
   }
+}
+
+function adminVolumeSummary(job, subjects = [], accessCodes = [], events = []) {
+  const now = new Date();
+  const eventCount = (name, status) => events.filter(event => event._id?.name === name && (!status || event._id?.status === status)).reduce((total, event) => total + event.count, 0);
+  const duplicateCodes = subjects.length - new Set(subjects.map(subject => subject.recipientCode)).size;
+  const withoutPhotos = subjects.filter(subject => !subject.assetIds?.length).length;
+  const activeCodes = accessCodes.filter(code => !code.usedAt && code.expiresAt > now).length;
+  const expiredCodes = accessCodes.filter(code => !code.usedAt && code.expiresAt <= now).length;
+  return {
+    id: job._id,
+    publicId: job.publicId,
+    title: job.title,
+    organisation: job.organisation,
+    category: job.category,
+    status: job.status,
+    photographer: job.userId?.studio?.name || job.userId?.name || 'Independent photographer',
+    photographerId: job.userId?._id || job.userId,
+    recipientCount: subjects.length || job.subjectCount || 0,
+    assignedPhotoCount: subjects.reduce((total, subject) => total + (subject.assetIds?.length || 0), 0) || job.assignedPhotoCount || 0,
+    recipientsWithoutPhotos: withoutPhotos,
+    duplicateRecipientCodes: duplicateCodes,
+    unmatchedRecipients: Number(job.assignmentHealth?.unmatchedRecipients || 0),
+    ambiguousFiles: Number(job.assignmentHealth?.ambiguousFiles || 0),
+    unmatchedFilenames: (job.assignmentHealth?.unmatchedFilenames || []).slice(0, 100),
+    assignmentCheckedAt: job.assignmentHealth?.lastRunAt || null,
+    accessCodes: { total: accessCodes.length, active: activeCodes, expired: expiredCodes, used: accessCodes.filter(code => code.usedAt).length, attempts: accessCodes.reduce((total, code) => total + Number(code.attempts || 0), 0) },
+    access: { link: `${String(process.env.CLIENT_URL || 'https://veylo.com.ng').replace(/\/$/, '')}/volume/${encodeURIComponent(job.publicId)}`, expiresAt: job.accessExpiresAt || null, expired: Boolean(job.accessExpiresAt && job.accessExpiresAt <= now), revoked: Boolean(job.revokedAt || job.status === 'archived'), revokedAt: job.revokedAt || null },
+    activity: { codeRequests: eventCount('volume.access_code.requested'), codeVerified: eventCount('volume.access_code.verified'), codeFailures: eventCount('volume.access_code.failed'), galleryOpens: eventCount('volume.recipient_gallery.opened'), downloads: eventCount('volume.recipient_gallery.downloaded') },
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    publishedAt: job.publishedAt || null
+  };
+}
+
+export async function getVolumeJobs(req, res) {
+  try {
+    const search = String(req.query.search || '').trim().slice(0, 100);
+    const category = String(req.query.category || 'all');
+    const status = String(req.query.status || 'all');
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 40));
+    const query = {};
+    if (['school', 'sports', 'corporate', 'other'].includes(category)) query.category = category;
+    if (['draft', 'published', 'archived'].includes(status)) query.status = status;
+    if (search) {
+      const pattern = { $regex: escaped(search), $options: 'i' };
+      const matchingUsers = await User.find({ $or: [{ name: pattern }, { email: pattern }, { 'studio.name': pattern }] }).select('_id').limit(200).lean();
+      query.$or = [{ publicId: pattern }, { title: pattern }, { organisation: pattern }, ...(matchingUsers.length ? [{ userId: { $in: matchingUsers.map(user => user._id) } }] : [])];
+    }
+    const [jobs, total] = await Promise.all([VolumeJob.find(query).populate('userId', 'name studio.name').sort({ updatedAt: -1 }).skip((page - 1) * limit).limit(limit).lean(), VolumeJob.countDocuments(query)]);
+    const ids = jobs.map(job => job._id);
+    const [subjects, accessCodes, events] = await Promise.all([
+      ids.length ? VolumeSubject.find({ jobId: { $in: ids } }).select('jobId recipientCode displayName assetIds').lean() : [],
+      ids.length ? VolumeAccessCode.find({ jobId: { $in: ids } }).select('jobId attempts expiresAt usedAt createdAt').lean() : [],
+      ids.length ? AnalyticsEvent.aggregate([{ $match: { name: { $in: ['volume.access_code.requested', 'volume.access_code.verified', 'volume.access_code.failed', 'volume.recipient_gallery.opened', 'volume.recipient_gallery.downloaded'] }, 'metadata.volumeJobId': { $in: ids.map(id => String(id)) } } }, { $group: { _id: { jobId: '$metadata.volumeJobId', name: '$name', status: '$status' }, count: { $sum: 1 } } }]) : []
+    ]);
+    const data = jobs.map(job => adminVolumeSummary(job, subjects.filter(subject => String(subject.jobId) === String(job._id)), accessCodes.filter(code => String(code.jobId) === String(job._id)), events.filter(event => String(event._id.jobId) === String(job._id))));
+    res.json({ success: true, data, pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
+  } catch (error) {
+    console.error('[admin/volume-jobs]', error.message);
+    res.status(500).json({ success: false, message: 'We could not load volume deliveries.' });
+  }
+}
+
+export async function getVolumeJobDetail(req, res) {
+  try {
+    const id = validId(req.params.id);
+    const job = id ? await VolumeJob.findById(id).populate('userId', 'name email studio.name').lean() : await VolumeJob.findOne({ publicId: String(req.params.id || '').trim() }).populate('userId', 'name email studio.name').lean();
+    if (!job) return res.status(404).json({ success: false, message: 'Volume delivery not found.' });
+    const [subjects, accessCodes, events] = await Promise.all([
+      VolumeSubject.find({ jobId: job._id }).select('recipientCode displayName assetIds createdAt updatedAt').sort({ displayName: 1 }).lean(),
+      VolumeAccessCode.find({ jobId: job._id }).select('subjectId attempts expiresAt usedAt createdAt').sort({ createdAt: -1 }).lean(),
+      AnalyticsEvent.aggregate([{ $match: { 'metadata.volumeJobId': String(job._id), name: { $in: ['volume.access_code.requested', 'volume.access_code.verified', 'volume.access_code.failed', 'volume.recipient_gallery.opened', 'volume.recipient_gallery.downloaded'] } } }, { $group: { _id: { name: '$name', status: '$status' }, count: { $sum: 1 } } }])
+    ]);
+    res.json({ success: true, data: { ...adminVolumeSummary(job, subjects, accessCodes, events), subjects: subjects.map(subject => ({ id: subject._id, recipientCode: subject.recipientCode, displayName: subject.displayName, photoCount: subject.assetIds?.length || 0, hasPhotos: Boolean(subject.assetIds?.length), createdAt: subject.createdAt, updatedAt: subject.updatedAt })), accessCodes: accessCodes.map(code => ({ id: code._id, subjectId: code.subjectId, attempts: code.attempts, status: code.usedAt ? 'used' : code.expiresAt <= new Date() ? 'expired' : 'active', expiresAt: code.expiresAt, usedAt: code.usedAt, createdAt: code.createdAt })) } });
+  } catch (error) {
+    console.error('[admin/volume-detail]', error.message);
+    res.status(500).json({ success: false, message: 'We could not load this volume delivery.' });
+  }
+}
+
+async function findAdminVolumeJob(identifier) {
+  const value = String(identifier || '').trim();
+  if (!value || value.length > 200) return null;
+  return mongoose.isValidObjectId(value) ? VolumeJob.findOne({ $or: [{ _id: new mongoose.Types.ObjectId(value) }, { publicId: value }] }) : VolumeJob.findOne({ publicId: value });
+}
+
+export async function adminPublishVolumeJob(req, res) {
+  try {
+    const job = await findAdminVolumeJob(req.params.id);
+    if (!job) return res.status(404).json({ success: false, message: 'Volume delivery not found.' });
+    const subjectsWithoutPhotos = await VolumeSubject.countDocuments({ jobId: job._id, 'assetIds.0': { $exists: false } });
+    if (!job.subjectCount || !job.assignedPhotoCount || subjectsWithoutPhotos) return res.status(409).json({ success: false, message: 'Every recipient needs at least one photograph before this delivery can be published.' });
+    const expiresAt = req.body.expiresAt ? new Date(req.body.expiresAt) : null;
+    if (expiresAt && Number.isNaN(expiresAt.getTime())) return res.status(400).json({ success: false, message: 'Enter a valid expiry date.' });
+    job.status = 'published'; job.publishedAt = job.publishedAt || new Date(); job.accessExpiresAt = expiresAt || undefined; job.revokedAt = undefined; job.accessVersion = Number(job.accessVersion || 1) + 1; await job.save();
+    await AdminAudit.create({ adminId: adminId(req), userId: job.userId, action: 'volume.published_by_admin', resourceType: 'VolumeJob', resourceId: String(job._id), details: { accessExpiresAt: job.accessExpiresAt || null } });
+    res.json({ success: true, data: { publicId: job.publicId, url: `${String(process.env.CLIENT_URL || 'https://veylo.com.ng').replace(/\/$/, '')}/volume/${job.publicId}` } });
+  } catch (error) { console.error('[admin/volume-publish]', error.message); res.status(500).json({ success: false, message: 'We could not publish this volume delivery.' }); }
+}
+
+export async function adminArchiveVolumeJob(req, res) {
+  try {
+    const job = await findAdminVolumeJob(req.params.id);
+    if (!job) return res.status(404).json({ success: false, message: 'Volume delivery not found.' });
+    job.status = 'archived'; job.archivedAt = new Date(); job.revokedAt = new Date(); job.accessVersion = Number(job.accessVersion || 1) + 1; await job.save();
+    await AdminAudit.create({ adminId: adminId(req), userId: job.userId, action: 'volume.archived_by_admin', resourceType: 'VolumeJob', resourceId: String(job._id), details: { reason: safeReason(req.body.reason, 'Archived by administrator') } });
+    res.json({ success: true });
+  } catch (error) { console.error('[admin/volume-archive]', error.message); res.status(500).json({ success: false, message: 'We could not archive this volume delivery.' }); }
+}
+
+export async function adminRestoreVolumeJob(req, res) {
+  try {
+    const job = await findAdminVolumeJob(req.params.id);
+    if (!job || job.status !== 'archived') return res.status(404).json({ success: false, message: 'Archived volume delivery not found.' });
+    job.status = 'draft'; job.archivedAt = undefined; job.revokedAt = undefined; job.accessVersion = Number(job.accessVersion || 1) + 1; await job.save();
+    await AdminAudit.create({ adminId: adminId(req), userId: job.userId, action: 'volume.restored_by_admin', resourceType: 'VolumeJob', resourceId: String(job._id), details: {} });
+    res.json({ success: true });
+  } catch (error) { console.error('[admin/volume-restore]', error.message); res.status(500).json({ success: false, message: 'We could not restore this volume delivery.' }); }
+}
+
+export async function adminDeleteVolumeJob(req, res) {
+  try {
+    const job = await findAdminVolumeJob(req.params.id);
+    if (!job) return res.status(404).json({ success: false, message: 'Volume delivery not found.' });
+    await Promise.all([VolumeSubject.deleteMany({ jobId: job._id }), VolumeAccessCode.deleteMany({ jobId: job._id }), VolumeJob.deleteOne({ _id: job._id })]);
+    await AdminAudit.create({ adminId: adminId(req), userId: job.userId, action: 'volume.deleted_by_admin', resourceType: 'VolumeJob', resourceId: String(job._id), details: { publicId: job.publicId, reason: safeReason(req.body.reason, 'Deleted by administrator') } });
+    res.json({ success: true });
+  } catch (error) { console.error('[admin/volume-delete]', error.message); res.status(500).json({ success: false, message: 'We could not delete this volume delivery.' }); }
 }
 
 export async function getPayments(req, res) {

@@ -12,7 +12,17 @@ const volumeJobSchema = new mongoose.Schema({
   assignedPhotoCount: { type: Number, default: 0, min: 0, max: 5000 },
   publishedAt: Date,
   archivedAt: Date,
-  accessVersion: { type: Number, default: 1, min: 1 }
+  accessVersion: { type: Number, default: 1, min: 1 },
+  accessExpiresAt: Date,
+  revokedAt: Date,
+  assignmentHealth: {
+    matchedRecipients: { type: Number, default: 0, min: 0 },
+    totalRecipients: { type: Number, default: 0, min: 0 },
+    unmatchedRecipients: { type: Number, default: 0, min: 0 },
+    ambiguousFiles: { type: Number, default: 0, min: 0 },
+    unmatchedFilenames: { type: [String], default: [] },
+    lastRunAt: Date
+  }
 }, { timestamps: true });
 
 volumeJobSchema.index({ userId: 1, updatedAt: -1 });

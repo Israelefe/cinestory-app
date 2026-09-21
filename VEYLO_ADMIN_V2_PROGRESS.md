@@ -7,7 +7,7 @@ Each stage is completed and verified before the next stage begins.
 - [x] 3. Delivery management — searchable/filterable delivery inventory, detail history, caption/audio readiness, AI jobs, preview/access inspection, role grants, lifecycle actions, link revocation, deletion, failed-job retry, and production build/import checks verified.
 - [x] 4. AI and job management — unified delivery/portfolio queue, provider/prompt/render versions, latency, stale/error/caption/timing/narration health, guarded retry/cancel controls, worker cancellation handling, and build/import checks verified.
 - [x] 5. Client-access management — delivery opens/unique/repeat visitors, PIN failures, expiry/revocation, download and like activity, share-grant usage/roles, volume code requests, visitor telemetry, and admin access dashboard/build/import checks verified.
-- [ ] 6. Volume delivery management
+- [x] 6. Volume delivery management — school/sports/corporate/other inventory, recipient and assignment health, unmatched/ambiguous/duplicate checks, code lifecycle, published/revoked/expired links, recipient activity, detail view, lifecycle actions, download telemetry, and build/import checks verified.
 - [ ] 7. Storage and media
 - [ ] 8. Music and narration
 - [ ] 9. Billing and finance

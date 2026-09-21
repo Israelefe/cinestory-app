@@ -1,13 +1,14 @@
 import express from 'express';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { emailCodeLimit, publicAccessLimit, publicMediaLimit } from '../middleware/rateLimit.middleware.js';
-import { addVolumeSubjects, archiveVolumeJob, assignVolumePhotos, autoAssignVolumePhotos, createVolumeJob, deleteVolumeJob, deleteVolumeSubject, exportVolumeJob, getVolumeGallery, getVolumeJob, listVolumeJobs, publishVolumeJob, requestVolumeCode, updateVolumeJob, updateVolumeSubject, verifyVolumeCode } from '../controllers/volume.controller.js';
+import { addVolumeSubjects, archiveVolumeJob, assignVolumePhotos, autoAssignVolumePhotos, createVolumeJob, deleteVolumeJob, deleteVolumeSubject, exportVolumeJob, getVolumeGallery, getVolumeJob, listVolumeJobs, publishVolumeJob, requestVolumeCode, trackVolumeDownload, updateVolumeJob, updateVolumeSubject, verifyVolumeCode } from '../controllers/volume.controller.js';
 
 const router = express.Router();
 
 router.post('/public/:publicId/request-code', publicAccessLimit, emailCodeLimit, requestVolumeCode);
 router.post('/public/:publicId/verify-code', publicAccessLimit, verifyVolumeCode);
 router.get('/public/:publicId/gallery', publicMediaLimit, getVolumeGallery);
+router.post('/public/:publicId/gallery/:assetId/downloaded', publicMediaLimit, trackVolumeDownload);
 
 router.use(authMiddleware);
 router.get('/', listVolumeJobs);

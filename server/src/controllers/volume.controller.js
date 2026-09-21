@@ -100,6 +100,7 @@ export async function archiveVolumeJob(req, res) {
     if (!job) return res.status(404).json({ success: false, message: 'Volume delivery not found.' });
     job.status = 'archived';
     job.archivedAt = new Date();
+    job.revokedAt = new Date();
     job.accessVersion = Number(job.accessVersion || 1) + 1;
     await job.save();
     res.json({ success: true, message: 'Volume delivery archived.' });
@@ -235,6 +236,7 @@ export async function autoAssignVolumePhotos(req, res) {
     if (assignedPhotoCount > 5000) return res.status(403).json({ success: false, message: 'The filename matches exceed the 5,000 assignment limit. Split this into two volume deliveries.' });
     await VolumeSubject.bulkWrite(assignments.map(item => ({ updateOne: { filter: { _id: item.subject._id, jobId: job._id }, update: { $set: { assetIds: item.assetIds } } } })));
     job.assignedPhotoCount = assignedPhotoCount;
+    job.assignmentHealth = { matchedRecipients: assignments.filter(item => item.matched).length, totalRecipients: assignments.length, unmatchedRecipients: assignments.filter(item => !item.matched).length, ambiguousFiles: ambiguousFiles.length, unmatchedFilenames: ambiguousFiles.slice(0, 100), lastRunAt: new Date() };
     await job.save();
     const unmatchedRecipients = assignments.filter(item => !item.matched).map(item => ({ recipientCode: item.subject.recipientCode, displayName: item.subject.displayName, existingAssignments: item.subject.assetIds.length }));
     res.json({ success: true, data: { matchedRecipients: assignments.filter(item => item.matched).length, totalRecipients: assignments.length, assignedPhotoCount, unmatchedRecipients, ambiguousFiles: ambiguousFiles.slice(0, 100) } });
@@ -253,6 +255,7 @@ export async function publishVolumeJob(req, res) {
     if (recipientsWithoutPhotos) return res.status(409).json({ success: false, message: `${recipientsWithoutPhotos} recipient${recipientsWithoutPhotos === 1 ? '' : 's'} still need photographs before publishing.` });
     job.status = 'published';
     job.publishedAt = new Date();
+    job.revokedAt = undefined;
     await job.save();
     res.json({ success: true, data: { publicId: job.publicId, url: `${String(process.env.CLIENT_URL || '').replace(/\/$/, '')}/volume/${job.publicId}` } });
   } catch {
@@ -285,7 +288,7 @@ export async function exportVolumeJob(req, res) {
 
 async function publicSubject(publicId, recipientCode, email) {
   const job = await VolumeJob.findOne({ publicId, status: 'published' });
-  if (!job) return {};
+  if (!job || job.revokedAt || (job.accessExpiresAt && job.accessExpiresAt <= new Date())) return {};
   const subject = await VolumeSubject.findOne({ jobId: job._id, recipientCode: recipientCode.toUpperCase(), email: normalizeEmail(email) }).select('+email');
   return { job, subject };
 }
@@ -302,9 +305,9 @@ export async function requestVolumeCode(req, res) {
         await VolumeAccessCode.deleteMany({ subjectId: subject._id });
         await VolumeAccessCode.create({ jobId: job._id, subjectId: subject._id, codeDigest: codeDigest(subject.email, `volume:${subject._id}`, code), expiresAt: new Date(Date.now() + 10 * 60 * 1000) });
         await sendVolumeAccessEmail({ to: subject.email, name: subject.displayName, code, organisation: job.organisation });
-        recordAnalyticsEventAsync({ name: 'volume.access_code.requested', source: 'server', actorType: 'anonymous', sessionDigest: volumeVisitorDigest(req, res), status: 'sent', route: req.originalUrl, metadata: { category: job.category } });
+        recordAnalyticsEventAsync({ name: 'volume.access_code.requested', source: 'server', actorType: 'anonymous', sessionDigest: volumeVisitorDigest(req, res), status: 'sent', route: req.originalUrl, metadata: { category: job.category, volumeJobId: String(job._id) } });
       } else {
-        recordAnalyticsEventAsync({ name: 'volume.access_code.requested', source: 'server', actorType: 'anonymous', sessionDigest: volumeVisitorDigest(req, res), status: 'rate_limited', route: req.originalUrl, metadata: { category: job.category } });
+        recordAnalyticsEventAsync({ name: 'volume.access_code.requested', source: 'server', actorType: 'anonymous', sessionDigest: volumeVisitorDigest(req, res), status: 'rate_limited', route: req.originalUrl, metadata: { category: job.category, volumeJobId: String(job._id) } });
       }
     } else {
       recordAnalyticsEventAsync({ name: 'volume.access_code.requested', source: 'server', actorType: 'anonymous', sessionDigest: volumeVisitorDigest(req, res), status: 'not_matched', route: req.originalUrl });
@@ -327,19 +330,19 @@ export async function verifyVolumeCode(req, res) {
     }
     const access = await VolumeAccessCode.findOne({ subjectId: subject._id, usedAt: null, expiresAt: { $gt: new Date() } }).select('+codeDigest');
     if (!access || access.attempts >= 5) {
-      recordAnalyticsEventAsync({ name: 'volume.access_code.failed', source: 'server', actorType: 'anonymous', sessionDigest: volumeVisitorDigest(req, res), status: 'expired', errorCode: 'CODE_EXPIRED', route: req.originalUrl, metadata: { category: job.category } });
+      recordAnalyticsEventAsync({ name: 'volume.access_code.failed', source: 'server', actorType: 'anonymous', sessionDigest: volumeVisitorDigest(req, res), status: 'expired', errorCode: 'CODE_EXPIRED', route: req.originalUrl, metadata: { category: job.category, volumeJobId: String(job._id) } });
       return res.status(403).json({ success: false, message: 'That code has expired. Request a new one.' });
     }
     const expected = codeDigest(subject.email, `volume:${subject._id}`, parsed.data.code);
     if (!safeEqual(access.codeDigest, expected)) {
       access.attempts += 1;
       await access.save();
-      recordAnalyticsEventAsync({ name: 'volume.access_code.failed', source: 'server', actorType: 'anonymous', sessionDigest: volumeVisitorDigest(req, res), status: 'failed', errorCode: 'CODE_INVALID', route: req.originalUrl, metadata: { category: job.category } });
+      recordAnalyticsEventAsync({ name: 'volume.access_code.failed', source: 'server', actorType: 'anonymous', sessionDigest: volumeVisitorDigest(req, res), status: 'failed', errorCode: 'CODE_INVALID', route: req.originalUrl, metadata: { category: job.category, volumeJobId: String(job._id) } });
       return res.status(403).json({ success: false, message: 'Those details or the code are not correct.' });
     }
     access.usedAt = new Date();
     await access.save();
-    recordAnalyticsEventAsync({ name: 'volume.access_code.verified', source: 'server', actorType: 'guest', sessionDigest: volumeVisitorDigest(req, res), status: 'verified', route: req.originalUrl, metadata: { category: job.category } });
+    recordAnalyticsEventAsync({ name: 'volume.access_code.verified', source: 'server', actorType: 'guest', sessionDigest: volumeVisitorDigest(req, res), status: 'verified', route: req.originalUrl, metadata: { category: job.category, volumeJobId: String(job._id) } });
     const accessToken = jwt.sign({ jobId: String(job._id), subjectId: String(subject._id), accessVersion: job.accessVersion || 1 }, process.env.JWT_SECRET, { expiresIn: '12h', issuer: 'veylo-api', audience: 'veylo-volume' });
     res.json({ success: true, data: { accessToken } });
   } catch {
@@ -351,13 +354,29 @@ export async function getVolumeGallery(req, res) {
   try {
     const payload = jwt.verify(req.get('x-volume-access') || '', process.env.JWT_SECRET, { issuer: 'veylo-api', audience: 'veylo-volume' });
     const job = await VolumeJob.findOne({ _id: payload.jobId, publicId: req.params.publicId, status: 'published' }).populate('userId', 'name studio avatar');
+    if (job && (job.revokedAt || (job.accessExpiresAt && job.accessExpiresAt <= new Date()))) return res.status(403).json({ success: false, message: 'This recipient gallery is no longer available.' });
     const subject = job && Number(payload.accessVersion || 1) === Number(job.accessVersion || 1) ? await VolumeSubject.findOne({ _id: payload.subjectId, jobId: job._id }) : null;
     if (!job || !subject) return res.status(403).json({ success: false, message: 'Open this gallery with a new access code.' });
     const assets = await StorageAsset.find({ userId: job.userId._id, assetId: { $in: subject.assetIds } }).lean();
     const byId = new Map(assets.map(asset => [asset.assetId, asset]));
     const photos = subject.assetIds.map(assetId => byId.get(assetId)).filter(Boolean).map(asset => ({ assetId: asset.assetId, url: signedImageUrl(asset.publicId), downloadUrl: signedImageUrl(asset.publicId, { width: 8000, attachment: true }), thumbnailUrl: signedImageUrl(asset.publicId, { thumbnail: true }), caption: asset.caption || '', width: asset.width, height: asset.height }));
-    recordAnalyticsEventAsync({ name: 'volume.recipient_gallery.opened', source: 'server', actorType: 'guest', userId: job.userId._id, sessionDigest: volumeVisitorDigest(req, res), status: 'opened', route: req.originalUrl, count: photos.length, metadata: { category: job.category } });
+    recordAnalyticsEventAsync({ name: 'volume.recipient_gallery.opened', source: 'server', actorType: 'guest', userId: job.userId._id, sessionDigest: volumeVisitorDigest(req, res), status: 'opened', route: req.originalUrl, count: photos.length, metadata: { category: job.category, volumeJobId: String(job._id) } });
     res.json({ success: true, data: { title: job.title, organisation: job.organisation, recipientName: subject.displayName, studio: job.userId.studio?.name || job.userId.name, photos } });
+  } catch {
+    res.status(403).json({ success: false, message: 'Open this gallery with a new access code.' });
+  }
+}
+
+export async function trackVolumeDownload(req, res) {
+  try {
+    const payload = jwt.verify(req.get('x-volume-access') || '', process.env.JWT_SECRET, { issuer: 'veylo-api', audience: 'veylo-volume' });
+    const job = await VolumeJob.findOne({ _id: payload.jobId, publicId: req.params.publicId, status: 'published' });
+    const subject = job && !job.revokedAt && (!job.accessExpiresAt || job.accessExpiresAt > new Date()) && Number(payload.accessVersion || 1) === Number(job.accessVersion || 1)
+      ? await VolumeSubject.findOne({ _id: payload.subjectId, jobId: job._id })
+      : null;
+    if (!job || !subject || !subject.assetIds.includes(req.params.assetId)) return res.status(404).json({ success: false, message: 'Photograph not found.' });
+    recordAnalyticsEventAsync({ name: 'volume.recipient_gallery.downloaded', source: 'server', actorType: 'guest', userId: job.userId, sessionDigest: volumeVisitorDigest(req, res), status: 'completed', route: req.originalUrl, count: 1, metadata: { category: job.category, volumeJobId: String(job._id) } });
+    res.json({ success: true, message: 'Download counted.' });
   } catch {
     res.status(403).json({ success: false, message: 'Open this gallery with a new access code.' });
   }

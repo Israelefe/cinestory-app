@@ -138,6 +138,11 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const [aiJobs, setAiJobs] = useState([]);
   const [aiSummary, setAiSummary] = useState(null);
   const [accessOverview, setAccessOverview] = useState(null);
+  const [volumeJobs, setVolumeJobs] = useState([]);
+  const [selectedVolume, setSelectedVolume] = useState(null);
+  const [volumeDetailLoading, setVolumeDetailLoading] = useState(false);
+  const [volumeCategoryFilter, setVolumeCategoryFilter] = useState('all');
+  const [volumeStatusFilter, setVolumeStatusFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [refund, setRefund] = useState(null);
@@ -171,7 +176,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       users: api.get('/v1/admin/users', { params: { search, plan: accountPlanFilter, status: accountStatusFilter, acquisitionSource: accountSourceFilter } }),
       payments: api.get('/v1/admin/payments', { params: { search } }),
       aiJobs: api.get('/v1/admin/ai/jobs', { params: { search, status: aiJobStatusFilter, type: aiJobTypeFilter } }),
-      access: api.get('/v1/admin/client-access', { params: { search } })
+      access: api.get('/v1/admin/client-access', { params: { search } }),
+      volume: api.get('/v1/admin/volume', { params: { search, category: volumeCategoryFilter, status: volumeStatusFilter } })
     };
     const entries = Object.entries(requests);
     const results = await Promise.allSettled(entries.map(([, request]) => request));
@@ -187,6 +193,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         if (key === 'payments') setPayments(Array.isArray(data) ? data : []);
         if (key === 'aiJobs') { setAiJobs(Array.isArray(data) ? data : []); setAiSummary(result.value.data?.summary || null); }
         if (key === 'access') setAccessOverview(data || null);
+        if (key === 'volume') setVolumeJobs(Array.isArray(data) ? data : []);
         return;
       }
       const error = result.status === 'rejected' ? result.reason : new Error(result.value?.data?.message || 'This panel is unavailable.');
@@ -195,7 +202,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
     setPanelErrors(nextErrors);
     if (Object.keys(nextErrors).length === entries.length) toast.error('The administration service is unavailable. Try again shortly.');
     setLoading(false);
-  }, [accountPlanFilter, accountSourceFilter, accountStatusFilter, aiJobStatusFilter, aiJobTypeFilter, deliveryFormatFilter, deliveryStatusFilter, search]);
+  }, [accountPlanFilter, accountSourceFilter, accountStatusFilter, aiJobStatusFilter, aiJobTypeFilter, deliveryFormatFilter, deliveryStatusFilter, search, volumeCategoryFilter, volumeStatusFilter]);
 
   useEffect(() => {
     const timer = window.setTimeout(fetchAdminData, 300);
@@ -237,6 +244,62 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       setSelectedDelivery(response.data?.data || null);
     } catch (error) {
       toast.error(error.response?.data?.message || 'Could not refresh this delivery.');
+    }
+  };
+
+  const openVolume = async (job) => {
+    setSelectedVolume({ summary: job });
+    setVolumeDetailLoading(true);
+    try {
+      const response = await api.get(`/v1/admin/volume/${job.id || job.publicId}`);
+      setSelectedVolume(response.data?.data || null);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not open this volume delivery.');
+      setSelectedVolume(null);
+    } finally {
+      setVolumeDetailLoading(false);
+    }
+  };
+
+  const refreshSelectedVolume = async () => {
+    const id = selectedVolume?.id || selectedVolume?.summary?.id || selectedVolume?.publicId || selectedVolume?.summary?.publicId;
+    if (!id) return;
+    try {
+      const response = await api.get(`/v1/admin/volume/${id}`);
+      setSelectedVolume(response.data?.data || null);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not refresh this volume delivery.');
+    }
+  };
+
+  const volumeAction = async (action, message, body = {}) => {
+    const id = selectedVolume?.id || selectedVolume?.summary?.id || selectedVolume?.publicId || selectedVolume?.summary?.publicId;
+    if (!id) return;
+    try {
+      setAccountActionLoading(true);
+      await api.post(`/v1/admin/volume/${id}/${action}`, body);
+      toast.success(message);
+      await Promise.all([fetchAdminData(), refreshSelectedVolume()]);
+    } catch (error) {
+      toast.error(error.response?.data?.message || `Could not ${action} this volume delivery.`);
+    } finally {
+      setAccountActionLoading(false);
+    }
+  };
+
+  const deleteSelectedVolume = async () => {
+    const id = selectedVolume?.id || selectedVolume?.summary?.id || selectedVolume?.publicId || selectedVolume?.summary?.publicId;
+    if (!id || !window.confirm('Delete this volume delivery and its recipient links?')) return;
+    try {
+      setAccountActionLoading(true);
+      await api.delete(`/v1/admin/volume/${id}`, { data: { reason: 'Deleted from the admin volume workspace' } });
+      toast.success('Volume delivery deleted.');
+      setSelectedVolume(null);
+      await fetchAdminData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not delete this volume delivery.');
+    } finally {
+      setAccountActionLoading(false);
     }
   };
 
@@ -479,9 +542,10 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       users: users.length,
       payments: payments.length,
       aiJobs: aiJobs.length,
-      access: accessOverview?.deliveries?.length || 0
+      access: accessOverview?.deliveries?.length || 0,
+      volume: volumeJobs.length
     }),
-    [accessOverview, aiJobs, deliveries, users, payments]
+    [accessOverview, aiJobs, deliveries, users, payments, volumeJobs]
   );
 
   return (
@@ -615,13 +679,14 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         {/* Section Tabs & Search */}
         <section className="mt-10">
           <div className="flex flex-col gap-4 border-b border-white/10 pb-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5 sm:grid-cols-5">
+            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5 sm:grid-cols-6">
               {[
                 ['deliveries', Film, 'Deliveries'],
                 ['users', Users, 'Accounts'],
                 ['payments', ReceiptText, 'Payments'],
                 ['aiJobs', Bot, 'AI jobs'],
-                ['access', Eye, 'Client access']
+                ['access', Eye, 'Client access'],
+                ['volume', Users, 'Volume']
               ].map(([key, Icon, label]) => (
                 <button
                   key={key}
@@ -820,8 +885,27 @@ export default function AdminDashboardPage({ admin, onLogout }) {
               </> : <div className="py-16 text-center text-sm text-white/45">Client access activity is unavailable.</div>}
             </div>
           )}
+
+          {/* Volume delivery tab */}
+          {!loading && tab === 'volume' && (
+            <div className="mt-6">
+              <div className="mb-4 grid gap-3 sm:grid-cols-2"><label className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/40">Category<select value={volumeCategoryFilter} onChange={(event) => setVolumeCategoryFilter(event.target.value)} className="mt-2 min-h-10 w-full rounded-xl border border-white/10 bg-[#0c0c10] px-3 text-xs font-normal normal-case tracking-normal text-white outline-none focus:border-[#ff9b8e]/60"><option value="all">All categories</option><option value="school">School</option><option value="sports">Sports</option><option value="corporate">Corporate</option><option value="other">Other</option></select></label><label className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/40">Status<select value={volumeStatusFilter} onChange={(event) => setVolumeStatusFilter(event.target.value)} className="mt-2 min-h-10 w-full rounded-xl border border-white/10 bg-[#0c0c10] px-3 text-xs font-normal normal-case tracking-normal text-white outline-none focus:border-[#ff9b8e]/60"><option value="all">All statuses</option><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select></label></div>
+              <div className="space-y-3">{volumeJobs.map(job => <button key={job.id || job.publicId} type="button" onClick={() => openVolume(job)} className="w-full rounded-2xl border border-white/10 bg-white/[.025] p-4 text-left transition-colors hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff9b8e]/70 sm:p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="text-[10px] font-semibold uppercase tracking-[.14em] text-[#ff9b8e]">{job.category}</span><Status value={job.access?.revoked ? 'revoked' : job.access?.expired ? 'expired' : job.status} /></div><h3 className="mt-1 truncate text-sm font-semibold text-white">{job.title}</h3><p className="mt-1 truncate text-xs text-white/40">{job.organisation} · {job.photographer}</p></div><span className="text-xs text-white/35">{job.publicId}</span></div><div className="mt-4 grid grid-cols-2 gap-3 text-xs text-white/55 sm:grid-cols-4 lg:grid-cols-8"><span>Recipients <strong className="ml-1 text-white">{number(job.recipientCount)}</strong></span><span>Photos <strong className="ml-1 text-white">{number(job.assignedPhotoCount)}</strong></span><span>Unmatched <strong className="ml-1 text-white">{number(job.unmatchedRecipients)}</strong></span><span>Ambiguous <strong className="ml-1 text-white">{number(job.ambiguousFiles)}</strong></span><span>Code requests <strong className="ml-1 text-white">{number(job.activity?.codeRequests)}</strong></span><span>Verified <strong className="ml-1 text-white">{number(job.activity?.codeVerified)}</strong></span><span>Gallery opens <strong className="ml-1 text-white">{number(job.activity?.galleryOpens)}</strong></span><span>Downloads <strong className="ml-1 text-white">{number(job.activity?.downloads)}</strong></span></div></button>)}{!volumeJobs.length && <p className="py-16 text-center text-sm text-white/45">No volume deliveries match these filters.</p>}</div>
+            </div>
+          )}
         </section>
       </main>
+
+      {/* Volume delivery detail drawer */}
+      {selectedVolume && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="volume-detail-title" onMouseDown={(event) => { if (event.target === event.currentTarget && !accountActionLoading) setSelectedVolume(null); }}>
+          <motion.aside initial={{ opacity: 0, x: 28 }} animate={{ opacity: 1, x: 0 }} className="ml-auto flex h-full w-full max-w-3xl flex-col overflow-y-auto border-l border-white/10 bg-[#0c0c10] shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-white/10 bg-[#0c0c10]/95 p-5 backdrop-blur sm:p-7"><div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Volume delivery</p><h2 id="volume-detail-title" className="mt-1 truncate text-2xl font-medium">{selectedVolume.title || selectedVolume.summary?.title || 'Volume delivery'}</h2><p className="mt-2 truncate text-xs text-white/45">{selectedVolume.organisation || selectedVolume.summary?.organisation || ''} · {selectedVolume.category || selectedVolume.summary?.category || ''}</p></div><button type="button" aria-label="Close volume details" onClick={() => setSelectedVolume(null)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/10 text-white/60 transition-colors hover:border-white/25 hover:text-white"><X size={18} /></button></div>
+            {volumeDetailLoading && <div className="p-7 text-sm text-white/45">Loading recipient records…</div>}
+            {!volumeDetailLoading && selectedVolume.subjects && <div className="space-y-6 p-5 sm:p-7"><section className="flex flex-wrap gap-2">{selectedVolume.status !== 'published' && selectedVolume.status !== 'archived' && <button type="button" disabled={accountActionLoading} onClick={() => volumeAction('publish', 'Volume delivery published.')} className="min-h-10 rounded-xl bg-emerald-300 px-4 text-xs font-bold text-[#07130e] disabled:opacity-50">Publish</button>}{selectedVolume.status === 'archived' ? <button type="button" disabled={accountActionLoading} onClick={() => volumeAction('restore', 'Volume delivery restored.')} className="min-h-10 rounded-xl bg-white px-4 text-xs font-bold text-black disabled:opacity-50">Restore</button> : <button type="button" disabled={accountActionLoading} onClick={() => volumeAction('archive', 'Volume delivery archived.')} className="min-h-10 rounded-xl border border-white/15 px-4 text-xs font-semibold text-white/70 disabled:opacity-50">Archive</button>}{selectedVolume.access?.link && <a href={selectedVolume.access.link} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center rounded-xl border border-white/15 px-4 text-xs font-semibold text-white/70">Open recipient portal</a>}<button type="button" disabled={accountActionLoading} onClick={deleteSelectedVolume} className="min-h-10 rounded-xl border border-red-300/25 px-4 text-xs font-semibold text-red-200 disabled:opacity-50">Delete</button></section><section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Recipients</p><p className="mt-2 text-xl font-medium">{number(selectedVolume.recipientCount)}</p><p className="mt-1 text-xs text-white/45">{number(selectedVolume.recipientsWithoutPhotos)} without photographs</p></div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Assignments</p><p className="mt-2 text-xl font-medium">{number(selectedVolume.assignedPhotoCount)}</p><p className="mt-1 text-xs text-white/45">{number(selectedVolume.unmatchedRecipients)} unmatched recipients</p></div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Access codes</p><p className="mt-2 text-xl font-medium">{number(selectedVolume.accessCodes?.active)}</p><p className="mt-1 text-xs text-white/45">{number(selectedVolume.accessCodes?.expired)} expired · {number(selectedVolume.accessCodes?.attempts)} attempts</p></div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Recipient activity</p><p className="mt-2 text-xl font-medium">{number(selectedVolume.activity?.galleryOpens)}</p><p className="mt-1 text-xs text-white/45">{number(selectedVolume.activity?.downloads)} downloads</p></div></section><section className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">Assignment health</h3><span className="text-xs text-white/35">{selectedVolume.assignmentCheckedAt ? `Checked ${shortDate(selectedVolume.assignmentCheckedAt)}` : 'Not checked'}</span></div><p className="mt-3 text-xs leading-5 text-white/55">{number(selectedVolume.ambiguousFiles)} ambiguous filenames · {number(selectedVolume.duplicateRecipientCodes)} duplicate recipient codes</p>{selectedVolume.unmatchedFilenames?.length > 0 && <p className="mt-2 text-xs leading-5 text-amber-100/70">Unmatched or ambiguous files: {selectedVolume.unmatchedFilenames.join(', ')}</p>}</section><section><div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">Recipients</h3><span className="text-xs text-white/35">{number(selectedVolume.subjects.length)} records</span></div><div className="mt-3 space-y-2">{selectedVolume.subjects.slice(0, 100).map(subject => <div key={subject.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[.02] p-3"><div className="min-w-0"><p className="truncate text-xs font-semibold text-white">{subject.displayName}</p><p className="mt-1 text-[11px] text-white/40">{subject.recipientCode}</p></div><span className={`text-[11px] ${subject.hasPhotos ? 'text-emerald-300' : 'text-amber-200'}`}>{number(subject.photoCount)} photos</span></div>)}</div></section></div>}
+          </motion.aside>
+        </div>
+      )}
 
       {/* Delivery detail drawer */}
       {selectedDelivery && (
