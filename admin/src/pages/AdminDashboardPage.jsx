@@ -137,6 +137,9 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const [deliveries, setDeliveries] = useState([]);
   const [users, setUsers] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [financeOverview, setFinanceOverview] = useState(null);
+  const [financeReconciliation, setFinanceReconciliation] = useState(null);
+  const [financeReconciling, setFinanceReconciling] = useState(false);
   const [aiJobs, setAiJobs] = useState([]);
   const [aiSummary, setAiSummary] = useState(null);
   const [accessOverview, setAccessOverview] = useState(null);
@@ -180,7 +183,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       analytics: api.get('/v1/admin/analytics'),
       deliveries: api.get('/v1/admin/deliveries', { params: { search, status: deliveryStatusFilter, format: deliveryFormatFilter } }),
       users: api.get('/v1/admin/users', { params: { search, plan: accountPlanFilter, status: accountStatusFilter, acquisitionSource: accountSourceFilter } }),
-      payments: api.get('/v1/admin/payments', { params: { search } }),
+      finance: api.get('/v1/admin/finance', { params: { search } }),
       aiJobs: api.get('/v1/admin/ai/jobs', { params: { search, status: aiJobStatusFilter, type: aiJobTypeFilter } }),
       access: api.get('/v1/admin/client-access', { params: { search } }),
       volume: api.get('/v1/admin/volume', { params: { search, category: volumeCategoryFilter, status: volumeStatusFilter } }),
@@ -198,7 +201,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         if (key === 'analytics') setAnalytics(data || null);
         if (key === 'deliveries') setDeliveries(Array.isArray(data) ? data : []);
         if (key === 'users') setUsers(Array.isArray(data) ? data : []);
-        if (key === 'payments') setPayments(Array.isArray(data) ? data : []);
+        if (key === 'finance') { setFinanceOverview(data || null); setPayments(Array.isArray(data?.payments) ? data.payments : []); }
         if (key === 'aiJobs') { setAiJobs(Array.isArray(data) ? data : []); setAiSummary(result.value.data?.summary || null); }
         if (key === 'access') setAccessOverview(data || null);
         if (key === 'volume') setVolumeJobs(Array.isArray(data) ? data : []);
@@ -573,6 +576,35 @@ export default function AdminDashboardPage({ admin, onLogout }) {
     }
   };
 
+  const reconcileFinance = async () => {
+    setFinanceReconciling(true);
+    try {
+      const response = await api.get('/v1/admin/finance/reconcile');
+      setFinanceReconciliation(response.data?.data || null);
+      toast.success('Paystack reconciliation completed.');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Paystack reconciliation could not be completed.');
+    } finally {
+      setFinanceReconciling(false);
+    }
+  };
+
+  const exportFinanceCsv = async () => {
+    try {
+      const response = await api.get('/v1/admin/finance/export', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(response.data);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'veylo-finance-export.csv';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'We could not export finance records.');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#070709] text-white">
       {/* Top Admin Navigation */}
@@ -821,6 +853,13 @@ export default function AdminDashboardPage({ admin, onLogout }) {
           {/* Payments Tab */}
           {!loading && tab === 'payments' && (
             <div className="mt-6 grid gap-4">
+              {panelErrors.finance && !financeOverview && <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-5 text-sm text-amber-100">Finance data is unavailable. {panelErrors.finance}</div>}
+              {financeOverview && <>
+                <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><MetricCard icon={Banknote} label="Gross collected" value={nairaFromKobo(financeOverview.summary?.grossKobo)} note={`${number(financeOverview.summary?.successful)} successful payment records`} /><MetricCard icon={Banknote} label="Net after refunds" value={nairaFromKobo(financeOverview.summary?.netKobo)} note={`${nairaFromKobo(financeOverview.summary?.refundedKobo)} refunded`} /><MetricCard icon={TriangleAlert} label="Payment issues" value={number(Number(financeOverview.summary?.failed || 0) + Number(financeOverview.summary?.disputed || 0))} note={`${number(financeOverview.summary?.pastDueSubscriptions)} subscriptions past due`} /><MetricCard icon={ReceiptText} label="Billing events" value={number(financeOverview.summary?.billingEvents)} note={`${number(financeOverview.summary?.failedBillingEvents)} webhook failures`} /></section>
+                <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Finance operations</p><h2 className="mt-1 text-xl font-medium">Paystack and subscription health</h2><p className="mt-2 text-xs leading-5 text-white/45">Last {number(financeOverview.windowDays)} days · {number(financeOverview.summary?.renewalEvents)} renewal events · {number(financeOverview.summary?.cancellationEvents)} cancellations · {number(financeOverview.summary?.refundEvents)} refund events · {number(financeOverview.summary?.disputeEvents)} disputes.</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={reconcileFinance} disabled={financeReconciling || financeOverview.reconciliation?.status !== 'ready'} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-white/15 px-4 text-xs font-semibold text-white/75 transition-colors hover:border-[#ff9b8e]/50 hover:text-white disabled:opacity-40"><RefreshCw size={14} className={financeReconciling ? 'animate-spin' : ''} />{financeReconciling ? 'Checking Paystack…' : 'Reconcile Paystack'}</button><button type="button" onClick={exportFinanceCsv} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-white px-4 text-xs font-semibold text-black transition-transform hover:-translate-y-0.5 active:scale-95"><FileDown size={14} />Export CSV</button></div></div>{financeReconciliation && <div className="mt-5 grid gap-3 sm:grid-cols-3"><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Paystack records</p><p className="mt-2 text-xl font-medium">{number(financeReconciliation.paystackTransactions)}</p><p className="mt-1 text-xs text-white/45">{number(financeReconciliation.localMatches)} matched locally</p></div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Missing locally</p><p className="mt-2 text-xl font-medium">{number(financeReconciliation.missingLocal?.length)}</p><p className="mt-1 text-xs text-white/45">Provider payments without a Veylo record</p></div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Amount mismatches</p><p className="mt-2 text-xl font-medium">{number(financeReconciliation.amountMismatches?.length)}</p><p className="mt-1 text-xs text-white/45">Local and Paystack amounts differ</p></div></div>}</section>
+                <section className="grid gap-5 lg:grid-cols-2"><div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Subscriptions</p><h2 className="mt-1 text-xl font-medium">Current plan states</h2><div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">{Object.entries(financeOverview.subscriptions || {}).map(([status, count]) => <div key={status} className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.12em] text-white/35">{status.replaceAll('_', ' ')}</p><p className="mt-2 text-xl font-medium">{number(count)}</p></div>)}</div></div><div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Manual Pro access</p><h2 className="mt-1 text-xl font-medium">Active support grants</h2><p className="mt-2 text-sm text-white/45">{number(financeOverview.manualProGrants?.length)} current manual grants with recorded reasons and expiry.</p><div className="mt-4 space-y-2">{(financeOverview.manualProGrants || []).slice(0, 8).map(grant => <div key={grant.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[.025] p-3"><div className="min-w-0"><p className="truncate text-xs font-semibold text-white">{grant.name}</p><p className="truncate text-[11px] text-white/40">{grant.reason || 'No reason recorded'}</p></div><span className="shrink-0 text-[11px] text-white/45">{grant.expiresAt ? shortDate(grant.expiresAt) : 'No expiry'}</span></div>)}</div></div></section>
+                <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Webhook events</p><h2 className="mt-1 text-xl font-medium">What Paystack has told Veylo</h2><div className="mt-5 space-y-2">{(financeOverview.events || []).slice(0, 40).map(event => <div key={event.id} className="flex flex-col gap-1 rounded-xl border border-white/10 bg-white/[.025] p-3 sm:flex-row sm:items-center sm:justify-between"><span className="text-xs text-white/65">{event.eventType} · {event.status}{event.failure ? ` · ${event.failure}` : ''}</span><span className="text-xs text-white/40">attempt {number(event.attempts)} · {shortDate(event.createdAt)}</span></div>)}{!financeOverview.events?.length && <p className="text-sm text-white/45">No billing events in this window.</p>}</div></section>
+              </>}
               {payments.map((payment) => {
                 const remaining = Math.max(0, payment.amountKobo - payment.refundedAmountKobo);
                 const refundable =

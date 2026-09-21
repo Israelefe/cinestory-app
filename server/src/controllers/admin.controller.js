@@ -1358,6 +1358,109 @@ export async function getPayments(req, res) {
   }
 }
 
+function csvCell(value) {
+  return `"${String(value ?? '').replace(/"/g, '""').replace(/[\r\n]+/g, ' ')}"`;
+}
+
+function paymentFinanceSummary(payments = []) {
+  const summary = { total: payments.length, pending: 0, successful: 0, failed: 0, refunded: 0, partiallyRefunded: 0, disputed: 0, grossKobo: 0, refundedKobo: 0, netKobo: 0 };
+  for (const payment of payments) {
+    const status = payment.status;
+    if (status === 'pending') summary.pending += 1;
+    if (status === 'success') summary.successful += 1;
+    if (status === 'failed') summary.failed += 1;
+    if (status === 'refunded') summary.refunded += 1;
+    if (status === 'partially_refunded') summary.partiallyRefunded += 1;
+    if (status === 'disputed') summary.disputed += 1;
+    if (['success', 'partially_refunded', 'refunded'].includes(status)) summary.grossKobo += Number(payment.amountKobo || 0);
+    summary.refundedKobo += Number(payment.refundedAmountKobo || 0);
+  }
+  summary.netKobo = Math.max(0, summary.grossKobo - summary.refundedKobo);
+  return summary;
+}
+
+export async function getFinanceOverview(req, res) {
+  try {
+    const days = Math.min(365, Math.max(1, Number.parseInt(req.query.days, 10) || 30));
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const search = String(req.query.search || '').trim().slice(0, 100);
+    const paymentQuery = { createdAt: { $gte: since } };
+    if (search) {
+      const pattern = { $regex: escaped(search), $options: 'i' };
+      const users = await User.find({ $or: [{ name: pattern }, { email: pattern }, { 'studio.name': pattern }] }).select('_id').limit(200).lean();
+      paymentQuery.$or = [{ reference: pattern }, ...(users.length ? [{ userId: { $in: users.map(user => user._id) } }] : [])];
+    }
+    const [payments, paymentTotals, billingEvents, subscriptionStatuses, manualGrants, failedBillingEvents, eventTypes, paymentTimeline] = await Promise.all([
+      Payment.find(paymentQuery).populate('userId', 'name email studio.name').populate('subscriptionId', 'status paidThrough').sort({ createdAt: -1 }).limit(250).select('-providerSnapshot').lean(),
+      Payment.aggregate([{ $match: paymentQuery }, { $group: { _id: null, total: { $sum: 1 }, pending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } }, successful: { $sum: { $cond: [{ $eq: ['$status', 'success'] }, 1, 0] } }, failed: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } }, refunded: { $sum: { $cond: [{ $eq: ['$status', 'refunded'] }, 1, 0] } }, partiallyRefunded: { $sum: { $cond: [{ $eq: ['$status', 'partially_refunded'] }, 1, 0] } }, disputed: { $sum: { $cond: [{ $eq: ['$status', 'disputed'] }, 1, 0] } }, grossKobo: { $sum: { $cond: [{ $in: ['$status', ['success', 'partially_refunded', 'refunded']] }, { $ifNull: ['$amountKobo', 0] }, 0] } }, refundedKobo: { $sum: { $ifNull: ['$refundedAmountKobo', 0] } } } }]),
+      BillingEvent.find({ createdAt: { $gte: since } }).sort({ createdAt: -1 }).limit(250).select('eventKey eventType userId provider status attempts processedAt failure createdAt').lean(),
+      Subscription.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
+      User.find({ 'planOverride.plan': 'pro', $or: [{ 'planOverride.expiresAt': null }, { 'planOverride.expiresAt': { $exists: false } }, { 'planOverride.expiresAt': { $gt: new Date() } }] }).select('name email plan planOverride').sort({ 'planOverride.expiresAt': 1 }).limit(250).lean(),
+      BillingEvent.countDocuments({ createdAt: { $gte: since }, status: 'failed' }),
+      BillingEvent.aggregate([{ $match: { createdAt: { $gte: since } } }, { $group: { _id: { eventType: '$eventType', status: '$status' }, count: { $sum: 1 } } }, { $sort: { count: -1 } }]),
+      Payment.aggregate([{ $match: { createdAt: { $gte: since } } }, { $group: { _id: { day: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, status: '$status' }, count: { $sum: 1 }, amountKobo: { $sum: '$amountKobo' }, refundedKobo: { $sum: '$refundedAmountKobo' } } }, { $sort: { '_id.day': 1 } }])
+    ]);
+    const paymentSummary = paymentTotals[0] || paymentFinanceSummary(payments);
+    paymentSummary.netKobo = Math.max(0, Number(paymentSummary.grossKobo || 0) - Number(paymentSummary.refundedKobo || 0));
+    const subscriptions = Object.fromEntries(subscriptionStatuses.map(item => [item._id || 'unknown', item.count]));
+    const eventSummary = Object.fromEntries(eventTypes.map(item => [`${item._id.eventType}:${item._id.status}`, item.count]));
+    const timeline = paymentTimeline.map(item => ({ day: item._id.day, status: item._id.status, count: item.count, amountKobo: item.amountKobo, refundedKobo: item.refundedKobo }));
+    const successfulEvents = billingEvents.filter(event => event.eventType === 'charge.success').length;
+    const renewalEvents = billingEvents.filter(event => ['invoice.create', 'invoice.payment_failed', 'charge.success'].includes(event.eventType)).length;
+    const cancellationEvents = billingEvents.filter(event => ['subscription.not_renew', 'subscription.disable'].includes(event.eventType)).length;
+    const refundEvents = billingEvents.filter(event => event.eventType.startsWith('refund.')).length;
+    const disputeEvents = billingEvents.filter(event => event.eventType.includes('dispute')).length;
+    res.json({ success: true, data: {
+      generatedAt: new Date(), windowDays: days,
+      summary: { ...paymentSummary, billingEvents: billingEvents.length, failedBillingEvents, successfulEvents, renewalEvents, cancellationEvents, refundEvents, disputeEvents, activeSubscriptions: subscriptions.active || 0, pastDueSubscriptions: subscriptions.past_due || 0 },
+      subscriptions,
+      payments: payments.map(payment => ({ ...payment, userId: payment.userId ? { _id: payment.userId._id, name: payment.userId.name, email: payment.userId.email, studio: payment.userId.studio?.name || '' } : null })),
+      events: billingEvents.map(event => ({ id: event._id, eventKey: event.eventKey, eventType: event.eventType, provider: event.provider, status: event.status, attempts: event.attempts, failure: event.failure || '', processedAt: event.processedAt || null, createdAt: event.createdAt })),
+      eventSummary,
+      timeline,
+      manualProGrants: manualGrants.map(user => ({ id: user._id, name: user.name, email: user.email, plan: user.plan, expiresAt: user.planOverride?.expiresAt || null, reason: user.planOverride?.reason || '', grantedBy: user.planOverride?.grantedBy || null })),
+      reconciliation: { status: billingConfigured() ? 'ready' : 'unavailable', reason: billingConfigured() ? 'Live Paystack reconciliation is available on request.' : 'Paystack billing is disabled or incomplete.', localSuccessfulPayments: paymentSummary.successful, localSuccessfulKobo: payments.filter(payment => payment.status === 'success').reduce((sum, payment) => sum + Number(payment.amountKobo || 0), 0), lastWebhookAt: billingEvents[0]?.createdAt || null }
+    } });
+  } catch (error) {
+    console.error('[admin/finance]', error.message);
+    res.status(500).json({ success: false, message: 'We could not load finance records.' });
+  }
+}
+
+export async function reconcileFinanceWithPaystack(req, res) {
+  try {
+    if (!billingConfigured()) return res.status(503).json({ success: false, message: 'Paystack billing is disabled or incomplete.' });
+    const days = Math.min(365, Math.max(1, Number.parseInt(req.query.days, 10) || 30));
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const remote = await paystackRequest(`/transaction?perPage=100&from=${encodeURIComponent(since.toISOString())}&to=${encodeURIComponent(new Date().toISOString())}`);
+    const remoteTransactions = Array.isArray(remote?.data) ? remote.data : Array.isArray(remote) ? remote : [];
+    const references = remoteTransactions.map(transaction => String(transaction.reference || '')).filter(Boolean);
+    const localPayments = await Payment.find({ reference: { $in: references } }).select('reference status amountKobo').lean();
+    const localMap = new Map(localPayments.map(payment => [payment.reference, payment]));
+    const missingLocal = remoteTransactions.filter(transaction => transaction.reference && !localMap.has(String(transaction.reference))).slice(0, 100).map(transaction => ({ reference: transaction.reference, status: transaction.status, amountKobo: transaction.amount, paidAt: transaction.paid_at || null }));
+    const amountMismatches = remoteTransactions.filter(transaction => { const local = localMap.get(String(transaction.reference)); return local && Number(local.amountKobo) !== Number(transaction.amount); }).slice(0, 100).map(transaction => ({ reference: transaction.reference, localAmountKobo: localMap.get(String(transaction.reference)).amountKobo, paystackAmountKobo: transaction.amount }));
+    res.json({ success: true, data: { status: 'complete', checkedAt: new Date(), days, paystackTransactions: remoteTransactions.length, localMatches: localPayments.length, missingLocal, amountMismatches } });
+  } catch (error) {
+    console.error('[admin/finance-reconcile]', error.message);
+    res.status(error.status || 502).json({ success: false, message: 'Paystack reconciliation could not be completed.' });
+  }
+}
+
+export async function exportFinance(req, res) {
+  try {
+    const days = Math.min(3650, Math.max(1, Number.parseInt(req.query.days, 10) || 365));
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const payments = await Payment.find({ createdAt: { $gte: since } }).populate('userId', 'name email').sort({ createdAt: -1 }).limit(10000).lean();
+    const rows = [['reference', 'account', 'email', 'status', 'amount_ngn', 'refunded_ngn', 'currency', 'channel', 'paid_at', 'created_at']];
+    for (const payment of payments) rows.push([payment.reference, payment.userId?.name || '', payment.userId?.email || '', payment.status, (Number(payment.amountKobo || 0) / 100).toFixed(2), (Number(payment.refundedAmountKobo || 0) / 100).toFixed(2), payment.currency || 'NGN', payment.channel || '', payment.paidAt || '', payment.createdAt || '']);
+    res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="veylo-finance-${days}d.csv"`, 'Cache-Control': 'no-store' });
+    res.send(rows.map(row => row.map(csvCell).join(',')).join('\n'));
+  } catch (error) {
+    console.error('[admin/finance-export]', error.message);
+    res.status(500).json({ success: false, message: 'We could not export finance records.' });
+  }
+}
+
 export async function refundPayment(req, res) {
   let reserved = false;
   let payment;

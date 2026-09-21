@@ -38,6 +38,9 @@ import {
   getAllStories,
   getAllDeliveries,
   getPayments,
+  getFinanceOverview,
+  reconcileFinanceWithPaystack,
+  exportFinance,
   adminDeleteStory,
   refundPayment
 } from '../controllers/admin.controller.js';
@@ -138,6 +141,9 @@ router.get('/storage', getStorageOverview);
 router.post('/storage/scan', scanStorageReferences);
 router.get('/music-narration', getMusicNarrationOverview);
 router.get('/payments', getPayments);
+router.get('/finance', getFinanceOverview);
+router.get('/finance/reconcile', reconcileFinanceWithPaystack);
+router.get('/finance/export', exportFinance);
 router.delete('/stories/:id', adminDeleteStory);
 router.post('/payments/:id/refund', billingActionLimit, refundPayment);
 
