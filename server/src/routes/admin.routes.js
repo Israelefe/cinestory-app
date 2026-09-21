@@ -15,6 +15,13 @@ import {
   getDeletionRequests,
   updateDeletionRequest,
   updateUserPlan,
+  getAdminDeliveryDetail,
+  adminPublishDelivery,
+  adminArchiveDelivery,
+  adminRestoreDelivery,
+  adminRevokeDeliveryLink,
+  adminDeleteDelivery,
+  adminRetryDeliveryJob,
   getAllStories,
   getAllDeliveries,
   getPayments,
@@ -97,6 +104,13 @@ router.get('/deletion-requests', getDeletionRequests);
 router.patch('/deletion-requests/:requestId', updateDeletionRequest);
 router.get('/stories', getAllStories);
 router.get('/deliveries', getAllDeliveries);
+router.get('/deliveries/:id', getAdminDeliveryDetail);
+router.post('/deliveries/:id/publish', adminPublishDelivery);
+router.post('/deliveries/:id/archive', adminArchiveDelivery);
+router.post('/deliveries/:id/restore', adminRestoreDelivery);
+router.post('/deliveries/:id/revoke-link', adminRevokeDeliveryLink);
+router.delete('/deliveries/:id', adminDeleteDelivery);
+router.post('/deliveries/:id/jobs/:jobId/retry', adminRetryDeliveryJob);
 router.get('/payments', getPayments);
 router.delete('/stories/:id', adminDeleteStory);
 router.post('/payments/:id/refund', billingActionLimit, refundPayment);

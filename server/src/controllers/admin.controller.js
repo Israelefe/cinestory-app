@@ -20,11 +20,14 @@ import Portfolio from '../models/Portfolio.js';
 import StorageAsset from '../models/StorageAsset.js';
 import DeliveryView from '../models/DeliveryView.js';
 import StoryView from '../models/StoryView.js';
+import PhotoLike from '../models/PhotoLike.js';
+import DeliveryShareGrant from '../models/DeliveryShareGrant.js';
 import { paystackRequest } from '../services/paystack.service.js';
 import { billingConfigured } from '../services/paystack.service.js';
 import { checkCloudinaryConnection } from '../services/cloudinary.service.js';
 import { PLAN_DEFINITIONS, PRO_PRICE_KOBO } from '../config/plans.js';
 import { tokenDigest } from '../utils/auth.js';
+import { removeDeliveryMedia } from '../services/deliveryMedia.service.js';
 
 function escaped(value) { return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
@@ -93,6 +96,37 @@ function deliverySummary(delivery) {
     publishedAt: delivery.publishedAt || null,
     updatedAt: delivery.updatedAt,
     createdAt: delivery.createdAt
+  };
+}
+
+function adminDeliverySummary(delivery, jobs = [], grants = []) {
+  const basic = deliverySummary(delivery);
+  const frames = Array.isArray(delivery.creativeDirection?.frames) ? delivery.creativeDirection.frames : [];
+  const totalPhotos = basic.photoCount || frames.length;
+  const captioned = frames.filter(frame => String(frame.caption || '').trim().length >= 18).length;
+  const failedJob = jobs.find(job => job.status === 'failed');
+  const currentJob = jobs.find(job => ['queued', 'running', 'needs_input'].includes(job.status));
+  const activeGrants = grants.filter(grant => !grant.revokedAt && (!grant.expiresAt || new Date(grant.expiresAt) > new Date()));
+  return {
+    ...basic,
+    effectiveStatus: failedJob ? 'failed' : basic.status,
+    photographer: delivery.userId ? {
+      id: delivery.userId._id || delivery.userId,
+      name: delivery.userId.name || '',
+      email: delivery.userId.email || '',
+      studio: delivery.userId.studio?.name || '',
+      avatar: delivery.userId.avatar || '',
+      plan: delivery.userId.plan || ''
+    } : null,
+    captions: { total: totalPhotos, completed: captioned, status: totalPhotos && captioned === totalPhotos ? 'complete' : captioned ? 'partial' : 'missing' },
+    music: { status: delivery.soundtrack?.catalogId || delivery.soundtrack?.publicId || delivery.soundtrack?.audioUrl ? 'ready' : 'missing', source: delivery.soundtrack?.source || null, trackId: delivery.soundtrack?.catalogId || delivery.soundtrack?.trackId || null },
+    narration: { status: delivery.narration?.status || (delivery.narration?.publicId || delivery.narration?.audioUrl ? 'ready' : 'missing'), voiceId: delivery.narration?.voiceId || null, timingStatus: delivery.narration?.timingStatus || delivery.narration?.alignmentStatus || null, renderVersion: delivery.narration?.renderVersion || null },
+    jobs: jobs.map(job => ({ id: job._id, type: job.type, status: job.status, stage: job.stage, progress: job.progress, attempts: job.attempts, errorCode: job.errorCode || null, errorMessage: job.errorMessage || null, createdAt: job.createdAt, updatedAt: job.updatedAt, completedAt: job.completedAt || null })),
+    currentJob: currentJob ? { id: currentJob._id, type: currentJob.type, status: currentJob.status, stage: currentJob.stage, progress: currentJob.progress } : null,
+    failedJob: failedJob ? { id: failedJob._id, type: failedJob.type, errorCode: failedJob.errorCode || null, errorMessage: failedJob.errorMessage || null } : null,
+    access: { hasPin: Boolean(delivery.access?.pinDigest), expiresAt: delivery.access?.expiresAt || null, revokedAt: delivery.access?.revokedAt || null, linkRevoked: Boolean(delivery.access?.revokedAt), allowIndividualDownloads: delivery.access?.allowIndividualDownloads !== false, allowDownloadAll: delivery.access?.allowDownloadAll !== false, allowLikes: delivery.access?.allowLikes !== false },
+    shareGrants: { total: grants.length, active: activeGrants.length, roles: activeGrants.reduce((result, grant) => { result[grant.role] = (result[grant.role] || 0) + 1; return result; }, {}) },
+    previewUrl: `${String(process.env.CLIENT_URL || 'https://veylo.com.ng').replace(/\/$/, '')}/d/${encodeURIComponent(delivery.publicId)}`
   };
 }
 
@@ -579,21 +613,178 @@ export async function updateDeletionRequest(req, res) {
 export async function getAllDeliveries(req, res) {
   try {
     const search = String(req.query.search || '').trim().slice(0, 100);
-    const query = search ? { $or: [
-      { title: { $regex: escaped(search), $options: 'i' } },
-      { clientName: { $regex: escaped(search), $options: 'i' } },
-      { shootType: { $regex: escaped(search), $options: 'i' } }
-    ] } : {};
-    const deliveries = await Delivery.find(query)
-      .populate('userId', 'name email studio.name')
-      .sort({ updatedAt: -1 })
-      .limit(100)
-      .select('-collectionAnalysis -creativeDirection -formatConfig -access.pinDigest')
-      .lean();
-    res.json({ success: true, data: deliveries });
+    const format = String(req.query.format || 'all');
+    const status = String(req.query.status || 'all');
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 40));
+    const query = {};
+    const searchOr = [];
+    if (search) {
+      const pattern = { $regex: escaped(search), $options: 'i' };
+      searchOr.push({ title: pattern }, { clientName: pattern }, { shootType: pattern }, { publicId: pattern });
+      if (mongoose.isValidObjectId(search)) searchOr.push({ _id: new mongoose.Types.ObjectId(search) });
+      const matchingUsers = await User.find({ $or: [{ name: pattern }, { email: pattern }, { 'studio.name': pattern }] }).select('_id').limit(200).lean();
+      if (matchingUsers.length) searchOr.push({ userId: { $in: matchingUsers.map(user => user._id) } });
+      query.$or = searchOr;
+    }
+    if (['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign'].includes(format)) query.format = format;
+    if (['draft', 'analyzing', 'directing', 'review', 'published', 'archived'].includes(status)) query.status = status;
+    let failedDeliveryIds = [];
+    if (status === 'failed') {
+      failedDeliveryIds = await DeliveryJob.distinct('deliveryId', { status: 'failed' });
+      query._id = { $in: failedDeliveryIds };
+      delete query.status;
+    }
+
+    const [deliveries, total] = await Promise.all([
+      Delivery.find(query).populate('userId', 'name email studio.name avatar plan').sort({ updatedAt: -1 }).skip((page - 1) * limit).limit(limit).select('+access.pinDigest').lean(),
+      Delivery.countDocuments(query)
+    ]);
+    const deliveryIds = deliveries.map(delivery => delivery._id);
+    const [jobs, grants] = await Promise.all([
+      deliveryIds.length ? DeliveryJob.find({ deliveryId: { $in: deliveryIds } }).sort({ updatedAt: -1 }).lean() : [],
+      deliveryIds.length ? DeliveryShareGrant.find({ deliveryId: { $in: deliveryIds } }).select('-tokenDigest').lean() : []
+    ]);
+    const data = deliveries.map(delivery => adminDeliverySummary(delivery, jobs.filter(job => String(job.deliveryId) === String(delivery._id)), grants.filter(grant => String(grant.deliveryId) === String(delivery._id))));
+    res.json({ success: true, data, pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
   } catch (error) {
     console.error('[admin/deliveries]', error.message);
     res.status(500).json({ success: false, message: 'We could not load the deliveries.' });
+  }
+}
+
+export async function getAdminDeliveryDetail(req, res) {
+  try {
+    const identifier = String(req.params.id || '').trim();
+    if (!identifier || identifier.length > 200) return res.status(400).json({ success: false, message: 'That delivery identifier is not valid.' });
+    const identifierQuery = mongoose.isValidObjectId(identifier)
+      ? { $or: [{ _id: new mongoose.Types.ObjectId(identifier) }, { publicId: identifier }] }
+      : { publicId: identifier };
+    const delivery = await Delivery.findOne(identifierQuery).populate('userId', 'name email studio.name avatar plan').select('+access.pinDigest').lean();
+    if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    const [jobs, grants] = await Promise.all([
+      DeliveryJob.find({ deliveryId: delivery._id }).sort({ createdAt: -1 }).lean(),
+      DeliveryShareGrant.find({ deliveryId: delivery._id }).select('-tokenDigest').sort({ createdAt: -1 }).lean()
+    ]);
+    const summary = adminDeliverySummary(delivery, jobs, grants);
+    const captions = (delivery.creativeDirection?.frames || []).map(frame => ({ assetId: frame.assetId, headline: frame.headline || '', caption: frame.caption || '' }));
+    res.json({ success: true, data: { ...summary, title: delivery.title || '', clientName: delivery.clientName || '', shootType: delivery.shootType || '', brief: delivery.brief || '', assets: (delivery.assets || []).map(asset => ({ assetId: asset.assetId, publicId: asset.publicId, originalFilename: asset.originalFilename || '', format: asset.format || '', width: asset.width || null, height: asset.height || null, bytes: asset.bytes || 0, sortOrder: asset.sortOrder || 0 })), captions, sections: delivery.creativeDirection?.sections || [], shareGrants: grants.map(grant => ({ id: grant._id, role: grant.role, label: grant.label, assetCount: grant.assetIds?.length || 0, sectionCount: grant.sectionIds?.length || 0, allowIndividualDownloads: Boolean(grant.allowIndividualDownloads), allowDownloadAll: Boolean(grant.allowDownloadAll), usageTerms: grant.usageTerms || '', expiresAt: grant.expiresAt || null, revokedAt: grant.revokedAt || null, createdAt: grant.createdAt })), rawStatus: delivery.status } });
+  } catch (error) {
+    console.error('[admin/delivery-detail]', error.message);
+    res.status(500).json({ success: false, message: 'We could not load this delivery.' });
+  }
+}
+
+async function findAdminDelivery(identifier) {
+  const value = String(identifier || '').trim();
+  if (!value || value.length > 200) return null;
+  const query = mongoose.isValidObjectId(value) ? { $or: [{ _id: new mongoose.Types.ObjectId(value) }, { publicId: value }] } : { publicId: value };
+  return Delivery.findOne(query);
+}
+
+export async function adminPublishDelivery(req, res) {
+  try {
+    const delivery = await findAdminDelivery(req.params.id);
+    if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    if (!delivery.assets?.length || !delivery.creativeDirection || !delivery.reviewApprovedAt) return res.status(409).json({ success: false, message: 'This delivery still needs an approved creative review before it can be published.' });
+    delivery.access = delivery.access || {};
+    const before = { status: delivery.status, revokedAt: delivery.access?.revokedAt || null };
+    delivery.status = 'published';
+    delivery.publishedAt = delivery.publishedAt || new Date();
+    delivery.access.revokedAt = undefined;
+    await delivery.save();
+    await AdminAudit.create({ adminId: adminId(req), userId: delivery.userId, action: 'delivery.published_by_admin', resourceType: 'Delivery', resourceId: String(delivery._id), details: { before, after: { status: delivery.status, revokedAt: null } } });
+    res.json({ success: true, data: { publicId: delivery.publicId, previewUrl: `${String(process.env.CLIENT_URL || 'https://veylo.com.ng').replace(/\/$/, '')}/d/${encodeURIComponent(delivery.publicId)}` } });
+  } catch (error) {
+    console.error('[admin/delivery-publish]', error.message);
+    res.status(500).json({ success: false, message: 'We could not publish this delivery.' });
+  }
+}
+
+export async function adminArchiveDelivery(req, res) {
+  try {
+    const delivery = await findAdminDelivery(req.params.id);
+    if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    if (delivery.status === 'archived') return res.json({ success: true, data: { status: delivery.status } });
+    const before = { status: delivery.status };
+    delivery.archivedFromStatus = delivery.status;
+    delivery.status = 'archived';
+    delivery.archivedAt = new Date();
+    await delivery.save();
+    await AdminAudit.create({ adminId: adminId(req), userId: delivery.userId, action: 'delivery.archived_by_admin', resourceType: 'Delivery', resourceId: String(delivery._id), details: { before, after: { status: delivery.status }, reason: safeReason(req.body.reason, 'Archived by administrator') } });
+    res.json({ success: true, data: { status: delivery.status } });
+  } catch (error) {
+    console.error('[admin/delivery-archive]', error.message);
+    res.status(500).json({ success: false, message: 'We could not archive this delivery.' });
+  }
+}
+
+export async function adminRestoreDelivery(req, res) {
+  try {
+    const delivery = await findAdminDelivery(req.params.id);
+    if (!delivery || delivery.status !== 'archived') return res.status(404).json({ success: false, message: 'Archived delivery not found.' });
+    const restoreStatus = ['draft', 'review', 'published'].includes(delivery.archivedFromStatus) ? delivery.archivedFromStatus : 'draft';
+    delivery.status = restoreStatus;
+    delivery.archivedAt = undefined;
+    delivery.archivedFromStatus = undefined;
+    await delivery.save();
+    await AdminAudit.create({ adminId: adminId(req), userId: delivery.userId, action: 'delivery.restored_by_admin', resourceType: 'Delivery', resourceId: String(delivery._id), details: { after: { status: restoreStatus } } });
+    res.json({ success: true, data: { status: restoreStatus } });
+  } catch (error) {
+    console.error('[admin/delivery-restore]', error.message);
+    res.status(500).json({ success: false, message: 'We could not restore this delivery.' });
+  }
+}
+
+export async function adminRevokeDeliveryLink(req, res) {
+  try {
+    const delivery = await findAdminDelivery(req.params.id);
+    if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    delivery.access = delivery.access || {};
+    delivery.access.revokedAt = new Date();
+    await delivery.save();
+    await AdminAudit.create({ adminId: adminId(req), userId: delivery.userId, action: 'delivery.link_revoked_by_admin', resourceType: 'Delivery', resourceId: String(delivery._id), details: { revokedAt: delivery.access.revokedAt, reason: safeReason(req.body.reason, 'Client link revoked by administrator') } });
+    res.json({ success: true, data: { revokedAt: delivery.access.revokedAt } });
+  } catch (error) {
+    console.error('[admin/delivery-revoke]', error.message);
+    res.status(500).json({ success: false, message: 'We could not revoke this client link.' });
+  }
+}
+
+export async function adminDeleteDelivery(req, res) {
+  try {
+    const delivery = await findAdminDelivery(req.params.id);
+    if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    const deliveryId = delivery._id;
+    const userId = delivery.userId;
+    const result = await Delivery.deleteOne({ _id: deliveryId });
+    if (!result.deletedCount) return res.status(404).json({ success: false, message: 'Delivery was already removed.' });
+    await Promise.allSettled([DeliveryJob.deleteMany({ deliveryId }), DeliveryShareGrant.deleteMany({ deliveryId }), PhotoLike.deleteMany({ deliveryId }), DeliveryView.deleteMany({ deliveryId })]);
+    void removeDeliveryMedia(userId, deliveryId).catch(error => console.error('[admin/delivery-media-cleanup]', error.message));
+    await AdminAudit.create({ adminId: adminId(req), userId, action: 'delivery.deleted_by_admin', resourceType: 'Delivery', resourceId: String(deliveryId), details: { publicId: delivery.publicId, reason: safeReason(req.body.reason, 'Deleted by administrator') } });
+    res.json({ success: true, message: 'Delivery deleted and its client link disabled.' });
+  } catch (error) {
+    console.error('[admin/delivery-delete]', error.message);
+    res.status(500).json({ success: false, message: 'We could not delete this delivery.' });
+  }
+}
+
+export async function adminRetryDeliveryJob(req, res) {
+  try {
+    const job = await DeliveryJob.findById(req.params.jobId);
+    if (!job || job.status !== 'failed') return res.status(409).json({ success: false, message: 'This job is not waiting to be retried.' });
+    job.status = 'queued';
+    job.stage = 'queued';
+    job.errorCode = undefined;
+    job.errorMessage = undefined;
+    job.completedAt = undefined;
+    if (job.attempts >= 3) { job.attempts = 0; job.cursor = 0; job.result = undefined; }
+    await job.save();
+    await AdminAudit.create({ adminId: adminId(req), userId: job.userId, action: 'delivery.job_retried_by_admin', resourceType: 'DeliveryJob', resourceId: String(job._id), details: { deliveryId: job.deliveryId, type: job.type } });
+    res.status(202).json({ success: true, data: { id: job._id, status: job.status, type: job.type } });
+  } catch (error) {
+    console.error('[admin/delivery-job-retry]', error.message);
+    res.status(500).json({ success: false, message: 'We could not retry this job.' });
   }
 }
 

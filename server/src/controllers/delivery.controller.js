@@ -769,6 +769,7 @@ export async function publishDelivery(req, res) {
     delivery.access.allowDownloadAll = parsed.data.allowDownloadAll;
     delivery.access.allowLikes = parsed.data.allowLikes;
     delivery.access.expiresAt = parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : undefined;
+    delivery.access.revokedAt = undefined;
     delivery.access.pinDigest = parsed.data.pin ? await bcrypt.hash(parsed.data.pin, 12) : undefined;
     if (!parsed.data.narration) delivery.narration = undefined;
     delivery.status = 'published';
@@ -790,7 +791,8 @@ function accessTokenValid(token, deliveryId) {
 }
 
 async function publicDelivery(id) {
-  return Delivery.findOne({ publicId: id, status: 'published' }).select('+access.pinDigest').populate('userId', 'name plan planOverride studio avatar');
+  const delivery = await Delivery.findOne({ publicId: id, status: 'published' }).select('+access.pinDigest').populate('userId', 'name plan planOverride studio avatar');
+  return delivery?.access?.revokedAt ? null : delivery;
 }
 
 function expired(delivery) { return delivery.access?.expiresAt && delivery.access.expiresAt <= new Date(); }

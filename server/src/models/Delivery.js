@@ -22,7 +22,8 @@ const accessSchema = new mongoose.Schema({
   expiresAt: Date,
   allowIndividualDownloads: { type: Boolean, default: true },
   allowDownloadAll: { type: Boolean, default: true },
-  allowLikes: { type: Boolean, default: true }
+  allowLikes: { type: Boolean, default: true },
+  revokedAt: Date
 }, { _id: false });
 
 const deliverySchema = new mongoose.Schema({

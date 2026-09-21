@@ -152,13 +152,17 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const [accountNoteCategory, setAccountNoteCategory] = useState('general');
   const [supportReason, setSupportReason] = useState('');
   const [proExpiry, setProExpiry] = useState('');
+  const [deliveryStatusFilter, setDeliveryStatusFilter] = useState('all');
+  const [deliveryFormatFilter, setDeliveryFormatFilter] = useState('all');
+  const [selectedDelivery, setSelectedDelivery] = useState(null);
+  const [deliveryDetailLoading, setDeliveryDetailLoading] = useState(false);
 
   const fetchAdminData = useCallback(async () => {
     setLoading(true);
     const requests = {
       operations: api.get('/v1/admin/operations'),
       analytics: api.get('/v1/admin/analytics'),
-      deliveries: api.get('/v1/admin/deliveries', { params: { search } }),
+      deliveries: api.get('/v1/admin/deliveries', { params: { search, status: deliveryStatusFilter, format: deliveryFormatFilter } }),
       users: api.get('/v1/admin/users', { params: { search, plan: accountPlanFilter, status: accountStatusFilter, acquisitionSource: accountSourceFilter } }),
       payments: api.get('/v1/admin/payments', { params: { search } })
     };
@@ -182,7 +186,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
     setPanelErrors(nextErrors);
     if (Object.keys(nextErrors).length === entries.length) toast.error('The administration service is unavailable. Try again shortly.');
     setLoading(false);
-  }, [accountPlanFilter, accountSourceFilter, accountStatusFilter, search]);
+  }, [accountPlanFilter, accountSourceFilter, accountStatusFilter, deliveryFormatFilter, deliveryStatusFilter, search]);
 
   useEffect(() => {
     const timer = window.setTimeout(fetchAdminData, 300);
@@ -199,6 +203,77 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       fetchAdminData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Could not change account plan.');
+    }
+  };
+
+  const openDelivery = async (delivery) => {
+    setSelectedDelivery({ summary: delivery });
+    setDeliveryDetailLoading(true);
+    try {
+      const response = await api.get(`/v1/admin/deliveries/${delivery.id || delivery._id || delivery.publicId}`);
+      setSelectedDelivery(response.data?.data || null);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not open this delivery.');
+      setSelectedDelivery(null);
+    } finally {
+      setDeliveryDetailLoading(false);
+    }
+  };
+
+  const refreshSelectedDelivery = async () => {
+    const id = selectedDelivery?.id || selectedDelivery?.summary?.id || selectedDelivery?.publicId || selectedDelivery?.summary?.publicId;
+    if (!id) return;
+    try {
+      const response = await api.get(`/v1/admin/deliveries/${id}`);
+      setSelectedDelivery(response.data?.data || null);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not refresh this delivery.');
+    }
+  };
+
+  const deliveryAction = async (action, message) => {
+    const id = selectedDelivery?.id || selectedDelivery?.summary?.id || selectedDelivery?.publicId || selectedDelivery?.summary?.publicId;
+    if (!id) return;
+    try {
+      setAccountActionLoading(true);
+      await api.post(`/v1/admin/deliveries/${id}/${action}`, { reason: message });
+      toast.success(message);
+      await Promise.all([fetchAdminData(), refreshSelectedDelivery()]);
+    } catch (error) {
+      toast.error(error.response?.data?.message || `Could not ${action.replace('-', ' ')} this delivery.`);
+    } finally {
+      setAccountActionLoading(false);
+    }
+  };
+
+  const deleteSelectedDelivery = async () => {
+    const id = selectedDelivery?.id || selectedDelivery?.summary?.id || selectedDelivery?.publicId || selectedDelivery?.summary?.publicId;
+    if (!id || !window.confirm('Delete this delivery and close its client link?')) return;
+    try {
+      setAccountActionLoading(true);
+      await api.delete(`/v1/admin/deliveries/${id}`, { data: { reason: 'Deleted from the admin delivery workspace' } });
+      toast.success('Delivery deleted.');
+      setSelectedDelivery(null);
+      await fetchAdminData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not delete this delivery.');
+    } finally {
+      setAccountActionLoading(false);
+    }
+  };
+
+  const retrySelectedJob = async (jobId) => {
+    const id = selectedDelivery?.id || selectedDelivery?.summary?.id || selectedDelivery?.publicId || selectedDelivery?.summary?.publicId;
+    if (!id || !jobId) return;
+    try {
+      setAccountActionLoading(true);
+      await api.post(`/v1/admin/deliveries/${id}/jobs/${jobId}/retry`);
+      toast.success('Job queued again.');
+      await Promise.all([fetchAdminData(), refreshSelectedDelivery()]);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not retry this job.');
+    } finally {
+      setAccountActionLoading(false);
     }
   };
 
@@ -545,44 +620,26 @@ export default function AdminDashboardPage({ admin, onLogout }) {
 
           {/* Deliveries Tab */}
           {!loading && tab === 'deliveries' && (
-            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {deliveries.map((item) => (
-                <article
-                  key={item._id}
-                  className="rounded-2xl border border-white/10 bg-white/[.025] p-5 transition-transform hover:-translate-y-0.5"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">
-                        {formatNames[item.format] || 'Delivery'}
-                      </p>
-                      <h2 className="mt-1.5 text-lg font-medium text-white">
-                        {item.title || item.clientName || 'Untitled delivery'}
-                      </h2>
-                    </div>
-                    <Status value={item.status} />
-                  </div>
-                  <p className="mt-4 text-xs text-white/50">
-                    Studio: {item.userId?.studio?.name || item.userId?.name || 'Independent Photographer'}
-                  </p>
-                  <div className="mt-6 flex items-center gap-5 border-t border-white/[.07] pt-4 text-xs text-white/40">
-                    <span className="flex items-center gap-1.5">
-                      <Eye size={14} />
-                      {item.viewsCount || 0}
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <Download size={14} />
-                      {item.downloadsCount || 0}
-                    </span>
-                    <span className="ml-auto">{shortDate(item.updatedAt)}</span>
-                  </div>
-                </article>
-              ))}
-              {!deliveries.length && (
-                <p className="col-span-full py-16 text-center text-sm text-white/45">
-                  No deliveries match your search query.
-                </p>
-              )}
+            <div className="mt-6">
+              <div className="mb-4 grid gap-3 sm:grid-cols-2">
+                <label className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/40">Format
+                  <select value={deliveryFormatFilter} onChange={(event) => setDeliveryFormatFilter(event.target.value)} className="mt-2 min-h-10 w-full rounded-xl border border-white/10 bg-[#0c0c10] px-3 text-xs font-normal normal-case tracking-normal text-white outline-none focus:border-[#ff9b8e]/60"><option value="all">All formats</option>{Object.entries(formatNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+                </label>
+                <label className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/40">Delivery status
+                  <select value={deliveryStatusFilter} onChange={(event) => setDeliveryStatusFilter(event.target.value)} className="mt-2 min-h-10 w-full rounded-xl border border-white/10 bg-[#0c0c10] px-3 text-xs font-normal normal-case tracking-normal text-white outline-none focus:border-[#ff9b8e]/60"><option value="all">All statuses</option><option value="draft">Draft</option><option value="review">Review</option><option value="published">Published</option><option value="archived">Archived</option><option value="failed">Failed jobs</option></select>
+                </label>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {deliveries.map((item) => (
+                  <button key={item.id || item.publicId} type="button" onClick={() => openDelivery(item)} className="rounded-2xl border border-white/10 bg-white/[.025] p-5 text-left transition-transform hover:-translate-y-0.5 hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff9b8e]/70">
+                    <div className="flex items-start justify-between gap-4"><div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">{formatNames[item.format] || 'Delivery'}</p><h2 className="mt-1.5 truncate text-lg font-medium text-white">{item.title || item.clientName || 'Untitled delivery'}</h2></div><Status value={item.effectiveStatus || item.status} /></div>
+                    <p className="mt-4 truncate text-xs text-white/50">{item.photographer?.studio || item.photographer?.name || 'Independent photographer'} · {item.clientName || 'No client name'}</p>
+                    <div className="mt-4 grid grid-cols-3 gap-2 text-xs text-white/45"><span>{number(item.photoCount)} photos</span><span>{item.captions?.completed || 0}/{item.captions?.total || 0} captions</span><span>{item.music?.status === 'ready' ? 'Music ready' : 'No music'}</span></div>
+                    <div className="mt-5 flex items-center gap-4 border-t border-white/[.07] pt-4 text-xs text-white/40"><span className="flex items-center gap-1.5"><Eye size={14} />{item.viewsCount || 0}</span><span className="flex items-center gap-1.5"><Download size={14} />{item.downloadsCount || 0}</span><span className="ml-auto">{shortDate(item.updatedAt)}</span></div>
+                  </button>
+                ))}
+                {!deliveries.length && <p className="col-span-full py-16 text-center text-sm text-white/45">No deliveries match these filters.</p>}
+              </div>
             </div>
           )}
 
@@ -699,6 +756,40 @@ export default function AdminDashboardPage({ admin, onLogout }) {
           )}
         </section>
       </main>
+
+      {/* Delivery detail drawer */}
+      {selectedDelivery && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="delivery-detail-title" onMouseDown={(event) => { if (event.target === event.currentTarget && !accountActionLoading) setSelectedDelivery(null); }}>
+          <motion.aside initial={{ opacity: 0, x: 28 }} animate={{ opacity: 1, x: 0 }} className="ml-auto flex h-full w-full max-w-3xl flex-col overflow-y-auto border-l border-white/10 bg-[#0c0c10] shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-white/10 bg-[#0c0c10]/95 p-5 backdrop-blur sm:p-7">
+              <div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Delivery workspace</p><h2 id="delivery-detail-title" className="mt-1 truncate text-2xl font-medium">{selectedDelivery.title || selectedDelivery.clientName || 'Delivery'}</h2><div className="mt-2 flex flex-wrap items-center gap-2"><Status value={selectedDelivery.effectiveStatus || selectedDelivery.rawStatus || selectedDelivery.status} /><span className="text-xs text-white/40">{formatNames[selectedDelivery.format] || selectedDelivery.format || 'Format not selected'} · {selectedDelivery.photographer?.studio || selectedDelivery.photographer?.name || 'Independent photographer'}</span></div></div>
+              <button type="button" aria-label="Close delivery details" onClick={() => setSelectedDelivery(null)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/10 text-white/60 transition-colors hover:border-white/25 hover:text-white"><X size={18} /></button>
+            </div>
+            {deliveryDetailLoading && <div className="p-7 text-sm text-white/45">Loading delivery details…</div>}
+            {!deliveryDetailLoading && selectedDelivery.title !== undefined && (
+              <div className="space-y-6 p-5 sm:p-7">
+                <section className="flex flex-wrap gap-2">
+                  {selectedDelivery.rawStatus !== 'published' && selectedDelivery.rawStatus !== 'archived' && <button type="button" disabled={accountActionLoading} onClick={() => deliveryAction('publish', 'Delivery published.')} className="min-h-10 rounded-xl bg-emerald-300 px-4 text-xs font-bold text-[#07130e] disabled:opacity-50">Publish</button>}
+                  {selectedDelivery.rawStatus === 'archived' ? <button type="button" disabled={accountActionLoading} onClick={() => deliveryAction('restore', 'Delivery restored.')} className="min-h-10 rounded-xl bg-white px-4 text-xs font-bold text-black disabled:opacity-50">Restore</button> : <button type="button" disabled={accountActionLoading} onClick={() => deliveryAction('archive', 'Delivery archived.')} className="min-h-10 rounded-xl border border-white/15 px-4 text-xs font-semibold text-white/70 disabled:opacity-50">Archive</button>}
+                  {selectedDelivery.rawStatus === 'published' && !selectedDelivery.access?.linkRevoked && <button type="button" disabled={accountActionLoading} onClick={() => deliveryAction('revoke-link', 'Client link revoked.')} className="min-h-10 rounded-xl border border-amber-300/30 px-4 text-xs font-semibold text-amber-200 disabled:opacity-50">Revoke link</button>}
+                  {selectedDelivery.previewUrl && <a href={selectedDelivery.previewUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center rounded-xl border border-white/15 px-4 text-xs font-semibold text-white/70 hover:border-[#ff9b8e]/50">Open client view</a>}
+                  <button type="button" disabled={accountActionLoading} onClick={deleteSelectedDelivery} className="min-h-10 rounded-xl border border-red-300/25 px-4 text-xs font-semibold text-red-200 disabled:opacity-50">Delete</button>
+                </section>
+
+                <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Photographs</p><p className="mt-2 text-xl font-medium">{number(selectedDelivery.photoCount)}</p><p className="mt-1 text-xs text-white/45">{bytes(selectedDelivery.fileBytes)}</p></div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Captions</p><p className="mt-2 text-xl font-medium">{number(selectedDelivery.captions?.completed)}/{number(selectedDelivery.captions?.total)}</p><p className="mt-1 text-xs text-white/45">{selectedDelivery.captions?.status || 'missing'}</p></div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Soundtrack</p><p className="mt-2 text-xl font-medium">{selectedDelivery.music?.status || 'missing'}</p><p className="mt-1 text-xs text-white/45">{selectedDelivery.music?.trackId || 'No selected track'}</p></div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Narration</p><p className="mt-2 text-xl font-medium">{selectedDelivery.narration?.status || 'missing'}</p><p className="mt-1 text-xs text-white/45">{selectedDelivery.narration?.timingStatus || selectedDelivery.narration?.voiceId || 'No timing reported'}</p></div></section>
+
+                <section className="rounded-2xl border border-white/10 bg-white/[.025] p-4 sm:p-5"><div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">Client access</h3><Status value={selectedDelivery.access?.linkRevoked ? 'revoked' : selectedDelivery.access?.hasPin ? 'pin protected' : 'open'} /></div><div className="mt-4 grid gap-3 text-xs text-white/55 sm:grid-cols-2"><p>Expires: <span className="text-white/75">{selectedDelivery.access?.expiresAt ? shortDate(selectedDelivery.access.expiresAt) : 'No expiry'}</span></p><p>PIN: <span className="text-white/75">{selectedDelivery.access?.hasPin ? 'Configured (hidden)' : 'None'}</span></p><p>Individual downloads: <span className="text-white/75">{selectedDelivery.access?.allowIndividualDownloads ? 'Allowed' : 'Off'}</span></p><p>Download all: <span className="text-white/75">{selectedDelivery.access?.allowDownloadAll ? 'Allowed' : 'Off'}</span></p><p>Likes: <span className="text-white/75">{selectedDelivery.access?.allowLikes ? 'Allowed' : 'Off'}</span></p><p>Share grants: <span className="text-white/75">{number(selectedDelivery.shareGrants?.total)} total · {number(selectedDelivery.shareGrants?.active)} active</span></p></div></section>
+
+                <section><div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">AI job history</h3><span className="text-xs text-white/35">{selectedDelivery.currentJob ? `${selectedDelivery.currentJob.type} is ${selectedDelivery.currentJob.status}` : 'No job running'}</span></div><div className="mt-3 space-y-2">{(selectedDelivery.jobs || []).map(job => <div key={job.id} className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[.02] p-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><span className="text-xs font-semibold text-white">{job.type}</span><Status value={job.status} /></div><p className="mt-1 text-[11px] text-white/40">{job.stage || 'queued'} · {number(job.progress)}% · attempt {number(job.attempts)}</p>{job.errorMessage && <p className="mt-1 text-[11px] text-amber-200/80">{job.errorCode || 'Job error'}: {job.errorMessage}</p>}</div>{job.status === 'failed' && <button type="button" disabled={accountActionLoading} onClick={() => retrySelectedJob(job.id)} className="min-h-9 rounded-lg border border-amber-300/30 px-3 text-[11px] font-semibold text-amber-200 disabled:opacity-50">Retry</button>}</div>)}{!selectedDelivery.jobs?.length && <p className="text-xs text-white/35">No AI jobs recorded.</p>}</div></section>
+
+                <section><div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">Role links</h3><span className="text-xs text-white/35">Organizer · vendor · guest</span></div><div className="mt-3 space-y-2">{(selectedDelivery.shareGrants || []).map(grant => <div key={grant.id} className="rounded-xl border border-white/10 bg-white/[.02] p-3"><div className="flex flex-wrap items-center gap-2"><Status value={grant.role} /><span className="text-xs font-semibold text-white">{grant.label}</span>{grant.revokedAt && <Status value="revoked" />}</div><p className="mt-2 text-[11px] text-white/45">{number(grant.assetCount)} photos · {number(grant.sectionCount)} sections · {grant.allowDownloadAll ? 'download all allowed' : 'download all off'}{grant.expiresAt ? ` · expires ${shortDate(grant.expiresAt)}` : ''}</p>{grant.usageTerms && <p className="mt-1 text-[11px] leading-5 text-white/40">{grant.usageTerms}</p>}</div>)}{!selectedDelivery.shareGrants?.length && <p className="text-xs text-white/35">No role links created.</p>}</div></section>
+
+                <section><h3 className="text-sm font-semibold">Photographs and captions</h3><div className="mt-3 space-y-2">{(selectedDelivery.assets || []).slice(0, 30).map(asset => { const caption = (selectedDelivery.captions || []).find(item => item.assetId === asset.assetId); return <div key={asset.assetId} className="rounded-xl border border-white/10 bg-white/[.02] p-3"><div className="flex items-start justify-between gap-3"><p className="truncate text-xs font-semibold text-white">{asset.originalFilename || asset.assetId}</p><span className="shrink-0 text-[11px] text-white/35">{bytes(asset.bytes)}</span></div><p className="mt-2 text-xs leading-5 text-white/55">{caption?.caption || 'Caption missing'}</p></div>; })}{!selectedDelivery.assets?.length && <p className="text-xs text-white/35">No photographs recorded.</p>}</div></section>
+              </div>
+            )}
+          </motion.aside>
+        </div>
+      )}
 
       {/* Account detail drawer */}
       {selectedAccount && (
