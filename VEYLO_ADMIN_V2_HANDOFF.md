@@ -5,6 +5,7 @@ The 15-stage admin plan is complete. `VEYLO_ADMIN_V2_PROGRESS.md` is the short a
 ## What is live in the codebase
 
 - The admin workspace has separate views for operations, accounts, deliveries, AI jobs, client access, volume jobs, storage, music and narration, billing, portfolios, support, configuration, product analytics, and security.
+- Superadmins can permanently delete a photographer account from its account workspace after entering a reason and typing `DELETE`. The guarded route cancels active Paystack subscriptions when configured, removes Veylo-hosted media and account-owned records, revokes access through deletion, and keeps immutable admin audit evidence. Administrator accounts cannot be removed from the photographer workspace.
 - Product analytics is optional and consent-gated. The client sends meaningful outcomes in small batches to `POST /api/v1/analytics/events`; the server allowlist currently contains 166 event names.
 - Session identifiers are HMAC-digested before persistence. Passwords, PINs, tokens, contact details, private briefs, client/studio names, captions, filenames, photograph pixels, audio, messages, and keystrokes are removed from metadata recursively.
 - The Product analytics tab is limited to superadmin, operations, analyst, and read-only admin roles. It reports journey checkpoints, format use, source/campaign/referrer labels, devices, failures, and the full event catalogue without exposing private content.

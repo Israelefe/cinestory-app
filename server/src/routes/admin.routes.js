@@ -5,6 +5,7 @@ import {
   getAdminAnalytics,
   getAllUsers,
   getAccountDetail,
+  adminDeleteAccount,
   updateAccountStatus,
   forceLogoutAccount,
   addAccountNote,
@@ -145,6 +146,7 @@ router.get('/product-analytics', requireAdminRoles('superadmin', 'operations', '
 router.get('/users', getAllUsers);
 router.patch('/users/:id/plan', requireAdminRoles('superadmin', 'operations'), updateUserPlan);
 router.get('/users/:id', getAccountDetail);
+router.delete('/users/:id', requireAdminRoles('superadmin'), adminDeleteAccount);
 router.patch('/users/:id/status', requireAdminRoles('superadmin', 'operations', 'support'), updateAccountStatus);
 router.post('/users/:id/force-logout', requireAdminRoles('superadmin', 'operations', 'support'), forceLogoutAccount);
 router.post('/users/:id/notes', requireAdminRoles('superadmin', 'operations', 'support'), addAccountNote);

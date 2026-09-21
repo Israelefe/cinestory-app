@@ -31,6 +31,7 @@ import {
   ShieldCheck,
   StickyNote,
   TriangleAlert,
+  Trash2,
   UserCheck,
   UserX,
   Users,
@@ -284,6 +285,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const [accountNoteCategory, setAccountNoteCategory] = useState('general');
   const [supportReason, setSupportReason] = useState('');
   const [proExpiry, setProExpiry] = useState('');
+  const [accountDeleteReason, setAccountDeleteReason] = useState('');
+  const [accountDeleteConfirmation, setAccountDeleteConfirmation] = useState('');
   const [deliveryStatusFilter, setDeliveryStatusFilter] = useState('all');
   const [deliveryFormatFilter, setDeliveryFormatFilter] = useState('all');
   const [selectedDelivery, setSelectedDelivery] = useState(null);
@@ -519,6 +522,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
     setAccountNote('');
     setSupportReason('');
     setProExpiry('');
+    setAccountDeleteReason('');
+    setAccountDeleteConfirmation('');
     setAccountDetailLoading(true);
     try {
       const response = await api.get(`/v1/admin/users/${account._id || account.id}`);
@@ -543,6 +548,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   };
 
   const accountId = selectedAccount?.account?.id || selectedAccount?.account?._id || selectedAccount?.account;
+  const canDeleteAccounts = ['superadmin', 'admin'].includes(String(admin?.role || '').toLowerCase());
 
   const changeAccountStatus = async (status) => {
     if (!accountId) return;
@@ -629,6 +635,28 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       toast.success('One-time read-only support code created and copied.');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Could not create support access.');
+    } finally {
+      setAccountActionLoading(false);
+    }
+  };
+
+  const deleteAccount = async () => {
+    if (!accountId || !canDeleteAccounts) return;
+    const reason = accountDeleteReason.trim();
+    if (reason.length < 8) return toast.error('Write a specific reason before deleting this account.');
+    if (accountDeleteConfirmation !== 'DELETE') return toast.error('Type DELETE to confirm the permanent removal.');
+    const accountName = selectedAccount?.account?.name || selectedAccount?.account?.email || 'this account';
+    if (!window.confirm(`Permanently delete ${accountName} and all of its deliveries, photographs, media, and account records? This cannot be undone.`)) return;
+    try {
+      setAccountActionLoading(true);
+      await api.delete(`/v1/admin/users/${accountId}`, { data: { reason, confirmation: accountDeleteConfirmation } });
+      toast.success('The photographer account was permanently deleted.');
+      setSelectedAccount(null);
+      setAccountDeleteReason('');
+      setAccountDeleteConfirmation('');
+      await fetchAdminData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not delete this account.');
     } finally {
       setAccountActionLoading(false);
     }
@@ -1523,6 +1551,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
                   <button type="button" disabled={accountActionLoading} onClick={forceLogoutAccount} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-white/15 px-4 text-xs font-semibold text-white/70 disabled:opacity-50"><LockKeyhole size={15} /> Sign out sessions</button>
                   <button type="button" onClick={exportAccount} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-white/15 px-4 text-xs font-semibold text-white/70"><FileDown size={15} /> Export account</button>
                 </section>
+
+                {canDeleteAccounts && selectedAccount.account.role !== 'admin' && <section className="rounded-2xl border border-red-300/20 bg-red-300/[.045] p-4 sm:p-5"><div className="flex items-start gap-3"><Trash2 size={16} className="mt-0.5 shrink-0 text-red-200" /><div><h3 className="text-sm font-semibold text-red-100">Delete this account permanently</h3><p className="mt-2 text-xs leading-5 text-red-100/65">This removes the photographer’s deliveries, photographs, media, portfolio, billing records, sessions, and account data. It cannot be undone. Veylo will cancel an active paid subscription first; removal stops if billing cannot confirm that cancellation.</p></div></div><div className="mt-4 grid gap-3"><label className="text-[10px] font-semibold uppercase tracking-[.14em] text-red-100/60">Reason for deletion<textarea value={accountDeleteReason} onChange={(event) => setAccountDeleteReason(event.target.value)} maxLength={240} rows={3} placeholder="Explain why this account is being removed." className="mt-2 w-full resize-y rounded-xl border border-red-200/15 bg-black/20 p-3 text-xs leading-5 text-white outline-none placeholder:text-white/25 focus:border-red-200/50" /></label><label className="text-[10px] font-semibold uppercase tracking-[.14em] text-red-100/60">Type DELETE to confirm<input value={accountDeleteConfirmation} onChange={(event) => setAccountDeleteConfirmation(event.target.value.toUpperCase().slice(0, 6))} inputMode="text" autoComplete="off" className="mt-2 min-h-10 w-full rounded-xl border border-red-200/15 bg-black/20 px-3 text-sm font-semibold tracking-[.2em] text-white outline-none placeholder:text-white/25 focus:border-red-200/50" placeholder="DELETE" /></label><button type="button" disabled={accountActionLoading || accountDeleteReason.trim().length < 8 || accountDeleteConfirmation !== 'DELETE'} onClick={deleteAccount} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-red-200/35 bg-red-300/10 px-4 text-xs font-bold text-red-100 transition-colors hover:bg-red-300/20 disabled:cursor-not-allowed disabled:opacity-40"><Trash2 size={15} />{accountActionLoading ? 'Deleting account…' : 'Delete account permanently'}</button></div></section>}
 
                 <section className="rounded-2xl border border-white/10 bg-white/[.025] p-4 sm:p-5"><div className="flex items-center gap-2"><KeyRound size={15} className="text-[#ff9b8e]" /><h3 className="text-sm font-semibold">Read-only support access</h3></div><p className="mt-2 text-xs leading-5 text-white/45">Creates a one-time code that expires in 15 minutes. It cannot change the photographer’s account.</p><div className="mt-3 flex flex-col gap-2 sm:flex-row"><input value={supportReason} onChange={(event) => setSupportReason(event.target.value)} placeholder="Why does support need access?" className="min-h-10 min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 px-3 text-xs text-white outline-none placeholder:text-white/25 focus:border-[#ff9b8e]/60" /><button type="button" disabled={accountActionLoading || supportReason.trim().length < 8} onClick={createSupportAccess} className="min-h-10 rounded-xl bg-[#ff5a47] px-4 text-xs font-bold text-[#160907] disabled:opacity-40">Create code</button></div></section>
 

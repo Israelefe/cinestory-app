@@ -1,29 +1,15 @@
 import crypto from 'crypto';
-import mongoose from 'mongoose';
 import { OAuth2Client } from 'google-auth-library';
 import { z } from 'zod';
 import User from '../models/User.js';
 import AuthCode from '../models/AuthCode.js';
 import Session from '../models/Session.js';
 import PasswordResetToken from '../models/PasswordResetToken.js';
-import PhotoStory from '../models/PhotoStory.js';
-import StoryView from '../models/StoryView.js';
-import Subscription from '../models/Subscription.js';
-import Payment from '../models/Payment.js';
-import BillingEvent from '../models/BillingEvent.js';
 import AccountDeletionRequest from '../models/AccountDeletionRequest.js';
-import DeliveryUsage from '../models/DeliveryUsage.js';
-import Delivery from '../models/Delivery.js';
-import DeliveryJob from '../models/DeliveryJob.js';
-import PhotoLike from '../models/PhotoLike.js';
-import DeliveryView from '../models/DeliveryView.js';
-import StorageAsset from '../models/StorageAsset.js';
 import Portfolio from '../models/Portfolio.js';
-import PortfolioJob from '../models/PortfolioJob.js';
 import { sendPasswordChangedEmail, sendPasswordResetEmail, sendVerificationEmail, sendWelcomeEmail } from '../services/email.service.js';
 import { verifyTurnstile } from '../services/turnstile.service.js';
-import { cloudinary, configureCloudinary } from '../services/cloudinary.service.js';
-import { decryptBillingToken, paystackRequest } from '../services/paystack.service.js';
+import { AccountDeletionError, deleteUserAccount } from '../services/accountDeletion.service.js';
 import { REFRESH_COOKIE, clearSessionCookies, codeDigest, createSession, normalizeEmail, publicUser, randomToken, safeEqual, setSessionCookies, tokenDigest } from '../utils/auth.js';
 import { STUDIO_NAME_CHANGE_COOLDOWN_MS, isoDate, nextChangeAt } from '../constants/profilePolicy.js';
 
@@ -333,35 +319,6 @@ async function confirmAccountOwner(user, data) {
   }
 }
 
-async function removeCloudinaryResources(prefix, resourceType = 'image') {
-  await Promise.all(['upload', 'authenticated'].map(type => cloudinary.api.delete_resources_by_prefix(prefix, { resource_type: resourceType, type, invalidate: true })));
-}
-
-async function deleteCloudinaryFolder(path) {
-  await cloudinary.api.delete_folder(path).catch(error => {
-    if (error?.http_code !== 404) throw error;
-  });
-}
-
-async function nestedCloudinaryFolders(prefix) {
-  const found = [];
-  let cursor;
-  do {
-    const response = await cloudinary.api.sub_folders(prefix, { max_results: 500, next_cursor: cursor });
-    for (const folder of response.folders || []) {
-      found.push(...await nestedCloudinaryFolders(folder.path), folder.path);
-    }
-    cursor = response.next_cursor;
-  } while (cursor);
-  return found;
-}
-
-async function removeCloudinaryFolder(prefix, resourceTypes) {
-  await Promise.all(resourceTypes.map(resourceType => removeCloudinaryResources(prefix, resourceType)));
-  for (const child of await nestedCloudinaryFolders(prefix)) await deleteCloudinaryFolder(child);
-  await deleteCloudinaryFolder(prefix);
-}
-
 export async function deleteAccount(req, res) {
   try {
     const parsed = deleteAccountSchema.safeParse(req.body);
@@ -369,61 +326,14 @@ export async function deleteAccount(req, res) {
     const user = await User.findById(req.user.id).select('+password +googleId');
     if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
     if (!(await confirmAccountOwner(user, parsed.data))) return res.status(403).json({ success: false, code: 'ACCOUNT_CONFIRMATION_FAILED', message: 'We could not confirm that this account belongs to you.' });
-
-    const paidSubscription = await Subscription.findOne({ userId: user._id, status: { $in: ['active', 'past_due'] }, subscriptionCode: { $exists: true } }).sort({ createdAt: -1 }).select('+emailTokenEncrypted');
-    if (paidSubscription) {
-      const token = decryptBillingToken(paidSubscription.emailTokenEncrypted);
-      if (!token) return res.status(409).json({ success: false, message: 'Cancel the active Pro subscription from Billing before deleting this account.' });
-      await paystackRequest('/subscription/disable', { method: 'POST', body: { code: paidSubscription.subscriptionCode, token } });
-    }
-
-    const userPrefix = `veylo/users/${user._id}`;
-    const stories = await PhotoStory.find({ userId: user._id }).select('photos.url soundtrack.audioUrl').lean();
-    const hasDeliveryAssets = stories.some(story => [story.soundtrack?.audioUrl, ...(story.photos || []).map(photo => photo.url)].some(url => String(url || '').includes(`/${userPrefix}/`))) || await Delivery.exists({ userId: user._id }) || await StorageAsset.exists({ userId: user._id });
-    const hasStudioAsset = user.studio?.logoPublicId?.startsWith(`veylo/studios/${user._id}/`);
-    if (hasStudioAsset || hasDeliveryAssets) {
-      if (!configureCloudinary()) throw new Error('Cloudinary credentials are missing.');
-      await Promise.all([
-        hasStudioAsset ? removeCloudinaryFolder(`veylo/studios/${user._id}`, ['image']) : Promise.resolve(),
-        hasDeliveryAssets ? removeCloudinaryFolder(userPrefix, ['image', 'video']) : Promise.resolve()
-      ]);
-    }
-
-    const transaction = await mongoose.startSession();
-    try {
-      await transaction.withTransaction(async () => {
-        const options = { session: transaction };
-        const storiesForViews = await PhotoStory.find({ userId: user._id }).select('_id').session(transaction);
-        await StoryView.deleteMany({ storyId: { $in: storiesForViews.map(item => item._id) } }, options);
-        await PhotoStory.deleteMany({ userId: user._id }, options);
-        await Session.deleteMany({ userId: user._id }, options);
-        await AuthCode.deleteMany({ userId: user._id }, options);
-        await PasswordResetToken.deleteMany({ userId: user._id }, options);
-        await Subscription.deleteMany({ userId: user._id }, options);
-        await Payment.deleteMany({ userId: user._id }, options);
-        await BillingEvent.deleteMany({ userId: user._id }, options);
-        // Audit records are retained after account deletion. They are immutable
-        // operational evidence and must not disappear with the account data.
-        await DeliveryUsage.deleteMany({ userId: user._id }, options);
-        const deliveries = await Delivery.find({ userId: user._id }).select('_id').session(transaction);
-        const deliveryIds = deliveries.map(item => item._id);
-        await PhotoLike.deleteMany({ deliveryId: { $in: deliveryIds } }, options);
-        await DeliveryView.deleteMany({ deliveryId: { $in: deliveryIds } }, options);
-        await DeliveryJob.deleteMany({ userId: user._id }, options);
-        await Delivery.deleteMany({ userId: user._id }, options);
-        await StorageAsset.deleteMany({ userId: user._id }, options);
-        await Portfolio.deleteMany({ userId: user._id }, options);
-        await PortfolioJob.deleteMany({ userId: user._id }, options);
-        await User.deleteOne({ _id: user._id }, options);
-      });
-    } finally {
-      await transaction.endSession();
-    }
+    await deleteUserAccount({ userId: user._id });
     clearSessionCookies(res);
     res.json({ success: true, message: 'Your Veylo account and its data have been deleted.' });
   } catch (error) {
     console.error('[auth/delete-account]', error.http_code || error.name || 'delete_error', error.message);
-    res.status(500).json({ success: false, message: 'We could not delete the complete account. Your account is still available. Please try again.' });
+    const status = error instanceof AccountDeletionError && Number.isInteger(error.status) ? error.status : 500;
+    const message = error instanceof AccountDeletionError ? error.message : 'We could not delete the complete account. Your account is still available. Please try again.';
+    res.status(status).json({ success: false, code: error.code || 'ACCOUNT_DELETION_FAILED', message });
   }
 }
 

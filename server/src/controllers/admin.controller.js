@@ -35,6 +35,7 @@ import { checkCloudinaryConnection, cloudinary, configureCloudinary } from '../s
 import { PLAN_DEFINITIONS, PRO_PRICE_KOBO } from '../config/plans.js';
 import { tokenDigest } from '../utils/auth.js';
 import { removeDeliveryMedia } from '../services/deliveryMedia.service.js';
+import { AccountDeletionError, deleteUserAccount } from '../services/accountDeletion.service.js';
 import { NARRATION_RENDER_VERSION } from '../services/narration.service.js';
 import { DELIVERY_SOUNDTRACKS, deliverySoundtrackFile } from '../constants/deliverySoundtracks.js';
 import { DEFAULT_NARRATION_VOICE_ID, NARRATION_VOICES } from '../constants/narrationVoices.js';
@@ -490,6 +491,57 @@ export async function getAccountDetail(req, res) {
   } catch (error) {
     console.error('[admin/account-detail]', error.message);
     res.status(500).json({ success: false, message: 'We could not load this account.' });
+  }
+}
+
+export async function adminDeleteAccount(req, res) {
+  try {
+    const accountId = validId(req.params.id);
+    const reason = safeReason(req.body?.reason);
+    const confirmation = String(req.body?.confirmation || '').trim();
+    if (!accountId) return res.status(400).json({ success: false, message: 'That account identifier is not valid.' });
+    if (reason.length < 8) return res.status(400).json({ success: false, message: 'Give a specific reason before deleting an account.' });
+    if (confirmation !== 'DELETE') return res.status(400).json({ success: false, message: 'Type DELETE to confirm this permanent action.' });
+
+    const user = await User.findById(accountId).select('name email role plan planOverride accountStatus emailVerifiedAt avatar studio acquisition onboardingStep onboardingCompletedAt storageUsedBytes storiesCount lastLoginAt createdAt updatedAt');
+    if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
+    if (String(accountId) === String(adminId(req)) || user.role === 'admin') return res.status(409).json({ success: false, message: 'Administrator accounts cannot be deleted from the photographer account workspace.' });
+
+    const administrator = adminId(req);
+    await AdminAudit.create({
+      adminId: administrator,
+      userId: user._id,
+      action: 'account.deletion_started',
+      resourceType: 'User',
+      resourceId: String(user._id),
+      details: { reason, confirmationRequired: true, phase: 'started' },
+      before: accountSnapshot(user)
+    });
+
+    const result = await deleteUserAccount({ userId: user._id });
+    try {
+      await AdminAudit.create({
+        adminId: administrator,
+        userId: user._id,
+        action: 'account.deleted_by_admin',
+        resourceType: 'User',
+        resourceId: String(user._id),
+        details: { reason, deleted: result.deleted, cancelledSubscription: result.cancelledSubscription, mediaRemoved: result.mediaRemoved, phase: 'completed' },
+        before: result.before,
+        after: { deleted: true }
+      });
+    } catch (auditError) {
+      // The deletion-started audit row remains immutable evidence if the
+      // completion row cannot be written after the account is gone.
+      console.error('[admin/account-delete-audit]', auditError.message);
+    }
+
+    res.json({ success: true, data: { accountId: result.accountId, deleted: result.deleted, cancelledSubscription: result.cancelledSubscription, mediaRemoved: result.mediaRemoved }, message: 'The photographer account and its data have been permanently deleted.' });
+  } catch (error) {
+    console.error('[admin/account-delete]', error.code || error.name || 'delete_error', error.message);
+    const status = error instanceof AccountDeletionError && Number.isInteger(error.status) ? error.status : 500;
+    const message = error instanceof AccountDeletionError ? error.message : 'We could not delete this account. Nothing else was changed. Please try again.';
+    res.status(status).json({ success: false, code: error.code || 'ACCOUNT_DELETION_FAILED', message });
   }
 }
 
