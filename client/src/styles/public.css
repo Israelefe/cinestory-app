@@ -2200,3 +2200,17 @@
   .v-dashboard-overview{margin-top:20px}
   .v-dashboard-deliveries{padding-top:42px}
 }
+.v-account-tools{max-width:850px;margin-top:20px;padding:20px;border:1px solid #ffffff17;background:radial-gradient(circle at 100% 0%,#ff5a470d,transparent 34%),#0d0d11}
+.v-account-tools>header p{color:#ff9b8e;font-size:11px;font-weight:750;letter-spacing:.13em}
+.v-account-tools>header span{display:block;margin-top:7px;color:#9b948d;font-size:13px;line-height:1.65}
+.v-account-tool-grid{display:grid;gap:10px;margin-top:18px}
+.v-account-tool-grid>a{display:grid;grid-template-columns:42px minmax(0,1fr) 18px;gap:12px;align-items:center;min-height:70px;padding:13px;border:1px solid #ffffff16;background:#101014;color:#d8d0c9;transition:transform .2s,border-color .2s,background .2s}
+.v-account-tool-grid>a:hover{transform:translate3d(0,-2px,0);border-color:#ff9b8e52;background:#141216}
+.v-account-tool-grid>a:active{transform:scale(.99)}
+.v-account-tool-icon{display:grid;place-items:center;width:42px;height:42px;border:1px solid #ff9b8e38;background:#ff5a470c;color:#ff9b8e}
+.v-account-tool-grid strong,.v-account-tool-grid small{display:block}
+.v-account-tool-grid strong{font-size:13px;font-weight:700}
+.v-account-tool-grid small{margin-top:4px;color:#817b75;font-size:11px;line-height:1.45}
+.v-account-tool-grid>a>svg{color:#aaa19a}
+@media(min-width:640px){.v-account-tools{padding:22px}.v-account-tool-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.v-account-tool-grid>a{padding:15px}}
+@media(prefers-reduced-motion:reduce){.v-account-tool-grid>a{transform:none!important;transition:none!important}}

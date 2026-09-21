@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Camera, CreditCard, ShieldCheck, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Camera, CreditCard, Images, ShieldCheck, Trash2 } from 'lucide-react';
 import GoogleSignIn from '../components/GoogleSignIn.jsx';
 import { Page, Reveal } from '../components/PublicDesign.jsx';
 import api, { apiMessage } from '../services/api.js';
@@ -44,7 +44,15 @@ export default function AccountSettings({ user, onAccountDeleted }) {
         <span className="v-account-plan"><ShieldCheck size={15} />Veylo {user?.plan === 'pro' ? 'Pro' : 'Free'}</span>
       </Reveal>
 
-      <Reveal className="v-account-billing" delay={.08}>
+      <Reveal className="v-account-tools" delay={.08}>
+        <header><div><p>STUDIO TOOLS</p><span>Keep the parts of your studio you use between deliveries in one place.</span></div></header>
+        <div className="v-account-tool-grid">
+          <Link to="/library"><span className="v-account-tool-icon"><Images size={19} /></span><span><strong>Image library</strong><small>Reuse photographs you have already stored.</small></span><ArrowRight size={17} /></Link>
+          <Link to="/portfolio/manage"><span className="v-account-tool-icon"><Camera size={19} /></span><span><strong>Studio portfolio</strong><small>Choose the work prospective clients can see.</small></span><ArrowRight size={17} /></Link>
+        </div>
+      </Reveal>
+
+      <Reveal className="v-account-billing" delay={.1}>
         <span><CreditCard size={20} /></span>
         <div><small>PLAN AND BILLING</small><strong>Manage {user?.plan === 'pro' ? 'your Pro subscription' : 'your Veylo plan'}</strong><p>See plan limits, payment history, and monthly subscription controls.</p></div>
         <Link to="/billing">Open billing</Link>

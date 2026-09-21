@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Archive, ArrowRight, BadgeCheck, Camera, Clock3, Copy, Download, ExternalLink, Eye, Film, Folder, Grid2X2, Image, Images, List, MessageCircle, MoreHorizontal, Plus, RefreshCw, Search, Send, Trash2, Users } from 'lucide-react';
+import { Archive, ArrowRight, BadgeCheck, Camera, Clock3, Copy, Download, ExternalLink, Eye, Film, Folder, Grid2X2, Image, Images, List, MessageCircle, MoreHorizontal, Plus, RefreshCw, Search, Trash2, Users } from 'lucide-react';
 import api, { apiMessage } from '../services/api.js';
 import { APP_URL } from '../config/env.js';
 import { toast } from 'react-toastify';
@@ -132,7 +132,6 @@ export default function Dashboard({ user }) {
   const totalDownloads = activeStories.reduce((total, story) => total + (story.downloadsCount || 0), 0);
   const needsAction = stories.filter(story => ['draft', 'review'].includes(story.status)).length;
   const actionStories = stories.filter(story => ['draft', 'review'].includes(story.status)).slice(0, 3);
-  const latestPublished = activeStories.find(story => story.status === 'published');
   const publishedCount = activeStories.filter(story => story.status === 'published').length;
   const averageViews = publishedCount ? Math.round(totalViews / publishedCount) : 0;
   const dataUnavailable = Boolean(loadError || partialError);
@@ -168,14 +167,14 @@ export default function Dashboard({ user }) {
       <motion.section className="v-studio-command" initial={reduced ? false : { opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .5, delay: .14 }}>
         <div className="v-studio-command-main">
           <p>WHAT NEEDS YOUR ATTENTION</p>
-          {dataUnavailable ? <><h2>Some studio information is unavailable.</h2><span className="v-studio-command-copy">We will not call your studio clear until every delivery list responds.</span><button type="button" className="v-dashboard-command-primary" onClick={fetchStories}><RefreshCw size={17} />Try loading the lists again</button></> : actionStories.length ? <><h2>{needsAction} delivery {needsAction === 1 ? 'is' : 'are'} waiting for you.</h2><div className="v-studio-action-list">{actionStories.map(story => <Link key={story._id} to={`/create?draft=${story._id}`}><span>{story.status === 'review' ? 'Ready to review' : 'Draft'}</span><strong>{story.clientName || story.title || 'Untitled delivery'}</strong><small>{story.status === 'review' ? 'Check the direction and prepare the client link.' : 'Continue from where you stopped.'}</small><ArrowRight size={17} /></Link>)}</div></> : <><h2>Your studio is clear.</h2><span className="v-studio-command-copy">Start a delivery when the next finished shoot is ready.</span><Link to="/create" className="v-dashboard-command-primary"><Plus size={17} />Create a client delivery</Link></>}
+          {dataUnavailable ? <><h2>Some studio information is unavailable.</h2><span className="v-studio-command-copy">We will not call your studio clear until every delivery list responds.</span><button type="button" className="v-dashboard-command-primary" onClick={fetchStories}><RefreshCw size={17} />Try loading the lists again</button></> : actionStories.length ? <><h2>{needsAction} delivery {needsAction === 1 ? 'is' : 'are'} waiting for you.</h2><div className="v-studio-action-list">{actionStories.map(story => <Link key={story._id} to={`/create?draft=${story._id}`}><span>{story.status === 'review' ? 'Ready to review' : 'Draft'}</span><strong>{story.clientName || story.title || 'Untitled delivery'}</strong><small>{story.status === 'review' ? 'Check the direction and prepare the client link.' : 'Continue from where you stopped.'}</small><ArrowRight size={17} /></Link>)}</div></> : <><h2>Your studio is clear.</h2><span className="v-studio-command-copy">Start a delivery when the next finished shoot is ready.</span></>}
         </div>
         <aside className="v-studio-quick">
-          <p>STUDIO SHORTCUTS</p>
-          <Link to="/create"><Plus size={17} /><span><strong>New delivery</strong><small>Start with a finished shoot</small></span><ArrowRight size={16} /></Link>
-          <Link to="/library"><Images size={17} /><span><strong>Image library</strong><small>Reuse stored photographs</small></span><ArrowRight size={16} /></Link>
-          <Link to="/portfolio/manage"><Camera size={17} /><span><strong>Studio portfolio</strong><small>Choose what prospective clients see</small></span><ArrowRight size={16} /></Link>
-          {latestPublished && !dataUnavailable && <button type="button" onClick={() => shareWhatsApp(latestPublished)}><Send size={17} /><span><strong>Send latest delivery</strong><small>{latestPublished.clientName || latestPublished.title}</small></span><ArrowRight size={16} /></button>}
+          <div className="v-studio-quick-heading"><p>STUDIO SHORTCUTS</p><span>Keep your library and public work close by.</span></div>
+          <div className="v-studio-quick-links">
+            <Link className="v-studio-quick-link" to="/library"><span className="v-studio-quick-icon"><Images size={18} /></span><span><strong>Image library</strong><small>Reuse stored photographs</small></span><ArrowRight size={16} /></Link>
+            <Link className="v-studio-quick-link" to="/portfolio/manage"><span className="v-studio-quick-icon"><Camera size={18} /></span><span><strong>Studio portfolio</strong><small>Choose what prospective clients see</small></span><ArrowRight size={16} /></Link>
+          </div>
         </aside>
       </motion.section>
 

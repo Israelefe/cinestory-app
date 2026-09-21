@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Camera, CreditCard, Images, LayoutDashboard, LogOut, Settings, UserRound } from 'lucide-react';
+import { Camera, LayoutDashboard, LogOut, Settings } from 'lucide-react';
 import './Header.css';
 
 export default function ProductHeader({ user, onLogout, mode = 'app' }) {
@@ -17,10 +17,7 @@ export default function ProductHeader({ user, onLogout, mode = 'app' }) {
       {setup && <div className="v-product-setup-label"><Camera size={15} /><span>Setting up {user?.studio?.name || user?.name || 'your studio'}</span></div>}
       {!auth && !setup && <nav aria-label="Account navigation">
         {pathname !== '/dashboard' && <Link to="/dashboard"><LayoutDashboard size={15} /><span>Dashboard</span></Link>}
-        {pathname !== '/library' && <Link to="/library"><Images size={15} /><span>Library</span></Link>}
-        {pathname !== '/portfolio/manage' && <Link to="/portfolio/manage"><UserRound size={15} /><span>Portfolio</span></Link>}
         {pathname !== '/settings' && <Link to="/settings"><Settings size={15} /><span>Settings</span></Link>}
-        {pathname !== '/billing' && <Link className="v-nav-billing" to="/billing"><CreditCard size={15} /><span>Billing</span></Link>}
       </nav>}
       {user && <button type="button" className="v-product-signout" onClick={onLogout}><LogOut size={16} /><span>Sign out</span></button>}
     </div>
