@@ -155,6 +155,72 @@ async function removeMedia({ user, stories, hasDeliveries, hasStorageAssets }) {
   }
 }
 
+function transactionUnsupported(error) {
+  const message = String(error?.message || '');
+  return error?.code === 20 || /transaction numbers are only allowed|transactions are not supported|replica set|mongos/i.test(message);
+}
+
+async function deleteOwnedRecords({ accountId, deliveryIds, storyIds, volumeJobIds, session, deleted }) {
+  const options = session ? { session } : {};
+  const deleteMany = async (key, model, filter) => {
+    try {
+      const result = await model.deleteMany(filter, options);
+      deleted[key] = Number(result.deletedCount || 0);
+    } catch (error) {
+      if (error instanceof AccountDeletionError) throw error;
+      const wrapped = new AccountDeletionError(`Account cleanup stopped while removing ${key}. Try again; the account itself was not removed.`, 500, 'ACCOUNT_RECORD_CLEANUP_FAILED');
+      wrapped.stage = key;
+      wrapped.cause = error;
+      throw wrapped;
+    }
+  };
+
+  await deleteMany('storyViews', StoryView, storyIds.length ? { storyId: { $in: storyIds } } : { _id: { $in: [] } });
+  await deleteMany('stories', PhotoStory, { userId: accountId });
+  await deleteMany('sessions', Session, { userId: accountId });
+  await deleteMany('authCodes', AuthCode, { userId: accountId });
+  await deleteMany('passwordResetTokens', PasswordResetToken, { userId: accountId });
+  await deleteMany('subscriptions', Subscription, { userId: accountId });
+  await deleteMany('payments', Payment, { userId: accountId });
+  await deleteMany('billingEvents', BillingEvent, { userId: accountId });
+  await deleteMany('deliveryUsage', DeliveryUsage, { userId: accountId });
+  await deleteMany('deliveryLikes', PhotoLike, deliveryIds.length ? { deliveryId: { $in: deliveryIds } } : { _id: { $in: [] } });
+  await deleteMany('deliveryViews', DeliveryView, deliveryIds.length ? { deliveryId: { $in: deliveryIds } } : { _id: { $in: [] } });
+  await deleteMany('deliveryShareGrants', DeliveryShareGrant, { userId: accountId });
+  await deleteMany('deliveryJobs', DeliveryJob, { userId: accountId });
+  await deleteMany('deliveries', Delivery, { userId: accountId });
+  await deleteMany('volumeAccessCodes', VolumeAccessCode, volumeJobIds.length ? { jobId: { $in: volumeJobIds } } : { _id: { $in: [] } });
+  await deleteMany('volumeSubjects', VolumeSubject, { userId: accountId });
+  await deleteMany('volumeJobs', VolumeJob, { userId: accountId });
+  await deleteMany('storageAssets', StorageAsset, { userId: accountId });
+  await deleteMany('portfolioJobs', PortfolioJob, { userId: accountId });
+  await deleteMany('portfolios', Portfolio, { userId: accountId });
+  await deleteMany('deletionRequests', AccountDeletionRequest, { userId: accountId });
+  await deleteMany('adminAccountNotes', AdminAccountNote, { userId: accountId });
+  await deleteMany('supportAccessGrants', SupportAccessGrant, { userId: accountId });
+
+  const supportFilter = deliveryIds.length
+    ? { $or: [{ userId: accountId }, { deliveryId: { $in: deliveryIds } }] }
+    : { userId: accountId };
+  await deleteMany('supportTickets', SupportTicket, supportFilter);
+  const analyticsFilter = deliveryIds.length
+    ? { $or: [{ userId: accountId }, { deliveryId: { $in: deliveryIds } }] }
+    : { userId: accountId };
+  await deleteMany('analyticsEvents', AnalyticsEvent, analyticsFilter);
+
+  let userResult;
+  try {
+    userResult = await User.deleteOne({ _id: accountId }, options);
+  } catch (error) {
+    const wrapped = new AccountDeletionError('Account cleanup stopped before the account record could be removed. Try again.', 500, 'ACCOUNT_RECORD_CLEANUP_FAILED');
+    wrapped.stage = 'user';
+    wrapped.cause = error;
+    throw wrapped;
+  }
+  if (!userResult.deletedCount) throw new AccountDeletionError('The account disappeared before deletion completed. Try again.', 409, 'ACCOUNT_CHANGED_DURING_DELETE');
+  deleted.user = 1;
+}
+
 /**
  * Permanently removes a photographer account and every owned product record.
  * Admin audit rows are deliberately not touched; they are the immutable record
@@ -183,50 +249,18 @@ export async function deleteUserAccount({ userId } = {}) {
   const deleted = {};
   const session = await mongoose.startSession();
   try {
-    await session.withTransaction(async () => {
-      const options = { session };
-      const deleteMany = async (key, model, filter) => {
-        const result = await model.deleteMany(filter, options);
-        deleted[key] = Number(result.deletedCount || 0);
-      };
-
-      await deleteMany('storyViews', StoryView, storyIds.length ? { storyId: { $in: storyIds } } : { _id: { $in: [] } });
-      await deleteMany('stories', PhotoStory, { userId: accountId });
-      await deleteMany('sessions', Session, { userId: accountId });
-      await deleteMany('authCodes', AuthCode, { userId: accountId });
-      await deleteMany('passwordResetTokens', PasswordResetToken, { userId: accountId });
-      await deleteMany('subscriptions', Subscription, { userId: accountId });
-      await deleteMany('payments', Payment, { userId: accountId });
-      await deleteMany('billingEvents', BillingEvent, { userId: accountId });
-      await deleteMany('deliveryUsage', DeliveryUsage, { userId: accountId });
-      await deleteMany('deliveryLikes', PhotoLike, deliveryIds.length ? { deliveryId: { $in: deliveryIds } } : { _id: { $in: [] } });
-      await deleteMany('deliveryViews', DeliveryView, deliveryIds.length ? { deliveryId: { $in: deliveryIds } } : { _id: { $in: [] } });
-      await deleteMany('deliveryShareGrants', DeliveryShareGrant, { userId: accountId });
-      await deleteMany('deliveryJobs', DeliveryJob, { userId: accountId });
-      await deleteMany('deliveries', Delivery, { userId: accountId });
-      await deleteMany('volumeAccessCodes', VolumeAccessCode, volumeJobIds.length ? { jobId: { $in: volumeJobIds } } : { _id: { $in: [] } });
-      await deleteMany('volumeSubjects', VolumeSubject, { userId: accountId });
-      await deleteMany('volumeJobs', VolumeJob, { userId: accountId });
-      await deleteMany('storageAssets', StorageAsset, { userId: accountId });
-      await deleteMany('portfolioJobs', PortfolioJob, { userId: accountId });
-      await deleteMany('portfolios', Portfolio, { userId: accountId });
-      await deleteMany('deletionRequests', AccountDeletionRequest, { userId: accountId });
-      await deleteMany('adminAccountNotes', AdminAccountNote, { userId: accountId });
-      await deleteMany('supportAccessGrants', SupportAccessGrant, { userId: accountId });
-
-      const supportFilter = deliveryIds.length
-        ? { $or: [{ userId: accountId }, { deliveryId: { $in: deliveryIds } }] }
-        : { userId: accountId };
-      await deleteMany('supportTickets', SupportTicket, supportFilter);
-      const analyticsFilter = deliveryIds.length
-        ? { $or: [{ userId: accountId }, { deliveryId: { $in: deliveryIds } }] }
-        : { userId: accountId };
-      await deleteMany('analyticsEvents', AnalyticsEvent, analyticsFilter);
-
-      const userResult = await User.deleteOne({ _id: accountId }, options);
-      if (!userResult.deletedCount) throw new AccountDeletionError('The account disappeared before deletion completed. Try again.', 409, 'ACCOUNT_CHANGED_DURING_DELETE');
-      deleted.user = 1;
-    });
+    try {
+      await session.withTransaction(async () => {
+        await deleteOwnedRecords({ accountId, deliveryIds, storyIds, volumeJobIds, session, deleted });
+      });
+    } catch (error) {
+      if (!transactionUnsupported(error)) throw error;
+      // Local MongoDB installations and a few managed development clusters do
+      // not expose replica-set transactions. The cleanup remains safe because
+      // the User row is deleted last and every operation is idempotent.
+      Object.keys(deleted).forEach(key => { delete deleted[key]; });
+      await deleteOwnedRecords({ accountId, deliveryIds, storyIds, volumeJobIds, deleted });
+    }
   } finally {
     await session.endSession();
   }

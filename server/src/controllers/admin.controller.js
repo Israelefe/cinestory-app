@@ -508,15 +508,20 @@ export async function adminDeleteAccount(req, res) {
     if (String(accountId) === String(adminId(req)) || user.role === 'admin') return res.status(409).json({ success: false, message: 'Administrator accounts cannot be deleted from the photographer account workspace.' });
 
     const administrator = adminId(req);
-    await AdminAudit.create({
-      adminId: administrator,
-      userId: user._id,
-      action: 'account.deletion_started',
-      resourceType: 'User',
-      resourceId: String(user._id),
-      details: { reason, confirmationRequired: true, phase: 'started' },
-      before: accountSnapshot(user)
-    });
+    try {
+      await AdminAudit.create({
+        adminId: administrator,
+        userId: user._id,
+        action: 'account.deletion_started',
+        resourceType: 'User',
+        resourceId: String(user._id),
+        details: { reason, confirmationRequired: true, phase: 'started' },
+        before: accountSnapshot(user)
+      });
+    } catch (auditError) {
+      console.error('[admin/account-delete-audit-start]', auditError.message);
+      return res.status(503).json({ success: false, code: 'AUDIT_UNAVAILABLE', message: 'The deletion audit is unavailable. The account was not changed. Try again shortly.' });
+    }
 
     const result = await deleteUserAccount({ userId: user._id });
     try {
