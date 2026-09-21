@@ -806,9 +806,16 @@ export async function unlockDelivery(req, res) {
     const parsed = z.object({ pin: z.string().regex(/^\d{6}$/) }).strict().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ success: false, message: 'Enter the six-digit PIN.' });
     const delivery = await publicDelivery(req.params.publicId);
-    if (!delivery || expired(delivery)) return res.status(404).json({ success: false, message: 'This delivery is no longer available.' });
-    if (!delivery.access?.pinDigest || !(await bcrypt.compare(parsed.data.pin, delivery.access.pinDigest))) return res.status(403).json({ success: false, message: 'That PIN is not correct.' });
+    if (!delivery || expired(delivery)) {
+      if (delivery) recordAnalyticsEventAsync({ name: 'client.delivery.link_expired', source: 'server', actorType: 'client', deliveryId: delivery._id, sessionDigest: tokenDigest(visitorId(req, res)), status: 'blocked', route: req.originalUrl });
+      return res.status(404).json({ success: false, message: 'This delivery is no longer available.' });
+    }
+    if (!delivery.access?.pinDigest || !(await bcrypt.compare(parsed.data.pin, delivery.access.pinDigest))) {
+      recordAnalyticsEventAsync({ name: 'client.delivery.pin_failed', source: 'server', actorType: 'client', deliveryId: delivery._id, sessionDigest: tokenDigest(visitorId(req, res)), status: 'failed', errorCode: 'PIN_INVALID', route: req.originalUrl });
+      return res.status(403).json({ success: false, message: 'That PIN is not correct.' });
+    }
     const token = jwt.sign({ deliveryId: String(delivery._id) }, process.env.JWT_SECRET, { expiresIn: '12h', issuer: 'veylo-api', audience: 'veylo-delivery' });
+    recordAnalyticsEventAsync({ name: 'client.delivery.pin_succeeded', source: 'server', actorType: 'client', deliveryId: delivery._id, sessionDigest: tokenDigest(visitorId(req, res)), status: 'succeeded', route: req.originalUrl });
     res.json({ success: true, data: { accessToken: token } });
   } catch (error) {
     console.error('[deliveries/unlock]', error.message);
@@ -916,12 +923,18 @@ export async function getPublicDelivery(req, res) {
       const branding = entitlements.features.branding === 'studio' ? { type: 'studio', name: owner.studio?.name || owner.name, logoUrl: owner.studio?.logoUrl || owner.avatar || '' } : { type: 'veylo', name: 'Veylo', logoUrl: '/veylo/veylo-mark.svg' };
       return res.json({ success: true, data: { locked: true, publicId: delivery.publicId, branding } });
     }
+    const sessionDigest = !isLikelyBot(req) ? tokenDigest(visitorId(req, res)) : undefined;
+    recordAnalyticsEventAsync({ name: 'client.delivery.opened', source: 'server', actorType: grant ? 'guest' : 'client', deliveryId: delivery._id, sessionDigest, format: delivery.format, status: 'opened', route: req.originalUrl, metadata: { access: grant ? 'share-grant' : 'public', role: grant?.role || null } });
+    if (grant) {
+      await DeliveryShareGrant.updateOne({ _id: grant._id }, { $inc: { openCount: 1 }, $set: { lastUsedAt: new Date() } });
+      recordAnalyticsEventAsync({ name: 'client.share_grant.opened', source: 'server', actorType: 'guest', deliveryId: delivery._id, sessionDigest, format: delivery.format, status: 'opened', route: req.originalUrl, metadata: { role: grant.role } });
+    }
     // Link unfurlers and social previews are not client visits. Exclude them
     // before the unique visitor record is written so dashboard views reflect
     // people who actually opened the delivery.
     if (!isLikelyBot(req)) {
       try {
-        await DeliveryView.create({ deliveryId: delivery._id, visitorDigest: tokenDigest(visitorId(req, res)) });
+        await DeliveryView.create({ deliveryId: delivery._id, visitorDigest: sessionDigest });
         await Delivery.updateOne({ _id: delivery._id }, { $inc: { viewsCount: 1 } });
       } catch (error) { if (error.code !== 11000) throw error; }
     }
@@ -978,6 +991,7 @@ export async function togglePhotoLike(req, res) {
     if (!existing) await PhotoLike.create(query);
     const likesCount = await PhotoLike.countDocuments({ deliveryId: delivery._id });
     await Delivery.updateOne({ _id: delivery._id }, { likesCount });
+    recordAnalyticsEventAsync({ name: existing ? 'client.delivery.like_removed' : 'client.delivery.like_added', source: 'server', actorType: 'guest', deliveryId: delivery._id, sessionDigest: tokenDigest(visitorId(req, res)), format: delivery.format, status: existing ? 'removed' : 'added', route: req.originalUrl, metadata: { assetCount: 1 } });
     res.json({ success: true, data: { liked: !existing, likesCount } });
   } catch (error) {
     if (error.code === 11000) return res.json({ success: true, data: { liked: true } });
@@ -995,6 +1009,7 @@ export async function getPhotoDownload(req, res) {
     if (!individualAllowed && !galleryAllowed) return res.status(403).json({ success: false, message: 'Downloads are turned off for this link.' });
     const asset = grantAssets(delivery, grant).find(item => item.assetId === req.params.assetId);
     if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
+    recordAnalyticsEventAsync({ name: 'client.delivery.download_requested', source: 'server', actorType: grant ? 'guest' : 'client', deliveryId: delivery._id, sessionDigest: tokenDigest(visitorId(req, res)), format: delivery.format, status: 'requested', route: req.originalUrl, metadata: { downloadType: 'individual', role: grant?.role || null } });
     res.json({ success: true, data: { url: signedImageUrl(asset.publicId, { original: true, attachment: true }) } });
   } catch (error) { res.status(500).json({ success: false, message: 'We could not prepare that download.' }); }
 }
@@ -1009,6 +1024,8 @@ export async function trackPhotoDownload(req, res) {
     if (!individualAllowed && !galleryAllowed) return res.status(403).json({ success: false, message: 'Downloads are turned off for this link.' });
     if (!grantAssets(delivery, grant).some(asset => asset.assetId === req.params.assetId)) return res.status(404).json({ success: false, message: 'Photograph not found.' });
     await Delivery.updateOne({ _id: delivery._id }, { $inc: { downloadsCount: 1 } });
+    if (grant) await DeliveryShareGrant.updateOne({ _id: grant._id }, { $inc: { downloadCount: 1 }, $set: { lastDownloadAt: new Date() } });
+    recordAnalyticsEventAsync({ name: 'client.delivery.download_completed', source: 'server', actorType: grant ? 'guest' : 'client', deliveryId: delivery._id, sessionDigest: tokenDigest(visitorId(req, res)), format: delivery.format, status: 'completed', route: req.originalUrl, metadata: { downloadType: 'individual', role: grant?.role || null } });
     res.json({ success: true, message: 'Download counted.' });
   } catch (error) {
     res.status(500).json({ success: false, message: 'We could not record that download.' });
@@ -1025,6 +1042,8 @@ export async function getGalleryDownload(req, res) {
     if (!selectedAssets.length) return res.status(404).json({ success: false, message: 'No photographs are available on this link.' });
     const url = signedArchiveUrl(selectedAssets.map(asset => asset.publicId), `${delivery.clientName || 'client'}-photographs`, grant?.assetIds?.length ? '' : deliveryFolder(delivery.userId._id, delivery._id));
     await Delivery.updateOne({ _id: delivery._id }, { $inc: { downloadsCount: 1 } });
+    if (grant) await DeliveryShareGrant.updateOne({ _id: grant._id }, { $inc: { downloadCount: 1 }, $set: { lastDownloadAt: new Date() } });
+    recordAnalyticsEventAsync({ name: 'client.delivery.download_completed', source: 'server', actorType: grant ? 'guest' : 'client', deliveryId: delivery._id, sessionDigest: tokenDigest(visitorId(req, res)), format: delivery.format, status: 'completed', route: req.originalUrl, count: selectedAssets.length, metadata: { downloadType: 'all', role: grant?.role || null } });
     res.json({ success: true, data: { url } });
   } catch (error) {
     console.error('[deliveries/gallery-download]', error.message);

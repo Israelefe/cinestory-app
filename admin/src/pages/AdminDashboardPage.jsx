@@ -137,6 +137,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const [payments, setPayments] = useState([]);
   const [aiJobs, setAiJobs] = useState([]);
   const [aiSummary, setAiSummary] = useState(null);
+  const [accessOverview, setAccessOverview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [refund, setRefund] = useState(null);
@@ -169,7 +170,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       deliveries: api.get('/v1/admin/deliveries', { params: { search, status: deliveryStatusFilter, format: deliveryFormatFilter } }),
       users: api.get('/v1/admin/users', { params: { search, plan: accountPlanFilter, status: accountStatusFilter, acquisitionSource: accountSourceFilter } }),
       payments: api.get('/v1/admin/payments', { params: { search } }),
-      aiJobs: api.get('/v1/admin/ai/jobs', { params: { search, status: aiJobStatusFilter, type: aiJobTypeFilter } })
+      aiJobs: api.get('/v1/admin/ai/jobs', { params: { search, status: aiJobStatusFilter, type: aiJobTypeFilter } }),
+      access: api.get('/v1/admin/client-access', { params: { search } })
     };
     const entries = Object.entries(requests);
     const results = await Promise.allSettled(entries.map(([, request]) => request));
@@ -184,6 +186,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         if (key === 'users') setUsers(Array.isArray(data) ? data : []);
         if (key === 'payments') setPayments(Array.isArray(data) ? data : []);
         if (key === 'aiJobs') { setAiJobs(Array.isArray(data) ? data : []); setAiSummary(result.value.data?.summary || null); }
+        if (key === 'access') setAccessOverview(data || null);
         return;
       }
       const error = result.status === 'rejected' ? result.reason : new Error(result.value?.data?.message || 'This panel is unavailable.');
@@ -475,9 +478,10 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       deliveries: deliveries.length,
       users: users.length,
       payments: payments.length,
-      aiJobs: aiJobs.length
+      aiJobs: aiJobs.length,
+      access: accessOverview?.deliveries?.length || 0
     }),
-    [aiJobs, deliveries, users, payments]
+    [accessOverview, aiJobs, deliveries, users, payments]
   );
 
   return (
@@ -611,12 +615,13 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         {/* Section Tabs & Search */}
         <section className="mt-10">
           <div className="flex flex-col gap-4 border-b border-white/10 pb-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5 sm:grid-cols-5">
               {[
                 ['deliveries', Film, 'Deliveries'],
                 ['users', Users, 'Accounts'],
                 ['payments', ReceiptText, 'Payments'],
-                ['aiJobs', Bot, 'AI jobs']
+                ['aiJobs', Bot, 'AI jobs'],
+                ['access', Eye, 'Client access']
               ].map(([key, Icon, label]) => (
                 <button
                   key={key}
@@ -802,6 +807,17 @@ export default function AdminDashboardPage({ admin, onLogout }) {
               </div>
               {aiSummary && <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><MetricCard icon={Activity} label="Queue depth" value={number(aiSummary.queueDepth)} note={`${number(aiSummary.stale)} stale jobs`} /><MetricCard icon={TriangleAlert} label="Failed today" value={number(aiSummary.failedLast24Hours)} note={`${number(aiSummary.captionFailures)} caption failures`} /><MetricCard icon={Bot} label="Timing failures" value={number(aiSummary.timingFailures)} note={`${number(aiSummary.staleNarration)} stale narrations`} />{(aiSummary.providerLatency || []).slice(0, 2).map(provider => <MetricCard key={provider.provider} icon={Server} label={provider.provider} value={`${number(provider.averageMs)}ms`} note={`${number(provider.samples)} samples · max ${number(provider.maxMs)}ms`} />)}</div>}
               <div className="space-y-3">{aiJobs.map(job => <article key={`${job.kind}-${job.id}`} className="rounded-2xl border border-white/10 bg-white/[.025] p-4 sm:p-5"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="text-xs font-semibold text-[#ff9b8e]">{job.type}</span><Status value={job.status} /><span className="text-[11px] text-white/35">{job.provider}</span></div><p className="mt-2 truncate text-sm font-medium text-white">{job.delivery?.title || job.portfolio?.studioName || 'AI job'}</p><p className="mt-1 truncate text-xs text-white/40">{job.delivery?.photographer || job.portfolio?.handle || 'No owner'} · {job.stage} · {number(job.progress)}% · attempt {number(job.attempts)}</p></div><div className="flex flex-wrap items-center gap-2"><span className="text-[11px] text-white/35">{job.providerLatencyMs ? `${number(job.providerLatencyMs)}ms provider` : 'No latency yet'}{job.promptVersion ? ` · ${job.promptVersion}` : ''}{job.renderVersion ? ` · ${job.renderVersion}` : ''}</span>{job.rawStatus === 'failed' && <button type="button" disabled={accountActionLoading} onClick={() => retryAiJob(job.id)} className="min-h-9 rounded-lg border border-amber-300/30 px-3 text-[11px] font-semibold text-amber-200 disabled:opacity-50">Retry</button>}{['queued', 'running'].includes(job.rawStatus) && <button type="button" disabled={accountActionLoading} onClick={() => cancelAiJob(job.id)} className="min-h-9 rounded-lg border border-white/15 px-3 text-[11px] font-semibold text-white/60 disabled:opacity-50">Cancel</button>}</div></div>{job.errorMessage && <p className="mt-3 rounded-xl border border-amber-300/15 bg-amber-300/[.04] p-3 text-xs leading-5 text-amber-100/80">{job.errorCode || 'AI job error'}: {job.errorMessage}</p>}</article>)}{!aiJobs.length && <p className="py-16 text-center text-sm text-white/45">No AI jobs match these filters.</p>}</div>
+            </div>
+          )}
+
+          {/* Client access tab */}
+          {!loading && tab === 'access' && (
+            <div className="mt-6">
+              {accessOverview ? <>
+                <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><MetricCard icon={Eye} label="Delivery opens" value={number(accessOverview.totals?.opens)} note={`${number(accessOverview.totals?.uniqueVisitors)} unique visitor records`} /><MetricCard icon={Users} label="Repeat visitors" value={number(accessOverview.totals?.repeatVisitors)} note={`${number(accessOverview.totals?.expiredLinks)} expired links`} /><MetricCard icon={Download} label="Downloads" value={number(accessOverview.totals?.downloadsCompleted)} note={`${number(accessOverview.totals?.downloadsRequested)} download requests`} /><MetricCard icon={ShieldCheck} label="Access issues" value={number(accessOverview.totals?.pinFailures)} note={`${number(accessOverview.totals?.revokedLinks)} revoked links`} /></div>
+                <div className="mb-5 rounded-2xl border border-white/10 bg-white/[.025] p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.14em] text-[#ff9b8e]">Volume access</p><h3 className="mt-1 text-lg font-medium">Recipient code activity</h3></div><span className="text-xs text-white/35">Last {number(accessOverview.windowDays)} days</span></div><div className="mt-4 grid gap-3 sm:grid-cols-4"><div><p className="text-xs text-white/40">Requests</p><p className="mt-1 text-xl font-medium">{number(accessOverview.totals?.volumeAccessCodeRequests)}</p></div><div><p className="text-xs text-white/40">Verified</p><p className="mt-1 text-xl font-medium">{number(accessOverview.totals?.volumeAccessCodeVerified)}</p></div><div><p className="text-xs text-white/40">Failures</p><p className="mt-1 text-xl font-medium">{number(accessOverview.totals?.volumeAccessCodeFailures)}</p></div><div><p className="text-xs text-white/40">Gallery opens</p><p className="mt-1 text-xl font-medium">{number(accessOverview.totals?.volumeGalleryOpens)}</p></div></div></div>
+                <div className="space-y-3">{(accessOverview.deliveries || []).map(item => <article key={item.id} className="rounded-2xl border border-white/10 bg-white/[.025] p-4 sm:p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><p className="text-[10px] uppercase tracking-[.14em] text-[#ff9b8e]">{formatNames[item.format] || item.format || 'Delivery'}</p><h3 className="mt-1 truncate text-sm font-semibold text-white">{item.title}</h3><p className="mt-1 truncate text-xs text-white/40">{item.photographer} · {item.publicId}</p></div><div className="flex items-center gap-2"><Status value={item.revoked ? 'revoked' : item.expired ? 'expired' : item.status} /><span className="text-xs text-white/35">{number(item.shareGrants?.active)} active grants</span></div></div><div className="mt-4 grid grid-cols-2 gap-3 text-xs text-white/55 sm:grid-cols-4 lg:grid-cols-8"><span>Opens <strong className="ml-1 text-white">{number(item.opens)}</strong></span><span>Unique <strong className="ml-1 text-white">{number(item.uniqueVisitors)}</strong></span><span>Repeat <strong className="ml-1 text-white">{number(item.repeatVisitors)}</strong></span><span>PIN fails <strong className="ml-1 text-white">{number(item.pinFailures)}</strong></span><span>Downloads <strong className="ml-1 text-white">{number(item.downloadsCompleted)}</strong></span><span>Likes <strong className="ml-1 text-white">{number(item.likes)}</strong></span><span>Grant opens <strong className="ml-1 text-white">{number(item.shareGrants?.opens)}</strong></span><span>Grant downloads <strong className="ml-1 text-white">{number(item.shareGrants?.downloads)}</strong></span></div></article>)}{!accessOverview.deliveries?.length && <p className="py-16 text-center text-sm text-white/45">No client access records match your search.</p>}</div>
+              </> : <div className="py-16 text-center text-sm text-white/45">Client access activity is unavailable.</div>}
             </div>
           )}
         </section>

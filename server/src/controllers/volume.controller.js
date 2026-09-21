@@ -10,6 +10,7 @@ import { resolveEntitlements } from '../services/entitlement.service.js';
 import { sendVolumeAccessEmail } from '../services/email.service.js';
 import { signedImageUrl } from '../services/deliveryMedia.service.js';
 import { codeDigest, normalizeEmail, safeEqual } from '../utils/auth.js';
+import { recordAnalyticsEventAsync } from '../services/analytics.service.js';
 
 const createSchema = z.object({ title: z.string().trim().min(3).max(120), organisation: z.string().trim().min(2).max(120), category: z.enum(['school', 'sports', 'corporate', 'other']) }).strict();
 const updateSchema = createSchema.partial().strict();
@@ -32,6 +33,15 @@ async function requirePro(userId) {
   if (!user) return false;
   const entitlements = await resolveEntitlements(user, { includeUsage: false });
   return entitlements.plan === 'pro';
+}
+
+function volumeVisitorDigest(req, res) {
+  let id = req.cookies?.veylo_volume_client;
+  if (!id || !/^[A-Za-z0-9_-]{30,100}$/.test(id)) {
+    id = crypto.randomBytes(32).toString('base64url');
+    res.cookie('veylo_volume_client', id, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 365 * 24 * 60 * 60 * 1000, path: '/api/v1/volume/public' });
+  }
+  return tokenDigest(id);
 }
 
 export async function listVolumeJobs(req, res) {
@@ -292,7 +302,12 @@ export async function requestVolumeCode(req, res) {
         await VolumeAccessCode.deleteMany({ subjectId: subject._id });
         await VolumeAccessCode.create({ jobId: job._id, subjectId: subject._id, codeDigest: codeDigest(subject.email, `volume:${subject._id}`, code), expiresAt: new Date(Date.now() + 10 * 60 * 1000) });
         await sendVolumeAccessEmail({ to: subject.email, name: subject.displayName, code, organisation: job.organisation });
+        recordAnalyticsEventAsync({ name: 'volume.access_code.requested', source: 'server', actorType: 'anonymous', sessionDigest: volumeVisitorDigest(req, res), status: 'sent', route: req.originalUrl, metadata: { category: job.category } });
+      } else {
+        recordAnalyticsEventAsync({ name: 'volume.access_code.requested', source: 'server', actorType: 'anonymous', sessionDigest: volumeVisitorDigest(req, res), status: 'rate_limited', route: req.originalUrl, metadata: { category: job.category } });
       }
+    } else {
+      recordAnalyticsEventAsync({ name: 'volume.access_code.requested', source: 'server', actorType: 'anonymous', sessionDigest: volumeVisitorDigest(req, res), status: 'not_matched', route: req.originalUrl });
     }
     res.json({ success: true, message: 'If those details match the delivery, a six-digit code has been sent.' });
   } catch (error) {
@@ -306,17 +321,25 @@ export async function verifyVolumeCode(req, res) {
   if (!parsed.success) return validation(res, parsed);
   try {
     const { job, subject } = await publicSubject(req.params.publicId, parsed.data.recipientCode, parsed.data.email);
-    if (!job || !subject) return res.status(403).json({ success: false, message: 'Those details or the code are not correct.' });
+    if (!job || !subject) {
+      recordAnalyticsEventAsync({ name: 'volume.access_code.failed', source: 'server', actorType: 'anonymous', sessionDigest: volumeVisitorDigest(req, res), status: 'failed', errorCode: 'RECIPIENT_NOT_MATCHED', route: req.originalUrl });
+      return res.status(403).json({ success: false, message: 'Those details or the code are not correct.' });
+    }
     const access = await VolumeAccessCode.findOne({ subjectId: subject._id, usedAt: null, expiresAt: { $gt: new Date() } }).select('+codeDigest');
-    if (!access || access.attempts >= 5) return res.status(403).json({ success: false, message: 'That code has expired. Request a new one.' });
+    if (!access || access.attempts >= 5) {
+      recordAnalyticsEventAsync({ name: 'volume.access_code.failed', source: 'server', actorType: 'anonymous', sessionDigest: volumeVisitorDigest(req, res), status: 'expired', errorCode: 'CODE_EXPIRED', route: req.originalUrl, metadata: { category: job.category } });
+      return res.status(403).json({ success: false, message: 'That code has expired. Request a new one.' });
+    }
     const expected = codeDigest(subject.email, `volume:${subject._id}`, parsed.data.code);
     if (!safeEqual(access.codeDigest, expected)) {
       access.attempts += 1;
       await access.save();
+      recordAnalyticsEventAsync({ name: 'volume.access_code.failed', source: 'server', actorType: 'anonymous', sessionDigest: volumeVisitorDigest(req, res), status: 'failed', errorCode: 'CODE_INVALID', route: req.originalUrl, metadata: { category: job.category } });
       return res.status(403).json({ success: false, message: 'Those details or the code are not correct.' });
     }
     access.usedAt = new Date();
     await access.save();
+    recordAnalyticsEventAsync({ name: 'volume.access_code.verified', source: 'server', actorType: 'guest', sessionDigest: volumeVisitorDigest(req, res), status: 'verified', route: req.originalUrl, metadata: { category: job.category } });
     const accessToken = jwt.sign({ jobId: String(job._id), subjectId: String(subject._id), accessVersion: job.accessVersion || 1 }, process.env.JWT_SECRET, { expiresIn: '12h', issuer: 'veylo-api', audience: 'veylo-volume' });
     res.json({ success: true, data: { accessToken } });
   } catch {
@@ -333,6 +356,7 @@ export async function getVolumeGallery(req, res) {
     const assets = await StorageAsset.find({ userId: job.userId._id, assetId: { $in: subject.assetIds } }).lean();
     const byId = new Map(assets.map(asset => [asset.assetId, asset]));
     const photos = subject.assetIds.map(assetId => byId.get(assetId)).filter(Boolean).map(asset => ({ assetId: asset.assetId, url: signedImageUrl(asset.publicId), downloadUrl: signedImageUrl(asset.publicId, { width: 8000, attachment: true }), thumbnailUrl: signedImageUrl(asset.publicId, { thumbnail: true }), caption: asset.caption || '', width: asset.width, height: asset.height }));
+    recordAnalyticsEventAsync({ name: 'volume.recipient_gallery.opened', source: 'server', actorType: 'guest', userId: job.userId._id, sessionDigest: volumeVisitorDigest(req, res), status: 'opened', route: req.originalUrl, count: photos.length, metadata: { category: job.category } });
     res.json({ success: true, data: { title: job.title, organisation: job.organisation, recipientName: subject.displayName, studio: job.userId.studio?.name || job.userId.name, photos } });
   } catch {
     res.status(403).json({ success: false, message: 'Open this gallery with a new access code.' });

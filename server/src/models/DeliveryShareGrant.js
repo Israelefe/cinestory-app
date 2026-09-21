@@ -12,7 +12,11 @@ const deliveryShareGrantSchema = new mongoose.Schema({
   allowDownloadAll: { type: Boolean, default: false },
   usageTerms: { type: String, trim: true, maxlength: 1000, default: '' },
   expiresAt: Date,
-  revokedAt: Date
+  revokedAt: Date,
+  openCount: { type: Number, min: 0, default: 0 },
+  downloadCount: { type: Number, min: 0, default: 0 },
+  lastUsedAt: Date,
+  lastDownloadAt: Date
 }, { timestamps: true });
 
 deliveryShareGrantSchema.index({ deliveryId: 1, revokedAt: 1 });

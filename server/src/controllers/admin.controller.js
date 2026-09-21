@@ -927,6 +927,52 @@ export async function adminCancelAiJob(req, res) {
   }
 }
 
+export async function getClientAccessOverview(req, res) {
+  try {
+    const days = Math.min(90, Math.max(1, Number.parseInt(req.query.days, 10) || 30));
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const search = String(req.query.search || '').trim().slice(0, 100);
+    const query = { status: { $in: ['published', 'archived', 'review', 'draft'] } };
+    if (search) {
+      const pattern = { $regex: escaped(search), $options: 'i' };
+      const matchingUsers = await User.find({ $or: [{ name: pattern }, { email: pattern }, { 'studio.name': pattern }] }).select('_id').limit(200).lean();
+      query.$or = [{ publicId: pattern }, { title: pattern }, { clientName: pattern }, ...(matchingUsers.length ? [{ userId: { $in: matchingUsers.map(user => user._id) } }] : [])];
+    }
+    const deliveries = await Delivery.find(query).populate('userId', 'name studio.name').sort({ updatedAt: -1 }).limit(200).select('publicId title clientName format status userId viewsCount downloadsCount likesCount access').lean();
+    const deliveryIds = deliveries.map(delivery => delivery._id);
+    const [eventCounts, visitorCounts, repeatPairs, likeCounts, grantCounts, volumeCodeCounts] = await Promise.all([
+      AnalyticsEvent.aggregate([{ $match: { deliveryId: { $in: deliveryIds }, occurredAt: { $gte: since } } }, { $group: { _id: { deliveryId: '$deliveryId', name: '$name' }, count: { $sum: 1 } } }]),
+      DeliveryView.aggregate([{ $match: { deliveryId: { $in: deliveryIds } } }, { $group: { _id: '$deliveryId', uniqueVisitors: { $sum: 1 } } }]),
+      AnalyticsEvent.aggregate([{ $match: { name: 'client.delivery.opened', deliveryId: { $in: deliveryIds }, sessionDigest: { $exists: true, $ne: null }, occurredAt: { $gte: since } } }, { $group: { _id: { deliveryId: '$deliveryId', sessionDigest: '$sessionDigest' }, opens: { $sum: 1 } } }, { $match: { opens: { $gt: 1 } } }, { $group: { _id: '$_id.deliveryId', repeatVisitors: { $sum: 1 } } }]),
+      PhotoLike.aggregate([{ $match: { deliveryId: { $in: deliveryIds } } }, { $group: { _id: '$deliveryId', likes: { $sum: 1 } } }]),
+      DeliveryShareGrant.aggregate([{ $match: { deliveryId: { $in: deliveryIds } } }, { $group: { _id: { deliveryId: '$deliveryId', role: '$role' }, total: { $sum: 1 }, active: { $sum: { $cond: [{ $and: [{ $eq: ['$revokedAt', null] }, { $or: [{ $eq: ['$expiresAt', null] }, { $gt: ['$expiresAt', new Date()] }] }] }, 1, 0] } }, opens: { $sum: '$openCount' }, downloads: { $sum: '$downloadCount' } } }]),
+      AnalyticsEvent.aggregate([{ $match: { name: { $in: ['volume.access_code.requested', 'volume.access_code.verified', 'volume.access_code.failed', 'volume.recipient_gallery.opened'] }, occurredAt: { $gte: since } } }, { $group: { _id: { name: '$name', status: '$status' }, count: { $sum: 1 } } }])
+    ]);
+    const eventMap = new Map(eventCounts.map(item => [`${item._id.deliveryId}:${item._id.name}`, item.count]));
+    const visitorMap = new Map(visitorCounts.map(item => [String(item._id), item.uniqueVisitors]));
+    const repeatMap = new Map(repeatPairs.map(item => [String(item._id), item.repeatVisitors]));
+    const likeMap = new Map(likeCounts.map(item => [String(item._id), item.likes]));
+    const grantMap = new Map();
+    grantCounts.forEach(item => { const key = String(item._id.deliveryId); const current = grantMap.get(key) || { total: 0, active: 0, opens: 0, downloads: 0, roles: {} }; current.total += item.total; current.active += item.active; current.opens += item.opens || 0; current.downloads += item.downloads || 0; current.roles[item._id.role] = { total: item.total, active: item.active }; grantMap.set(key, current); });
+    const volumeAccess = Object.fromEntries(volumeCodeCounts.map(item => [`${item._id.name}:${item._id.status}`, item.count]));
+    const data = deliveries.map(delivery => {
+      const id = String(delivery._id);
+      const grants = grantMap.get(id) || { total: 0, active: 0, opens: 0, downloads: 0, roles: {} };
+      return { id: delivery._id, publicId: delivery.publicId, title: delivery.title || delivery.clientName || 'Untitled delivery', format: delivery.format || '', status: delivery.status, photographer: delivery.userId?.studio?.name || delivery.userId?.name || 'Independent photographer', opens: eventMap.get(`${id}:client.delivery.opened`) || Number(delivery.viewsCount || 0), uniqueVisitors: visitorMap.get(id) || 0, repeatVisitors: repeatMap.get(id) || 0, pinFailures: eventMap.get(`${id}:client.delivery.pin_failed`) || 0, downloadsRequested: eventMap.get(`${id}:client.delivery.download_requested`) || 0, downloadsCompleted: eventMap.get(`${id}:client.delivery.download_completed`) || Number(delivery.downloadsCount || 0), likes: likeMap.get(id) || Number(delivery.likesCount || 0), shareGrants: grants, expired: Boolean(delivery.access?.expiresAt && new Date(delivery.access.expiresAt) <= new Date()), revoked: Boolean(delivery.access?.revokedAt) };
+    });
+    const [expiredLinks, revokedLinks, totalUniqueVisitors] = await Promise.all([
+      Delivery.countDocuments({ status: 'published', 'access.expiresAt': { $lte: new Date() } }),
+      Delivery.countDocuments({ 'access.revokedAt': { $exists: true, $ne: null } }),
+      DeliveryView.countDocuments({ createdAt: { $gte: since } })
+    ]);
+    const totals = data.reduce((result, item) => { result.opens += item.opens; result.uniqueVisitors += item.uniqueVisitors; result.repeatVisitors += item.repeatVisitors; result.pinFailures += item.pinFailures; result.downloadsRequested += item.downloadsRequested; result.downloadsCompleted += item.downloadsCompleted; result.likes += item.likes; result.shareGrantOpens += item.shareGrants.opens; result.shareGrantDownloads += item.shareGrants.downloads; return result; }, { opens: 0, uniqueVisitors: 0, repeatVisitors: 0, pinFailures: 0, downloadsRequested: 0, downloadsCompleted: 0, likes: 0, shareGrantOpens: 0, shareGrantDownloads: 0 });
+    res.json({ success: true, data: { generatedAt: new Date(), windowDays: days, totals: { ...totals, uniqueVisitorRecords: totalUniqueVisitors, expiredLinks, revokedLinks, volumeAccessCodeRequests: Object.entries(volumeAccess).filter(([key]) => key.startsWith('volume.access_code.requested')).reduce((sum, [, count]) => sum + count, 0), volumeAccessCodeVerified: Object.entries(volumeAccess).filter(([key]) => key.startsWith('volume.access_code.verified')).reduce((sum, [, count]) => sum + count, 0), volumeAccessCodeFailures: Object.entries(volumeAccess).filter(([key]) => key.startsWith('volume.access_code.failed')).reduce((sum, [, count]) => sum + count, 0), volumeGalleryOpens: Object.entries(volumeAccess).filter(([key]) => key.startsWith('volume.recipient_gallery.opened')).reduce((sum, [, count]) => sum + count, 0) }, deliveries: data } });
+  } catch (error) {
+    console.error('[admin/client-access]', error.message);
+    res.status(500).json({ success: false, message: 'We could not load client access activity.' });
+  }
+}
+
 export async function getPayments(req, res) {
   try {
     const search = String(req.query.search || '').trim().slice(0, 100);

@@ -25,6 +25,7 @@ import {
   getAiJobs,
   adminRetryAiJob,
   adminCancelAiJob,
+  getClientAccessOverview,
   getAllStories,
   getAllDeliveries,
   getPayments,
@@ -117,6 +118,7 @@ router.post('/deliveries/:id/jobs/:jobId/retry', adminRetryDeliveryJob);
 router.get('/ai/jobs', getAiJobs);
 router.post('/ai/jobs/:jobId/retry', adminRetryAiJob);
 router.post('/ai/jobs/:jobId/cancel', adminCancelAiJob);
+router.get('/client-access', getClientAccessOverview);
 router.get('/payments', getPayments);
 router.delete('/stories/:id', adminDeleteStory);
 router.post('/payments/:id/refund', billingActionLimit, refundPayment);
