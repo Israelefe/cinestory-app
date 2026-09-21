@@ -19,12 +19,16 @@ const adminAuditSchema = new mongoose.Schema({
   immutable: { type: Boolean, default: true, immutable: true }
 }, { timestamps: true });
 
-adminAuditSchema.pre('save', async function () {
+adminAuditSchema.pre(['validate', 'save'], async function () {
   if (this.eventHash) return;
   if (this.before === undefined && this.details && typeof this.details === 'object' && this.details.before !== undefined) this.before = this.details.before;
   if (this.after === undefined && this.details && typeof this.details === 'object' && this.details.after !== undefined) this.after = this.details.after;
-  const previous = await this.constructor.findOne({ eventHash: { $exists: true } }).sort({ createdAt: -1, _id: -1 }).select('eventHash').lean();
-  this.previousHash = previous?.eventHash || null;
+  try {
+    const previous = await this.constructor.findOne({ eventHash: { $exists: true } }).sort({ createdAt: -1, _id: -1 }).select('eventHash').lean();
+    this.previousHash = previous?.eventHash || null;
+  } catch {
+    this.previousHash = null;
+  }
   const payload = {
     adminId: String(this.adminId),
     userId: this.userId ? String(this.userId) : null,
