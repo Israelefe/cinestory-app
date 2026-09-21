@@ -35,6 +35,8 @@ import {
   getStorageOverview,
   scanStorageReferences,
   getMusicNarrationOverview,
+  getPortfolioOverview,
+  adminUnpublishPortfolio,
   getAllStories,
   getAllDeliveries,
   getPayments,
@@ -140,6 +142,8 @@ router.delete('/volume/:id', adminDeleteVolumeJob);
 router.get('/storage', getStorageOverview);
 router.post('/storage/scan', scanStorageReferences);
 router.get('/music-narration', getMusicNarrationOverview);
+router.get('/portfolios', getPortfolioOverview);
+router.post('/portfolios/:id/unpublish', adminUnpublishPortfolio);
 router.get('/payments', getPayments);
 router.get('/finance', getFinanceOverview);
 router.get('/finance/reconcile', reconcileFinanceWithPaystack);

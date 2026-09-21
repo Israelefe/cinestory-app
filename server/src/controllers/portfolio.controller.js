@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import crypto from 'node:crypto';
 import Delivery from '../models/Delivery.js';
 import Portfolio from '../models/Portfolio.js';
 import StorageAsset from '../models/StorageAsset.js';
@@ -8,6 +9,8 @@ import { resolveEntitlements } from '../services/entitlement.service.js';
 import { signedImageUrl } from '../services/deliveryMedia.service.js';
 import { CREATIVE_DIRECTOR_PROMPT_VERSION, CREATIVE_DIRECTOR_PROVIDER } from '../services/alibabaCreativeDirector.service.js';
 import { PORTFOLIO_HANDLE_CHANGE_COOLDOWN_MS, PORTFOLIO_HANDLE_REDIRECT_MS, PORTFOLIO_HANDLE_RESERVATION_MS, STUDIO_NAME_CHANGE_COOLDOWN_MS, isoDate, nextChangeAt } from '../constants/profilePolicy.js';
+import { tokenDigest } from '../utils/auth.js';
+import { recordAnalyticsEventAsync } from '../services/analytics.service.js';
 
 const handleSchema = z.string().trim().toLowerCase().min(3).max(40).regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/, 'Use letters, numbers, and single hyphens.');
 const updateSchema = z.object({
@@ -26,6 +29,15 @@ const updateSchema = z.object({
 
 const RESERVED = new Set(['admin', 'api', 'app', 'billing', 'dashboard', 'delivery', 'formats', 'help', 'home', 'login', 'portfolio', 'pricing', 'settings', 'signup', 'support', 'veylo']);
 function safeHandle(value) { return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'studio'; }
+
+function portfolioVisitorDigest(req, res) {
+  let id = req.cookies?.veylo_portfolio_client;
+  if (!id || !/^[A-Za-z0-9_-]{30,100}$/.test(id)) {
+    id = crypto.randomBytes(32).toString('base64url');
+    res.cookie('veylo_portfolio_client', id, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 365 * 24 * 60 * 60 * 1000, path: '/api/v1/portfolio/public' });
+  }
+  return tokenDigest(id);
+}
 function publicOutput(portfolio) {
   return {
     handle: portfolio.handle, studioName: portfolio.studioName, bio: portfolio.bio, headline: portfolio.headline, introLine: portfolio.introLine, location: portfolio.location,
@@ -57,6 +69,19 @@ async function ownedPublicIds(userId) {
     StorageAsset.find({ userId }).select('publicId').lean()
   ]);
   return new Set([...deliveries.flatMap(delivery => delivery.assets.map(asset => asset.publicId)), ...stored.map(asset => asset.publicId)]);
+}
+
+async function resolvePublicPortfolio(rawHandle) {
+  const parsed = handleSchema.safeParse(rawHandle);
+  if (!parsed.success) return null;
+  const now = new Date();
+  const portfolio = await Portfolio.findOne({ handle: parsed.data, status: 'published' }) || await Portfolio.findOne({ status: 'published', previousHandles: { $elemMatch: { handle: parsed.data, redirectUntil: { $gt: now } } } });
+  if (!portfolio) return null;
+  const user = await User.findById(portfolio.userId);
+  if (!user) return null;
+  const entitlements = await resolveEntitlements(user, { includeUsage: false });
+  if (entitlements.features.portfolioMode !== 'public') return null;
+  return { portfolio, user, redirectedFrom: portfolio.handle === parsed.data ? null : parsed.data };
 }
 
 export async function getMyPortfolio(req, res) {
@@ -167,14 +192,20 @@ export async function getPortfolioJob(req, res) {
 
 export async function getPublicPortfolio(req, res) {
   try {
-    const handle = handleSchema.safeParse(req.params.handle);
-    if (!handle.success) return res.status(404).json({ success: false, message: 'Portfolio not found.' });
-    const now = new Date();
-    const portfolio = await Portfolio.findOne({ handle: handle.data, status: 'published' }) || await Portfolio.findOne({ status: 'published', previousHandles: { $elemMatch: { handle: handle.data, redirectUntil: { $gt: now } } } });
-    if (!portfolio) return res.status(404).json({ success: false, message: 'Portfolio not found.' });
-    const user = await User.findById(portfolio.userId);
-    const entitlements = await resolveEntitlements(user, { includeUsage: false });
-    if (entitlements.features.portfolioMode !== 'public') return res.status(404).json({ success: false, message: 'Portfolio not found.' });
-    res.json({ success: true, data: publicOutput(portfolio), redirectedFrom: portfolio.handle === handle.data ? null : handle.data });
+    const resolved = await resolvePublicPortfolio(req.params.handle);
+    if (!resolved) return res.status(404).json({ success: false, message: 'Portfolio not found.' });
+    recordAnalyticsEventAsync({ name: 'portfolio.viewed', source: 'server', actorType: 'anonymous', userId: resolved.user._id, sessionDigest: portfolioVisitorDigest(req, res), status: 'viewed', route: req.originalUrl, metadata: { handle: resolved.portfolio.handle, redirected: Boolean(resolved.redirectedFrom) } });
+    res.json({ success: true, data: publicOutput(resolved.portfolio), redirectedFrom: resolved.redirectedFrom });
   } catch { res.status(500).json({ success: false, message: 'We could not open that portfolio.' }); }
+}
+
+export async function recordPortfolioEngagement(req, res) {
+  try {
+    const resolved = await resolvePublicPortfolio(req.params.handle);
+    if (!resolved) return res.status(404).json({ success: false, message: 'Portfolio not found.' });
+    const parsed = z.object({ action: z.enum(['project.opened', 'filter.used', 'instagram.clicked', 'whatsapp.clicked', 'enquiry.clicked']), itemIndex: z.number().int().min(0).max(50).optional(), category: z.string().trim().max(50).optional() }).strict().safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ success: false, message: 'That portfolio action is not valid.' });
+    recordAnalyticsEventAsync({ name: `portfolio.${parsed.data.action}`, source: 'server', actorType: 'anonymous', userId: resolved.user._id, sessionDigest: portfolioVisitorDigest(req, res), status: 'completed', route: req.originalUrl, metadata: { handle: resolved.portfolio.handle, itemIndex: parsed.data.itemIndex, category: parsed.data.category } });
+    res.status(202).json({ success: true });
+  } catch { res.status(500).json({ success: false, message: 'We could not record that portfolio action.' }); }
 }

@@ -1461,6 +1461,148 @@ export async function exportFinance(req, res) {
   }
 }
 
+const portfolioAnalyticsNames = [
+  'portfolio.viewed',
+  'portfolio.project.opened',
+  'portfolio.filter.used',
+  'portfolio.instagram.clicked',
+  'portfolio.whatsapp.clicked',
+  'portfolio.enquiry.clicked'
+];
+
+function portfolioMetricBucket() {
+  return { views: 0, uniqueVisitors: 0, projectOpens: 0, filterUses: 0, instagramClicks: 0, whatsappClicks: 0, enquiryClicks: 0 };
+}
+
+export async function getPortfolioOverview(req, res) {
+  try {
+    const search = String(req.query.search || '').trim().slice(0, 100);
+    const status = ['draft', 'published'].includes(String(req.query.status || '')) ? String(req.query.status) : 'all';
+    const limit = Math.min(500, Math.max(1, Number.parseInt(req.query.limit, 10) || 250));
+    const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const query = status === 'all' ? {} : { status };
+    if (search) {
+      const pattern = { $regex: escaped(search), $options: 'i' };
+      const matchingUsers = await User.find({ $or: [{ name: pattern }, { email: pattern }, { 'studio.name': pattern }] }).select('_id').limit(500).lean();
+      query.$or = [
+        { handle: pattern },
+        { studioName: pattern },
+        { headline: pattern },
+        ...(matchingUsers.length ? [{ userId: { $in: matchingUsers.map(user => user._id) } }] : [])
+      ];
+    }
+    const portfolios = await Portfolio.find(query)
+      .populate('userId', 'name email plan accountStatus studio.name planOverride')
+      .sort({ updatedAt: -1 })
+      .limit(limit)
+      .lean();
+    const portfolioIds = portfolios.map(portfolio => portfolio._id);
+    const publicIds = [...new Set(portfolios.flatMap(portfolio => (portfolio.items || []).map(item => String(item.publicId)).filter(Boolean)))];
+    const [storedAssets, deliveryAssets, jobs, analytics] = await Promise.all([
+      publicIds.length ? StorageAsset.find({ publicId: { $in: publicIds } }).select('publicId').lean() : [],
+      publicIds.length ? Delivery.find({ 'assets.publicId': { $in: publicIds } }).select('assets.publicId').lean() : [],
+      portfolioIds.length ? PortfolioJob.find({ portfolioId: { $in: portfolioIds } }).sort({ updatedAt: -1 }).limit(Math.max(500, portfolioIds.length * 5)).lean() : [],
+      AnalyticsEvent.aggregate([
+        { $match: { name: { $in: portfolioAnalyticsNames }, occurredAt: { $gte: since } } },
+        { $group: { _id: { name: '$name', handle: '$metadata.handle' }, count: { $sum: 1 }, sessions: { $addToSet: '$sessionDigest' } } },
+        { $project: { _id: 1, count: 1, uniqueVisitors: { $size: { $setDifference: ['$sessions', [null, '']] } } } }
+      ])
+    ]);
+    const availableMedia = new Set([
+      ...storedAssets.map(asset => String(asset.publicId)),
+      ...deliveryAssets.flatMap(delivery => (delivery.assets || []).map(asset => String(asset.publicId)))
+    ]);
+    const metricsByHandle = new Map();
+    for (const event of analytics) {
+      const handle = String(event._id?.handle || '').toLowerCase();
+      if (!handle) continue;
+      const bucket = metricsByHandle.get(handle) || portfolioMetricBucket();
+      const count = Number(event.count || 0);
+      const uniqueVisitors = Number(event.uniqueVisitors || 0);
+      if (event._id.name === 'portfolio.viewed') { bucket.views += count; bucket.uniqueVisitors += uniqueVisitors; }
+      if (event._id.name === 'portfolio.project.opened') bucket.projectOpens += count;
+      if (event._id.name === 'portfolio.filter.used') bucket.filterUses += count;
+      if (event._id.name === 'portfolio.instagram.clicked') bucket.instagramClicks += count;
+      if (event._id.name === 'portfolio.whatsapp.clicked') bucket.whatsappClicks += count;
+      if (event._id.name === 'portfolio.enquiry.clicked') bucket.enquiryClicks += count;
+      metricsByHandle.set(handle, bucket);
+    }
+    const latestJobByPortfolio = new Map();
+    for (const job of jobs) {
+      const key = String(job.portfolioId);
+      if (!latestJobByPortfolio.has(key)) latestJobByPortfolio.set(key, job);
+    }
+    const records = portfolios.map(portfolio => {
+      const owner = portfolio.userId;
+      const items = Array.isArray(portfolio.items) ? portfolio.items : [];
+      const missingItemCount = items.filter(item => !availableMedia.has(String(item.publicId))).length;
+      const previousHandles = Array.isArray(portfolio.previousHandles) ? portfolio.previousHandles : [];
+      const now = Date.now();
+      const activeRedirects = previousHandles.filter(entry => new Date(entry.redirectUntil).getTime() > now).length;
+      const expiredRedirects = previousHandles.filter(entry => new Date(entry.redirectUntil).getTime() <= now).length;
+      const latestJob = latestJobByPortfolio.get(String(portfolio._id));
+      const reasons = [];
+      if (!owner) reasons.push('Owner account is missing');
+      if (!owner || !['pro', 'studio'].includes(owner.plan) && !(owner.planOverride?.plan === 'pro' && (!owner.planOverride.expiresAt || new Date(owner.planOverride.expiresAt).getTime() > now))) reasons.push('Account is not currently entitled to public Portfolio');
+      if (portfolio.status === 'published' && !String(portfolio.bio || '').trim()) reasons.push('Published portfolio has no bio');
+      if (portfolio.status === 'published' && items.length < 4) reasons.push(`Published portfolio has only ${items.length} photograph${items.length === 1 ? '' : 's'}`);
+      if (missingItemCount) reasons.push(`${missingItemCount} selected photograph${missingItemCount === 1 ? '' : 's'} no longer resolve`);
+      if (latestJob?.status === 'failed') reasons.push(`Latest direction job failed${latestJob.errorCode ? ` (${latestJob.errorCode})` : ''}`);
+      const metrics = metricsByHandle.get(String(portfolio.handle || '').toLowerCase()) || portfolioMetricBucket();
+      return {
+        id: portfolio._id,
+        handle: portfolio.handle,
+        publicPath: `/@${encodeURIComponent(portfolio.handle)}`,
+        status: portfolio.status,
+        studioName: portfolio.studioName || owner?.studio?.name || owner?.name || 'Unnamed studio',
+        owner: owner ? { id: owner._id, name: owner.name, email: owner.email, plan: owner.plan, accountStatus: owner.accountStatus } : null,
+        itemCount: items.length,
+        missingItemCount,
+        bioPresent: Boolean(String(portfolio.bio || '').trim()),
+        previousHandles: { active: activeRedirects, expired: expiredRedirects },
+        metrics,
+        latestJob: latestJob ? { id: latestJob._id, status: latestJob.status, stage: latestJob.stage, progress: latestJob.progress, attempts: latestJob.attempts, provider: latestJob.provider, promptVersion: latestJob.promptVersion, errorCode: latestJob.errorCode || '', errorMessage: latestJob.errorMessage || '', updatedAt: latestJob.updatedAt, completedAt: latestJob.completedAt || null } : null,
+        broken: reasons.length > 0,
+        brokenReasons: reasons,
+        updatedAt: portfolio.updatedAt,
+        publishedAt: portfolio.publishedAt || null
+      };
+    });
+    const summary = records.reduce((result, portfolio) => {
+      result.total += 1;
+      result[portfolio.status] = (result[portfolio.status] || 0) + 1;
+      if (portfolio.broken) result.broken += 1;
+      if (portfolio.latestJob?.status === 'failed') result.jobsFailed += 1;
+      for (const key of ['views', 'uniqueVisitors', 'projectOpens', 'filterUses', 'instagramClicks', 'whatsappClicks', 'enquiryClicks']) result[key] += Number(portfolio.metrics?.[key] || 0);
+      result.expiredRedirects += Number(portfolio.previousHandles?.expired || 0);
+      return result;
+    }, { total: 0, draft: 0, published: 0, broken: 0, jobsFailed: 0, views: 0, uniqueVisitors: 0, projectOpens: 0, filterUses: 0, instagramClicks: 0, whatsappClicks: 0, enquiryClicks: 0, expiredRedirects: 0 });
+    res.json({ success: true, data: { generatedAt: new Date(), windowDays: 90, summary, portfolios: records } });
+  } catch (error) {
+    console.error('[admin/portfolios]', error.message);
+    res.status(500).json({ success: false, message: 'We could not load portfolio records.' });
+  }
+}
+
+export async function adminUnpublishPortfolio(req, res) {
+  try {
+    const portfolioId = validId(req.params.id);
+    if (!portfolioId) return res.status(400).json({ success: false, message: 'Portfolio identifier is invalid.' });
+    const portfolio = await Portfolio.findById(portfolioId);
+    if (!portfolio) return res.status(404).json({ success: false, message: 'Portfolio not found.' });
+    if (portfolio.status !== 'published') return res.status(409).json({ success: false, message: 'That portfolio is already private.' });
+    const before = { status: portfolio.status, publishedAt: portfolio.publishedAt || null };
+    portfolio.status = 'draft';
+    portfolio.publishedAt = undefined;
+    await portfolio.save();
+    await AdminAudit.create({ adminId: adminId(req), userId: portfolio.userId, action: 'portfolio.unpublished_by_admin', resourceType: 'Portfolio', resourceId: String(portfolio._id), details: { before, after: { status: portfolio.status, publishedAt: null }, reason: safeReason(req.body.reason, 'Made private by administrator') } });
+    res.json({ success: true, message: 'Portfolio is now private.' });
+  } catch (error) {
+    console.error('[admin/portfolio-unpublish]', error.message);
+    res.status(500).json({ success: false, message: 'We could not make that portfolio private.' });
+  }
+}
+
 export async function refundPayment(req, res) {
   let reserved = false;
   let payment;

@@ -11,11 +11,13 @@ import {
   Eye,
   Film,
   FileDown,
+  Globe2,
   HardDrive,
   KeyRound,
   LogOut,
   LockKeyhole,
   Mail,
+  MessageCircle,
   Mic2,
   Music2,
   ReceiptText,
@@ -148,6 +150,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const [storageScan, setStorageScan] = useState(null);
   const [storageScanLoading, setStorageScanLoading] = useState(false);
   const [musicOverview, setMusicOverview] = useState(null);
+  const [portfolioOverview, setPortfolioOverview] = useState(null);
   const [selectedVolume, setSelectedVolume] = useState(null);
   const [volumeDetailLoading, setVolumeDetailLoading] = useState(false);
   const [volumeCategoryFilter, setVolumeCategoryFilter] = useState('all');
@@ -188,7 +191,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       access: api.get('/v1/admin/client-access', { params: { search } }),
       volume: api.get('/v1/admin/volume', { params: { search, category: volumeCategoryFilter, status: volumeStatusFilter } }),
       storage: api.get('/v1/admin/storage', { params: { search } }),
-      musicNarration: api.get('/v1/admin/music-narration', { params: { search } })
+      musicNarration: api.get('/v1/admin/music-narration', { params: { search } }),
+      portfolio: api.get('/v1/admin/portfolios', { params: { search } })
     };
     const entries = Object.entries(requests);
     const results = await Promise.allSettled(entries.map(([, request]) => request));
@@ -207,6 +211,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         if (key === 'volume') setVolumeJobs(Array.isArray(data) ? data : []);
         if (key === 'storage') setStorageOverview(data || null);
         if (key === 'musicNarration') setMusicOverview(data || null);
+        if (key === 'portfolio') setPortfolioOverview(data || null);
         return;
       }
       const error = result.status === 'rejected' ? result.reason : new Error(result.value?.data?.message || 'This panel is unavailable.');
@@ -558,9 +563,10 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       access: accessOverview?.deliveries?.length || 0,
       volume: volumeJobs.length,
       storage: storageOverview?.accounts?.length || 0,
-      musicNarration: musicOverview?.catalogue?.filtered || 0
+      musicNarration: musicOverview?.catalogue?.filtered || 0,
+      portfolio: portfolioOverview?.portfolios?.length || 0
     }),
-    [accessOverview, aiJobs, deliveries, users, payments, volumeJobs, storageOverview, musicOverview]
+    [accessOverview, aiJobs, deliveries, users, payments, volumeJobs, storageOverview, musicOverview, portfolioOverview]
   );
 
   const runStorageScan = async () => {
@@ -602,6 +608,20 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       window.URL.revokeObjectURL(url);
     } catch (error) {
       toast.error(error.response?.data?.message || 'We could not export finance records.');
+    }
+  };
+
+  const unpublishPortfolio = async (portfolio) => {
+    if (!portfolio?.id || !window.confirm(`Make ${portfolio.studioName || 'this portfolio'} private?`)) return;
+    try {
+      setAccountActionLoading(true);
+      await api.post(`/v1/admin/portfolios/${portfolio.id}/unpublish`, { reason: 'Made private from the portfolio operations workspace' });
+      toast.success('Portfolio is now private.');
+      await fetchAdminData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not make this portfolio private.');
+    } finally {
+      setAccountActionLoading(false);
     }
   };
 
@@ -736,10 +756,11 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         {/* Section Tabs & Search */}
         <section className="mt-10">
           <div className="flex flex-col gap-4 border-b border-white/10 pb-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5 sm:grid-cols-4 md:grid-cols-8">
+            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5 sm:grid-cols-4 md:grid-cols-9">
               {[
                 ['deliveries', Film, 'Deliveries'],
                 ['users', Users, 'Accounts'],
+                ['portfolio', Globe2, 'Portfolio'],
                 ['payments', ReceiptText, 'Payments'],
                 ['aiJobs', Bot, 'AI jobs'],
                 ['access', Eye, 'Client access'],
@@ -847,6 +868,33 @@ export default function AdminDashboardPage({ admin, onLogout }) {
                 </div>
                 {!users.length && <p className="p-12 text-center text-sm text-white/45">No accounts match your search query.</p>}
               </div>
+            </div>
+          )}
+
+          {/* Portfolio and public pages tab */}
+          {!loading && tab === 'portfolio' && (
+            <div className="mt-6 grid gap-4">
+              {panelErrors.portfolio && !portfolioOverview && <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-5 text-sm text-amber-100">Portfolio data is unavailable. {panelErrors.portfolio}</div>}
+              {portfolioOverview && <>
+                <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <MetricCard icon={Globe2} label="Public portfolios" value={number(portfolioOverview.summary?.published)} note={`${number(portfolioOverview.summary?.draft)} saved drafts`} />
+                  <MetricCard icon={TriangleAlert} label="Needs attention" value={number(portfolioOverview.summary?.broken)} note={`${number(portfolioOverview.summary?.jobsFailed)} failed direction jobs`} />
+                  <MetricCard icon={Eye} label="Portfolio views" value={number(portfolioOverview.summary?.views)} note={`${number(portfolioOverview.summary?.uniqueVisitors)} unique visitors · last 90 days`} />
+                  <MetricCard icon={MessageCircle} label="Enquiries" value={number(portfolioOverview.summary?.enquiryClicks)} note={`${number(portfolioOverview.summary?.whatsappClicks)} WhatsApp clicks · ${number(portfolioOverview.summary?.instagramClicks)} Instagram clicks`} />
+                </section>
+                <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Public pages</p><h2 className="mt-1 text-xl font-medium">Portfolio health and demand</h2><p className="mt-2 text-xs leading-5 text-white/45">Views, project opens, social clicks, broken photographs, redirect history, and direction jobs for the last 90 days.</p></div><span className="text-xs text-white/35">Updated {shortDate(portfolioOverview.generatedAt)}</span></div>
+                  <div className="mt-5 space-y-3">
+                    {(portfolioOverview.portfolios || []).map(portfolio => <article key={portfolio.id} className="rounded-2xl border border-white/10 bg-white/[.025] p-4 sm:p-5">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><Status value={portfolio.status} />{portfolio.broken && <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/25 bg-amber-300/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[.12em] text-amber-200"><TriangleAlert size={12} />Needs attention</span>}<span className="truncate text-xs text-white/45">@{portfolio.handle}</span></div><h3 className="mt-2 truncate text-base font-semibold text-white">{portfolio.studioName}</h3><p className="mt-1 truncate text-xs text-white/40">{portfolio.owner?.name || 'Owner account missing'}{portfolio.owner?.email ? ` · ${portfolio.owner.email}` : ''} · {portfolio.owner?.plan || 'unknown plan'}</p></div><div className="flex flex-wrap gap-2"><a href={portfolio.publicPath} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-white/15 px-3 text-xs font-semibold text-white/70 transition-colors hover:border-[#ff9b8e]/50 hover:text-white"><Eye size={14} />Open public page</a>{portfolio.status === 'published' && <button type="button" disabled={accountActionLoading} onClick={() => unpublishPortfolio(portfolio)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-amber-300/25 px-3 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-300/10 disabled:opacity-50">Make private</button>}</div></div>
+                      <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-white/50 sm:grid-cols-4 lg:grid-cols-8"><span>Photos <strong className="ml-1 text-white">{number(portfolio.itemCount)}</strong></span><span>Missing <strong className={`ml-1 ${portfolio.missingItemCount ? 'text-amber-200' : 'text-white'}`}>{number(portfolio.missingItemCount)}</strong></span><span>Views <strong className="ml-1 text-white">{number(portfolio.metrics?.views)}</strong></span><span>Unique <strong className="ml-1 text-white">{number(portfolio.metrics?.uniqueVisitors)}</strong></span><span>Projects <strong className="ml-1 text-white">{number(portfolio.metrics?.projectOpens)}</strong></span><span>Enquiries <strong className="ml-1 text-white">{number(portfolio.metrics?.enquiryClicks)}</strong></span><span>Redirects <strong className="ml-1 text-white">{number(portfolio.previousHandles?.active)}</strong></span><span>Job <strong className="ml-1 text-white">{portfolio.latestJob?.status || 'none'}</strong></span></div>
+                      {(portfolio.brokenReasons || []).length > 0 && <p className="mt-4 rounded-xl border border-amber-300/15 bg-amber-300/[.05] px-3 py-2 text-xs leading-5 text-amber-100/80">{portfolio.brokenReasons.join(' · ')}</p>}
+                      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-white/35"><span>{number(portfolio.metrics?.filterUses)} category filters</span><span>{number(portfolio.metrics?.instagramClicks)} Instagram clicks</span><span>{number(portfolio.metrics?.whatsappClicks)} WhatsApp clicks</span><span>{number(portfolio.previousHandles?.expired)} expired redirects</span>{portfolio.latestJob?.errorMessage && <span className="text-amber-200/70">{portfolio.latestJob.errorMessage}</span>}</div>
+                    </article>)}
+                    {!portfolioOverview.portfolios?.length && <p className="py-12 text-center text-sm text-white/45">No portfolios match this search.</p>}
+                  </div>
+                </section>
+              </>}
             </div>
           )}
 
