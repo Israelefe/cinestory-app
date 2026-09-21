@@ -1,15 +1,24 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
+  Activity,
   Banknote,
+  Bot,
+  CheckCircle2,
+  Cloud,
+  Database,
   Download,
   Eye,
   Film,
+  HardDrive,
   LogOut,
+  Mail,
   ReceiptText,
   RefreshCw,
   Search,
+  Server,
   ShieldCheck,
+  TriangleAlert,
   Users
 } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -21,7 +30,9 @@ const formatNames = {
   'photo-reveal': 'Photo Reveal',
   canvas: 'Canvas',
   chapters: 'Chapters',
-  album: 'Album'
+  album: 'Album',
+  'event-coverage': 'Event Coverage',
+  campaign: 'Campaign'
 };
 
 const nairaFromKobo = (value = 0) =>
@@ -39,6 +50,16 @@ const shortDate = (value) =>
         year: 'numeric'
       }).format(new Date(value))
     : '—';
+
+const number = (value = 0) => Number(value || 0).toLocaleString('en-NG');
+
+const bytes = (value = 0) => {
+  const amount = Number(value || 0);
+  if (!amount) return '0 GB';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const index = Math.min(units.length - 1, Math.floor(Math.log(amount) / Math.log(1024)));
+  return `${(amount / (1024 ** index)).toFixed(index > 2 ? 1 : 0)} ${units[index]}`;
+};
 
 function Status({ value }) {
   const calm = ['success', 'active', 'published', 'pro'].includes(value);
@@ -83,9 +104,27 @@ function MetricCard({ icon: Icon, label, value, note }) {
   );
 }
 
+function HealthCard({ icon: Icon, label, health }) {
+  const state = health?.status || 'unknown';
+  const okay = ['healthy', 'idle', 'busy'].includes(state);
+  const disabled = state === 'disabled';
+  return (
+    <article className="rounded-2xl border border-white/10 bg-white/[.025] p-4 sm:p-5">
+      <div className="flex items-start justify-between gap-3">
+        <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[.14em] text-white/45"><Icon size={15} />{label}</span>
+        <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-wider ${okay ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300' : disabled ? 'border-white/10 bg-white/[.04] text-white/45' : 'border-amber-300/25 bg-amber-300/10 text-amber-200'}`}>
+          {okay ? <CheckCircle2 size={12} /> : <TriangleAlert size={12} />}{state}
+        </span>
+      </div>
+      <p className="mt-3 text-xs leading-5 text-white/50">{health?.reason || (health?.latencyMs ? `${health.latencyMs}ms response` : disabled ? 'Not enabled in this environment.' : 'No recent status reported.')}</p>
+    </article>
+  );
+}
+
 export default function AdminDashboardPage({ admin, onLogout }) {
   const [tab, setTab] = useState('deliveries');
   const [analytics, setAnalytics] = useState(null);
+  const [operations, setOperations] = useState(null);
   const [deliveries, setDeliveries] = useState([]);
   const [users, setUsers] = useState([]);
   const [payments, setPayments] = useState([]);
@@ -95,25 +134,37 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const [refundAmount, setRefundAmount] = useState('');
   const [refundNote, setRefundNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [panelErrors, setPanelErrors] = useState({});
 
   const fetchAdminData = useCallback(async () => {
-    try {
-      setLoading(true);
-      const [analyticsRes, deliveriesRes, usersRes, paymentsRes] = await Promise.all([
-        api.get('/v1/admin/analytics'),
-        api.get('/v1/admin/deliveries', { params: { search } }),
-        api.get('/v1/admin/users', { params: { search } }),
-        api.get('/v1/admin/payments', { params: { search } })
-      ]);
-      setAnalytics(analyticsRes.data?.data || null);
-      setDeliveries(deliveriesRes.data?.data || []);
-      setUsers(usersRes.data?.data || []);
-      setPayments(paymentsRes.data?.data || []);
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Could not load administrative records.');
-    } finally {
-      setLoading(false);
-    }
+    setLoading(true);
+    const requests = {
+      operations: api.get('/v1/admin/operations'),
+      analytics: api.get('/v1/admin/analytics'),
+      deliveries: api.get('/v1/admin/deliveries', { params: { search } }),
+      users: api.get('/v1/admin/users', { params: { search } }),
+      payments: api.get('/v1/admin/payments', { params: { search } })
+    };
+    const entries = Object.entries(requests);
+    const results = await Promise.allSettled(entries.map(([, request]) => request));
+    const nextErrors = {};
+    results.forEach((result, index) => {
+      const [key] = entries[index];
+      if (result.status === 'fulfilled' && result.value.data?.success !== false) {
+        const data = result.value.data?.data;
+        if (key === 'operations') setOperations(data || null);
+        if (key === 'analytics') setAnalytics(data || null);
+        if (key === 'deliveries') setDeliveries(Array.isArray(data) ? data : []);
+        if (key === 'users') setUsers(Array.isArray(data) ? data : []);
+        if (key === 'payments') setPayments(Array.isArray(data) ? data : []);
+        return;
+      }
+      const error = result.status === 'rejected' ? result.reason : new Error(result.value?.data?.message || 'This panel is unavailable.');
+      nextErrors[key] = error.response?.data?.message || error.message || 'This panel is unavailable.';
+    });
+    setPanelErrors(nextErrors);
+    if (Object.keys(nextErrors).length === entries.length) toast.error('The administration service is unavailable. Try again shortly.');
+    setLoading(false);
   }, [search]);
 
   useEffect(() => {
@@ -232,6 +283,42 @@ export default function AdminDashboardPage({ admin, onLogout }) {
             </button>
           </div>
         </section>
+
+        {/* Operations overview */}
+        {panelErrors.operations && !operations && (
+          <section className="mt-6 rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-5 text-sm text-amber-100">
+            <div className="flex items-start gap-3"><TriangleAlert size={18} className="mt-0.5 shrink-0" /><div><strong>Operations data is unavailable.</strong><p className="mt-1 text-xs leading-5 text-amber-100/70">{panelErrors.operations}</p></div></div>
+          </section>
+        )}
+        {operations && (
+          <>
+            <section className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <MetricCard icon={Users} label="Accounts" value={number(operations.metrics?.accounts?.total)} note={`${number(operations.metrics?.accounts?.newLast30Days)} joined in the last 30 days`} />
+              <MetricCard icon={ShieldCheck} label="Verified" value={number(operations.metrics?.accounts?.verified)} note={`${number(operations.metrics?.accounts?.onboardingCompleted)} finished studio setup`} />
+              <MetricCard icon={Film} label="Active deliveries" value={number(operations.metrics?.deliveries?.active)} note={`${number(operations.metrics?.deliveries?.published)} published live`} />
+              <MetricCard icon={HardDrive} label="Stored media" value={bytes(operations.metrics?.storage?.usedBytes)} note={`${number(operations.metrics?.storage?.nearLimitAccounts)} Pro accounts near their limit`} />
+              <MetricCard icon={Bot} label="Failed jobs" value={number(operations.metrics?.jobs?.failedLast24Hours)} note={`${number(operations.metrics?.jobs?.queueDepth)} jobs currently queued or running`} />
+              <MetricCard icon={Cloud} label="Failed uploads" value={number(operations.metrics?.uploads?.failedLast24Hours)} note="Recorded in the last 24 hours" />
+              <MetricCard icon={Banknote} label="Payment issues" value={number(operations.metrics?.payments?.failedOrDisputedLast24Hours)} note={`${number(operations.metrics?.payments?.pastDueSubscriptions)} subscriptions past due`} />
+              <MetricCard icon={Activity} label="Active Pro" value={number(operations.metrics?.accounts?.activePro)} note="Current plan or support grant" />
+            </section>
+
+            <section className="mt-6 rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Service health</p><h2 className="mt-1 text-xl font-medium">Can the platform do its work right now?</h2></div><span className="text-xs text-white/35">Updated {shortDate(operations.generatedAt)}</span></div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <HealthCard icon={Database} label="Database" health={operations.providers?.database} />
+                <HealthCard icon={Cloud} label="Cloudinary" health={operations.providers?.cloudinary} />
+                <HealthCard icon={Bot} label="Delivery AI" health={operations.providers?.ai} />
+                <HealthCard icon={Mail} label="Email" health={operations.providers?.email} />
+                <HealthCard icon={Server} label="Paystack" health={operations.providers?.paystack} />
+              </div>
+            </section>
+
+            <section className="mt-4 grid gap-4 md:grid-cols-3">
+              {(operations.workers || []).map(worker => <HealthCard key={worker.workerName} icon={Activity} label={`${worker.workerName} worker`} health={worker} />)}
+            </section>
+          </>
+        )}
 
         {/* Platform Metrics */}
         {analytics && (

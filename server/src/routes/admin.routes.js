@@ -1,6 +1,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import {
+  getOperationsOverview,
   getAdminAnalytics,
   getAllUsers,
   updateUserPlan,
@@ -70,6 +71,7 @@ router.post('/auth/logout', adminLogout);
 // Protected routes
 router.use(adminAuthMiddleware);
 router.get('/auth/me', getAdminMe);
+router.get('/operations', getOperationsOverview);
 router.get('/analytics', getAdminAnalytics);
 router.get('/users', getAllUsers);
 router.patch('/users/:id/plan', updateUserPlan);

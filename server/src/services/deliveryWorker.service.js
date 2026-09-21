@@ -1,12 +1,13 @@
-import os from 'os';
 import Delivery from '../models/Delivery.js';
 import DeliveryJob from '../models/DeliveryJob.js';
 import { analyzeImageBatch, createFrameBatch, createGlobalDirection, recommendFormats } from './alibabaCreativeDirector.service.js';
 import { signedImageUrl } from './deliveryMedia.service.js';
 import { generateNarration } from './narration.service.js';
 import { deliverySoundtrack } from '../constants/deliverySoundtracks.js';
+import { recordAnalyticsEventAsync } from './analytics.service.js';
+import { recordWorkerHeartbeat, workerInstance } from './workerHeartbeat.service.js';
 
-const workerId = `${os.hostname()}:${process.pid}`;
+const workerId = workerInstance();
 let timer;
 let busy = false;
 
@@ -163,21 +164,41 @@ async function run(job) {
   } catch (error) {
     await saveJob(job, { status: 'failed', stage: 'failed', errorCode: error.code || 'GENERATION_FAILED', errorMessage: String(error.message || 'Generation failed.').slice(0, 500), completedAt: new Date() });
     await Delivery.updateOne({ _id: job.deliveryId }, { status: ['narrate', 'revise'].includes(job.type) ? 'review' : 'draft' });
+    recordAnalyticsEventAsync({
+      name: 'ai.job.failed',
+      source: 'server',
+      actorType: 'system',
+      userId: job.userId,
+      deliveryId: job.deliveryId,
+      status: 'failed',
+      errorCode: error.code || 'GENERATION_FAILED',
+      metadata: { jobType: job.type, worker: 'delivery' }
+    });
     console.error(`[delivery-worker/${job.type}]`, error.code || error.name, error.message);
   }
 }
 
 async function tick() {
-  if (busy) return;
+  if (busy) {
+    recordWorkerHeartbeat('delivery', { status: 'busy', stage: 'running' });
+    return;
+  }
   busy = true;
   try {
+    await recordWorkerHeartbeat('delivery', { status: 'busy', stage: 'polling' });
     const stale = new Date(Date.now() - 5 * 60 * 1000);
     await DeliveryJob.updateMany({ status: 'running', $or: [{ heartbeatAt: { $lt: stale } }, { heartbeatAt: { $exists: false } }], attempts: { $lt: 3 } }, { status: 'queued', lockedBy: null });
     await DeliveryJob.updateMany({ status: 'running', $or: [{ heartbeatAt: { $lt: stale } }, { heartbeatAt: { $exists: false } }], attempts: { $gte: 3 } }, { status: 'failed', stage: 'failed', errorCode: 'WORKER_INTERRUPTED', errorMessage: 'The server stopped before this job finished. Retry it from the delivery review.', completedAt: new Date(), lockedBy: null });
     const job = await DeliveryJob.findOneAndUpdate({ status: 'queued', attempts: { $lt: 3 } }, { $set: { status: 'running', stage: 'starting', lockedAt: new Date(), heartbeatAt: new Date(), lockedBy: workerId }, $inc: { attempts: 1 } }, { new: true, sort: { createdAt: 1 } }).select('+input');
-    if (job) await run(job);
+    if (job) {
+      await recordWorkerHeartbeat('delivery', { status: 'busy', stage: job.type, details: { jobId: String(job._id) } });
+      await run(job);
+    }
   } catch (error) { console.error('[delivery-worker]', error.message); }
-  finally { busy = false; }
+  finally {
+    busy = false;
+    await recordWorkerHeartbeat('delivery', { status: 'idle', stage: 'polling' });
+  }
 }
 
 export function startDeliveryWorker() {

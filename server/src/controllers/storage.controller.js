@@ -5,6 +5,7 @@ import Portfolio from '../models/Portfolio.js';
 import { PLAN_DEFINITIONS } from '../config/plans.js';
 import { resolveEntitlements } from '../services/entitlement.service.js';
 import { confirmStorageUpload, createStorageUploadSignature, removeStorageAsset, storageAssetUrls } from '../services/storageMedia.service.js';
+import { recordAnalyticsEventAsync } from '../services/analytics.service.js';
 
 const confirmSchema = z.object({ publicId: z.string().min(5).max(500), version: z.union([z.string(), z.number()]), signature: z.string().min(20).max(200), originalFilename: z.string().trim().max(180).default('photograph'), folder: z.string().trim().max(100).default('All photographs'), tags: z.array(z.string().trim().min(1).max(40)).max(12).default([]) }).strict();
 const editSchema = z.object({ folder: z.string().trim().min(1).max(100), tags: z.array(z.string().trim().min(1).max(40)).max(12), caption: z.string().trim().max(180).default('') }).strict();
@@ -38,7 +39,10 @@ export async function signStorageUpload(req, res) {
     const { entitlements } = await storageAccess(req.user.id);
     if (entitlements.features.storageMode !== 'read-write') return res.status(403).json({ success: false, code: 'PRO_REQUIRED', message: 'Personal image storage is included with Veylo Pro.' });
     res.json({ success: true, data: createStorageUploadSignature(req.user.id) });
-  } catch (error) { res.status(error.status || 500).json({ success: false, message: error.message || 'We could not prepare this upload.' }); }
+  } catch (error) {
+    recordAnalyticsEventAsync({ name: 'upload.failed', source: 'server', actorType: 'photographer', userId: req.user?.id, status: 'failed', errorCode: error.code || 'STORAGE_UPLOAD_SIGNATURE_FAILED', metadata: { surface: 'library', stage: 'signature' } });
+    res.status(error.status || 500).json({ success: false, message: error.message || 'We could not prepare this upload.' });
+  }
 }
 
 export async function confirmStorageAsset(req, res) {
@@ -59,6 +63,7 @@ export async function confirmStorageAsset(req, res) {
     reserved = true;
     reservedBytes = resource.bytes;
     const asset = await StorageAsset.create({ userId: user._id, publicId: resource.public_id, originalFilename: parsed.data.originalFilename, format: resource.format, width: resource.width, height: resource.height, bytes: resource.bytes, folder: parsed.data.folder || 'All photographs', tags: [...new Set(parsed.data.tags.map(tag => tag.toLowerCase()))] });
+    recordAnalyticsEventAsync({ name: 'upload.completed', source: 'server', actorType: 'photographer', userId: req.user?.id, status: 'completed', bytes: resource.bytes, metadata: { surface: 'library', format: resource.format } });
     res.status(201).json({ success: true, data: output(asset), usage: { usedBytes: user.storageUsedBytes, limitBytes: PLAN_DEFINITIONS.pro.personalStorageBytes } });
   } catch (error) {
     if (reserved && reservedBytes) await User.updateOne(
@@ -66,6 +71,7 @@ export async function confirmStorageAsset(req, res) {
       [{ $set: { storageUsedBytes: { $max: [0, { $subtract: [{ $ifNull: ['$storageUsedBytes', 0] }, reservedBytes] }] } } }]
     ).catch(() => {});
     if (uploadedPublicId) await removeStorageAsset(uploadedPublicId).catch(() => {});
+    recordAnalyticsEventAsync({ name: 'upload.failed', source: 'server', actorType: 'photographer', userId: req.user?.id, status: 'failed', errorCode: error.code || 'STORAGE_UPLOAD_CONFIRM_FAILED', metadata: { surface: 'library', stage: 'confirm' } });
     res.status(error.status || 500).json({ success: false, message: error.message || 'We could not save this photograph.' });
   }
 }

@@ -1,13 +1,148 @@
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 import PhotoStory from '../models/PhotoStory.js';
 import Delivery from '../models/Delivery.js';
+import DeliveryJob from '../models/DeliveryJob.js';
+import PortfolioJob from '../models/PortfolioJob.js';
+import VolumeJob from '../models/VolumeJob.js';
 import Payment from '../models/Payment.js';
 import Subscription from '../models/Subscription.js';
+import BillingEvent from '../models/BillingEvent.js';
+import AnalyticsEvent from '../models/AnalyticsEvent.js';
+import WorkerHeartbeat from '../models/WorkerHeartbeat.js';
 import AdminAudit from '../models/AdminAudit.js';
 import { paystackRequest } from '../services/paystack.service.js';
-import { PRO_PRICE_KOBO } from '../config/plans.js';
+import { billingConfigured } from '../services/paystack.service.js';
+import { checkCloudinaryConnection } from '../services/cloudinary.service.js';
+import { PLAN_DEFINITIONS, PRO_PRICE_KOBO } from '../config/plans.js';
 
 function escaped(value) { return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+function health(ok, reason = '', details = {}) {
+  return { status: ok ? 'healthy' : 'degraded', ok: Boolean(ok), reason: reason || undefined, ...details };
+}
+
+async function databaseHealth() {
+  if (mongoose.connection.readyState !== 1 || !mongoose.connection.db) return health(false, 'Database connection is not ready.');
+  const started = Date.now();
+  try {
+    await mongoose.connection.db.admin().ping();
+    return health(true, '', { latencyMs: Date.now() - started });
+  } catch (error) {
+    return health(false, 'Database ping failed.', { latencyMs: Date.now() - started, errorCode: error.code || 'DB_PING_FAILED' });
+  }
+}
+
+async function workerHealth() {
+  const pipelineEnabled = process.env.DELIVERY_PIPELINE_ENABLED === 'true';
+  const definitions = [
+    { name: 'retention', enabled: true, staleAfterMs: 7 * 60 * 60 * 1000 },
+    { name: 'delivery', enabled: pipelineEnabled, staleAfterMs: 30 * 1000 },
+    { name: 'portfolio', enabled: pipelineEnabled, staleAfterMs: 30 * 1000 }
+  ];
+  const records = await WorkerHeartbeat.find({ workerName: { $in: definitions.map(item => item.name) } }).sort({ heartbeatAt: -1 }).lean();
+  return definitions.map(definition => {
+    const record = records.find(item => item.workerName === definition.name);
+    if (!definition.enabled) return { workerName: definition.name, status: 'disabled', enabled: false, heartbeatAt: record?.heartbeatAt || null };
+    const heartbeatAt = record?.heartbeatAt || null;
+    const alive = heartbeatAt && Date.now() - new Date(heartbeatAt).getTime() <= definition.staleAfterMs;
+    return { workerName: definition.name, enabled: true, status: alive ? (record.status || 'idle') : 'stale', stage: record?.stage || 'not started', heartbeatAt, instance: record?.instance || null };
+  });
+}
+
+export async function getOperationsOverview(req, res) {
+  const now = new Date();
+  const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const staleJobAt = new Date(now.getTime() - 5 * 60 * 1000);
+  try {
+    const [
+      totalUsers,
+      newAccounts,
+      verifiedAccounts,
+      onboardingCompleted,
+      activeProAccounts,
+      activeDeliveries,
+      publishedDeliveries,
+      activeLegacyStories,
+      publishedLegacyStories,
+      activeVolumeJobs,
+      publishedVolumeJobs,
+      failedDeliveryJobs,
+      failedPortfolioJobs,
+      staleDeliveryJobs,
+      stalePortfolioJobs,
+      failedUploads,
+      storageAgg,
+      storageNearLimit,
+      paymentEvents,
+      failedPayments,
+      pastDueSubscriptions,
+      database,
+      cloudinary,
+      workers
+    ] = await Promise.all([
+      User.countDocuments(),
+      User.countDocuments({ createdAt: { $gte: thirtyDaysAgo } }),
+      User.countDocuments({ emailVerifiedAt: { $exists: true, $ne: null } }),
+      User.countDocuments({ onboardingCompletedAt: { $exists: true, $ne: null } }),
+      User.countDocuments({ $or: [{ plan: 'pro' }, { plan: 'studio' }, { 'planOverride.plan': 'pro', $or: [{ 'planOverride.expiresAt': null }, { 'planOverride.expiresAt': { $gt: now } }] }] }),
+      Delivery.countDocuments({ status: { $in: ['draft', 'analyzing', 'directing', 'review', 'published'] } }),
+      Delivery.countDocuments({ status: 'published' }),
+      PhotoStory.countDocuments({ status: { $in: ['draft', 'published'] } }),
+      PhotoStory.countDocuments({ status: 'published' }),
+      VolumeJob.countDocuments({ status: { $in: ['draft', 'published'] } }),
+      VolumeJob.countDocuments({ status: 'published' }),
+      DeliveryJob.countDocuments({ status: 'failed', updatedAt: { $gte: dayAgo } }),
+      PortfolioJob.countDocuments({ status: 'failed', updatedAt: { $gte: dayAgo } }),
+      DeliveryJob.countDocuments({ status: 'running', $or: [{ heartbeatAt: { $lt: staleJobAt } }, { heartbeatAt: { $exists: false } }] }),
+      PortfolioJob.countDocuments({ status: 'running', $or: [{ lockedAt: { $lt: staleJobAt } }, { lockedAt: { $exists: false } }] }),
+      AnalyticsEvent.countDocuments({ name: 'upload.failed', occurredAt: { $gte: dayAgo } }),
+      User.aggregate([{ $group: { _id: null, bytes: { $sum: { $ifNull: ['$storageUsedBytes', 0] } } } }]),
+      User.countDocuments({ plan: { $in: ['pro', 'studio'] }, $expr: { $gte: [{ $ifNull: ['$storageUsedBytes', 0] }, PLAN_DEFINITIONS.pro.personalStorageBytes * 0.8] } }),
+      BillingEvent.aggregate([{ $match: { createdAt: { $gte: dayAgo } } }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
+      Payment.countDocuments({ status: { $in: ['failed', 'disputed'] }, updatedAt: { $gte: dayAgo } }),
+      Subscription.countDocuments({ status: 'past_due' }),
+      databaseHealth(),
+      checkCloudinaryConnection(),
+      workerHealth()
+    ]);
+
+    const analyticsFailures = await AnalyticsEvent.countDocuments({ name: 'ai.job.failed', occurredAt: { $gte: dayAgo } });
+    const emailFailures = await AnalyticsEvent.countDocuments({ name: 'email.send.failed', occurredAt: { $gte: dayAgo } });
+    const emailSuccesses = await AnalyticsEvent.countDocuments({ name: 'email.send.succeeded', occurredAt: { $gte: dayAgo } });
+    const paymentEventCounts = Object.fromEntries(paymentEvents.map(item => [item._id || 'unknown', item.count]));
+    const storageBytes = Number(storageAgg[0]?.bytes || 0);
+    const providerAiConfigured = process.env.DELIVERY_PIPELINE_ENABLED === 'true' && Boolean(process.env.ALIBABA_MODEL_STUDIO_API_KEY && process.env.ALIBABA_WORKSPACE_ID && process.env.DEEPGRAM_API_KEY);
+
+    res.json({
+      success: true,
+      data: {
+        generatedAt: now,
+        telemetry: { eventStore: 'ready', startedAt: now },
+        metrics: {
+          accounts: { total: totalUsers, newLast30Days: newAccounts, verified: verifiedAccounts, onboardingCompleted, activePro: activeProAccounts },
+          deliveries: { active: activeDeliveries + activeLegacyStories + activeVolumeJobs, published: publishedDeliveries + publishedLegacyStories + publishedVolumeJobs, current: activeDeliveries, legacy: activeLegacyStories, volume: activeVolumeJobs },
+          jobs: { failedLast24Hours: failedDeliveryJobs + failedPortfolioJobs, failedDelivery: failedDeliveryJobs, failedPortfolio: failedPortfolioJobs, stale: staleDeliveryJobs + stalePortfolioJobs, queueDepth: await DeliveryJob.countDocuments({ status: { $in: ['queued', 'running'] } }) + await PortfolioJob.countDocuments({ status: { $in: ['queued', 'running'] } }) },
+          uploads: { failedLast24Hours: failedUploads },
+          storage: { usedBytes: storageBytes, usedGb: Number((storageBytes / (1024 ** 3)).toFixed(2)), nearLimitAccounts: storageNearLimit, proLimitBytes: PLAN_DEFINITIONS.pro.personalStorageBytes },
+          payments: { billingEventsLast24Hours: paymentEventCounts, failedOrDisputedLast24Hours: failedPayments, pastDueSubscriptions }
+        },
+        providers: {
+          database,
+          cloudinary: health(cloudinary.ok, cloudinary.reason),
+          ai: health(providerAiConfigured && analyticsFailures === 0, providerAiConfigured ? (analyticsFailures ? `${analyticsFailures} AI jobs failed in the last 24 hours.` : '') : 'Delivery AI configuration is disabled or incomplete.', { configured: providerAiConfigured, failuresLast24Hours: analyticsFailures }),
+          email: health(Boolean(process.env.RESEND_API_KEY) && emailFailures === 0, process.env.RESEND_API_KEY ? (emailFailures ? `${emailFailures} email sends failed in the last 24 hours.` : '') : 'RESEND_API_KEY is not configured.', { configured: Boolean(process.env.RESEND_API_KEY), sentLast24Hours: emailSuccesses, failuresLast24Hours: emailFailures }),
+          paystack: health(billingConfigured() && failedPayments === 0, billingConfigured() ? (failedPayments ? `${failedPayments} payment failures or disputes were recorded in the last 24 hours.` : '') : 'Paystack billing is disabled or incomplete.', { configured: billingConfigured(), failuresLast24Hours: failedPayments })
+        },
+        workers
+      }
+    });
+  } catch (error) {
+    console.error('[admin/operations]', error.message);
+    res.status(500).json({ success: false, message: 'We could not load the operations overview.' });
+  }
+}
 
 export async function getAdminAnalytics(req, res) {
   try {

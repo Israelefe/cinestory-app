@@ -5,6 +5,7 @@ import Subscription from '../models/Subscription.js';
 import Delivery from '../models/Delivery.js';
 import { removeStorageAsset } from './storageMedia.service.js';
 import { cloudinary, configureCloudinary } from './cloudinary.service.js';
+import { recordWorkerHeartbeat } from './workerHeartbeat.service.js';
 
 let timer;
 let running = false;
@@ -52,6 +53,7 @@ export async function purgeExpiredProData(now = new Date()) {
   if (running) return;
   running = true;
   try {
+    await recordWorkerHeartbeat('retention', { status: 'busy', stage: 'retention-scan' });
     const expiredOverrides = await User.find({ 'planOverride.expiresAt': { $lte: now } }).select('_id').limit(100).lean();
     for (const account of expiredOverrides) {
       const paid = await Subscription.exists({ userId: account._id, $or: [
@@ -76,8 +78,14 @@ export async function purgeExpiredProData(now = new Date()) {
       ]);
     }
     await purgeOrphanedUploads(now);
-  } catch (error) { console.error('[retention]', error.message); }
-  finally { running = false; }
+  } catch (error) {
+    console.error('[retention]', error.message);
+    await recordWorkerHeartbeat('retention', { status: 'error', stage: 'retention-scan', details: { errorCode: error.code || 'RETENTION_FAILED' } });
+  }
+  finally {
+    running = false;
+    await recordWorkerHeartbeat('retention', { status: 'idle', stage: 'retention-scan' });
+  }
 }
 
 export function startRetentionWorker() {

@@ -2,6 +2,8 @@ import Portfolio from '../models/Portfolio.js';
 import PortfolioJob from '../models/PortfolioJob.js';
 import { analyzeImageBatch, createPortfolioDirection } from './alibabaCreativeDirector.service.js';
 import { signedImageUrl } from './deliveryMedia.service.js';
+import { recordAnalyticsEventAsync } from './analytics.service.js';
+import { recordWorkerHeartbeat } from './workerHeartbeat.service.js';
 
 let busy = false;
 let timer;
@@ -24,21 +26,32 @@ async function work(job) {
     job.status = 'review'; job.stage = 'ready-to-review'; job.progress = 100; job.completedAt = new Date(); job.result = { insights, direction }; job.markModified('result'); await job.save();
   } catch (error) {
     job.status = 'failed'; job.stage = 'failed'; job.errorMessage = String(error.message || 'Portfolio direction failed.').slice(0, 500); job.completedAt = new Date(); await job.save();
+    recordAnalyticsEventAsync({ name: 'ai.job.failed', source: 'server', actorType: 'system', userId: job.userId, status: 'failed', errorCode: 'PORTFOLIO_DIRECTION_FAILED', metadata: { jobType: 'portfolio', worker: 'portfolio' } });
     console.error('[portfolio-worker]', error.message);
   }
 }
 
 async function tick() {
-  if (busy) return;
+  if (busy) {
+    recordWorkerHeartbeat('portfolio', { status: 'busy', stage: 'running' });
+    return;
+  }
   busy = true;
   try {
+    await recordWorkerHeartbeat('portfolio', { status: 'busy', stage: 'polling' });
     const stale = new Date(Date.now() - 5 * 60 * 1000);
     await PortfolioJob.updateMany({ status: 'running', lockedAt: { $lt: stale }, attempts: { $lt: 3 } }, { status: 'queued' });
     await PortfolioJob.updateMany({ status: 'running', lockedAt: { $lt: stale }, attempts: { $gte: 3 } }, { status: 'failed', stage: 'failed', errorMessage: 'The server stopped before this portfolio was finished. Run the direction again.', completedAt: new Date() });
     const job = await PortfolioJob.findOneAndUpdate({ status: 'queued', attempts: { $lt: 3 } }, { $set: { status: 'running', stage: 'starting', lockedAt: new Date() }, $inc: { attempts: 1 } }, { new: true, sort: { createdAt: 1 } });
-    if (job) await work(job);
+    if (job) {
+      await recordWorkerHeartbeat('portfolio', { status: 'busy', stage: 'portfolio-direction', details: { jobId: String(job._id) } });
+      await work(job);
+    }
   } catch (error) { console.error('[portfolio-worker/tick]', error.message); }
-  finally { busy = false; }
+  finally {
+    busy = false;
+    await recordWorkerHeartbeat('portfolio', { status: 'idle', stage: 'polling' });
+  }
 }
 
 export function startPortfolioWorker() {

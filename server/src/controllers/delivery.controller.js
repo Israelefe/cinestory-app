@@ -22,6 +22,7 @@ import QRCode from 'qrcode';
 import { DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
 import { DELIVERY_SOUNDTRACKS, deliverySoundtrack, deliverySoundtrackFile } from '../constants/deliverySoundtracks.js';
 import { getNarrationVoiceCatalogue, NARRATION_RENDER_VERSION } from '../services/narration.service.js';
+import { recordAnalyticsEventAsync } from '../services/analytics.service.js';
 
 const createSchema = z.object({ clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().min(2).max(80), brief: z.string().trim().min(1) }).strict();
 const confirmSchema = z.object({ publicId: z.string().min(5).max(500), version: z.union([z.string(), z.number()]), signature: z.string().min(20).max(200), resourceType: z.enum(['image']).default('image'), originalFilename: z.string().trim().max(180).default('photograph') }).strict();
@@ -406,6 +407,7 @@ export async function signDeliveryUpload(req, res) {
     if (delivery.assets.length >= entitlements.limits.photosPerDelivery) return res.status(403).json({ success: false, code: 'PHOTO_LIMIT_REACHED', message: `${entitlements.planName} allows up to ${entitlements.limits.photosPerDelivery} photographs in one delivery.` });
     res.json({ success: true, data: createUploadSignature({ userId: req.user.id, deliveryId: delivery._id, resourceType: 'image' }) });
   } catch (error) {
+    recordAnalyticsEventAsync({ name: 'upload.failed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'failed', errorCode: error.code || 'DELIVERY_UPLOAD_SIGNATURE_FAILED', metadata: { surface: 'delivery', stage: 'signature' } });
     console.error('[deliveries/upload-signature]', error.message);
     res.status(error.status || 500).json({ success: false, message: error.message || 'We could not prepare this upload.' });
   }
@@ -447,9 +449,11 @@ export async function confirmDeliveryUpload(req, res) {
     }
     const saved = updated.assets.find(item => item.assetId === asset.assetId);
     uploadedPublicId = '';
+    recordAnalyticsEventAsync({ name: 'upload.completed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'completed', bytes: resource.bytes, format: delivery.format, metadata: { surface: 'delivery', resourceType: 'image' } });
     res.status(201).json({ success: true, data: ownerAsset(saved), limits: entitlements.limits });
   } catch (error) {
     if (uploadedPublicId) await removeDeliveryImage(uploadedPublicId).catch(() => {});
+    recordAnalyticsEventAsync({ name: 'upload.failed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'failed', errorCode: error.code || 'DELIVERY_UPLOAD_CONFIRM_FAILED', metadata: { surface: 'delivery', stage: 'confirm' } });
     console.error('[deliveries/upload-confirm]', error.message);
     res.status(error.status || 500).json({ success: false, message: error.message || 'We could not verify this photograph.' });
   }
@@ -493,9 +497,11 @@ export async function addLibraryAssets(req, res) {
     }
     const addedIds = new Set(newAssets.map(item => item.assetId));
     const data = updated.assets.filter(item => addedIds.has(item.assetId)).map(ownerAsset);
+    recordAnalyticsEventAsync({ name: 'upload.completed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'completed', count: data.length, bytes: newAssets.reduce((total, asset) => total + Number(asset.bytes || 0), 0), format: delivery.format, metadata: { surface: 'delivery', resourceType: 'library-copy' } });
     res.status(201).json({ success: true, data });
   } catch (error) {
     await Promise.all(copied.map(publicId => removeDeliveryImage(publicId).catch(() => {})));
+    recordAnalyticsEventAsync({ name: 'upload.failed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'failed', errorCode: error.code || 'LIBRARY_COPY_FAILED', metadata: { surface: 'delivery', stage: 'library-copy' } });
     console.error('[deliveries/library]', error.message);
     res.status(error.status || 500).json({ success: false, message: error.message || 'We could not add those library photographs.' });
   }
@@ -527,7 +533,10 @@ export async function signSoundtrackUpload(req, res) {
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This delivery is not available for audio uploads.' });
     res.json({ success: true, data: createUploadSignature({ userId: req.user.id, deliveryId: delivery._id, resourceType: 'video' }) });
-  } catch (error) { res.status(error.status || 500).json({ success: false, message: error.message || 'We could not prepare this audio upload.' }); }
+  } catch (error) {
+    recordAnalyticsEventAsync({ name: 'upload.failed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'failed', errorCode: error.code || 'SOUNDTRACK_UPLOAD_SIGNATURE_FAILED', metadata: { surface: 'soundtrack', stage: 'signature' } });
+    res.status(error.status || 500).json({ success: false, message: error.message || 'We could not prepare this audio upload.' });
+  }
 }
 
 export async function confirmSoundtrackUpload(req, res) {
@@ -544,9 +553,11 @@ export async function confirmSoundtrackUpload(req, res) {
     delivery.soundtrack = { publicId: resource.public_id, title: parsed.data.title, originalFilename: parsed.data.originalFilename, format: resource.format, bytes: resource.bytes, duration: resource.duration, source: 'photographer', rightsConfirmedAt: new Date() };
     delivery.markModified('soundtrack');
     await delivery.save();
+    recordAnalyticsEventAsync({ name: 'upload.completed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'completed', bytes: resource.bytes, metadata: { surface: 'soundtrack', resourceType: 'audio' } });
     res.status(201).json({ success: true, data: { ...delivery.soundtrack, url: signedImageUrl(resource.public_id, { resourceType: 'video' }) } });
   } catch (error) {
     if (uploadedPublicId) await removeDeliveryAudio(uploadedPublicId).catch(() => {});
+    recordAnalyticsEventAsync({ name: 'upload.failed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'failed', errorCode: error.code || 'SOUNDTRACK_UPLOAD_CONFIRM_FAILED', metadata: { surface: 'soundtrack', stage: 'confirm' } });
     res.status(error.status || 500).json({ success: false, message: error.message || 'We could not save that soundtrack.' });
   }
 }

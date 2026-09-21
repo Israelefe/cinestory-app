@@ -1,4 +1,5 @@
 import { Resend } from 'resend';
+import { recordAnalyticsEventAsync } from './analytics.service.js';
 
 let client;
 function resend() {
@@ -16,16 +17,24 @@ function shell(content) {
 }
 
 async function send(kind, message) {
-  const { data, error } = await resend().emails.send({
-    from: process.env.RESEND_FROM_EMAIL || 'Veylo <info@veylo.com.ng>',
-    ...message
-  });
-  if (error) {
-    console.error(`[email/${kind}] rejected`, error.name || error.statusCode || 'provider_error', error.message || 'Email could not be sent.');
-    throw new Error(error.message || 'Email could not be sent.');
+  try {
+    const { data, error } = await resend().emails.send({
+      from: process.env.RESEND_FROM_EMAIL || 'Veylo <info@veylo.com.ng>',
+      ...message
+    });
+    if (error) {
+      console.error(`[email/${kind}] rejected`, error.name || error.statusCode || 'provider_error', error.message || 'Email could not be sent.');
+      const failure = new Error(error.message || 'Email could not be sent.');
+      failure.code = error.name || 'EMAIL_PROVIDER_REJECTED';
+      throw failure;
+    }
+    recordAnalyticsEventAsync({ name: 'email.send.succeeded', source: 'server', actorType: 'system', status: 'accepted', metadata: { kind } });
+    console.info(`[email/${kind}] accepted`, data?.id || 'no_delivery_id');
+    return data;
+  } catch (error) {
+    recordAnalyticsEventAsync({ name: 'email.send.failed', source: 'server', actorType: 'system', status: 'failed', errorCode: error.code || 'EMAIL_SEND_FAILED', metadata: { kind } });
+    throw error;
   }
-  console.info(`[email/${kind}] accepted`, data?.id || 'no_delivery_id');
-  return data;
 }
 
 export function sendVerificationEmail({ to, name, code }) {
