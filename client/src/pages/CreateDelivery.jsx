@@ -9,6 +9,7 @@ import { uploadDeliveryPhotos, uploadDeliverySoundtrack } from '../utils/deliver
 import { SHOOT_TYPES } from '../constants/shootTypes.js';
 import { FORMAT_REGISTRY, formatName } from '../constants/formatRegistry.jsx';
 import { DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
+import { trackEvent } from '../services/analytics.js';
 import DeliveryDirectionStudio from '../components/delivery/DeliveryDirectionStudio.jsx';
 import ClientDeliveryPreview from '../components/delivery/ClientDeliveryPreview.jsx';
 import './CreateDelivery.css';
@@ -257,6 +258,12 @@ export default function CreateDelivery({ user }) {
     return () => { active = false; };
   }, [draftId]);
 
+  useEffect(() => {
+    if (!delivery) return;
+    trackEvent('delivery.creation.step.viewed', { step, format: delivery.format }, { format: delivery.format, status: 'viewed' });
+    if (step === 4) trackEvent('delivery.review.opened', { format: delivery.format }, { format: delivery.format, status: 'opened' });
+  }, [delivery?.format, step]);
+
   async function refreshDelivery(id = delivery?._id) {
     const response = await api.get(`/v1/deliveries/${id}`);
     setDelivery(response.data.data);
@@ -282,7 +289,8 @@ export default function CreateDelivery({ user }) {
       setDelivery(nextDelivery);
       setParams({ draft: response.data.data._id }, { replace: true });
       setStep(existingDelivery && !detailsChanged ? Math.max(2, returnStepRef.current) : 2);
-    } catch (requestError) { setError(apiMessage(requestError, 'We could not start this delivery.')); }
+      trackEvent('delivery.brief.saved', { hasExistingDelivery: Boolean(existingDelivery), detailsChanged }, { status: 'completed' });
+    } catch (requestError) { trackEvent('delivery.brief.saved', {}, { status: 'failed', errorCode: requestError.response?.data?.code || 'BRIEF_SAVE_FAILED' }); setError(apiMessage(requestError, 'We could not start this delivery.')); }
     finally { setBusy(''); }
   }
 
@@ -303,6 +311,7 @@ export default function CreateDelivery({ user }) {
     if (!valid.length) return toast.error('Choose JPEG, PNG, or WebP photographs up to 50 MB each.');
     if (valid.length > remaining) return toast.error(`You can add ${remaining} more photograph${remaining === 1 ? '' : 's'} to this delivery.`);
     setUploadQueue(valid.map(file => ({ name: file.name, size: file.size, status: 'starting', progress: 0 })));
+    trackEvent('upload.started', { surface: 'delivery', files: valid.length }, { count: valid.length, bytes: valid.reduce((sum, file) => sum + file.size, 0), status: 'started' });
     setBusy('upload'); setError(''); setProgress({ value: 0, stage: `Uploading ${valid.length} finished photograph${valid.length === 1 ? '' : 's'}…` });
     try {
       await uploadDeliveryPhotos(delivery._id, valid, (value, meta) => {
@@ -315,9 +324,11 @@ export default function CreateDelivery({ user }) {
       const current = await refreshDelivery();
       toast.success(`${valid.length} photograph${valid.length === 1 ? '' : 's'} added`);
       setProgress({ value: 100, stage: `${current.assets.length} photographs ready` });
+      trackEvent('upload.completed', { surface: 'delivery', files: valid.length }, { count: valid.length, bytes: valid.reduce((sum, file) => sum + file.size, 0), status: 'completed' });
     } catch (requestError) {
       setUploadQueue(current => current.map(item => item.status === 'complete' ? item : { ...item, status: 'failed' }));
       setError(apiMessage(requestError, requestError.message || 'We could not upload those photographs.'));
+      trackEvent('upload.failed', { surface: 'delivery', files: valid.length }, { count: valid.length, status: 'failed', errorCode: requestError.response?.data?.code || 'DELIVERY_UPLOAD_FAILED' });
     }
     finally { setBusy(''); if (inputRef.current) inputRef.current.value = ''; }
   }
@@ -328,7 +339,8 @@ export default function CreateDelivery({ user }) {
       const response = await api.post(`/v1/deliveries/${delivery._id}/analyze`);
       await waitForJob(delivery._id, response.data.data._id, job => setProgress({ value: job.progress, stage: job.stage === 'reading-photographs' ? 'Checking every finished photograph…' : 'Finding the right way to present the set…' }));
       await refreshDelivery(); setStep(3);
-    } catch (requestError) { setError(requestError.message || apiMessage(requestError, 'Veylo could not analyze this shoot.')); if (requestError.jobId) setFailedJob({ id: requestError.jobId, type: requestError.jobType }); }
+      trackEvent('delivery.creation.step.completed', { step: 'analysis' }, { status: 'completed' });
+    } catch (requestError) { trackEvent('delivery.creation.step.completed', { step: 'analysis' }, { status: 'failed', errorCode: requestError.response?.data?.code || 'ANALYSIS_FAILED' }); setError(requestError.message || apiMessage(requestError, 'Veylo could not analyze this shoot.')); if (requestError.jobId) setFailedJob({ id: requestError.jobId, type: requestError.jobType }); }
     finally { setBusy(''); }
   }
 
@@ -338,7 +350,9 @@ export default function CreateDelivery({ user }) {
       const response = await api.post(`/v1/deliveries/${delivery._id}/direct`, { format });
       await waitForJob(delivery._id, response.data.data._id, job => setProgress({ value: job.progress, stage: job.stage === 'setting-direction' ? 'Choosing the type, colour, and structure…' : 'Placing every photograph in order…' }));
       await refreshDelivery(); setStep(4);
-    } catch (requestError) { setError(requestError.message || apiMessage(requestError, 'Veylo could not direct this format.')); if (requestError.jobId) setFailedJob({ id: requestError.jobId, type: requestError.jobType }); }
+      trackEvent('delivery.format.selected', { format }, { format, status: 'completed' });
+      trackEvent('delivery.creation.step.completed', { step: 'direction', format }, { format, status: 'completed' });
+    } catch (requestError) { trackEvent('delivery.creation.step.completed', { step: 'direction', format }, { format, status: 'failed', errorCode: requestError.response?.data?.code || 'DIRECTION_FAILED' }); setError(requestError.message || apiMessage(requestError, 'Veylo could not direct this format.')); if (requestError.jobId) setFailedJob({ id: requestError.jobId, type: requestError.jobType }); }
     finally { setBusy(''); }
   }
 
@@ -347,6 +361,8 @@ export default function CreateDelivery({ user }) {
   }
 
   function editDirectionSetting(group, field, value) {
+    const eventName = group === 'palette' ? 'delivery.colour.changed' : group === 'typography' ? 'delivery.typography.changed' : group === 'variation' ? 'delivery.layout.changed' : '';
+    if (eventName) trackEvent(eventName, { group, field }, { format: delivery?.format, status: 'changed' });
     setDelivery(current => ({
       ...current,
       creativeDirection: field
@@ -356,6 +372,8 @@ export default function CreateDelivery({ user }) {
   }
 
   function editSection(sectionId, field, value) {
+    trackEvent('delivery.section.changed', { field }, { format: delivery?.format, status: 'changed' });
+    if (field === 'layout') trackEvent('delivery.layout.changed', { field }, { format: delivery?.format, status: 'changed' });
     setDelivery(current => ({ ...current, creativeDirection: { ...current.creativeDirection, sections: (current.creativeDirection.sections || []).map(section => section.id === sectionId ? { ...section, [field]: value } : section) } }));
   }
 
@@ -370,8 +388,14 @@ export default function CreateDelivery({ user }) {
       const target = index + offset;
       if (target < 0 || target >= assets.length) return current;
       [assets[index], assets[target]] = [assets[target], assets[index]];
+      trackEvent('delivery.photo.reordered', { direction: offset < 0 ? 'earlier' : 'later' }, { format: current.format, status: 'changed' });
       return { ...current, narration: undefined, assets: assets.map((asset, sortOrder) => ({ ...asset, sortOrder })) };
     });
+  }
+
+  function goBackTo(nextStep) {
+    trackEvent('delivery.creation.back', { fromStep: step, toStep: nextStep }, { format: delivery?.format, status: 'back' });
+    setStep(nextStep);
   }
 
   async function saveReview() {
@@ -382,7 +406,9 @@ export default function CreateDelivery({ user }) {
       if (missingCaption) throw new Error('Every photograph needs a meaningful caption before you approve this delivery.');
       const response = await api.patch(`/v1/deliveries/${delivery._id}/review`, { title: delivery.creativeDirection.title, openingLine: delivery.creativeDirection.openingLine, closingLine: delivery.creativeDirection.closingLine, palette: delivery.creativeDirection.palette, typography: delivery.creativeDirection.typography, pace: delivery.creativeDirection.pace, variation: delivery.creativeDirection.variation, sections: (delivery.creativeDirection.sections || []).map(({ id, title, subtitle, layout }) => ({ id, title, subtitle: subtitle || '', layout })), frames: delivery.creativeDirection.frames.map(({ assetId, headline, caption }) => ({ assetId, headline: headline || '', caption: caption.trim() })), assetOrder: ordered.map(asset => asset.assetId) });
       setDelivery(response.data.data); setStep(5); toast.success('Delivery review saved');
-    } catch (requestError) { setError(apiMessage(requestError, 'We could not save these edits.')); }
+      trackEvent('delivery.caption.edited', { count: delivery.creativeDirection.frames.length }, { format: delivery.format, status: 'saved', count: delivery.creativeDirection.frames.length });
+      trackEvent('delivery.review.approved', { format: delivery.format }, { format: delivery.format, status: 'completed' });
+    } catch (requestError) { trackEvent('delivery.review.approved', { format: delivery?.format }, { format: delivery?.format, status: 'failed', errorCode: requestError.response?.data?.code || 'REVIEW_SAVE_FAILED' }); setError(apiMessage(requestError, 'We could not save these edits.')); }
     finally { setBusy(''); }
   }
 
@@ -398,7 +424,8 @@ export default function CreateDelivery({ user }) {
       const response = await api.post(`/v1/deliveries/${delivery._id}/publish`, { pin: access.pinEnabled ? access.pin : '', expiresAt: access.expiresAt ? new Date(access.expiresAt).toISOString() : '', allowIndividualDownloads: access.allowIndividualDownloads, allowDownloadAll: access.allowDownloadAll, allowLikes: access.allowLikes, narration: access.narration });
       setDelivery(current => ({ ...current, status: 'published', publishedUrl: response.data.data.url }));
       setParams({}, { replace: true }); toast.success('Client delivery published');
-    } catch (requestError) { setError(apiMessage(requestError, requestError.message || 'We could not publish this delivery.')); if (requestError.jobId) setFailedJob({ id: requestError.jobId, type: requestError.jobType }); }
+      trackEvent('delivery.publish.succeeded', { format: delivery.format, narration: access.narration, soundtrack: Boolean(delivery.soundtrack) }, { format: delivery.format, status: 'completed' });
+    } catch (requestError) { trackEvent('delivery.publish.failed', { format: delivery?.format }, { format: delivery?.format, status: 'failed', errorCode: requestError.response?.data?.code || 'PUBLISH_FAILED' }); setError(apiMessage(requestError, requestError.message || 'We could not publish this delivery.')); if (requestError.jobId) setFailedJob({ id: requestError.jobId, type: requestError.jobType }); }
     finally { setBusy(''); }
   }
 
@@ -413,14 +440,15 @@ export default function CreateDelivery({ user }) {
       setChangingSoundtrack(false);
       if (!audioTitle) setAudioTitle(soundtrack.title || '');
       toast.success('Soundtrack added.');
-    } catch (requestError) { setError(apiMessage(requestError, requestError.message || 'We could not add that soundtrack.')); }
+      trackEvent('music.uploaded', { source: 'photographer' }, { status: 'completed' });
+    } catch (requestError) { trackEvent('music.failed', { source: 'photographer' }, { status: 'failed', errorCode: requestError.response?.data?.code || 'SOUNDTRACK_UPLOAD_FAILED' }); setError(apiMessage(requestError, requestError.message || 'We could not add that soundtrack.')); }
     finally { setBusy(''); if (audioInputRef.current) audioInputRef.current.value = ''; }
   }
 
   async function removeSoundtrack() {
     setBusy('soundtrack');
-    try { await api.delete(`/v1/deliveries/${delivery._id}/soundtrack`); setDelivery(current => ({ ...current, soundtrack: null })); toast.success('Soundtrack removed.'); }
-    catch (requestError) { setError(apiMessage(requestError, 'We could not remove that soundtrack.')); }
+    try { await api.delete(`/v1/deliveries/${delivery._id}/soundtrack`); setDelivery(current => ({ ...current, soundtrack: null })); toast.success('Soundtrack removed.'); trackEvent('music.track.replaced', { replacement: 'none' }, { status: 'completed' }); }
+    catch (requestError) { trackEvent('music.failed', {}, { status: 'failed', errorCode: requestError.response?.data?.code || 'SOUNDTRACK_REMOVE_FAILED' }); setError(apiMessage(requestError, 'We could not remove that soundtrack.')); }
     finally { setBusy(''); }
   }
 
@@ -469,6 +497,7 @@ export default function CreateDelivery({ user }) {
         setPreviewLoadingId(null);
         toast.error('This preview could not play. Tap the track to try again.');
       });
+      trackEvent('music.preview.started', { trackId: track.id }, { status: 'started' });
     }
   }
 
@@ -482,7 +511,9 @@ export default function CreateDelivery({ user }) {
       setDelivery(current => ({ ...current, soundtrack: response.data.data }));
       setChangingSoundtrack(false);
       toast.success(`Attached "${track.title}" to delivery.`);
+      trackEvent('music.track.selected', { source: 'curated' }, { status: 'completed' });
     } catch (requestError) {
+      trackEvent('music.failed', { source: 'curated' }, { status: 'failed', errorCode: requestError.response?.data?.code || 'SOUNDTRACK_SELECT_FAILED' });
       setError(apiMessage(requestError, 'We could not attach that track.'));
     } finally {
       setBusy('');
@@ -576,7 +607,7 @@ export default function CreateDelivery({ user }) {
     <div className="v-create-glow" aria-hidden="true" />
     <header className="v-create-top"><div><Link to="/dashboard"><ArrowLeft size={16} />Back to deliveries</Link><span>{delivery ? `${brief.clientName} · ${brief.shootType}` : 'New client delivery'}</span></div><small>{limits.photosPerDelivery} photos per delivery · Veylo {user?.plan === 'pro' ? 'Pro' : 'Free'}</small></header>
     <div className="v-create-layout">
-       <aside className="v-create-steps" aria-label="Creation progress">{steps.map((label, index) => <button key={label} type="button" className={`${step === index + 1 ? 'is-current' : ''} ${step > index + 1 ? 'is-complete' : ''}`} onClick={() => { if (index + 1 < step) { if (index + 1 === 1) returnStepRef.current = step; setStep(index + 1); } }} disabled={index + 1 > step}><span>{step > index + 1 ? <Check size={14} /> : String(index + 1).padStart(2, '0')}</span><small>{label}</small></button>)}</aside>
+       <aside className="v-create-steps" aria-label="Creation progress">{steps.map((label, index) => <button key={label} type="button" className={`${step === index + 1 ? 'is-current' : ''} ${step > index + 1 ? 'is-complete' : ''}`} onClick={() => { if (index + 1 < step) { if (index + 1 === 1) returnStepRef.current = step; goBackTo(index + 1); } }} disabled={index + 1 > step}><span>{step > index + 1 ? <Check size={14} /> : String(index + 1).padStart(2, '0')}</span><small>{label}</small></button>)}</aside>
       <main className="v-create-workspace">
         {error && <div className="v-create-error" role="alert"><span>{error}{failedJob && <button type="button" className="v-create-retry" onClick={retryFailedJob} disabled={Boolean(busy)}><RefreshCw size={14} />Retry this step</button>}</span><button type="button" onClick={() => { setError(''); setFailedJob(null); }}><X size={16} /></button></div>}
         <AnimatePresence mode="wait">
@@ -622,13 +653,13 @@ export default function CreateDelivery({ user }) {
             </section>}
             {limits.personalStorageBytes > 0 && <button type="button" className="v-create-library-open" onClick={openLibrary} disabled={Boolean(busy)}><Image size={17} /><span><strong>Choose from your Pro library</strong><small>Reuse finished photographs without uploading them from your device again.</small></span><ArrowRight size={16} /></button>}
             {orderedAssets.length > 0 && <div className="v-create-thumbs">{orderedAssets.slice(0, 24).map((asset, index) => <div key={asset.assetId}><img src={asset.thumbnailUrl || asset.url} alt="" /><span>{String(index + 1).padStart(2, '0')}</span><button type="button" onClick={() => removePhoto(asset.assetId)} disabled={Boolean(busy)} aria-label={`Remove photograph ${index + 1}`}><Trash2 size={13} /></button></div>)}{orderedAssets.length > 24 && <div className="v-create-more">+{orderedAssets.length - 24}</div>}</div>}
-            <div className="v-create-footer"><button type="button" onClick={() => setStep(1)}><ArrowLeft size={16} />Edit shoot details</button><button type="button" className="v-create-primary" onClick={analyzeShoot} disabled={!orderedAssets.length || Boolean(busy)}>{busy === 'analyze' ? progress.stage : 'Analyze the complete shoot'}{busy === 'analyze' ? <LoaderCircle className="v-spin" size={17} /> : <ArrowRight size={17} />}</button></div>
+            <div className="v-create-footer"><button type="button" onClick={() => goBackTo(1)}><ArrowLeft size={16} />Edit shoot details</button><button type="button" className="v-create-primary" onClick={analyzeShoot} disabled={!orderedAssets.length || Boolean(busy)}>{busy === 'analyze' ? progress.stage : 'Analyze the complete shoot'}{busy === 'analyze' ? <LoaderCircle className="v-spin" size={17} /> : <ArrowRight size={17} />}</button></div>
             {busy === 'analyze' && <Progress value={progress.value} label={progress.stage} />}
           </Stage> : step === 3 ? <Stage key="format">
             <StageHead eyebrow="03 / Format recommendation" title="Choose how the client sees it." copy={delivery?.collectionAnalysis?.summary || 'Veylo has read the complete set. Choose the experience you want the client to receive.'} />
             <div className="v-format-recommendations">{recommendations.map((recommendation, index) => { const item = formats.find(format => format.id === recommendation.format); const Icon = item?.icon || LayoutTemplate; const isSelected = selectedFormat === recommendation.format; return <button type="button" key={recommendation.format} onClick={() => setSelectedFormat(recommendation.format)} disabled={Boolean(busy)} className={`${index === 0 ? 'is-recommended' : ''} ${isSelected ? 'is-selected' : ''}`}><span className="v-format-rank">{String(index + 1).padStart(2, '0')}</span><Icon size={22} /><div><small>{index === 0 ? 'VEYLO RECOMMENDS' : item?.verb}</small><strong>{item?.name}</strong><p>{recommendation.reason}</p></div><b>{recommendation.score}</b>{isSelected && <span className="v-format-check"><Check size={14} /></span>}</button>; })}</div>
             {busy === 'direct' && <Progress value={progress.value} label={progress.stage} />}
-            <div className="v-create-footer"><button type="button" onClick={() => setStep(2)}><ArrowLeft size={16} />Back to photographs</button><button type="button" className="v-create-primary" onClick={() => chooseFormat(selectedFormat)} disabled={!selectedFormat || Boolean(busy)}>{busy === 'direct' ? progress.stage : selectedFormat ? `Create ${formatName(selectedFormat)}` : 'Choose a format above'}{busy === 'direct' ? <LoaderCircle className="v-spin" size={17} /> : <ArrowRight size={17} />}</button></div>
+            <div className="v-create-footer"><button type="button" onClick={() => goBackTo(2)}><ArrowLeft size={16} />Back to photographs</button><button type="button" className="v-create-primary" onClick={() => chooseFormat(selectedFormat)} disabled={!selectedFormat || Boolean(busy)}>{busy === 'direct' ? progress.stage : selectedFormat ? `Create ${formatName(selectedFormat)}` : 'Choose a format above'}{busy === 'direct' ? <LoaderCircle className="v-spin" size={17} /> : <ArrowRight size={17} />}</button></div>
           </Stage> : step === 4 ? <Stage key="review">
             <StageHead eyebrow={`04 / Review the ${formatName(delivery?.format)}`} title="Check the order. Read every line." copy="Veylo proposes the direction. You decide what reaches your client. Edit any line and move any photograph before you publish." />
             <div className="v-review-opening"><label>Delivery title<input value={delivery?.creativeDirection?.title || ''} onChange={event => editDirection('title', event.target.value)} maxLength={80} /></label><label>Opening line<textarea value={delivery?.creativeDirection?.openingLine || ''} onChange={event => editDirection('openingLine', event.target.value)} maxLength={140} rows={3} /></label><label>Closing line<textarea value={delivery?.creativeDirection?.closingLine || ''} onChange={event => editDirection('closingLine', event.target.value)} maxLength={160} rows={3} /></label></div>
@@ -641,7 +672,7 @@ export default function CreateDelivery({ user }) {
             <div className="v-review-revision"><div><ListChecks size={19} /><span><strong>Ask for another direction</strong><small>Choose photographs below for a focused change, or ask Veylo to rethink the complete delivery.</small></span></div><textarea value={revisionInstruction} onChange={event => setRevisionInstruction(event.target.value)} maxLength={600} placeholder="For example: make these captions warmer and keep the focus on her confidence in the second look." /><footer><span>{revisionIds.length} photograph{revisionIds.length === 1 ? '' : 's'} selected</span><button type="button" onClick={() => requestRevision('selected')} disabled={Boolean(busy) || !revisionIds.length}>Revise selected</button><button type="button" onClick={() => requestRevision('full')} disabled={Boolean(busy)}>Rethink full direction</button></footer>{busy === 'revise' && <Progress value={progress.value} label={progress.stage} />}</div>
             <div className="v-review-grid">{pageAssets.map((asset, localIndex) => { const index = reviewPage * 18 + localIndex; const frame = frameMap.get(asset.assetId) || {}; return <article key={asset.assetId}><button type="button" className={`v-review-select ${revisionIds.includes(asset.assetId) ? 'is-selected' : ''}`} onClick={() => toggleRevisionAsset(asset.assetId)}><Check size={13} />{revisionIds.includes(asset.assetId) ? 'Selected for revision' : 'Select for revision'}</button><div><img src={asset.thumbnailUrl || asset.url} alt="" /><span>{String(index + 1).padStart(2, '0')}</span><div><button type="button" onClick={() => movePhoto(asset.assetId, -1)} disabled={index === 0} aria-label="Move photograph earlier"><ChevronUp size={15} /></button><button type="button" onClick={() => movePhoto(asset.assetId, 1)} disabled={index === orderedAssets.length - 1} aria-label="Move photograph later"><ChevronDown size={15} /></button></div></div><label>Heading<input value={frame.headline || ''} onChange={event => editFrame(asset.assetId, 'headline', event.target.value)} maxLength={70} /></label><label>Caption<textarea value={frame.caption || ''} onChange={event => editFrame(asset.assetId, 'caption', event.target.value)} maxLength={180} rows={4} /></label><small>{frame.motion?.replaceAll('-', ' ')} · {frame.transition}</small></article>; })}</div>
             {orderedAssets.length > 18 && <div className="v-review-pages"><button onClick={() => setReviewPage(value => Math.max(0, value - 1))} disabled={reviewPage === 0}>Previous</button><span>{reviewPage + 1} / {Math.ceil(orderedAssets.length / 18)}</span><button onClick={() => setReviewPage(value => Math.min(Math.ceil(orderedAssets.length / 18) - 1, value + 1))} disabled={reviewPage >= Math.ceil(orderedAssets.length / 18) - 1}>Next</button></div>}
-            <div className="v-create-footer"><button type="button" onClick={() => setStep(3)}><RefreshCw size={15} />Choose another format</button><button type="button" className="v-create-primary" onClick={saveReview} disabled={Boolean(busy)}>{busy === 'save' ? 'Saving your edits…' : 'Approve this direction'}<Check size={17} /></button></div>
+            <div className="v-create-footer"><button type="button" onClick={() => goBackTo(3)}><RefreshCw size={15} />Choose another format</button><button type="button" className="v-create-primary" onClick={saveReview} disabled={Boolean(busy)}>{busy === 'save' ? 'Saving your edits…' : 'Approve this direction'}<Check size={17} /></button></div>
           </Stage> : <Stage key="publish">
             {publishedUrl ? <div className="v-published"><span><Check size={25} /></span><p>CLIENT DELIVERY READY</p><h1>{delivery.title}</h1><small>Send one private link. Your client can open it on their phone without creating an account.</small><div><a className="v-create-primary" href={publishedUrl} target="_blank" rel="noreferrer">Open client view<ArrowRight size={17} /></a><button type="button" onClick={() => navigator.clipboard.writeText(publishedUrl).then(() => toast.success('Client link copied'))}>Copy client link</button><a href={`https://wa.me/?text=${encodeURIComponent(`Hello ${delivery.clientName}, your photographs are ready. Open your private delivery here:\n${publishedUrl}`)}`} target="_blank" rel="noreferrer">Send on WhatsApp</a><button type="button" onClick={shareDelivery}><Share2 size={15} />Open share menu</button><button type="button" onClick={downloadQr}><QrCode size={15} />Download QR code</button></div><form className="v-published-email" onSubmit={sendDeliveryEmail}><label><Mail size={15} /><input type="email" value={clientEmail} onChange={event => setClientEmail(event.target.value)} required maxLength={254} placeholder="Client email address" /></label><button type="submit" disabled={busy === 'email'}>{busy === 'email' ? 'Sending…' : 'Send by email'}</button></form><Link to="/dashboard">Return to my deliveries</Link></div> : <>
               <StageHead eyebrow="05 / Client access" title="Choose what happens after you share." copy="Set privacy and download controls, then publish one link for your client." />
@@ -739,7 +770,7 @@ export default function CreateDelivery({ user }) {
                 <Toggle icon={Play} label="Narration with Hannah" copy="On by default. Deepgram Flux reads the approved captions in a calm, measured voice." checked={access.narration} onChange={value => setAccess(current => ({ ...current, narration: value }))}>{access.narration && <small className="v-narration-voice-note">Deepgram Flux · Hannah · captions are read in photograph order.</small>}</Toggle>
               </div>
               {busy === 'publish' && progress.stage && <Progress value={progress.value} label={progress.stage} />}
-              <div className="v-create-footer"><button type="button" onClick={() => setStep(4)}><ArrowLeft size={16} />Back to review</button><button type="button" className="v-create-primary" onClick={publish} disabled={Boolean(busy)}>{busy === 'publish' ? 'Preparing the client link…' : 'Publish client delivery'}<ArrowRight size={17} /></button></div>
+              <div className="v-create-footer"><button type="button" onClick={() => goBackTo(4)}><ArrowLeft size={16} />Back to review</button><button type="button" className="v-create-primary" onClick={publish} disabled={Boolean(busy)}>{busy === 'publish' ? 'Preparing the client link…' : 'Publish client delivery'}<ArrowRight size={17} /></button></div>
             </>}
           </Stage>}
         </AnimatePresence>

@@ -7,6 +7,7 @@ import ProductHeader from './components/ProductHeader.jsx';
 import CookiePreferences from './components/CookiePreferences.jsx';
 import LandingPage from './pages/LandingPage.jsx';
 import api from './services/api.js';
+import { installAnalyticsListeners, trackEvent } from './services/analytics.js';
 import lazyWithRecovery from './utils/lazyWithRecovery.jsx';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -89,6 +90,11 @@ function RoutePosition() {
     const label = names[pathname] || (pathname.startsWith('/for/') ? `For ${pathname.split('/').pop().replaceAll('-', ' ')}` : 'Photo delivery');
     document.title = `Veylo — ${label}`;
   }, [pathname]);
+  useEffect(() => {
+    const specificEvent = pathname === '/' ? 'landing.viewed' : pathname === '/pricing' ? 'pricing.viewed' : pathname === '/signup' ? 'signup.started' : pathname === '/signin' ? 'signin.viewed' : pathname === '/create' ? 'delivery.creation.started' : pathname === '/dashboard' ? 'dashboard.opened' : pathname === '/settings' ? 'dashboard.settings.opened' : pathname === '/library' ? 'dashboard.library.opened' : pathname === '/portfolio/manage' ? 'dashboard.portfolio.opened' : pathname.startsWith('/demo/') ? 'client.format.opened' : '';
+    trackEvent('page.viewed', { path: pathname });
+    if (specificEvent) trackEvent(specificEvent, { path: pathname });
+  }, [pathname]);
   return null;
 }
 
@@ -155,6 +161,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const authVersion = useRef(0);
+  useEffect(() => { installAnalyticsListeners(); }, []);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('utm_source')) sessionStorage.setItem('veylo_utm_source', params.get('utm_source'));

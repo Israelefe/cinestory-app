@@ -4,6 +4,7 @@ import { ArrowRight, Check, Image, LoaderCircle, Mic2, Music2, RefreshCw } from 
 import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
 import { API_BASE_URL } from '../config/env.js';
+import { trackEvent } from '../services/analytics.js';
 import { DeliveryFormatViewer } from '../components/delivery/viewerRegistry.jsx';
 import DeliveryBrandMark from '../components/delivery/DeliveryBrandMark.jsx';
 import '../styles/format-demos.css';
@@ -168,6 +169,7 @@ export function DeliveryReadiness({ delivery, onReady }) {
     setLoaded({ photo: 0, soundtrack: 0, narration: 0, total: 0, failed: 0 });
     setBlocked(false);
     setFailedItems([]);
+    trackEvent('client.preloader.started', { photos: totals.photo, soundtrack: Boolean(totals.soundtrack), narration: Boolean(totals.narration) }, { format: delivery.format, status: 'started', count: total });
     const tasks = [
       ...(delivery.soundtrack?.url ? [{ kind: 'soundtrack', label: 'Soundtrack', run: () => preloadAudio(apiMediaUrl(delivery.soundtrack.url), cleanup) }] : []),
       ...(delivery.narration?.url ? [{ kind: 'narration', label: 'Narration', run: () => preloadAudio(apiMediaUrl(delivery.narration.url), cleanup) }] : []),
@@ -175,7 +177,7 @@ export function DeliveryReadiness({ delivery, onReady }) {
     ];
 
     if (!tasks.length) {
-      const readyTimer = window.setTimeout(() => { transferred = true; open(); }, 250);
+      const readyTimer = window.setTimeout(() => { transferred = true; trackEvent('client.preloader.completed', { photos: totals.photo }, { format: delivery.format, status: 'completed', count: total }); open(); }, 250);
       cleanup.push(() => window.clearTimeout(readyTimer));
     } else {
       const queue = [...tasks];
@@ -200,9 +202,10 @@ export function DeliveryReadiness({ delivery, onReady }) {
         const failed = workerResults.flat().filter(result => !result.ok).length;
         if (failed) {
           setBlocked(true);
+          trackEvent('client.preloader.failed', { failedFiles: failed }, { format: delivery.format, status: 'failed', errorCode: 'MEDIA_PRELOAD_FAILED', count: failed });
           return;
         }
-        const readyTimer = window.setTimeout(() => { transferred = true; open(); }, 350);
+        const readyTimer = window.setTimeout(() => { transferred = true; trackEvent('client.preloader.completed', { photos: totals.photo }, { format: delivery.format, status: 'completed', count: total }); open(); }, 350);
         cleanup.push(() => window.clearTimeout(readyTimer));
       });
     }
@@ -270,6 +273,7 @@ export default function DeliveryViewer() {
     if (!selected) return;
     if (audioState.playing === kind || audioState.loading === kind) {
       selected.pause();
+      trackEvent(kind === 'narration' ? 'client.narration.paused' : 'client.music.paused', { format: delivery?.format }, { format: delivery?.format, status: 'paused' });
       if (kind === 'narration' && soundtrackRef.current && !soundtrackRef.current.paused) {
         fadeAudioVolume(soundtrackRef.current, 1);
         setAudioState({ playing: 'soundtrack', loading: '' });
@@ -285,10 +289,13 @@ export default function DeliveryViewer() {
         other?.pause();
       }
       setAudioState(current => ({ ...current, loading: kind }));
+      const resuming = Number(selected.currentTime || 0) > 0.2;
       await selected.play();
       setAudioState({ playing: kind, loading: '' });
+      trackEvent(resuming ? (kind === 'narration' ? 'client.narration.resumed' : 'client.music.started') : (kind === 'narration' ? 'client.narration.started' : 'client.music.started'), { format: delivery?.format }, { format: delivery?.format, status: resuming ? 'resumed' : 'started' });
     } catch {
       setAudioState({ playing: '', loading: '' });
+      trackEvent(kind === 'narration' ? 'client.narration.failed' : 'client.music.failed', { format: delivery?.format }, { format: delivery?.format, status: 'failed', errorCode: 'AUDIO_PLAY_FAILED' });
       toast.info(`The ${kind === 'narration' ? 'narration' : 'music'} did not load. Check your connection and try again.`);
     }
   };
@@ -310,10 +317,12 @@ export default function DeliveryViewer() {
         setPreloadedMedia({ assets: {}, soundtrack: '', narration: '' });
         setExperienceReady(false);
         setLocked(false);
+        trackEvent('client.delivery.opened', { access: 'link' }, { format: current.format, status: 'opened' });
         document.title = `${response.data.data.title} · Veylo`;
       }
     } catch (requestError) {
       setError(apiMessage(requestError, 'This delivery is not available.'));
+      trackEvent('client.delivery.load.failed', {}, { status: 'failed', errorCode: requestError.response?.data?.code || 'DELIVERY_LOAD_FAILED' });
     } finally {
       setLoading(false);
     }
@@ -333,6 +342,12 @@ export default function DeliveryViewer() {
   useEffect(() => {
     narrationInteractionRef.current = false;
   }, [delivery?.publicId]);
+
+  useEffect(() => {
+    if (!experienceReady || !delivery?.format) return;
+    trackEvent('client.format.opened', { format: delivery.format }, { format: delivery.format, status: 'opened' });
+    trackEvent('client.first.photo.shown', { format: delivery.format }, { format: delivery.format, status: 'shown', count: 1 });
+  }, [delivery?.format, experienceReady]);
 
   useEffect(() => {
     if (!experienceReady || !delivery?.narration?.url || delivery.format === 'photo-story') return undefined;
@@ -386,9 +401,11 @@ export default function DeliveryViewer() {
     try {
       const response = await api.post(`/v1/deliveries/public/${publicId}/unlock`, { pin });
       sessionStorage.setItem(`veylo_delivery_${publicId}`, response.data.data.accessToken);
+      trackEvent('client.pin.succeeded', {}, { status: 'succeeded' });
       await load();
     } catch (requestError) {
       setError(apiMessage(requestError, 'That PIN is not correct.'));
+      trackEvent('client.pin.failed', {}, { status: 'failed', errorCode: requestError.response?.data?.code || 'PIN_INVALID' });
       setLoading(false);
     }
   }
@@ -399,10 +416,12 @@ export default function DeliveryViewer() {
         ? { ...current, loading: kind }
         : current
     ));
+    trackEvent(kind === 'narration' ? 'client.narration.started' : 'client.music.started', { phase: 'buffering' }, { status: 'loading' });
   };
 
   const handleAudioPlaying = kind => {
     setAudioState({ playing: kind, loading: '' });
+    trackEvent(kind === 'narration' ? 'client.narration.started' : 'client.music.started', {}, { status: 'playing' });
   };
 
   const handleAudioError = kind => {
@@ -411,6 +430,7 @@ export default function DeliveryViewer() {
         ? { playing: '', loading: '' }
         : current
     ));
+    trackEvent(kind === 'narration' ? 'client.narration.failed' : 'client.music.failed', {}, { status: 'failed', errorCode: 'AUDIO_LOAD_FAILED' });
   };
 
   const syncNarrationCue = event => {
@@ -423,6 +443,10 @@ export default function DeliveryViewer() {
     const narration = narrationRef.current;
     const wanted = new Set((Array.isArray(assetIds) ? assetIds : [assetIds]).map(String));
     const segment = (delivery?.narration?.segments || []).find(item => (item.assetIds || []).some(id => wanted.has(String(id))));
+    const count = Array.isArray(assetIds) ? assetIds.length : 1;
+    trackEvent('client.photo.reveal.advanced', { format: delivery?.format, count }, { format: delivery?.format, status: 'advanced', count });
+    if (delivery?.format === 'chapters') trackEvent('client.chapter.opened', { count }, { format: delivery.format, status: 'opened', count });
+    if (delivery?.format === 'album') trackEvent('client.album.page.turned', { count }, { format: delivery.format, status: 'turned', count });
     if (!narration || !segment) return;
     narration.currentTime = Number(segment.startSec || 0);
     if (audioState.playing === 'narration') narration.play().catch(() => {});
@@ -440,6 +464,7 @@ export default function DeliveryViewer() {
         response.data.data.liked ? next.add(assetId) : next.delete(assetId);
         return next;
       });
+      trackEvent(response.data.data.liked ? 'client.like.added' : 'client.like.removed', { assetCount: 1 }, { format: delivery?.format, status: response.data.data.liked ? 'added' : 'removed', count: 1 });
     } catch (err) {
       toast.error(apiMessage(err, 'We could not update that photograph.'));
     }
@@ -474,8 +499,10 @@ export default function DeliveryViewer() {
       const prepared = await requestPhotoDownload(asset, deliveryAssets.indexOf(asset) >= 0 ? deliveryAssets.indexOf(asset) : index);
       startBrowserDownload(prepared.url, prepared.filename);
       void recordPhotoDownload(prepared.assetId);
+      trackEvent('client.photo.download.started', { downloadType: 'individual' }, { format: delivery?.format, status: 'completed', count: 1 });
       toast.info('Download started. Check your Downloads or Files app.');
     } catch (err) {
+      trackEvent('client.photo.download.failed', { downloadType: 'individual' }, { format: delivery?.format, status: 'failed', errorCode: err.response?.data?.code || 'DOWNLOAD_FAILED' });
       toast.error(apiMessage(err, 'We could not prepare that download.'));
     } finally {
       setBusy('');
@@ -488,6 +515,7 @@ export default function DeliveryViewer() {
     if (!assets.length) return;
     let failed = 0;
     setBusy('all');
+    trackEvent('client.download.all.started', { count: assets.length }, { format: delivery?.format, status: 'started', count: assets.length });
     setDownloadProgress({ current: 0, total: assets.length, failed: 0 });
     setDownloadNotice('Each photograph downloads separately. Android may ask you to allow multiple downloads. On iPhone or iPad, Safari may stop after one; use the individual Download buttons if that happens.');
     try {
@@ -546,6 +574,7 @@ export default function DeliveryViewer() {
           ? `${started} download${started === 1 ? '' : 's'} started. ${failed} need another tap.`
           : 'Downloads started one at a time. Check your Downloads or Files app.');
       toast.info(shared ? 'All photographs are ready in the share sheet.' : failed ? `${started} downloads started. Try the remaining photographs individually.` : 'Downloads started one at a time. Check your Downloads or Files app.');
+      trackEvent(failed ? 'client.download.all.partial_failed' : 'client.photo.download.started', { downloadType: 'all', count: started }, { format: delivery?.format, status: failed ? 'partial_failure' : 'completed', count: started });
     } finally {
       setBusy('');
       setDownloadProgress(null);
@@ -601,7 +630,7 @@ export default function DeliveryViewer() {
   }
 
   if (!experienceReady) {
-    return <DeliveryReadiness delivery={delivery} onReady={media => { setPreloadedMedia(media); setExperienceReady(true); }} />;
+    return <DeliveryReadiness delivery={delivery} onReady={media => { setPreloadedMedia(media); setExperienceReady(true); trackEvent('client.experience.started', { format: delivery.format }, { format: delivery.format, status: 'started' }); }} />;
   }
 
   const format = delivery.format || 'photo-story';

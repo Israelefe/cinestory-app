@@ -25,3 +25,4 @@ export const mediaSignatureLimit = limiter(60 * 60 * 1000, 650, 'Too many upload
 export const billingActionLimit = limiter(60 * 60 * 1000, 30, 'Too many billing requests were made. Wait a while and try again.', 'billingActionsPerHour');
 export const profileUpdateLimit = limiter(60 * 60 * 1000, 20, 'Too many profile changes were requested. Please try again later.', 'profileUpdatesPerHour');
 export const supportTicketLimit = limiter(60 * 60 * 1000, 8, 'Too many support requests were sent from this connection. Please try again later.', 'supportTicketsPerHour');
+export const clientAnalyticsLimit = limiter(15 * 60 * 1000, 300, 'Too many analytics events were sent from this connection. Please try again later.', 'analyticsEventsPer15m');

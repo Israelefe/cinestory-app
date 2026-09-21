@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowLeft, ChevronLeft, ChevronRight, Download, Heart, LoaderCircle, X } from 'lucide-react';
 import { Photo } from '../PublicDesign.jsx';
 import { useDialogFocus } from '../useDialogFocus.js';
+import { trackEvent } from '../../services/analytics.js';
 import './ClientGallery.css';
 
 const photoKey = (photo, index) => photo?.assetId || photo?.id || photo?.name || index;
@@ -21,6 +22,16 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
   const activePhoto = selected === null ? null : resolvedPhotos[selected];
   const activeKey = selected === null ? null : photoKey(activePhoto, selected);
   const resolvedBusy = busy ?? (allDownloading ? 'all' : downloading === null ? null : photoKey(resolvedPhotos[downloading], downloading));
+
+  useEffect(() => {
+    trackEvent('client.gallery.opened', { demo: Boolean(demoId), count: resolvedPhotos.length }, { format: delivery?.format || 'photo-story', status: 'opened', count: resolvedPhotos.length });
+  }, []);
+
+  useEffect(() => {
+    if (selected === null || !activePhoto) return;
+    trackEvent('client.photo.opened', { index: selected + 1 }, { format: delivery?.format || 'photo-story', status: 'opened', count: 1 });
+    if (activePhoto.caption) trackEvent('client.caption.viewed', { index: selected + 1 }, { format: delivery?.format || 'photo-story', status: 'viewed', count: 1 });
+  }, [activePhoto, delivery?.format, selected]);
 
   useEffect(() => {
     const onKey = event => {

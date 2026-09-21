@@ -3,7 +3,7 @@ import AnalyticsEvent from '../models/AnalyticsEvent.js';
 // Analytics must describe product behaviour without becoming a second copy of
 // the photographer's private work. These keys are never accepted in event
 // metadata, even if a future caller accidentally passes them.
-const blockedKey = /password|passcode|pin|token|secret|credential|email|phone|caption|brief|message|content|signed.?url|original.?filename/i;
+const blockedKey = /password|passcode|pin|token|secret|credential|email|phone|client.?name|studio.?name|full.?name|caption|brief|message|content|signed.?url|original.?filename|filename|photo|pixel|audio|keystroke/i;
 
 function clean(value, depth = 0) {
   if (depth > 3 || value === null || value === undefined) return undefined;
@@ -53,4 +53,3 @@ export function recordAnalyticsEventAsync(input = {}) {
     console.error('[analytics]', error.message);
   });
 }
-

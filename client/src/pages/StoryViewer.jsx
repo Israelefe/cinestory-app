@@ -4,6 +4,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { Play, Pause, Volume2, VolumeX, Download, Share2, X, Grid, RotateCcw, ChevronLeft, ChevronRight, ArrowUpRight, Film, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api from '../services/api.js';
+import { trackEvent } from '../services/analytics.js';
 import { DEMO_PRESETS } from '../constants/demoStories.js';
 import { useDialogFocus } from '../components/useDialogFocus.js';
 import ClientGallery from '../components/delivery/ClientGallery.jsx';
@@ -265,8 +266,8 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   else api.get('/v1/stories/public/' + encodeURIComponent(storyId)).then(res => {
    if (!active) return;
    if (!res.data?.success || !Array.isArray(res.data.data?.photos) || !res.data.data.photos.length) throw new Error('Story not found');
-   setStory(res.data.data); setLoading(false);
-  }).catch(() => { if (active) { setError('This story could not be opened. Check the link with the photographer.'); setLoading(false); } });
+   setStory(res.data.data); setLoading(false); trackEvent('client.delivery.opened', { format: 'photo-story' }, { format: 'photo-story', status: 'opened' });
+  }).catch(() => { trackEvent('client.delivery.load.failed', {}, { format: 'photo-story', status: 'failed', errorCode: 'PHOTO_STORY_LOAD_FAILED' }); if (active) { setError('This story could not be opened. Check the link with the photographer.'); setLoading(false); } });
   return () => { active = false; };
  }, [demo, demoId, storyId, deliveryProp]);
  const go = useCallback(direction => {
@@ -281,6 +282,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
    return nextIndex;
   });
   if (progress.current) progress.current.style.transform = 'scaleX(0)';
+  trackEvent('client.photo.reveal.advanced', { direction }, { format: 'photo-story', status: 'advanced' });
  }, [photos, deliveryProp?.narration?.segments, muted, narrationPlaying, narrationLoading]);
  useEffect(() => {
   if (!running) return;
@@ -378,6 +380,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
 
   const download = async (i, quiet = false) => {
    setDownloading(i);
+   let downloadSucceeded = false;
    try {
     if (deliveryProp?.publicId) {
       const assetId = photos[i]?.id || photos[i]?.assetId;
@@ -397,7 +400,9 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
       link.rel = 'noopener noreferrer';
       document.body.appendChild(link); link.click(); link.remove();
       api.post(`/v1/deliveries/public/${deliveryProp.publicId}/photos/${encodeURIComponent(assetId)}/downloaded`, {}, { headers }).catch(() => {});
+      trackEvent('client.photo.download.started', { downloadType: 'individual' }, { format: 'photo-story', status: 'completed', count: 1 });
       if (!quiet) { setDownloadNotice('On iPhone or iPad, use Share then Save to Files if Safari opens the photograph instead.'); toast.info('Download started. Check your Downloads or Files app.'); }
+      downloadSucceeded = true;
       return true;
     }
     const url = mediaUrl(photos[i].url); if (!url) throw new Error('Invalid image');
@@ -408,10 +413,12 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
     const a = document.createElement('a'); a.href = object; a.download = (story.clientName || 'Veylo').replace(/[^a-z0-9_-]/gi, '_').slice(0, 60) + '-' + (i + 1) + '.' + extension;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(object), 30000);
     if (!demo && storyId) api.post('/v1/stories/public/' + encodeURIComponent(storyId) + '/track-download').catch(() => {});
+    trackEvent('client.photo.download.started', { downloadType: 'individual' }, { format: 'photo-story', status: 'completed', count: 1 });
     if (!quiet) { toast.success('Download requested. Check your browser’s downloads.'); }
+    downloadSucceeded = true;
     return true;
    } catch { toast.error('Couldn’t download this photograph. Please try again.'); return false; }
-   finally { setDownloading(null); }
+   finally { if (!downloadSucceeded) trackEvent('client.photo.download.failed', { downloadType: 'individual' }, { format: 'photo-story', status: 'failed', errorCode: 'DOWNLOAD_FAILED' }); setDownloading(null); }
   };
   const downloadAll = async () => {
    if (allDownloading) return;
@@ -420,6 +427,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
      ? 'Each photograph downloads separately. Android may ask you to allow multiple downloads. On iPhone or iPad, Safari may stop after one; use the individual Download buttons if that happens.'
      : 'Each photograph downloads separately. Your browser may ask you to allow multiple downloads.');
    setDownloadProgress({ current: 0, total: photos.length, failed: 0 });
+   trackEvent('client.download.all.started', { count: photos.length }, { format: 'photo-story', status: 'started', count: photos.length });
    let failed = 0;
    try {
      if (!deliveryProp?.publicId && photos.length <= 40) {
@@ -433,6 +441,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
         await navigator.share({ title: `${story.clientName || 'Client'} photographs`, files });
         if (!demo && storyId) files.forEach(() => api.post('/v1/stories/public/' + encodeURIComponent(storyId) + '/track-download').catch(() => {}));
         setDownloadNotice('Choose Save to Files or Photos in the share sheet to keep every photograph.');
+        trackEvent('client.photo.download.started', { downloadType: 'all', count: files.length }, { format: 'photo-story', status: 'completed', count: files.length });
         toast.success('All photographs are ready in the share sheet.');
         return;
        }
@@ -449,6 +458,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
        await new Promise(r => setTimeout(r, 250));
      }
      const started = photos.length - failed;
+     trackEvent(failed ? 'client.download.all.partial_failed' : 'client.photo.download.started', { downloadType: 'all', count: started }, { format: 'photo-story', status: failed ? 'partial_failure' : 'completed', count: started });
      setDownloadNotice(failed ? `${started} download${started === 1 ? '' : 's'} started. ${failed} need another tap.` : 'Downloads started one at a time. Check your Downloads or Files app.');
      toast.success(failed ? `${started} downloads started. Try the remaining photographs individually.` : 'Downloads started. Check your Downloads or Files app.');
    } finally {
@@ -456,8 +466,9 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
      setDownloadProgress(null);
    }
   };
-  const start = () => {
+ const start = () => {
     setStarted(true); setPaused(false); setFinished(false); setIndex(0); elapsed.current = 0;
+    trackEvent('client.experience.started', { format: 'photo-story' }, { format: 'photo-story', status: 'started' });
     if (audio.current) {
       audio.current.currentTime = 0;
       audio.current.volume = 1;

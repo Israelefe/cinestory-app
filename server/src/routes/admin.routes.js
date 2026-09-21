@@ -69,6 +69,7 @@ import User from '../models/User.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { authAttemptLimit, billingActionLimit } from '../middleware/rateLimit.middleware.js';
 import { tokenDigest } from '../utils/auth.js';
+import { getProductAnalytics } from '../controllers/adminAnalytics.controller.js';
 
 const router = express.Router();
 
@@ -140,6 +141,7 @@ router.use(adminAuthMiddleware);
 router.get('/auth/me', getAdminMe);
 router.get('/operations', getOperationsOverview);
 router.get('/analytics', getAdminAnalytics);
+router.get('/product-analytics', requireAdminRoles('superadmin', 'operations', 'analyst', 'read-only'), getProductAnalytics);
 router.get('/users', getAllUsers);
 router.patch('/users/:id/plan', requireAdminRoles('superadmin', 'operations'), updateUserPlan);
 router.get('/users/:id', getAccountDetail);

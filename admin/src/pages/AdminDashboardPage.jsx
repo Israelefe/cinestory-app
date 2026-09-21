@@ -148,6 +148,85 @@ function SecurityProviderPanel({ providers = {}, secretStatus = {}, admins = [],
   return <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Provider and secret status</p><h2 className="mt-1 text-xl font-medium">Keys are never shown here</h2><p className="mt-2 text-xs leading-5 text-white/45">This panel only reports whether required providers are configured. It never returns a token, password, or API key.</p></div><div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{Object.entries(secretStatus).map(([key, configured]) => <div key={key} className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold capitalize text-white">{key}</span><Status value={configured ? 'active' : 'attention'} /></div><p className="mt-2 text-[11px] text-white/40">{configured ? 'Configured on the server' : 'Not configured'}</p></div>)}{Object.entries(providers).map(([key, provider]) => <div key={`provider-${key}`} className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><div className="flex items-center justify-between gap-2"><span className="truncate text-xs font-semibold text-white">{provider.provider || key}</span><Status value={provider.configured ? 'active' : 'attention'} /></div><p className="mt-2 truncate text-[11px] text-white/40">{provider.model || provider.from || 'Provider configuration'}</p></div>)}</div><div className="mt-6 border-t border-white/10 pt-5"><p className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/40">Account status</p><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{admins.map(adminRecord => <label key={adminRecord.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[.025] px-3 py-2.5 text-xs text-white/65"><span className="truncate">{adminRecord.name}</span><select value={adminRecord.accountStatus} disabled={disabled || String(adminRecord.id) === String(currentAdminId)} onChange={(event) => onStatusChange(adminRecord, event.target.value)} className="min-h-8 rounded-lg border border-white/10 bg-[#141419] px-2 text-[11px] text-white outline-none focus:border-[#ff9b8e]/60"><option value="active">Active</option><option value="suspended">Suspended</option></select></label>)}</div></div></section>;
 }
 
+function ProductAnalyticsPanel({
+  data,
+  days,
+  format,
+  actorType,
+  onDaysChange,
+  onFormatChange,
+  onActorChange,
+  error
+}) {
+  if (!data) {
+    return <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-5 text-sm text-amber-100">Product analytics is unavailable for this role. {error || 'Try refreshing the workspace.'}</div>;
+  }
+  const totals = data.totals || {};
+  const journey = data.journey || [];
+  const errors = data.errors || [];
+  const devices = data.devices || [];
+  const daily = data.daily || [];
+  const sourceTotals = daily.reduce((result, item) => {
+    result[item.source] = (result[item.source] || 0) + Number(item.events || 0);
+    return result;
+  }, {});
+  const maxJourney = Math.max(1, ...journey.map(item => Number(item.events || 0)));
+  const maxDaily = Math.max(1, ...daily.map(item => Number(item.events || 0)));
+
+  return <div className="mt-6 space-y-5">
+    <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Product analytics</p>
+          <h2 className="mt-1 text-xl font-medium">What photographers and clients actually do</h2>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-white/45">These are meaningful actions and outcomes, not keystrokes or private content. Sessions are anonymised before they reach the server.</p>
+        </div>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:min-w-[32rem]">
+          <label className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/40">Window<select value={days} onChange={(event) => onDaysChange(event.target.value)} className="mt-2 min-h-10 w-full rounded-xl border border-white/10 bg-[#141419] px-3 text-xs font-normal normal-case tracking-normal text-white outline-none focus:border-[#ff9b8e]/60"><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option></select></label>
+          <label className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/40">Format<select value={format} onChange={(event) => onFormatChange(event.target.value)} className="mt-2 min-h-10 w-full rounded-xl border border-white/10 bg-[#141419] px-3 text-xs font-normal normal-case tracking-normal text-white outline-none focus:border-[#ff9b8e]/60"><option value="all">All formats</option>{Object.entries(formatNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/40">Audience<select value={actorType} onChange={(event) => onActorChange(event.target.value)} className="mt-2 min-h-10 w-full rounded-xl border border-white/10 bg-[#141419] px-3 text-xs font-normal normal-case tracking-normal text-white outline-none focus:border-[#ff9b8e]/60"><option value="all">Everyone</option><option value="photographer">Photographers</option><option value="client">Clients</option><option value="guest">Guests</option><option value="anonymous">Anonymous</option></select></label>
+        </div>
+      </div>
+    </section>
+
+    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <MetricCard icon={Activity} label="Recorded actions" value={number(totals.events)} note={`${number(totals.clientEvents)} came from opted-in product use`} />
+      <MetricCard icon={Users} label="Unique sessions" value={number(totals.uniqueSessions)} note="Anonymised browser sessions in this window" />
+      <MetricCard icon={CheckCircle2} label="Successful outcomes" value={`${number(totals.successRate)}%`} note={`${number(totals.failedEvents)} failed or partial events`} />
+      <MetricCard icon={ShieldCheck} label="Consent events" value={number(data.collection?.consentEvents)} note={data.collection?.optionalAnalyticsEnabled ? 'Optional analytics is enabled' : 'Optional analytics is disabled'} />
+    </section>
+
+    <section className="grid gap-5 xl:grid-cols-[1.15fr_.85fr]">
+      <div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6">
+        <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Journey checkpoints</p><h2 className="mt-1 text-xl font-medium">Where people continue or stop</h2></div><span className="text-xs text-white/35">{data.windowDays} days</span></div>
+        <div className="mt-5 space-y-3">{journey.map(item => <div key={item.name}><div className="flex items-center justify-between gap-3 text-xs"><span className="truncate text-white/65">{item.name}</span><span className="shrink-0 text-white/40">{number(item.events)}</span></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-[#ff7867] transition-[width] duration-500" style={{ width: `${Math.max(0, Math.min(100, Number(item.events || 0) / maxJourney * 100))}%` }} /></div></div>)}{!journey.length && <p className="py-8 text-sm text-white/45">No journey events in this window.</p>}</div>
+      </div>
+      <div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6">
+        <div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Collection health</p><h2 className="mt-1 text-xl font-medium">How data arrived</h2></div>
+        <div className="mt-5 grid grid-cols-2 gap-3"><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Client events</p><p className="mt-2 text-xl font-medium text-white">{number(totals.clientEvents)}</p></div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Server events</p><p className="mt-2 text-xl font-medium text-white">{number(totals.serverEvents)}</p></div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Client share</p><p className="mt-2 text-xl font-medium text-white">{totals.events ? `${Math.round(Number(totals.clientEvents || 0) / Number(totals.events) * 100)}%` : '0%'}</p></div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Session IDs</p><p className="mt-2 text-xl font-medium text-white">{data.collection?.anonymized ? 'Hashed' : 'Review'}</p></div></div>
+        <div className="mt-4 space-y-2 text-xs text-white/45"><p>Client: {number(sourceTotals.client)} events</p><p>Server: {number(sourceTotals.server)} events</p><p>System: {number(sourceTotals.system)} events</p><p className="border-t border-white/10 pt-3">Excluded: {(data.collection?.excludedFields || []).join(', ')}.</p></div>
+      </div>
+    </section>
+
+    <section className="grid gap-5 xl:grid-cols-2">
+      <div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Delivery formats</p><h2 className="mt-1 text-xl font-medium">What gets created and opened</h2></div><div className="mt-5 space-y-2">{(data.formats || []).map(item => <div key={item.format} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[.025] p-3"><span className="truncate text-xs font-semibold text-white">{formatNames[item.format] || item.format}</span><span className="shrink-0 text-xs text-white/45">{number(item.events)} actions · {number(item.deliveries)} deliveries</span></div>)}{!data.formats?.length && <p className="py-8 text-sm text-white/45">No format activity in this window.</p>}</div></div>
+      <div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Devices and viewports</p><h2 className="mt-1 text-xl font-medium">Where the product is used</h2></div><div className="mt-5 space-y-2">{devices.slice(0, 12).map(item => <div key={`${item.deviceType}-${item.viewport}`} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[.025] p-3"><span className="truncate text-xs text-white/70">{item.deviceType} · {item.viewport}</span><span className="shrink-0 text-xs text-white/45">{number(item.events)}</span></div>)}{!devices.length && <p className="py-8 text-sm text-white/45">No device details in this window.</p>}</div></div>
+    </section>
+
+    <section className="grid gap-5 xl:grid-cols-2">
+      <div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Acquisition</p><h2 className="mt-1 text-xl font-medium">How people found Veylo</h2><p className="mt-2 text-xs leading-5 text-white/45">Only the source label, campaign label, and referring hostname are kept. Full URLs and contact details are not stored.</p></div><div className="mt-5 space-y-2">{(data.acquisitionSources || []).map(item => <div key={item.source} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[.025] p-3"><span className="truncate text-xs text-white/70">{item.source}</span><span className="shrink-0 text-xs text-white/45">{number(item.events)} events</span></div>)}{!data.acquisitionSources?.length && <p className="py-8 text-sm text-white/45">No source labels have been recorded yet.</p>}</div><div className="mt-5 border-t border-white/10 pt-4"><p className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/35">Referring sites</p><div className="mt-2 space-y-2">{(data.referrers || []).slice(0, 8).map(item => <div key={item.host} className="flex items-center justify-between gap-3 text-xs"><span className="truncate text-white/60">{item.host}</span><span className="shrink-0 text-white/35">{number(item.events)}</span></div>)}{!data.referrers?.length && <p className="mt-2 text-xs text-white/40">No external referrers recorded yet.</p>}</div></div></div>
+      <div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Campaigns</p><h2 className="mt-1 text-xl font-medium">Which campaigns brought visits</h2></div><div className="mt-5 space-y-2">{(data.campaigns || []).map(item => <div key={item.campaign} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[.025] p-3"><span className="truncate text-xs text-white/70">{item.campaign}</span><span className="shrink-0 text-xs text-white/45">{number(item.events)} events</span></div>)}{!data.campaigns?.length && <p className="py-8 text-sm text-white/45">No campaign labels have been recorded yet.</p>}</div></div>
+    </section>
+
+    <section className="grid gap-5 xl:grid-cols-[1.1fr_.9fr]">
+      <div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Daily activity</p><h2 className="mt-1 text-xl font-medium">A simple reliability trend</h2></div><span className="text-xs text-white/35">{daily.length} source rows</span></div><div className="mt-5 space-y-2">{daily.slice(-14).map(item => <div key={`${item.day}-${item.source}`} className="flex items-center gap-3"><span className="w-24 shrink-0 text-[11px] text-white/40">{item.day}</span><div className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-white/[.06]"><div className={`h-full rounded-full ${item.source === 'client' ? 'bg-[#ff7867]' : 'bg-white/40'}`} style={{ width: `${Math.max(2, Number(item.events || 0) / maxDaily * 100)}%` }} /></div><span className="w-16 shrink-0 text-right text-[11px] text-white/45">{number(item.events)}</span></div>)}{!daily.length && <p className="py-8 text-sm text-white/45">No events have been recorded yet.</p>}</div></div>
+      <div className="rounded-3xl border border-amber-300/15 bg-amber-300/[.04] p-5 sm:p-6"><div className="flex items-start gap-3"><TriangleAlert size={18} className="mt-0.5 shrink-0 text-amber-200" /><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-amber-200/70">Failures to inspect</p><h2 className="mt-1 text-xl font-medium text-white">Errors and partial outcomes</h2></div></div><div className="mt-5 space-y-2">{errors.slice(0, 10).map(item => <div key={`${item.name}-${item.errorCode}-${item.status}`} className="rounded-2xl border border-amber-300/15 bg-black/10 p-3"><div className="flex items-start justify-between gap-3"><span className="min-w-0 truncate text-xs font-semibold text-white">{item.name}</span><span className="shrink-0 text-xs text-amber-100">{number(item.events)}</span></div><p className="mt-1 truncate text-[11px] text-amber-100/60">{item.errorCode} · {item.status}</p></div>)}{!errors.length && <p className="py-8 text-sm text-amber-100/60">No failures recorded in this window.</p>}</div></div>
+    </section>
+
+    <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Event catalogue</p><h2 className="mt-1 text-xl font-medium">The complete allowed event list</h2><p className="mt-2 text-xs leading-5 text-white/45">Zero-count rows stay visible so missing instrumentation is easy to spot. Add a name to the server allowlist before shipping a new event.</p></div><span className="text-xs text-white/35">{number(data.clientCatalog?.length)} names</span></div><div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{(data.clientCatalog || []).map(item => <div key={item.name} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[.025] px-3 py-2.5"><span className="min-w-0 truncate text-[11px] text-white/60">{item.name}</span><span className="shrink-0 text-[11px] text-white/35">{number(item.events)}</span></div>)}</div></section>
+  </div>;
+}
+
 export default function AdminDashboardPage({ admin, onLogout }) {
   const [tab, setTab] = useState('deliveries');
   const [analytics, setAnalytics] = useState(null);
@@ -171,6 +250,10 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const [runtimeConfig, setRuntimeConfig] = useState(null);
   const [runtimeConfigSaving, setRuntimeConfigSaving] = useState(false);
   const [securityOverview, setSecurityOverview] = useState(null);
+  const [productAnalytics, setProductAnalytics] = useState(null);
+  const [productAnalyticsDays, setProductAnalyticsDays] = useState('30');
+  const [productAnalyticsFormat, setProductAnalyticsFormat] = useState('all');
+  const [productAnalyticsActor, setProductAnalyticsActor] = useState('all');
   const [securityActionLoading, setSecurityActionLoading] = useState(false);
   const [twoFactorSetup, setTwoFactorSetup] = useState(null);
   const [twoFactorCode, setTwoFactorCode] = useState('');
@@ -224,7 +307,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       portfolio: api.get('/v1/admin/portfolios', { params: { search } }),
       support: api.get('/v1/admin/support/tickets', { params: { search } }),
       configuration: api.get('/v1/admin/configuration'),
-      security: api.get('/v1/admin/security')
+      security: api.get('/v1/admin/security'),
+      productAnalytics: api.get('/v1/admin/product-analytics', { params: { days: productAnalyticsDays, format: productAnalyticsFormat, actorType: productAnalyticsActor } })
     };
     const entries = Object.entries(requests);
     const results = await Promise.allSettled(entries.map(([, request]) => request));
@@ -247,15 +331,17 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         if (key === 'support') setSupportOverview(data || null);
         if (key === 'configuration') setRuntimeConfig(data || null);
         if (key === 'security') setSecurityOverview(data || null);
+        if (key === 'productAnalytics') setProductAnalytics(data || null);
         return;
       }
       const error = result.status === 'rejected' ? result.reason : new Error(result.value?.data?.message || 'This panel is unavailable.');
+      if (key === 'productAnalytics') setProductAnalytics(null);
       nextErrors[key] = error.response?.data?.message || error.message || 'This panel is unavailable.';
     });
     setPanelErrors(nextErrors);
     if (Object.keys(nextErrors).length === entries.length) toast.error('The administration service is unavailable. Try again shortly.');
     setLoading(false);
-  }, [accountPlanFilter, accountSourceFilter, accountStatusFilter, aiJobStatusFilter, aiJobTypeFilter, deliveryFormatFilter, deliveryStatusFilter, search, volumeCategoryFilter, volumeStatusFilter]);
+  }, [accountPlanFilter, accountSourceFilter, accountStatusFilter, aiJobStatusFilter, aiJobTypeFilter, deliveryFormatFilter, deliveryStatusFilter, productAnalyticsActor, productAnalyticsDays, productAnalyticsFormat, search, volumeCategoryFilter, volumeStatusFilter]);
 
   useEffect(() => {
     const timer = window.setTimeout(fetchAdminData, 300);
@@ -602,9 +688,10 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       portfolio: portfolioOverview?.portfolios?.length || 0,
       support: supportOverview?.tickets?.length || 0,
       configuration: runtimeConfig ? 1 : 0,
-      security: securityOverview?.summary?.adminCount || 0
+      security: securityOverview?.summary?.adminCount || 0,
+      productAnalytics: productAnalytics?.totals?.events || 0
     }),
-    [accessOverview, aiJobs, deliveries, users, payments, volumeJobs, storageOverview, musicOverview, portfolioOverview, supportOverview, runtimeConfig, securityOverview]
+    [accessOverview, aiJobs, deliveries, users, payments, volumeJobs, storageOverview, musicOverview, portfolioOverview, supportOverview, runtimeConfig, securityOverview, productAnalytics]
   );
 
   const runStorageScan = async () => {
@@ -983,7 +1070,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         {/* Section Tabs & Search */}
         <section className="mt-10">
           <div className="flex flex-col gap-4 border-b border-white/10 pb-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5 sm:grid-cols-4 md:grid-cols-12">
+            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5 sm:grid-cols-4 lg:grid-cols-7">
               {[
                 ['deliveries', Film, 'Deliveries'],
                 ['users', Users, 'Accounts'],
@@ -996,6 +1083,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
                 ['volume', Users, 'Volume'],
                 ['storage', HardDrive, 'Storage'],
                 ['musicNarration', Music2, 'Music & voice'],
+                ['productAnalytics', Activity, 'Product data'],
                 ['security', LockKeyhole, 'Security']
               ].map(([key, Icon, label]) => (
                 <button
@@ -1137,6 +1225,20 @@ export default function AdminDashboardPage({ admin, onLogout }) {
                 <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Support and moderation</p><h2 className="mt-1 text-xl font-medium">Requests that need a human reply</h2><p className="mt-2 text-xs leading-5 text-white/45">Every request has an owner, status, priority, response history, and moderation trail. Open one to reply, assign it, or make a reported delivery or portfolio private.</p></div><span className="text-xs text-white/35">Updated {shortDate(supportOverview.generatedAt)}</span></div><div className="mt-5 space-y-2">{(supportOverview.tickets || []).map(ticket => <button key={ticket.id} type="button" onClick={() => openSupportTicket(ticket)} className="w-full rounded-2xl border border-white/10 bg-white/[.025] p-4 text-left transition-colors hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff9b8e]/70"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><Status value={ticket.status} /><Status value={ticket.priority} /><span className="text-[10px] font-semibold uppercase tracking-[.12em] text-[#ff9b8e]">{ticket.category}</span><span className="font-mono text-[10px] text-white/35">{ticket.ticketNumber}</span></div><h3 className="mt-2 truncate text-sm font-semibold text-white">{ticket.subject}</h3><p className="mt-1 truncate text-xs text-white/40">{ticket.requester?.name || 'Requester'} · {ticket.requester?.email || 'No reply email'}{ticket.account?.studio ? ` · ${ticket.account.studio}` : ''}</p></div><span className="shrink-0 text-xs text-white/35">{shortDate(ticket.updatedAt)}</span></div><div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-white/40"><span>{number(ticket.messageCount)} messages</span><span>{number(ticket.internalNoteCount)} internal notes</span><span>{ticket.assignedAdmin?.name ? `Assigned to ${ticket.assignedAdmin.name}` : 'Unassigned'}</span>{ticket.delivery?.publicId && <span>Delivery {ticket.delivery.publicId}</span>}</div></button>)}{!supportOverview.tickets?.length && <p className="py-12 text-center text-sm text-white/45">No support requests match this search.</p>}</div></section>
               </>}
             </div>
+          )}
+
+          {/* Product analytics tab */}
+          {!loading && tab === 'productAnalytics' && (
+            <ProductAnalyticsPanel
+              data={productAnalytics}
+              days={productAnalyticsDays}
+              format={productAnalyticsFormat}
+              actorType={productAnalyticsActor}
+              onDaysChange={setProductAnalyticsDays}
+              onFormatChange={setProductAnalyticsFormat}
+              onActorChange={setProductAnalyticsActor}
+              error={panelErrors.productAnalytics}
+            />
           )}
 
           {/* Security and audit tab */}
