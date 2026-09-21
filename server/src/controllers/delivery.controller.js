@@ -310,8 +310,12 @@ export async function getDelivery(req, res) {
 
 export async function deleteDelivery(req, res) {
   try {
-    if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ success: false, message: 'Delivery not found.' });
-    const delivery = await ownedDelivery(req.params.id, req.user.id);
+    const identifier = String(req.params.id || '').trim();
+    if (!identifier || identifier.length > 200) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    const identifierQuery = mongoose.isValidObjectId(identifier)
+      ? { $or: [{ _id: identifier }, { publicId: identifier }, { legacyStoryId: identifier }] }
+      : { $or: [{ publicId: identifier }, { legacyStoryId: identifier }] };
+    const delivery = await Delivery.findOne({ userId: req.user.id, ...identifierQuery });
     if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
     const removedIds = new Set((delivery.assets || []).map(asset => asset.publicId).filter(Boolean));
     // Remove the database record first. A temporary Cloudinary outage must not
