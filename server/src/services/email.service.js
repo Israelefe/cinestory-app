@@ -1,5 +1,6 @@
 import { Resend } from 'resend';
 import { recordAnalyticsEventAsync } from './analytics.service.js';
+import { emailTemplateEnabled } from './runtimeConfig.service.js';
 
 let client;
 function resend() {
@@ -18,6 +19,10 @@ function shell(content) {
 
 async function send(kind, message) {
   try {
+    if (!(await emailTemplateEnabled(kind))) {
+      console.info(`[email/${kind}] disabled by runtime configuration`);
+      return null;
+    }
     const { data, error } = await resend().emails.send({
       from: process.env.RESEND_FROM_EMAIL || 'Veylo <info@veylo.com.ng>',
       ...message

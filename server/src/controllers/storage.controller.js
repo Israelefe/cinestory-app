@@ -2,7 +2,6 @@ import { z } from 'zod';
 import User from '../models/User.js';
 import StorageAsset from '../models/StorageAsset.js';
 import Portfolio from '../models/Portfolio.js';
-import { PLAN_DEFINITIONS } from '../config/plans.js';
 import { resolveEntitlements } from '../services/entitlement.service.js';
 import { confirmStorageUpload, createStorageUploadSignature, removeStorageAsset, storageAssetUrls } from '../services/storageMedia.service.js';
 import { recordAnalyticsEventAsync } from '../services/analytics.service.js';
@@ -23,14 +22,14 @@ function output(asset) { return { ...asset.toObject(), ...storageAssetUrls(asset
 export async function listStorage(req, res) {
   try {
     const { user, entitlements } = await storageAccess(req.user.id);
-    if (entitlements.features.storageMode === 'unavailable') return res.json({ success: true, data: [], access: entitlements.features.storageMode, usage: { usedBytes: user.storageUsedBytes || 0, limitBytes: PLAN_DEFINITIONS.pro.personalStorageBytes } });
+    if (entitlements.features.storageMode === 'unavailable') return res.json({ success: true, data: [], access: entitlements.features.storageMode, usage: { usedBytes: user.storageUsedBytes || 0, limitBytes: entitlements.limits.personalStorageBytes } });
     const query = { userId: user._id };
     if (req.query.folder) query.folder = String(req.query.folder).slice(0, 100);
     if (req.query.search) query.$or = [{ originalFilename: { $regex: escaped(req.query.search), $options: 'i' } }, { tags: { $regex: escaped(req.query.search), $options: 'i' } }];
     const page = Math.max(1, Math.min(10000, Number(req.query.page) || 1));
     const [assets, folders] = await Promise.all([StorageAsset.find(query).sort({ createdAt: -1 }).skip((page - 1) * 60).limit(61), StorageAsset.distinct('folder', { userId: user._id })]);
     const hasMore = assets.length > 60;
-    res.json({ success: true, data: assets.slice(0, 60).map(output), folders, access: entitlements.features.storageMode, usage: { usedBytes: user.storageUsedBytes || 0, limitBytes: PLAN_DEFINITIONS.pro.personalStorageBytes }, page, hasMore });
+    res.json({ success: true, data: assets.slice(0, 60).map(output), folders, access: entitlements.features.storageMode, usage: { usedBytes: user.storageUsedBytes || 0, limitBytes: entitlements.limits.personalStorageBytes }, page, hasMore });
   } catch (error) { res.status(error.status || 500).json({ success: false, message: error.message || 'We could not open your image library.' }); }
 }
 
@@ -58,13 +57,14 @@ export async function confirmStorageAsset(req, res) {
     const resource = await confirmStorageUpload(req.user.id, parsed.data);
     uploadedPublicId = resource.public_id;
     if (!['jpg', 'jpeg', 'png', 'webp'].includes(String(resource.format).toLowerCase()) || resource.bytes > 50 * 1024 * 1024) throw Object.assign(new Error('Use a JPEG, PNG, or WebP photograph no larger than 50 MB.'), { status: 400 });
-    const user = await User.findOneAndUpdate({ _id: req.user.id, $expr: { $lte: [{ $add: [{ $ifNull: ['$storageUsedBytes', 0] }, resource.bytes] }, PLAN_DEFINITIONS.pro.personalStorageBytes] } }, { $inc: { storageUsedBytes: resource.bytes } }, { new: true });
-    if (!user) { await removeStorageAsset(resource.public_id); return res.status(403).json({ success: false, code: 'STORAGE_LIMIT_REACHED', message: 'This upload would take your personal storage above 50 GB.' }); }
+    const storageLimitBytes = Number(entitlements.limits.personalStorageBytes || 0);
+    const user = await User.findOneAndUpdate({ _id: req.user.id, $expr: { $lte: [{ $add: [{ $ifNull: ['$storageUsedBytes', 0] }, resource.bytes] }, storageLimitBytes] } }, { $inc: { storageUsedBytes: resource.bytes } }, { new: true });
+    if (!user) { await removeStorageAsset(resource.public_id); return res.status(403).json({ success: false, code: 'STORAGE_LIMIT_REACHED', message: `This upload would take your personal storage above ${Math.round(storageLimitBytes / (1024 ** 3))} GB.` }); }
     reserved = true;
     reservedBytes = resource.bytes;
     const asset = await StorageAsset.create({ userId: user._id, publicId: resource.public_id, originalFilename: parsed.data.originalFilename, format: resource.format, width: resource.width, height: resource.height, bytes: resource.bytes, contentHash: resource.etag || undefined, hashAlgorithm: resource.etag ? 'cloudinary-etag' : undefined, hashVerifiedAt: resource.etag ? new Date() : undefined, folder: parsed.data.folder || 'All photographs', tags: [...new Set(parsed.data.tags.map(tag => tag.toLowerCase()))] });
     recordAnalyticsEventAsync({ name: 'upload.completed', source: 'server', actorType: 'photographer', userId: req.user?.id, status: 'completed', bytes: resource.bytes, metadata: { surface: 'library', format: resource.format } });
-    res.status(201).json({ success: true, data: output(asset), usage: { usedBytes: user.storageUsedBytes, limitBytes: PLAN_DEFINITIONS.pro.personalStorageBytes } });
+    res.status(201).json({ success: true, data: output(asset), usage: { usedBytes: user.storageUsedBytes, limitBytes: entitlements.limits.personalStorageBytes } });
   } catch (error) {
     if (reserved && reservedBytes) await User.updateOne(
       { _id: req.user.id },

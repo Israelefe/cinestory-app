@@ -3,6 +3,7 @@ import Subscription from '../models/Subscription.js';
 import DeliveryUsage from '../models/DeliveryUsage.js';
 import Delivery from '../models/Delivery.js';
 import { PLAN_DEFINITIONS } from '../config/plans.js';
+import { getRuntimeConfig } from './runtimeConfig.service.js';
 
 const LAGOS_OFFSET_MS = 60 * 60 * 1000;
 
@@ -30,7 +31,10 @@ export async function resolveEntitlements(user, { includeUsage = true, now = new
   // Billing writes `pro` to User.plan, so treating only `studio` as paid made
   // current Pro deliveries fall back to the Veylo mark.
   const pro = ['pro', 'studio'].includes(user?.plan) || overrideIsPro(user, now) || subscriptionGrantsPro(subscription, now);
-  const plan = pro ? PLAN_DEFINITIONS.pro : PLAN_DEFINITIONS.free;
+  const runtime = await getRuntimeConfig();
+  const plan = (pro ? runtime.plans?.pro : runtime.plans?.free) || (pro ? PLAN_DEFINITIONS.pro : PLAN_DEFINITIONS.free);
+  const enabledFormats = new Set(Object.values(runtime.formats || {}).filter(format => format?.enabled !== false).map(format => format.id));
+  const featureFlags = runtime.featureFlags || {};
   const { start, end } = lagosMonthWindow(now);
   let usedThisMonth = 0;
   if (includeUsage) {
@@ -53,13 +57,14 @@ export async function resolveEntitlements(user, { includeUsage = true, now = new
       personalStorageBytes: plan.personalStorageBytes
     },
     features: {
-      formats: plan.formats,
+      formats: (plan.formats || []).filter(format => enabledFormats.has(format)),
       branding: plan.branding,
-      portfolio: plan.portfolio,
-      portfolioMode: pro ? 'public' : user.proRetentionUntil > now ? 'private' : 'unavailable',
+      portfolio: Boolean(plan.portfolio && featureFlags.portfolio !== false),
+      portfolioMode: plan.portfolio && featureFlags.portfolio !== false ? (pro ? 'public' : user.proRetentionUntil > now ? 'private' : 'unavailable') : 'unavailable',
       storageMode: pro ? 'read-write' : user.proRetentionUntil > now ? 'read-only' : 'unavailable',
-      music: true,
-      narration: true,
+      music: featureFlags.music !== false,
+      narration: featureFlags.narration !== false,
+      volumeDeliveries: featureFlags.volumeDeliveries !== false,
       accessControls: true,
       clientLikes: true,
       downloads: true
@@ -90,7 +95,7 @@ export async function assertCanPublish(user, photoCount) {
     throw error;
   }
   if (entitlements.usage.deliveriesRemaining === 0) {
-    const error = new Error('You have published all three Free deliveries for this month. Move to Pro or publish again next month.');
+    const error = new Error(`You have published all ${entitlements.limits.deliveriesPerMonth} Free deliveries for this month. Move to Pro or publish again next month.`);
     error.status = 403;
     error.code = 'MONTHLY_DELIVERY_LIMIT_REACHED';
     throw error;
@@ -115,7 +120,7 @@ export async function reservePublishSlot(user, photoCount) {
   let reservation;
   try {
     reservation = await DeliveryUsage.findOneAndUpdate(
-      { key, publishedDeliveries: { $lt: PLAN_DEFINITIONS.free.deliveriesPerMonth } },
+      { key, publishedDeliveries: { $lt: entitlements.limits.deliveriesPerMonth } },
       { $inc: { publishedDeliveries: 1 } },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
@@ -123,7 +128,7 @@ export async function reservePublishSlot(user, photoCount) {
     if (error.code !== 11000) throw error;
   }
   if (!reservation) {
-    const limitError = new Error('You have published all three Free deliveries for this month. Move to Pro or publish again next month.');
+    const limitError = new Error(`You have published all ${entitlements.limits.deliveriesPerMonth} Free deliveries for this month. Move to Pro or publish again next month.`);
     limitError.status = 403;
     limitError.code = 'MONTHLY_DELIVERY_LIMIT_REACHED';
     throw limitError;

@@ -24,8 +24,10 @@ import {
   Music2,
   ReceiptText,
   RefreshCw,
+  Save,
   Search,
   Server,
+  Settings2,
   ShieldCheck,
   StickyNote,
   TriangleAlert,
@@ -134,6 +136,10 @@ function HealthCard({ icon: Icon, label, health }) {
   );
 }
 
+function ConfigToggle({ label, checked, onChange, note }) {
+  return <label className="flex cursor-pointer items-start justify-between gap-4 rounded-2xl border border-white/10 bg-white/[.025] p-4 transition-colors hover:border-white/20"><span className="min-w-0"><span className="block text-xs font-semibold text-white">{label}</span>{note && <span className="mt-1 block text-[11px] leading-5 text-white/40">{note}</span>}</span><input type="checkbox" checked={Boolean(checked)} onChange={(event) => onChange(event.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-[#ff7867]" /></label>;
+}
+
 export default function AdminDashboardPage({ admin, onLogout }) {
   const [tab, setTab] = useState('deliveries');
   const [analytics, setAnalytics] = useState(null);
@@ -154,6 +160,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const [musicOverview, setMusicOverview] = useState(null);
   const [portfolioOverview, setPortfolioOverview] = useState(null);
   const [supportOverview, setSupportOverview] = useState(null);
+  const [runtimeConfig, setRuntimeConfig] = useState(null);
+  const [runtimeConfigSaving, setRuntimeConfigSaving] = useState(false);
   const [selectedSupportTicket, setSelectedSupportTicket] = useState(null);
   const [supportDetailLoading, setSupportDetailLoading] = useState(false);
   const [supportReply, setSupportReply] = useState('');
@@ -201,7 +209,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       storage: api.get('/v1/admin/storage', { params: { search } }),
       musicNarration: api.get('/v1/admin/music-narration', { params: { search } }),
       portfolio: api.get('/v1/admin/portfolios', { params: { search } }),
-      support: api.get('/v1/admin/support/tickets', { params: { search } })
+      support: api.get('/v1/admin/support/tickets', { params: { search } }),
+      configuration: api.get('/v1/admin/configuration')
     };
     const entries = Object.entries(requests);
     const results = await Promise.allSettled(entries.map(([, request]) => request));
@@ -222,6 +231,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         if (key === 'musicNarration') setMusicOverview(data || null);
         if (key === 'portfolio') setPortfolioOverview(data || null);
         if (key === 'support') setSupportOverview(data || null);
+        if (key === 'configuration') setRuntimeConfig(data || null);
         return;
       }
       const error = result.status === 'rejected' ? result.reason : new Error(result.value?.data?.message || 'This panel is unavailable.');
@@ -575,9 +585,10 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       storage: storageOverview?.accounts?.length || 0,
       musicNarration: musicOverview?.catalogue?.filtered || 0,
       portfolio: portfolioOverview?.portfolios?.length || 0,
-      support: supportOverview?.tickets?.length || 0
+      support: supportOverview?.tickets?.length || 0,
+      configuration: runtimeConfig ? 1 : 0
     }),
-    [accessOverview, aiJobs, deliveries, users, payments, volumeJobs, storageOverview, musicOverview, portfolioOverview, supportOverview]
+    [accessOverview, aiJobs, deliveries, users, payments, volumeJobs, storageOverview, musicOverview, portfolioOverview, supportOverview, runtimeConfig]
   );
 
   const runStorageScan = async () => {
@@ -688,6 +699,35 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       toast.error(error.response?.data?.message || 'Could not apply that moderation action.');
     } finally {
       setAccountActionLoading(false);
+    }
+  };
+
+  const setRuntimeConfigField = (section, key, value) => setRuntimeConfig(current => ({ ...current, [section]: { ...(current?.[section] || {}), [key]: value } }));
+
+  const saveRuntimeConfig = async () => {
+    if (!runtimeConfig) return;
+    const payload = {
+      plans: {
+        free: { deliveriesPerMonth: Number(runtimeConfig.plans?.free?.deliveriesPerMonth), photosPerDelivery: Number(runtimeConfig.plans?.free?.photosPerDelivery), personalStorageBytes: Number(runtimeConfig.plans?.free?.personalStorageBytes || 0), portfolio: Boolean(runtimeConfig.plans?.free?.portfolio), branding: runtimeConfig.plans?.free?.branding, formats: runtimeConfig.plans?.free?.formats || [] },
+        pro: { deliveriesPerMonth: runtimeConfig.plans?.pro?.deliveriesPerMonth === null ? null : Number(runtimeConfig.plans?.pro?.deliveriesPerMonth), photosPerDelivery: Number(runtimeConfig.plans?.pro?.photosPerDelivery), personalStorageBytes: Number(runtimeConfig.plans?.pro?.personalStorageBytes || 0), portfolio: Boolean(runtimeConfig.plans?.pro?.portfolio), branding: runtimeConfig.plans?.pro?.branding, formats: runtimeConfig.plans?.pro?.formats || [] }
+      },
+      formats: Object.values(runtimeConfig.formats || {}),
+      featureFlags: runtimeConfig.featureFlags || {},
+      maintenance: runtimeConfig.maintenance || { enabled: false, message: 'Veylo is briefly offline for maintenance. Please try again shortly.' },
+      narration: { enabled: runtimeConfig.narration?.enabled !== false, defaultVoiceId: runtimeConfig.narration?.defaultVoiceId },
+      retention: runtimeConfig.retention || {},
+      rateLimits: runtimeConfig.rateLimits || {},
+      emailTemplates: runtimeConfig.emailTemplates || []
+    };
+    try {
+      setRuntimeConfigSaving(true);
+      const response = await api.patch('/v1/admin/configuration', payload);
+      setRuntimeConfig(response.data?.data || runtimeConfig);
+      toast.success('Runtime configuration saved.');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not save runtime configuration.');
+    } finally {
+      setRuntimeConfigSaving(false);
     }
   };
 
@@ -822,12 +862,13 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         {/* Section Tabs & Search */}
         <section className="mt-10">
           <div className="flex flex-col gap-4 border-b border-white/10 pb-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5 sm:grid-cols-4 md:grid-cols-10">
+            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5 sm:grid-cols-4 md:grid-cols-11">
               {[
                 ['deliveries', Film, 'Deliveries'],
                 ['users', Users, 'Accounts'],
                 ['portfolio', Globe2, 'Portfolio'],
                 ['support', MessageCircle, 'Support'],
+                ['configuration', Settings2, 'Config'],
                 ['payments', ReceiptText, 'Payments'],
                 ['aiJobs', Bot, 'AI jobs'],
                 ['access', Eye, 'Client access'],
@@ -972,6 +1013,21 @@ export default function AdminDashboardPage({ admin, onLogout }) {
               {supportOverview && <>
                 <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><MetricCard icon={MessageCircle} label="All requests" value={number(supportOverview.summary?.total)} note="Support, privacy, and moderation queue" /><MetricCard icon={AlertCircle} label="Open" value={number(supportOverview.summary?.open)} note={`${number(supportOverview.summary?.urgent)} urgent requests`} /><MetricCard icon={Clock3} label="Pending" value={number(supportOverview.summary?.pending)} note={`${number(supportOverview.summary?.high)} high-priority requests`} /><MetricCard icon={ShieldCheck} label="Privacy" value={number(supportOverview.summary?.privacy)} note="Deletion and privacy requests" /><MetricCard icon={TriangleAlert} label="Reports" value={number(Number(supportOverview.summary?.abuse || 0) + Number(supportOverview.summary?.copyright || 0))} note={`${number(supportOverview.summary?.abuse)} abuse · ${number(supportOverview.summary?.copyright)} copyright`} /></section>
                 <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Support and moderation</p><h2 className="mt-1 text-xl font-medium">Requests that need a human reply</h2><p className="mt-2 text-xs leading-5 text-white/45">Every request has an owner, status, priority, response history, and moderation trail. Open one to reply, assign it, or make a reported delivery or portfolio private.</p></div><span className="text-xs text-white/35">Updated {shortDate(supportOverview.generatedAt)}</span></div><div className="mt-5 space-y-2">{(supportOverview.tickets || []).map(ticket => <button key={ticket.id} type="button" onClick={() => openSupportTicket(ticket)} className="w-full rounded-2xl border border-white/10 bg-white/[.025] p-4 text-left transition-colors hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff9b8e]/70"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><Status value={ticket.status} /><Status value={ticket.priority} /><span className="text-[10px] font-semibold uppercase tracking-[.12em] text-[#ff9b8e]">{ticket.category}</span><span className="font-mono text-[10px] text-white/35">{ticket.ticketNumber}</span></div><h3 className="mt-2 truncate text-sm font-semibold text-white">{ticket.subject}</h3><p className="mt-1 truncate text-xs text-white/40">{ticket.requester?.name || 'Requester'} · {ticket.requester?.email || 'No reply email'}{ticket.account?.studio ? ` · ${ticket.account.studio}` : ''}</p></div><span className="shrink-0 text-xs text-white/35">{shortDate(ticket.updatedAt)}</span></div><div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-white/40"><span>{number(ticket.messageCount)} messages</span><span>{number(ticket.internalNoteCount)} internal notes</span><span>{ticket.assignedAdmin?.name ? `Assigned to ${ticket.assignedAdmin.name}` : 'Unassigned'}</span>{ticket.delivery?.publicId && <span>Delivery {ticket.delivery.publicId}</span>}</div></button>)}{!supportOverview.tickets?.length && <p className="py-12 text-center text-sm text-white/45">No support requests match this search.</p>}</div></section>
+              </>}
+            </div>
+          )}
+
+          {/* Configuration tab */}
+          {!loading && tab === 'configuration' && (
+            <div className="mt-6 grid gap-4">
+              {panelErrors.configuration && !runtimeConfig && <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-5 text-sm text-amber-100">Runtime configuration is unavailable. {panelErrors.configuration}</div>}
+              {runtimeConfig && <>
+                <section className="flex flex-col gap-4 rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6 md:flex-row md:items-center md:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Configuration</p><h2 className="mt-1 text-xl font-medium">What the product is allowed to do</h2><p className="mt-2 max-w-2xl text-xs leading-5 text-white/45">Changes here affect new requests and worker behaviour. Provider keys never appear in this view; only safe configuration and health are shown.</p></div><button type="button" disabled={runtimeConfigSaving} onClick={saveRuntimeConfig} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-5 text-xs font-bold text-black transition-transform hover:-translate-y-0.5 active:scale-95 disabled:opacity-50"><Save size={15} />{runtimeConfigSaving ? 'Saving…' : 'Save configuration'}</button></section>
+                <section className="grid gap-5 lg:grid-cols-2"><div className="rounded-3xl border border-red-300/15 bg-red-300/[.04] p-5 sm:p-6"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-red-200/70">Maintenance</p><h3 className="mt-1 text-xl font-medium">Pause client traffic</h3><p className="mt-2 text-xs leading-5 text-white/45">Admin, sign-in, and support remain available while public product requests receive a clear 503 response.</p></div><ConfigToggle label="" checked={runtimeConfig.maintenance?.enabled} onChange={(value) => setRuntimeConfigField('maintenance', 'enabled', value)} /></div><label className="mt-4 block text-[10px] font-semibold uppercase tracking-[.14em] text-white/40">Maintenance message<textarea value={runtimeConfig.maintenance?.message || ''} onChange={(event) => setRuntimeConfigField('maintenance', 'message', event.target.value)} maxLength={240} rows={3} className="mt-2 w-full resize-y rounded-xl border border-white/10 bg-black/20 p-3 text-xs leading-5 normal-case tracking-normal text-white outline-none focus:border-[#ff9b8e]/60" /></label></div><div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Feature flags</p><h3 className="mt-1 text-xl font-medium">Product surfaces</h3><div className="mt-4 grid gap-2 sm:grid-cols-2"><ConfigToggle label="AI delivery pipeline" checked={runtimeConfig.featureFlags?.deliveryPipeline} onChange={(value) => setRuntimeConfigField('featureFlags', 'deliveryPipeline', value)} note="Analysis, direction, revisions, and narration jobs" /><ConfigToggle label="Veylo Portfolio" checked={runtimeConfig.featureFlags?.portfolio} onChange={(value) => setRuntimeConfigField('featureFlags', 'portfolio', value)} /><ConfigToggle label="Music catalogue" checked={runtimeConfig.featureFlags?.music} onChange={(value) => setRuntimeConfigField('featureFlags', 'music', value)} /><ConfigToggle label="Narration" checked={runtimeConfig.featureFlags?.narration} onChange={(value) => setRuntimeConfigField('featureFlags', 'narration', value)} /><ConfigToggle label="Volume deliveries" checked={runtimeConfig.featureFlags?.volumeDeliveries} onChange={(value) => setRuntimeConfigField('featureFlags', 'volumeDeliveries', value)} /><ConfigToggle label="Optional analytics" checked={runtimeConfig.featureFlags?.optionalAnalytics} onChange={(value) => setRuntimeConfigField('featureFlags', 'optionalAnalytics', value)} note="Still respects visitor consent when enabled" /></div></div></section>
+                <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Formats and plans</p><h3 className="mt-1 text-xl font-medium">Availability and limits</h3></div><span className="text-xs text-white/35">Prices are in Nigerian Naira</span></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><div className="grid gap-2 sm:grid-cols-2">{Object.values(runtimeConfig.formats || {}).map(format => <ConfigToggle key={format.id} label={format.label} checked={format.enabled} onChange={(value) => setRuntimeConfig(current => ({ ...current, formats: { ...(current.formats || {}), [format.id]: { ...format, enabled: value } } }))} note={format.id} />)}</div><div className="grid gap-3 sm:grid-cols-2"><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Free</p><label className="mt-3 block text-xs text-white/55">Deliveries / month<input type="number" min="0" max="100000" value={runtimeConfig.plans?.free?.deliveriesPerMonth ?? ''} onChange={(event) => setRuntimeConfig(current => ({ ...current, plans: { ...current.plans, free: { ...current.plans.free, deliveriesPerMonth: event.target.value === '' ? 0 : Number(event.target.value) } } }))} className="mt-1 min-h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-[#ff9b8e]/60" /></label><label className="mt-3 block text-xs text-white/55">Photos / delivery<input type="number" min="1" max="5000" value={runtimeConfig.plans?.free?.photosPerDelivery ?? ''} onChange={(event) => setRuntimeConfig(current => ({ ...current, plans: { ...current.plans, free: { ...current.plans.free, photosPerDelivery: Number(event.target.value) } } }))} className="mt-1 min-h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-[#ff9b8e]/60" /></label></div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Pro</p><label className="mt-3 block text-xs text-white/55">Monthly price (₦)<input type="number" min="0" max="100000000" value={runtimeConfig.plans?.pro?.monthlyPriceNaira ?? ''} onChange={(event) => setRuntimeConfig(current => ({ ...current, plans: { ...current.plans, pro: { ...current.plans.pro, monthlyPriceNaira: Number(event.target.value) } } }))} className="mt-1 min-h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-[#ff9b8e]/60" /></label><label className="mt-3 block text-xs text-white/55">Photos / delivery<input type="number" min="1" max="5000" value={runtimeConfig.plans?.pro?.photosPerDelivery ?? ''} onChange={(event) => setRuntimeConfig(current => ({ ...current, plans: { ...current.plans, pro: { ...current.plans.pro, photosPerDelivery: Number(event.target.value) } } }))} className="mt-1 min-h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-[#ff9b8e]/60" /></label><p className="mt-3 text-[11px] text-white/35">Storage: {bytes(runtimeConfig.plans?.pro?.personalStorageBytes)}</p></div></div></div></section>
+                <section className="grid gap-5 lg:grid-cols-2"><div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Narration and catalogue</p><h3 className="mt-1 text-xl font-medium">Audio defaults</h3><label className="mt-4 flex items-center gap-3 text-sm text-white/70"><input type="checkbox" checked={runtimeConfig.narration?.enabled !== false} onChange={(event) => setRuntimeConfigField('narration', 'enabled', event.target.checked)} className="h-4 w-4 accent-[#ff7867]" />Narration is available to photographers</label><label className="mt-4 block text-xs text-white/55">Default voice<select value={runtimeConfig.narration?.defaultVoiceId || ''} onChange={(event) => setRuntimeConfigField('narration', 'defaultVoiceId', event.target.value)} className="mt-2 min-h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-[#ff9b8e]/60">{(runtimeConfig.narration?.voices || []).map(voice => <option key={voice.id} value={voice.id}>{voice.name} · {voice.presentation} · {voice.tone}</option>)}</select></label><p className="mt-4 text-xs text-white/40">{number(runtimeConfig.music?.catalogueCount)} approved Pixabay tracks · {runtimeConfig.music?.verifiedCatalogue ? 'catalogue verified' : 'verification needed'}.</p></div><div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Providers</p><h3 className="mt-1 text-xl font-medium">Safe configuration status</h3><div className="mt-4 grid gap-2 sm:grid-cols-2">{Object.entries(runtimeConfig.providers || {}).map(([key, provider]) => <div key={key} className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-white">{provider.provider || key}</span><Status value={provider.configured ? 'active' : 'disabled'} /></div><p className="mt-2 text-[11px] leading-5 text-white/40">{provider.model || provider.from || (provider.enabled === false ? 'Disabled' : 'Configured')}</p></div>)}</div></div></section>
+                <section className="grid gap-5 lg:grid-cols-2"><div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Retention rules</p><h3 className="mt-1 text-xl font-medium">When retained Pro data is removed</h3><div className="mt-4 grid gap-3 sm:grid-cols-3">{[['proRetentionDays','Pro retention (days)'],['orphanUploadHours','Orphan upload wait (hours)'],['workerIntervalHours','Worker interval (hours)']].map(([key,label]) => <label key={key} className="text-xs text-white/55">{label}<input type="number" min="1" max={key === 'proRetentionDays' ? 3650 : 168} value={runtimeConfig.retention?.[key] ?? ''} onChange={(event) => setRuntimeConfigField('retention', key, Number(event.target.value))} className="mt-1 min-h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-[#ff9b8e]/60" /></label>)}</div></div><div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Rate limits</p><h3 className="mt-1 text-xl font-medium">Abuse and load protection</h3><div className="mt-4 grid gap-3 sm:grid-cols-2">{Object.entries(runtimeConfig.rateLimits || {}).map(([key,value]) => <label key={key} className="text-xs text-white/55">{key.replace(/([A-Z])/g, ' $1')}<input type="number" min="1" value={value} onChange={(event) => setRuntimeConfigField('rateLimits', key, Number(event.target.value))} className="mt-1 min-h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-[#ff9b8e]/60" /></label>)}</div></div></section>
+                <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Email templates</p><h3 className="mt-1 text-xl font-medium">Which system emails may send</h3><div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{(runtimeConfig.emailTemplates || []).map(template => <ConfigToggle key={template.id} label={template.label} checked={template.enabled} onChange={(value) => setRuntimeConfig(current => ({ ...current, emailTemplates: (current.emailTemplates || []).map(item => item.id === template.id ? { ...item, enabled: value } : item) }))} note={template.id} />)}</div></section>
               </>}
             </div>
           )}

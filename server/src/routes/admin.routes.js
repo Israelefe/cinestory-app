@@ -41,6 +41,8 @@ import {
   getSupportTicketDetail,
   updateSupportTicket,
   moderateSupportTicket,
+  getRuntimeConfiguration,
+  updateRuntimeConfiguration,
   getAllStories,
   getAllDeliveries,
   getPayments,
@@ -152,6 +154,8 @@ router.get('/support/tickets', getSupportOverview);
 router.get('/support/tickets/:id', getSupportTicketDetail);
 router.patch('/support/tickets/:id', updateSupportTicket);
 router.post('/support/tickets/:id/moderate', moderateSupportTicket);
+router.get('/configuration', getRuntimeConfiguration);
+router.patch('/configuration', updateRuntimeConfiguration);
 router.get('/payments', getPayments);
 router.get('/finance', getFinanceOverview);
 router.get('/finance/reconcile', reconcileFinanceWithPaystack);

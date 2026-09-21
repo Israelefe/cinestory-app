@@ -7,6 +7,7 @@ import BillingEvent from '../models/BillingEvent.js';
 import { PRO_PRICE_KOBO, publicPlans } from '../config/plans.js';
 import { resolveEntitlements } from '../services/entitlement.service.js';
 import { billingConfigured, decryptBillingToken, encryptBillingToken, paystackRequest, validateConfiguredPlan, verifyPaystackSignature } from '../services/paystack.service.js';
+import { getRuntimeConfig } from '../services/runtimeConfig.service.js';
 
 function addOneMonth(value = new Date()) {
   const date = new Date(value);
@@ -35,7 +36,9 @@ async function grantPro(userId) {
 }
 
 async function beginProRetention(userId) {
-  await User.updateOne({ _id: userId }, { $set: { plan: 'free', proRetentionUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) } });
+  const runtime = await getRuntimeConfig();
+  const days = Math.max(1, Number(runtime.retention?.proRetentionDays) || 30);
+  await User.updateOne({ _id: userId }, { $set: { plan: 'free', proRetentionUntil: new Date(Date.now() + days * 24 * 60 * 60 * 1000) } });
 }
 
 async function syncPlanAfterSubscriptionEnds(userId, endedSubscriptionId) {

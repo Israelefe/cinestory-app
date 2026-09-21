@@ -7,9 +7,11 @@ import { removeStorageAsset } from './storageMedia.service.js';
 import { cloudinary, configureCloudinary } from './cloudinary.service.js';
 import { recordWorkerHeartbeat } from './workerHeartbeat.service.js';
 import { recordAnalyticsEventAsync } from './analytics.service.js';
+import { getRuntimeConfig } from './runtimeConfig.service.js';
 
 let timer;
 let running = false;
+let lastRunAt = 0;
 
 async function referencedMedia(ids, resourceType) {
   const referenced = new Set();
@@ -30,9 +32,9 @@ async function referencedMedia(ids, resourceType) {
   return referenced;
 }
 
-async function purgeOrphanedUploads(now) {
+async function purgeOrphanedUploads(now, orphanUploadHours = 2) {
   if (!configureCloudinary()) return;
-  const cutoff = now.getTime() - 2 * 60 * 60 * 1000;
+  const cutoff = now.getTime() - Math.max(1, Number(orphanUploadHours) || 2) * 60 * 60 * 1000;
   for (const resourceType of ['image', 'video']) {
     let nextCursor;
     let pages = 0;
@@ -54,6 +56,9 @@ export async function purgeExpiredProData(now = new Date()) {
   if (running) return;
   running = true;
   try {
+    const runtime = await getRuntimeConfig();
+    const retention = runtime.retention || {};
+    const retentionDays = Math.max(1, Number(retention.proRetentionDays) || 30);
     await recordWorkerHeartbeat('retention', { status: 'busy', stage: 'retention-scan' });
     const expiredOverrides = await User.find({ 'planOverride.expiresAt': { $lte: now } }).select('_id').limit(100).lean();
     for (const account of expiredOverrides) {
@@ -66,7 +71,7 @@ export async function purgeExpiredProData(now = new Date()) {
     const endedSubscriptions = await Subscription.find({ status: { $in: ['past_due', 'canceling'] }, $or: [{ status: 'past_due', graceEndsAt: { $lte: now } }, { status: 'canceling', paidThrough: { $lte: now } }] }).select('userId');
     for (const subscription of endedSubscriptions) {
       subscription.status = 'expired'; subscription.canceledAt ||= now; await subscription.save();
-      await User.updateOne({ _id: subscription.userId }, { $set: { plan: 'free', proRetentionUntil: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000) } });
+      await User.updateOne({ _id: subscription.userId }, { $set: { plan: 'free', proRetentionUntil: new Date(now.getTime() + retentionDays * 24 * 60 * 60 * 1000) } });
     }
     const users = await User.find({ proRetentionUntil: { $lte: now } }).select('_id').limit(50).lean();
     for (const user of users) {
@@ -81,7 +86,7 @@ export async function purgeExpiredProData(now = new Date()) {
         User.updateOne({ _id: user._id }, { $set: { storageUsedBytes: 0 }, $unset: { proRetentionUntil: 1 } })
       ]);
     }
-    await purgeOrphanedUploads(now);
+    await purgeOrphanedUploads(now, retention.orphanUploadHours);
   } catch (error) {
     console.error('[retention]', error.message);
     recordAnalyticsEventAsync({ name: 'storage.retention.failed', source: 'system', actorType: 'system', status: 'failed', errorCode: error.code || 'RETENTION_FAILED', metadata: { surface: 'retention' } });
@@ -95,8 +100,14 @@ export async function purgeExpiredProData(now = new Date()) {
 
 export function startRetentionWorker() {
   if (timer) return;
-  const run = () => purgeExpiredProData();
+  const run = async () => {
+    const runtime = await getRuntimeConfig();
+    const intervalHours = Math.max(1, Number(runtime.retention?.workerIntervalHours) || 6);
+    if (lastRunAt && Date.now() - lastRunAt < intervalHours * 60 * 60 * 1000) return;
+    lastRunAt = Date.now();
+    await purgeExpiredProData();
+  };
   setTimeout(run, 15_000).unref?.();
-  timer = setInterval(run, 6 * 60 * 60 * 1000);
+  timer = setInterval(run, 15 * 60 * 1000);
   timer.unref?.();
 }

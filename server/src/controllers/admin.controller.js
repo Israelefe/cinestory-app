@@ -38,6 +38,7 @@ import { removeDeliveryMedia } from '../services/deliveryMedia.service.js';
 import { NARRATION_RENDER_VERSION } from '../services/narration.service.js';
 import { DELIVERY_SOUNDTRACKS, deliverySoundtrackFile } from '../constants/deliverySoundtracks.js';
 import { DEFAULT_NARRATION_VOICE_ID, NARRATION_VOICES } from '../constants/narrationVoices.js';
+import { FORMAT_IDS, FORMAT_LABELS, getRuntimeConfig, updateRuntimeConfig } from '../services/runtimeConfig.service.js';
 
 function escaped(value) { return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
@@ -1832,6 +1833,62 @@ export async function moderateSupportTicket(req, res) {
   } catch (error) {
     console.error('[admin/support-moderation]', error.message);
     res.status(500).json({ success: false, message: 'We could not apply that moderation action.' });
+  }
+}
+
+const runtimePlanPatchSchema = z.object({
+  deliveriesPerMonth: z.number().int().min(0).max(100000).nullable().optional(),
+  photosPerDelivery: z.number().int().min(1).max(5000).optional(),
+  branding: z.enum(['veylo', 'studio']).optional(),
+  portfolio: z.boolean().optional(),
+  personalStorageBytes: z.number().int().min(0).max(10 * 1024 ** 4).optional(),
+  formats: z.array(z.enum(FORMAT_IDS)).max(FORMAT_IDS.length).optional()
+}).strict();
+
+const runtimeConfigPatchSchema = z.object({
+  plans: z.object({ free: runtimePlanPatchSchema.optional(), pro: runtimePlanPatchSchema.optional() }).strict().optional(),
+  formats: z.array(z.object({ id: z.enum(FORMAT_IDS), label: z.string().trim().min(2).max(80), enabled: z.boolean() }).strict()).max(FORMAT_IDS.length).optional(),
+  featureFlags: z.object({ deliveryPipeline: z.boolean().optional(), portfolio: z.boolean().optional(), music: z.boolean().optional(), narration: z.boolean().optional(), volumeDeliveries: z.boolean().optional(), optionalAnalytics: z.boolean().optional() }).strict().optional(),
+  maintenance: z.object({ enabled: z.boolean(), message: z.string().trim().min(10).max(240) }).strict().optional(),
+  narration: z.object({ enabled: z.boolean().optional(), defaultVoiceId: z.enum(NARRATION_VOICES.map(voice => voice.id)).optional() }).strict().optional(),
+  retention: z.object({ proRetentionDays: z.number().int().min(1).max(3650).optional(), orphanUploadHours: z.number().int().min(1).max(168).optional(), workerIntervalHours: z.number().int().min(1).max(168).optional() }).strict().optional(),
+  rateLimits: z.object({ authAttemptsPer15m: z.number().int().min(1).max(1000).optional(), registrationsPerHour: z.number().int().min(1).max(1000).optional(), emailCodesPerHour: z.number().int().min(1).max(1000).optional(), aiGenerationsPerHour: z.number().int().min(1).max(1000).optional(), supportTicketsPerHour: z.number().int().min(1).max(100).optional(), publicAccessPer15m: z.number().int().min(1).max(10000).optional(), mediaPerHour: z.number().int().min(1).max(100000).optional(), uploadsPerHour: z.number().int().min(1).max(100000).optional(), clientDeliveryEmailsPerHour: z.number().int().min(1).max(1000).optional(), billingActionsPerHour: z.number().int().min(1).max(1000).optional(), profileUpdatesPerHour: z.number().int().min(1).max(1000).optional() }).strict().optional(),
+  emailTemplates: z.array(z.object({ id: z.string().trim().regex(/^[a-z0-9-]+$/).max(60), label: z.string().trim().min(2).max(100), enabled: z.boolean() }).strict()).max(50).optional()
+}).strict();
+
+export async function getRuntimeConfiguration(req, res) {
+  try {
+    const config = await getRuntimeConfig({ fresh: true });
+    res.json({ success: true, data: config });
+  } catch (error) {
+    console.error('[admin/configuration]', error.message);
+    res.status(500).json({ success: false, message: 'We could not load runtime configuration.' });
+  }
+}
+
+export async function updateRuntimeConfiguration(req, res) {
+  try {
+    const parsed = runtimeConfigPatchSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ success: false, message: parsed.error.issues[0]?.message || 'That configuration change is not valid.' });
+    const current = await getRuntimeConfig({ fresh: true });
+    const patch = { ...parsed.data };
+    if (patch.plans) patch.plans = { free: { ...(current.plans?.free || {}), ...(patch.plans.free || {}) }, pro: { ...(current.plans?.pro || {}), ...(patch.plans.pro || {}) } };
+    if (patch.formats) patch.formats = Object.fromEntries(patch.formats.map(format => [format.id, { id: format.id, label: format.label || FORMAT_LABELS[format.id], enabled: format.enabled }]));
+    if (patch.featureFlags) patch.featureFlags = { ...(current.featureFlags || {}), ...patch.featureFlags };
+    if (patch.maintenance) patch.maintenance = { ...(current.maintenance || {}), ...patch.maintenance };
+    if (patch.narration) {
+      patch.narration = { ...(current.narration || {}), ...patch.narration };
+      if (patch.narration.enabled !== undefined) patch.featureFlags = { ...(current.featureFlags || {}), ...(patch.featureFlags || {}), narration: patch.narration.enabled };
+    }
+    if (patch.retention) patch.retention = { ...(current.retention || {}), ...patch.retention };
+    if (patch.rateLimits) patch.rateLimits = { ...(current.rateLimits || {}), ...patch.rateLimits };
+    if (patch.emailTemplates) patch.emailTemplates = patch.emailTemplates.map(template => ({ ...(current.emailTemplates || []).find(item => item.id === template.id), ...template }));
+    const updated = await updateRuntimeConfig(patch, adminId(req));
+    await AdminAudit.create({ adminId: adminId(req), action: 'configuration.updated', resourceType: 'RuntimeConfig', resourceId: 'global', details: { changedSections: Object.keys(patch), before: Object.fromEntries(Object.keys(patch).map(key => [key, current[key]])), after: Object.fromEntries(Object.keys(patch).map(key => [key, updated[key]])) } });
+    res.json({ success: true, data: updated, message: 'Runtime configuration saved.' });
+  } catch (error) {
+    console.error('[admin/configuration-update]', error.message);
+    res.status(500).json({ success: false, message: 'We could not save runtime configuration.' });
   }
 }
 

@@ -23,6 +23,7 @@ import { DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
 import { DELIVERY_SOUNDTRACKS, deliverySoundtrack, deliverySoundtrackFile } from '../constants/deliverySoundtracks.js';
 import { getNarrationVoiceCatalogue, NARRATION_RENDER_VERSION } from '../services/narration.service.js';
 import { recordAnalyticsEventAsync } from '../services/analytics.service.js';
+import { isRuntimeFeatureEnabled } from '../services/runtimeConfig.service.js';
 
 const createSchema = z.object({ clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().min(2).max(80), brief: z.string().trim().min(1) }).strict();
 const confirmSchema = z.object({ publicId: z.string().min(5).max(500), version: z.union([z.string(), z.number()]), signature: z.string().min(20).max(200), resourceType: z.enum(['image']).default('image'), originalFilename: z.string().trim().max(180).default('photograph') }).strict();
@@ -583,6 +584,7 @@ export async function deleteSoundtrack(req, res) {
 
 export async function selectCuratedSoundtrack(req, res) {
   try {
+    if (!(await isRuntimeFeatureEnabled('music', true))) return res.status(503).json({ success: false, message: 'Soundtrack selection is temporarily unavailable.' });
     const parsed = z.object({ trackId: z.string().trim().min(3).max(80) }).strict().safeParse(req.body);
     if (!parsed.success) return failValidation(res, parsed);
     const track = deliverySoundtrack(parsed.data.trackId);
@@ -637,7 +639,7 @@ export async function selectCuratedSoundtrack(req, res) {
 
 export async function queueAnalysis(req, res) {
   try {
-    if (process.env.DELIVERY_PIPELINE_ENABLED !== 'true') return res.status(503).json({ success: false, message: 'The AI Creative Director is not available yet.' });
+    if (!(await isRuntimeFeatureEnabled('deliveryPipeline', process.env.DELIVERY_PIPELINE_ENABLED === 'true'))) return res.status(503).json({ success: false, message: 'The AI Creative Director is not available yet.' });
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
     if (!delivery.assets.length) return res.status(400).json({ success: false, message: 'Upload at least one finished photograph first.' });
@@ -655,11 +657,14 @@ export async function queueAnalysis(req, res) {
 
 export async function queueDirection(req, res) {
   try {
-    if (process.env.DELIVERY_PIPELINE_ENABLED !== 'true') return res.status(503).json({ success: false, message: 'The AI Creative Director is not available yet.' });
+    if (!(await isRuntimeFeatureEnabled('deliveryPipeline', process.env.DELIVERY_PIPELINE_ENABLED === 'true'))) return res.status(503).json({ success: false, message: 'The AI Creative Director is not available yet.' });
     const parsed = formatSchema.safeParse(req.body);
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery?.formatRecommendations?.length) return res.status(409).json({ success: false, message: 'Let Veylo read the complete shoot before choosing a format.' });
+    const user = await User.findById(req.user.id);
+    const entitlements = await resolveEntitlements(user, { includeUsage: false });
+    if (!entitlements.features.formats.includes(parsed.data.format)) return res.status(403).json({ success: false, code: 'FORMAT_UNAVAILABLE', message: 'That delivery format is currently unavailable.' });
     const running = await DeliveryJob.findOne({ deliveryId: delivery._id, status: { $in: ['queued', 'running'] } });
     if (running) return res.status(409).json({ success: false, message: 'Veylo is already working on this delivery.' });
     const job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'direct', stage: 'queued', input: parsed.data, provider: CREATIVE_DIRECTOR_PROVIDER, promptVersion: CREATIVE_DIRECTOR_PROMPT_VERSION });
@@ -675,7 +680,7 @@ export async function queueDirection(req, res) {
 
 export async function queueNarration(req, res) {
   try {
-    if (process.env.DELIVERY_PIPELINE_ENABLED !== 'true') return res.status(503).json({ success: false, message: 'Narration is not available yet.' });
+    if (!(await isRuntimeFeatureEnabled('deliveryPipeline', process.env.DELIVERY_PIPELINE_ENABLED === 'true')) || !(await isRuntimeFeatureEnabled('narration', true))) return res.status(503).json({ success: false, message: 'Narration is not available yet.' });
     const parsed = narrationSchema.safeParse(req.body);
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
@@ -692,7 +697,7 @@ export async function queueNarration(req, res) {
 
 export async function queueRevision(req, res) {
   try {
-    if (process.env.DELIVERY_PIPELINE_ENABLED !== 'true') return res.status(503).json({ success: false, message: 'The AI Creative Director is not available yet.' });
+    if (!(await isRuntimeFeatureEnabled('deliveryPipeline', process.env.DELIVERY_PIPELINE_ENABLED === 'true'))) return res.status(503).json({ success: false, message: 'The AI Creative Director is not available yet.' });
     const parsed = revisionSchema.safeParse(req.body);
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);

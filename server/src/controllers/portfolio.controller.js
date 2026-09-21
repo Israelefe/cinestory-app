@@ -11,6 +11,7 @@ import { CREATIVE_DIRECTOR_PROMPT_VERSION, CREATIVE_DIRECTOR_PROVIDER } from '..
 import { PORTFOLIO_HANDLE_CHANGE_COOLDOWN_MS, PORTFOLIO_HANDLE_REDIRECT_MS, PORTFOLIO_HANDLE_RESERVATION_MS, STUDIO_NAME_CHANGE_COOLDOWN_MS, isoDate, nextChangeAt } from '../constants/profilePolicy.js';
 import { tokenDigest } from '../utils/auth.js';
 import { recordAnalyticsEventAsync } from '../services/analytics.service.js';
+import { isRuntimeFeatureEnabled } from '../services/runtimeConfig.service.js';
 
 const handleSchema = z.string().trim().toLowerCase().min(3).max(40).regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/, 'Use letters, numbers, and single hyphens.');
 const updateSchema = z.object({
@@ -169,7 +170,7 @@ export async function unpublishMyPortfolio(req, res) {
 
 export async function directMyPortfolio(req, res) {
   try {
-    if (process.env.DELIVERY_PIPELINE_ENABLED !== 'true') return res.status(503).json({ success: false, message: 'The AI Creative Director is not available yet.' });
+    if (!(await isRuntimeFeatureEnabled('deliveryPipeline', process.env.DELIVERY_PIPELINE_ENABLED === 'true')) || !(await isRuntimeFeatureEnabled('portfolio', true))) return res.status(503).json({ success: false, message: 'The AI Creative Director is not available yet.' });
     const user = await User.findById(req.user.id);
     const entitlements = await resolveEntitlements(user, { includeUsage: false });
     if (entitlements.features.portfolioMode !== 'public') return res.status(403).json({ success: false, code: 'PRO_REQUIRED', message: 'Veylo Portfolio is included with Pro.' });

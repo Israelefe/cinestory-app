@@ -21,6 +21,7 @@ import { startDeliveryWorker } from './src/services/deliveryWorker.service.js';
 import { startRetentionWorker } from './src/services/retention.service.js';
 import { startPortfolioWorker } from './src/services/portfolioWorker.service.js';
 import { seedAdminFromEnv } from './src/utils/seedAdmin.js';
+import { maintenanceMiddleware } from './src/middleware/maintenance.middleware.js';
 
 dotenv.config();
 
@@ -87,6 +88,7 @@ app.use((req, res, next) => {
 app.use(cookieParser());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
+app.use(maintenanceMiddleware);
 
 app.get('/health', (req, res) => res.json({ status: 'healthy', app: 'Veylo API Server' }));
 app.use('/api/v1/auth', authRoutes);
