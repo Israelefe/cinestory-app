@@ -3,6 +3,7 @@ import StorageAsset from '../models/StorageAsset.js';
 import User from '../models/User.js';
 import Subscription from '../models/Subscription.js';
 import Delivery from '../models/Delivery.js';
+import AnalyticsEvent from '../models/AnalyticsEvent.js';
 import { removeStorageAsset } from './storageMedia.service.js';
 import { cloudinary, configureCloudinary } from './cloudinary.service.js';
 import { recordWorkerHeartbeat } from './workerHeartbeat.service.js';
@@ -59,7 +60,10 @@ export async function purgeExpiredProData(now = new Date()) {
     const runtime = await getRuntimeConfig();
     const retention = runtime.retention || {};
     const retentionDays = Math.max(1, Number(retention.proRetentionDays) || 30);
-    await recordWorkerHeartbeat('retention', { status: 'busy', stage: 'retention-scan' });
+    const analyticsRetentionDays = Math.max(30, Number(retention.analyticsRetentionDays) || 365);
+    const analyticsCutoff = new Date(now.getTime() - analyticsRetentionDays * 24 * 60 * 60 * 1000);
+    const analyticsPurge = await AnalyticsEvent.deleteMany({ occurredAt: { $lt: analyticsCutoff } });
+    await recordWorkerHeartbeat('retention', { status: 'busy', stage: 'retention-scan', details: { analyticsEventsRemoved: Number(analyticsPurge.deletedCount || 0), analyticsRetentionDays } });
     const expiredOverrides = await User.find({ 'planOverride.expiresAt': { $lte: now } }).select('_id').limit(100).lean();
     for (const account of expiredOverrides) {
       const paid = await Subscription.exists({ userId: account._id, $or: [

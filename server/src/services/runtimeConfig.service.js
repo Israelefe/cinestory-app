@@ -49,7 +49,7 @@ export function defaultRuntimeConfig() {
     providers: providerState(),
     narration: { enabled: true, provider: 'Deepgram Flux', defaultVoiceId: DEFAULT_NARRATION_VOICE_ID, voices: NARRATION_VOICES.map(voice => ({ id: voice.id, name: voice.name, presentation: voice.presentation, tone: voice.tone, bestFor: voice.bestFor })) },
     music: { enabled: true, catalogueCount: DELIVERY_SOUNDTRACKS.length, licence: 'Pixabay Content License', source: 'Pixabay', verifiedCatalogue: true },
-    retention: { proRetentionDays: 30, orphanUploadHours: 2, workerIntervalHours: 6 },
+    retention: { proRetentionDays: 30, orphanUploadHours: 2, workerIntervalHours: 6, analyticsRetentionDays: 365 },
     rateLimits: { authAttemptsPer15m: 30, registrationsPerHour: 10, emailCodesPerHour: 12, aiGenerationsPerHour: 12, supportTicketsPerHour: 8, publicAccessPer15m: 80, mediaPerHour: 700, uploadsPerHour: 650, clientDeliveryEmailsPerHour: 20, billingActionsPerHour: 30, profileUpdatesPerHour: 20, analyticsEventsPer15m: 300 },
     emailTemplates: [
       { id: 'verification', label: 'Email verification', enabled: true },

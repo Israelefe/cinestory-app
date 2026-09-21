@@ -5,17 +5,17 @@ import AnalyticsEvent from '../models/AnalyticsEvent.js';
 // metadata, even if a future caller accidentally passes them.
 const blockedKey = /password|passcode|pin|token|secret|credential|email|phone|client.?name|studio.?name|full.?name|caption|brief|message|content|signed.?url|original.?filename|filename|photo|pixel|audio|keystroke/i;
 
-function clean(value, depth = 0) {
+export function sanitizeAnalyticsMetadata(value, depth = 0) {
   if (depth > 3 || value === null || value === undefined) return undefined;
   if (typeof value === 'string') return value.slice(0, 180);
   if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
   if (typeof value === 'boolean') return value;
-  if (Array.isArray(value)) return value.slice(0, 30).map(item => clean(item, depth + 1)).filter(item => item !== undefined);
+  if (Array.isArray(value)) return value.slice(0, 30).map(item => sanitizeAnalyticsMetadata(item, depth + 1)).filter(item => item !== undefined);
   if (typeof value === 'object') {
     return Object.fromEntries(Object.entries(value)
       .filter(([key]) => !blockedKey.test(key))
       .slice(0, 40)
-      .map(([key, item]) => [key.slice(0, 60), clean(item, depth + 1)])
+      .map(([key, item]) => [key.slice(0, 60), sanitizeAnalyticsMetadata(item, depth + 1)])
       .filter(([, item]) => item !== undefined));
   }
   return undefined;
@@ -23,7 +23,7 @@ function clean(value, depth = 0) {
 
 export async function recordAnalyticsEvent(input = {}) {
   if (!input.name) return null;
-  const metadata = clean(input.metadata || {});
+  const metadata = sanitizeAnalyticsMetadata(input.metadata || {});
   return AnalyticsEvent.create({
     name: String(input.name).trim().slice(0, 120),
     version: Number.isInteger(input.version) ? input.version : 1,

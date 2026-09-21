@@ -10,6 +10,7 @@
     "verify:client-ip": "node scripts/verify-client-ip.mjs",
     "verify:delivery-v2": "node scripts/verify-delivery-v2.mjs",
     "verify:soundtracks": "node scripts/verify-soundtrack-catalogue.mjs",
+    "verify:analytics": "node scripts/verify-analytics-privacy.mjs",
     "verify:security": "node scripts/security-audit-delivery-v2.mjs",
     "verify:smoke": "node scripts/verify-production-smoke.mjs"
   },
