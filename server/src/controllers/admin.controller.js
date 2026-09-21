@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
+import { z } from 'zod';
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import PhotoStory from '../models/PhotoStory.js';
@@ -19,6 +20,7 @@ import AdminAudit from '../models/AdminAudit.js';
 import AdminAccountNote from '../models/AdminAccountNote.js';
 import AccountDeletionRequest from '../models/AccountDeletionRequest.js';
 import SupportAccessGrant from '../models/SupportAccessGrant.js';
+import AdminUser from '../models/AdminUser.js';
 import Session from '../models/Session.js';
 import Portfolio from '../models/Portfolio.js';
 import StorageAsset from '../models/StorageAsset.js';
@@ -26,6 +28,7 @@ import DeliveryView from '../models/DeliveryView.js';
 import StoryView from '../models/StoryView.js';
 import PhotoLike from '../models/PhotoLike.js';
 import DeliveryShareGrant from '../models/DeliveryShareGrant.js';
+import SupportTicket from '../models/SupportTicket.js';
 import { paystackRequest } from '../services/paystack.service.js';
 import { billingConfigured } from '../services/paystack.service.js';
 import { checkCloudinaryConnection, cloudinary, configureCloudinary } from '../services/cloudinary.service.js';
@@ -1600,6 +1603,235 @@ export async function adminUnpublishPortfolio(req, res) {
   } catch (error) {
     console.error('[admin/portfolio-unpublish]', error.message);
     res.status(500).json({ success: false, message: 'We could not make that portfolio private.' });
+  }
+}
+
+const supportCreateSchema = z.object({
+  name: z.string().trim().min(2).max(100),
+  email: z.string().trim().email().max(254),
+  subject: z.string().trim().min(3).max(160),
+  message: z.string().trim().min(10).max(4000),
+  deliveryPublicId: z.string().trim().max(120).optional(),
+  resourceType: z.enum(['delivery', 'portfolio', 'account', 'none']).default('none'),
+  resourceId: z.string().trim().max(160).optional()
+}).strict();
+
+const supportUpdateSchema = z.object({
+  status: z.enum(['open', 'pending', 'resolved', 'closed']).optional(),
+  priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
+  category: z.enum(['delivery', 'upload', 'billing', 'privacy', 'abuse', 'copyright', 'account', 'format', 'portfolio', 'other']).optional(),
+  assignedAdminId: z.string().trim().optional(),
+  message: z.string().trim().min(1).max(4000).optional(),
+  internal: z.boolean().default(false)
+}).strict();
+
+const supportModerationSchema = z.object({
+  action: z.enum(['takedown', 'restore', 'copyright_hold', 'abuse_review']),
+  targetType: z.enum(['delivery', 'portfolio', 'account']),
+  targetId: z.string().trim().max(160).optional(),
+  reason: z.string().trim().min(8).max(1000)
+}).strict();
+
+function supportText(value, max = 4000) {
+  return String(value || '').replace(/[<>]/g, '').trim().slice(0, max);
+}
+
+function supportCategory(subject) {
+  const value = String(subject || '').toLowerCase();
+  if (value.includes('delivery')) return 'delivery';
+  if (value.includes('format')) return 'format';
+  if (value.includes('portfolio')) return 'portfolio';
+  if (value.includes('pro') || value.includes('billing') || value.includes('payment')) return 'billing';
+  if (value.includes('privacy') || value.includes('deletion')) return 'privacy';
+  if (value.includes('upload')) return 'upload';
+  if (value.includes('account') || value.includes('sign')) return 'account';
+  return 'other';
+}
+
+function supportSummary(ticket) {
+  const messages = Array.isArray(ticket.messages) ? ticket.messages : [];
+  const latest = messages[messages.length - 1];
+  return {
+    id: ticket._id,
+    ticketNumber: ticket.ticketNumber,
+    requester: { name: ticket.requesterName, email: ticket.requesterEmail },
+    account: ticket.userId ? { id: ticket.userId._id || ticket.userId, name: ticket.userId.name, email: ticket.userId.email, studio: ticket.userId.studio?.name || '' } : null,
+    subject: ticket.subject,
+    category: ticket.category,
+    status: ticket.status,
+    priority: ticket.priority,
+    delivery: ticket.deliveryId ? { id: ticket.deliveryId._id || ticket.deliveryId, publicId: ticket.deliveryId.publicId, title: ticket.deliveryId.title, status: ticket.deliveryId.status } : (ticket.deliveryPublicId ? { publicId: ticket.deliveryPublicId } : null),
+    resourceType: ticket.resourceType,
+    resourceId: ticket.resourceId || '',
+    assignedAdmin: ticket.assignedAdminId ? { id: ticket.assignedAdminId._id || ticket.assignedAdminId, name: ticket.assignedAdminId.name, username: ticket.assignedAdminId.username, role: ticket.assignedAdminId.role } : null,
+    messageCount: messages.length,
+    internalNoteCount: messages.filter(message => message.internal).length,
+    latestMessage: latest ? { message: latest.message, internal: latest.internal, authorType: latest.authorType, createdAt: latest.createdAt } : null,
+    moderationCount: Array.isArray(ticket.moderationActions) ? ticket.moderationActions.length : 0,
+    createdAt: ticket.createdAt,
+    updatedAt: ticket.updatedAt,
+    lastResponseAt: ticket.lastResponseAt || null,
+    resolvedAt: ticket.resolvedAt || null,
+    closedAt: ticket.closedAt || null
+  };
+}
+
+export async function createSupportTicket(req, res) {
+  try {
+    const parsed = supportCreateSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ success: false, message: parsed.error.issues[0]?.message || 'Please check the support form.' });
+    const body = parsed.data;
+    const signedInUser = req.user?.id ? await User.findById(req.user.id).select('_id name email') : null;
+    const delivery = body.deliveryPublicId ? await Delivery.findOne({ publicId: body.deliveryPublicId }).select('_id publicId userId title status').lean() : null;
+    const associatedDelivery = delivery && (!signedInUser || String(delivery.userId) === String(signedInUser._id)) ? delivery : null;
+    const ticket = await SupportTicket.create({
+      userId: signedInUser?._id,
+      requesterName: supportText(signedInUser?.name || body.name, 100),
+      requesterEmail: String(signedInUser?.email || body.email).trim().toLowerCase().slice(0, 254),
+      subject: supportText(body.subject, 160),
+      category: supportCategory(body.subject),
+      deliveryId: associatedDelivery?._id,
+      deliveryPublicId: supportText(body.deliveryPublicId, 120),
+      resourceType: body.resourceType,
+      resourceId: supportText(body.resourceId, 160),
+      messages: [{ authorType: 'requester', message: supportText(body.message), internal: false }]
+    });
+    res.status(201).json({ success: true, data: { ticketNumber: ticket.ticketNumber, status: ticket.status }, message: 'Your support request is with the Veylo team.' });
+  } catch (error) {
+    console.error('[support/create]', error.message);
+    res.status(500).json({ success: false, message: 'We could not send your support request. Please email info@veylo.com.ng.' });
+  }
+}
+
+export async function getSupportOverview(req, res) {
+  try {
+    const status = ['open', 'pending', 'resolved', 'closed'].includes(String(req.query.status || '')) ? String(req.query.status) : 'all';
+    const category = ['delivery', 'upload', 'billing', 'privacy', 'abuse', 'copyright', 'account', 'format', 'portfolio', 'other'].includes(String(req.query.category || '')) ? String(req.query.category) : 'all';
+    const priority = ['low', 'normal', 'high', 'urgent'].includes(String(req.query.priority || '')) ? String(req.query.priority) : 'all';
+    const search = String(req.query.search || '').trim().slice(0, 100);
+    const query = {};
+    if (status !== 'all') query.status = status;
+    if (category !== 'all') query.category = category;
+    if (priority !== 'all') query.priority = priority;
+    if (search) {
+      const pattern = { $regex: escaped(search), $options: 'i' };
+      query.$or = [{ ticketNumber: pattern }, { requesterName: pattern }, { requesterEmail: pattern }, { subject: pattern }, { deliveryPublicId: pattern }, { resourceId: pattern }];
+    }
+    const limit = Math.min(500, Math.max(1, Number.parseInt(req.query.limit, 10) || 250));
+    const [tickets, total, grouped] = await Promise.all([
+      SupportTicket.find(query).populate('userId', 'name email studio.name').populate('assignedAdminId', 'name username role').populate('deliveryId', 'publicId title status').sort({ priority: -1, updatedAt: -1 }).limit(limit).lean(),
+      SupportTicket.countDocuments(query),
+      SupportTicket.aggregate([{ $group: { _id: { status: '$status', category: '$category' }, count: { $sum: 1 } } }, { $sort: { count: -1 } }])
+    ]);
+    const summary = { total, open: 0, pending: 0, resolved: 0, closed: 0, urgent: 0, high: 0, privacy: 0, abuse: 0, copyright: 0 };
+    for (const ticket of tickets) {
+      summary[ticket.status] = (summary[ticket.status] || 0) + 1;
+      if (ticket.priority === 'urgent') summary.urgent += 1;
+      if (ticket.priority === 'high') summary.high += 1;
+      if (['privacy', 'abuse', 'copyright'].includes(ticket.category)) summary[ticket.category] += 1;
+    }
+    res.json({ success: true, data: { generatedAt: new Date(), summary, grouped, tickets: tickets.map(supportSummary), total } });
+  } catch (error) {
+    console.error('[admin/support-overview]', error.message);
+    res.status(500).json({ success: false, message: 'We could not load support requests.' });
+  }
+}
+
+export async function getSupportTicketDetail(req, res) {
+  try {
+    const ticketId = validId(req.params.id);
+    if (!ticketId) return res.status(400).json({ success: false, message: 'That support request identifier is invalid.' });
+    const ticket = await SupportTicket.findById(ticketId).populate('userId', 'name email studio.name plan accountStatus').populate('assignedAdminId', 'name username role').populate('deliveryId', 'publicId title clientName status format').lean();
+    if (!ticket) return res.status(404).json({ success: false, message: 'Support request not found.' });
+    res.json({ success: true, data: { ...supportSummary(ticket), messages: ticket.messages || [], moderationActions: ticket.moderationActions || [] } });
+  } catch (error) {
+    console.error('[admin/support-detail]', error.message);
+    res.status(500).json({ success: false, message: 'We could not open this support request.' });
+  }
+}
+
+export async function updateSupportTicket(req, res) {
+  try {
+    const ticketId = validId(req.params.id);
+    if (!ticketId) return res.status(400).json({ success: false, message: 'That support request identifier is invalid.' });
+    const parsed = supportUpdateSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ success: false, message: parsed.error.issues[0]?.message || 'That support update is not valid.' });
+    const ticket = await SupportTicket.findById(ticketId);
+    if (!ticket) return res.status(404).json({ success: false, message: 'Support request not found.' });
+    const before = { status: ticket.status, priority: ticket.priority, category: ticket.category, assignedAdminId: ticket.assignedAdminId || null };
+    if (parsed.data.assignedAdminId !== undefined) {
+      const assignedId = validId(parsed.data.assignedAdminId);
+      if (!assignedId) return res.status(400).json({ success: false, message: 'That administrator identifier is invalid.' });
+      const assigned = await AdminUser.findOne({ _id: assignedId, accountStatus: 'active' }).select('_id').lean();
+      if (!assigned) return res.status(404).json({ success: false, message: 'That administrator is not active.' });
+      ticket.assignedAdminId = assigned._id;
+    }
+    if (parsed.data.status) {
+      ticket.status = parsed.data.status;
+      if (parsed.data.status === 'resolved') ticket.resolvedAt = new Date();
+      if (parsed.data.status === 'closed') ticket.closedAt = new Date();
+      if (parsed.data.status === 'open' || parsed.data.status === 'pending') { ticket.resolvedAt = undefined; ticket.closedAt = undefined; }
+    }
+    if (parsed.data.priority) ticket.priority = parsed.data.priority;
+    if (parsed.data.category) ticket.category = parsed.data.category;
+    if (parsed.data.message) {
+      ticket.messages.push({ authorType: 'admin', adminId: adminId(req), message: supportText(parsed.data.message), internal: Boolean(parsed.data.internal) });
+      if (!parsed.data.internal) ticket.lastResponseAt = new Date();
+    }
+    await ticket.save();
+    await AdminAudit.create({ adminId: adminId(req), userId: ticket.userId, action: 'support.ticket_updated', resourceType: 'SupportTicket', resourceId: String(ticket._id), details: { before, after: { status: ticket.status, priority: ticket.priority, category: ticket.category, assignedAdminId: ticket.assignedAdminId || null }, messageAdded: Boolean(parsed.data.message), internal: Boolean(parsed.data.internal) } });
+    res.json({ success: true, data: supportSummary(ticket), message: 'Support request updated.' });
+  } catch (error) {
+    console.error('[admin/support-update]', error.message);
+    res.status(500).json({ success: false, message: 'We could not update this support request.' });
+  }
+}
+
+export async function moderateSupportTicket(req, res) {
+  try {
+    const ticketId = validId(req.params.id);
+    if (!ticketId) return res.status(400).json({ success: false, message: 'That support request identifier is invalid.' });
+    const parsed = supportModerationSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ success: false, message: parsed.error.issues[0]?.message || 'That moderation action is not valid.' });
+    const ticket = await SupportTicket.findById(ticketId);
+    if (!ticket) return res.status(404).json({ success: false, message: 'Support request not found.' });
+    const targetId = supportText(parsed.data.targetId || ticket.resourceId || ticket.deliveryPublicId, 160);
+    let outcome = 'Action recorded for review.';
+    let userId = ticket.userId;
+    if (parsed.data.action === 'takedown' && parsed.data.targetType === 'delivery' && targetId) {
+      const deliveryQuery = mongoose.isValidObjectId(targetId) ? { _id: targetId } : { publicId: targetId };
+      const delivery = await Delivery.findOne(deliveryQuery);
+      if (!delivery) return res.status(404).json({ success: false, message: 'The delivery named in this report was not found.' });
+      const before = { status: delivery.status, revokedAt: delivery.access?.revokedAt || null };
+      delivery.archivedFromStatus = delivery.status;
+      delivery.status = 'archived';
+      delivery.archivedAt = new Date();
+      delivery.access = delivery.access || {};
+      delivery.access.revokedAt = new Date();
+      await delivery.save();
+      userId = delivery.userId;
+      outcome = 'Delivery archived and its client link revoked.';
+      await AdminAudit.create({ adminId: adminId(req), userId: delivery.userId, action: 'moderation.delivery_takedown', resourceType: 'Delivery', resourceId: String(delivery._id), details: { before, after: { status: delivery.status, revokedAt: delivery.access.revokedAt }, ticketId: String(ticket._id), reason: supportText(parsed.data.reason, 1000) } });
+    } else if (parsed.data.action === 'takedown' && parsed.data.targetType === 'portfolio' && targetId) {
+      const portfolio = await Portfolio.findOne({ $or: [{ handle: targetId }, ...(mongoose.isValidObjectId(targetId) ? [{ _id: targetId }] : [])] });
+      if (!portfolio) return res.status(404).json({ success: false, message: 'The portfolio named in this report was not found.' });
+      portfolio.status = 'draft';
+      portfolio.publishedAt = undefined;
+      await portfolio.save();
+      userId = portfolio.userId;
+      outcome = 'Portfolio made private while the report is reviewed.';
+      await AdminAudit.create({ adminId: adminId(req), userId: portfolio.userId, action: 'moderation.portfolio_takedown', resourceType: 'Portfolio', resourceId: String(portfolio._id), details: { ticketId: String(ticket._id), reason: supportText(parsed.data.reason, 1000) } });
+    } else if (parsed.data.action === 'restore') {
+      outcome = 'Restore request recorded; the owner must meet publishing checks before the link is restored.';
+    }
+    ticket.moderationActions.push({ action: parsed.data.action, targetType: parsed.data.targetType, targetId, adminId: adminId(req), reason: supportText(parsed.data.reason, 1000), outcome });
+    ticket.status = ticket.status === 'closed' ? 'closed' : 'pending';
+    await ticket.save();
+    await AdminAudit.create({ adminId: adminId(req), userId, action: `support.moderation_${parsed.data.action}`, resourceType: 'SupportTicket', resourceId: String(ticket._id), details: { targetType: parsed.data.targetType, targetId, outcome, reason: supportText(parsed.data.reason, 1000) } });
+    res.json({ success: true, data: { outcome, ticket: supportSummary(ticket) } });
+  } catch (error) {
+    console.error('[admin/support-moderation]', error.message);
+    res.status(500).json({ success: false, message: 'We could not apply that moderation action.' });
   }
 }
 

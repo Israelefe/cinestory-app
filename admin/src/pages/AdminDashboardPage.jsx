@@ -2,9 +2,11 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Activity,
+  AlertCircle,
   Banknote,
   Bot,
   CheckCircle2,
+  Clock3,
   Cloud,
   Database,
   Download,
@@ -151,6 +153,12 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const [storageScanLoading, setStorageScanLoading] = useState(false);
   const [musicOverview, setMusicOverview] = useState(null);
   const [portfolioOverview, setPortfolioOverview] = useState(null);
+  const [supportOverview, setSupportOverview] = useState(null);
+  const [selectedSupportTicket, setSelectedSupportTicket] = useState(null);
+  const [supportDetailLoading, setSupportDetailLoading] = useState(false);
+  const [supportReply, setSupportReply] = useState('');
+  const [supportInternal, setSupportInternal] = useState(false);
+  const [moderationReason, setModerationReason] = useState('');
   const [selectedVolume, setSelectedVolume] = useState(null);
   const [volumeDetailLoading, setVolumeDetailLoading] = useState(false);
   const [volumeCategoryFilter, setVolumeCategoryFilter] = useState('all');
@@ -192,7 +200,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       volume: api.get('/v1/admin/volume', { params: { search, category: volumeCategoryFilter, status: volumeStatusFilter } }),
       storage: api.get('/v1/admin/storage', { params: { search } }),
       musicNarration: api.get('/v1/admin/music-narration', { params: { search } }),
-      portfolio: api.get('/v1/admin/portfolios', { params: { search } })
+      portfolio: api.get('/v1/admin/portfolios', { params: { search } }),
+      support: api.get('/v1/admin/support/tickets', { params: { search } })
     };
     const entries = Object.entries(requests);
     const results = await Promise.allSettled(entries.map(([, request]) => request));
@@ -212,6 +221,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         if (key === 'storage') setStorageOverview(data || null);
         if (key === 'musicNarration') setMusicOverview(data || null);
         if (key === 'portfolio') setPortfolioOverview(data || null);
+        if (key === 'support') setSupportOverview(data || null);
         return;
       }
       const error = result.status === 'rejected' ? result.reason : new Error(result.value?.data?.message || 'This panel is unavailable.');
@@ -564,9 +574,10 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       volume: volumeJobs.length,
       storage: storageOverview?.accounts?.length || 0,
       musicNarration: musicOverview?.catalogue?.filtered || 0,
-      portfolio: portfolioOverview?.portfolios?.length || 0
+      portfolio: portfolioOverview?.portfolios?.length || 0,
+      support: supportOverview?.tickets?.length || 0
     }),
-    [accessOverview, aiJobs, deliveries, users, payments, volumeJobs, storageOverview, musicOverview, portfolioOverview]
+    [accessOverview, aiJobs, deliveries, users, payments, volumeJobs, storageOverview, musicOverview, portfolioOverview, supportOverview]
   );
 
   const runStorageScan = async () => {
@@ -620,6 +631,61 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       await fetchAdminData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Could not make this portfolio private.');
+    } finally {
+      setAccountActionLoading(false);
+    }
+  };
+
+  const openSupportTicket = async (ticket) => {
+    setSelectedSupportTicket({ summary: ticket });
+    setSupportReply('');
+    setModerationReason('');
+    setSupportInternal(false);
+    setSupportDetailLoading(true);
+    try {
+      const response = await api.get(`/v1/admin/support/tickets/${ticket.id}`);
+      setSelectedSupportTicket(response.data?.data || null);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not open this support request.');
+      setSelectedSupportTicket(null);
+    } finally {
+      setSupportDetailLoading(false);
+    }
+  };
+
+  const updateSupportTicket = async (body, successMessage = 'Support request updated.') => {
+    const id = selectedSupportTicket?.id || selectedSupportTicket?.summary?.id;
+    if (!id) return;
+    try {
+      setAccountActionLoading(true);
+      const response = await api.patch(`/v1/admin/support/tickets/${id}`, body);
+      setSelectedSupportTicket(current => ({ ...(current || {}), ...(response.data?.data || {}) }));
+      setSupportReply('');
+      toast.success(successMessage);
+      await fetchAdminData();
+      const detail = await api.get(`/v1/admin/support/tickets/${id}`);
+      setSelectedSupportTicket(detail.data?.data || null);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not update this support request.');
+    } finally {
+      setAccountActionLoading(false);
+    }
+  };
+
+  const moderateSupport = async (action, targetType = 'delivery') => {
+    const id = selectedSupportTicket?.id || selectedSupportTicket?.summary?.id;
+    if (!id || moderationReason.trim().length < 8) return toast.error('Write the reason for this moderation action first.');
+    const targetId = selectedSupportTicket?.resourceId || selectedSupportTicket?.delivery?.publicId || selectedSupportTicket?.summary?.delivery?.publicId || '';
+    try {
+      setAccountActionLoading(true);
+      await api.post(`/v1/admin/support/tickets/${id}/moderate`, { action, targetType, targetId, reason: moderationReason.trim() });
+      toast.success(action === 'takedown' ? 'The reported item was made private.' : 'Moderation action recorded.');
+      setModerationReason('');
+      await fetchAdminData();
+      const detail = await api.get(`/v1/admin/support/tickets/${id}`);
+      setSelectedSupportTicket(detail.data?.data || null);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not apply that moderation action.');
     } finally {
       setAccountActionLoading(false);
     }
@@ -756,11 +822,12 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         {/* Section Tabs & Search */}
         <section className="mt-10">
           <div className="flex flex-col gap-4 border-b border-white/10 pb-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5 sm:grid-cols-4 md:grid-cols-9">
+            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5 sm:grid-cols-4 md:grid-cols-10">
               {[
                 ['deliveries', Film, 'Deliveries'],
                 ['users', Users, 'Accounts'],
                 ['portfolio', Globe2, 'Portfolio'],
+                ['support', MessageCircle, 'Support'],
                 ['payments', ReceiptText, 'Payments'],
                 ['aiJobs', Bot, 'AI jobs'],
                 ['access', Eye, 'Client access'],
@@ -894,6 +961,17 @@ export default function AdminDashboardPage({ admin, onLogout }) {
                     {!portfolioOverview.portfolios?.length && <p className="py-12 text-center text-sm text-white/45">No portfolios match this search.</p>}
                   </div>
                 </section>
+              </>}
+            </div>
+          )}
+
+          {/* Support and moderation tab */}
+          {!loading && tab === 'support' && (
+            <div className="mt-6 grid gap-4">
+              {panelErrors.support && !supportOverview && <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-5 text-sm text-amber-100">Support data is unavailable. {panelErrors.support}</div>}
+              {supportOverview && <>
+                <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><MetricCard icon={MessageCircle} label="All requests" value={number(supportOverview.summary?.total)} note="Support, privacy, and moderation queue" /><MetricCard icon={AlertCircle} label="Open" value={number(supportOverview.summary?.open)} note={`${number(supportOverview.summary?.urgent)} urgent requests`} /><MetricCard icon={Clock3} label="Pending" value={number(supportOverview.summary?.pending)} note={`${number(supportOverview.summary?.high)} high-priority requests`} /><MetricCard icon={ShieldCheck} label="Privacy" value={number(supportOverview.summary?.privacy)} note="Deletion and privacy requests" /><MetricCard icon={TriangleAlert} label="Reports" value={number(Number(supportOverview.summary?.abuse || 0) + Number(supportOverview.summary?.copyright || 0))} note={`${number(supportOverview.summary?.abuse)} abuse · ${number(supportOverview.summary?.copyright)} copyright`} /></section>
+                <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Support and moderation</p><h2 className="mt-1 text-xl font-medium">Requests that need a human reply</h2><p className="mt-2 text-xs leading-5 text-white/45">Every request has an owner, status, priority, response history, and moderation trail. Open one to reply, assign it, or make a reported delivery or portfolio private.</p></div><span className="text-xs text-white/35">Updated {shortDate(supportOverview.generatedAt)}</span></div><div className="mt-5 space-y-2">{(supportOverview.tickets || []).map(ticket => <button key={ticket.id} type="button" onClick={() => openSupportTicket(ticket)} className="w-full rounded-2xl border border-white/10 bg-white/[.025] p-4 text-left transition-colors hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff9b8e]/70"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><Status value={ticket.status} /><Status value={ticket.priority} /><span className="text-[10px] font-semibold uppercase tracking-[.12em] text-[#ff9b8e]">{ticket.category}</span><span className="font-mono text-[10px] text-white/35">{ticket.ticketNumber}</span></div><h3 className="mt-2 truncate text-sm font-semibold text-white">{ticket.subject}</h3><p className="mt-1 truncate text-xs text-white/40">{ticket.requester?.name || 'Requester'} · {ticket.requester?.email || 'No reply email'}{ticket.account?.studio ? ` · ${ticket.account.studio}` : ''}</p></div><span className="shrink-0 text-xs text-white/35">{shortDate(ticket.updatedAt)}</span></div><div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-white/40"><span>{number(ticket.messageCount)} messages</span><span>{number(ticket.internalNoteCount)} internal notes</span><span>{ticket.assignedAdmin?.name ? `Assigned to ${ticket.assignedAdmin.name}` : 'Unassigned'}</span>{ticket.delivery?.publicId && <span>Delivery {ticket.delivery.publicId}</span>}</div></button>)}{!supportOverview.tickets?.length && <p className="py-12 text-center text-sm text-white/45">No support requests match this search.</p>}</div></section>
               </>}
             </div>
           )}
@@ -1056,6 +1134,17 @@ export default function AdminDashboardPage({ admin, onLogout }) {
           )}
         </section>
       </main>
+
+      {/* Support ticket detail drawer */}
+      {selectedSupportTicket && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="support-ticket-title" onMouseDown={(event) => { if (event.target === event.currentTarget && !accountActionLoading) setSelectedSupportTicket(null); }}>
+          <motion.aside initial={{ opacity: 0, x: 28 }} animate={{ opacity: 1, x: 0 }} className="ml-auto flex h-full w-full max-w-3xl flex-col overflow-y-auto border-l border-white/10 bg-[#0c0c10] shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-white/10 bg-[#0c0c10]/95 p-5 backdrop-blur sm:p-7"><div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Support request</p><h2 id="support-ticket-title" className="mt-1 truncate text-2xl font-medium">{selectedSupportTicket.subject || selectedSupportTicket.summary?.subject || 'Support request'}</h2><p className="mt-2 truncate font-mono text-xs text-white/40">{selectedSupportTicket.ticketNumber || selectedSupportTicket.summary?.ticketNumber || ''}</p></div><button type="button" aria-label="Close support request" onClick={() => setSelectedSupportTicket(null)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/10 text-white/60 transition-colors hover:border-white/25 hover:text-white"><X size={18} /></button></div>
+            {supportDetailLoading && <div className="p-7 text-sm text-white/45">Loading the request history…</div>}
+            {!supportDetailLoading && <div className="space-y-6 p-5 sm:p-7"><section className="grid gap-3 sm:grid-cols-2"><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Requester</p><p className="mt-2 text-sm font-semibold text-white">{selectedSupportTicket.requester?.name || 'Unknown requester'}</p><p className="mt-1 break-all text-xs text-white/45">{selectedSupportTicket.requester?.email || 'No reply email'}</p>{selectedSupportTicket.account?.name && <p className="mt-2 text-xs text-white/40">Account: {selectedSupportTicket.account.name} · {selectedSupportTicket.account.plan || 'unknown plan'}</p>}</div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Related work</p><p className="mt-2 text-sm font-semibold text-white">{selectedSupportTicket.delivery?.title || selectedSupportTicket.delivery?.publicId || selectedSupportTicket.resourceId || 'No delivery attached'}</p><p className="mt-1 text-xs text-white/45">{selectedSupportTicket.delivery?.status || selectedSupportTicket.resourceType || 'General support request'}</p></div></section><section className="grid gap-3 sm:grid-cols-3"><label className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/40">Status<select value={selectedSupportTicket.status || 'open'} onChange={(event) => updateSupportTicket({ status: event.target.value })} className="mt-2 min-h-10 w-full rounded-xl border border-white/10 bg-[#141419] px-3 text-xs normal-case tracking-normal text-white outline-none focus:border-[#ff9b8e]/60"><option value="open">Open</option><option value="pending">Pending</option><option value="resolved">Resolved</option><option value="closed">Closed</option></select></label><label className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/40">Priority<select value={selectedSupportTicket.priority || 'normal'} onChange={(event) => updateSupportTicket({ priority: event.target.value })} className="mt-2 min-h-10 w-full rounded-xl border border-white/10 bg-[#141419] px-3 text-xs normal-case tracking-normal text-white outline-none focus:border-[#ff9b8e]/60"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></label><div className="flex items-end"><button type="button" disabled={accountActionLoading} onClick={() => updateSupportTicket({ assignedAdminId: admin?._id || admin?.id }, 'Assigned to you.')} className="min-h-10 w-full rounded-xl border border-white/15 px-3 text-xs font-semibold text-white/70 transition-colors hover:border-[#ff9b8e]/50 hover:text-white disabled:opacity-50">{selectedSupportTicket.assignedAdmin?.name ? `Assigned to ${selectedSupportTicket.assignedAdmin.name}` : 'Assign to me'}</button></div></section><section><div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">Conversation and internal notes</h3><span className="text-xs text-white/35">{number(selectedSupportTicket.messages?.length)} entries</span></div><div className="mt-3 space-y-2">{(selectedSupportTicket.messages || []).map(message => <article key={message._id || `${message.createdAt}-${message.message}`} className={`rounded-2xl border p-4 ${message.internal ? 'border-amber-300/15 bg-amber-300/[.05]' : 'border-white/10 bg-white/[.025]'}`}><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-[10px] font-semibold uppercase tracking-[.12em] text-white/45">{message.internal ? 'Internal note' : message.authorType === 'admin' ? 'Reply from Veylo' : 'Requester'}</span><span className="text-[10px] text-white/30">{shortDate(message.createdAt)}</span></div><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white/75">{message.message}</p></article>)}</div><form onSubmit={(event) => { event.preventDefault(); if (supportReply.trim()) updateSupportTicket({ message: supportReply.trim(), internal: supportInternal }, supportInternal ? 'Internal note added.' : 'Reply recorded.'); }} className="mt-4 space-y-3"><textarea value={supportReply} onChange={(event) => setSupportReply(event.target.value)} rows={4} maxLength={4000} placeholder="Write a clear reply or internal note…" className="w-full resize-y rounded-2xl border border-white/10 bg-white/[.025] p-4 text-sm leading-6 text-white outline-none placeholder:text-white/25 focus:border-[#ff9b8e]/60" /><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><label className="flex items-center gap-2 text-xs text-white/55"><input type="checkbox" checked={supportInternal} onChange={(event) => setSupportInternal(event.target.checked)} />Keep this as an internal note</label><button type="submit" disabled={accountActionLoading || !supportReply.trim()} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-white px-4 text-xs font-bold text-black disabled:opacity-40"><Send size={14} />{supportInternal ? 'Add note' : 'Record reply'}</button></div></form></section><section className="rounded-2xl border border-red-300/15 bg-red-300/[.04] p-4"><div className="flex items-center gap-2"><TriangleAlert size={15} className="text-amber-200" /><h3 className="text-sm font-semibold">Moderation actions</h3></div><p className="mt-2 text-xs leading-5 text-white/45">Use a specific reason. A takedown archives the related delivery or makes the related portfolio private, revokes its public link, and writes an audit record.</p><textarea value={moderationReason} onChange={(event) => setModerationReason(event.target.value)} rows={3} maxLength={1000} placeholder="Why should this item be taken down or reviewed?" className="mt-3 w-full resize-y rounded-xl border border-white/10 bg-black/20 p-3 text-xs leading-5 text-white outline-none placeholder:text-white/25 focus:border-[#ff9b8e]/60" /><div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={accountActionLoading || moderationReason.trim().length < 8 || !selectedSupportTicket.delivery?.publicId} onClick={() => moderateSupport('takedown', 'delivery')} className="min-h-10 rounded-xl border border-red-300/25 px-3 text-xs font-semibold text-red-200 disabled:opacity-40">Take down delivery</button><button type="button" disabled={accountActionLoading || moderationReason.trim().length < 8 || selectedSupportTicket.resourceType !== 'portfolio'} onClick={() => moderateSupport('takedown', 'portfolio')} className="min-h-10 rounded-xl border border-red-300/25 px-3 text-xs font-semibold text-red-200 disabled:opacity-40">Make portfolio private</button><button type="button" disabled={accountActionLoading || moderationReason.trim().length < 8} onClick={() => moderateSupport('copyright_hold', selectedSupportTicket.resourceType === 'portfolio' ? 'portfolio' : 'delivery')} className="min-h-10 rounded-xl border border-amber-300/25 px-3 text-xs font-semibold text-amber-200 disabled:opacity-40">Record copyright hold</button></div></section></div>}
+          </motion.aside>
+        </div>
+      )}
 
       {/* Volume delivery detail drawer */}
       {selectedVolume && (

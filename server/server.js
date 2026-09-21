@@ -12,6 +12,7 @@ import billingRoutes from './src/routes/billing.routes.js';
 import deliveryRoutes from './src/routes/delivery.routes.js';
 import storageRoutes from './src/routes/storage.routes.js';
 import portfolioRoutes from './src/routes/portfolio.routes.js';
+import supportRoutes from './src/routes/support.routes.js';
 import volumeRoutes from './src/routes/volume.routes.js';
 import { paystackWebhook } from './src/controllers/billing.controller.js';
 import { resolveEdgeClientIp } from './src/middleware/clientIp.middleware.js';
@@ -95,6 +96,7 @@ app.use('/api/v1/billing', billingRoutes);
 app.use('/api/v1/deliveries', deliveryRoutes);
 app.use('/api/v1/storage', storageRoutes);
 app.use('/api/v1/portfolios', portfolioRoutes);
+app.use('/api/v1/support', supportRoutes);
 app.use('/api/v1/volume-jobs', volumeRoutes);
 app.use('/api/v1/admin', adminRoutes);
 

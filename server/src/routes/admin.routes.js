@@ -37,6 +37,10 @@ import {
   getMusicNarrationOverview,
   getPortfolioOverview,
   adminUnpublishPortfolio,
+  getSupportOverview,
+  getSupportTicketDetail,
+  updateSupportTicket,
+  moderateSupportTicket,
   getAllStories,
   getAllDeliveries,
   getPayments,
@@ -144,6 +148,10 @@ router.post('/storage/scan', scanStorageReferences);
 router.get('/music-narration', getMusicNarrationOverview);
 router.get('/portfolios', getPortfolioOverview);
 router.post('/portfolios/:id/unpublish', adminUnpublishPortfolio);
+router.get('/support/tickets', getSupportOverview);
+router.get('/support/tickets/:id', getSupportTicketDetail);
+router.patch('/support/tickets/:id', updateSupportTicket);
+router.post('/support/tickets/:id/moderate', moderateSupportTicket);
 router.get('/payments', getPayments);
 router.get('/finance', getFinanceOverview);
 router.get('/finance/reconcile', reconcileFinanceWithPaystack);
