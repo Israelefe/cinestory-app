@@ -74,7 +74,7 @@ assert.match(deliveryController, /NARRATION_REFRESH_REQUIRED/, 'Publishing must 
 assert.match(deliveryController, /export async function trackPhotoDownload/, 'Download analytics must have a post-download event endpoint');
 assert.match(deliveryController, /individualAllowed.*galleryAllowed/, 'Download all must work when only gallery downloads are enabled');
 assert.match(deliveryController, /isLikelyBot/, 'Link previews must not inflate delivery view counts');
-assert.match(deliveryController, /findOneAndDelete\(\{ _id: delivery\._id, userId: req\.user\.id \}\)/, 'Owned deliveries must be deletable regardless of status');
+assert.match(deliveryController, /findOneAndDelete\(\{ userId: req\.user\.id, \.\.\.identifierQuery \}\)/, 'Owned deliveries must be deletable regardless of status');
 assert.match(deliveryController, /Promise\.allSettled\(cleanupTasks\.map/, 'Secondary cleanup failures must not block delivery deletion');
 assert.match(deliveryRoutes, /photos\/:assetId\/downloaded/, 'Download analytics route must be registered');
 assert.match(storyController, /StoryView\.create/, 'Legacy Photo Story views must be deduplicated');

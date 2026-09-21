@@ -315,13 +315,12 @@ export async function deleteDelivery(req, res) {
     const identifierQuery = mongoose.isValidObjectId(identifier)
       ? { $or: [{ _id: identifier }, { publicId: identifier }, { legacyStoryId: identifier }] }
       : { $or: [{ publicId: identifier }, { legacyStoryId: identifier }] };
-    const delivery = await Delivery.findOne({ userId: req.user.id, ...identifierQuery });
-    if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
-    const removedIds = new Set((delivery.assets || []).map(asset => asset.publicId).filter(Boolean));
-    // Remove the database record first. A temporary Cloudinary outage must not
-    // leave an owned draft or published delivery stuck in the dashboard.
-    const removed = await Delivery.findOneAndDelete({ _id: delivery._id, userId: req.user.id });
+    // Delete the owned record in one atomic operation. This keeps the lookup
+    // and deletion tied to the same owner and works for drafts, published,
+    // and archived deliveries alike.
+    const removed = await Delivery.findOneAndDelete({ userId: req.user.id, ...identifierQuery });
     if (!removed) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    const removedIds = new Set((removed.assets || []).map(asset => asset.publicId).filter(Boolean));
     const cleanupTasks = [
       async () => {
         if (!removedIds.size) return;
@@ -331,11 +330,11 @@ export async function deleteDelivery(req, res) {
         if (portfolio.status === 'published' && portfolio.items.length < 4) { portfolio.status = 'draft'; portfolio.publishedAt = undefined; }
         await portfolio.save();
       },
-      () => DeliveryJob.deleteMany({ deliveryId: delivery._id }),
-      () => DeliveryShareGrant.deleteMany({ deliveryId: delivery._id }),
-      () => PhotoLike.deleteMany({ deliveryId: delivery._id }),
-      () => DeliveryView.deleteMany({ deliveryId: delivery._id }),
-      () => removeDeliveryMedia(req.user.id, delivery._id)
+      () => DeliveryJob.deleteMany({ deliveryId: removed._id }),
+      () => DeliveryShareGrant.deleteMany({ deliveryId: removed._id }),
+      () => PhotoLike.deleteMany({ deliveryId: removed._id }),
+      () => DeliveryView.deleteMany({ deliveryId: removed._id }),
+      () => removeDeliveryMedia(req.user.id, removed._id)
     ];
     // Respond as soon as the owned database record is gone. Cloudinary and
     // secondary collection cleanup can be slow or temporarily unavailable;
