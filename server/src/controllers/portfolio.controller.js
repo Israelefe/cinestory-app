@@ -6,6 +6,7 @@ import User from '../models/User.js';
 import PortfolioJob from '../models/PortfolioJob.js';
 import { resolveEntitlements } from '../services/entitlement.service.js';
 import { signedImageUrl } from '../services/deliveryMedia.service.js';
+import { CREATIVE_DIRECTOR_PROMPT_VERSION, CREATIVE_DIRECTOR_PROVIDER } from '../services/alibabaCreativeDirector.service.js';
 import { PORTFOLIO_HANDLE_CHANGE_COOLDOWN_MS, PORTFOLIO_HANDLE_REDIRECT_MS, PORTFOLIO_HANDLE_RESERVATION_MS, STUDIO_NAME_CHANGE_COOLDOWN_MS, isoDate, nextChangeAt } from '../constants/profilePolicy.js';
 
 const handleSchema = z.string().trim().toLowerCase().min(3).max(40).regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/, 'Use letters, numbers, and single hyphens.');
@@ -151,7 +152,7 @@ export async function directMyPortfolio(req, res) {
     if (!portfolio || portfolio.items.length < 4 || !portfolio.bio) return res.status(400).json({ success: false, message: 'Save a short bio and at least four photographs first.' });
     const running = await PortfolioJob.findOne({ portfolioId: portfolio._id, status: { $in: ['queued', 'running'] } });
     if (running) return res.json({ success: true, data: running });
-    const job = await PortfolioJob.create({ portfolioId: portfolio._id, userId: user._id });
+    const job = await PortfolioJob.create({ portfolioId: portfolio._id, userId: user._id, provider: CREATIVE_DIRECTOR_PROVIDER, promptVersion: CREATIVE_DIRECTOR_PROMPT_VERSION });
     res.status(202).json({ success: true, data: job });
   } catch { res.status(500).json({ success: false, message: 'We could not start your portfolio direction.' }); }
 }

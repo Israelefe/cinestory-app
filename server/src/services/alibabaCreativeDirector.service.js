@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { DELIVERY_SOUNDTRACKS, recommendSoundtracks } from '../constants/deliverySoundtracks.js';
 
 const FORMATS = ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign'];
+export const CREATIVE_DIRECTOR_PROVIDER = 'Alibaba Model Studio';
+export const CREATIVE_DIRECTOR_PROMPT_VERSION = 'creative-director-v3';
 const MOTIONS = ['slow-push', 'slow-pull', 'pan-left', 'pan-right', 'float', 'still'];
 const TRANSITIONS = ['fade', 'crossfade', 'wipe', 'slide', 'reveal', 'cut'];
 const LAYOUTS = ['hero', 'single', 'pair', 'triptych', 'grid', 'strip', 'spread', 'cluster', 'chapter-cover'];

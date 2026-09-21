@@ -1,6 +1,6 @@
 import Delivery from '../models/Delivery.js';
 import DeliveryJob from '../models/DeliveryJob.js';
-import { analyzeImageBatch, createFrameBatch, createGlobalDirection, recommendFormats } from './alibabaCreativeDirector.service.js';
+import { CREATIVE_DIRECTOR_PROVIDER, CREATIVE_DIRECTOR_PROMPT_VERSION, analyzeImageBatch, createFrameBatch, createGlobalDirection, recommendFormats } from './alibabaCreativeDirector.service.js';
 import { signedImageUrl } from './deliveryMedia.service.js';
 import { generateNarration } from './narration.service.js';
 import { deliverySoundtrack } from '../constants/deliverySoundtracks.js';
@@ -12,9 +12,16 @@ let timer;
 let busy = false;
 
 async function saveJob(job, update) {
-  Object.assign(job, update, { heartbeatAt: new Date() });
+  const latest = await DeliveryJob.findById(job._id).select('cancelRequestedAt status').lean();
+  if (latest?.cancelRequestedAt && update.status !== 'failed') {
+    Object.assign(job, { status: 'cancelled', stage: 'cancelled', cancelledAt: new Date(), completedAt: new Date(), heartbeatAt: new Date() });
+    await job.save();
+    return false;
+  }
+  Object.assign(job, update, { heartbeatAt: new Date(), provider: job.provider || CREATIVE_DIRECTOR_PROVIDER, promptVersion: job.promptVersion || CREATIVE_DIRECTOR_PROMPT_VERSION });
   job.markModified('result');
   await job.save();
+  return true;
 }
 
 async function analyze(job, delivery) {
@@ -154,6 +161,7 @@ async function revise(job, delivery) {
 }
 
 async function run(job) {
+  const startedAt = Date.now();
   try {
     const delivery = await Delivery.findOne({ _id: job.deliveryId, userId: job.userId });
     if (!delivery) throw Object.assign(new Error('This delivery no longer exists.'), { code: 'DELIVERY_NOT_FOUND' });
@@ -161,8 +169,24 @@ async function run(job) {
     else if (job.type === 'direct') await direct(job, delivery);
     else if (job.type === 'revise') await revise(job, delivery);
     else if (job.type === 'narrate') await narrate(job, delivery);
+    const latest = await DeliveryJob.findById(job._id).select('cancelRequestedAt status').lean();
+    if (latest?.cancelRequestedAt || latest?.status === 'cancelled') {
+      await DeliveryJob.updateOne({ _id: job._id }, { $set: { status: 'cancelled', stage: 'cancelled', cancelledAt: new Date(), completedAt: new Date(), providerLatencyMs: Date.now() - startedAt } });
+      recordAnalyticsEventAsync({ name: 'ai.job.cancelled', source: 'system', actorType: 'system', userId: job.userId, deliveryId: job.deliveryId, status: 'cancelled', durationMs: Date.now() - startedAt, metadata: { jobType: job.type, provider: job.provider || CREATIVE_DIRECTOR_PROVIDER } });
+      return;
+    }
+    await DeliveryJob.updateOne({ _id: job._id }, { $set: { providerLatencyMs: Date.now() - startedAt } });
+    recordAnalyticsEventAsync({ name: 'ai.job.completed', source: 'system', actorType: 'system', userId: job.userId, deliveryId: job.deliveryId, status: 'completed', durationMs: Date.now() - startedAt, metadata: { jobType: job.type, provider: job.provider || (job.type === 'narrate' ? 'Deepgram Flux' : CREATIVE_DIRECTOR_PROVIDER), promptVersion: job.promptVersion || CREATIVE_DIRECTOR_PROMPT_VERSION, renderVersion: job.renderVersion || null } });
   } catch (error) {
-    await saveJob(job, { status: 'failed', stage: 'failed', errorCode: error.code || 'GENERATION_FAILED', errorMessage: String(error.message || 'Generation failed.').slice(0, 500), completedAt: new Date() });
+    const latest = await DeliveryJob.findById(job._id).select('cancelRequestedAt').lean();
+    if (latest?.cancelRequestedAt) {
+      await DeliveryJob.updateOne({ _id: job._id }, { $set: { status: 'cancelled', stage: 'cancelled', cancelledAt: new Date(), completedAt: new Date(), providerLatencyMs: Date.now() - startedAt } });
+      return;
+    }
+    const failureUpdate = { status: 'failed', stage: 'failed', errorCode: error.code || 'GENERATION_FAILED', errorMessage: String(error.message || 'Generation failed.').slice(0, 500), completedAt: new Date(), providerLatencyMs: Date.now() - startedAt };
+    if (error.code === 'CAPTIONS_REQUIRED' || error.code === 'INVALID_MODEL_OUTPUT') failureUpdate.captionFailures = 1;
+    if (error.code === 'NARRATION_TIMING_FAILED') failureUpdate.timingFailures = 1;
+    await saveJob(job, failureUpdate);
     await Delivery.updateOne({ _id: job.deliveryId }, { status: ['narrate', 'revise'].includes(job.type) ? 'review' : 'draft' });
     recordAnalyticsEventAsync({
       name: 'ai.job.failed',
@@ -171,8 +195,9 @@ async function run(job) {
       userId: job.userId,
       deliveryId: job.deliveryId,
       status: 'failed',
+      durationMs: Date.now() - startedAt,
       errorCode: error.code || 'GENERATION_FAILED',
-      metadata: { jobType: job.type, worker: 'delivery' }
+      metadata: { jobType: job.type, worker: 'delivery', provider: job.provider || (job.type === 'narrate' ? 'Deepgram Flux' : CREATIVE_DIRECTOR_PROVIDER), promptVersion: job.promptVersion || CREATIVE_DIRECTOR_PROMPT_VERSION, renderVersion: job.renderVersion || null }
     });
     console.error(`[delivery-worker/${job.type}]`, error.code || error.name, error.message);
   }
@@ -189,7 +214,7 @@ async function tick() {
     const stale = new Date(Date.now() - 5 * 60 * 1000);
     await DeliveryJob.updateMany({ status: 'running', $or: [{ heartbeatAt: { $lt: stale } }, { heartbeatAt: { $exists: false } }], attempts: { $lt: 3 } }, { status: 'queued', lockedBy: null });
     await DeliveryJob.updateMany({ status: 'running', $or: [{ heartbeatAt: { $lt: stale } }, { heartbeatAt: { $exists: false } }], attempts: { $gte: 3 } }, { status: 'failed', stage: 'failed', errorCode: 'WORKER_INTERRUPTED', errorMessage: 'The server stopped before this job finished. Retry it from the delivery review.', completedAt: new Date(), lockedBy: null });
-    const job = await DeliveryJob.findOneAndUpdate({ status: 'queued', attempts: { $lt: 3 } }, { $set: { status: 'running', stage: 'starting', lockedAt: new Date(), heartbeatAt: new Date(), lockedBy: workerId }, $inc: { attempts: 1 } }, { new: true, sort: { createdAt: 1 } }).select('+input');
+    const job = await DeliveryJob.findOneAndUpdate({ status: 'queued', attempts: { $lt: 3 }, cancelRequestedAt: null }, { $set: { status: 'running', stage: 'starting', lockedAt: new Date(), heartbeatAt: new Date(), lockedBy: workerId }, $inc: { attempts: 1 } }, { new: true, sort: { createdAt: 1 } }).select('+input');
     if (job) {
       await recordWorkerHeartbeat('delivery', { status: 'busy', stage: job.type, details: { jobId: String(job._id) } });
       await run(job);

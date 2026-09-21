@@ -22,6 +22,9 @@ import {
   adminRevokeDeliveryLink,
   adminDeleteDelivery,
   adminRetryDeliveryJob,
+  getAiJobs,
+  adminRetryAiJob,
+  adminCancelAiJob,
   getAllStories,
   getAllDeliveries,
   getPayments,
@@ -111,6 +114,9 @@ router.post('/deliveries/:id/restore', adminRestoreDelivery);
 router.post('/deliveries/:id/revoke-link', adminRevokeDeliveryLink);
 router.delete('/deliveries/:id', adminDeleteDelivery);
 router.post('/deliveries/:id/jobs/:jobId/retry', adminRetryDeliveryJob);
+router.get('/ai/jobs', getAiJobs);
+router.post('/ai/jobs/:jobId/retry', adminRetryAiJob);
+router.post('/ai/jobs/:jobId/cancel', adminCancelAiJob);
 router.get('/payments', getPayments);
 router.delete('/stories/:id', adminDeleteStory);
 router.post('/payments/:id/refund', billingActionLimit, refundPayment);

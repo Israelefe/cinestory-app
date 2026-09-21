@@ -135,6 +135,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const [deliveries, setDeliveries] = useState([]);
   const [users, setUsers] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [aiJobs, setAiJobs] = useState([]);
+  const [aiSummary, setAiSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [refund, setRefund] = useState(null);
@@ -156,6 +158,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const [deliveryFormatFilter, setDeliveryFormatFilter] = useState('all');
   const [selectedDelivery, setSelectedDelivery] = useState(null);
   const [deliveryDetailLoading, setDeliveryDetailLoading] = useState(false);
+  const [aiJobStatusFilter, setAiJobStatusFilter] = useState('all');
+  const [aiJobTypeFilter, setAiJobTypeFilter] = useState('all');
 
   const fetchAdminData = useCallback(async () => {
     setLoading(true);
@@ -164,7 +168,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       analytics: api.get('/v1/admin/analytics'),
       deliveries: api.get('/v1/admin/deliveries', { params: { search, status: deliveryStatusFilter, format: deliveryFormatFilter } }),
       users: api.get('/v1/admin/users', { params: { search, plan: accountPlanFilter, status: accountStatusFilter, acquisitionSource: accountSourceFilter } }),
-      payments: api.get('/v1/admin/payments', { params: { search } })
+      payments: api.get('/v1/admin/payments', { params: { search } }),
+      aiJobs: api.get('/v1/admin/ai/jobs', { params: { search, status: aiJobStatusFilter, type: aiJobTypeFilter } })
     };
     const entries = Object.entries(requests);
     const results = await Promise.allSettled(entries.map(([, request]) => request));
@@ -178,6 +183,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         if (key === 'deliveries') setDeliveries(Array.isArray(data) ? data : []);
         if (key === 'users') setUsers(Array.isArray(data) ? data : []);
         if (key === 'payments') setPayments(Array.isArray(data) ? data : []);
+        if (key === 'aiJobs') { setAiJobs(Array.isArray(data) ? data : []); setAiSummary(result.value.data?.summary || null); }
         return;
       }
       const error = result.status === 'rejected' ? result.reason : new Error(result.value?.data?.message || 'This panel is unavailable.');
@@ -186,7 +192,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
     setPanelErrors(nextErrors);
     if (Object.keys(nextErrors).length === entries.length) toast.error('The administration service is unavailable. Try again shortly.');
     setLoading(false);
-  }, [accountPlanFilter, accountSourceFilter, accountStatusFilter, deliveryFormatFilter, deliveryStatusFilter, search]);
+  }, [accountPlanFilter, accountSourceFilter, accountStatusFilter, aiJobStatusFilter, aiJobTypeFilter, deliveryFormatFilter, deliveryStatusFilter, search]);
 
   useEffect(() => {
     const timer = window.setTimeout(fetchAdminData, 300);
@@ -272,6 +278,32 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       await Promise.all([fetchAdminData(), refreshSelectedDelivery()]);
     } catch (error) {
       toast.error(error.response?.data?.message || 'Could not retry this job.');
+    } finally {
+      setAccountActionLoading(false);
+    }
+  };
+
+  const retryAiJob = async (jobId) => {
+    try {
+      setAccountActionLoading(true);
+      await api.post(`/v1/admin/ai/jobs/${jobId}/retry`);
+      toast.success('AI job queued again.');
+      await fetchAdminData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not retry this AI job.');
+    } finally {
+      setAccountActionLoading(false);
+    }
+  };
+
+  const cancelAiJob = async (jobId) => {
+    try {
+      setAccountActionLoading(true);
+      await api.post(`/v1/admin/ai/jobs/${jobId}/cancel`);
+      toast.success('AI job cancellation requested.');
+      await fetchAdminData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not cancel this AI job.');
     } finally {
       setAccountActionLoading(false);
     }
@@ -442,9 +474,10 @@ export default function AdminDashboardPage({ admin, onLogout }) {
     () => ({
       deliveries: deliveries.length,
       users: users.length,
-      payments: payments.length
+      payments: payments.length,
+      aiJobs: aiJobs.length
     }),
-    [deliveries, users, payments]
+    [aiJobs, deliveries, users, payments]
   );
 
   return (
@@ -578,11 +611,12 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         {/* Section Tabs & Search */}
         <section className="mt-10">
           <div className="flex flex-col gap-4 border-b border-white/10 pb-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="grid grid-cols-3 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5">
+            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5 sm:grid-cols-4">
               {[
                 ['deliveries', Film, 'Deliveries'],
                 ['users', Users, 'Accounts'],
-                ['payments', ReceiptText, 'Payments']
+                ['payments', ReceiptText, 'Payments'],
+                ['aiJobs', Bot, 'AI jobs']
               ].map(([key, Icon, label]) => (
                 <button
                   key={key}
@@ -752,6 +786,22 @@ export default function AdminDashboardPage({ admin, onLogout }) {
                   No payments match your search query.
                 </p>
               )}
+            </div>
+          )}
+
+          {/* AI jobs tab */}
+          {!loading && tab === 'aiJobs' && (
+            <div className="mt-6">
+              <div className="mb-4 grid gap-3 sm:grid-cols-2">
+                <label className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/40">Job status
+                  <select value={aiJobStatusFilter} onChange={(event) => setAiJobStatusFilter(event.target.value)} className="mt-2 min-h-10 w-full rounded-xl border border-white/10 bg-[#0c0c10] px-3 text-xs font-normal normal-case tracking-normal text-white outline-none focus:border-[#ff9b8e]/60"><option value="all">All statuses</option><option value="queued">Queued</option><option value="running">Running</option><option value="failed">Failed</option><option value="stale">Stale</option><option value="cancelled">Cancelled</option><option value="review">Completed for review</option></select>
+                </label>
+                <label className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/40">Job type
+                  <select value={aiJobTypeFilter} onChange={(event) => setAiJobTypeFilter(event.target.value)} className="mt-2 min-h-10 w-full rounded-xl border border-white/10 bg-[#0c0c10] px-3 text-xs font-normal normal-case tracking-normal text-white outline-none focus:border-[#ff9b8e]/60"><option value="all">All AI work</option><option value="analyze">Analysis</option><option value="direct">Creative direction</option><option value="revise">Revision</option><option value="narrate">Narration</option><option value="portfolio">Portfolio</option></select>
+                </label>
+              </div>
+              {aiSummary && <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><MetricCard icon={Activity} label="Queue depth" value={number(aiSummary.queueDepth)} note={`${number(aiSummary.stale)} stale jobs`} /><MetricCard icon={TriangleAlert} label="Failed today" value={number(aiSummary.failedLast24Hours)} note={`${number(aiSummary.captionFailures)} caption failures`} /><MetricCard icon={Bot} label="Timing failures" value={number(aiSummary.timingFailures)} note={`${number(aiSummary.staleNarration)} stale narrations`} />{(aiSummary.providerLatency || []).slice(0, 2).map(provider => <MetricCard key={provider.provider} icon={Server} label={provider.provider} value={`${number(provider.averageMs)}ms`} note={`${number(provider.samples)} samples · max ${number(provider.maxMs)}ms`} />)}</div>}
+              <div className="space-y-3">{aiJobs.map(job => <article key={`${job.kind}-${job.id}`} className="rounded-2xl border border-white/10 bg-white/[.025] p-4 sm:p-5"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="text-xs font-semibold text-[#ff9b8e]">{job.type}</span><Status value={job.status} /><span className="text-[11px] text-white/35">{job.provider}</span></div><p className="mt-2 truncate text-sm font-medium text-white">{job.delivery?.title || job.portfolio?.studioName || 'AI job'}</p><p className="mt-1 truncate text-xs text-white/40">{job.delivery?.photographer || job.portfolio?.handle || 'No owner'} · {job.stage} · {number(job.progress)}% · attempt {number(job.attempts)}</p></div><div className="flex flex-wrap items-center gap-2"><span className="text-[11px] text-white/35">{job.providerLatencyMs ? `${number(job.providerLatencyMs)}ms provider` : 'No latency yet'}{job.promptVersion ? ` · ${job.promptVersion}` : ''}{job.renderVersion ? ` · ${job.renderVersion}` : ''}</span>{job.rawStatus === 'failed' && <button type="button" disabled={accountActionLoading} onClick={() => retryAiJob(job.id)} className="min-h-9 rounded-lg border border-amber-300/30 px-3 text-[11px] font-semibold text-amber-200 disabled:opacity-50">Retry</button>}{['queued', 'running'].includes(job.rawStatus) && <button type="button" disabled={accountActionLoading} onClick={() => cancelAiJob(job.id)} className="min-h-9 rounded-lg border border-white/15 px-3 text-[11px] font-semibold text-white/60 disabled:opacity-50">Cancel</button>}</div></div>{job.errorMessage && <p className="mt-3 rounded-xl border border-amber-300/15 bg-amber-300/[.04] p-3 text-xs leading-5 text-amber-100/80">{job.errorCode || 'AI job error'}: {job.errorMessage}</p>}</article>)}{!aiJobs.length && <p className="py-16 text-center text-sm text-white/45">No AI jobs match these filters.</p>}</div>
             </div>
           )}
         </section>

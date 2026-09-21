@@ -13,7 +13,7 @@ import DeliveryShareGrant from '../models/DeliveryShareGrant.js';
 import Portfolio from '../models/Portfolio.js';
 import User from '../models/User.js';
 import StorageAsset from '../models/StorageAsset.js';
-import { creativeDirectorAllowlist } from '../services/alibabaCreativeDirector.service.js';
+import { CREATIVE_DIRECTOR_PROMPT_VERSION, CREATIVE_DIRECTOR_PROVIDER, creativeDirectorAllowlist } from '../services/alibabaCreativeDirector.service.js';
 import { confirmUploadedAsset, copyStorageImageToDelivery, createUploadSignature, deliveryFolder, removeDeliveryAudio, removeDeliveryImage, removeDeliveryMedia, signedArchiveUrl, signedImageUrl, signedOgImageUrl } from '../services/deliveryMedia.service.js';
 import { reservePublishSlot, resolveEntitlements } from '../services/entitlement.service.js';
 import { tokenDigest } from '../utils/auth.js';
@@ -634,7 +634,7 @@ export async function queueAnalysis(req, res) {
     if (!delivery.assets.length) return res.status(400).json({ success: false, message: 'Upload at least one finished photograph first.' });
     const running = await DeliveryJob.findOne({ deliveryId: delivery._id, status: { $in: ['queued', 'running'] } });
     if (running) return res.json({ success: true, data: running });
-    const job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'analyze', stage: 'queued' });
+    const job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'analyze', stage: 'queued', provider: CREATIVE_DIRECTOR_PROVIDER, promptVersion: CREATIVE_DIRECTOR_PROMPT_VERSION });
     delivery.status = 'analyzing';
     await delivery.save();
     res.status(202).json({ success: true, data: job });
@@ -653,7 +653,7 @@ export async function queueDirection(req, res) {
     if (!delivery?.formatRecommendations?.length) return res.status(409).json({ success: false, message: 'Let Veylo read the complete shoot before choosing a format.' });
     const running = await DeliveryJob.findOne({ deliveryId: delivery._id, status: { $in: ['queued', 'running'] } });
     if (running) return res.status(409).json({ success: false, message: 'Veylo is already working on this delivery.' });
-    const job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'direct', stage: 'queued', input: parsed.data });
+    const job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'direct', stage: 'queued', input: parsed.data, provider: CREATIVE_DIRECTOR_PROVIDER, promptVersion: CREATIVE_DIRECTOR_PROMPT_VERSION });
     delivery.status = 'directing';
     delivery.format = parsed.data.format;
     await delivery.save();
@@ -673,7 +673,7 @@ export async function queueNarration(req, res) {
     if (!delivery?.creativeDirection) return res.status(409).json({ success: false, message: 'Narration is available after the delivery has been directed.' });
     const running = await DeliveryJob.findOne({ deliveryId: delivery._id, status: { $in: ['queued', 'running'] } });
     if (running) return res.status(409).json({ success: false, message: 'Veylo is already working on this delivery.' });
-    const job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'narrate', stage: 'queued', input: parsed.data });
+    const job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'narrate', stage: 'queued', input: parsed.data, provider: 'Deepgram Flux', renderVersion: NARRATION_RENDER_VERSION });
     res.status(202).json({ success: true, data: job });
   } catch (error) {
     console.error('[deliveries/narrate]', error.message);
@@ -692,7 +692,7 @@ export async function queueRevision(req, res) {
     if (parsed.data.scope === 'selected' && (!parsed.data.assetIds.length || parsed.data.assetIds.some(id => !known.has(id)))) return res.status(400).json({ success: false, message: 'Choose at least one photograph from this delivery.' });
     const running = await DeliveryJob.findOne({ deliveryId: delivery._id, status: { $in: ['queued', 'running'] } });
     if (running) return res.status(409).json({ success: false, message: 'Veylo is already working on this delivery.' });
-    const job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'revise', stage: 'queued', input: { ...parsed.data, format: delivery.format } });
+    const job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'revise', stage: 'queued', input: { ...parsed.data, format: delivery.format }, provider: CREATIVE_DIRECTOR_PROVIDER, promptVersion: CREATIVE_DIRECTOR_PROMPT_VERSION });
     delivery.status = 'directing'; delivery.reviewApprovedAt = undefined; await delivery.save();
     res.status(202).json({ success: true, data: job });
   } catch (error) { console.error('[deliveries/revise]', error.message); res.status(500).json({ success: false, message: 'We could not start that revision.' }); }

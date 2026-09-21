@@ -28,6 +28,7 @@ import { checkCloudinaryConnection } from '../services/cloudinary.service.js';
 import { PLAN_DEFINITIONS, PRO_PRICE_KOBO } from '../config/plans.js';
 import { tokenDigest } from '../utils/auth.js';
 import { removeDeliveryMedia } from '../services/deliveryMedia.service.js';
+import { NARRATION_RENDER_VERSION } from '../services/narration.service.js';
 
 function escaped(value) { return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
@@ -785,6 +786,144 @@ export async function adminRetryDeliveryJob(req, res) {
   } catch (error) {
     console.error('[admin/delivery-job-retry]', error.message);
     res.status(500).json({ success: false, message: 'We could not retry this job.' });
+  }
+}
+
+function aiJobSummary(job, kind, delivery = null, portfolio = null) {
+  const lockDate = job.heartbeatAt || job.lockedAt || null;
+  const stale = job.status === 'running' && (!lockDate || Date.now() - new Date(lockDate).getTime() > 5 * 60 * 1000);
+  return {
+    id: job._id,
+    kind,
+    type: kind === 'portfolio' ? 'portfolio' : job.type,
+    status: stale ? 'stale' : job.status,
+    rawStatus: job.status,
+    stage: job.stage || 'queued',
+    progress: Number(job.progress || 0),
+    attempts: Number(job.attempts || 0),
+    provider: job.provider || (job.type === 'narrate' ? 'Deepgram Flux' : 'Alibaba Model Studio'),
+    promptVersion: job.promptVersion || null,
+    renderVersion: job.renderVersion || null,
+    providerLatencyMs: Number(job.providerLatencyMs || 0),
+    captionFailures: Number(job.captionFailures || 0),
+    timingFailures: Number(job.timingFailures || 0),
+    errorCode: job.errorCode || null,
+    errorMessage: job.errorMessage || null,
+    cancelRequestedAt: job.cancelRequestedAt || null,
+    cancelledAt: job.cancelledAt || null,
+    stale,
+    delivery: delivery ? { id: delivery._id, publicId: delivery.publicId, title: delivery.title || '', format: delivery.format || '', status: delivery.status, userId: delivery.userId?._id || delivery.userId, photographer: delivery.userId?.name || '', studio: delivery.userId?.studio?.name || '' } : null,
+    portfolio: portfolio ? { id: portfolio._id, handle: portfolio.handle, studioName: portfolio.studioName || '', userId: portfolio.userId?._id || portfolio.userId } : null,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    completedAt: job.completedAt || null,
+    heartbeatAt: job.heartbeatAt || null,
+    lockedAt: job.lockedAt || null
+  };
+}
+
+export async function getAiJobs(req, res) {
+  try {
+    const status = String(req.query.status || 'all');
+    const type = String(req.query.type || 'all');
+    const search = String(req.query.search || '').trim().slice(0, 100);
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
+    const jobQuery = {};
+    if (['queued', 'running', 'needs_input', 'review', 'failed', 'cancelled'].includes(status)) jobQuery.status = status;
+    if (['analyze', 'direct', 'revise', 'narrate'].includes(type)) jobQuery.type = type;
+    if (search) {
+      const pattern = { $regex: escaped(search), $options: 'i' };
+      const matchingDeliveries = await Delivery.find({ $or: [{ title: pattern }, { clientName: pattern }, { publicId: pattern }] }).select('_id').limit(200).lean();
+      jobQuery.$or = [{ stage: pattern }, { errorCode: pattern }, { errorMessage: pattern }, ...(matchingDeliveries.length ? [{ deliveryId: { $in: matchingDeliveries.map(item => item._id) } }] : [])];
+    }
+    const portfolioQuery = {};
+    if (status !== 'all' && ['queued', 'running', 'review', 'failed', 'cancelled'].includes(status)) portfolioQuery.status = status;
+    const [deliveryJobs, portfolioJobs] = await Promise.all([
+      DeliveryJob.find(jobQuery).sort({ updatedAt: -1 }).limit(500).populate({ path: 'deliveryId', select: 'publicId title format status userId', populate: { path: 'userId', select: 'name studio.name' } }).lean(),
+      type === 'all' || type === 'portfolio' ? PortfolioJob.find(portfolioQuery).sort({ updatedAt: -1 }).limit(500).populate({ path: 'portfolioId', select: 'handle studioName userId', populate: { path: 'userId', select: 'name' } }).lean() : []
+    ]);
+    let data = [
+      ...deliveryJobs.map(job => aiJobSummary(job, 'delivery', job.deliveryId)),
+      ...portfolioJobs.map(job => aiJobSummary(job, 'portfolio', null, job.portfolioId))
+    ];
+    if (type === 'portfolio') data = data.filter(job => job.kind === 'portfolio');
+    if (status === 'stale') data = data.filter(job => job.stale);
+    data.sort((left, right) => new Date(right.updatedAt || right.createdAt) - new Date(left.updatedAt || left.createdAt));
+    const total = data.length;
+    const paged = data.slice((page - 1) * limit, page * limit);
+    const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const [queuedDelivery, queuedPortfolio, failedDelivery, failedPortfolio, staleDelivery, stalePortfolio, captionFailures, timingFailures, staleNarration, providerLatency] = await Promise.all([
+      DeliveryJob.countDocuments({ status: { $in: ['queued', 'running'] } }),
+      PortfolioJob.countDocuments({ status: { $in: ['queued', 'running'] } }),
+      DeliveryJob.countDocuments({ status: 'failed', updatedAt: { $gte: dayAgo } }),
+      PortfolioJob.countDocuments({ status: 'failed', updatedAt: { $gte: dayAgo } }),
+      DeliveryJob.countDocuments({ status: 'running', $or: [{ heartbeatAt: { $lt: new Date(Date.now() - 5 * 60 * 1000) } }, { heartbeatAt: { $exists: false } }] }),
+      PortfolioJob.countDocuments({ status: 'running', lockedAt: { $lt: new Date(Date.now() - 5 * 60 * 1000) } }),
+      DeliveryJob.countDocuments({ captionFailures: { $gt: 0 } }) + AnalyticsEvent.countDocuments({ name: 'ai.job.failed', errorCode: { $in: ['CAPTIONS_REQUIRED', 'INVALID_MODEL_OUTPUT'] } }),
+      DeliveryJob.countDocuments({ timingFailures: { $gt: 0 } }) + AnalyticsEvent.countDocuments({ name: 'ai.job.failed', errorCode: 'NARRATION_TIMING_FAILED' }),
+      Delivery.countDocuments({ 'narration.renderVersion': { $exists: true, $ne: NARRATION_RENDER_VERSION } }),
+      AnalyticsEvent.aggregate([{ $match: { name: { $in: ['ai.job.completed', 'ai.job.failed'] }, occurredAt: { $gte: dayAgo }, durationMs: { $gt: 0 } } }, { $group: { _id: '$metadata.provider', samples: { $sum: 1 }, averageMs: { $avg: '$durationMs' }, maxMs: { $max: '$durationMs' } } }, { $sort: { averageMs: -1 } }])
+    ]);
+    res.json({ success: true, data: paged, pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) }, summary: { queueDepth: queuedDelivery + queuedPortfolio, queuedDelivery, queuedPortfolio, failedLast24Hours: failedDelivery + failedPortfolio, stale: staleDelivery + stalePortfolio, captionFailures, timingFailures, staleNarration, providerLatency: providerLatency.map(item => ({ provider: item._id || 'unknown', samples: item.samples, averageMs: Math.round(item.averageMs || 0), maxMs: Math.round(item.maxMs || 0) })) } });
+  } catch (error) {
+    console.error('[admin/ai-jobs]', error.message);
+    res.status(500).json({ success: false, message: 'We could not load AI jobs.' });
+  }
+}
+
+async function findAiJob(jobId) {
+  const id = validId(jobId);
+  if (!id) return null;
+  const delivery = await DeliveryJob.findById(id);
+  if (delivery) return { job: delivery, kind: 'delivery' };
+  const portfolio = await PortfolioJob.findById(id);
+  return portfolio ? { job: portfolio, kind: 'portfolio' } : null;
+}
+
+export async function adminRetryAiJob(req, res) {
+  try {
+    const found = await findAiJob(req.params.jobId);
+    if (!found || found.job.status !== 'failed') return res.status(409).json({ success: false, message: 'This job is not waiting to be retried.' });
+    const job = found.job;
+    job.status = 'queued';
+    job.stage = 'queued';
+    job.errorCode = undefined;
+    job.errorMessage = undefined;
+    job.cancelRequestedAt = undefined;
+    job.cancelledAt = undefined;
+    job.completedAt = undefined;
+    if (job.attempts >= 3) { job.attempts = 0; job.cursor = 0; job.result = undefined; }
+    await job.save();
+    await AdminAudit.create({ adminId: adminId(req), userId: job.userId, action: 'ai.job_retried_by_admin', resourceType: found.kind === 'delivery' ? 'DeliveryJob' : 'PortfolioJob', resourceId: String(job._id), details: { type: job.type || 'portfolio', provider: job.provider || null } });
+    res.status(202).json({ success: true, data: { id: job._id, kind: found.kind, status: job.status } });
+  } catch (error) {
+    console.error('[admin/ai-job-retry]', error.message);
+    res.status(500).json({ success: false, message: 'We could not retry this job.' });
+  }
+}
+
+export async function adminCancelAiJob(req, res) {
+  try {
+    const found = await findAiJob(req.params.jobId);
+    if (!found || !['queued', 'running'].includes(found.job.status)) return res.status(409).json({ success: false, message: 'Only queued or running jobs can be cancelled.' });
+    const job = found.job;
+    const now = new Date();
+    if (job.status === 'queued') {
+      job.status = 'cancelled';
+      job.stage = 'cancelled';
+      job.cancelledAt = now;
+      job.completedAt = now;
+    } else {
+      job.cancelRequestedAt = now;
+      job.stage = 'cancelling';
+    }
+    await job.save();
+    await AdminAudit.create({ adminId: adminId(req), userId: job.userId, action: 'ai.job_cancelled_by_admin', resourceType: found.kind === 'delivery' ? 'DeliveryJob' : 'PortfolioJob', resourceId: String(job._id), details: { type: job.type || 'portfolio', status: job.status } });
+    res.json({ success: true, data: { id: job._id, kind: found.kind, status: job.status, cancelRequestedAt: job.cancelRequestedAt || null } });
+  } catch (error) {
+    console.error('[admin/ai-job-cancel]', error.message);
+    res.status(500).json({ success: false, message: 'We could not cancel this job.' });
   }
 }
 

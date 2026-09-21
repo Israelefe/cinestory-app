@@ -1,6 +1,6 @@
 import Portfolio from '../models/Portfolio.js';
 import PortfolioJob from '../models/PortfolioJob.js';
-import { analyzeImageBatch, createPortfolioDirection } from './alibabaCreativeDirector.service.js';
+import { CREATIVE_DIRECTOR_PROVIDER, CREATIVE_DIRECTOR_PROMPT_VERSION, analyzeImageBatch, createPortfolioDirection } from './alibabaCreativeDirector.service.js';
 import { signedImageUrl } from './deliveryMedia.service.js';
 import { recordAnalyticsEventAsync } from './analytics.service.js';
 import { recordWorkerHeartbeat } from './workerHeartbeat.service.js';
@@ -9,6 +9,7 @@ let busy = false;
 let timer;
 
 async function work(job) {
+  const startedAt = Date.now();
   try {
     const portfolio = await Portfolio.findOne({ _id: job.portfolioId, userId: job.userId });
     if (!portfolio) throw new Error('This portfolio no longer exists.');
@@ -23,10 +24,21 @@ async function work(job) {
     const positions = new Map(direction.orderedPublicIds.map((id, index) => [id, index]));
     portfolio.items.forEach(item => { item.sortOrder = positions.get(item.publicId); });
     portfolio.headline = direction.headline; portfolio.introLine = direction.introLine; portfolio.direction = { background: direction.background, accent: direction.accent, typeStyle: direction.typeStyle, rhythm: direction.rhythm }; portfolio.markModified('items'); await portfolio.save();
-    job.status = 'review'; job.stage = 'ready-to-review'; job.progress = 100; job.completedAt = new Date(); job.result = { insights, direction }; job.markModified('result'); await job.save();
+    const latest = await PortfolioJob.findById(job._id).select('cancelRequestedAt status').lean();
+    if (latest?.cancelRequestedAt || latest?.status === 'cancelled') {
+      await PortfolioJob.updateOne({ _id: job._id }, { $set: { status: 'cancelled', stage: 'cancelled', cancelledAt: new Date(), completedAt: new Date(), providerLatencyMs: Date.now() - startedAt } });
+      return;
+    }
+    job.status = 'review'; job.stage = 'ready-to-review'; job.progress = 100; job.completedAt = new Date(); job.result = { insights, direction }; job.providerLatencyMs = Date.now() - startedAt; job.provider = job.provider || CREATIVE_DIRECTOR_PROVIDER; job.promptVersion = job.promptVersion || CREATIVE_DIRECTOR_PROMPT_VERSION; job.markModified('result'); await job.save();
+    recordAnalyticsEventAsync({ name: 'ai.job.completed', source: 'system', actorType: 'system', userId: job.userId, status: 'completed', durationMs: Date.now() - startedAt, metadata: { jobType: 'portfolio', worker: 'portfolio', provider: job.provider, promptVersion: job.promptVersion } });
   } catch (error) {
-    job.status = 'failed'; job.stage = 'failed'; job.errorMessage = String(error.message || 'Portfolio direction failed.').slice(0, 500); job.completedAt = new Date(); await job.save();
-    recordAnalyticsEventAsync({ name: 'ai.job.failed', source: 'server', actorType: 'system', userId: job.userId, status: 'failed', errorCode: 'PORTFOLIO_DIRECTION_FAILED', metadata: { jobType: 'portfolio', worker: 'portfolio' } });
+    const latest = await PortfolioJob.findById(job._id).select('cancelRequestedAt').lean();
+    if (latest?.cancelRequestedAt) {
+      await PortfolioJob.updateOne({ _id: job._id }, { $set: { status: 'cancelled', stage: 'cancelled', cancelledAt: new Date(), completedAt: new Date(), providerLatencyMs: Date.now() - startedAt } });
+      return;
+    }
+    job.status = 'failed'; job.stage = 'failed'; job.errorCode = error.code || 'PORTFOLIO_DIRECTION_FAILED'; job.errorMessage = String(error.message || 'Portfolio direction failed.').slice(0, 500); job.completedAt = new Date(); job.providerLatencyMs = Date.now() - startedAt; job.provider = job.provider || CREATIVE_DIRECTOR_PROVIDER; job.promptVersion = job.promptVersion || CREATIVE_DIRECTOR_PROMPT_VERSION; await job.save();
+    recordAnalyticsEventAsync({ name: 'ai.job.failed', source: 'server', actorType: 'system', userId: job.userId, status: 'failed', durationMs: Date.now() - startedAt, errorCode: error.code || 'PORTFOLIO_DIRECTION_FAILED', metadata: { jobType: 'portfolio', worker: 'portfolio', provider: job.provider, promptVersion: job.promptVersion } });
     console.error('[portfolio-worker]', error.message);
   }
 }
@@ -42,7 +54,7 @@ async function tick() {
     const stale = new Date(Date.now() - 5 * 60 * 1000);
     await PortfolioJob.updateMany({ status: 'running', lockedAt: { $lt: stale }, attempts: { $lt: 3 } }, { status: 'queued' });
     await PortfolioJob.updateMany({ status: 'running', lockedAt: { $lt: stale }, attempts: { $gte: 3 } }, { status: 'failed', stage: 'failed', errorMessage: 'The server stopped before this portfolio was finished. Run the direction again.', completedAt: new Date() });
-    const job = await PortfolioJob.findOneAndUpdate({ status: 'queued', attempts: { $lt: 3 } }, { $set: { status: 'running', stage: 'starting', lockedAt: new Date() }, $inc: { attempts: 1 } }, { new: true, sort: { createdAt: 1 } });
+    const job = await PortfolioJob.findOneAndUpdate({ status: 'queued', attempts: { $lt: 3 }, cancelRequestedAt: null }, { $set: { status: 'running', stage: 'starting', lockedAt: new Date() }, $inc: { attempts: 1 } }, { new: true, sort: { createdAt: 1 } });
     if (job) {
       await recordWorkerHeartbeat('portfolio', { status: 'busy', stage: 'portfolio-direction', details: { jobId: String(job._id) } });
       await work(job);

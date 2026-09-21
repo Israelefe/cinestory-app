@@ -5,7 +5,7 @@ Each stage is completed and verified before the next stage begins.
 - [x] 1. Operations overview and shared admin data foundation — operations metrics, provider checks, worker heartbeats, upload/job/email telemetry hooks, partial-load handling, and admin production build verified.
 - [x] 2. Account management — account search/filter, detail history, suspend/reactivate, Pro grants/removal with expiry, session revocation, notes, exports, deletion request workflow, and one-time read-only support access. API/UI/build/import checks verified.
 - [x] 3. Delivery management — searchable/filterable delivery inventory, detail history, caption/audio readiness, AI jobs, preview/access inspection, role grants, lifecycle actions, link revocation, deletion, failed-job retry, and production build/import checks verified.
-- [ ] 4. AI and job management
+- [x] 4. AI and job management — unified delivery/portfolio queue, provider/prompt/render versions, latency, stale/error/caption/timing/narration health, guarded retry/cancel controls, worker cancellation handling, and build/import checks verified.
 - [ ] 5. Client-access management
 - [ ] 6. Volume delivery management
 - [ ] 7. Storage and media
