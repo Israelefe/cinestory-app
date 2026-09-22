@@ -8,6 +8,48 @@ export const FORMAT_LABELS = Object.freeze({
   'photo-story': 'Photo Story', editorial: 'Editorial Page', 'photo-reveal': 'Photo Reveal', canvas: 'Canvas', chapters: 'Chapters', album: 'Album', 'event-coverage': 'Event Coverage', campaign: 'Campaign'
 });
 
+// These are abuse backstops, not Free/Pro product quotas. Workflow limits are
+// deliberately generous so a photographer can upload a full delivery, run
+// revisions, and prepare several deliveries without being stopped by a hidden
+// hourly counter. The middleware applies the right account/session key for
+// each surface.
+export const RATE_LIMIT_DEFAULTS = Object.freeze({
+  authAttemptsPer15m: 30,
+  registrationsPerHour: 20,
+  emailCodesPerHour: 30,
+  aiJobsPerMinute: 120,
+  supportTicketsPerHour: 20,
+  publicAccessPer15m: 600,
+  publicMediaPerHour: 20_000,
+  uploadsPerHour: 10_000,
+  clientDeliveryEmailsPerHour: 100,
+  billingActionsPerHour: 120,
+  profileUpdatesPerHour: 120,
+  analyticsEventsPer15m: 1_000
+});
+
+// Normal product actions must not be configurable below the safe starting
+// point. Administrators can raise these values, while the security-only
+// counters above remain adjustable for incident response.
+const RATE_LIMIT_FLOORS = Object.freeze({
+  aiJobsPerMinute: 120,
+  publicAccessPer15m: 600,
+  publicMediaPerHour: 20_000,
+  uploadsPerHour: 10_000,
+  clientDeliveryEmailsPerHour: 100,
+  billingActionsPerHour: 120,
+  profileUpdatesPerHour: 120,
+  analyticsEventsPer15m: 1_000
+});
+
+function normalizedRateLimits(value = {}) {
+  return Object.fromEntries(Object.keys(RATE_LIMIT_DEFAULTS).map(key => {
+    const parsed = Number(value?.[key]);
+    const floor = RATE_LIMIT_FLOORS[key] || 1;
+    return [key, Number.isFinite(parsed) && parsed >= floor ? Math.round(parsed) : RATE_LIMIT_DEFAULTS[key]];
+  }));
+}
+
 let cache = { expiresAt: 0, value: null, pending: null };
 
 function clone(value) {
@@ -50,7 +92,7 @@ export function defaultRuntimeConfig() {
     narration: { enabled: true, provider: 'Deepgram Flux', defaultVoiceId: DEFAULT_NARRATION_VOICE_ID, voices: NARRATION_VOICES.map(voice => ({ id: voice.id, name: voice.name, presentation: voice.presentation, tone: voice.tone, bestFor: voice.bestFor })) },
     music: { enabled: true, catalogueCount: DELIVERY_SOUNDTRACKS.length, licence: 'Pixabay Content License', source: 'Pixabay', verifiedCatalogue: true },
     retention: { proRetentionDays: 30, orphanUploadHours: 2, workerIntervalHours: 6, analyticsRetentionDays: 365 },
-    rateLimits: { authAttemptsPer15m: 30, registrationsPerHour: 10, emailCodesPerHour: 12, aiGenerationsPerHour: 12, supportTicketsPerHour: 8, publicAccessPer15m: 80, mediaPerHour: 700, uploadsPerHour: 650, clientDeliveryEmailsPerHour: 20, billingActionsPerHour: 30, profileUpdatesPerHour: 20, analyticsEventsPer15m: 300 },
+    rateLimits: normalizedRateLimits(),
     emailTemplates: [
       { id: 'verification', label: 'Email verification', enabled: true },
       { id: 'password-reset', label: 'Password reset', enabled: true },
@@ -64,6 +106,7 @@ export function defaultRuntimeConfig() {
 
 function applyDerivedValues(config) {
   const output = { ...config, providers: providerState() };
+  output.rateLimits = normalizedRateLimits(config.rateLimits);
   output.music = { ...(config.music || {}), catalogueCount: DELIVERY_SOUNDTRACKS.length, source: 'Pixabay', licence: 'Pixabay Content License', verifiedCatalogue: true };
   output.narration = { ...(config.narration || {}), voices: NARRATION_VOICES.map(voice => ({ id: voice.id, name: voice.name, presentation: voice.presentation, tone: voice.tone, bestFor: voice.bestFor })) };
   return output;

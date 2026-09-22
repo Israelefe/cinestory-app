@@ -10,9 +10,10 @@ const EDGE_CLIENT_IP_HEADER = 'x-veylo-client-ip';
  *
  * Without this, `trust proxy: 1` (server.js) returns the *rightmost*
  * X-Forwarded-For entry, which in the `visitor -> Cloudflare -> Render -> app`
- * chain is Cloudflare's egress IP. Every visitor then shares one bucket in
- * express-rate-limit, and `req.ip` is also wrong in the Turnstile check
- * (auth.controller.js) and in the session audit trail (utils/auth.js).
+ * chain is Cloudflare's egress IP. Without the edge key, IP-scoped security
+ * checks would treat every visitor as one network, and `req.ip` would also be
+ * wrong in the Turnstile check (auth.controller.js) and session audit trail
+ * (utils/auth.js).
  *
  * Rewriting the header rather than `req.ip` itself is deliberate: `req.ip` is a
  * getter on the request prototype with no setter, so it can only be shadowed per
