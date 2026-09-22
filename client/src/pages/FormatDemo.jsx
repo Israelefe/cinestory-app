@@ -6,6 +6,7 @@ import { Photo } from '../components/PublicDesign.jsx';
 import { useDialogFocus } from '../components/useDialogFocus.js';
 import ClientGallery from '../components/delivery/ClientGallery.jsx';
 import { EVENT_COVERAGE_DEMO_PHOTOS } from '../constants/eventCoverageDemo.js';
+import { getDeliveryCapabilities } from '../constants/deliveryCapabilities.js';
 import '../styles/format-demos.css';
 
 export const editorialPhotos = Array.from({ length: 5 }, (_, index) => ({ name: `demo-ada-${index + 1}`, alt: `Ada's fashion portrait ${index + 1}` }));
@@ -146,6 +147,7 @@ export function DemoHeader({ format, client, sectionId, onGallery, light = false
   };
 
   const brandName = delivery?.branding?.name || 'Veylo';
+  const capabilities = getDeliveryCapabilities(delivery?.format);
   const soundtrackLoading = audioState?.loading === 'soundtrack';
   const narrationLoading = audioState?.loading === 'narration';
 
@@ -167,7 +169,7 @@ export function DemoHeader({ format, client, sectionId, onGallery, light = false
     <div className="fd-header-title"><span>{format}</span><strong>{client}</strong></div>
 
     <div className="fd-header-actions">
-      {audioState && toggleAudio && delivery?.soundtrack?.url && !hideSoundtrack && (
+      {audioState && toggleAudio && capabilities.music && delivery?.soundtrack?.url && !hideSoundtrack && (
         <button
           type="button"
           className={`fd-header-audio-btn ${audioState.playing === 'soundtrack' ? 'is-active' : ''} ${soundtrackLoading ? 'is-loading' : ''}`}
@@ -180,7 +182,7 @@ export function DemoHeader({ format, client, sectionId, onGallery, light = false
         </button>
       )}
 
-      {audioState && toggleAudio && delivery?.narration?.url && (
+      {audioState && toggleAudio && capabilities.narration && delivery?.narration?.url && (
         <button
           type="button"
           className={`fd-header-audio-btn ${audioState.playing === 'narration' ? 'is-active' : ''} ${narrationLoading ? 'is-loading' : ''}`}
@@ -522,8 +524,8 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio, on
   const clientName = delivery?.clientName || 'Sharon';
   const studioName = delivery?.branding?.name ? `${delivery.branding.name.toUpperCase()} / LAGOS` : 'STUDIO LUMIÈRE / LAGOS';
   const closingLine = delivery?.creativeDirection?.closingLine || 'Your complete finished session is ready to view and download.';
-  const audioTrack = delivery?.soundtrack?.url || '';
   const demoOnly = !delivery;
+  const audioTrack = delivery?.soundtrack?.url || (demoOnly ? '/audio/soundtrack-2.mp3' : '');
 
   const playSoundtrack = () => {
     if (!audio.current) return;
@@ -1005,7 +1007,8 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
   const clientName = delivery?.clientName || 'The Adeyemi Family';
   const studioName = delivery?.branding?.name ? `${delivery.branding.name.toUpperCase()} PRESENTS` : 'VEYLO MEDIA PRESENTS';
   const albumTitle = delivery?.creativeDirection?.title || 'Family Album';
-  const audioTrack = delivery?.soundtrack?.url || '';
+  const demoOnly = !delivery;
+  const audioTrack = delivery?.soundtrack?.url || (demoOnly ? '/audio/soundtrack-1.mp3' : '');
 
   const playSoundtrack = () => {
     if (!audio.current) return;

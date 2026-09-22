@@ -117,6 +117,19 @@ function GuestOnlyRoute({ user, loading, children }) {
   return <Navigate to={user.onboardingComplete ? '/dashboard' : '/onboarding'} replace />;
 }
 
+function DeliveryChrome({ user }) {
+  const { pathname } = useLocation();
+  // Client delivery pages are deliberately quiet: the photographs own the
+  // screen. Necessary session and analytics cookies still work in the
+  // background, but neither the privacy notice nor Veylo Help is rendered on
+  // a delivery or delivery demo.
+  const isDeliverySurface = /^\/(?:d|story|volume)(?:\/|$)/.test(pathname)
+    || pathname === '/demo'
+    || pathname.startsWith('/demo/');
+  if (isDeliverySurface) return null;
+  return <><CookiePreferences /><VeyloAssistant user={user} /></>;
+}
+
 function VerificationRoute({ user, loading, children }) {
   if (loading) return <div className="v-page-loading" role="status">Checking your account…</div>;
   if (user?.emailVerified) return <Navigate to={user.onboardingComplete ? '/dashboard' : '/onboarding'} replace />;
@@ -193,7 +206,7 @@ export default function App() {
     window.location.assign('/');
   };
   const handlePlanChanged = plan => setUser(current => current ? { ...current, plan } : current);
-  return <MotionConfig reducedMotion="user"><BrowserRouter><RoutePosition /><CookiePreferences /><VeyloAssistant user={user} /><ToastContainer position="top-right" theme="dark" autoClose={3000} /><Suspense fallback={<div className="v-page-loading" role="status">Opening Veylo…</div>}><Routes>
+  return <MotionConfig reducedMotion="user"><BrowserRouter><RoutePosition /><DeliveryChrome user={user} /><ToastContainer position="top-right" theme="dark" autoClose={3000} /><Suspense fallback={<div className="v-page-loading" role="status">Opening Veylo…</div>}><Routes>
     <Route path="/story/:storyId" element={<StoryViewer />} />
     <Route path="/d/:publicId" element={<DeliveryViewer />} />
     <Route path="/volume-deliveries" element={<Navigate to="/dashboard" replace />} />

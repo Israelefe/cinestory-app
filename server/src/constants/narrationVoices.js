@@ -5,7 +5,7 @@ export const NARRATION_VOICES = Object.freeze([
     presentation: 'Female',
     tone: 'Clear, thoughtful, pleasant storyteller',
     provider: 'Deepgram Flux',
-    bestFor: ['Photo Story', 'Chapters', 'Editorial', 'Event Coverage', 'Campaign']
+    bestFor: ['Photo Story']
   })
 ]);
 

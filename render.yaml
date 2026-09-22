@@ -66,9 +66,17 @@ services:
       - key: ALIBABA_BASE_URL
         sync: false
       - key: ALIBABA_VISION_MODEL
-        value: qwen3.7-flash
+        value: qwen3-vl-flash
       - key: ALIBABA_CREATIVE_MODEL
         value: deepseek-v4.1-flash
+      - key: DELIVERY_WORKER_CONCURRENCY
+        value: "4"
+      - key: DELIVERY_AI_CONCURRENCY
+        value: "6"
+      - key: DELIVERY_VISION_BATCH_SIZE
+        value: "12"
+      - key: DELIVERY_CAPTION_BATCH_SIZE
+        value: "8"
       - key: DEEPGRAM_API_KEY
         sync: false
       - key: DELIVERY_PIPELINE_ENABLED

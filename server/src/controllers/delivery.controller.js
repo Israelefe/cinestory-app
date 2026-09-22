@@ -22,6 +22,7 @@ import { sendShareGrantEmail, sendStoryReadyEmail } from '../services/email.serv
 import QRCode from 'qrcode';
 import { DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
 import { DELIVERY_SOUNDTRACKS, deliverySoundtrack, deliverySoundtrackFile } from '../constants/deliverySoundtracks.js';
+import { supportsDeliveryMusic, supportsDeliveryNarration } from '../constants/deliveryCapabilities.js';
 import { getNarrationVoiceCatalogue, NARRATION_RENDER_VERSION } from '../services/narration.service.js';
 import { recordAnalyticsEventAsync } from '../services/analytics.service.js';
 import { isRuntimeFeatureEnabled } from '../services/runtimeConfig.service.js';
@@ -336,8 +337,14 @@ export async function getDelivery(req, res) {
   try {
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    const latestJob = await DeliveryJob.findOne({ deliveryId: delivery._id, userId: req.user.id })
+      .sort({ createdAt: -1 })
+      .select('_id type status stage progress errorCode errorMessage attempts createdAt updatedAt')
+      .lean();
+    const generationJob = latestJob && ['queued', 'running', 'failed'].includes(latestJob.status) ? latestJob : null;
     const data = delivery.toObject();
     data.assets = delivery.assets.map(ownerAsset);
+    data.generationJob = generationJob || null;
     if (data.soundtrack?.catalogId && data.soundtrack?.source === 'curated') {
       data.soundtrack.url = curatedPreviewUrl(data.soundtrack.catalogId, soundtrackPreviewToken(req.user.id));
     }
@@ -576,6 +583,7 @@ export async function signSoundtrackUpload(req, res) {
   try {
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This delivery is not available for audio uploads.' });
+    if (!supportsDeliveryMusic(delivery.format)) return res.status(409).json({ success: false, code: 'MUSIC_FORMAT_UNSUPPORTED', message: 'This delivery format does not use music.' });
     res.json({ success: true, data: createUploadSignature({ userId: req.user.id, deliveryId: delivery._id, resourceType: 'video' }) });
   } catch (error) {
     recordAnalyticsEventAsync({ name: 'upload.failed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'failed', errorCode: error.code || 'SOUNDTRACK_UPLOAD_SIGNATURE_FAILED', metadata: { surface: 'soundtrack', stage: 'signature' } });
@@ -590,6 +598,7 @@ export async function confirmSoundtrackUpload(req, res) {
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This delivery is not available for audio uploads.' });
+    if (!supportsDeliveryMusic(delivery.format)) return res.status(409).json({ success: false, code: 'MUSIC_FORMAT_UNSUPPORTED', message: 'This delivery format does not use music.' });
     const resource = await confirmUploadedAsset({ userId: req.user.id, deliveryId: delivery._id, publicId: parsed.data.publicId, version: parsed.data.version, signature: parsed.data.signature, resourceType: 'video' });
     uploadedPublicId = resource.public_id;
     if (!['mp3', 'wav', 'm4a', 'ogg', 'aac'].includes(String(resource.format).toLowerCase()) || resource.bytes > 20 * 1024 * 1024 || Number(resource.duration || 0) > 20 * 60) throw Object.assign(new Error('Use an MP3, WAV, M4A, OGG, or AAC track no larger than 20 MB and no longer than 20 minutes.'), { status: 400 });
@@ -630,6 +639,7 @@ export async function selectCuratedSoundtrack(req, res) {
     if (!track) return res.status(404).json({ success: false, message: 'That soundtrack is not in Veylo’s approved library.' });
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This delivery is not available for audio selection.' });
+    if (!supportsDeliveryMusic(delivery.format)) return res.status(409).json({ success: false, code: 'MUSIC_FORMAT_UNSUPPORTED', message: 'This delivery format does not use music.' });
     const previousTrackId = delivery.soundtrack?.catalogId || null;
     if (delivery.soundtrack?.publicId) await removeDeliveryAudio(delivery.soundtrack.publicId).catch(() => {});
     delivery.soundtrack = {
@@ -724,6 +734,7 @@ export async function queueNarration(req, res) {
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery?.creativeDirection) return res.status(409).json({ success: false, message: 'Narration is available after the delivery has been directed.' });
+    if (!supportsDeliveryNarration(delivery.format)) return res.status(409).json({ success: false, code: 'NARRATION_FORMAT_UNSUPPORTED', message: 'This delivery format does not use narration.' });
     const running = await DeliveryJob.findOne({ deliveryId: delivery._id, status: { $in: ['queued', 'running'] } });
     if (running) return res.status(409).json({ success: false, message: 'Veylo is already working on this delivery.' });
     const job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'narrate', stage: 'queued', input: parsed.data, provider: 'Deepgram Flux', renderVersion: NARRATION_RENDER_VERSION });
@@ -753,7 +764,7 @@ export async function queueRevision(req, res) {
 
 export async function getDeliveryJob(req, res) {
   try {
-    const job = await DeliveryJob.findOne({ _id: req.params.jobId, userId: req.user.id });
+    const job = await DeliveryJob.findOne({ _id: req.params.jobId, deliveryId: req.params.id, userId: req.user.id });
     if (!job) return res.status(404).json({ success: false, message: 'Generation job not found.' });
     res.json({ success: true, data: job });
   } catch { res.status(404).json({ success: false, message: 'Generation job not found.' }); }
@@ -827,7 +838,7 @@ export async function updateDeliveryReview(req, res) {
 
 export async function retryDeliveryJob(req, res) {
   try {
-    const job = await DeliveryJob.findOne({ _id: req.params.jobId, userId: req.user.id }).select('+input');
+    const job = await DeliveryJob.findOne({ _id: req.params.jobId, deliveryId: req.params.id, userId: req.user.id }).select('+input');
     if (!job || job.status !== 'failed') return res.status(409).json({ success: false, message: 'This job is not waiting to be retried.' });
     job.status = 'queued'; job.stage = 'queued'; job.errorCode = undefined; job.errorMessage = undefined; job.completedAt = undefined;
     if (job.attempts >= 3) { job.attempts = 0; job.cursor = 0; job.result = undefined; }
@@ -844,7 +855,8 @@ export async function publishDelivery(req, res) {
     const delivery = await ownedDelivery(req.params.id, req.user.id, true);
     if (!delivery || delivery.status !== 'review' || !delivery.creativeDirection || !delivery.reviewApprovedAt) return res.status(409).json({ success: false, message: 'Review and approve the complete delivery before publishing it.' });
     const user = await User.findById(req.user.id);
-    if (parsed.data.narration && delivery.narration?.renderVersion !== NARRATION_RENDER_VERSION) {
+    const narrationRequested = supportsDeliveryNarration(delivery.format) && parsed.data.narration;
+    if (narrationRequested && delivery.narration?.renderVersion !== NARRATION_RENDER_VERSION) {
       return res.status(409).json({ success: false, code: 'NARRATION_REFRESH_REQUIRED', message: 'Regenerate the approved narration before publishing this delivery.' });
     }
     reservation = await reservePublishSlot(user, delivery.assets.length);
@@ -854,7 +866,7 @@ export async function publishDelivery(req, res) {
     delivery.access.expiresAt = parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : undefined;
     delivery.access.revokedAt = undefined;
     delivery.access.pinDigest = parsed.data.pin ? await bcrypt.hash(parsed.data.pin, 12) : undefined;
-    if (!parsed.data.narration) delivery.narration = undefined;
+    if (!narrationRequested) delivery.narration = undefined;
     delivery.status = 'published';
     delivery.publishedAt = new Date();
     await delivery.save();

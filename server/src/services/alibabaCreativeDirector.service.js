@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { DELIVERY_SOUNDTRACKS, recommendSoundtracks } from '../constants/deliverySoundtracks.js';
+import { supportsDeliveryMusic, supportsDeliveryNarration } from '../constants/deliveryCapabilities.js';
 
 const FORMATS = ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign'];
 export const CREATIVE_DIRECTOR_PROVIDER = 'Alibaba Model Studio';
@@ -244,8 +245,8 @@ const directionSchema = z.object({
     mood: z.preprocess(val => String(val || '').trim().slice(0, 80), z.string().min(2).max(80)),
     genre: z.preprocess(val => String(val || '').trim().slice(0, 80), z.string().min(2).max(80)),
     tempo: z.enum(['slow', 'mid', 'upbeat'])
-  }),
-  narrationRecommended: z.preprocess(val => Boolean(val), z.boolean()),
+  }).optional(),
+  narrationRecommended: z.preprocess(val => Boolean(val), z.boolean()).default(false),
   sections: z.array(z.object({
     id: z.preprocess(val => String(val || '').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 32) || 'section-1', z.string().regex(/^[a-z0-9-]{1,32}$/)),
     title: z.preprocess(val => String(val || '').trim().slice(0, 60) || 'Chapter', z.string().min(1).max(60)),
@@ -265,6 +266,9 @@ const directionSchema = z.object({
   });
   const profile = FORMAT_DIRECTION_PROFILES[value.format];
   if (!profile) return;
+  if (supportsDeliveryMusic(value.format) && !value.music) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['music'], message: 'Choose one approved soundtrack for the ' + value.format + ' format.' });
+  }
   if (!profile.compositions.includes(value.variation.composition)) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['variation', 'composition'], message: `Use a composition supported by the ${value.format} format.` });
   }
@@ -371,7 +375,10 @@ function config() {
   try { parsed = new URL(baseUrl); } catch { throw new Error('ALIBABA_BASE_URL is not a valid URL.'); }
   if (parsed.protocol !== 'https:' || !parsed.hostname.endsWith('.aliyuncs.com')) throw new Error('ALIBABA_BASE_URL must use the Singapore Alibaba Model Studio HTTPS endpoint.');
   const creativeModel = process.env.ALIBABA_CREATIVE_MODEL || 'deepseek-v4.1-flash';
-  const visionModel = process.env.ALIBABA_VISION_MODEL || creativeModel;
+  // DeepSeek remains the Creative Director. Image inspection uses a real
+  // multimodal model so the creative model never has to guess from missing
+  // visual input when the vision variable is not configured.
+  const visionModel = process.env.ALIBABA_VISION_MODEL || 'qwen3-vl-flash';
   return { apiKey, baseUrl: baseUrl.replace(/\/$/, ''), visionModel, creativeModel };
 }
 
@@ -629,6 +636,7 @@ Rank all eight delivery formats exactly once.`;
 export async function createGlobalDirection({ format, brief, shootType, clientName, collectionAnalysis, imageInsights, revisionInstruction = '', currentDirection = null }) {
   const provider = config();
   const formatProfile = FORMAT_DIRECTION_PROFILES[format] || FORMAT_DIRECTION_PROFILES['photo-story'];
+  const audioCapabilities = { music: supportsDeliveryMusic(format), narration: supportsDeliveryNarration(format) };
   const compact = imageInsights.map(item => ({ assetId: item.assetId, summary: item.summary || '', subjects: item.subjects || [], setting: item.setting || '', expression: item.expression || '', clothing: item.clothing || '', weight: item.visualWeight, moment: item.moment, orientation: item.orientation, photographerCaption: item.photographerCaption || '', photographerTags: item.photographerTags || [] }));
   const schemaInstructions = `Return a JSON object matching this schema:
 {
@@ -641,8 +649,8 @@ export async function createGlobalDirection({ format, brief, shootType, clientNa
   "typography": { "display": "${formatProfile.typography.join('" | "')}", "body": "clean-sans" | "editorial-serif" },
   "pace": "measured" | "warm" | "energetic",
   "variation": { "composition": "${formatProfile.compositions.join('" | "')}", "density": "${formatProfile.density.join('" | "')}", "imageTreatment": "natural", "captionTreatment": "quiet" | "editorial" | "bold", "accentPlacement": "${formatProfile.accents.join('" | "')}" },
-  "music": { "trackId": "<one approved track id>", "mood": "<mood title, 2-80 chars>", "genre": "<genre title, 2-80 chars>", "tempo": "slow" | "mid" | "upbeat" },
-  "narrationRecommended": boolean,
+  "music": ${audioCapabilities.music ? '{ "trackId": "<one approved track id>", "mood": "<mood title, 2-80 chars>", "genre": "<genre title, 2-80 chars>", "tempo": "slow" | "mid" | "upbeat" }' : 'omit this field'},
+  "narrationRecommended": ${audioCapabilities.narration ? 'boolean' : 'false'},
   "sections": [
     { "id": "<kebab-case-id>", "title": "<section title>", "subtitle": "<section subtitle>", "label": "<short scene label>", "delivery": "<short purpose label>", "layout": "${formatProfile.sectionLayouts.join('" | "')}", "accent": "<#hex>" }
   ]
@@ -686,9 +694,11 @@ Do not choose the generic quiet/rules/balanced combination unless the photograph
         collectionAnalysis,
         currentDirection,
         photographerRevision: revisionInstruction,
-        approvedSoundtrackCatalogue: DELIVERY_SOUNDTRACKS.map(track => ({ trackId: track.id, title: track.title, creator: track.creator, category: track.category, genre: track.genre, mood: track.mood, tempo: track.tempo, energy: track.energy, narrationFit: track.narrationFit, durationSec: track.durationSec, tags: track.tags, sourceTags: track.sourceTags, sourceDescription: track.sourceDescription, isAiGenerated: track.isAiGenerated, storyFunction: track.storyFunction, bestFor: track.bestFor, avoidFor: track.avoidFor, editingPace: track.editingPace, instrumentationCue: track.instrumentationCue, titleSignals: track.titleSignals, selectionNote: track.selectionNote, metadataConfidence: track.metadataConfidence, contentIdRegistered: track.contentIdRegistered, contentIdGuidance: track.contentIdGuidance, sourcePageUrl: track.sourcePageUrl, license: track.license, licenseUrl: track.licenseUrl, verifiedAt: track.verifiedAt })),
-        strongestSoundtrackMatches: recommendSoundtracks(`${shootType} ${brief} ${JSON.stringify(collectionAnalysis || {})}`, 18).map(track => ({ trackId: track.id, title: track.title, creator: track.creator, genre: track.genre, mood: track.mood, tempo: track.tempo, energy: track.energy, narrationFit: track.narrationFit, durationSec: track.durationSec, tags: track.tags, sourceTags: track.sourceTags, sourceDescription: track.sourceDescription, isAiGenerated: track.isAiGenerated, storyFunction: track.storyFunction, bestFor: track.bestFor, avoidFor: track.avoidFor, editingPace: track.editingPace, instrumentationCue: track.instrumentationCue, titleSignals: track.titleSignals, selectionNote: track.selectionNote, metadataConfidence: track.metadataConfidence, contentIdRegistered: track.contentIdRegistered, contentIdGuidance: track.contentIdGuidance, sourcePageUrl: track.sourcePageUrl, license: track.license, licenseUrl: track.licenseUrl, verifiedAt: track.verifiedAt })),
-        soundtrackInstruction: `Consider the complete ${DELIVERY_SOUNDTRACKS.length}-track catalogue, including each track's source tags, listing description, duration and Content ID status. Use the strongest matches as a focused shortlist, and choose the exact trackId that best fits the photographs, occasion, pace, format and narration. Use only an approved trackId.`,
+        ...(audioCapabilities.music ? {
+          approvedSoundtrackCatalogue: DELIVERY_SOUNDTRACKS.map(track => ({ trackId: track.id, title: track.title, creator: track.creator, category: track.category, genre: track.genre, mood: track.mood, tempo: track.tempo, energy: track.energy, narrationFit: track.narrationFit, durationSec: track.durationSec, tags: track.tags, sourceTags: track.sourceTags, sourceDescription: track.sourceDescription, isAiGenerated: track.isAiGenerated, storyFunction: track.storyFunction, bestFor: track.bestFor, avoidFor: track.avoidFor, editingPace: track.editingPace, instrumentationCue: track.instrumentationCue, titleSignals: track.titleSignals, selectionNote: track.selectionNote, metadataConfidence: track.metadataConfidence, contentIdRegistered: track.contentIdRegistered, contentIdGuidance: track.contentIdGuidance, sourcePageUrl: track.sourcePageUrl, license: track.license, licenseUrl: track.licenseUrl, verifiedAt: track.verifiedAt })),
+          strongestSoundtrackMatches: recommendSoundtracks(`${shootType} ${brief} ${JSON.stringify(collectionAnalysis || {})}`, 18).map(track => ({ trackId: track.id, title: track.title, creator: track.creator, genre: track.genre, mood: track.mood, tempo: track.tempo, energy: track.energy, narrationFit: track.narrationFit, durationSec: track.durationSec, tags: track.tags, sourceTags: track.sourceTags, sourceDescription: track.sourceDescription, isAiGenerated: track.isAiGenerated, storyFunction: track.storyFunction, bestFor: track.bestFor, avoidFor: track.avoidFor, editingPace: track.editingPace, instrumentationCue: track.instrumentationCue, titleSignals: track.titleSignals, selectionNote: track.selectionNote, metadataConfidence: track.metadataConfidence, contentIdRegistered: track.contentIdRegistered, contentIdGuidance: track.contentIdGuidance, sourcePageUrl: track.sourcePageUrl, license: track.license, licenseUrl: track.licenseUrl, verifiedAt: track.verifiedAt })),
+          soundtrackInstruction: `Consider the complete ${DELIVERY_SOUNDTRACKS.length}-track catalogue, including each track's source tags, listing description, duration and Content ID status. Use the strongest matches as a focused shortlist, and choose the exact trackId that best fits the photographs, occasion, pace, format and narration. Use only an approved trackId.`
+        } : { soundtrackInstruction: 'This format is silent. Do not choose a soundtrack and do not return a music field.' }),
         photographs: compact
       }) }
     ],
@@ -699,6 +709,8 @@ Do not choose the generic quiet/rules/balanced combination unless the photograph
   if (result.format !== format) {
     throw Object.assign(new Error(`The creative director returned ${result.format} instead of ${format}.`), { code: 'INVALID_MODEL_OUTPUT' });
   }
+  if (!audioCapabilities.music) result.music = undefined;
+  result.narrationRecommended = audioCapabilities.narration;
   return result;
 }
 

@@ -1,15 +1,108 @@
 import Delivery from '../models/Delivery.js';
 import DeliveryJob from '../models/DeliveryJob.js';
 import { CREATIVE_DIRECTOR_PROVIDER, CREATIVE_DIRECTOR_PROMPT_VERSION, analyzeImageBatch, createFrameBatch, createGlobalDirection, recommendFormats } from './alibabaCreativeDirector.service.js';
-import { signedImageUrl } from './deliveryMedia.service.js';
+import { removeDeliveryAudio, signedImageUrl } from './deliveryMedia.service.js';
 import { generateNarration } from './narration.service.js';
 import { deliverySoundtrack } from '../constants/deliverySoundtracks.js';
+import { supportsDeliveryMusic, supportsDeliveryNarration } from '../constants/deliveryCapabilities.js';
 import { recordAnalyticsEventAsync } from './analytics.service.js';
 import { recordWorkerHeartbeat, workerInstance } from './workerHeartbeat.service.js';
+import { fetchAlibabaQuotas } from './alibabaQuota.service.js';
 
 const workerId = workerInstance();
 let timer;
-let busy = false;
+let polling = false;
+const activeJobs = new Map();
+const activeDeliveryIds = new Set();
+
+function positiveInt(value, fallback, { min = 1, max = 32 } = {}) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.min(max, Math.max(min, Math.floor(parsed))) : fallback;
+}
+
+const workerSettings = {
+  maxJobConcurrency: 4,
+  aiBatchConcurrency: 6,
+  visionBatchSize: 12,
+  captionBatchSize: 8
+};
+let effectiveJobConcurrency = workerSettings.maxJobConcurrency;
+let effectiveAiBatchConcurrency = workerSettings.aiBatchConcurrency;
+let quotaSnapshot = {};
+let quotaFetchedAt = 0;
+
+function readWorkerSettings() {
+  workerSettings.maxJobConcurrency = positiveInt(process.env.DELIVERY_WORKER_CONCURRENCY, 4, { min: 1, max: 16 });
+  workerSettings.aiBatchConcurrency = positiveInt(process.env.DELIVERY_AI_CONCURRENCY, 6, { min: 1, max: 16 });
+  workerSettings.visionBatchSize = positiveInt(process.env.DELIVERY_VISION_BATCH_SIZE, 12, { min: 4, max: 24 });
+  workerSettings.captionBatchSize = positiveInt(process.env.DELIVERY_CAPTION_BATCH_SIZE, 8, { min: 4, max: 16 });
+  effectiveJobConcurrency = workerSettings.maxJobConcurrency;
+  effectiveAiBatchConcurrency = workerSettings.aiBatchConcurrency;
+}
+
+async function refreshProviderQuotas() {
+  if (Date.now() - quotaFetchedAt < 5 * 60 * 1000) return;
+  quotaFetchedAt = Date.now();
+  const creativeModel = process.env.ALIBABA_CREATIVE_MODEL || 'deepseek-v4.1-flash';
+  const visionModel = process.env.ALIBABA_VISION_MODEL || 'qwen3-vl-flash';
+  const quotas = await fetchAlibabaQuotas([creativeModel, visionModel]);
+  if (!Object.keys(quotas).length) return;
+  quotaSnapshot = quotas;
+  effectiveJobConcurrency = workerSettings.maxJobConcurrency;
+  effectiveAiBatchConcurrency = workerSettings.aiBatchConcurrency;
+  const requestsPerSecond = Object.values(quotas)
+    .map(quota => quota.requestLimit && quota.requestPeriodSeconds ? quota.requestLimit / quota.requestPeriodSeconds : null)
+    .filter(value => Number.isFinite(value) && value > 0);
+  const providerConcurrency = Object.values(quotas)
+    .map(quota => quota.concurrencyLimit)
+    .filter(value => Number.isFinite(value) && value > 0);
+  // Leave most of the provider quota available for other workspaces and
+  // retries. The normal defaults are already small; this only lowers them
+  // when the account reports a genuinely smaller request window.
+  if (requestsPerSecond.length) {
+    const safeRequests = Math.max(1, Math.floor(Math.min(...requestsPerSecond) * 0.5));
+    effectiveAiBatchConcurrency = Math.min(workerSettings.aiBatchConcurrency, safeRequests);
+    effectiveJobConcurrency = Math.min(workerSettings.maxJobConcurrency, Math.max(1, Math.floor(safeRequests / 2)));
+  }
+  if (providerConcurrency.length) {
+    effectiveAiBatchConcurrency = Math.min(effectiveAiBatchConcurrency, Math.min(...providerConcurrency));
+  }
+}
+
+async function mapConcurrent(items, limit, handler) {
+  if (!items.length) return [];
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  let firstError = null;
+  const worker = async () => {
+    while (!firstError) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= items.length) return;
+      try {
+        results[index] = await handler(items[index], index);
+      } catch (error) {
+        firstError = error;
+        return;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  if (firstError) throw firstError;
+  return results;
+}
+
+function serialSaveJob(job) {
+  let chain = Promise.resolve(true);
+  return update => {
+    chain = chain.then(async () => {
+      const saved = await saveJob(job, update);
+      if (!saved) throw Object.assign(new Error('This delivery job was cancelled.'), { code: 'JOB_CANCELLED' });
+      return saved;
+    });
+    return chain;
+  };
+}
 
 async function saveJob(job, update) {
   const latest = await DeliveryJob.findById(job._id).select('cancelRequestedAt status').lean();
@@ -27,16 +120,39 @@ async function saveJob(job, update) {
 async function analyze(job, delivery) {
   delivery.status = 'analyzing';
   await delivery.save();
-  const assets = delivery.assets.sort((a, b) => a.sortOrder - b.sortOrder);
-  const startOffset = job.cursor || 0;
-  const insights = startOffset > 0 && Array.isArray(job.result?.insights) ? [...job.result.insights] : [];
-  for (let offset = startOffset; offset < assets.length; offset += 20) {
-    const batch = assets.slice(offset, offset + 20).map(asset => ({ assetId: asset.assetId, analysisUrl: signedImageUrl(asset.publicId, { width: 1024 }), photographerCaption: asset.libraryCaption || '', photographerTags: asset.libraryTags || [] }));
-    const batchInsights = await analyzeImageBatch({ brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, assets: batch });
-    const contextByAsset = new Map(batch.map(asset => [asset.assetId, asset]));
-    insights.push(...batchInsights.map(insight => ({ ...insight, photographerCaption: contextByAsset.get(insight.assetId)?.photographerCaption || '', photographerTags: contextByAsset.get(insight.assetId)?.photographerTags || [] })));
-    await saveJob(job, { stage: 'reading-photographs', cursor: offset + batch.length, progress: Math.min(80, Math.round(((offset + batch.length) / assets.length) * 80)), result: { insights } });
+  const assets = [...delivery.assets].sort((a, b) => a.sortOrder - b.sortOrder);
+  const persistedInsights = Array.isArray(job.result?.insights) ? job.result.insights : [];
+  const insightsById = new Map(persistedInsights.map(insight => [String(insight.assetId), insight]));
+  const batches = [];
+  for (let offset = 0; offset < assets.length; offset += workerSettings.visionBatchSize) {
+    batches.push(assets.slice(offset, offset + workerSettings.visionBatchSize).map(asset => ({
+      assetId: asset.assetId,
+      analysisUrl: signedImageUrl(asset.publicId, { width: 1024 }),
+      photographerCaption: asset.libraryCaption || '',
+      photographerTags: asset.libraryTags || []
+    })));
   }
+  const pending = batches.filter(batch => batch.some(asset => !insightsById.has(String(asset.assetId))));
+  const saveProgress = serialSaveJob(job);
+  let completed = assets.filter(asset => insightsById.has(String(asset.assetId))).length;
+  await mapConcurrent(pending, effectiveAiBatchConcurrency, async batch => {
+    const batchInsights = await analyzeImageBatch({ brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, assets: batch });
+    const contextByAsset = new Map(batch.map(asset => [String(asset.assetId), asset]));
+    for (const insight of batchInsights) {
+      const context = contextByAsset.get(String(insight.assetId));
+      if (!context) throw Object.assign(new Error(`The vision model returned an unknown photograph ${insight.assetId}.`), { code: 'INVALID_VISION_SEQUENCE' });
+      insightsById.set(String(insight.assetId), { ...insight, assetId: context.assetId, photographerCaption: context.photographerCaption, photographerTags: context.photographerTags });
+    }
+    if (batchInsights.length !== batch.length || batch.some(asset => !insightsById.has(String(asset.assetId)))) {
+      throw Object.assign(new Error('The vision model did not return one analysis for every photograph in the batch.'), { code: 'INVALID_VISION_SEQUENCE' });
+    }
+    completed = assets.filter(asset => insightsById.has(String(asset.assetId))).length;
+    const insights = assets.map(asset => insightsById.get(String(asset.assetId))).filter(Boolean);
+    await saveProgress({ stage: 'reading-photographs', cursor: completed, progress: Math.min(78, Math.round((completed / assets.length) * 78)), result: { insights } });
+  });
+  const insights = assets.map(asset => insightsById.get(String(asset.assetId))).filter(Boolean);
+  if (insights.length !== assets.length) throw Object.assign(new Error('The complete shoot could not be analysed.'), { code: 'INVALID_VISION_SEQUENCE' });
+  await saveProgress({ stage: 'understanding-the-shoot', cursor: assets.length, progress: 82, result: { insights } });
   const recommendation = await recommendFormats({ brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, imageInsights: insights });
   const byId = new Map(insights.map(item => [item.assetId, item]));
   delivery.assets.forEach(asset => { asset.analysis = byId.get(asset.assetId); });
@@ -47,13 +163,20 @@ async function analyze(job, delivery) {
   delivery.markModified('collectionAnalysis');
   delivery.markModified('formatRecommendations');
   await delivery.save();
-  await saveJob(job, { status: 'review', stage: 'format-ready', progress: 100, result: { insights, recommendation }, completedAt: new Date() });
+  await saveProgress({ status: 'review', stage: 'format-ready', progress: 100, result: { insights, recommendation }, completedAt: new Date() });
 }
 
 async function direct(job, delivery) {
   const format = job.input?.format;
+  if (!format || (!supportsDeliveryMusic(format) && delivery.soundtrack)) {
+    if (delivery.soundtrack?.publicId) await removeDeliveryAudio(delivery.soundtrack.publicId).catch(() => {});
+    delivery.soundtrack = undefined;
+    delivery.markModified('soundtrack');
+  }
   delivery.status = 'directing';
   delivery.format = format;
+  delivery.narration = undefined;
+  delivery.markModified('narration');
   delivery.reviewApprovedAt = undefined;
   await delivery.save();
   const insights = delivery.assets.sort((a, b) => a.sortOrder - b.sortOrder).map(asset => asset.analysis).filter(Boolean);
@@ -73,28 +196,43 @@ async function direct(job, delivery) {
   }
   const sectionIds = new Set(direction.sections.map(section => section.id));
   const defaultSectionId = direction.sections[0]?.id || 'section-1';
-  // Keep caption requests small enough that the model can return every frame;
-  // a twenty-photo response was previously truncated halfway through.
-  const frameBatchSize = 8;
-  for (let offset = job.cursor || 0; offset < insights.length; offset += frameBatchSize) {
-    const batch = insights.slice(offset, offset + frameBatchSize);
+  // Keep caption requests small enough that every frame fits in a response,
+  // but run independent batches together. A previous worker made every
+  // batch wait for the one before it, which turned ten photographs into a
+  // twenty-minute serial pipeline.
+  const frameById = new Map(frames.map(frame => [String(frame.assetId), frame]));
+  const batches = [];
+  for (let offset = 0; offset < insights.length; offset += workerSettings.captionBatchSize) batches.push(insights.slice(offset, offset + workerSettings.captionBatchSize));
+  const pending = batches.filter(batch => batch.some(item => !frameById.has(String(item.assetId))));
+  const saveProgress = serialSaveJob(job);
+  let completed = insights.filter(item => frameById.has(String(item.assetId))).length;
+  await mapConcurrent(pending, effectiveAiBatchConcurrency, async batch => {
     const result = await createFrameBatch({ format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction, imageInsights: batch, revisionInstruction: job.input?.instruction || '', currentFrames: job.type === 'revise' ? (delivery.creativeDirection?.frames || []).filter(frame => batch.some(item => item.assetId === frame.assetId)) : [] });
-    const frameMap = new Map((result.frames || []).map(frame => [frame.assetId, frame]));
-    const alignedFrames = batch.map((item, index) => {
-      const frame = frameMap.get(item.assetId);
+    const frameMap = new Map((result.frames || []).map(frame => [String(frame.assetId), frame]));
+    for (const item of batch) {
+      const frame = frameMap.get(String(item.assetId));
       if (!frame) throw Object.assign(new Error(`No approved caption was returned for photograph ${item.assetId}.`), { code: 'CAPTIONS_REQUIRED' });
       if (!sectionIds.has(frame.sectionId)) frame.sectionId = defaultSectionId;
       frame.assetId = item.assetId;
       if (typeof frame.caption !== 'string' || frame.caption.trim().length < 18) throw Object.assign(new Error(`Caption is missing for photograph ${item.assetId}.`), { code: 'CAPTIONS_REQUIRED' });
-      return frame;
-    });
-    frames.push(...alignedFrames);
-    await saveJob(job, { stage: 'directing-photographs', cursor: offset + batch.length, progress: 18 + Math.round(((offset + batch.length) / insights.length) * 78), result: { direction, frames } });
+      frameById.set(String(item.assetId), frame);
+    }
+    completed = insights.filter(item => frameById.has(String(item.assetId))).length;
+    const orderedFrames = insights.map(item => frameById.get(String(item.assetId))).filter(Boolean);
+    await saveProgress({ stage: 'directing-photographs', cursor: completed, progress: 18 + Math.round((completed / insights.length) * 78), result: { direction, frames: orderedFrames } });
+  });
+  frames = insights.map(item => frameById.get(String(item.assetId))).filter(Boolean);
+  if (frames.length !== insights.length) throw Object.assign(new Error('The creative director did not return a caption for every photograph.'), { code: 'CAPTIONS_REQUIRED' });
+  const captionKeys = new Set();
+  for (const frame of frames) {
+    const key = String(frame.caption || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    if (!key || captionKeys.has(key)) throw Object.assign(new Error(`The creative director repeated a caption for photograph ${frame.assetId}.`), { code: 'CAPTIONS_REQUIRED' });
+    captionKeys.add(key);
   }
   const sections = direction.sections.map(section => ({ ...section, assetIds: frames.filter(frame => frame.sectionId === section.id).map(frame => frame.assetId) })).filter(section => section.assetIds.length);
   delivery.title = direction.title;
   delivery.creativeDirection = { ...direction, sections, frames };
-  if (!delivery.soundtrack && direction.music?.trackId) {
+  if (supportsDeliveryMusic(format) && !delivery.soundtrack && direction.music?.trackId) {
     const track = deliverySoundtrack(direction.music.trackId);
     if (track) delivery.soundtrack = {
       catalogId: track.id,
@@ -133,6 +271,9 @@ async function direct(job, delivery) {
 }
 
 async function narrate(job, delivery) {
+  if (!supportsDeliveryNarration(delivery.format)) {
+    throw Object.assign(new Error('Narration is only available for Photo Story deliveries.'), { code: 'NARRATION_FORMAT_UNSUPPORTED' });
+  }
   await saveJob(job, { stage: 'recording-narration', progress: 20 });
   delivery.narration = await generateNarration(delivery, job.input || {});
   delivery.markModified('narration');
@@ -207,30 +348,48 @@ async function run(job) {
 }
 
 async function tick() {
-  if (busy) {
-    recordWorkerHeartbeat('delivery', { status: 'busy', stage: 'running' });
-    return;
-  }
-  busy = true;
+  if (polling) return;
+  polling = true;
   try {
-    await recordWorkerHeartbeat('delivery', { status: 'busy', stage: 'polling' });
+    await refreshProviderQuotas();
+    await recordWorkerHeartbeat('delivery', { status: activeJobs.size ? 'busy' : 'idle', stage: 'polling', details: { activeJobs: activeJobs.size, maxJobs: effectiveJobConcurrency, aiConcurrency: effectiveAiBatchConcurrency, quotaModels: Object.keys(quotaSnapshot) } });
     const stale = new Date(Date.now() - 5 * 60 * 1000);
     await DeliveryJob.updateMany({ status: 'running', $or: [{ heartbeatAt: { $lt: stale } }, { heartbeatAt: { $exists: false } }], attempts: { $lt: 3 } }, { status: 'queued', lockedBy: null });
     await DeliveryJob.updateMany({ status: 'running', $or: [{ heartbeatAt: { $lt: stale } }, { heartbeatAt: { $exists: false } }], attempts: { $gte: 3 } }, { status: 'failed', stage: 'failed', errorCode: 'WORKER_INTERRUPTED', errorMessage: 'The server stopped before this job finished. Retry it from the delivery review.', completedAt: new Date(), lockedBy: null });
-    const job = await DeliveryJob.findOneAndUpdate({ status: 'queued', attempts: { $lt: 3 }, cancelRequestedAt: null }, { $set: { status: 'running', stage: 'starting', lockedAt: new Date(), heartbeatAt: new Date(), lockedBy: workerId }, $inc: { attempts: 1 } }, { new: true, sort: { createdAt: 1 } }).select('+input');
-    if (job) {
-      await recordWorkerHeartbeat('delivery', { status: 'busy', stage: job.type, details: { jobId: String(job._id) } });
-      await run(job);
+
+    while (activeJobs.size < effectiveJobConcurrency) {
+      const filter = { status: 'queued', attempts: { $lt: 3 }, cancelRequestedAt: null };
+      if (activeDeliveryIds.size) filter.deliveryId = { $nin: [...activeDeliveryIds] };
+      const job = await DeliveryJob.findOneAndUpdate(filter, { $set: { status: 'running', stage: 'starting', lockedAt: new Date(), heartbeatAt: new Date(), lockedBy: workerId }, $inc: { attempts: 1 } }, { new: true, sort: { createdAt: 1 } }).select('+input');
+      if (!job) break;
+      const jobId = String(job._id);
+      const deliveryId = String(job.deliveryId);
+      activeDeliveryIds.add(deliveryId);
+      const promise = (async () => {
+        await recordWorkerHeartbeat('delivery', { status: 'busy', stage: job.type, details: { jobId, activeJobs: activeJobs.size, maxJobs: effectiveJobConcurrency, aiConcurrency: effectiveAiBatchConcurrency } });
+        await run(job);
+      })().catch(error => {
+        console.error(`[delivery-worker/${job.type}]`, error.message);
+      }).finally(async () => {
+        activeJobs.delete(jobId);
+        activeDeliveryIds.delete(deliveryId);
+        await recordWorkerHeartbeat('delivery', { status: activeJobs.size ? 'busy' : 'idle', stage: 'polling', details: { activeJobs: activeJobs.size, maxJobs: effectiveJobConcurrency, aiConcurrency: effectiveAiBatchConcurrency, quotaModels: Object.keys(quotaSnapshot) } });
+      });
+      activeJobs.set(jobId, promise);
     }
-  } catch (error) { console.error('[delivery-worker]', error.message); }
-  finally {
-    busy = false;
-    await recordWorkerHeartbeat('delivery', { status: 'idle', stage: 'polling' });
+  } catch (error) {
+    console.error('[delivery-worker]', error.message);
+  } finally {
+    polling = false;
   }
 }
 
 export function startDeliveryWorker() {
   if (timer) return;
+  // server.js loads dotenv before calling this function. Reading settings here
+  // keeps local `.env` values effective even though ES module imports are
+  // evaluated before dotenv.config().
+  readWorkerSettings();
   timer = setInterval(tick, 5000);
   timer.unref?.();
   tick();

@@ -7,6 +7,7 @@ import { API_BASE_URL } from '../config/env.js';
 import { trackEvent } from '../services/analytics.js';
 import { DeliveryFormatViewer } from '../components/delivery/viewerRegistry.jsx';
 import DeliveryBrandMark from '../components/delivery/DeliveryBrandMark.jsx';
+import { getDeliveryCapabilities } from '../constants/deliveryCapabilities.js';
 import '../styles/format-demos.css';
 import './DeliveryViewer.css';
 import './DeliveryViewerRole.css';
@@ -133,17 +134,19 @@ function preloadAudio(url, cleanup) {
 }
 
 export function DeliveryReadiness({ delivery, onReady }) {
+  const capabilities = getDeliveryCapabilities(delivery?.format);
   const sortedAssets = [...(delivery.assets || [])].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
   const mediaKey = [
     delivery.publicId || delivery._id || 'draft',
-    delivery.soundtrack?.url || '',
-    delivery.narration?.url || '',
+    delivery.format || '',
+    capabilities.music ? delivery.soundtrack?.url || '' : '',
+    capabilities.narration ? delivery.narration?.url || '' : '',
     ...sortedAssets.map(asset => `${asset.assetId}:${asset.url || ''}`)
   ].join('|');
   const totals = {
     photo: sortedAssets.length,
-    soundtrack: delivery.soundtrack?.url ? 1 : 0,
-    narration: delivery.narration?.url ? 1 : 0
+    soundtrack: capabilities.music && delivery.soundtrack?.url ? 1 : 0,
+    narration: capabilities.narration && delivery.narration?.url ? 1 : 0
   };
   const total = Math.max(1, totals.photo + totals.soundtrack + totals.narration);
   const [loaded, setLoaded] = useState({ photo: 0, soundtrack: 0, narration: 0, total: 0, failed: 0 });
@@ -171,8 +174,8 @@ export function DeliveryReadiness({ delivery, onReady }) {
     setFailedItems([]);
     trackEvent('client.preloader.started', { photos: totals.photo, soundtrack: Boolean(totals.soundtrack), narration: Boolean(totals.narration) }, { format: delivery.format, status: 'started', count: total });
     const tasks = [
-      ...(delivery.soundtrack?.url ? [{ kind: 'soundtrack', label: 'Soundtrack', run: () => preloadAudio(apiMediaUrl(delivery.soundtrack.url), cleanup) }] : []),
-      ...(delivery.narration?.url ? [{ kind: 'narration', label: 'Narration', run: () => preloadAudio(apiMediaUrl(delivery.narration.url), cleanup) }] : []),
+      ...(totals.soundtrack ? [{ kind: 'soundtrack', label: 'Soundtrack', run: () => preloadAudio(apiMediaUrl(delivery.soundtrack.url), cleanup) }] : []),
+      ...(totals.narration ? [{ kind: 'narration', label: 'Narration', run: () => preloadAudio(apiMediaUrl(delivery.narration.url), cleanup) }] : []),
       ...sortedAssets.map((asset, index) => ({ kind: 'photo', key: asset.assetId, label: asset.originalFilename || asset.filename || `Photograph ${index + 1}`, run: () => preloadImage(apiMediaUrl(asset.url), cleanup) }))
     ];
 
@@ -233,7 +236,7 @@ export function DeliveryReadiness({ delivery, onReady }) {
       <DeliveryBrandMark branding={delivery.branding} />
       <p>{delivery.branding?.name || 'Veylo'} · PRIVATE DELIVERY</p>
       <h1>Preparing {delivery.clientName ? `${delivery.clientName}’s` : 'your'} photographs.</h1>
-      <span>We’re preparing every photograph, the music, and the narration before the experience begins.</span>
+      <span>{totals.soundtrack && totals.narration ? 'We’re preparing every photograph, the music, and the narration before the experience begins.' : totals.soundtrack ? 'We’re preparing every photograph and the selected music before the experience begins.' : totals.narration ? 'We’re preparing every photograph and the narration before the experience begins.' : 'We’re preparing every photograph before the experience begins.'}</span>
       <div className="vd-readiness-progress" aria-label={`${percent}% prepared`} aria-valuemin="0" aria-valuemax="100" aria-valuenow={percent} role="progressbar"><i style={{ transform: `scaleX(${percent / 100})` }} /></div>
       <div className="vd-readiness-stage"><LoaderCircle className="v-spin" size={17} /><strong>{stage}</strong><b>{percent}%</b></div>
       <ul>
@@ -265,9 +268,10 @@ export default function DeliveryViewer() {
   const [narrationCue, setNarrationCue] = useState(null);
   const soundtrackRef = useRef(null);
   const narrationRef = useRef(null);
-  const narrationInteractionRef = useRef(false);
 
   const toggleAudio = async kind => {
+    const capabilities = getDeliveryCapabilities(delivery?.format);
+    if ((kind === 'soundtrack' && !capabilities.music) || (kind === 'narration' && !capabilities.narration)) return;
     const selected = kind === 'narration' ? narrationRef.current : soundtrackRef.current;
     const other = kind === 'narration' ? soundtrackRef.current : narrationRef.current;
     if (!selected) return;
@@ -340,31 +344,10 @@ export default function DeliveryViewer() {
   }, [preloadedMedia]);
 
   useEffect(() => {
-    narrationInteractionRef.current = false;
-  }, [delivery?.publicId]);
-
-  useEffect(() => {
     if (!experienceReady || !delivery?.format) return;
     trackEvent('client.format.opened', { format: delivery.format }, { format: delivery.format, status: 'opened' });
     trackEvent('client.first.photo.shown', { format: delivery.format }, { format: delivery.format, status: 'shown', count: 1 });
   }, [delivery?.format, experienceReady]);
-
-  useEffect(() => {
-    if (!experienceReady || !delivery?.narration?.url || delivery.format === 'photo-story') return undefined;
-    const startNarration = event => {
-      if (narrationInteractionRef.current || event.target?.closest?.('input, textarea, select')) return;
-      narrationInteractionRef.current = true;
-      toggleAudio('narration');
-      window.removeEventListener('pointerdown', startNarration, { capture: true });
-      window.removeEventListener('keydown', startNarration, { capture: true });
-    };
-    window.addEventListener('pointerdown', startNarration, { capture: true });
-    window.addEventListener('keydown', startNarration, { capture: true });
-    return () => {
-      window.removeEventListener('pointerdown', startNarration, { capture: true });
-      window.removeEventListener('keydown', startNarration, { capture: true });
-    };
-  }, [experienceReady, delivery?.publicId, delivery?.format, delivery?.narration?.url, toggleAudio]);
 
   useEffect(() => {
     if (!delivery || !experienceReady || !delivery.assets?.length) return undefined;
@@ -634,14 +617,15 @@ export default function DeliveryViewer() {
   }
 
   const format = delivery.format || 'photo-story';
+  const capabilities = getDeliveryCapabilities(format);
   const playbackDelivery = {
     ...delivery,
     assets: (delivery.assets || []).map(asset => {
       const url = preloadedMedia.assets?.[asset.assetId] || asset.url;
       return { ...asset, url, thumbnailUrl: url, srcSet: undefined };
     }),
-    soundtrack: delivery.soundtrack?.url ? { ...delivery.soundtrack, url: preloadedMedia.soundtrack || delivery.soundtrack.url } : delivery.soundtrack,
-    narration: delivery.narration?.url ? { ...delivery.narration, url: preloadedMedia.narration || apiMediaUrl(delivery.narration.url) } : delivery.narration
+    soundtrack: capabilities.music && delivery.soundtrack?.url ? { ...delivery.soundtrack, url: preloadedMedia.soundtrack || delivery.soundtrack.url } : undefined,
+    narration: capabilities.narration && delivery.narration?.url ? { ...delivery.narration, url: preloadedMedia.narration || apiMediaUrl(delivery.narration.url) } : undefined
   };
   const galleryProps = {
     liked,
@@ -666,7 +650,7 @@ export default function DeliveryViewer() {
 
   return (
     <>
-      {playbackDelivery.soundtrack?.url && !['photo-reveal', 'album', 'photo-story'].includes(format) && (
+      {playbackDelivery.soundtrack?.url && capabilities.soundtrackOwner === 'viewer' && (
         <audio
           ref={soundtrackRef}
           src={playbackDelivery.soundtrack.url}
@@ -679,7 +663,7 @@ export default function DeliveryViewer() {
           onEnded={() => setAudioState({ playing: '', loading: '' })}
         />
       )}
-      {playbackDelivery.narration?.url && !['photo-story'].includes(format) && (
+      {playbackDelivery.narration?.url && capabilities.narrationOwner === 'viewer' && (
         <audio
           ref={narrationRef}
           src={playbackDelivery.narration.url}
@@ -702,7 +686,7 @@ export default function DeliveryViewer() {
       )}
 
       {delivery.viewer && <aside className="vd-role-notice"><strong>{delivery.viewer.label}</strong><span>{delivery.viewer.role} access</span>{delivery.viewer.usageTerms && <p>{delivery.viewer.usageTerms}</p>}</aside>}
-      {format !== 'photo-story' && audioState.playing === 'narration' && narrationCue?.text && <aside className="vd-narration-cue" aria-live="polite"><span>READING THE APPROVED CAPTION</span><p>{narrationCue.text}</p></aside>}
+      {capabilities.narration && audioState.playing === 'narration' && narrationCue?.text && <aside className="vd-narration-cue" aria-live="polite"><span>READING THE APPROVED CAPTION</span><p>{narrationCue.text}</p></aside>}
       {content}
     </>
   );

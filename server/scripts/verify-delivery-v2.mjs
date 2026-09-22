@@ -20,6 +20,8 @@ const deliveryRoutes = await read('src/routes/delivery.routes.js');
 const storyController = await read('src/controllers/story.controller.js');
 const storyView = await read('src/models/StoryView.js');
 const entitlement = await read('src/services/entitlement.service.js');
+const deliveryWorker = await read('src/services/deliveryWorker.service.js');
+const quotaService = await read('src/services/alibabaQuota.service.js');
 
 const delivery = {
   clientName: 'Amaka',
@@ -55,10 +57,10 @@ assert.equal(measured[0].endSec, 3.45, 'Narration must use measured segment end'
 assert.throws(() => timedSegments(segments, [{ word: 'unrelated', start: 0, end: 1 }]), /aligned/, 'Narration must fail when captions cannot be aligned');
 assert.match(narration, /flux-hannah-en/, 'Deepgram Flux Hannah must be the configured narrator');
 assert.match(narration, /captionsRead: true/, 'Narration metadata must state that approved captions were read');
-assert.match(narration, /speed: 0\.9/, 'Narration must use a measured but natural speaking speed');
+assert.match(narration, /speed: 0\.86/, 'Narration must use a measured but natural speaking speed');
 assert.match(narration, /expressivity: 0/, 'Narration must keep Flux natural expressivity');
 assert.match(narration, /renderVersion: NARRATION_RENDER_VERSION/, 'Narration must identify its rendering settings');
-assert.match(narration, /transcriptLines\.join\('\\n\\n'\)/, 'Narration must leave a breath between approved captions');
+assert.match(narration, /spokenTranscriptLines\.join\('\\n\\n'\)/, 'Narration must leave a breath between approved captions');
 assert.match(narration, /transcribeWordTimings/, 'Narration must measure generated audio word timings');
 assert.match(narration, /timedSegments/, 'Narration must align approved captions to measured timings');
 assert.match(narration, /splitNarration/, 'Narration must split long deliveries into bounded synthesis requests');
@@ -73,7 +75,18 @@ assert.match(director, /Campaign Delivery is a commercial presentation/, 'Campai
 assert.match(director, /FORMAT_DIRECTION_PROFILES/, 'Creative direction must keep a format-specific design contract');
 assert.match(director, /Use a composition supported by the/, 'Creative direction must reject unsupported format compositions');
 assert.match(director, /trackId: z\.enum/, 'Creative direction must not silently replace an invalid soundtrack with the first catalogue track');
+assert.match(director, /supportsDeliveryMusic\(value\.format\) && !value\.music/, 'Music-capable formats must receive an approved soundtrack decision');
 assert.match(director, /imageTreatment: z\.literal\('natural'\)/, 'Creative direction must preserve original photograph pixels');
+assert.match(deliveryWorker, /mapConcurrent/, 'Delivery AI batches must run concurrently');
+assert.match(deliveryWorker, /supportsDeliveryMusic/, 'Delivery worker must enforce the format music contract');
+assert.match(deliveryWorker, /supportsDeliveryNarration/, 'Delivery worker must enforce the format narration contract');
+assert.match(deliveryWorker, /activeJobs = new Map/, 'Delivery worker must process more than one queued job');
+assert.match(deliveryWorker, /activeDeliveryIds/, 'One delivery must not be mutated by two active jobs at once');
+assert.match(quotaService, /api\/v1\/quotas/, 'Worker must be able to read the Alibaba workspace quota');
+assert.match(quotaService, /async_user_concurrency_limit/, 'Quota discovery must retain the provider concurrency limit');
+assert.match(deliveryController, /const latestJob = await DeliveryJob\.findOne/, 'Draft loading must inspect the latest generation job');
+assert.match(deliveryController, /generationJob = latestJob && \['queued', 'running', 'failed'\]/, 'Draft loading must not surface an obsolete failed job after a newer completed job');
+assert.match(deliveryController, /deliveryId: req\.params\.id, userId: req\.user\.id/, 'Job polling and retry must stay inside the requested delivery');
 assert.match(director, /focalPoint: z\.preprocess\(val => String\(val \|\| ''\)\.trim\(\)\.slice\(0, 24\), z\.string\(\)\.regex/, 'Frame focal points must be validated before reaching CSS');
 assert.match(director, /campaignType/, 'Campaign captions must carry a filterable asset type');
 assert.match(director, /eventType/, 'Event Coverage captions must carry a filterable scene type');
@@ -92,6 +105,7 @@ assert.match(legacyPhotoStory, /slides\.length === photoCount/, 'Legacy Photo St
 assert.match(legacyStoryController, /caption: z\.string\(\)\.trim\(\)\.min\(18\)/, 'Legacy Photo Story publishing must require a meaningful caption for every photograph');
 assert.match(deliveryController, /caption: z\.string\(\)\.trim\(\)\.min\(18\)/, 'Review API must reject short or empty captions');
 assert.match(deliveryController, /narration: z\.boolean\(\)\.default\(true\)/, 'Publishing must keep narration enabled by default');
+assert.match(deliveryController, /const narrationRequested = supportsDeliveryNarration/, 'Publishing must only retain narration for formats that support it');
 assert.match(deliveryController, /NARRATION_REFRESH_REQUIRED/, 'Publishing must not reuse narration rendered with stale voice settings');
 assert.match(deliveryController, /export async function trackPhotoDownload/, 'Download analytics must have a post-download event endpoint');
 assert.match(deliveryController, /individualAllowed.*galleryAllowed/, 'Download all must work when only gallery downloads are enabled');

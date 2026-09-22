@@ -205,6 +205,8 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
  const [hidden, setHidden] = useState(document.hidden);
  const audio = useRef(null);
  const narrationRef = useRef(null);
+ const narrationLeadTimer = useRef(null);
+ const narrationLeadRef = useRef(false);
  const progress = useRef(null);
  const elapsed = useRef(0);
  const touch = useRef(null);
@@ -222,6 +224,8 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
 
  useEffect(() => {
   let active = true;
+  if (narrationLeadTimer.current) window.clearTimeout(narrationLeadTimer.current);
+  narrationLeadRef.current = false;
   setStarted(false); setIndex(0); setPaused(false); setFinished(false); setGallery(false); setError(''); setLoading(true); elapsed.current = 0;
   if (deliveryProp) {
     const cd = deliveryProp.creativeDirection || {};
@@ -282,7 +286,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
     };
     setStory(derived);
     setLoading(false);
-    return () => { active = false; };
+    return () => { active = false; if (narrationLeadTimer.current) window.clearTimeout(narrationLeadTimer.current); narrationLeadRef.current = false; };
   }
   if (demo) { setStory(DEMO_PRESETS.find(p => p.id === demoId)); setLoading(false); }
   else api.get('/v1/stories/public/' + encodeURIComponent(storyId)).then(res => {
@@ -290,7 +294,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
    if (!res.data?.success || !Array.isArray(res.data.data?.photos) || !res.data.data.photos.length) throw new Error('Story not found');
    setStory(res.data.data); setLoading(false); trackEvent('client.delivery.opened', { format: 'photo-story' }, { format: 'photo-story', status: 'opened' });
   }).catch(() => { trackEvent('client.delivery.load.failed', {}, { format: 'photo-story', status: 'failed', errorCode: 'PHOTO_STORY_LOAD_FAILED' }); if (active) { setError('This story could not be opened. Check the link with the photographer.'); setLoading(false); } });
-  return () => { active = false; };
+  return () => { active = false; if (narrationLeadTimer.current) window.clearTimeout(narrationLeadTimer.current); };
  }, [demo, demoId, storyId, deliveryProp]);
  const go = useCallback(direction => {
   elapsed.current = 0; setFinished(false); setIndex(current => {
@@ -356,7 +360,9 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
     }
   }, [index, photos, demo, demoId]);
 
-  const handleNarrationEnded = () => {
+ const handleNarrationEnded = () => {
+    if (narrationLeadTimer.current) window.clearTimeout(narrationLeadTimer.current);
+    narrationLeadRef.current = false;
     setNarrationPlaying(false);
     setNarrationLoading(false);
     if (progress.current) progress.current.style.transform = 'scaleX(1)';
@@ -368,6 +374,10 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
     const narrationEl = narrationRef.current;
     if (!narrationEl || !hasNarration) return;
     narrationEl.muted = muted;
+    if (muted) {
+      if (narrationLeadTimer.current) window.clearTimeout(narrationLeadTimer.current);
+      narrationLeadRef.current = false;
+    }
     if (running && !muted && (narrationPlaying || narrationLoading)) {
       narrationEl.play().catch(() => {});
     } else {
@@ -380,6 +390,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
     const segments = deliveryProp?.narration?.segments || [];
     if (!narration || !hasNarration || !segments.length) return;
     const onTimeUpdate = () => {
+      if (narrationLeadRef.current) return;
       const time = narration.currentTime;
       const segmentIndex = segments.findIndex(segment => time >= Number(segment.startSec || 0) && time < Number(segment.endSec || 0));
       if (segmentIndex < 0) {
@@ -490,6 +501,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
    }
   };
  const start = () => {
+    if (narrationLeadTimer.current) window.clearTimeout(narrationLeadTimer.current);
     setStarted(true); setPaused(false); setFinished(false); setIndex(0); elapsed.current = 0;
     trackEvent('client.experience.started', { format: 'photo-story' }, { format: 'photo-story', status: 'started' });
     if (audio.current) {
@@ -502,13 +514,25 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
     }
     if (narrationRef.current && hasNarration) {
       narrationRef.current.currentTime = 0;
+      narrationRef.current.volume = 0;
       if (!muted) {
+        narrationLeadRef.current = true;
         setNarrationLoading(true);
+        // Prime narration inside the same user gesture as the music. The voice
+        // stays inaudible for a short musical lead-in, then starts again from
+        // the beginning so browsers do not block the delayed play request.
         narrationRef.current.play().then(() => {
           setNarrationPlaying(true);
           setNarrationLoading(false);
-          fadeAudioVolume(audio.current, .16, 520);
-        }).catch(() => { setNarrationPlaying(false); setNarrationLoading(false); });
+          narrationLeadTimer.current = window.setTimeout(() => {
+            const narration = narrationRef.current;
+            if (!narration || narration.muted) return;
+            narrationLeadRef.current = false;
+            narration.currentTime = 0;
+            fadeAudioVolume(narration, 1, 180);
+            fadeAudioVolume(audio.current, .16, 520);
+          }, reduced ? 0 : 1400);
+        }).catch(() => { narrationLeadRef.current = false; setNarrationPlaying(false); setNarrationLoading(false); });
       }
     }
   };

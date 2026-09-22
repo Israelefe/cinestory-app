@@ -9,6 +9,7 @@ import { uploadDeliveryPhotos, uploadDeliverySoundtrack } from '../utils/deliver
 import { SHOOT_TYPES } from '../constants/shootTypes.js';
 import { FORMAT_REGISTRY, formatName } from '../constants/formatRegistry.jsx';
 import { DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
+import { getDeliveryCapabilities, supportsDeliveryNarration } from '../constants/deliveryCapabilities.js';
 import { trackEvent } from '../services/analytics.js';
 import DeliveryDirectionStudio from '../components/delivery/DeliveryDirectionStudio.jsx';
 import ClientDeliveryPreview from '../components/delivery/ClientDeliveryPreview.jsx';
@@ -181,6 +182,7 @@ export default function CreateDelivery({ user }) {
   const [error, setError] = useState('');
   const [failedJob, setFailedJob] = useState(null);
   const [reviewPage, setReviewPage] = useState(0);
+  const [reviewPanel, setReviewPanel] = useState('overview');
   const [access, setAccess] = useState({ pinEnabled: false, pin: '', expiresAt: '', allowIndividualDownloads: true, allowDownloadAll: true, allowLikes: true, narration: true, narrationVoiceId: DEFAULT_NARRATION_VOICE_ID });
   const [audioRights, setAudioRights] = useState(false);
   const [audioTitle, setAudioTitle] = useState('');
@@ -245,15 +247,52 @@ export default function CreateDelivery({ user }) {
     if (!draftId) return;
     let active = true;
     setBusy('loading');
+    setError('');
+    setFailedJob(null);
     api.get(`/v1/deliveries/${draftId}`).then(response => {
       if (!active) return;
       const current = response.data.data;
       setDelivery(current);
+      setAccess(currentAccess => ({ ...currentAccess, narration: supportsDeliveryNarration(current.format) && currentAccess.narration }));
       setBrief({ clientName: current.clientName || '', shootType: current.shootType || '', brief: current.brief || '' });
       if (current.status === 'published') setStep(5);
       else if (current.creativeDirection) setStep(current.reviewApprovedAt ? 5 : 4);
       else if (current.formatRecommendations?.length) setStep(3);
       else if (current.assets?.length) setStep(2);
+      const activeJob = current.generationJob;
+      if (active && activeJob?.status === 'failed') {
+        setError(activeJob.errorMessage || 'Veylo could not finish this saved step.');
+        setFailedJob({ id: activeJob._id, type: activeJob.type });
+      }
+      if (active && activeJob && ['queued', 'running'].includes(activeJob.status)) {
+        const jobStage = activeJob.type === 'analyze'
+          ? 'Reading the complete shoot…'
+          : activeJob.type === 'direct'
+            ? 'Directing every photograph…'
+            : activeJob.type === 'narrate'
+              ? 'Recording the approved narration…'
+              : 'Applying the selected revision…';
+        if (activeJob.type === 'analyze') setStep(2);
+        if (activeJob.type === 'direct') setStep(3);
+        if (activeJob.type === 'revise' || activeJob.type === 'narrate') setStep(4);
+        setBusy(activeJob.type);
+        setProgress({ value: Number(activeJob.progress || 0), stage: jobStage });
+        return waitForJob(current._id, activeJob._id, job => {
+          if (!active) return;
+          setProgress({ value: job.progress, stage: jobStage });
+        }).then(async () => {
+          if (!active) return;
+          const refreshed = await refreshDelivery(current._id);
+          if (activeJob.type === 'analyze') setStep(3);
+          if (activeJob.type === 'direct' || activeJob.type === 'revise') setStep(4);
+          if (activeJob.type === 'narrate' && refreshed.status === 'review') setStep(5);
+        }).catch(requestError => {
+          if (active) {
+            setError(requestError.message || 'Veylo could not finish the saved job.');
+            setFailedJob({ id: activeJob._id, type: activeJob.type });
+          }
+        });
+      }
     }).catch(requestError => setError(apiMessage(requestError, 'We could not open this draft.'))).finally(() => setBusy(''));
     return () => { active = false; };
   }, [draftId]);
@@ -263,6 +302,12 @@ export default function CreateDelivery({ user }) {
     trackEvent('delivery.creation.step.viewed', { step, format: delivery.format }, { format: delivery.format, status: 'viewed' });
     if (step === 4) trackEvent('delivery.review.opened', { format: delivery.format }, { format: delivery.format, status: 'opened' });
   }, [delivery?.format, step]);
+
+  useEffect(() => {
+    if (!delivery?._id) return;
+    setReviewPanel('overview');
+    setReviewPage(0);
+  }, [delivery?._id, delivery?.format]);
 
   async function refreshDelivery(id = delivery?._id) {
     const response = await api.get(`/v1/deliveries/${id}`);
@@ -345,6 +390,7 @@ export default function CreateDelivery({ user }) {
   }
 
   async function chooseFormat(format) {
+    setAccess(current => ({ ...current, narration: supportsDeliveryNarration(format) }));
     setBusy('direct'); setError(''); setFailedJob(null); setProgress({ value: 2, stage: `Directing the ${formatName(format)}…` });
     try {
       const response = await api.post(`/v1/deliveries/${delivery._id}/direct`, { format });
@@ -416,21 +462,23 @@ export default function CreateDelivery({ user }) {
     if (access.pinEnabled && !/^\d{6}$/.test(access.pin)) return setError('Enter a six-digit PIN or turn the PIN off.');
     setBusy('publish'); setError(''); setFailedJob(null);
     try {
-      if (access.narration && delivery.narration?.renderVersion !== NARRATION_RENDER_VERSION) {
+      const narrationEnabled = getDeliveryCapabilities(delivery?.format).narration && access.narration;
+      if (narrationEnabled && delivery.narration?.renderVersion !== NARRATION_RENDER_VERSION) {
         setProgress({ value: 5, stage: 'Recording the approved narration…' });
         const narration = await api.post(`/v1/deliveries/${delivery._id}/narrate`, { voiceId: DEFAULT_NARRATION_VOICE_ID });
         await waitForJob(delivery._id, narration.data.data._id, job => setProgress({ value: job.progress, stage: 'Recording the approved narration…' }));
       }
-      const response = await api.post(`/v1/deliveries/${delivery._id}/publish`, { pin: access.pinEnabled ? access.pin : '', expiresAt: access.expiresAt ? new Date(access.expiresAt).toISOString() : '', allowIndividualDownloads: access.allowIndividualDownloads, allowDownloadAll: access.allowDownloadAll, allowLikes: access.allowLikes, narration: access.narration });
+      const response = await api.post(`/v1/deliveries/${delivery._id}/publish`, { pin: access.pinEnabled ? access.pin : '', expiresAt: access.expiresAt ? new Date(access.expiresAt).toISOString() : '', allowIndividualDownloads: access.allowIndividualDownloads, allowDownloadAll: access.allowDownloadAll, allowLikes: access.allowLikes, narration: narrationEnabled });
       setDelivery(current => ({ ...current, status: 'published', publishedUrl: response.data.data.url }));
       setParams({}, { replace: true }); toast.success('Client delivery published');
-      trackEvent('delivery.publish.succeeded', { format: delivery.format, narration: access.narration, soundtrack: Boolean(delivery.soundtrack) }, { format: delivery.format, status: 'completed' });
+      trackEvent('delivery.publish.succeeded', { format: delivery.format, narration: narrationEnabled, soundtrack: Boolean(delivery.soundtrack) }, { format: delivery.format, status: 'completed' });
     } catch (requestError) { trackEvent('delivery.publish.failed', { format: delivery?.format }, { format: delivery?.format, status: 'failed', errorCode: requestError.response?.data?.code || 'PUBLISH_FAILED' }); setError(apiMessage(requestError, requestError.message || 'We could not publish this delivery.')); if (requestError.jobId) setFailedJob({ id: requestError.jobId, type: requestError.jobType }); }
     finally { setBusy(''); }
   }
 
   async function addSoundtrack(file) {
     if (!file) return;
+    if (!getDeliveryCapabilities(delivery?.format).music) return toast.info('This format does not use music.');
     if (!audioRights) return toast.error('Confirm that you have permission to use this track first.');
     if (file.size > 20 * 1024 * 1024) return toast.error('Choose an audio file no larger than 20 MB.');
     setBusy('soundtrack'); setError('');
@@ -502,6 +550,7 @@ export default function CreateDelivery({ user }) {
   }
 
   async function selectCuratedTrack(track) {
+    if (!getDeliveryCapabilities(delivery?.format).music) return toast.info('This format does not use music.');
     setBusy('soundtrack');
     setError('');
     try {
@@ -602,6 +651,7 @@ export default function CreateDelivery({ user }) {
   const frameMap = useMemo(() => new Map((delivery?.creativeDirection?.frames || []).map(frame => [frame.assetId, frame])), [delivery]);
   const pageAssets = orderedAssets.slice(reviewPage * 18, reviewPage * 18 + 18);
   const publishedUrl = delivery?.publishedUrl || (delivery?.status === 'published' ? `${APP_URL}/d/${delivery.publicId}` : '');
+  const reviewCapabilities = getDeliveryCapabilities(delivery?.format);
 
   return <div className="v-create-page">
     <div className="v-create-glow" aria-hidden="true" />
@@ -662,21 +712,29 @@ export default function CreateDelivery({ user }) {
             <div className="v-create-footer"><button type="button" onClick={() => goBackTo(2)}><ArrowLeft size={16} />Back to photographs</button><button type="button" className="v-create-primary" onClick={() => chooseFormat(selectedFormat)} disabled={!selectedFormat || Boolean(busy)}>{busy === 'direct' ? progress.stage : selectedFormat ? `Create ${formatName(selectedFormat)}` : 'Choose a format above'}{busy === 'direct' ? <LoaderCircle className="v-spin" size={17} /> : <ArrowRight size={17} />}</button></div>
           </Stage> : step === 4 ? <Stage key="review">
             <StageHead eyebrow={`04 / Review the ${formatName(delivery?.format)}`} title="Check the order. Read every line." copy="Veylo proposes the direction. You decide what reaches your client. Edit any line and move any photograph before you publish." />
+            <section className="v-review-summary" aria-label="Review summary"><div><strong>{orderedAssets.length}</strong><span>photographs</span></div><div><strong>{frameMap.size}/{orderedAssets.length}</strong><span>captions ready</span></div><div><strong>{reviewCapabilities.music ? (delivery?.soundtrack ? 'Ready' : 'Choose') : 'Not used'}</strong><span>soundtrack</span></div><div><strong>{reviewCapabilities.narration ? (access.narration ? 'On' : 'Off') : 'Not used'}</strong><span>Hannah narration</span></div></section>
+            <nav className="v-review-nav" aria-label="Review sections"><button type="button" className={reviewPanel === 'overview' ? 'is-active' : ''} onClick={() => setReviewPanel('overview')}>Overview</button><button type="button" className={reviewPanel === 'design' ? 'is-active' : ''} onClick={() => setReviewPanel('design')}>Design</button><button type="button" className={reviewPanel === 'photos' ? 'is-active' : ''} onClick={() => setReviewPanel('photos')}>Photographs</button>{reviewCapabilities.music && <button type="button" className={reviewPanel === 'soundtrack' ? 'is-active' : ''} onClick={() => setReviewPanel('soundtrack')}>Soundtrack</button>}<button type="button" className={reviewPanel === 'client' ? 'is-active' : ''} onClick={() => setReviewPanel('client')}>Client preview</button></nav>
+            {reviewPanel === 'overview' && <>
             <div className="v-review-opening"><label>Delivery title<input value={delivery?.creativeDirection?.title || ''} onChange={event => editDirection('title', event.target.value)} maxLength={80} /></label><label>Opening line<textarea value={delivery?.creativeDirection?.openingLine || ''} onChange={event => editDirection('openingLine', event.target.value)} maxLength={140} rows={3} /></label><label>Closing line<textarea value={delivery?.creativeDirection?.closingLine || ''} onChange={event => editDirection('closingLine', event.target.value)} maxLength={160} rows={3} /></label></div>
-             <DeliveryDirectionStudio delivery={delivery} assets={orderedAssets} frameMap={frameMap} onDirectionChange={editDirectionSetting} onSectionChange={editSection} onFrameChange={editFrame} />
-             <CurrentSoundtrackPlayer soundtrack={delivery?.soundtrack} />
-             <section className="v-client-format-preview" aria-label="Exact client format preview">
+             {reviewCapabilities.music && <CurrentSoundtrackPlayer soundtrack={delivery?.soundtrack} />}
+             {!delivery?.soundtrack && reviewCapabilities.music && <div className="v-review-audio-empty"><Music2 size={17} /><span><strong>No soundtrack is attached yet.</strong><small>Veylo can suggest one for this format, and you can listen before publishing.</small></span><button type="button" onClick={() => setStep(5)}>Choose music</button></div>}
+            </>}
+            {reviewPanel === 'design' && <DeliveryDirectionStudio delivery={delivery} assets={orderedAssets} frameMap={frameMap} onDirectionChange={editDirectionSetting} onSectionChange={editSection} onFrameChange={editFrame} />}
+            {reviewPanel === 'soundtrack' && <section className="v-review-audio-panel" aria-label="Soundtrack review">{reviewCapabilities.music ? <><h2>Soundtrack for this delivery</h2><p>Listen to the selected track here. You do not need to open the catalogue just to hear what Veylo chose.</p>{delivery?.soundtrack ? <CurrentSoundtrackPlayer soundtrack={delivery.soundtrack} /> : <div className="v-review-audio-empty"><Music2 size={17} /><span><strong>No soundtrack is attached yet.</strong><small>Open the publish step to choose a track.</small></span><button type="button" onClick={() => setStep(5)}>Choose music</button></div>}</> : <p>This format is designed without music.</p>}</section>}
+             {reviewPanel === 'client' && <section className="v-client-format-preview" aria-label="Exact client format preview">
                <header><div><p>EXACT CLIENT VIEW</p><h2>Open the same format your client will receive.</h2><span>This preview uses the selected format, order, captions, colour direction, and typography. It is the final viewer inside the studio.</span></div><span className="v-client-format-preview-badge">{formatName(delivery?.format)}</span></header>
-              <div className="v-client-format-preview-frame"><ClientDeliveryPreview delivery={delivery ? { ...delivery, branding: delivery.branding || previewBranding } : delivery} narrationEnabled={access.narration} accessPin={access.pinEnabled ? access.pin : ''} access={access} /></div>
-             </section>
+              <div className="v-client-format-preview-frame"><ClientDeliveryPreview delivery={delivery ? { ...delivery, branding: delivery.branding || previewBranding } : delivery} narrationEnabled={reviewCapabilities.narration && access.narration} accessPin={access.pinEnabled ? access.pin : ''} access={access} /></div>
+             </section>}
+            {reviewPanel === 'photos' && <>
             <div className="v-review-revision"><div><ListChecks size={19} /><span><strong>Ask for another direction</strong><small>Choose photographs below for a focused change, or ask Veylo to rethink the complete delivery.</small></span></div><textarea value={revisionInstruction} onChange={event => setRevisionInstruction(event.target.value)} maxLength={600} placeholder="For example: make these captions warmer and keep the focus on her confidence in the second look." /><footer><span>{revisionIds.length} photograph{revisionIds.length === 1 ? '' : 's'} selected</span><button type="button" onClick={() => requestRevision('selected')} disabled={Boolean(busy) || !revisionIds.length}>Revise selected</button><button type="button" onClick={() => requestRevision('full')} disabled={Boolean(busy)}>Rethink full direction</button></footer>{busy === 'revise' && <Progress value={progress.value} label={progress.stage} />}</div>
             <div className="v-review-grid">{pageAssets.map((asset, localIndex) => { const index = reviewPage * 18 + localIndex; const frame = frameMap.get(asset.assetId) || {}; return <article key={asset.assetId}><button type="button" className={`v-review-select ${revisionIds.includes(asset.assetId) ? 'is-selected' : ''}`} onClick={() => toggleRevisionAsset(asset.assetId)}><Check size={13} />{revisionIds.includes(asset.assetId) ? 'Selected for revision' : 'Select for revision'}</button><div><img src={asset.thumbnailUrl || asset.url} alt="" /><span>{String(index + 1).padStart(2, '0')}</span><div><button type="button" onClick={() => movePhoto(asset.assetId, -1)} disabled={index === 0} aria-label="Move photograph earlier"><ChevronUp size={15} /></button><button type="button" onClick={() => movePhoto(asset.assetId, 1)} disabled={index === orderedAssets.length - 1} aria-label="Move photograph later"><ChevronDown size={15} /></button></div></div><label>Heading<input value={frame.headline || ''} onChange={event => editFrame(asset.assetId, 'headline', event.target.value)} maxLength={70} /></label><label>Caption<textarea value={frame.caption || ''} onChange={event => editFrame(asset.assetId, 'caption', event.target.value)} maxLength={180} rows={4} /></label><small>{frame.motion?.replaceAll('-', ' ')} · {frame.transition}</small></article>; })}</div>
             {orderedAssets.length > 18 && <div className="v-review-pages"><button onClick={() => setReviewPage(value => Math.max(0, value - 1))} disabled={reviewPage === 0}>Previous</button><span>{reviewPage + 1} / {Math.ceil(orderedAssets.length / 18)}</span><button onClick={() => setReviewPage(value => Math.min(Math.ceil(orderedAssets.length / 18) - 1, value + 1))} disabled={reviewPage >= Math.ceil(orderedAssets.length / 18) - 1}>Next</button></div>}
+            </>}
             <div className="v-create-footer"><button type="button" onClick={() => goBackTo(3)}><RefreshCw size={15} />Choose another format</button><button type="button" className="v-create-primary" onClick={saveReview} disabled={Boolean(busy)}>{busy === 'save' ? 'Saving your edits…' : 'Approve this direction'}<Check size={17} /></button></div>
           </Stage> : <Stage key="publish">
             {publishedUrl ? <div className="v-published"><span><Check size={25} /></span><p>CLIENT DELIVERY READY</p><h1>{delivery.title}</h1><small>Send one private link. Your client can open it on their phone without creating an account.</small><div><a className="v-create-primary" href={publishedUrl} target="_blank" rel="noreferrer">Open client view<ArrowRight size={17} /></a><button type="button" onClick={() => navigator.clipboard.writeText(publishedUrl).then(() => toast.success('Client link copied'))}>Copy client link</button><a href={`https://wa.me/?text=${encodeURIComponent(`Hello ${delivery.clientName}, your photographs are ready. Open your private delivery here:\n${publishedUrl}`)}`} target="_blank" rel="noreferrer">Send on WhatsApp</a><button type="button" onClick={shareDelivery}><Share2 size={15} />Open share menu</button><button type="button" onClick={downloadQr}><QrCode size={15} />Download QR code</button></div><form className="v-published-email" onSubmit={sendDeliveryEmail}><label><Mail size={15} /><input type="email" value={clientEmail} onChange={event => setClientEmail(event.target.value)} required maxLength={254} placeholder="Client email address" /></label><button type="submit" disabled={busy === 'email'}>{busy === 'email' ? 'Sending…' : 'Send by email'}</button></form><Link to="/dashboard">Return to my deliveries</Link></div> : <>
               <StageHead eyebrow="05 / Client access" title="Choose what happens after you share." copy="Set privacy and download controls, then publish one link for your client." />
-              <div className="v-publish-audio">
+              {reviewCapabilities.music && <div className="v-publish-audio">
                 <header>
                   <Music2 size={20} />
                   <div>
@@ -760,14 +818,14 @@ export default function CreateDelivery({ user }) {
                     )}
                   </div>
                 )}
-              </div>
+              </div>}
               <div className="v-publish-settings">
                 <Toggle icon={LockKeyhole} label="Six-digit PIN" copy="Ask for a PIN before showing the client name, title, or photographs." checked={access.pinEnabled} onChange={value => setAccess(current => ({ ...current, pinEnabled: value }))}>{access.pinEnabled && <input value={access.pin} onChange={event => setAccess(current => ({ ...current, pin: event.target.value.replace(/\D/g, '').slice(0, 6) }))} inputMode="numeric" placeholder="000000" aria-label="Six-digit delivery PIN" />}</Toggle>
                 <label className="v-publish-expiry"><span>Link expiry</span><small>Leave empty when the delivery should stay open.</small><input type="date" value={access.expiresAt} min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)} onChange={event => setAccess(current => ({ ...current, expiresAt: event.target.value }))} /></label>
                 <Toggle icon={Image} label="Individual photo downloads" copy="Let the client download one photograph at a time." checked={access.allowIndividualDownloads} onChange={value => setAccess(current => ({ ...current, allowIndividualDownloads: value }))} />
                 <Toggle icon={Clapperboard} label="Download all photographs" copy="Let the client start the photographs one by one from the gallery." checked={access.allowDownloadAll} onChange={value => setAccess(current => ({ ...current, allowDownloadAll: value }))} />
                 <Toggle icon={Check} label="Photo likes" copy="Let the client mark the photographs they love." checked={access.allowLikes} onChange={value => setAccess(current => ({ ...current, allowLikes: value }))} />
-                <Toggle icon={Play} label="Narration with Hannah" copy="On by default. Deepgram Flux reads the approved captions in a calm, measured voice." checked={access.narration} onChange={value => setAccess(current => ({ ...current, narration: value }))}>{access.narration && <small className="v-narration-voice-note">Deepgram Flux · Hannah · captions are read in photograph order.</small>}</Toggle>
+                {reviewCapabilities.narration && <Toggle icon={Play} label="Narration with Hannah" copy="On by default for Photo Story. Deepgram Flux reads the approved captions in a calm, measured voice." checked={access.narration} onChange={value => setAccess(current => ({ ...current, narration: value }))}>{access.narration && <small className="v-narration-voice-note">Deepgram Flux · Hannah · captions are read in photograph order.</small>}</Toggle>}
               </div>
               {busy === 'publish' && progress.stage && <Progress value={progress.value} label={progress.stage} />}
               <div className="v-create-footer"><button type="button" onClick={() => goBackTo(4)}><ArrowLeft size={16} />Back to review</button><button type="button" className="v-create-primary" onClick={publish} disabled={Boolean(busy)}>{busy === 'publish' ? 'Preparing the client link…' : 'Publish client delivery'}<ArrowRight size={17} /></button></div>

@@ -4,10 +4,9 @@ import { toast } from 'react-toastify';
 import { API_BASE_URL } from '../../config/env.js';
 import { DeliveryFormatViewer } from './viewerRegistry.jsx';
 import { DeliveryReadiness } from '../../pages/DeliveryViewer.jsx';
+import { getDeliveryCapabilities } from '../../constants/deliveryCapabilities.js';
 import '../../pages/DeliveryViewer.css';
 import './ClientDeliveryPreview.css';
-
-const externalSoundtrackFormats = new Set(['photo-story', 'photo-reveal', 'album']);
 
 function revokeMedia(media) {
   Object.values(media?.assets || {}).forEach(url => {
@@ -45,11 +44,12 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
     setNarrationCue(null);
     setPreviewLiked(new Set());
     narrationInteractionRef.current = false;
-  }, [accessPin, access?.allowIndividualDownloads, access?.allowDownloadAll, access?.allowLikes, delivery?.publicId, delivery?._id, delivery?.soundtrack?.url, delivery?.narration?.url, (delivery?.assets || []).map(asset => `${asset.assetId}:${asset.url || ''}`).join('|')]);
+  }, [accessPin, access?.allowIndividualDownloads, access?.allowDownloadAll, access?.allowLikes, delivery?.publicId, delivery?._id, delivery?.format, delivery?.soundtrack?.url, delivery?.narration?.url, (delivery?.assets || []).map(asset => `${asset.assetId}:${asset.url || ''}`).join('|')]);
 
   useEffect(() => () => revokeMedia(preloadedMedia), [preloadedMedia]);
 
   const format = delivery?.format || 'photo-story';
+  const capabilities = getDeliveryCapabilities(format);
   const playbackDelivery = useMemo(() => ({
     ...delivery,
     access: {
@@ -61,12 +61,12 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
       const url = preloadedMedia.assets?.[asset.assetId] || mediaUrl(asset.url);
       return { ...asset, url, thumbnailUrl: url, srcSet: undefined };
     }),
-    soundtrack: delivery?.soundtrack?.url
+    soundtrack: capabilities.music && delivery?.soundtrack?.url
       ? { ...delivery.soundtrack, url: preloadedMedia.soundtrack || mediaUrl(delivery.soundtrack.url) }
-      : delivery?.soundtrack,
-    narration: delivery?.narration?.url
+      : undefined,
+    narration: capabilities.narration && delivery?.narration?.url
       ? { ...delivery.narration, url: preloadedMedia.narration || mediaUrl(delivery.narration.url) }
-      : delivery?.narration
+      : undefined
   }), [access.allowIndividualDownloads, access.allowDownloadAll, access.allowLikes, delivery, preloadedMedia]);
 
   const toggleAudio = async kind => {
@@ -105,7 +105,7 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
   };
 
   useEffect(() => {
-    if (!experienceReady || !playbackDelivery?.narration?.url || format === 'photo-story') return undefined;
+    if (!experienceReady || !playbackDelivery?.narration?.url || capabilities.narrationOwner !== 'viewer') return undefined;
     const startNarration = event => {
       if (narrationInteractionRef.current || event.target?.closest?.('input, textarea, select')) return;
       narrationInteractionRef.current = true;
@@ -119,7 +119,7 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
       window.removeEventListener('pointerdown', startNarration, { capture: true });
       window.removeEventListener('keydown', startNarration, { capture: true });
     };
-  }, [experienceReady, playbackDelivery?.narration?.url, format, audioState.playing]);
+  }, [experienceReady, playbackDelivery?.narration?.url, capabilities.narrationOwner, audioState.playing]);
 
   if (!previewUnlocked) {
     return <section className="v-client-preview-access-gate" aria-label="Client access preview">
@@ -167,14 +167,14 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
     <div className="v-client-preview-runtime-bar" role="status" aria-live="polite">
       <span><strong>Client experience</strong><small>Everything below uses the loaded files this preview checked.</small></span>
       <div>
-        {playbackDelivery.soundtrack?.url && !externalSoundtrackFormats.has(format) && <button type="button" onClick={() => toggleAudio('soundtrack')} aria-label={audioState.playing === 'soundtrack' ? 'Pause soundtrack' : 'Play soundtrack'}>{audioState.loading === 'soundtrack' ? <LoaderCircle className="v-spin" size={15} /> : audioState.playing === 'soundtrack' ? <Pause size={15} /> : <Play size={15} />}<Music2 size={14} /></button>}
-        {playbackDelivery.narration?.url && format !== 'photo-story' && <button type="button" onClick={() => toggleAudio('narration')} aria-label={audioState.playing === 'narration' ? 'Pause narration' : 'Play narration'}>{audioState.loading === 'narration' ? <LoaderCircle className="v-spin" size={15} /> : audioState.playing === 'narration' ? <Pause size={15} /> : <Play size={15} />}<Mic2 size={14} /></button>}
+        {playbackDelivery.soundtrack?.url && capabilities.soundtrackOwner === 'viewer' && <button type="button" onClick={() => toggleAudio('soundtrack')} aria-label={audioState.playing === 'soundtrack' ? 'Pause soundtrack' : 'Play soundtrack'}>{audioState.loading === 'soundtrack' ? <LoaderCircle className="v-spin" size={15} /> : audioState.playing === 'soundtrack' ? <Pause size={15} /> : <Play size={15} />}<Music2 size={14} /></button>}
+        {playbackDelivery.narration?.url && capabilities.narrationOwner === 'viewer' && <button type="button" onClick={() => toggleAudio('narration')} aria-label={audioState.playing === 'narration' ? 'Pause narration' : 'Play narration'}>{audioState.loading === 'narration' ? <LoaderCircle className="v-spin" size={15} /> : audioState.playing === 'narration' ? <Pause size={15} /> : <Play size={15} />}<Mic2 size={14} /></button>}
       </div>
     </div>
-    {narrationEnabled && !playbackDelivery.narration?.url && <p className="v-client-preview-note"><Mic2 size={15} />Narration is enabled. Publishing will create it from the approved captions in this exact order.</p>}
-    {playbackDelivery.narration?.url && format !== 'photo-story' && narrationCue?.text && <aside className="v-client-preview-cue" aria-live="polite"><span>READING THE APPROVED CAPTION</span><p>{narrationCue.text}</p></aside>}
-    {playbackDelivery.soundtrack?.url && !externalSoundtrackFormats.has(format) && <audio ref={soundtrackRef} src={playbackDelivery.soundtrack.url} preload="auto" loop onWaiting={() => setAudioState(current => ({ ...current, loading: 'soundtrack' }))} onPlaying={() => setAudioState({ playing: 'soundtrack', loading: '' })} onError={() => setAudioState({ playing: '', loading: '' })} />}
-    {playbackDelivery.narration?.url && format !== 'photo-story' && <audio ref={narrationRef} src={playbackDelivery.narration.url} preload="auto" onWaiting={() => setAudioState(current => ({ ...current, loading: 'narration' }))} onPlaying={() => setAudioState({ playing: 'narration', loading: '' })} onTimeUpdate={syncNarrationCue} onEnded={() => { setNarrationCue(null); setAudioState({ playing: '', loading: '' }); }} onError={() => setAudioState({ playing: '', loading: '' })} />}
+    {narrationEnabled && capabilities.narration && !playbackDelivery.narration?.url && <p className="v-client-preview-note"><Mic2 size={15} />Narration is enabled. Publishing will create it from the approved captions in this exact order.</p>}
+    {playbackDelivery.narration?.url && capabilities.narrationOwner === 'viewer' && narrationCue?.text && <aside className="v-client-preview-cue" aria-live="polite"><span>READING THE APPROVED CAPTION</span><p>{narrationCue.text}</p></aside>}
+    {playbackDelivery.soundtrack?.url && capabilities.soundtrackOwner === 'viewer' && <audio ref={soundtrackRef} src={playbackDelivery.soundtrack.url} preload="auto" loop onWaiting={() => setAudioState(current => ({ ...current, loading: 'soundtrack' }))} onPlaying={() => setAudioState({ playing: 'soundtrack', loading: '' })} onError={() => setAudioState({ playing: '', loading: '' })} />}
+    {playbackDelivery.narration?.url && capabilities.narrationOwner === 'viewer' && <audio ref={narrationRef} src={playbackDelivery.narration.url} preload="auto" onWaiting={() => setAudioState(current => ({ ...current, loading: 'narration' }))} onPlaying={() => setAudioState({ playing: 'narration', loading: '' })} onTimeUpdate={syncNarrationCue} onEnded={() => { setNarrationCue(null); setAudioState({ playing: '', loading: '' }); }} onError={() => setAudioState({ playing: '', loading: '' })} />}
     <DeliveryFormatViewer format={format} {...sharedProps} />
   </div>;
 }

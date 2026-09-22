@@ -66,7 +66,7 @@ function merge(base, override) {
 
 function providerState() {
   return {
-    ai: { provider: 'Alibaba Model Studio', configured: Boolean(process.env.ALIBABA_MODEL_STUDIO_API_KEY && process.env.ALIBABA_WORKSPACE_ID), model: process.env.ALIBABA_CREATIVE_MODEL || 'deepseek-v4.1-flash', visionModel: process.env.ALIBABA_VISION_MODEL || process.env.ALIBABA_CREATIVE_MODEL || 'deepseek-v4.1-flash' },
+    ai: { provider: 'Alibaba Model Studio', configured: Boolean(process.env.ALIBABA_MODEL_STUDIO_API_KEY && process.env.ALIBABA_WORKSPACE_ID), model: process.env.ALIBABA_CREATIVE_MODEL || 'deepseek-v4.1-flash', visionModel: process.env.ALIBABA_VISION_MODEL || 'qwen3-vl-flash' },
     assistant: { provider: 'Veylo Help', configured: Boolean(process.env.ALIBABA_MODEL_STUDIO_API_KEY && process.env.ALIBABA_WORKSPACE_ID), model: process.env.ALIBABA_ASSISTANT_MODEL || 'qwen3.8-flash' },
     narration: { provider: 'Deepgram Flux', configured: Boolean(process.env.DEEPGRAM_API_KEY), defaultVoiceId: DEFAULT_NARRATION_VOICE_ID },
     email: { provider: 'Resend', configured: Boolean(process.env.RESEND_API_KEY), from: process.env.RESEND_FROM_EMAIL || 'Veylo <info@veylo.com.ng>' },

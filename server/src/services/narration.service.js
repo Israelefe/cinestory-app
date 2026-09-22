@@ -7,14 +7,24 @@ import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID } from '../constants/narra
 // The audio is generated from the approved per-photograph captions; no second script
 // is invented at narration time.
 const MODEL_ID = 'flux-hannah-en';
-export const NARRATION_RENDER_VERSION = 'flux-hannah-biography-v2';
+export const NARRATION_RENDER_VERSION = 'flux-hannah-biography-v3';
 // Keep Hannah measured without flattening her natural pitch movement. Deepgram's
 // tuned expressivity default (0) sounds more like a person telling a story than
 // the narrow, evenly stressed delivery produced by the previous -1 setting.
-const VOICE_SETTINGS = Object.freeze({ speed: 0.9, expressivity: 0, sampleRate: 24000 });
+const VOICE_SETTINGS = Object.freeze({ speed: 0.86, expressivity: 0, sampleRate: 24000 });
 
 function cleanLine(value, max = 360) {
   return String(value || '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+function narrationLine(value) {
+  const line = cleanLine(value, 220)
+    .replace(/[—–]/g, ', ')
+    .replace(/\s*;\s*/g, ', ')
+    .replace(/\s*,\s*/g, ', ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return /[.!?…]$/.test(line) ? line : `${line}.`;
 }
 
 export async function getNarrationVoiceCatalogue() {
@@ -258,7 +268,8 @@ export async function generateNarration(delivery) {
   });
   // A short paragraph break gives the narrator room to breathe between frames
   // while keeping every spoken word equal to an approved caption.
-  const transcript = transcriptLines.join('\n\n');
+  const spokenTranscriptLines = segments.map(segment => narrationLine(segment.text));
+  const transcript = spokenTranscriptLines.join('\n\n');
   const chunks = splitNarration(segments);
   const audioBuffers = [];
   const measuredSegments = [];
@@ -268,7 +279,8 @@ export async function generateNarration(delivery) {
       const line = cleanLine(segment.text, 220);
       return /[.!?…]$/.test(line) ? line : `${line}.`;
     }).join('\n\n');
-    const chunkAudio = await synthesize({ apiKey, text: chunkText });
+    const spokenChunkText = chunk.map(segment => narrationLine(segment.text)).join('\n\n');
+    const chunkAudio = await synthesize({ apiKey, text: spokenChunkText });
     const timing = await transcribeWordTimings({ apiKey, audio: chunkAudio });
     const chunkSegments = timedSegments(chunk, timing.words, timing.duration).map(segment => ({
       ...segment,
