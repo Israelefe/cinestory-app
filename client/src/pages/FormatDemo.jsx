@@ -525,8 +525,8 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio, on
   const studioName = delivery?.branding?.name ? `${delivery.branding.name.toUpperCase()} / LAGOS` : 'STUDIO LUMIÈRE / LAGOS';
   const closingLine = delivery?.creativeDirection?.closingLine || 'Your complete finished session is ready to view and download.';
   const demoOnly = !delivery;
-  // Pixabay catalogue track pixabay_570690: Afrobeat Background Music by Monume.
-  const audioTrack = delivery?.soundtrack?.url || (demoOnly ? '/audio/photo-reveal-afrobeat.mp3' : '');
+  // Pixabay catalogue track pixabay_465199: Afrobeat Music - Feelgood Groove by MusicInMedia.
+  const audioTrack = delivery?.soundtrack?.url || (demoOnly ? '/audio/photo-reveal-feelgood-groove.mp3' : '');
 
   const playSoundtrack = () => {
     if (!audio.current) return;
