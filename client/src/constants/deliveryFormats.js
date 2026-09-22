@@ -88,7 +88,17 @@ export const DELIVERY_FORMATS = [
     description: 'Built for conferences, church services, owambe celebrations, and gatherings where no single person is the subject. The delivery opens with highlights, then lets guests browse every scene and the complete gallery.',
     bestFor: 'Conferences, church services, social gatherings, corporate events, concerts, and community celebrations.',
     clientMindset: 'Browse what happened.',
-    photos: ['demo-wedding-1', 'demo-wedding-2', 'demo-wedding-3']
+    photos: [
+      '/veylo/demo/event/event-01-arrivals.webp',
+      '/veylo/demo/event/event-02-keynote.webp',
+      '/veylo/demo/event/event-03-networking.webp',
+      '/veylo/demo/event/event-04-stage.webp',
+      '/veylo/demo/event/event-05-details.webp'
+    ],
+    photoAlt: 'A Nigerian conference moving from arrivals to the main programme',
+    eventLabel: 'THE ROOM, IN FULL',
+    eventDate: '05 SCENES',
+    eventScenes: ['Arrivals', 'Main programme', 'Between sessions', 'On stage', 'Details']
   },
   {
     id: 'campaign',
@@ -101,7 +111,17 @@ export const DELIVERY_FORMATS = [
     description: 'The client sees the campaign as a considered presentation, then moves into clearly named asset sets, variants, download sizes, and photographer-supplied usage terms.',
     bestFor: 'Lookbooks, product campaigns, hospitality, food, property, personal branding, and corporate libraries.',
     clientMindset: 'See the campaign, then use the files.',
-    photos: ['demo-ada-1', 'demo-ada-3']
+    photos: [
+      '/veylo/demo/campaign/campaign-01-hero.webp',
+      '/veylo/demo/campaign/campaign-02-detail.webp',
+      '/veylo/demo/campaign/campaign-03-lifestyle.webp',
+      '/veylo/demo/campaign/campaign-04-kit.webp',
+      '/veylo/demo/campaign/campaign-05-context.webp'
+    ],
+    photoAlt: 'A complete leather goods campaign with hero, detail, lifestyle, and handoff images',
+    campaignLabel: 'COMMERCIAL HANDOFF',
+    campaignCode: 'A / 05',
+    campaignSets: ['Hero', 'Detail', 'Lifestyle', 'Kit', 'Context']
   }
 ];
 

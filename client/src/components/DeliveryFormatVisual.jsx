@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { AnimatePresence, motion, useInView, useReducedMotion } from 'framer-motion';
-import { ArrowRight, BookOpen, Film, Grid2X2, Layers3, MousePointer2 } from 'lucide-react';
+import { ArrowRight, BookOpen, BriefcaseBusiness, CalendarRange, Film, Grid2X2, Layers3, MousePointer2, PackageOpen, ScanLine, UsersRound } from 'lucide-react';
 import { Photo } from './PublicDesign.jsx';
 
 const move = (reduced, values, duration = 8) => reduced
@@ -24,7 +24,25 @@ export default function DeliveryFormatVisual({ format, compact = false, paused =
     <span className="v-visual-format-icon"><Film size={17} /></span>
   </div>;
 
-  if (format.id === 'editorial-page' || format.id === 'campaign') return <div ref={visualRef} className={visualClass('is-editorial')}>
+  if (format.id === 'event-coverage') return <div ref={visualRef} className={visualClass('is-event')}>
+    <div className="v-event-preview-head"><span><CalendarRange size={12} />{format.eventLabel || 'THE ROOM, IN FULL'}</span><b>{format.eventDate || '05 SCENES'}</b></div>
+    <motion.figure className="v-event-preview-hero" {...move(pauseMotion, { scale: [1.01, 1.055], x: ['0%', '-1%'] }, 8.5)}><Photo name={photos[0]} alt={format.photoAlt || 'A complete event coverage photograph'} /></motion.figure>
+    <div className="v-event-preview-overlay"><span>EVENT COVERAGE</span><strong>People.<br />Programme.<br /><em>Place.</em></strong><small>Browse the day by scene.</small></div>
+    <div className="v-event-preview-scenes">{photos.slice(1, 5).map((photo, index) => <div key={photo}><Photo name={photo} alt={`${format.eventScenes?.[index + 1] || 'Event'} scene`} /><span><i>0{index + 2}</i>{format.eventScenes?.[index + 1] || `Scene ${index + 2}`}</span></div>)}</div>
+    <div className="v-event-preview-footer"><UsersRound size={14} /><span>Shared moments, not one subject</span><small>OPEN SCENES <ArrowRight size={12} /></small></div>
+    <span className="v-visual-format-icon"><CalendarRange size={17} /></span>
+  </div>;
+
+  if (format.id === 'campaign') return <div ref={visualRef} className={visualClass('is-campaign')}>
+    <div className="v-campaign-preview-head"><span><BriefcaseBusiness size={12} />{format.campaignLabel || 'COMMERCIAL HANDOFF'}</span><b>{format.campaignCode || 'A / 05'}</b></div>
+    <motion.figure className="v-campaign-preview-hero" {...move(pauseMotion, { scale: [1.01, 1.055], y: ['0%', '-1.5%'] }, 8.5)}><Photo name={photos[0]} alt={format.photoAlt || 'A commercial campaign hero photograph'} /></motion.figure>
+    <div className="v-campaign-preview-title"><span>APPROVED CAMPAIGN</span><strong>See it.<br /><em>Use it.</em></strong></div>
+    <div className="v-campaign-preview-rail">{photos.slice(1, 5).map((photo, index) => <div key={photo}><Photo name={photo} alt={`${format.campaignSets?.[index + 1] || 'Campaign'} asset`} /><span>{format.campaignSets?.[index + 1] || `Asset ${index + 2}`}</span></div>)}</div>
+    <div className="v-campaign-preview-footer"><PackageOpen size={14} /><strong>5 asset sets</strong><span><ScanLine size={12} /> Web · social · master</span></div>
+    <span className="v-visual-format-icon"><BriefcaseBusiness size={17} /></span>
+  </div>;
+
+  if (format.id === 'editorial-page') return <div ref={visualRef} className={visualClass('is-editorial')}>
     <div className="v-editorial-mast"><span>{format.editorialMast || 'THE PORTRAIT ISSUE'}</span><b>{format.editorialIssue || '01'}</b></div>
     <motion.div className="v-editorial-main" {...move(pauseMotion, { y: ['0%', '-2.5%'] }, 8.5)}><Photo name={photos[0]} alt={format.photoAlt || "Fashion photograph in an editorial page layout"} /></motion.div>
     <motion.div className="v-editorial-detail" {...move(pauseMotion, { y: ['2%', '-2%'], rotate: [-2, 0] }, 7)}><Photo name={photos[1]} alt={format.detailAlt || "Editorial fashion detail"} /></motion.div>

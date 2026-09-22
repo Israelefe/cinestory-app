@@ -12,11 +12,26 @@ export const revealPhotos = Array.from({ length: 4 }, (_, index) => ({ name: `de
 export const couragePhotos = Array.from({ length: 6 }, (_, index) => ({ name: `demo-courage-${index + 1}`, alt: `Courage's graduation portrait ${index + 1}` }));
 export const weddingPhotos = Array.from({ length: 5 }, (_, index) => ({ name: `demo-wedding-${index + 1}`, alt: `Folake and Tunde's wedding portrait ${index + 1}` }));
 export const albumPhotos = ['demo-album-fa-source', 'demo-album-fa-2', 'demo-album-fa-3', 'demo-album-fa-4', 'demo-album-fa-5'].map((name, index) => ({ name, alt: `The Adeyemi family album portrait ${index + 1}` }));
+export const eventCoveragePhotos = [
+  { name: '/veylo/demo/event/event-01-arrivals.webp', alt: 'Attendees arriving and checking in at a Lagos conference', caption: 'The room starts with arrivals: familiar faces, new introductions, and the first conversations of the day.' },
+  { name: '/veylo/demo/event/event-02-keynote.webp', alt: 'A speaker addressing a seated conference audience', caption: 'A quiet room gives the speaker its full attention.' },
+  { name: '/veylo/demo/event/event-03-networking.webp', alt: 'Attendees talking over refreshments during a networking break', caption: 'The useful moments happen between sessions, over a cup of coffee and an easy introduction.' },
+  { name: '/veylo/demo/event/event-04-stage.webp', alt: 'Performers and speakers sharing a stage while the audience records the moment', caption: 'The programme lifts the room, and the audience becomes part of the frame.' },
+  { name: '/veylo/demo/event/event-05-details.webp', alt: 'Name badges and event materials arranged on a registration table', caption: 'Small details make a gathering feel ready before the first guest walks in.' }
+];
+export const campaignPhotos = [
+  { name: '/veylo/demo/campaign/campaign-01-hero.webp', alt: 'Tan leather handbag and wallet on an indigo pedestal', caption: 'The campaign opens with the pieces together: warm leather, clean shape, and a confident point of view.', assetType: 'CAMPAIGN HERO', deliveryLabel: 'MASTER / WEB' },
+  { name: '/veylo/demo/campaign/campaign-02-detail.webp', alt: 'Close detail of leather stitching and brass hardware', caption: 'Stitching, grain, and hardware are kept close enough to inspect.', assetType: 'DETAIL', deliveryLabel: 'DETAIL / CROP' },
+  { name: '/veylo/demo/campaign/campaign-03-lifestyle.webp', alt: 'Woman carrying a tan leather handbag through a modern lobby', caption: 'The everyday frame shows how the bag sits in a real working day.', assetType: 'LIFESTYLE', deliveryLabel: 'SOCIAL / 4:5' },
+  { name: '/veylo/demo/campaign/campaign-04-kit.webp', alt: 'A leather handbag, wallet, card holder and packaging arranged overhead', caption: 'The complete kit is laid out for a quick, useful handoff.', assetType: 'KIT', deliveryLabel: 'CATALOG / FLATLAY' },
+  { name: '/veylo/demo/campaign/campaign-05-context.webp', alt: 'Woman seated beside a tan leather handbag at an indigo table', caption: 'A quieter context frame gives the campaign room to breathe across a feed or landing page.', assetType: 'CONTEXT', deliveryLabel: 'SOCIAL / 1:1' }
+];
 
 export const imageSrc = (photo, width = 1440) => {
   if (photo?.url) return photo.url;
-  if (typeof photo === 'string' && (photo.startsWith('http') || photo.startsWith('/'))) return photo;
-  return `/veylo/web/${photo?.name || photo}-${width}.webp`;
+  const name = typeof photo === 'string' ? photo : photo?.name;
+  if (typeof name === 'string' && (name.startsWith('http') || name.startsWith('/'))) return name;
+  return `/veylo/web/${name || photo}-${width}.webp`;
 };
 
 function getFontFamily(type, fallback = "'Playfair Display', Georgia, serif") {
@@ -1131,7 +1146,7 @@ function NewFormatDemo({ children }) {
 
 export default function FormatDemo() {
   const { formatId } = useParams();
-  useEffect(() => { const names = { editorial: 'Editorial Page', reveal: 'Photo Reveal', canvas: 'Canvas', chapters: 'Chapters', album: 'Album' }; if (names[formatId]) document.title = `Veylo — ${names[formatId]} demo`; }, [formatId]);
+  useEffect(() => { const names = { editorial: 'Editorial Page', reveal: 'Photo Reveal', canvas: 'Canvas', chapters: 'Chapters', album: 'Album', 'event-coverage': 'Event Coverage', campaign: 'Campaign Delivery' }; if (names[formatId]) document.title = `Veylo — ${names[formatId]} demo`; }, [formatId]);
   if (formatId === 'photo-story' || formatId === 'story') return <Navigate to="/demo" replace />;
   if (formatId === 'editorial') return <EditorialDemo />;
   if (formatId === 'reveal') return <RevealDemo />;

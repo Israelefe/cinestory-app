@@ -55,11 +55,12 @@ export function Photo({ name, url, thumbnailUrl, srcSet, alt, className = '', ea
     />;
   }
 
-  const source = '/veylo/web/' + name;
+  const directSource = typeof name === 'string' && (name.startsWith('/') || name.startsWith('http://') || name.startsWith('https://'));
+  const source = directSource ? name : '/veylo/web/' + name;
   return <img
     ref={imageRef}
-    src={nearViewport ? source + '-960.webp' : undefined}
-    srcSet={nearViewport ? source + '-480.webp 480w, ' + source + '-960.webp 960w, ' + source + '-1440.webp 1440w' : undefined}
+    src={nearViewport ? (directSource ? source : source + '-960.webp') : undefined}
+    srcSet={nearViewport && !directSource ? source + '-480.webp 480w, ' + source + '-960.webp 960w, ' + source + '-1440.webp 1440w' : undefined}
     sizes={sizes}
     alt={alt}
     loading={nearViewport ? 'eager' : 'lazy'}
