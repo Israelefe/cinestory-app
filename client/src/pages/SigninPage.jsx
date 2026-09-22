@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight, Camera, Eye, EyeOff, Folder, ShieldCheck } from 'lucide-react';
 import GoogleSignIn from '../components/GoogleSignIn.jsx';
 import TurnstileCheck from '../components/TurnstileCheck.jsx';
-import { Page, Reveal } from '../components/PublicDesign.jsx';
+import { Page } from '../components/PublicDesign.jsx';
 import api, { apiMessage } from '../services/api.js';
 
 export default function SigninPage({ onAuthenticated }) {
@@ -57,14 +57,14 @@ export default function SigninPage({ onAuthenticated }) {
 
   return <Page className="v-auth-page" footer={false}>
     <section className="v-auth-stage v-auth-stage-signin">
-      <Reveal className="v-auth-visual v-auth-visual-signin">
+      <div className="v-auth-visual v-auth-visual-signin">
         <img src="/veylo/pv-photographer.jpeg" alt="A photographer returning to her Veylo studio" loading="eager" fetchPriority="high" decoding="async" />
         <div className="v-auth-visual-shade" />
         <div className="v-auth-visual-copy"><p><Folder size={15} />Your studio is ready</p><h1>Pick up where<br /><em>you stopped.</em></h1><span>Your deliveries, client links, and studio details are waiting.</span></div>
         <div className="v-auth-visual-note"><ShieldCheck size={17} /><span><strong>Private by default</strong>Your account stays behind secure sign-in</span></div>
-      </Reveal>
+      </div>
 
-      <Reveal className="v-auth-panel" delay={.06}>
+      <div className="v-auth-panel">
         <header className="v-auth-panel-head">
           <p className="v-eyebrow"><Camera size={14} />Photographer sign in</p>
           <h2>Welcome back.</h2>
@@ -82,7 +82,7 @@ export default function SigninPage({ onAuthenticated }) {
           <button type="submit" className="v-button v-auth-submit" disabled={status.loading || !turnstileToken}>{status.loading ? 'Signing you in…' : !turnstileToken ? 'Complete the security check' : 'Sign in'}<ArrowRight size={18} /></button>
         </form>
         <p className="v-auth-privacy">Google and email sign-in open the same Veylo account when the verified email address matches.</p>
-      </Reveal>
+      </div>
     </section>
   </Page>;
 }

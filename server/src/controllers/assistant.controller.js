@@ -15,20 +15,56 @@ const chatSchema = z.object({
   messages: z.array(messageSchema).min(1).max(20)
 }).strict();
 
-function safeMessages(messages) {
-  // The browser owns its display history and can therefore not be trusted to
-  // label text as an assistant instruction. Only user turns are sent back to
-  // the model; the server-generated answer is always the latest turn.
-  const userTurns = messages.filter(message => message.role === 'user').slice(-8);
-  const total = userTurns.reduce((sum, message) => sum + message.content.length, 0);
-  if (total <= 12_000) return userTurns;
-  let remaining = 12_000;
-  return userTurns.reverse().map(message => {
-    if (remaining <= 0) return null;
-    const content = message.content.slice(-remaining);
-    remaining -= content.length;
-    return { role: 'user', content };
-  }).filter(Boolean).reverse();
+export function safeMessages(messages) {
+  // Validate and sanitize multi-turn conversation history.
+  // Preserves alternating user and assistant turns ending with the user's latest question.
+  // This ensures the model has clear context that earlier questions were already answered,
+  // preventing it from re-answering or packing all previous questions into each new reply.
+  if (!Array.isArray(messages) || !messages.length) return [];
+
+  const valid = messages
+    .filter(message => ['user', 'assistant'].includes(message?.role) && typeof message?.content === 'string')
+    .map(message => ({
+      role: message.role,
+      content: message.content.trim().slice(0, 3000)
+    }))
+    .filter(message => message.content.length > 0);
+
+  if (!valid.length) return [];
+
+  // The conversation sent to the model must end with the user's current question
+  const lastUserIndex = valid.map(m => m.role).lastIndexOf('user');
+  if (lastUserIndex === -1) return [];
+  const trimmed = valid.slice(0, lastUserIndex + 1);
+
+  // Reconstruct alternating turns backwards from the latest user message
+  const history = [];
+  let expectedRole = 'user';
+  for (let i = trimmed.length - 1; i >= 0 && history.length < 8; i--) {
+    const item = trimmed[i];
+    if (item.role === expectedRole) {
+      history.unshift(item);
+      expectedRole = expectedRole === 'user' ? 'assistant' : 'user';
+    }
+  }
+
+  // Ensure history starts with a user turn
+  while (history.length && history[0].role !== 'user') {
+    history.shift();
+  }
+
+  // Enforce total character budget (max 12,000 characters)
+  let totalLength = history.reduce((sum, item) => sum + item.content.length, 0);
+  while (totalLength > 12_000 && history.length > 1) {
+    const removed = history.shift();
+    totalLength -= removed.content.length;
+    if (history.length && history[0].role !== 'user') {
+      const extra = history.shift();
+      totalLength -= extra.content.length;
+    }
+  }
+
+  return history;
 }
 
 async function safeAccountContext(req) {

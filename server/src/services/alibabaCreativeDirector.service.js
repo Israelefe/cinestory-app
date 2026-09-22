@@ -7,6 +7,7 @@ export const CREATIVE_DIRECTOR_PROMPT_VERSION = 'creative-director-v3';
 const MOTIONS = ['slow-push', 'slow-pull', 'pan-left', 'pan-right', 'float', 'still'];
 const TRANSITIONS = ['fade', 'crossfade', 'wipe', 'slide', 'reveal', 'cut'];
 const LAYOUTS = ['hero', 'single', 'pair', 'triptych', 'grid', 'strip', 'spread', 'cluster', 'chapter-cover'];
+const EVENT_FRAME_TYPES = ['people', 'programme', 'networking', 'details', ''];
 
 const COLOR_NAMES = {
   black: '#111111', white: '#ffffff', gray: '#888888', grey: '#888888',
@@ -147,6 +148,8 @@ const directionSchema = z.object({
     id: z.preprocess(val => String(val || '').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 32) || 'section-1', z.string().regex(/^[a-z0-9-]{1,32}$/)),
     title: z.preprocess(val => String(val || '').trim().slice(0, 60) || 'Chapter', z.string().min(1).max(60)),
     subtitle: z.preprocess(val => String(val || '').trim().slice(0, 120), z.string().max(120)),
+    label: z.preprocess(val => String(val || '').trim().slice(0, 40), z.string().max(40)).default(''),
+    delivery: z.preprocess(val => String(val || '').trim().slice(0, 40), z.string().max(40)).default(''),
     layout: z.preprocess(val => LAYOUTS.includes(val) ? val : 'single', z.enum(LAYOUTS))
   })).min(1).max(12)
 }).superRefine((value) => {
@@ -169,6 +172,7 @@ const frameSchema = z.preprocess(raw => {
     role: raw.role,
     headline: typeof raw.headline === 'string' ? raw.headline : (raw.title ?? ''),
     caption: typeof raw.caption === 'string' ? raw.caption : (raw.text ?? raw.description ?? ''),
+    eventType: raw.eventType ?? raw.category ?? raw.sceneType ?? '',
     motion: raw.motion,
     transition: raw.transition,
     duration: raw.duration,
@@ -180,6 +184,7 @@ const frameSchema = z.preprocess(raw => {
   role: z.preprocess(val => ['opening', 'hero', 'supporting', 'detail', 'pair', 'finale'].includes(val) ? val : 'supporting', z.enum(['opening', 'hero', 'supporting', 'detail', 'pair', 'finale'])),
   headline: z.preprocess(val => String(val || '').trim().slice(0, 70), z.string().max(70)),
   caption: z.preprocess(val => String(val || '').trim().slice(0, 180), z.string().min(18).max(180)),
+  eventType: z.preprocess(val => { const value = String(val || '').trim().toLowerCase(); return EVENT_FRAME_TYPES.includes(value) ? value : ''; }, z.string().max(20)).default(''),
   motion: z.preprocess(val => MOTIONS.includes(val) ? val : 'slow-push', z.enum(MOTIONS)),
   transition: z.preprocess(val => TRANSITIONS.includes(val) ? val : 'crossfade', z.enum(TRANSITIONS)),
   duration: z.preprocess(val => Math.min(12, Math.max(2, Number(val) || 4.5)), z.number().min(2).max(12)),
@@ -484,7 +489,7 @@ Rank all eight delivery formats exactly once.`;
 
 export async function createGlobalDirection({ format, brief, shootType, clientName, collectionAnalysis, imageInsights, revisionInstruction = '', currentDirection = null }) {
   const provider = config();
-  const compact = imageInsights.map(item => ({ assetId: item.assetId, weight: item.visualWeight, moment: item.moment, orientation: item.orientation, photographerCaption: item.photographerCaption || '', photographerTags: item.photographerTags || [] }));
+  const compact = imageInsights.map(item => ({ assetId: item.assetId, summary: item.summary || '', subjects: item.subjects || [], setting: item.setting || '', expression: item.expression || '', clothing: item.clothing || '', weight: item.visualWeight, moment: item.moment, orientation: item.orientation, photographerCaption: item.photographerCaption || '', photographerTags: item.photographerTags || [] }));
   const schemaInstructions = `Return a JSON object matching this schema:
 {
   "format": "${format}",
@@ -499,14 +504,26 @@ export async function createGlobalDirection({ format, brief, shootType, clientNa
   "music": { "trackId": "<one approved track id>", "mood": "<mood title, 2-80 chars>", "genre": "<genre title, 2-80 chars>", "tempo": "slow" | "mid" | "upbeat" },
   "narrationRecommended": boolean,
   "sections": [
-    { "id": "<kebab-case-id>", "title": "<section title>", "subtitle": "<section subtitle>", "layout": "hero" | "single" | "pair" | "triptych" | "grid" | "strip" | "spread" | "cluster" | "chapter-cover" }
+    { "id": "<kebab-case-id>", "title": "<section title>", "subtitle": "<section subtitle>", "label": "<short scene label>", "delivery": "<short purpose label>", "layout": "hero" | "single" | "pair" | "triptych" | "grid" | "strip" | "spread" | "cluster" | "chapter-cover" }
   ]
 }`;
+
+  const formatDirectionRules = {
+    'event-coverage': `Event Coverage is a multi-subject event archive, not a personal celebration. Create 4-8 scenes that follow the actual event flow, such as arrivals, programme, people, networking, and details. Use plural or neutral language. Give every scene a useful label and delivery purpose. Do not write one-person chapters, wedding language, or generic portrait sections. Keep scene titles and subtitles grounded in the supplied brief and image analysis.`,
+    campaign: `Campaign Delivery is a commercial presentation followed by a practical asset handoff. Create 3-6 asset sets that reflect the actual brief, such as hero, detail, in-use, kit, and context when supported. Give every set a clear label and delivery purpose. Do not write celebration language, personal biography captions, or unsupported product claims.`,
+    'photo-story': `Photo Story is a personal, paced sequence with an opening, development, and closing frame.`,
+    editorial: `Editorial Page is a scrollable publication with a clear visual hierarchy, feature sections, details, and breathing space.`,
+    'photo-reveal': `Photo Reveal is a client-paced sequence where each section supports anticipation and a deliberate first look.`,
+    canvas: `Canvas is a browsable spatial arrangement with clusters that help the client compare related photographs.`,
+    chapters: `Chapters should name the real parts of a large collection and make each entry useful before the client opens it.`,
+    album: `Album should use a small number of deliberate spreads with calm page-turn language.`
+  }[format] || '';
 
   return completion({
     model: provider.creativeModel,
     messages: [
       { role: 'system', content: `You are Veylo’s senior creative director. Design one ${format} presentation around the actual finished shoot. The format must have its own structure. Photo Story is paced and sequential. Editorial is a scrollable publication. Photo Reveal is client-paced and suspenseful. Canvas is spatial and freely explored. Chapters is a non-linear moment selector. Album uses deliberate page turns and spreads. Event Coverage is documentary browsing organised into scenes for many subjects. Campaign is a commercial showcase followed by practical asset sets. ${voiceRules}\n\n${schemaInstructions}` },
+      { role: 'system', content: formatDirectionRules },
       { role: 'user', content: JSON.stringify({
         task: revisionInstruction ? 'Revise the complete art direction and section plan' : 'Create the complete art direction and section plan',
         format,
@@ -544,6 +561,7 @@ export async function createFrameBatch({ format, brief, shootType, clientName, d
       "role": "opening" | "hero" | "supporting" | "detail" | "pair" | "finale",
       "headline": "<brief evocative headline under 70 chars, or empty>",
       "caption": "<required natural human caption under 180 chars, written for this client and occasion>",
+      "eventType": "people" | "programme" | "networking" | "details" | "",
       "motion": "slow-push" | "slow-pull" | "pan-left" | "pan-right" | "float" | "still",
       "transition": "fade" | "crossfade" | "wipe" | "slide" | "reveal" | "cut",
       "duration": <number between 2 and 12 seconds>,
@@ -568,7 +586,7 @@ Return one frame per photograph in the supplied order.`;
 
   const minimalDirection = {
     title: direction?.title || 'Photo Story',
-    sections: (direction?.sections || []).map(s => ({ id: s.id, title: s.title }))
+    sections: (direction?.sections || []).map(s => ({ id: s.id, title: s.title, subtitle: s.subtitle || '', label: s.label || '', delivery: s.delivery || '' }))
   };
 
   const captionFormatRules = {
@@ -581,6 +599,12 @@ Return one frame per photograph in the supplied order.`;
     chapters: `This is a chaptered delivery. Tie each caption to its chapter's purpose and keep the language varied across the sequence.`,
     album: `This is an album delivery. Write captions that feel like considered album notes: specific to the brief, calm, and useful to the person receiving the finished photographs.`
   }[format] || `Use the photographer's brief and the supplied photograph context to write a meaningful caption for this delivery.`;
+
+  const captionAudienceRule = format === 'event-coverage'
+    ? `The audience is a group of guests, organisers, vendors, and people revisiting the event. Do not address one named client or use singular celebration language.`
+    : format === 'campaign'
+      ? `The audience is a brand or production team reviewing approved assets. Keep the writing useful for selection and handoff, not like a personal biography or sales claim.`
+      : `Speak directly to ${clientName || 'the client'} with warmth, while staying grounded in the photographer's brief.`;
 
   const alignFrames = (rawFrames = []) => {
     const byAssetId = new Map(rawFrames.map(f => [String(f.assetId || ''), f]));
@@ -643,6 +667,7 @@ Assign every photograph to one existing section (${validSectionIds.join(', ')}).
 
  ${schemaInstructions}`
         },
+        { role: 'system', content: captionAudienceRule },
         {
           role: 'user',
           content: JSON.stringify({

@@ -28,7 +28,7 @@ function resolveSections(delivery, photos, fallbackSections) {
     return {
       id: section.id || `section-${index + 1}`,
       title: section.title || section.name || section.headline || fallbacks[index % fallbacks.length].title,
-      copy: section.copy || section.caption || section.description || '',
+      copy: section.copy || section.subtitle || section.caption || section.description || fallbacks[index % fallbacks.length].copy || '',
       label: section.label || section.eyebrow || fallbacks[index % fallbacks.length].label || '',
       delivery: section.delivery || section.output || fallbacks[index % fallbacks.length].delivery || '',
       photos: assigned

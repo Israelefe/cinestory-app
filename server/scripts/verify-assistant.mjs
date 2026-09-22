@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { assistantSuggestedQuestions, buildAssistantKnowledge } from '../src/knowledge/veyloAssistantKnowledge.js';
+import { safeMessages } from '../src/controllers/assistant.controller.js';
 import { answerVeyloQuestion } from '../src/services/alibabaAssistant.service.js';
 
 const read = path => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
@@ -18,12 +19,26 @@ assert.match(buildAssistantKnowledge({ query: 'How do I publish a delivery?', au
 assert.equal(assistantSuggestedQuestions('delivery').length, 3);
 assert.match(service, /qwen3\.8-flash/);
 assert.match(service, /systemPrompt/);
+assert.match(service, /CONVERSATION DISCIPLINE & SCOPE/);
 assert.match(service, /Do not discuss source code, databases/);
 assert.match(service, /appearsSensitive/);
 assert.match(service, /response\.ok/);
 assert.match(controller, /safeAccountContext/);
-assert.match(controller, /Only user turns are sent back to/);
+assert.match(controller, /safeMessages/);
 assert.match(controller, /provider messages, model names, request payloads/);
+
+const turns = safeMessages([
+  { role: 'assistant', content: 'Welcome to Veylo Help!' },
+  { role: 'user', content: 'What is Veylo?' },
+  { role: 'assistant', content: 'Veylo delivers client photo stories.' },
+  { role: 'user', content: 'How much is Pro?' }
+]);
+assert.equal(turns.length, 3);
+assert.equal(turns[0].role, 'user');
+assert.equal(turns[0].content, 'What is Veylo?');
+assert.equal(turns[1].role, 'assistant');
+assert.equal(turns[2].role, 'user');
+assert.equal(turns[2].content, 'How much is Pro?');
 assert.match(route, /optionalAuthMiddleware/);
 assert.match(route, /assistantChatLimit/);
 assert.match(client, /VeyloMarkdown/);

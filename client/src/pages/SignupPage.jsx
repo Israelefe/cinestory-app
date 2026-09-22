@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight, BadgeCheck, Check, Eye, EyeOff, Image, ShieldCheck } from 'lucide-react';
 import TurnstileCheck from '../components/TurnstileCheck.jsx';
 import GoogleSignIn from '../components/GoogleSignIn.jsx';
-import { Page, Reveal } from '../components/PublicDesign.jsx';
+import { Page } from '../components/PublicDesign.jsx';
 import api, { apiMessage } from '../services/api.js';
 
 const included = ['Three client deliveries every month', 'All eight delivery formats', 'Full galleries and downloads'];
@@ -65,7 +65,7 @@ export default function SignupPage({ onAuthenticated }) {
 
   return <Page className="v-auth-page" footer={false}>
     <section className="v-auth-stage">
-      <Reveal className="v-auth-visual">
+      <div className="v-auth-visual">
         <img src="/veylo/pv-green-portrait.jpeg" alt="A finished studio portrait ready for client delivery" loading="eager" fetchPriority="high" decoding="async" />
         <div className="v-auth-visual-shade" />
         <div className="v-auth-visual-copy">
@@ -74,9 +74,9 @@ export default function SignupPage({ onAuthenticated }) {
           <span>Your client remembers how the photographs arrived.</span>
         </div>
         <div className="v-auth-visual-note"><BadgeCheck size={17} /><span><strong>Veylo Free</strong>No payment card needed</span></div>
-      </Reveal>
+      </div>
 
-      <Reveal className="v-auth-panel" delay={.06}>
+      <div className="v-auth-panel">
         <header className="v-auth-panel-head">
           <p className="v-eyebrow"><ShieldCheck size={14} />Create your photographer account</p>
           <h2>Start with Veylo Free.</h2>
@@ -97,7 +97,7 @@ export default function SignupPage({ onAuthenticated }) {
           <button type="submit" className="v-button v-auth-submit" disabled={status.loading || !turnstileToken || !form.accepted}>{status.loading ? 'Creating your account…' : !turnstileToken ? 'Complete the security check' : 'Create free account'}<ArrowRight size={18} /></button>
         </form>
         <p className="v-auth-privacy">We will email a six-digit code before your account can be used.</p>
-      </Reveal>
+      </div>
     </section>
   </Page>;
 }
