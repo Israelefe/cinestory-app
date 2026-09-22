@@ -5,6 +5,7 @@ import { ArrowLeft, BookOpen, Check, ChevronLeft, ChevronRight, Download, Grid2X
 import { Photo } from '../components/PublicDesign.jsx';
 import { useDialogFocus } from '../components/useDialogFocus.js';
 import ClientGallery from '../components/delivery/ClientGallery.jsx';
+import { EVENT_COVERAGE_DEMO_PHOTOS } from '../constants/eventCoverageDemo.js';
 import '../styles/format-demos.css';
 
 export const editorialPhotos = Array.from({ length: 5 }, (_, index) => ({ name: `demo-ada-${index + 1}`, alt: `Ada's fashion portrait ${index + 1}` }));
@@ -12,13 +13,7 @@ export const revealPhotos = Array.from({ length: 4 }, (_, index) => ({ name: `de
 export const couragePhotos = Array.from({ length: 6 }, (_, index) => ({ name: `demo-courage-${index + 1}`, alt: `Courage's graduation portrait ${index + 1}` }));
 export const weddingPhotos = Array.from({ length: 5 }, (_, index) => ({ name: `demo-wedding-${index + 1}`, alt: `Folake and Tunde's wedding portrait ${index + 1}` }));
 export const albumPhotos = ['demo-album-fa-source', 'demo-album-fa-2', 'demo-album-fa-3', 'demo-album-fa-4', 'demo-album-fa-5'].map((name, index) => ({ name, alt: `The Adeyemi family album portrait ${index + 1}` }));
-export const eventCoveragePhotos = [
-  { name: '/veylo/demo/event/event-01-arrivals.webp', alt: 'Attendees arriving and checking in at a Lagos conference', caption: 'The room starts with arrivals: familiar faces, new introductions, and the first conversations of the day.' },
-  { name: '/veylo/demo/event/event-02-keynote.webp', alt: 'A speaker addressing a seated conference audience', caption: 'A quiet room gives the speaker its full attention.' },
-  { name: '/veylo/demo/event/event-03-networking.webp', alt: 'Attendees talking over refreshments during a networking break', caption: 'The useful moments happen between sessions, over a cup of coffee and an easy introduction.' },
-  { name: '/veylo/demo/event/event-04-stage.webp', alt: 'Performers and speakers sharing a stage while the audience records the moment', caption: 'The programme lifts the room, and the audience becomes part of the frame.' },
-  { name: '/veylo/demo/event/event-05-details.webp', alt: 'Name badges and event materials arranged on a registration table', caption: 'Small details make a gathering feel ready before the first guest walks in.' }
-];
+export const eventCoveragePhotos = EVENT_COVERAGE_DEMO_PHOTOS;
 export const campaignPhotos = [
   { name: '/veylo/demo/campaign/campaign-01-hero.webp', alt: 'Tan leather handbag and wallet on an indigo pedestal', caption: 'The campaign opens with the pieces together: warm leather, clean shape, and a confident point of view.', assetType: 'CAMPAIGN HERO', deliveryLabel: 'MASTER / WEB' },
   { name: '/veylo/demo/campaign/campaign-02-detail.webp', alt: 'Close detail of leather stitching and brass hardware', caption: 'Stitching, grain, and hardware are kept close enough to inspect.', assetType: 'DETAIL', deliveryLabel: 'DETAIL / CROP' },
@@ -93,6 +88,7 @@ export function normalizeDeliveryPhotos(delivery, fallbackPhotos) {
       alt: a.originalFilename || `Photograph ${i + 1}`,
       caption: frames.get(String(a.assetId))?.caption || '',
       headline: frames.get(String(a.assetId))?.headline || '',
+      eventType: frames.get(String(a.assetId))?.eventType || frames.get(String(a.assetId))?.category || frames.get(String(a.assetId))?.sceneType || '',
       duration: frames.get(String(a.assetId))?.duration,
       motion: frames.get(String(a.assetId))?.motion,
       url: a.url, // Original photographer upload quality preserved

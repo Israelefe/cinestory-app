@@ -20,6 +20,7 @@ import {
 import { Link, useLocation } from 'react-router-dom';
 import { Action, Eyebrow, Page, Photo, Reveal } from '../components/PublicDesign.jsx';
 import DeliveryFormatVisual from '../components/DeliveryFormatVisual.jsx';
+import { EVENT_COVERAGE_DEMO_PHOTOS } from '../constants/eventCoverageDemo.js';
 
 const formats = [
   {
@@ -130,13 +131,7 @@ const formats = [
     icon: CalendarRange,
     demo: '/demo/event-coverage',
     demoLabel: 'Browse the Event Coverage demo',
-    photos: [
-      '/veylo/demo/event/event-01-arrivals.webp',
-      '/veylo/demo/event/event-02-keynote.webp',
-      '/veylo/demo/event/event-03-networking.webp',
-      '/veylo/demo/event/event-04-stage.webp',
-      '/veylo/demo/event/event-05-details.webp'
-    ],
+    photos: EVENT_COVERAGE_DEMO_PHOTOS.map(photo => photo.name),
     photoAlt: 'A Nigerian conference moving from arrivals to the main programme',
     eventLabel: 'THE ROOM, IN FULL',
     eventDate: '05 SCENES',

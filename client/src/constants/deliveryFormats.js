@@ -1,3 +1,5 @@
+import { EVENT_COVERAGE_DEMO_PHOTOS } from './eventCoverageDemo.js';
+
 export const DELIVERY_FORMATS = [
   {
     id: 'photo-story',
@@ -88,13 +90,7 @@ export const DELIVERY_FORMATS = [
     description: 'Built for conferences, church services, owambe celebrations, and gatherings where no single person is the subject. The delivery opens with highlights, then lets guests browse every scene and the complete gallery.',
     bestFor: 'Conferences, church services, social gatherings, corporate events, concerts, and community celebrations.',
     clientMindset: 'Browse what happened.',
-    photos: [
-      '/veylo/demo/event/event-01-arrivals.webp',
-      '/veylo/demo/event/event-02-keynote.webp',
-      '/veylo/demo/event/event-03-networking.webp',
-      '/veylo/demo/event/event-04-stage.webp',
-      '/veylo/demo/event/event-05-details.webp'
-    ],
+    photos: EVENT_COVERAGE_DEMO_PHOTOS.map(photo => photo.name),
     photoAlt: 'A Nigerian conference moving from arrivals to the main programme',
     eventLabel: 'THE ROOM, IN FULL',
     eventDate: '05 SCENES',
