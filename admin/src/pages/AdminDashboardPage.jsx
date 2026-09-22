@@ -52,18 +52,18 @@ const formatNames = {
 };
 
 const rateLimitFields = [
-  ['authAttemptsPer15m', 'Failed sign-in attempts', 'Security check for failed login, verification, and password attempts.'],
-  ['registrationsPerHour', 'New account attempts', 'Abuse protection for account creation from one network.'],
-  ['emailCodesPerHour', 'Verification and access codes', 'Protects email-code delivery without limiting normal delivery work.'],
-  ['aiJobsPerMinute', 'AI job submissions', 'A generous provider backstop per signed-in account; not a delivery quota.'],
-  ['supportTicketsPerHour', 'Support tickets', 'Stops automated ticket spam.'],
-  ['publicAccessPer15m', 'Public link access', 'Protects one delivery or public page and visitor session.'],
-  ['publicMediaPerHour', 'Public media requests', 'Origin protection for audio and tracking; photographs use signed media URLs.'],
-  ['uploadsPerHour', 'Upload signatures', 'High safety ceiling per signed-in account; plan photo and storage limits still apply.'],
-  ['clientDeliveryEmailsPerHour', 'Delivery emails', 'Protects email sending for one studio account.'],
-  ['billingActionsPerHour', 'Billing actions', 'Protects payment and subscription endpoints.'],
-  ['profileUpdatesPerHour', 'Profile updates', 'Protects the profile endpoint without restricting normal editing.'],
-  ['analyticsEventsPer15m', 'Analytics batches', 'Collector protection; one batch can contain up to 50 events.']
+  ['authAttemptsPer15m', 'Failed sign-in attempts (per 15 minutes)', 'What it does: counts failed sign-in, email-verification, password-reset-code, password-reset, and session-refresh attempts. Scope: one email or username plus the connecting network. Successful requests do not count. Purpose: slows credential guessing; it is not a delivery quota.'],
+  ['registrationsPerHour', 'New account attempts (per hour)', 'What it does: counts requests to create a new Veylo account, whether or not the form eventually succeeds. Scope: one connecting network. Purpose: prevents automated account creation from flooding the service.'],
+  ['emailCodesPerHour', 'Verification and access codes (per hour)', 'What it does: counts verification emails, password-reset codes, and volume-gallery access-code requests. Scope: the requested email, recipient code, or public resource plus the connecting network. Purpose: protects code delivery from spam; it does not limit photo uploads or deliveries.'],
+  ['aiJobsPerMinute', 'AI job submissions (per minute)', 'What it does: counts analysis, creative direction, narration, revisions, failed-job retries, and portfolio direction requests. Scope: one signed-in photographer or studio account. Purpose: protects the AI provider during short bursts; this is not a delivery-per-hour or plan quota.'],
+  ['supportTicketsPerHour', 'Support tickets (per hour)', 'What it does: counts new support-ticket submissions. Scope: one connecting network. Purpose: stops automated ticket spam so real support requests remain visible.'],
+  ['publicAccessPer15m', 'Public link access (per 15 minutes)', 'What it does: counts opening link details, refreshing, unlocking a protected delivery, and public portfolio or volume access checks. Scope: one delivery, portfolio, or volume link plus one visitor session. Purpose: blocks abusive link polling. This is not a lifetime view limit, so a delivery is not limited to this many total opens.'],
+  ['publicMediaPerHour', 'Public media requests (per hour)', 'What it does: counts audio, likes, individual downloads, download-all requests, download tracking, and other public media endpoints. Scope: one public delivery or volume link plus one visitor session. Normal signed image loads do not use this counter. Purpose: protects media endpoints from scraping and runaway retries without limiting the number of photographs in a gallery.'],
+  ['uploadsPerHour', 'Upload signatures (per hour)', 'What it does: counts requests for the temporary upload permission used by delivery, image-library, and soundtrack uploads. Scope: one signed-in photographer or studio account. Purpose: protects the upload service; it is not a storage allowance, file-size limit, or photo-count quota.'],
+  ['clientDeliveryEmailsPerHour', 'Delivery emails (per hour)', 'What it does: counts requests to send a delivery link by email. Scope: one studio account. Purpose: prevents accidental or automated email floods while leaving WhatsApp and copied links unaffected.'],
+  ['billingActionsPerHour', 'Billing actions (per hour)', 'What it does: counts checkout, payment verification, subscription cancellation or resume, manage-link, and approved refund requests. Scope: one signed-in account or administrator. Purpose: protects payment and subscription endpoints from repeated or automated requests.'],
+  ['profileUpdatesPerHour', 'Profile updates (per hour)', 'What it does: counts requests to save profile details such as name, studio information, or profile settings. Scope: one signed-in photographer or studio account. Purpose: protects the profile endpoint without restricting ordinary editing.'],
+  ['analyticsEventsPer15m', 'Analytics batches (per 15 minutes)', 'What it does: counts analytics batch requests. Scope: one anonymous visitor or signed-in session. Each batch can contain up to 50 events, so this is not a one-event-at-a-time limit. Purpose: keeps the analytics collector from being flooded; a temporary analytics limit does not stop the visitor from using Veylo.']
 ];
 
 const rateLimitMinimums = {
