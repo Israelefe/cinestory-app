@@ -115,7 +115,7 @@ for (const placement of ['corners', 'labels', 'type', 'rules']) {
 }
 assert.match(formatCss, /fd-editorial \.fd-ed-cover>figure \.v-photo[\s\S]*filter:none!important/, 'Editorial images must not be colour filtered');
 assert.doesNotMatch(demos, /audioTrack = delivery\?\.soundtrack\?\.url \|\| '\/audio\//, 'Real deliveries must not fall back to demo soundtrack files');
-assert.match(demos, /const audioTrack = delivery\?\.soundtrack\?\.url \|\| \(demoOnly \? '\/audio\/soundtrack-2\.mp3' : ''\)/, 'Photo Reveal demo must include a local soundtrack without masking real delivery media');
+assert.match(demos, /const audioTrack = delivery\?\.soundtrack\?\.url \|\| \(demoOnly \? '\/audio\/photo-reveal-afrobeat\.mp3' : ''\)/, 'Photo Reveal demo must use the approved Afrobeat catalogue soundtrack without masking real delivery media');
 assert.match(demos, /const audioTrack = delivery\?\.soundtrack\?\.url \|\| \(demoOnly \? '\/audio\/soundtrack-1\.mp3' : ''\)/, 'Album demo must include a local soundtrack without masking real delivery media');
 assert.match(event, /vec-photo-caption/, 'Event and campaign viewers must show captions');
 assert.match(registry, /'event-coverage': EventCoverageViewer/, 'Published Event Coverage must use the same viewer as its demo');
