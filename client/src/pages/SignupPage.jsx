@@ -78,10 +78,13 @@ export default function SignupPage({ onAuthenticated }) {
 
       <Reveal className="v-auth-panel" delay={.06}>
         <header className="v-auth-panel-head">
-          <div><p className="v-eyebrow"><ShieldCheck size={14} />Create your photographer account</p><h2>Start with Veylo Free.</h2></div>
-          <p>Already registered? <Link to="/signin">Sign in</Link></p>
+          <p className="v-eyebrow"><ShieldCheck size={14} />Create your photographer account</p>
+          <h2>Start with Veylo Free.</h2>
+          <p className="v-auth-panel-subhead">Already have an account? <Link to="/signin">Sign in</Link></p>
         </header>
-        <div className="v-auth-included">{included.map(item => <span key={item}><Check size={14} />{item}</span>)}</div>
+        <div className="v-auth-included" aria-label="Included with Veylo Free">
+          {included.map(item => <span key={item}><Check size={14} />{item}</span>)}
+        </div>
         <GoogleSignIn context="signup" onCredential={google} onUnavailable={message => setStatus({ loading: false, error: message || 'Google sign-in is not available right now. Use your email to continue.' })} />
         <div className="v-auth-divider"><span>or continue with email</span></div>
         <form className="v-form" onSubmit={submit}>

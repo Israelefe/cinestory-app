@@ -13,13 +13,13 @@ export default function SigninPage({ onAuthenticated }) {
   const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({ email: '', password: '', remember: true });
   const [turnstileToken, setTurnstileToken] = useState('');
-  const [status, setStatus] = useState({ loading: false, error: '', challenge: false });
+  const [status, setStatus] = useState({ loading: false, error: '' });
   const requestedDestination = location.state?.from;
   const destination = typeof requestedDestination === 'string' && requestedDestination.startsWith('/') && !requestedDestination.startsWith('//') ? requestedDestination : '/dashboard';
 
   async function submit(event) {
     event.preventDefault();
-    if (status.challenge && !turnstileToken) return setStatus(current => ({ ...current, error: 'Complete the security check before signing in.' }));
+    if (!turnstileToken) return setStatus(current => ({ ...current, error: 'Complete the security check before signing in.' }));
     setStatus(current => ({ ...current, loading: true, error: '' }));
     try {
       const { data } = await api.post('/v1/auth/login', { email: form.email, password: form.password, remember: form.remember, turnstileToken });
@@ -34,7 +34,7 @@ export default function SigninPage({ onAuthenticated }) {
       }
       challengeRef.current?.reset();
       setTurnstileToken('');
-      setStatus({ loading: false, error: apiMessage(error, 'We could not sign you in. Please try again.'), challenge: Boolean(response?.requiresChallenge || response?.code === 'CHALLENGE_REQUIRED') });
+      setStatus({ loading: false, error: apiMessage(error, 'We could not sign you in. Please check your credentials and try again.') });
     }
   }
 
@@ -65,7 +65,11 @@ export default function SigninPage({ onAuthenticated }) {
       </Reveal>
 
       <Reveal className="v-auth-panel" delay={.06}>
-        <header className="v-auth-panel-head"><div><p className="v-eyebrow"><Camera size={14} />Photographer sign in</p><h2>Welcome back.</h2></div><p>New to Veylo? <Link to="/signup">Create an account</Link></p></header>
+        <header className="v-auth-panel-head">
+          <p className="v-eyebrow"><Camera size={14} />Photographer sign in</p>
+          <h2>Welcome back.</h2>
+          <p className="v-auth-panel-subhead">New to Veylo? <Link to="/signup">Create an account</Link></p>
+        </header>
         <p className="v-auth-panel-copy">Use the email address connected to your photographer or studio account.</p>
         <GoogleSignIn onCredential={google} onUnavailable={message => setStatus(current => ({ ...current, loading: false, error: message || 'Google sign-in is not available right now. Use your email to continue.' }))} />
         <div className="v-auth-divider"><span>or sign in with email</span></div>
@@ -73,9 +77,9 @@ export default function SigninPage({ onAuthenticated }) {
           <div className="v-field"><label htmlFor="signin-email">Email address</label><input id="signin-email" name="email" type="email" inputMode="email" autoComplete="email" required maxLength={254} value={form.email} onChange={event => setForm(current => ({ ...current, email: event.target.value }))} /></div>
           <div className="v-field"><div className="v-auth-label-row"><label htmlFor="signin-password">Password</label><Link to="/forgot-password">Forgot password?</Link></div><div className="v-password-input"><input id="signin-password" name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required maxLength={128} value={form.password} onChange={event => setForm(current => ({ ...current, password: event.target.value }))} /><button type="button" onClick={() => setShowPassword(value => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></div>
           <label className="v-auth-consent"><input type="checkbox" checked={form.remember} onChange={event => setForm(current => ({ ...current, remember: event.target.checked }))} /><span>Keep me signed in on this device</span></label>
-          <div className={status.challenge ? 'v-challenge-visible' : 'v-challenge-hidden'}><TurnstileCheck ref={challengeRef} action="login" onVerify={setTurnstileToken} /></div>
+          <TurnstileCheck ref={challengeRef} action="login" onVerify={setTurnstileToken} />
           {status.error && <p className="v-form-status" role="alert">{status.error}</p>}
-          <button type="submit" className="v-button v-auth-submit" disabled={status.loading || (status.challenge && !turnstileToken)}>{status.loading ? 'Signing you in…' : status.challenge && !turnstileToken ? 'Complete the security check' : 'Sign in'}<ArrowRight size={18} /></button>
+          <button type="submit" className="v-button v-auth-submit" disabled={status.loading || !turnstileToken}>{status.loading ? 'Signing you in…' : !turnstileToken ? 'Complete the security check' : 'Sign in'}<ArrowRight size={18} /></button>
         </form>
         <p className="v-auth-privacy">Google and email sign-in open the same Veylo account when the verified email address matches.</p>
       </Reveal>

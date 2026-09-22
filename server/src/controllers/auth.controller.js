@@ -144,15 +144,15 @@ export async function login(req, res) {
   try {
     const parsed = loginSchema.safeParse(req.body);
     if (!parsed.success) return validationFailure(res, parsed);
+    if (!(await validChallenge(parsed.data.turnstileToken, req, 'login'))) return res.status(400).json({ success: false, code: 'CHALLENGE_FAILED', message: 'Complete the security check before signing in.' });
     const user = await User.findOne({ email: parsed.data.email }).select('+password +failedLoginCount +loginLockedUntil');
     const generic = { success: false, code: 'INVALID_CREDENTIALS', message: 'The email address or password is incorrect.' };
     if (!user) return res.status(401).json(generic);
     if (user.accountStatus === 'suspended') return res.status(403).json({ success: false, code: 'ACCOUNT_SUSPENDED', message: 'This account is unavailable. Contact Veylo support.' });
-    if (user.failedLoginCount >= 3 && !(await validChallenge(parsed.data.turnstileToken, req, 'login'))) return res.status(400).json({ success: false, code: 'CHALLENGE_REQUIRED', message: 'Please complete the security check and try again.' });
     if (!(await user.comparePassword(parsed.data.password))) {
       user.failedLoginCount = (user.failedLoginCount || 0) + 1;
       await user.save();
-      return res.status(401).json({ ...generic, requiresChallenge: user.failedLoginCount >= 3 });
+      return res.status(401).json(generic);
     }
     if (!user.emailVerifiedAt) return res.status(403).json({ success: false, code: 'EMAIL_NOT_VERIFIED', email: user.email, message: 'Verify your email address before signing in.' });
     user.accountStatus = 'active';

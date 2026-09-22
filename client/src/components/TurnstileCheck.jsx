@@ -23,7 +23,14 @@ const TurnstileCheck = forwardRef(function TurnstileCheck({ onVerify, action }, 
   useImperativeHandle(ref, () => ({ reset() { if (widget.current !== null && window.turnstile) window.turnstile.reset(widget.current); } }), []);
 
   useEffect(() => {
-    if (!TURNSTILE_SITE_KEY) { onVerify(''); return; }
+    if (!TURNSTILE_SITE_KEY) {
+      if (import.meta.env.DEV) {
+        onVerify('dev-turnstile-token');
+      } else {
+        onVerify('');
+      }
+      return;
+    }
     let active = true;
     loadTurnstile().then(() => {
       if (!active || !container.current || widget.current !== null) return;
