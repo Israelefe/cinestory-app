@@ -51,7 +51,7 @@ const reviewSchema = z.object({
     accentPlacement: z.enum(['corners', 'rules', 'labels', 'type'])
   }).strict().default({ composition: 'quiet', density: 'balanced', imageTreatment: 'natural', captionTreatment: 'editorial', accentPlacement: 'rules' }),
   sections: z.array(z.object({ id: z.string().regex(/^[a-z0-9-]{1,32}$/), title: z.string().trim().min(1).max(60), subtitle: z.string().trim().max(120), label: z.string().trim().max(40).default(''), delivery: z.string().trim().max(40).default(''), layout: z.enum(['hero', 'single', 'pair', 'triptych', 'grid', 'strip', 'spread', 'cluster', 'chapter-cover']) }).strict()).min(1).max(12),
-  frames: z.array(z.object({ assetId: z.string().min(1).max(100), headline: z.string().trim().max(70), caption: z.string().trim().min(18).max(180), eventType: z.enum(['people', 'programme', 'networking', 'details', '']).default('') }).strict()).min(1).max(500),
+  frames: z.array(z.object({ assetId: z.string().min(1).max(100), headline: z.string().trim().max(70), caption: z.string().trim().min(18).max(180), eventType: z.enum(['people', 'programme', 'networking', 'details', '']).default(''), campaignType: z.enum(['hero', 'detail', 'lifestyle', 'kit', 'context', '']).default('') }).strict()).min(1).max(500),
   assetOrder: z.array(z.string().min(1).max(100)).min(1).max(500)
 }).strict();
 const shareGrantSchema = z.object({
@@ -765,7 +765,7 @@ export async function updateDeliveryReview(req, res) {
     delivery.creativeDirection.pace = parsed.data.pace;
     const editedFrames = new Map(delivery.creativeDirection.frames.map(frame => {
       const edit = frameEdits.get(frame.assetId);
-      return [frame.assetId, { ...frame, headline: edit.headline, caption: edit.caption, eventType: edit.eventType || frame.eventType || '' }];
+      return [frame.assetId, { ...frame, headline: edit.headline, caption: edit.caption, eventType: edit.eventType || frame.eventType || '', campaignType: edit.campaignType || frame.campaignType || '' }];
     }));
     // The order approved in Review is the order every client surface must use:
     // the gallery, Event Coverage scenes, and caption narration all read this

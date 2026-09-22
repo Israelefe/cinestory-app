@@ -8,6 +8,7 @@ const MOTIONS = ['slow-push', 'slow-pull', 'pan-left', 'pan-right', 'float', 'st
 const TRANSITIONS = ['fade', 'crossfade', 'wipe', 'slide', 'reveal', 'cut'];
 const LAYOUTS = ['hero', 'single', 'pair', 'triptych', 'grid', 'strip', 'spread', 'cluster', 'chapter-cover'];
 const EVENT_FRAME_TYPES = ['people', 'programme', 'networking', 'details', ''];
+const CAMPAIGN_ASSET_TYPES = ['hero', 'detail', 'lifestyle', 'kit', 'context', ''];
 
 const COLOR_NAMES = {
   black: '#111111', white: '#ffffff', gray: '#888888', grey: '#888888',
@@ -173,6 +174,7 @@ const frameSchema = z.preprocess(raw => {
     headline: typeof raw.headline === 'string' ? raw.headline : (raw.title ?? ''),
     caption: typeof raw.caption === 'string' ? raw.caption : (raw.text ?? raw.description ?? ''),
     eventType: raw.eventType ?? raw.category ?? raw.sceneType ?? '',
+    campaignType: raw.campaignType ?? raw.assetType ?? raw.assetRole ?? '',
     motion: raw.motion,
     transition: raw.transition,
     duration: raw.duration,
@@ -185,6 +187,7 @@ const frameSchema = z.preprocess(raw => {
   headline: z.preprocess(val => String(val || '').trim().slice(0, 70), z.string().max(70)),
   caption: z.preprocess(val => String(val || '').trim().slice(0, 180), z.string().min(18).max(180)),
   eventType: z.preprocess(val => { const value = String(val || '').trim().toLowerCase(); return EVENT_FRAME_TYPES.includes(value) ? value : ''; }, z.string().max(20)).default(''),
+  campaignType: z.preprocess(val => { const value = String(val || '').trim().toLowerCase(); return CAMPAIGN_ASSET_TYPES.includes(value) ? value : ''; }, z.string().max(20)).default(''),
   motion: z.preprocess(val => MOTIONS.includes(val) ? val : 'slow-push', z.enum(MOTIONS)),
   transition: z.preprocess(val => TRANSITIONS.includes(val) ? val : 'crossfade', z.enum(TRANSITIONS)),
   duration: z.preprocess(val => Math.min(12, Math.max(2, Number(val) || 4.5)), z.number().min(2).max(12)),
@@ -510,7 +513,7 @@ export async function createGlobalDirection({ format, brief, shootType, clientNa
 
   const formatDirectionRules = {
     'event-coverage': `Event Coverage is a multi-subject event archive, not a personal celebration. Create 4-8 scenes that follow the actual event flow, such as arrivals, programme, people, networking, and details. Use plural or neutral language. Give every scene a useful label and delivery purpose. Do not write one-person chapters, wedding language, or generic portrait sections. Keep scene titles and subtitles grounded in the supplied brief and image analysis. The live renderer owns the event layout: hero, event summary, highlights, sticky scene navigation, filters, scene grids, shared full gallery, and closing handoff. Use the direction fields to supply truthful scene copy and grouping for that renderer; do not invent a different page model.`,
-    campaign: `Campaign Delivery is a commercial presentation followed by a practical asset handoff. Create 3-6 asset sets that reflect the actual brief, such as hero, detail, in-use, kit, and context when supported. Give every set a clear label and delivery purpose. Do not write celebration language, personal biography captions, or unsupported product claims. The live renderer owns the campaign layout: lead presentation, approved asset sets, usage handoff, shared full gallery, and download controls. Use the direction fields to make those sets useful; do not invent a different page model.`,
+    campaign: `Campaign Delivery is a commercial presentation followed by a practical asset handoff. Create 4-6 asset sets that reflect the actual brief: hero, detail, lifestyle/in-use, kit/packaging, and context when supported. Give every set a clear label and delivery purpose. Do not write celebration language, personal biography captions, or unsupported product claims. The live renderer owns the campaign layout: lead presentation, highlights, sticky set navigation, asset-type filters, approved asset sets with supporting photographs, usage handoff, shared full gallery, and download controls. Use the direction fields to make those sets useful; do not invent a different page model.`,
     'photo-story': `Photo Story is a personal, paced sequence with an opening, development, and closing frame.`,
     editorial: `Editorial Page is a scrollable publication with a clear visual hierarchy, feature sections, details, and breathing space.`,
     'photo-reveal': `Photo Reveal is a client-paced sequence where each section supports anticipation and a deliberate first look.`,
@@ -562,6 +565,7 @@ export async function createFrameBatch({ format, brief, shootType, clientName, d
       "headline": "<brief evocative headline under 70 chars, or empty>",
       "caption": "<required natural human caption under 180 chars, written for this client and occasion>",
       "eventType": "people" | "programme" | "networking" | "details" | "",
+      "campaignType": "hero" | "detail" | "lifestyle" | "kit" | "context" | "",
       "motion": "slow-push" | "slow-pull" | "pan-left" | "pan-right" | "float" | "still",
       "transition": "fade" | "crossfade" | "wipe" | "slide" | "reveal" | "cut",
       "duration": <number between 2 and 12 seconds>,
@@ -591,7 +595,7 @@ Return one frame per photograph in the supplied order.`;
 
   const captionFormatRules = {
     'event-coverage': `This is multi-subject event coverage. Do not address one named client and do not assume a private celebration. Write each caption as a useful, human record of the people, scene, purpose, or atmosphere the photographer described. Use plural or neutral language where appropriate. Explain why the moment matters to the event, not only what is visible. Classify each frame as people, programme, networking, or details so the event viewer can filter it.`,
-    campaign: `This is a campaign handoff. Write for the brand, campaign objective, audience, and approved usage described in the brief. Captions should clarify the role of each frame in the campaign or asset set without inventing claims, sales copy, product specifications, or a private-person celebration.`,
+    campaign: `This is a campaign handoff. Write for the brand, campaign objective, audience, and approved usage described in the brief. Captions should clarify the role of each frame in the campaign or asset set without inventing claims, sales copy, product specifications, or a private-person celebration. Classify every frame as hero, detail, lifestyle, kit, or context so the campaign viewer can filter and group the approved assets.`,
     'photo-story': `This is a personal Photo Story. Address the named client naturally and connect each caption to the milestone, relationship, or purpose in the photographer's brief. Keep the voice intimate and reflective without becoming sentimental or generic.`,
     editorial: `This is an editorial delivery. Use the brief to give each frame a clear point of view and editorial role. Address the subject or story naturally, but do not write generic praise or describe pixels as alt text.`,
     'photo-reveal': `This is a reveal sequence. Make each caption build the approved story and explain the significance of the frame in the brief. Keep the writing concise enough to read during a reveal.`,
@@ -620,7 +624,7 @@ Return one frame per photograph in the supplied order.`;
       const frame = { ...matched };
       frame.assetId = id;
       if (!validSectionIds.includes(frame.sectionId)) frame.sectionId = defaultSectionId;
-      if (format === 'event-coverage' && !EVENT_FRAME_TYPES.includes(frame.eventType)) {
+      if (format === 'event-coverage' && !frame.eventType) {
         const section = (direction?.sections || []).find(item => item.id === frame.sectionId);
         const sectionText = `${section?.title || ''} ${section?.subtitle || ''}`.toLowerCase();
         frame.eventType = /network|between|partner|vendor|break/.test(sectionText)
@@ -630,6 +634,19 @@ Return one frame per photograph in the supplied order.`;
             : /program|stage|speaker|keynote|panel|performance|talk/.test(sectionText)
               ? 'programme'
               : 'people';
+      }
+      if (format === 'campaign' && !frame.campaignType) {
+        const section = (direction?.sections || []).find(item => item.id === frame.sectionId);
+        const sectionText = `${section?.title || ''} ${section?.subtitle || ''} ${section?.label || ''} ${section?.delivery || ''}`.toLowerCase();
+        frame.campaignType = /detail|material|texture|hardware|close/.test(sectionText)
+          ? 'detail'
+          : /kit|pack|catalog|retail|set|flatlay/.test(sectionText)
+            ? 'kit'
+            : /life|use|wear|portrait|people|social/.test(sectionText)
+              ? 'lifestyle'
+              : /context|environment|space|location|travel|cafe/.test(sectionText)
+                ? 'context'
+                : index === 0 ? 'hero' : 'context';
       }
       if (!['opening', 'hero', 'supporting', 'detail', 'pair', 'finale'].includes(frame.role)) {
         frame.role = index === 0 ? 'hero' : 'supporting';

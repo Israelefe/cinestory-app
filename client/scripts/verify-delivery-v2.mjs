@@ -105,6 +105,10 @@ assert.match(event, /normalizeDeliveryPhotos\(delivery, eventCoveragePhotos\)/, 
 assert.match(event, /resolveSections\(delivery, photos/, 'Event Coverage must render AI sections through the shared scene layout');
 assert.match(event, /<DemoGallery photos=\{photos\}/, 'Event Coverage must use the shared Photo Story gallery');
 assert.match(event, /useDemoFallbacks = !delivery/, 'Demo-only scene copy must not leak into real deliveries');
+assert.match(event, /normalizeDeliveryPhotos\(delivery, campaignPhotos\)/, 'Campaign must use real delivery assets through the demo renderer contract');
+assert.match(event, /resolveCampaignSets\(delivery, photos/, 'Campaign must render AI asset sets through the shared set layout');
+assert.match(event, /vec-campaign-set-support/, 'Campaign must show supporting photographs inside each asset set');
+assert.match(event, /campaignType/, 'Campaign demo and viewer must classify asset types');
 assert.match(preview, /<DeliveryFormatViewer format=\{format\}/, 'Creation preview must use the same format viewer as the published delivery');
 assert.match(dashboard, /Try again/, 'Studio dashboard must expose a recovery state');
 assert.match(dashboard, /No matching deliveries/, 'Studio dashboard must expose a no-match state');

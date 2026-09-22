@@ -69,9 +69,12 @@ assert.match(director, /Every photograph must have a meaningful caption/, 'Creat
 assert.match(director, /captionFormatRules/, 'Creative direction must have format-specific caption rules');
 assert.match(director, /Event Coverage is a multi-subject event archive/, 'Event Coverage direction must use its multi-subject scene brief');
 assert.match(director, /The live renderer owns the event layout/, 'Event Coverage direction must target the live renderer contract');
+assert.match(director, /Campaign Delivery is a commercial presentation/, 'Campaign direction must use its commercial handoff brief');
+assert.match(director, /campaignType/, 'Campaign captions must carry a filterable asset type');
 assert.match(director, /eventType/, 'Event Coverage captions must carry a filterable scene type');
 assert.match(director, /label.*short scene label/, 'Creative direction must return useful scene labels');
 assert.match(deliveryController, /eventType: z\.enum/, 'Review API must preserve Event Coverage scene types');
+assert.match(deliveryController, /campaignType: z\.enum/, 'Review API must preserve Campaign asset types');
 assert.match(deliveryController, /delivery\.creativeDirection\.frames = parsed\.data\.assetOrder\.map/, 'Review API must persist the approved frame order');
 assert.match(deliveryController, /assetIds = \(existing\?\.assetIds \|\| \[\]\)\.filter/, 'Review API must keep Event Coverage scene photos in the approved order');
 assert.match(director, /approvedSoundtrackCatalogue:[\s\S]*sourcePageUrl/, 'Creative direction must expose the verified soundtrack source record to the AI');

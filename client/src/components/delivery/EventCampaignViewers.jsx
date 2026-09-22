@@ -48,12 +48,41 @@ function resolveSections(delivery, photos, fallbackSections) {
   }));
 }
 
+function resolveCampaignSets(delivery, photos, fallbackSections) {
+  const source = delivery?.creativeDirection?.sections || delivery?.formatConfig?.sections || [];
+  if (source.length) return resolveSections(delivery, photos, fallbackSections);
+
+  const byType = new Map(fallbackSections.map(section => [section.campaignType, section]));
+  const orderedTypes = ['hero', 'detail', 'lifestyle', 'kit', 'context'];
+  const typedSets = orderedTypes.map(type => {
+    const group = photos.filter(photo => photo.campaignType === type);
+    const fallback = byType.get(type) || {};
+    return group.length ? {
+      id: `campaign-${type}`,
+      title: fallback.title || `${type[0].toUpperCase()}${type.slice(1)} assets`,
+      copy: fallback.copy || '',
+      label: fallback.label || '',
+      delivery: fallback.delivery || '',
+      photos: group
+    } : null;
+  }).filter(Boolean);
+  return typedSets.length ? typedSets : resolveSections(delivery, photos, fallbackSections);
+}
+
 function sceneAnchorId(section, index) {
   const slug = String(section?.id || section?.title || `scene-${index + 1}`)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
   return `event-scene-${slug || index + 1}`;
+}
+
+function campaignAnchorId(section, index) {
+  const slug = String(section?.id || section?.title || `set-${index + 1}`)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  return `campaign-set-${slug || index + 1}`;
 }
 
 function OpeningPhoto({ photo, alt }) {
@@ -177,16 +206,33 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
   const reduced = useReducedMotion();
   const [gallery, setGallery] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(null);
+  const [activeFilter, setActiveFilter] = useState('all');
   const photos = useMemo(() => normalizeDeliveryPhotos(delivery, campaignPhotos), [delivery]);
-  const sets = useMemo(() => resolveSections(delivery, photos, [
-    { title: 'Hero campaign', copy: 'The lead frame establishes the product, the palette, and the first impression.', label: '01 / MASTER', delivery: 'WEB + HERO' },
-    { title: 'Craft and detail', copy: 'Close frames make the material, construction, and finish easy to inspect.', label: '02 / DETAIL', delivery: 'DETAIL CROP' },
-    { title: 'In use', copy: 'A natural context image gives the campaign a life beyond the studio set.', label: '03 / LIFESTYLE', delivery: 'SOCIAL 4:5' },
-    { title: 'Complete kit', copy: 'The supporting pieces are grouped together for a clean catalogue or handoff page.', label: '04 / KIT', delivery: 'CATALOG FLATLAY' },
-    { title: 'Quiet context', copy: 'A flexible frame for feeds, landing pages, and the spaces between the stronger campaign images.', label: '05 / CONTEXT', delivery: 'SOCIAL 1:1' }
-  ]), [delivery, photos]);
+  const fallbackSets = useMemo(() => [
+    { campaignType: 'hero', title: 'Hero campaign', copy: 'The lead frame establishes the product, the palette, and the first impression.', label: '01 / MASTER', delivery: 'WEB + HERO' },
+    { campaignType: 'detail', title: 'Craft and detail', copy: 'Close frames make the material, construction, and finish easy to inspect.', label: '02 / DETAIL', delivery: 'DETAIL CROP' },
+    { campaignType: 'lifestyle', title: 'In use', copy: 'Natural context frames show where the product belongs beyond the studio set.', label: '03 / LIFESTYLE', delivery: 'SOCIAL + WEB' },
+    { campaignType: 'kit', title: 'Complete kit', copy: 'The supporting pieces are grouped together for a clean catalogue or retail handoff.', label: '04 / KIT', delivery: 'CATALOG + RETAIL' },
+    { campaignType: 'context', title: 'Quiet context', copy: 'A flexible frame gives the campaign room to breathe across a feed or landing page.', label: '05 / CONTEXT', delivery: 'SOCIAL / 1:1' }
+  ], []);
+  const sets = useMemo(() => resolveCampaignSets(delivery, photos, fallbackSets), [delivery, photos, fallbackSets]);
+  const filterOptions = [
+    ['all', 'All assets'],
+    ['hero', 'Hero'],
+    ['detail', 'Detail'],
+    ['lifestyle', 'In use'],
+    ['kit', 'Kit'],
+    ['context', 'Context']
+  ];
+  const hasCampaignTypes = photos.some(photo => photo.campaignType);
+  const visibleSets = sets.map(set => ({
+    ...set,
+    photos: !hasCampaignTypes || activeFilter === 'all' ? set.photos : set.photos.filter(photo => photo.campaignType === activeFilter)
+  })).filter(set => set.photos.length);
+  const highlights = photos.slice(0, 4);
   const title = delivery?.title || delivery?.clientName || 'Carry it forward';
   const client = delivery?.clientName || 'Campaign team';
+  const heroPhoto = photos.find(photo => photo.campaignType === 'hero') || photos[0];
   const statement = delivery?.creativeDirection?.openingLine || delivery?.brief || 'A clear campaign presentation first, followed by an organised handoff that makes the right file easy to find and use.';
   const usage = delivery?.formatConfig?.usageTerms || 'Usage terms are supplied by the photographer. Contact the studio before any use outside the agreed brief.';
   const styles = getFormatThemeStyles(delivery, { bg: '#090908', surface: '#141411', text: '#f3f0e8', accent: '#d9c270', fontDisplay: "'Playfair Display', Georgia, serif" });
@@ -202,17 +248,46 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
     <main>
       <section className="vec-campaign-hero">
         <div className="vec-campaign-number">01 <span>/ CAMPAIGN</span></div>
-        <motion.div initial={reduced ? false : { opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .75 }}><span>FINAL ASSET DELIVERY</span><h1>{title}</h1><p>{statement}</p><small>Prepared for {client}</small></motion.div>
-        <motion.figure initial={reduced ? false : { opacity: 0, clipPath: 'inset(0 0 12% 0)' }} animate={{ opacity: 1, clipPath: 'inset(0 0 0% 0)' }} transition={{ duration: reduced ? 0 : .9, delay: reduced ? 0 : .14 }}><OpeningPhoto photo={photos[0]} alt="Campaign lead photograph" /></motion.figure>
+        <motion.div initial={reduced ? false : { opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .75 }}><span>FINAL ASSET DELIVERY</span><h1>{title}</h1><p>{statement}</p><small>Prepared for {client}</small><button className="vec-campaign-hero-cta" type="button" onClick={() => document.getElementById('campaign-sets')?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth' })}>View approved sets<ArrowRight size={17} /></button></motion.div>
+        <motion.figure initial={reduced ? false : { opacity: 0, clipPath: 'inset(0 0 12% 0)' }} animate={{ opacity: 1, clipPath: 'inset(0 0 0% 0)' }} transition={{ duration: reduced ? 0 : .9, delay: reduced ? 0 : .14 }}><OpeningPhoto photo={heroPhoto} alt="Campaign lead photograph" /></motion.figure>
       </section>
 
       <section className="vec-campaign-note"><BriefcaseBusiness size={21} /><p>{delivery?.creativeDirection?.closingLine || 'Review the campaign first. The organised files and photographer-supplied terms follow below.'}</p></section>
 
-      <section className="vec-campaign-sets">
+      <section className="vec-campaign-tools" aria-label="Campaign navigation and actions">
+        <div className="vec-campaign-tools-head">
+          <div><span>FIND AN APPROVED ASSET</span><strong>Start with a set, inspect the supporting files, or open everything.</strong></div>
+          <div className="vec-campaign-tools-actions">
+            <button type="button" onClick={() => { setGalleryIndex(null); setGallery(true); }}><Images size={15} />Full gallery</button>
+            {galleryProps?.onDownloadAll && delivery?.access?.allowDownloadAll !== false && <button type="button" onClick={galleryProps.onDownloadAll} disabled={Boolean(galleryProps.busy)}><Download size={15} />{galleryProps.busy === 'all' ? 'Preparing…' : 'Download all'}</button>}
+          </div>
+        </div>
+        <nav className="vec-campaign-set-nav" aria-label="Campaign asset sets">
+          {visibleSets.map((set, index) => <a key={set.id} href={`#${campaignAnchorId(set, index)}`}><span>{String(index + 1).padStart(2, '0')}</span>{set.title}</a>)}
+        </nav>
+      </section>
+
+      <section className="vec-campaign-highlights" aria-label="Campaign highlights">
+        <header><span>START HERE</span><h2>The approved frames that carry the campaign.</h2></header>
+        <div className="vec-campaign-highlight-grid">
+          {highlights.map((photo, index) => <button type="button" key={photo.assetId || photo.name || index} onClick={() => openPhoto(photo)} aria-label={`Open campaign highlight ${index + 1}`}>
+            <Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || `Campaign highlight ${index + 1}`} sizes="(max-width: 640px) 78vw, 23vw" />
+            <span>{photo.caption || `Approved asset ${String(index + 1).padStart(2, '0')}`}</span>
+          </button>)}
+        </div>
+      </section>
+
+      <section id="campaign-sets" className="vec-campaign-sets">
         <header><span>02 / APPROVED WORK</span><h2>Asset sets</h2><p>Each set keeps a job together: the lead image, the detail, the context, and the crops the team will actually use.</p></header>
-        <div>{sets.map((set, setIndex) => <motion.article key={set.id} initial={reduced ? false : { opacity: 0, y: 28 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .14 }} transition={{ duration: reduced ? 0 : .55, delay: reduced ? 0 : setIndex * .04 }}>
+        {hasCampaignTypes && <div className="vec-campaign-filters" role="group" aria-label="Filter campaign assets">
+          {filterOptions.map(([value, label]) => <button type="button" key={value} className={activeFilter === value ? 'is-active' : ''} onClick={() => setActiveFilter(value)} aria-pressed={activeFilter === value}>{label}</button>)}
+        </div>}
+        <div>{visibleSets.map((set, setIndex) => <motion.article id={campaignAnchorId(set, setIndex)} key={set.id} initial={reduced ? false : { opacity: 0, y: 28 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .14 }} transition={{ duration: reduced ? 0 : .55, delay: reduced ? 0 : setIndex * .04 }}>
           <button type="button" onClick={() => openPhoto(set.photos[0])} aria-label={`Open ${set.title}`}><Photo name={set.photos[0]?.name} url={set.photos[0]?.url} srcSet={set.photos[0]?.srcSet} alt={set.photos[0]?.alt || ''} sizes="(max-width: 640px) 92vw, (max-width: 1024px) 46vw, 31vw" /><span>{String(setIndex + 1).padStart(2, '0')}</span><small>{set.delivery || `${set.photos.length} approved files`}</small></button>
-           <div>{set.label && <small className="vec-set-label">{set.label}</small>}<h3>{set.title}</h3>{set.copy && <p>{set.copy}</p>}<p className="vec-photo-caption">{set.photos[0]?.caption}</p><span>{set.photos.length} approved {set.photos.length === 1 ? 'file' : 'files'}</span></div>
+          <div className="vec-campaign-set-copy">{set.label && <small className="vec-set-label">{set.label}</small>}<h3>{set.title}</h3>{set.copy && <p>{set.copy}</p>}<p className="vec-photo-caption">{set.photos[0]?.caption}</p><span>{set.photos.length} approved {set.photos.length === 1 ? 'file' : 'files'}</span></div>
+          {set.photos.length > 1 && <div className="vec-campaign-set-support" aria-label={`${set.title} supporting photographs`}>
+            {set.photos.slice(1).map((photo, index) => <button type="button" key={photo.assetId || photo.name || index} onClick={() => openPhoto(photo)} aria-label={`Open ${set.title} supporting photograph ${index + 1}`}><Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || photo.caption || ''} sizes="(max-width: 640px) 44vw, (max-width: 1024px) 22vw, 18vw" /><span>{photo.caption || photo.deliveryLabel || 'Supporting asset'}</span></button>)}
+          </div>}
         </motion.article>)}</div>
       </section>
 
