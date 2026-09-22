@@ -7,8 +7,102 @@ export const CREATIVE_DIRECTOR_PROMPT_VERSION = 'creative-director-v3';
 const MOTIONS = ['slow-push', 'slow-pull', 'pan-left', 'pan-right', 'float', 'still'];
 const TRANSITIONS = ['fade', 'crossfade', 'wipe', 'slide', 'reveal', 'cut'];
 const LAYOUTS = ['hero', 'single', 'pair', 'triptych', 'grid', 'strip', 'spread', 'cluster', 'chapter-cover'];
+// These values are consumed by Photo Story's client renderer. Keep them
+// separate from section layouts: a section describes a group, while a frame
+// layout describes how one photograph is presented inside that group.
+const FRAME_LAYOUTS = ['cinema', 'poster', 'split', 'collage'];
+const FRAME_TEXT_STYLES = ['typewriter', 'editorial_quote', 'neon_pop', 'cinematic_drift', 'minimal_clean', 'bold_banner'];
+const FRAME_TEXT_BACKGROUNDS = ['frosted_glass', 'solid_dark', 'neon_pill', 'transparent_shadow', 'vogue_bordered'];
+const FRAME_CAPTION_POSITIONS = ['top', 'middle', 'bottom', 'left', 'right'];
+const FRAME_TEXT_ANIMATIONS = ['word_fade_up', 'scale_pop', 'smooth_slide', 'blur_reveal', 'letter_drift', 'typewriter'];
 const EVENT_FRAME_TYPES = ['people', 'programme', 'networking', 'details', ''];
 const CAMPAIGN_ASSET_TYPES = ['hero', 'detail', 'lifestyle', 'kit', 'context', ''];
+
+// The model gets a different visual brief for every format. This is deliberately
+// data rather than prose scattered through the prompt so the same contract can
+// later power validation, diagnostics, and the review UI.
+const FORMAT_DIRECTION_PROFILES = Object.freeze({
+  'photo-story': {
+    purpose: 'A personal sequence that moves from an opening frame through a measured middle to a clear closing frame.',
+    compositions: ['quiet', 'split', 'portrait-led'],
+    typography: ['editorial-serif', 'soft-serif', 'clean-sans'],
+    density: ['spacious', 'balanced'],
+    accents: ['corners', 'rules', 'type'],
+    sectionLayouts: ['hero', 'single', 'pair', 'strip'],
+    frameLayouts: FRAME_LAYOUTS,
+    instruction: 'Vary the frame layouts when the photographs support it. Give the first frame an opening role, the strongest middle frame a distinct focal treatment, and the final frame a deliberate close. Use calm transitions and never let every frame look identical.'
+  },
+  editorial: {
+    purpose: 'A publication-like scroll with a cover, point of view, feature spread, detail section, and closing handoff.',
+    compositions: ['split', 'layered', 'grid', 'wide-led'],
+    typography: ['editorial-serif', 'condensed-sans', 'soft-serif'],
+    density: ['spacious', 'balanced'],
+    accents: ['rules', 'labels', 'type'],
+    sectionLayouts: ['hero', 'single', 'pair', 'triptych', 'grid', 'spread', 'strip'],
+    frameLayouts: FRAME_LAYOUTS,
+    instruction: 'Choose a clear feature hierarchy. Identify which section is the cover, which frame carries the main editorial statement, where details should breathe, and how the closing section hands the complete gallery back to the client.'
+  },
+  'photo-reveal': {
+    purpose: 'A client-controlled first viewing where each photograph earns its own reveal and the complete gallery arrives after the final frame.',
+    compositions: ['quiet', 'split', 'layered', 'portrait-led'],
+    typography: ['editorial-serif', 'soft-serif', 'clean-sans'],
+    density: ['spacious', 'balanced'],
+    accents: ['corners', 'type', 'rules'],
+    sectionLayouts: ['hero', 'single', 'pair', 'spread'],
+    frameLayouts: FRAME_LAYOUTS,
+    instruction: 'Keep the reveal calm and legible. Assign transitions and motions that match the photograph rather than cycling blindly. Reserve the clearest, most personal frame for the end.'
+  },
+  canvas: {
+    purpose: 'A spatial wall where related photographs form useful clusters and the client can explore the entire collection.',
+    compositions: ['grid', 'layered', 'split', 'portrait-led', 'wide-led'],
+    typography: ['clean-sans', 'condensed-sans', 'editorial-serif'],
+    density: ['balanced', 'layered'],
+    accents: ['labels', 'rules', 'corners'],
+    sectionLayouts: ['cluster', 'grid', 'pair', 'triptych', 'strip'],
+    frameLayouts: FRAME_LAYOUTS,
+    instruction: 'Make every cluster meaningful. Use the full photograph set, not only the first few files. Name clusters by the actual visual relationship in the collection and keep captions useful while browsing.'
+  },
+  chapters: {
+    purpose: 'A directory of real chapters in a larger shoot, each with a strong cover and a useful reason to open it.',
+    compositions: ['grid', 'split', 'layered', 'portrait-led'],
+    typography: ['editorial-serif', 'soft-serif', 'clean-sans'],
+    density: ['balanced', 'spacious'],
+    accents: ['labels', 'rules', 'type'],
+    sectionLayouts: ['chapter-cover', 'pair', 'single', 'triptych', 'grid'],
+    frameLayouts: FRAME_LAYOUTS,
+    instruction: 'Create chapters from real changes in location, outfit, activity, or part of the day. Each chapter must have a cover, a short useful subtitle, and all of its assigned photographs.'
+  },
+  album: {
+    purpose: 'A quiet page-turning keepsake made from deliberate spreads, pairings, and a final page.',
+    compositions: ['quiet', 'split', 'wide-led', 'layered'],
+    typography: ['soft-serif', 'editorial-serif', 'clean-sans'],
+    density: ['spacious', 'balanced'],
+    accents: ['rules', 'type', 'corners'],
+    sectionLayouts: ['spread', 'pair', 'single', 'hero'],
+    frameLayouts: FRAME_LAYOUTS,
+    instruction: 'Pair photographs only when they belong together. Use generous space, short album notes, and a final spread that feels finished without hiding the complete gallery.'
+  },
+  'event-coverage': {
+    purpose: 'A practical multi-subject archive organised around the actual scenes and shifts of an event.',
+    compositions: ['grid', 'wide-led', 'split', 'layered'],
+    typography: ['clean-sans', 'condensed-sans', 'editorial-serif'],
+    density: ['balanced', 'layered'],
+    accents: ['labels', 'rules', 'corners'],
+    sectionLayouts: ['hero', 'grid', 'strip', 'cluster'],
+    frameLayouts: FRAME_LAYOUTS,
+    instruction: 'Prioritise retrieval: useful scene names, clear counts, fast access to the full gallery, and neutral captions for groups of people.'
+  },
+  campaign: {
+    purpose: 'A commercial lead presentation followed by a clear asset handoff organised by approved use.',
+    compositions: ['wide-led', 'split', 'grid', 'layered'],
+    typography: ['clean-sans', 'condensed-sans', 'editorial-serif'],
+    density: ['balanced', 'layered'],
+    accents: ['labels', 'rules', 'type'],
+    sectionLayouts: ['hero', 'grid', 'strip', 'cluster', 'spread'],
+    frameLayouts: FRAME_LAYOUTS,
+    instruction: 'Make the hero, details, lifestyle, kit, and context sets easy to identify and download. Never invent product claims or turn a commercial handoff into personal celebration copy.'
+  }
+});
 
 const COLOR_NAMES = {
   black: '#111111', white: '#ffffff', gray: '#888888', grey: '#888888',
@@ -121,28 +215,35 @@ const directionSchema = z.object({
   closingLine: z.preprocess(val => String(val || '').trim().slice(0, 160) || 'Thank you for sharing these moments.', z.string().min(2).max(160)),
   designReason: z.preprocess(val => String(val || '').trim().slice(0, 240) || 'Art directed for this specific shoot.', z.string().min(4).max(240)),
   palette: z.object({
-    background: z.preprocess(val => normalizeHexColor(val) || '#070709', z.string().regex(/^#[0-9a-f]{6}$/i)),
-    surface: z.preprocess(val => normalizeHexColor(val) || '#121217', z.string().regex(/^#[0-9a-f]{6}$/i)),
-    text: z.preprocess(val => normalizeHexColor(val) || '#ffffff', z.string().regex(/^#[0-9a-f]{6}$/i)),
-    accent: z.preprocess(val => normalizeHexColor(val) || '#ff5a47', z.string().regex(/^#[0-9a-f]{6}$/i))
+    background: z.preprocess(val => normalizeHexColor(val), z.string().regex(/^#[0-9a-f]{6}$/i)),
+    surface: z.preprocess(val => normalizeHexColor(val), z.string().regex(/^#[0-9a-f]{6}$/i)),
+    text: z.preprocess(val => normalizeHexColor(val), z.string().regex(/^#[0-9a-f]{6}$/i)),
+    accent: z.preprocess(val => normalizeHexColor(val), z.string().regex(/^#[0-9a-f]{6}$/i))
   }),
   typography: z.object({
-    display: z.preprocess(val => ['editorial-serif', 'clean-sans', 'condensed-sans', 'soft-serif'].includes(val) ? val : 'editorial-serif', z.enum(['editorial-serif', 'clean-sans', 'condensed-sans', 'soft-serif'])),
-    body: z.preprocess(val => ['editorial-serif', 'clean-sans'].includes(val) ? val : 'clean-sans', z.enum(['clean-sans', 'editorial-serif']))
+    display: z.enum(['editorial-serif', 'clean-sans', 'condensed-sans', 'soft-serif']),
+    body: z.enum(['clean-sans', 'editorial-serif'])
   }),
-  pace: z.preprocess(val => ['measured', 'warm', 'energetic'].includes(val) ? val : 'warm', z.enum(['measured', 'warm', 'energetic'])),
+  pace: z.enum(['measured', 'warm', 'energetic']),
   variation: z.object({
-    composition: z.preprocess(val => ['quiet', 'split', 'layered', 'grid', 'portrait-led', 'wide-led'].includes(val) ? val : 'quiet', z.enum(['quiet', 'split', 'layered', 'grid', 'portrait-led', 'wide-led'])),
-    density: z.preprocess(val => ['spacious', 'balanced', 'layered'].includes(val) ? val : 'balanced', z.enum(['spacious', 'balanced', 'layered'])),
-    imageTreatment: z.preprocess(val => ['natural', 'warm', 'contrast', 'monochrome'].includes(val) ? val : 'natural', z.enum(['natural', 'warm', 'contrast', 'monochrome'])),
-    captionTreatment: z.preprocess(val => ['quiet', 'editorial', 'bold'].includes(val) ? val : 'editorial', z.enum(['quiet', 'editorial', 'bold'])),
-    accentPlacement: z.preprocess(val => ['corners', 'rules', 'labels', 'type'].includes(val) ? val : 'rules', z.enum(['corners', 'rules', 'labels', 'type']))
-  }).default({ composition: 'quiet', density: 'balanced', imageTreatment: 'natural', captionTreatment: 'editorial', accentPlacement: 'rules' }),
+    // Do not coerce an invalid or missing design decision into the same quiet
+    // default for every format. completion() will ask the model for a complete
+    // corrected object, and the renderer has a format-specific legacy fallback
+    // only for old deliveries that predate this contract.
+    composition: z.enum(['quiet', 'split', 'layered', 'grid', 'portrait-led', 'wide-led']),
+    density: z.enum(['spacious', 'balanced', 'layered']),
+    // Finished photographs are never colour-graded in the viewer. This field is
+    // retained for old records but new directions use natural and express the
+    // difference through surfaces, type, overlays, and spacing instead.
+    imageTreatment: z.literal('natural'),
+    captionTreatment: z.enum(['quiet', 'editorial', 'bold']),
+    accentPlacement: z.enum(['corners', 'rules', 'labels', 'type'])
+  }).strict(),
   music: z.object({
-    trackId: z.preprocess(val => DELIVERY_SOUNDTRACKS.some(track => track.id === val) ? val : DELIVERY_SOUNDTRACKS[0].id, z.enum(DELIVERY_SOUNDTRACKS.map(track => track.id))),
-    mood: z.preprocess(val => String(val || '').trim().slice(0, 80) || 'Cinematic Warmth', z.string().min(2).max(80)),
-    genre: z.preprocess(val => String(val || '').trim().slice(0, 80) || 'Ambient Acoustic', z.string().min(2).max(80)),
-    tempo: z.preprocess(val => ['slow', 'mid', 'upbeat'].includes(val) ? val : 'mid', z.enum(['slow', 'mid', 'upbeat']))
+    trackId: z.enum(DELIVERY_SOUNDTRACKS.map(track => track.id)),
+    mood: z.preprocess(val => String(val || '').trim().slice(0, 80), z.string().min(2).max(80)),
+    genre: z.preprocess(val => String(val || '').trim().slice(0, 80), z.string().min(2).max(80)),
+    tempo: z.enum(['slow', 'mid', 'upbeat'])
   }),
   narrationRecommended: z.preprocess(val => Boolean(val), z.boolean()),
   sections: z.array(z.object({
@@ -151,15 +252,35 @@ const directionSchema = z.object({
     subtitle: z.preprocess(val => String(val || '').trim().slice(0, 120), z.string().max(120)),
     label: z.preprocess(val => String(val || '').trim().slice(0, 40), z.string().max(40)).default(''),
     delivery: z.preprocess(val => String(val || '').trim().slice(0, 40), z.string().max(40)).default(''),
-    layout: z.preprocess(val => LAYOUTS.includes(val) ? val : 'single', z.enum(LAYOUTS))
+    layout: z.enum(LAYOUTS),
+    accent: z.preprocess(val => val == null || val === '' ? undefined : normalizeHexColor(val), z.string().regex(/^#[0-9a-f]{6}$/i).optional())
   })).min(1).max(12)
-}).superRefine((value) => {
+}).superRefine((value, context) => {
   const seen = new Set();
   value.sections.forEach((section, idx) => {
     if (seen.has(section.id)) {
       section.id = `${section.id}-${idx + 1}`.slice(0, 32);
     }
     seen.add(section.id);
+  });
+  const profile = FORMAT_DIRECTION_PROFILES[value.format];
+  if (!profile) return;
+  if (!profile.compositions.includes(value.variation.composition)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['variation', 'composition'], message: `Use a composition supported by the ${value.format} format.` });
+  }
+  if (!profile.typography.includes(value.typography.display)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['typography', 'display'], message: `Use a display type supported by the ${value.format} format.` });
+  }
+  if (!profile.density.includes(value.variation.density)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['variation', 'density'], message: `Use a spacing direction supported by the ${value.format} format.` });
+  }
+  if (!profile.accents.includes(value.variation.accentPlacement)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['variation', 'accentPlacement'], message: `Use an accent placement supported by the ${value.format} format.` });
+  }
+  value.sections.forEach((section, index) => {
+    if (!profile.sectionLayouts.includes(section.layout)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['sections', index, 'layout'], message: `Use a section layout supported by the ${value.format} format.` });
+    }
   });
 });
 
@@ -178,7 +299,14 @@ const frameSchema = z.preprocess(raw => {
     motion: raw.motion,
     transition: raw.transition,
     duration: raw.duration,
-    emphasis: raw.emphasis
+    emphasis: raw.emphasis,
+    layout: raw.layout ?? raw.sceneLayout,
+    typographyStyle: raw.typographyStyle ?? raw.textStyle,
+    textBackground: raw.textBackground,
+    captionPosition: raw.captionPosition,
+    textAnimation: raw.textAnimation,
+    focalPoint: raw.focalPoint,
+    colorAccent: raw.colorAccent ?? raw.accent
   };
 }, z.object({
   assetId: z.preprocess(val => String(val ?? '').trim().slice(0, 100), z.string()),
@@ -191,7 +319,14 @@ const frameSchema = z.preprocess(raw => {
   motion: z.preprocess(val => MOTIONS.includes(val) ? val : 'slow-push', z.enum(MOTIONS)),
   transition: z.preprocess(val => TRANSITIONS.includes(val) ? val : 'crossfade', z.enum(TRANSITIONS)),
   duration: z.preprocess(val => Math.min(12, Math.max(2, Number(val) || 4.5)), z.number().min(2).max(12)),
-  emphasis: z.preprocess(val => Math.min(10, Math.max(1, Math.round(Number(val) || 5))), z.number().int().min(1).max(10))
+  emphasis: z.preprocess(val => Math.min(10, Math.max(1, Math.round(Number(val) || 5))), z.number().int().min(1).max(10)),
+  layout: z.enum(FRAME_LAYOUTS).optional(),
+  typographyStyle: z.enum(FRAME_TEXT_STYLES).optional(),
+  textBackground: z.enum(FRAME_TEXT_BACKGROUNDS).optional(),
+  captionPosition: z.enum(FRAME_CAPTION_POSITIONS).optional(),
+  textAnimation: z.enum(FRAME_TEXT_ANIMATIONS).optional(),
+  focalPoint: z.preprocess(val => String(val || '').trim().slice(0, 24), z.string().regex(/^(?:100|[0-9]{1,2})%\s+(?:100|[0-9]{1,2})%$/)).optional(),
+  colorAccent: z.preprocess(val => val == null || val === '' ? undefined : normalizeHexColor(val), z.string().regex(/^#[0-9a-f]{6}$/i).optional())
 }));
 
 const frameBatchSchema = z.preprocess(val => {
@@ -478,7 +613,7 @@ export async function recommendFormats({ brief, shootType, clientName, imageInsi
 }
 Rank all eight delivery formats exactly once.`;
 
-  return completion({
+  const result = await completion({
     model: provider.creativeModel,
     messages: [
       { role: 'system', content: `You are Veylo’s senior creative director. Decide how a finished shoot should be delivered. Rank all eight formats exactly once. ${voiceRules}\n\n${schemaInstructions}` },
@@ -488,10 +623,12 @@ Rank all eight delivery formats exactly once.`;
     repairLabel: 'format recommendation',
     schemaHint: schemaInstructions
   });
+  return result;
 }
 
 export async function createGlobalDirection({ format, brief, shootType, clientName, collectionAnalysis, imageInsights, revisionInstruction = '', currentDirection = null }) {
   const provider = config();
+  const formatProfile = FORMAT_DIRECTION_PROFILES[format] || FORMAT_DIRECTION_PROFILES['photo-story'];
   const compact = imageInsights.map(item => ({ assetId: item.assetId, summary: item.summary || '', subjects: item.subjects || [], setting: item.setting || '', expression: item.expression || '', clothing: item.clothing || '', weight: item.visualWeight, moment: item.moment, orientation: item.orientation, photographerCaption: item.photographerCaption || '', photographerTags: item.photographerTags || [] }));
   const schemaInstructions = `Return a JSON object matching this schema:
 {
@@ -501,13 +638,13 @@ export async function createGlobalDirection({ format, brief, shootType, clientNa
   "closingLine": "<closing sign-off or ending line, 4-160 chars>",
   "designReason": "<rationale for chosen palette and structure, 10-240 chars>",
   "palette": { "background": "<#hex>", "surface": "<#hex>", "text": "<#hex>", "accent": "<#hex>" },
-  "typography": { "display": "editorial-serif" | "clean-sans" | "condensed-sans" | "soft-serif", "body": "clean-sans" | "editorial-serif" },
+  "typography": { "display": "${formatProfile.typography.join('" | "')}", "body": "clean-sans" | "editorial-serif" },
   "pace": "measured" | "warm" | "energetic",
-  "variation": { "composition": "quiet" | "split" | "layered" | "grid" | "portrait-led" | "wide-led", "density": "spacious" | "balanced" | "layered", "imageTreatment": "natural" | "warm" | "contrast" | "monochrome", "captionTreatment": "quiet" | "editorial" | "bold", "accentPlacement": "corners" | "rules" | "labels" | "type" },
+  "variation": { "composition": "${formatProfile.compositions.join('" | "')}", "density": "${formatProfile.density.join('" | "')}", "imageTreatment": "natural", "captionTreatment": "quiet" | "editorial" | "bold", "accentPlacement": "${formatProfile.accents.join('" | "')}" },
   "music": { "trackId": "<one approved track id>", "mood": "<mood title, 2-80 chars>", "genre": "<genre title, 2-80 chars>", "tempo": "slow" | "mid" | "upbeat" },
   "narrationRecommended": boolean,
   "sections": [
-    { "id": "<kebab-case-id>", "title": "<section title>", "subtitle": "<section subtitle>", "label": "<short scene label>", "delivery": "<short purpose label>", "layout": "hero" | "single" | "pair" | "triptych" | "grid" | "strip" | "spread" | "cluster" | "chapter-cover" }
+    { "id": "<kebab-case-id>", "title": "<section title>", "subtitle": "<section subtitle>", "label": "<short scene label>", "delivery": "<short purpose label>", "layout": "${formatProfile.sectionLayouts.join('" | "')}", "accent": "<#hex>" }
   ]
 }`;
 
@@ -522,11 +659,24 @@ export async function createGlobalDirection({ format, brief, shootType, clientNa
     album: `Album should use a small number of deliberate spreads with calm page-turn language.`
   }[format] || '';
 
-  return completion({
+  const designContract = `FORMAT DESIGN CONTRACT FOR ${format.toUpperCase()}:
+Purpose: ${formatProfile.purpose}
+Preferred compositions: ${formatProfile.compositions.join(', ')}
+Preferred display type families: ${formatProfile.typography.join(', ')}
+Preferred density: ${formatProfile.density.join(', ')}
+Preferred accent placement: ${formatProfile.accents.join(', ')}
+Allowed section layouts: ${formatProfile.sectionLayouts.join(', ')}
+Per-frame layouts available to the renderer: ${formatProfile.frameLayouts.join(', ')}
+Specific direction: ${formatProfile.instruction}
+
+Do not choose the generic quiet/rules/balanced combination unless the photographs and brief clearly support it. Choose a deliberate combination from this contract, explain the visual reason in designReason, and return every required field. The viewer will use the exact saved values; do not provide a decorative suggestion that the renderer cannot express. Finished photograph pixels remain unchanged, so imageTreatment must be natural.`;
+
+  const result = await completion({
     model: provider.creativeModel,
     messages: [
       { role: 'system', content: `You are Veylo’s senior creative director. Design one ${format} presentation around the actual finished shoot. The format must have its own structure. Photo Story is paced and sequential. Editorial is a scrollable publication. Photo Reveal is client-paced and suspenseful. Canvas is spatial and freely explored. Chapters is a non-linear moment selector. Album uses deliberate page turns and spreads. Event Coverage is documentary browsing organised into scenes for many subjects. Campaign is a commercial showcase followed by practical asset sets. ${voiceRules}\n\n${schemaInstructions}` },
       { role: 'system', content: formatDirectionRules },
+      { role: 'system', content: designContract },
       { role: 'user', content: JSON.stringify({
         task: revisionInstruction ? 'Revise the complete art direction and section plan' : 'Create the complete art direction and section plan',
         format,
@@ -546,10 +696,15 @@ export async function createGlobalDirection({ format, brief, shootType, clientNa
     repairLabel: 'creative direction',
     schemaHint: schemaInstructions
   });
+  if (result.format !== format) {
+    throw Object.assign(new Error(`The creative director returned ${result.format} instead of ${format}.`), { code: 'INVALID_MODEL_OUTPUT' });
+  }
+  return result;
 }
 
 export async function createFrameBatch({ format, brief, shootType, clientName, direction, imageInsights, revisionInstruction = '', currentFrames = [] }) {
   const provider = config();
+  const formatProfile = FORMAT_DIRECTION_PROFILES[format] || FORMAT_DIRECTION_PROFILES['photo-story'];
   const validSectionIds = (direction?.sections?.map(s => s.id) || []).filter(Boolean);
   if (!validSectionIds.length) validSectionIds.push('section-1');
   const defaultSectionId = validSectionIds[0];
@@ -569,7 +724,14 @@ export async function createFrameBatch({ format, brief, shootType, clientName, d
       "motion": "slow-push" | "slow-pull" | "pan-left" | "pan-right" | "float" | "still",
       "transition": "fade" | "crossfade" | "wipe" | "slide" | "reveal" | "cut",
       "duration": <number between 2 and 12 seconds>,
-      "emphasis": <integer from 1 to 10>
+      "emphasis": <integer from 1 to 10>,
+      "layout": "cinema" | "poster" | "split" | "collage",
+      "typographyStyle": "typewriter" | "editorial_quote" | "neon_pop" | "cinematic_drift" | "minimal_clean" | "bold_banner",
+      "textBackground": "frosted_glass" | "solid_dark" | "neon_pill" | "transparent_shadow" | "vogue_bordered",
+      "captionPosition": "top" | "middle" | "bottom" | "left" | "right",
+      "textAnimation": "word_fade_up" | "scale_pop" | "smooth_slide" | "blur_reveal" | "letter_drift" | "typewriter",
+      "focalPoint": "<x% y% focal point, for example 50% 50%>",
+      "colorAccent": "<#hex accent for this frame>"
     }
   ]
 }
@@ -590,7 +752,10 @@ Return one frame per photograph in the supplied order.`;
 
   const minimalDirection = {
     title: direction?.title || 'Photo Story',
-    sections: (direction?.sections || []).map(s => ({ id: s.id, title: s.title, subtitle: s.subtitle || '', label: s.label || '', delivery: s.delivery || '' }))
+    sections: (direction?.sections || []).map(s => ({ id: s.id, title: s.title, subtitle: s.subtitle || '', label: s.label || '', delivery: s.delivery || '', layout: s.layout || 'single', accent: s.accent || '' })),
+    variation: direction?.variation || {},
+    typography: direction?.typography || {},
+    pace: direction?.pace || 'warm'
   };
 
   const captionFormatRules = {
@@ -610,6 +775,38 @@ Return one frame per photograph in the supplied order.`;
       ? `The audience is a brand or production team reviewing approved assets. Keep the writing useful for selection and handoff, not like a personal biography or sales claim.`
       : `Speak directly to ${clientName || 'the client'} with warmth, while staying grounded in the photographer's brief.`;
 
+  const frameDesignDefaults = (index, insight = {}) => {
+    const layouts = format === 'photo-story'
+      ? ['cinema', 'split', 'poster', 'collage']
+      : format === 'editorial'
+        ? ['poster', 'cinema', 'split', 'collage']
+        : format === 'photo-reveal'
+          ? ['cinema', 'poster', 'split', 'collage']
+          : ['cinema', 'poster', 'split', 'collage'];
+    const styles = format === 'editorial'
+      ? ['editorial_quote', 'minimal_clean', 'bold_banner']
+      : format === 'campaign'
+        ? ['minimal_clean', 'bold_banner', 'editorial_quote']
+        : format === 'event-coverage'
+          ? ['minimal_clean', 'editorial_quote', 'cinematic_drift']
+          : ['cinematic_drift', 'editorial_quote', 'minimal_clean'];
+    const backgrounds = format === 'editorial'
+      ? ['vogue_bordered', 'transparent_shadow', 'solid_dark']
+      : ['transparent_shadow', 'solid_dark', 'frosted_glass'];
+    const positions = insight.orientation === 'portrait'
+      ? ['bottom', 'right', 'left']
+      : ['bottom', 'middle', 'top'];
+    return {
+      layout: layouts[index % layouts.length],
+      typographyStyle: styles[index % styles.length],
+      textBackground: backgrounds[index % backgrounds.length],
+      captionPosition: positions[index % positions.length],
+      textAnimation: ['word_fade_up', 'smooth_slide', 'blur_reveal', 'letter_drift'][index % 4],
+      focalPoint: '50% 50%',
+      colorAccent: direction?.palette?.accent || '#ff5a47'
+    };
+  };
+
   const alignFrames = (rawFrames = []) => {
     const byAssetId = new Map(rawFrames.map(f => [String(f.assetId || ''), f]));
     if (rawFrames.length !== expectedAssetIds.length) {
@@ -623,6 +820,14 @@ Return one frame per photograph in the supplied order.`;
       }
       const frame = { ...matched };
       frame.assetId = id;
+      const designDefaults = frameDesignDefaults(index, imageInsights[index] || {});
+      frame.layout = FRAME_LAYOUTS.includes(frame.layout) ? frame.layout : designDefaults.layout;
+      frame.typographyStyle = FRAME_TEXT_STYLES.includes(frame.typographyStyle) ? frame.typographyStyle : designDefaults.typographyStyle;
+      frame.textBackground = FRAME_TEXT_BACKGROUNDS.includes(frame.textBackground) ? frame.textBackground : designDefaults.textBackground;
+      frame.captionPosition = FRAME_CAPTION_POSITIONS.includes(frame.captionPosition) ? frame.captionPosition : designDefaults.captionPosition;
+      frame.textAnimation = FRAME_TEXT_ANIMATIONS.includes(frame.textAnimation) ? frame.textAnimation : designDefaults.textAnimation;
+      frame.focalPoint = /^(?:100|[0-9]{1,2})%\s+(?:100|[0-9]{1,2})%$/.test(String(frame.focalPoint || '')) ? frame.focalPoint : designDefaults.focalPoint;
+      frame.colorAccent = normalizeHexColor(frame.colorAccent) || designDefaults.colorAccent;
       if (!validSectionIds.includes(frame.sectionId)) frame.sectionId = defaultSectionId;
       if (format === 'event-coverage' && !frame.eventType) {
         const section = (direction?.sections || []).find(item => item.id === frame.sectionId);
@@ -692,6 +897,10 @@ Assign every photograph to one existing section (${validSectionIds.join(', ')}).
 
  FORMAT-SPECIFIC DIRECTION (this overrides any generic personal-portrait wording above):
  ${captionFormatRules}
+
+ FRAME DESIGN CONTRACT:
+ ${formatProfile.instruction}
+ Return frame-level layout, typographyStyle, textBackground, captionPosition, textAnimation, focalPoint, motion, transition, duration, and emphasis for every photograph. Vary those choices when the image and format support it; do not copy one treatment across the entire batch. Use the approved global palette accent for colorAccent unless a clearly supported frame accent is needed. The viewer will use these exact values.
 
  ${schemaInstructions}`
         },
@@ -826,4 +1035,15 @@ export async function createPortfolioDirection({ studioName, bio, location, item
   return result;
 }
 
-export const creativeDirectorAllowlist = Object.freeze({ formats: FORMATS, motions: MOTIONS, transitions: TRANSITIONS, layouts: LAYOUTS });
+export const creativeDirectorAllowlist = Object.freeze({
+  formats: FORMATS,
+  motions: MOTIONS,
+  transitions: TRANSITIONS,
+  layouts: LAYOUTS,
+  frameLayouts: FRAME_LAYOUTS,
+  frameTextStyles: FRAME_TEXT_STYLES,
+  frameTextBackgrounds: FRAME_TEXT_BACKGROUNDS,
+  frameCaptionPositions: FRAME_CAPTION_POSITIONS,
+  frameTextAnimations: FRAME_TEXT_ANIMATIONS,
+  formatDirectionProfiles: FORMAT_DIRECTION_PROFILES
+});

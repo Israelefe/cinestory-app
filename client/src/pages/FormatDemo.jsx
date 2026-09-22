@@ -81,7 +81,8 @@ export function getFormatThemeStyles(delivery, fallback = {}) {
     '--fd-density-gap': densityGap,
     '--fd-caption-weight': variation.captionTreatment === 'bold' ? '650' : variation.captionTreatment === 'quiet' ? '400' : '500',
     '--fd-accent-placement': variation.accentPlacement || 'rules',
-    '--fd-composition': variation.composition || 'quiet'
+    '--fd-composition': variation.composition || 'quiet',
+    '--fd-pace': cd?.pace || 'warm'
   };
 }
 
@@ -99,6 +100,14 @@ export function normalizeDeliveryPhotos(delivery, fallbackPhotos) {
       campaignType: frames.get(String(a.assetId))?.campaignType || frames.get(String(a.assetId))?.assetType || frames.get(String(a.assetId))?.assetRole || '',
       duration: frames.get(String(a.assetId))?.duration,
       motion: frames.get(String(a.assetId))?.motion,
+      transition: frames.get(String(a.assetId))?.transition,
+      layout: frames.get(String(a.assetId))?.layout,
+      typographyStyle: frames.get(String(a.assetId))?.typographyStyle,
+      textBackground: frames.get(String(a.assetId))?.textBackground,
+      captionPosition: frames.get(String(a.assetId))?.captionPosition,
+      textAnimation: frames.get(String(a.assetId))?.textAnimation,
+      focalPoint: frames.get(String(a.assetId))?.focalPoint,
+      colorAccent: frames.get(String(a.assetId))?.colorAccent,
       url: a.url, // Original photographer upload quality preserved
       thumbnailUrl: a.thumbnailUrl || a.url
     }));
@@ -318,16 +327,16 @@ function LegacyDemoGallery({ photos, title, onClose, initialIndex = null, liked,
 
 export const DemoGallery = ClientGallery;
 
-function EditorialPhoto({ photo, className = '', caption, sizes, direction = 1, horizontal = false, onNarrationNavigate }) {
+function EditorialPhoto({ photo, className = '', caption, sizes, direction = 1, horizontal = false, onNarrationNavigate, accent, frame }) {
   const ref = useRef(null);
   const reduced = useReducedMotion();
   const { scrollYProgress } = useScroll({ target: ref, offset: ['start end', 'end start'] });
   const y = useTransform(scrollYProgress, [0, 1], direction > 0 ? [-24, 24] : [24, -24]);
   const x = useTransform(scrollYProgress, [0, 1], direction > 0 ? [-18, 18] : [18, -18]);
   const scale = useTransform(scrollYProgress, [0, .5, 1], [1.07, 1.025, 1.07]);
-  return <motion.figure ref={ref} className={className} initial={reduced ? false : { opacity: .72, clipPath: horizontal ? 'inset(0 18% 0 0)' : 'inset(0 0 18% 0)' }} whileInView={{ opacity: 1, clipPath: 'inset(0 0 0% 0)' }} viewport={{ once: true, amount: .08 }} onViewportEnter={() => onNarrationNavigate?.(photo?.assetId)} transition={{ duration: reduced ? 0 : .95, ease: [0.22, 1, 0.36, 1] }}>
+  return <motion.figure ref={ref} className={className} data-frame-layout={frame?.layout || undefined} data-caption-position={frame?.captionPosition || undefined} data-text-background={frame?.textBackground || undefined} data-type-style={frame?.typographyStyle || undefined} style={accent ? { '--frame-accent': accent } : undefined} initial={reduced ? false : { opacity: .72, clipPath: horizontal ? 'inset(0 18% 0 0)' : 'inset(0 0 18% 0)' }} whileInView={{ opacity: 1, clipPath: 'inset(0 0 0% 0)' }} viewport={{ once: true, amount: .08 }} onViewportEnter={() => onNarrationNavigate?.(photo?.assetId)} transition={{ duration: reduced ? 0 : .95, ease: [0.22, 1, 0.36, 1] }}>
     <motion.div className="fd-ed-photo-motion" style={reduced ? undefined : { y: horizontal ? 0 : y, x: horizontal ? x : 0, scale }}>
-      <Photo name={photo.name} url={photo.url} alt={photo.alt} sizes={sizes} />
+      <Photo name={photo.name} url={photo.url} alt={photo.alt} sizes={sizes} style={frame?.focalPoint ? { objectPosition: frame.focalPoint } : undefined} />
     </motion.div>
     {caption && <figcaption>{caption}</figcaption>}
   </motion.figure>;
@@ -341,6 +350,8 @@ export function EditorialDemo({ delivery, galleryProps, audioState, toggleAudio,
 
   const photos = normalizeDeliveryPhotos(delivery, editorialPhotos);
   const frames = useMemo(() => new Map((delivery?.creativeDirection?.frames || []).map(f => [f.assetId, f])), [delivery]);
+  const sections = delivery?.creativeDirection?.sections || [];
+  const sectionByAsset = useMemo(() => new Map(sections.flatMap(section => (section.assetIds || []).map(assetId => [String(assetId), section]))), [sections]);
 
   const client = delivery ? (delivery.clientName ? `${delivery.clientName} / ${delivery.title}` : delivery.title) : 'Ada / The Style Issue';
   const masthead = delivery?.branding?.name ? `${delivery.branding.name.toUpperCase()} EDITORIAL / 001` : 'VEYLO EDITORIAL / 001';
@@ -371,8 +382,12 @@ export function EditorialDemo({ delivery, galleryProps, audioState, toggleAudio,
   const frame2 = frames.get(photo2?.assetId) || {};
   const frame3 = frames.get(photo3?.assetId) || {};
   const frame4 = frames.get(photo4?.assetId) || {};
+  const section2 = sectionByAsset.get(String(photo2?.assetId)) || sections[0] || {};
+  const section3 = sectionByAsset.get(String(photo3?.assetId)) || sections[1] || section2;
+  const section4 = sectionByAsset.get(String(photo4?.assetId)) || sections[2] || section3;
+  const demoOnly = !delivery;
 
-  return <div className="fd-page fd-editorial" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} style={themeStyles}>
+  return <div className="fd-page fd-editorial" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} data-pace={themeStyles['--fd-pace']} style={themeStyles}>
     <DemoHeader format="Editorial Page" client={client} sectionId="editorial-page" onGallery={() => setGallery(true)} light delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     <motion.div className="fd-ed-scroll-progress" style={reduced ? undefined : { scaleX: scrollYProgress }} aria-hidden="true" />
     <main>
@@ -389,31 +404,31 @@ export function EditorialDemo({ delivery, galleryProps, audioState, toggleAudio,
 
       <section className="fd-ed-intro">
         <motion.span {...reveal()}>{delivery?.shootType ? `${delivery.shootType.toUpperCase()} · ${delivery?.clientName?.toUpperCase() || 'COLLECTION'}` : 'FASHION PORTRAITS / LAGOS'}</motion.span>
-        <h1><motion.i {...reveal(.05)}>{titleLines[0] || 'One look.'}</motion.i><motion.em {...reveal(.12)}>{delivery?.clientName ? `Completely ${delivery.clientName}.` : 'Completely Ada.'}</motion.em></h1>
+        <h1><motion.i {...reveal(.05)}>{titleLines[0] || (demoOnly ? 'One look.' : title)}</motion.i><motion.em {...reveal(.12)}>{delivery ? (section2.title || delivery.clientName || 'Selected work') : 'Completely Ada.'}</motion.em></h1>
         <motion.p {...reveal(.18)}>{openingLine}</motion.p>
       </section>
 
-      <section className="fd-ed-spread">
-        <EditorialPhoto photo={photo2} sizes="(max-width: 767px) 92vw, 48vw" caption={frame2.caption || frame2.headline || "02 / The suit, held with quiet confidence."} direction={-1} onNarrationNavigate={onNarrationNavigate} />
+      <section className="fd-ed-spread" data-section-layout={section2.layout || 'pair'}>
+        <EditorialPhoto photo={photo2} frame={frame2} accent={frame2.colorAccent} sizes="(max-width: 767px) 92vw, 48vw" caption={frame2.caption || frame2.headline || (demoOnly ? "02 / The suit, held with quiet confidence." : section2.subtitle || '')} direction={-1} onNarrationNavigate={onNarrationNavigate} />
         <motion.div className="fd-ed-quote" {...reveal(.08)}>
-          <span>{frame2.headline ? 'KEY FRAME' : 'THE GREEN SUIT'}</span>
+          <span>{frame2.headline ? 'KEY FRAME' : (section2.label || (demoOnly ? 'THE GREEN SUIT' : 'FEATURE'))}</span>
           <blockquote>
-            <motion.span {...reveal(.12)}>{frame2.headline ? `“${frame2.headline}”` : '“One outfit.'}</motion.span>
-            {!frame2.headline && <motion.span {...reveal(.2)}>Five different ways to own it.”</motion.span>}
+            <motion.span {...reveal(.12)}>{`“${frame2.headline || section2.title || (demoOnly ? 'One outfit.' : frame2.caption || 'A closer look.')}”`}</motion.span>
+            {!frame2.headline && (section2.subtitle || demoOnly) && <motion.span {...reveal(.2)}>{section2.subtitle || 'Five different ways to own it.'}</motion.span>}
           </blockquote>
-          <motion.p {...reveal(.24)}>{frame2.caption || 'The ivory telephone gave Ada something to play with. She did the rest.'}</motion.p>
+          <motion.p {...reveal(.24)}>{frame2.caption || section2.subtitle || (demoOnly ? 'The ivory telephone gave Ada something to play with. She did the rest.' : '')}</motion.p>
         </motion.div>
-        <EditorialPhoto photo={photo3} className="fd-ed-tall" sizes="(max-width: 767px) 84vw, 35vw" caption={frame3.caption || frame3.headline || "03 / A quieter moment with the phone."} direction={1} horizontal onNarrationNavigate={onNarrationNavigate} />
+        <EditorialPhoto photo={photo3} frame={frame3} accent={frame3.colorAccent} className="fd-ed-tall" sizes="(max-width: 767px) 84vw, 35vw" caption={frame3.caption || frame3.headline || (demoOnly ? "03 / A quieter moment with the phone." : section3.subtitle || '')} direction={1} horizontal onNarrationNavigate={onNarrationNavigate} />
       </section>
 
-      <section className="fd-ed-number">
+      <section className="fd-ed-number" data-section-layout={section4.layout || 'hero'}>
         <motion.span aria-hidden="true" initial={reduced ? false : { opacity: 0, x: 100 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, amount: .2 }} transition={{ duration: reduced ? 0 : 1, ease: [0.22, 1, 0.36, 1] }}>04</motion.span>
-        <EditorialPhoto photo={photo4} sizes="100vw" direction={-1} horizontal onNarrationNavigate={onNarrationNavigate} />
+        <EditorialPhoto photo={photo4} frame={frame4} accent={frame4.colorAccent} sizes="100vw" direction={-1} horizontal onNarrationNavigate={onNarrationNavigate} />
         <motion.div>
-          <motion.small {...reveal()}>{frame4.headline ? 'HIGHLIGHT' : 'THE FULL LOOK'}</motion.small>
+          <motion.small {...reveal()}>{frame4.headline ? 'HIGHLIGHT' : (section4.label || (demoOnly ? 'THE FULL LOOK' : 'SELECTED FRAME'))}</motion.small>
           <h2>
-            <motion.span {...reveal(.08)}>{frame4.headline || 'Green velvet, sculpted lines,'}</motion.span>
-            <motion.span {...reveal(.16)}>{frame4.caption || 'and Ada in complete control of the frame.'}</motion.span>
+            <motion.span {...reveal(.08)}>{frame4.headline || section4.title || (demoOnly ? 'Green velvet, sculpted lines,' : '')}</motion.span>
+            <motion.span {...reveal(.16)}>{frame4.caption || section4.subtitle || (demoOnly ? 'and Ada in complete control of the frame.' : '')}</motion.span>
           </h2>
         </motion.div>
       </section>
@@ -425,7 +440,7 @@ export function EditorialDemo({ delivery, galleryProps, audioState, toggleAudio,
             <motion.h3 {...reveal(0.08)}>Further highlights from this shoot</motion.h3>
           </div>
           <div className="fd-ed-preview-grid">
-            {photos.slice(4, Math.min(photos.length - 1, 10)).map((p, idx) => (
+            {photos.slice(4, Math.max(4, photos.length - 1)).map((p, idx) => (
               <motion.figure
                 key={p.assetId || p.name || idx}
                 {...reveal(idx * 0.08)}
@@ -446,7 +461,7 @@ export function EditorialDemo({ delivery, galleryProps, audioState, toggleAudio,
       )}
 
       <section className="fd-ed-close">
-        <EditorialPhoto photo={lastPhoto} sizes="(max-width: 767px) 88vw, 46vw" direction={1} onNarrationNavigate={onNarrationNavigate} />
+        <EditorialPhoto photo={lastPhoto} frame={frames.get(lastPhoto?.assetId)} accent={frames.get(lastPhoto?.assetId)?.colorAccent} sizes="(max-width: 767px) 88vw, 46vw" direction={1} onNarrationNavigate={onNarrationNavigate} />
         <div>
           <motion.span {...reveal()}>THE COMPLETE SESSION</motion.span>
           <h2>
@@ -476,6 +491,17 @@ export const revealMotions = [
   { initial: { clipPath: 'inset(100% 0 0 0)', scale: 1.06, filter: 'blur(5px)' }, animate: { clipPath: 'inset(0% 0 0 0)', scale: 1, filter: 'blur(0px)' } }
 ];
 
+function revealMotionForFrame(frame, index) {
+  const fallback = revealMotions[index % revealMotions.length];
+  if (!frame || !frame.transition) return fallback;
+  if (frame.transition === 'cut') return { initial: { opacity: 0 }, animate: { opacity: 1 } };
+  if (frame.transition === 'slide' || frame.transition === 'wipe') return { initial: { clipPath: 'inset(0 100% 0 0)', scale: 1.04 }, animate: { clipPath: 'inset(0 0% 0 0)', scale: 1 } };
+  if (frame.transition === 'reveal') return { initial: { clipPath: 'circle(0% at 50% 50%)', scale: 1.08 }, animate: { clipPath: 'circle(78% at 50% 50%)', scale: 1 } };
+  if (frame.motion === 'slow-pull') return { initial: { opacity: .2, scale: 1.12 }, animate: { opacity: 1, scale: 1 } };
+  if (frame.motion === 'pan-left' || frame.motion === 'pan-right') return { initial: { opacity: .25, x: frame.motion === 'pan-left' ? '6%' : '-6%', scale: 1.04 }, animate: { opacity: 1, x: 0, scale: 1 } };
+  return fallback;
+}
+
 export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio, onNarrationNavigate }) {
   const [started, setStarted] = useState(false);
   const [index, setIndex] = useState(0);
@@ -497,6 +523,7 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio, on
   const studioName = delivery?.branding?.name ? `${delivery.branding.name.toUpperCase()} / LAGOS` : 'STUDIO LUMIÈRE / LAGOS';
   const closingLine = delivery?.creativeDirection?.closingLine || 'Your complete finished session is ready to view and download.';
   const audioTrack = delivery?.soundtrack?.url || '';
+  const demoOnly = !delivery;
 
   const playSoundtrack = () => {
     if (!audio.current) return;
@@ -588,9 +615,9 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio, on
   const activePhoto = photos[index] || photos[0];
   const activeFrame = frames.get(activePhoto.assetId) || {};
   const captionData = revealCaptions[index % revealCaptions.length];
-  const currentKicker = activeFrame.headline || captionData[0];
-  const currentLine = activeFrame.caption || captionData[1];
-  const motionEffect = revealMotions[index % revealMotions.length];
+  const currentKicker = activeFrame.headline || (delivery?.creativeDirection?.sections || []).find(section => (section.assetIds || []).includes(activePhoto?.assetId))?.title || (demoOnly ? captionData[0] : `Photograph ${index + 1}`);
+  const currentLine = activeFrame.caption || (delivery?.creativeDirection?.sections || []).find(section => (section.assetIds || []).includes(activePhoto?.assetId))?.subtitle || (demoOnly ? captionData[1] : '');
+  const motionEffect = revealMotionForFrame(activeFrame, index);
 
   const themeStyles = getFormatThemeStyles(delivery, {
     bg: '#050506',
@@ -599,7 +626,7 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio, on
     accent: '#ff9b8e'
   });
 
-  return <div className="fd-page fd-reveal" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} style={themeStyles} onTouchStart={event => { touchStart.current = event.changedTouches[0].clientX; }} onTouchEnd={event => { if (touchStart.current === null || !started || finished || !uncovered) return; const distance = event.changedTouches[0].clientX - touchStart.current; touchStart.current = null; if (Math.abs(distance) > 45) distance < 0 ? next() : previous(); }}>
+  return <div className="fd-page fd-reveal" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} data-pace={themeStyles['--fd-pace']} style={themeStyles} onTouchStart={event => { touchStart.current = event.changedTouches[0].clientX; }} onTouchEnd={event => { if (touchStart.current === null || !started || finished || !uncovered) return; const distance = event.changedTouches[0].clientX - touchStart.current; touchStart.current = null; if (Math.abs(distance) > 45) distance < 0 ? next() : previous(); }}>
     {audioTrack && <audio ref={audio} src={audioTrack} loop preload="auto" muted={muted} onWaiting={() => setAudioLoading(true)} onStalled={() => setAudioLoading(true)} onPlaying={() => { setAudioLoading(false); setAudioFailed(false); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioLoading(false); setAudioFailed(true); }} />}
     <DemoHeader format="Photo Reveal" client={client} sectionId="photo-reveal" onGallery={() => setGallery(true)} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} hideSoundtrack />
     {!started ? <main className="fd-reveal-opening">
@@ -609,19 +636,19 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio, on
       <motion.div className="fd-reveal-opening-copy" initial={reduced ? false : { opacity: 0, y: 26 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .7, delay: reduced ? 0 : .2 }}><span>{studioName}</span><h1>{clientName},<br />your photographs<br />are ready.</h1><p>There are {photos.length} finished {photos.length === 1 ? 'portrait' : 'portraits'} waiting. Reveal each one when you are ready.</p><button type="button" onClick={beginReveal}>Begin reveal<ChevronRight size={18} /></button></motion.div>
     </main> : <main className="fd-reveal-stage">
       {!finished ? <div className="fd-reveal-room">
-        <div className="fd-reveal-frame-shell">
+        <div className="fd-reveal-frame-shell" data-frame-layout={activeFrame.layout || undefined} style={activeFrame.colorAccent ? { '--frame-accent': activeFrame.colorAccent } : undefined}>
           <motion.div className="fd-reveal-waiting" key={'waiting-' + index} initial={{ opacity: 0 }} animate={{ opacity: uncovered ? 0 : 1 }} transition={{ duration: reduced ? 0 : .25 }} aria-hidden={uncovered}><span>PORTRAIT</span><strong>{String(index + 1).padStart(2, '0')}</strong><i>OPENING</i></motion.div>
-          <AnimatePresence mode="wait">{uncovered && <motion.figure className={'fd-reveal-portrait is-effect-' + ((index % 4) + 1)} key={activePhoto.url || activePhoto.name} initial={reduced ? false : { opacity: .35, ...motionEffect.initial }} animate={{ opacity: 1, ...motionEffect.animate }} exit={{ opacity: 0, scale: .985 }} transition={{ duration: reduced ? 0 : 1.15, ease: [0.22, 1, 0.36, 1] }}><motion.div animate={reduced ? undefined : { scale: [1.01, 1.045], x: index % 2 ? ['0%', '-.7%'] : ['-.7%', '.7%'] }} transition={{ duration: 11, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={activePhoto.name} url={activePhoto.url} alt={activePhoto.alt} eager sizes="(max-width: 767px) 100vw, 72vw" /></motion.div><motion.i className="fd-reveal-light" initial={reduced ? false : { x: '-130%', opacity: 0 }} animate={{ x: '180%', opacity: [0, .8, 0] }} transition={{ duration: reduced ? 0 : 1.1, delay: reduced ? 0 : .2, ease: 'easeInOut' }} /></motion.figure>}</AnimatePresence>
+          <AnimatePresence mode="wait">{uncovered && <motion.figure className={'fd-reveal-portrait is-effect-' + ((index % 4) + 1)} data-frame-layout={activeFrame.layout || undefined} data-type-style={activeFrame.typographyStyle || undefined} data-text-background={activeFrame.textBackground || undefined} style={activeFrame.colorAccent ? { '--frame-accent': activeFrame.colorAccent } : undefined} key={activePhoto.url || activePhoto.name} initial={reduced ? false : { opacity: .35, ...motionEffect.initial }} animate={{ opacity: 1, ...motionEffect.animate }} exit={{ opacity: 0, scale: .985 }} transition={{ duration: reduced ? 0 : 1.15, ease: [0.22, 1, 0.36, 1] }}><motion.div animate={reduced ? undefined : { scale: [1.01, 1.045], x: index % 2 ? ['0%', '-.7%'] : ['-.7%', '.7%'] }} transition={{ duration: 11, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={activePhoto.name} url={activePhoto.url} alt={activePhoto.alt} style={activeFrame.focalPoint ? { objectPosition: activeFrame.focalPoint } : undefined} eager sizes="(max-width: 767px) 100vw, 72vw" /></motion.div><motion.i className="fd-reveal-light" initial={reduced ? false : { x: '-130%', opacity: 0 }} animate={{ x: '180%', opacity: [0, .8, 0] }} transition={{ duration: reduced ? 0 : 1.1, delay: reduced ? 0 : .2, ease: 'easeInOut' }} /></motion.figure>}</AnimatePresence>
           <div className="fd-reveal-frame-lines" aria-hidden="true"><i /><i /><i /><i /></div>
         </div>
         <aside className="fd-reveal-details">
           <div className="fd-reveal-position"><span>PORTRAIT {String(index + 1).padStart(2, '0')}</span><i /><span>{String(photos.length).padStart(2, '0')}</span></div>
-          <AnimatePresence mode="wait">{uncovered && <motion.div className="fd-reveal-caption" key={'caption-' + index} initial={reduced ? false : { opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .65, delay: reduced ? 0 : .82 }}><motion.span initial={reduced ? false : { letterSpacing: '.35em', opacity: 0 }} animate={{ letterSpacing: '.18em', opacity: 1 }} transition={{ duration: reduced ? 0 : .7, delay: reduced ? 0 : .9 }}>{currentKicker}</motion.span><p>{currentLine}</p></motion.div>}</AnimatePresence>
+          <AnimatePresence mode="wait">{uncovered && <motion.div className="fd-reveal-caption" data-caption-position={activeFrame.captionPosition || undefined} data-text-animation={activeFrame.textAnimation || undefined} data-type-style={activeFrame.typographyStyle || undefined} data-text-background={activeFrame.textBackground || undefined} style={activeFrame.colorAccent ? { '--frame-accent': activeFrame.colorAccent } : undefined} key={'caption-' + index} initial={reduced ? false : { opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .65, delay: reduced ? 0 : .82 }}><motion.span initial={reduced ? false : { letterSpacing: '.35em', opacity: 0 }} animate={{ letterSpacing: '.18em', opacity: 1 }} transition={{ duration: reduced ? 0 : .7, delay: reduced ? 0 : .9 }}>{currentKicker}</motion.span><p>{currentLine}</p></motion.div>}</AnimatePresence>
           <div className="fd-reveal-controls"><button type="button" onClick={previous} disabled={index === 0 || !uncovered} aria-label="Previous portrait"><ChevronLeft size={18} /></button><button className="fd-reveal-next" type="button" onClick={next} disabled={!uncovered}>{index === photos.length - 1 ? 'Complete reveal' : 'Reveal next portrait'}<ChevronRight size={18} /></button></div>
         </aside>
       </div> : <motion.section className="fd-reveal-finale" initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }}>
         <div className="fd-reveal-finale-grid">{photos.slice(0, Math.min(photos.length, 6)).map((photo, photoIndex) => <motion.figure key={photo.url || photo.name} initial={reduced ? false : { opacity: 0, y: 34, rotate: (photoIndex - 1.5) * 3 }} animate={{ opacity: 1, y: 0, rotate: (photoIndex - 1.5) * 1.5 }} transition={{ delay: reduced ? 0 : photoIndex * .08 }}><Photo name={photo.name} url={photo.url} alt="" /></motion.figure>)}</div>
-        <div className="fd-reveal-finale-copy"><span>{clientName.toUpperCase()} / ALL {photos.length} REVEALED</span><h1>These portraits<br />are yours.</h1><p>{closingLine}</p><div><button type="button" onClick={() => setGallery(true)}>View full gallery<Images size={17} /></button><button type="button" onClick={restart}><RotateCcw size={16} />Start again</button></div></div>
+        <div className="fd-reveal-finale-copy"><span>{clientName.toUpperCase()} / ALL {photos.length} REVEALED</span><h1>{delivery?.creativeDirection?.title || (demoOnly ? <>These portraits<br />are yours.</> : `${clientName}, these are yours.`)}</h1><p>{closingLine}</p><div><button type="button" onClick={() => setGallery(true)}>View full gallery<Images size={17} /></button><button type="button" onClick={restart}><RotateCcw size={16} />Start again</button></div></div>
       </motion.section>}
     </main>}
     {started && audioTrack && <button className={`fd-reveal-sound ${audioLoading ? 'is-loading' : ''} ${audioFailed ? 'is-error' : ''}`} type="button" onClick={toggleSound} aria-label={audioLoading ? 'Stop loading soundtrack' : audioFailed ? 'Try soundtrack again' : muted ? 'Turn soundtrack on' : 'Mute soundtrack'} aria-busy={audioLoading}>{audioLoading ? <LoaderCircle className="v-spin" size={17} /> : muted || audioFailed ? <VolumeX size={17} /> : <Volume2 size={17} />}<span aria-live="polite">{audioLoading ? 'Loading music…' : audioFailed ? 'Try music again' : muted ? 'Sound off' : 'Sound on'}</span></button>}
@@ -661,7 +688,7 @@ export function CanvasFocus({ photos, index, onSelect, onClose, reduced, clientN
 
   const activePhoto = photos[index];
   const frame = frames?.get(activePhoto?.assetId) || {};
-  const caption = frame.caption || frame.headline || canvasCaptions[index % canvasCaptions.length];
+  const caption = frame.caption || frame.headline || (frames?.size ? `Photograph ${index + 1} from this collection.` : canvasCaptions[index % canvasCaptions.length]);
 
   return <motion.div className="fd-canvas-focus" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onPointerDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <motion.section ref={panel} role="dialog" aria-modal="true" aria-label={`Photograph ${index + 1} of ${clientName || "Courage's graduation portraits"}`} tabIndex={-1} initial={reduced ? false : { opacity: 0, scale: .975 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: .985 }} transition={{ type: 'spring', damping: 28, stiffness: 240 }}>
@@ -670,8 +697,8 @@ export function CanvasFocus({ photos, index, onSelect, onClose, reduced, clientN
         {index > 0 && <motion.div initial={reduced ? false : { opacity: 0, x: -30 }} animate={{ opacity: .2, x: 0 }}><Photo name={photos[index - 1].name} url={photos[index - 1].url} alt="" /></motion.div>}
         {index < photos.length - 1 && <motion.div initial={reduced ? false : { opacity: 0, x: 30 }} animate={{ opacity: .2, x: 0 }}><Photo name={photos[index + 1].name} url={photos[index + 1].url} alt="" /></motion.div>}
       </div>
-      <motion.figure layoutId={`canvas-photo-${index}`} transition={{ type: 'spring', damping: 29, stiffness: 210 }}><Photo name={activePhoto.name} url={activePhoto.url} alt={activePhoto.alt} eager sizes="(max-width: 767px) 96vw, 66vw" /></motion.figure>
-      <motion.div className="fd-canvas-focus-copy" key={index} initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: reduced ? 0 : .25 }}><span>{(clientName || 'COURAGE').toUpperCase()} / PORTRAIT {String(index + 1).padStart(2, '0')}</span><p>{caption}</p><div><button type="button" onClick={() => onSelect(index - 1)} disabled={index === 0}><ChevronLeft size={17} />Previous</button><button type="button" onClick={() => onSelect(index + 1)} disabled={index === photos.length - 1}>Next<ChevronRight size={17} /></button></div></motion.div>
+      <motion.figure layoutId={`canvas-photo-${index}`} data-frame-layout={frame.layout || undefined} data-type-style={frame.typographyStyle || undefined} data-text-background={frame.textBackground || undefined} style={frame.colorAccent ? { '--frame-accent': frame.colorAccent } : undefined} transition={{ type: 'spring', damping: 29, stiffness: 210 }}><Photo name={activePhoto.name} url={activePhoto.url} alt={activePhoto.alt} style={frame.focalPoint ? { objectPosition: frame.focalPoint } : undefined} eager sizes="(max-width: 767px) 96vw, 66vw" /></motion.figure>
+      <motion.div className="fd-canvas-focus-copy" data-caption-position={frame.captionPosition || undefined} data-type-style={frame.typographyStyle || undefined} data-text-background={frame.textBackground || undefined} style={frame.colorAccent ? { '--frame-accent': frame.colorAccent } : undefined} key={index} initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: reduced ? 0 : .25 }}><span>{(clientName || 'COURAGE').toUpperCase()} / PORTRAIT {String(index + 1).padStart(2, '0')}</span><p>{caption}</p><div><button type="button" onClick={() => onSelect(index - 1)} disabled={index === 0}><ChevronLeft size={17} />Previous</button><button type="button" onClick={() => onSelect(index + 1)} disabled={index === photos.length - 1}>Next<ChevronRight size={17} /></button></div></motion.div>
     </motion.section>
   </motion.div>;
 }
@@ -685,7 +712,10 @@ export function CanvasDemo({ delivery, galleryProps, audioState, toggleAudio, on
   const reduced = useReducedMotion();
 
   const photos = normalizeDeliveryPhotos(delivery, couragePhotos);
-  const wallPhotos = photos.slice(0, 6);
+  // The canvas is the format's complete visual field. Keep every approved
+  // photograph in the wall; the shared gallery remains available for the
+  // original-size view and downloads.
+  const wallPhotos = photos;
   const frames = useMemo(() => new Map((delivery?.creativeDirection?.frames || []).map(f => [f.assetId, f])), [delivery]);
 
   const client = delivery ? (delivery.clientName ? `${delivery.clientName} / Canvas` : delivery.title) : 'Courage / Graduation';
@@ -736,12 +766,12 @@ export function CanvasDemo({ delivery, galleryProps, audioState, toggleAudio, on
     accent: '#764831'
   });
 
-  return <div className="fd-page fd-canvas" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} style={themeStyles}>
+  return <div className="fd-page fd-canvas" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} data-pace={themeStyles['--fd-pace']} style={themeStyles}>
     <DemoHeader format="Canvas" client={client} sectionId="canvas" onGallery={() => setGallery(true)} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     <main className="fd-wall-shell">
       <header className="fd-wall-intro"><div><span>{clientName.toUpperCase()} · CANVAS</span><strong>{cluster ? cluster.name : 'The complete canvas'}</strong></div><AnimatePresence mode="wait"><motion.p key={cluster?.name || 'overview'} initial={reduced ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .35 }}>{cluster ? cluster.note : 'Every finished portrait is here. Choose a group, or open any photograph.'}</motion.p></AnimatePresence>{activeCluster !== null && <button type="button" onClick={() => setActiveCluster(null)}><Grid2X2 size={15} />See the whole canvas</button>}</header>
       <section className="fd-wall-stage" onPointerMove={moveDepth} onPointerLeave={resetDepth} onTouchStart={event => { touchStart.current = event.changedTouches[0].clientX; }} onTouchEnd={event => { if (touchStart.current === null) return; const distance = event.changedTouches[0].clientX - touchStart.current; touchStart.current = null; if (Math.abs(distance) > 48) moveCluster(distance < 0 ? 1 : -1); }}>
-        <div ref={wall} className={'fd-wall' + (activeCluster === null ? ' is-overview' : ' is-focus')}>
+        <div ref={wall} className={'fd-wall' + (activeCluster === null ? ' is-overview' : ' is-focus') + (wallPhotos.length > 6 ? ' has-many' : '')}>
           <div className="fd-wall-grid" aria-hidden="true" />
           <div className="fd-wall-glow" aria-hidden="true"><i /><i /></div>
           <svg className="fd-wall-paths" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M 17 30 C 28 8, 45 12, 54 34 S 75 60, 91 28" /><path d="M 12 72 C 31 58, 38 88, 56 75 S 77 72, 91 84" /></svg>
@@ -751,7 +781,9 @@ export function CanvasDemo({ delivery, galleryProps, audioState, toggleAudio, on
             const place = clusterIndex >= 0 ? clusters[clusterIndex].photos.indexOf(index) : 0;
             const inCluster = activeCluster === clusterIndex;
             const dimmed = activeCluster !== null && !inCluster;
-            return <motion.button layout layoutId={`canvas-photo-${index}`} type="button" key={photo.url || photo.name} className={`fd-wall-card is-card-${index + 1}${inCluster ? ` is-in-cluster is-place-${place + 1}` : ''}${dimmed ? ' is-dimmed' : ''}`} onClick={() => selectPhoto(index)} initial={reduced ? false : { opacity: 0, scale: .86, ...canvasEntrances[index] }} animate={{ opacity: dimmed ? .16 : 1, scale: dimmed ? .88 : 1, x: 0, y: 0, rotate: 0 }} whileHover={reduced ? undefined : { scale: 1.025, y: -6 }} transition={{ layout: { type: 'spring', damping: 28, stiffness: 190 }, opacity: { duration: reduced ? 0 : .35 }, delay: reduced ? 0 : index * .055 }} aria-label={`Open photograph ${index + 1}`}><div className="fd-wall-depth"><motion.span animate={reduced ? undefined : { scale: [1.01, 1.05], x: index % 2 ? ['0%', '-1.2%'] : ['-1%', '1%'] }} transition={{ duration: 9 + index, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={photo.name} url={photo.url} alt={photo.alt || photo.caption} eager={index < 3} sizes="(max-width: 640px) 45vw, (max-width: 1024px) 34vw, 25vw" /></motion.span><i>{String(index + 1).padStart(2, '0')}</i><small className="fd-wall-caption">{photo.caption}</small></div></motion.button>;
+            const cardClass = wallPhotos.length > 6 ? 'is-card-extra' : `is-card-${index + 1}`;
+            const frame = frames.get(photo.assetId) || {};
+            return <motion.button layout layoutId={`canvas-photo-${index}`} type="button" key={photo.url || photo.name} data-frame-layout={frame.layout || undefined} data-type-style={frame.typographyStyle || undefined} data-text-background={frame.textBackground || undefined} data-caption-position={frame.captionPosition || undefined} className={`fd-wall-card ${cardClass}${inCluster ? ` is-in-cluster is-place-${place + 1}` : ''}${dimmed ? ' is-dimmed' : ''}`} style={frame.colorAccent ? { '--frame-accent': frame.colorAccent } : undefined} onClick={() => selectPhoto(index)} initial={reduced ? false : { opacity: 0, scale: .86, ...canvasEntrances[index % canvasEntrances.length] }} animate={{ opacity: dimmed ? .16 : 1, scale: dimmed ? .88 : 1, x: 0, y: 0, rotate: 0 }} whileHover={reduced ? undefined : { scale: 1.025, y: -6 }} transition={{ layout: { type: 'spring', damping: 28, stiffness: 190 }, opacity: { duration: reduced ? 0 : .35 }, delay: reduced ? 0 : index * .055 }} aria-label={`Open photograph ${index + 1}`}><div className="fd-wall-depth"><motion.span animate={reduced ? undefined : { scale: [1.01, 1.05], x: index % 2 ? ['0%', '-1.2%'] : ['-1%', '1%'] }} transition={{ duration: 9 + index, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={photo.name} url={photo.url} alt={photo.alt || photo.caption} style={frame.focalPoint ? { objectPosition: frame.focalPoint } : undefined} eager={index < 3} sizes="(max-width: 640px) 45vw, (max-width: 1024px) 34vw, 25vw" /></motion.span><i>{String(index + 1).padStart(2, '0')}</i><small className="fd-wall-caption">{photo.caption}</small></div></motion.button>;
           })}
           <AnimatePresence>{cluster && <motion.div className="fd-wall-focus-label" key={cluster.name} initial={reduced ? false : { opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ delay: reduced ? 0 : .28 }}><span>0{activeCluster + 1} / 0{clusters.length}</span><strong>{cluster.name}</strong><p>{cluster.note}</p></motion.div>}</AnimatePresence>
         </div>
@@ -816,12 +848,14 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
         kicker: `CHAPTER 0${idx + 1}`,
         line: section.subtitle || 'A deliberate movement in this shoot.',
         note: section.subtitle || delivery?.creativeDirection?.openingLine || 'Explore every frame.',
-        accent: accents[idx % accents.length],
+        accent: section.accent || delivery?.creativeDirection?.palette?.accent || accents[idx % accents.length],
+        layout: section.layout || 'chapter-cover',
         photos: section.assetIds.map(id => photos.find(p => p.assetId === id)).filter(Boolean),
-        captions: section.assetIds.map(id => frames.get(id)?.caption || frames.get(id)?.headline || '')
+        captions: section.assetIds.map(id => frames.get(id)?.caption || frames.get(id)?.headline || ''),
+        frame: frames.get(section.assetIds[0]) || {}
       })).filter(ch => ch.photos.length > 0);
     }
-    return chapters;
+    return chapters.map(chapter => ({ ...chapter, layout: chapter.layout || 'chapter-cover' }));
   }, [delivery, photos, frames]);
 
   const openChapterData = openIndex === null ? null : chaptersData[openIndex];
@@ -866,7 +900,7 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
     onNarrationNavigate?.(photo.assetId);
   };
 
-  return <div className="fd-page fd-chapters" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} style={{ ...themeStyles, '--chapter-accent': openChapterData?.accent || themeStyles['--fd-accent'] }}>
+  return <div className="fd-page fd-chapters" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} data-pace={themeStyles['--fd-pace']} style={{ ...themeStyles, '--chapter-accent': openChapterData?.accent || themeStyles['--fd-accent'] }}>
     <DemoHeader format="Chapters" client={client} sectionId="chapters" onGallery={() => { setGalleryIndex(null); setGallery(true); }} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
 
     <AnimatePresence mode="wait">
@@ -876,8 +910,8 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
           <p>{delivery?.creativeDirection?.openingLine || `We arranged your ${photos.length} finished portraits into ${chaptersData.length} chapters. Open whichever one you want first.`}</p>
           <div><strong>0{chaptersData.length}</strong><span>CHAPTERS</span><strong>{String(photos.length).padStart(2, '0')}</strong><span>PORTRAITS</span></div>
         </header>
-        <section className={`fd-chapter-directory-board ${chaptersData.length > 3 ? 'is-grid-layout' : ''}`} aria-label={`${clientName}'s chapters`}>{chaptersData.map((item, index) => <motion.button type="button" key={item.name} className={`is-card-${(index % 3) + 1}${visited.includes(index) ? ' is-visited' : ''}${narrationChapter === index ? ' is-narrating' : ''}`} onClick={() => openChapter(index)} initial={reduced ? false : { opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .65, delay: reduced ? 0 : .12 + index * .1, ease: [0.22, 1, 0.36, 1] }} whileHover={reduced ? undefined : { y: -5 }} whileTap={reduced ? undefined : { scale: .985 }}>
-          <motion.span className="fd-chapter-directory-photo" animate={reduced ? undefined : { scale: [1.01, 1.055], x: index % 2 ? ['0%', '-1%'] : ['-1%', '1%'] }} transition={{ duration: 9 + index, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={item.photos[0].name} url={item.photos[0].url} alt={`${item.name} chapter cover`} eager={index === 0} sizes="(max-width: 767px) 64vw, 34vw" /></motion.span>
+        <section className={`fd-chapter-directory-board ${chaptersData.length > 3 ? 'is-grid-layout' : ''}`} aria-label={`${clientName}'s chapters`}>{chaptersData.map((item, index) => <motion.button type="button" key={item.name} data-layout={item.layout || 'chapter-cover'} data-frame-layout={item.frame?.layout || undefined} data-type-style={item.frame?.typographyStyle || undefined} data-text-background={item.frame?.textBackground || undefined} style={item.frame?.colorAccent ? { '--frame-accent': item.frame.colorAccent } : undefined} className={`is-card-${(index % 3) + 1}${visited.includes(index) ? ' is-visited' : ''}${narrationChapter === index ? ' is-narrating' : ''}`} onClick={() => openChapter(index)} initial={reduced ? false : { opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .65, delay: reduced ? 0 : .12 + index * .1, ease: [0.22, 1, 0.36, 1] }} whileHover={reduced ? undefined : { y: -5 }} whileTap={reduced ? undefined : { scale: .985 }}>
+          <motion.span className="fd-chapter-directory-photo" animate={reduced ? undefined : { scale: [1.01, 1.055], x: index % 2 ? ['0%', '-1%'] : ['-1%', '1%'] }} transition={{ duration: 9 + index, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={item.photos[0].name} url={item.photos[0].url} alt={`${item.name} chapter cover`} style={item.frame?.focalPoint ? { objectPosition: item.frame.focalPoint } : undefined} eager={index === 0} sizes="(max-width: 767px) 64vw, 34vw" /></motion.span>
           <span className="fd-chapter-directory-shade" />
           <span className="fd-chapter-directory-number">0{index + 1}</span>
           <span className="fd-chapter-directory-copy"><i>{item.photos.length} {item.photos.length === 1 ? 'portrait' : 'portraits'}</i><strong>{item.name}</strong><p>{item.line}</p><b>Open chapter<ChevronRight size={15} /></b></span>
@@ -898,7 +932,8 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
           <span className="fd-chapter-room-number" aria-hidden="true">0{openIndex + 1}</span>
           <div className="fd-chapter-room-photos">{openChapterData.photos.map((photo, index) => {
             const caption = openChapterData.captions?.[index] || frames.get(photo.assetId)?.caption || frames.get(photo.assetId)?.headline || '';
-            return <motion.button type="button" key={photo.url || photo.name} onClick={() => openPhoto(photo)} initial={reduced ? false : { opacity: 0, y: 38, clipPath: 'inset(0 0 14% 0)' }} animate={{ opacity: 1, y: 0, clipPath: 'inset(0 0 0% 0)' }} transition={{ duration: reduced ? 0 : .78, delay: reduced ? 0 : .14 + index * .12, ease: [0.22, 1, 0.36, 1] }} aria-label={`Open ${caption}`}><motion.div animate={reduced ? undefined : { scale: [1.015, 1.06], x: index % 2 ? ['0%', '-1%'] : ['-1%', '1%'] }} transition={{ duration: 10 + index, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={photo.name} url={photo.url} alt={photo.alt} eager sizes="(max-width: 767px) 92vw, 48vw" /></motion.div><span>0{index + 1}</span><p>{caption}</p></motion.button>;
+            const frame = frames.get(photo.assetId) || {};
+            return <motion.button type="button" key={photo.url || photo.name} data-frame-layout={frame.layout || undefined} data-type-style={frame.typographyStyle || undefined} data-text-background={frame.textBackground || undefined} data-caption-position={frame.captionPosition || undefined} style={frame.colorAccent ? { '--frame-accent': frame.colorAccent } : undefined} onClick={() => openPhoto(photo)} initial={reduced ? false : { opacity: 0, y: 38, clipPath: 'inset(0 0 14% 0)' }} animate={{ opacity: 1, y: 0, clipPath: 'inset(0 0 0% 0)' }} transition={{ duration: reduced ? 0 : .78, delay: reduced ? 0 : .14 + index * .12, ease: [0.22, 1, 0.36, 1] }} aria-label={`Open ${caption}`}><motion.div animate={reduced ? undefined : { scale: [1.015, 1.06], x: index % 2 ? ['0%', '-1%'] : ['-1%', '1%'] }} transition={{ duration: 10 + index, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={photo.name} url={photo.url} alt={photo.alt} style={frame.focalPoint ? { objectPosition: frame.focalPoint } : undefined} eager sizes="(max-width: 767px) 92vw, 48vw" /></motion.div><span>0{index + 1}</span><p>{caption}</p></motion.button>;
           })}</div>
           <footer><button type="button" onClick={() => setOpenIndex(null)}>All chapters<Grid2X2 size={17} /></button><button type="button" onClick={() => { setGalleryIndex(null); setGallery(true); }}>View full gallery<Images size={17} /></button></footer>
         </section>
@@ -931,20 +966,22 @@ export const albumSpreads = [
 ];
 
 export function AlbumSpread({ spread, index, reduced, onGallery }) {
-  if (spread.id === 'opening') return <section className="fd-album-spread is-opening">
+  const frameAttrs = { 'data-frame-layout': spread.frame?.layout || undefined, 'data-type-style': spread.frame?.typographyStyle || undefined, 'data-text-background': spread.frame?.textBackground || undefined };
+  const frameStyle = spread.frame?.colorAccent ? { '--frame-accent': spread.frame.colorAccent } : undefined;
+  if (spread.id === 'opening') return <section className="fd-album-spread is-opening" data-layout={spread.layout || 'spread'} {...frameAttrs} style={frameStyle}>
     <figure><motion.div animate={reduced ? undefined : { scale: [1.01, 1.045], x: ['0%', '-.8%'] }} transition={{ duration: 10, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={spread.photo1.name} url={spread.photo1.url} alt={spread.photo1.alt} eager sizes="(max-width: 767px) 100vw, 50vw" /></motion.div></figure>
     <article><span>{spread.label}</span><h1>{spread.title}</h1><p>{spread.copy}</p><small>{spread.footer}</small></article>
     <i className="fd-album-spine" aria-hidden="true" />
   </section>;
 
-  if (spread.id === 'together') return <section className="fd-album-spread is-wide">
+  if (spread.id === 'together') return <section className="fd-album-spread is-wide" data-layout={spread.layout || 'spread'} {...frameAttrs} style={frameStyle}>
     <motion.figure animate={reduced ? undefined : { scale: [1.005, 1.035] }} transition={{ duration: 11, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={spread.photo1.name} url={spread.photo1.url} alt={spread.photo1.alt} eager sizes="100vw" /></motion.figure>
     <div><span>{spread.label}</span><h1>{spread.title}</h1><p>{spread.copy}</p></div>
   </section>;
 
-  return <section className="fd-album-spread is-finale">
+  return <section className="fd-album-spread is-finale" data-layout={spread.layout || 'spread'} {...frameAttrs} style={frameStyle}>
     <figure className="is-family"><motion.div animate={reduced ? undefined : { scale: [1.01, 1.05], x: ['-.6%', '.6%'] }} transition={{ duration: 10.5, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={spread.photo1.name} url={spread.photo1.url} alt={spread.photo1.alt} eager sizes="(max-width: 767px) 100vw, 50vw" /></motion.div></figure>
-    <article>{spread.photo2 && <figure className="is-mother"><motion.div animate={reduced ? undefined : { scale: [1.01, 1.045], y: ['0%', '-.7%'] }} transition={{ duration: 9.5, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={spread.photo2.name} url={spread.photo2.url} alt="A mother seated closely with her two daughters" eager sizes="(max-width: 767px) 100vw, 34vw" /></motion.div></figure>}<div><span>{spread.label}</span><h1>{spread.title}</h1><p>{spread.copy}</p><button type="button" onClick={onGallery}>View full gallery<Images size={17} /></button></div></article>
+    <article>{spread.photo2 && <figure className="is-mother"><motion.div animate={reduced ? undefined : { scale: [1.01, 1.045], y: ['0%', '-.7%'] }} transition={{ duration: 9.5, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={spread.photo2.name} url={spread.photo2.url} alt={spread.photo2.alt || 'Photograph from this album'} eager sizes="(max-width: 767px) 100vw, 34vw" /></motion.div></figure>}<div><span>{spread.label}</span><h1>{spread.title}</h1><p>{spread.copy}</p><button type="button" onClick={onGallery}>View full gallery<Images size={17} /></button></div></article>
     <i className="fd-album-spine" aria-hidden="true" />
   </section>;
 }
@@ -982,16 +1019,38 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
 
   const spreadsData = useMemo(() => {
     if (delivery && photos.length) {
+      const approvedSections = (delivery.creativeDirection?.sections || []).filter(section => (section.assetIds || []).some(assetId => photos.some(photo => photo.assetId === assetId)));
+      if (approvedSections.length) {
+        return approvedSections.map((section, index) => {
+          const sectionPhotos = (section.assetIds || []).map(assetId => photos.find(photo => photo.assetId === assetId)).filter(Boolean);
+          const first = sectionPhotos[0] || photos[index] || photos[0];
+          const second = sectionPhotos[1];
+          const frame = frames.get(first?.assetId) || {};
+          const last = index === approvedSections.length - 1;
+          return {
+            id: index === 0 ? 'opening' : last ? 'finale' : 'together',
+            label: section.label || `SPREAD ${String(index + 1).padStart(2, '0')}`,
+            title: frame.headline || section.title || delivery.creativeDirection?.title || 'Selected photographs',
+            copy: frame.caption || section.subtitle || delivery.creativeDirection?.openingLine || '',
+            footer: index === 0 ? `${clientName.toUpperCase()} Â· ${new Date().getFullYear()}` : undefined,
+            photo1: first,
+            photo2: last ? (second || sectionPhotos[sectionPhotos.length - 1]) : undefined,
+            layout: section.layout || 'spread',
+            frame
+          };
+        });
+      }
       const list = [];
       const photo1 = photos[1] || photos[0];
       const f1 = frames.get(photo1.assetId) || {};
       list.push({
         id: 'opening',
         label: 'THE OPENING PORTRAIT',
-        title: f1.headline || delivery.creativeDirection?.title || 'The people who make home feel like home.',
-        copy: f1.caption || delivery.creativeDirection?.openingLine || 'Everyone arrived in matching attire, set with quiet care.',
+        title: f1.headline || delivery.creativeDirection?.title || 'Selected photographs',
+        copy: f1.caption || delivery.creativeDirection?.openingLine || 'The opening photographs from this delivery.',
         footer: `${clientName.toUpperCase()} · ${new Date().getFullYear()}`,
-        photo1
+        photo1,
+        frame: f1
       });
 
       for (let i = 2; i < photos.length - 2; i++) {
@@ -1002,7 +1061,8 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
           label: `SPREAD ${String(i).padStart(2, '0')}`,
           title: f.headline || '',
           copy: f.caption || '',
-          photo1: p
+          photo1: p,
+          frame: f
         });
       }
 
@@ -1012,10 +1072,11 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
       list.push({
         id: 'finale',
         label: 'SAVED FOR THE END',
-        title: fFinal.headline || `${clientName}, these are the photographs you will keep coming back to.`,
+        title: fFinal.headline || `${clientName}, these photographs are ready to keep.`,
         copy: delivery.creativeDirection?.closingLine || '',
         photo1: finaleP1,
-        photo2: finaleP2
+        photo2: finaleP2,
+        frame: fFinal
       });
 
       return list;
@@ -1094,7 +1155,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
     accent: '#ef8969'
   });
 
-  return <div className="fd-page fd-album" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} style={themeStyles}>
+  return <div className="fd-page fd-album" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} data-pace={themeStyles['--fd-pace']} style={themeStyles}>
     {audioTrack && <audio ref={audio} src={audioTrack} loop preload="auto" muted={muted} onWaiting={() => setAudioLoading(true)} onStalled={() => setAudioLoading(true)} onPlaying={() => { setAudioLoading(false); setAudioFailed(false); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioLoading(false); setAudioFailed(true); }} />}
     <DemoHeader format="Album" client={client} sectionId="album" onGallery={() => setGallery(true)} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} hideSoundtrack />
     {!started ? <main className="fd-album-cover">

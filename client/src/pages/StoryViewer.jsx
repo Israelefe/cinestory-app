@@ -76,6 +76,22 @@ const TEXT_BACKGROUNDS = ['frosted_glass', 'solid_dark', 'neon_pill', 'transpare
 const CAPTION_POSITIONS = ['top', 'middle', 'bottom', 'left', 'right'];
 const safeChoice = (value, choices, fallback) => choices.includes(value) ? value : fallback;
 const sceneLayout = (photo, index) => safeChoice(photo?.sceneLayout || photo?.layout, STORY_LAYOUTS, STORY_LAYOUTS[index % STORY_LAYOUTS.length]);
+const storyMotion = value => ({
+ 'slow-push': 'zoom_in',
+ 'slow-pull': 'zoom_out',
+ 'pan-left': 'pan_left',
+ 'pan-right': 'pan_right',
+ 'float': 'pan_up',
+ still: 'still'
+ }[value] || value || 'zoom_in');
+const storyTransition = value => ({
+ crossfade: 'fade',
+ wipe: 'slide_left',
+ slide: 'slide_left',
+ reveal: 'rise',
+ cut: 'cut',
+ fade: 'fade'
+ }[value] || 'fade');
 
 function SceneTransition({ kind, accent, reduced }) {
  if (reduced) return null;
@@ -111,12 +127,13 @@ function AnimatedStoryText({ text, mode, animation, reduced }) {
  return <motion.h2 initial="hidden" animate="visible" variants={{ visible: { transition: { staggerChildren: byLetter ? .018 : .055, delayChildren: .12 } } }}>{units.map((unit, i) => <motion.span className="v-story-word" key={i} variants={{ hidden: starts[effect] || starts.word_fade_up, visible: { opacity: 1, x: 0, y: 0, scale: 1, rotate: 0, filter: 'blur(0px)', transition: { type: 'spring', damping: 22, stiffness: 190 } } }}>{unit === ' ' ? '\u00a0' : unit}{!byLetter && i < units.length - 1 ? '\u00a0' : ''}</motion.span>)}</motion.h2>;
 }
 
-function StoryScene({ demo, demoId, photos, photo, index, mode, started, finished, reduced, displaySrc, displaySet, motionForPhoto, accent }) {
+function StoryScene({ demo, demoId, photos, photo, index, mode, started, finished, reduced, displaySrc, displaySet, motionForPhoto, accent, pace = 'warm' }) {
  const adjacentIndex = index < photos.length - 1 ? index + 1 : Math.max(0, index - 1);
  const adjacentSrc = demo ? '/veylo/web/demo-' + demoId + '-' + (adjacentIndex + 1) + '-960.webp' : mediaUrl(photos[adjacentIndex]?.url);
  const finaleIndexes = [...new Set([0, Math.floor((photos.length - 1) / 2), photos.length - 1])];
  const finaleSource = i => demo ? '/veylo/web/demo-' + demoId + '-' + (i + 1) + '-960.webp' : mediaUrl(photos[i]?.thumbnailUrl || photos[i]?.url);
- const duration = Math.max(2, Number(photo?.duration) || 5.5);
+ const paceScale = pace === 'measured' ? 1.18 : pace === 'energetic' ? .86 : 1;
+ const duration = Math.max(2, (Number(photo?.duration) || 5.5) * paceScale);
  const focus = photo?.focalPoint || photo?.visualAnalysis?.focalPoint || '50% 50%';
  const adjacentFocus = photos[adjacentIndex]?.focalPoint || photos[adjacentIndex]?.visualAnalysis?.focalPoint || '50% 50%';
  const photoTransition = { duration: reduced ? 0 : duration, ease: 'linear' };
@@ -222,11 +239,15 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
         caption: frame.caption || frame.headline || '',
         chapterTitle: frame.headline || '',
         duration: Math.max(2, Number(frame.duration) || 5.5),
-        motion: frame.motion || 'zoom_in',
+        motion: storyMotion(frame.motion),
         sceneLayout: frame.layout || STORY_LAYOUTS[i % STORY_LAYOUTS.length],
         typographyStyle: frame.typographyStyle || 'cinematic_drift',
-        transition: frame.transition || 'fade',
-        focalPoint: frame.focalPoint || '50% 50%'
+        textBackground: frame.textBackground || 'transparent_shadow',
+        captionPosition: frame.captionPosition || 'bottom',
+        textAnimation: frame.textAnimation || undefined,
+        transition: storyTransition(frame.transition),
+        focalPoint: frame.focalPoint || '50% 50%',
+        colorAccent: frame.colorAccent || palette.accent || '#ff5a47'
       };
     });
     const derived = {
@@ -255,7 +276,8 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
         surfaceColor: palette.surface || '#0c0c10',
         textColor: palette.text || '#ffffff',
         displayFont: getFontFamily(typography.display),
-        bodyFont: getFontFamily(typography.body, "'Plus Jakarta Sans', system-ui, sans-serif")
+        bodyFont: getFontFamily(typography.body, "'Plus Jakarta Sans', system-ui, sans-serif"),
+        pace: cd.pace || 'warm'
       }
     };
     setStory(derived);
@@ -290,7 +312,8 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   let frame; let previous = performance.now();
   const wordCount = (photo?.caption || '').split(/\s+/).filter(Boolean).length;
   const spokenBreathingSeconds = wordCount > 0 ? (wordCount * 0.52 + 1.8) : 5.5;
-  const duration = Math.max(2, Math.min(30, Math.max(Number(photo?.duration) || 5.5, spokenBreathingSeconds))) * 1000;
+  const paceScale = story?.theme?.pace === 'measured' ? 1.18 : story?.theme?.pace === 'energetic' ? .86 : 1;
+  const duration = Math.max(2, Math.min(30, Math.max((Number(photo?.duration) || 5.5) * paceScale, spokenBreathingSeconds))) * 1000;
   const tick = now => {
    elapsed.current += now - previous; previous = now;
    if (progress.current) progress.current.style.transform = 'scaleX(' + Math.min(1, elapsed.current / duration) + ')';
@@ -498,7 +521,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   const displaySrc = demo ? '/veylo/web/demo-' + demoId + '-' + (index + 1) + '-960.webp' : mediaUrl(photo?.url);
   const displaySet = demo ? [480, 960, 1440].map(w => '/veylo/web/demo-' + demoId + '-' + (index + 1) + '-' + w + '.webp ' + w + 'w').join(', ') : photo?.srcSet;
   const motionName = String(photo?.motion || photo?.zoomEffect || 'zoom_in').replaceAll('_', '-');
-  const motionForPhoto = reduced ? { scale: 1, x: 0, y: 0 } : motionName === 'pan-down' ? { scale: 1.16, y: ['-4%', '4%'] } : motionName === 'pan-up' ? { scale: 1.16, y: ['4%', '-4%'] } : motionName === 'pan-right' ? { scale: 1.16, x: ['-4%', '4%'] } : motionName === 'pan-left' ? { scale: 1.16, x: ['4%', '-4%'] } : motionName === 'zoom-out' ? { scale: [1.18, 1.03] } : { scale: [1.02, 1.16] };
+ const motionForPhoto = reduced || motionName === 'still' ? { scale: 1, x: 0, y: 0 } : motionName === 'pan-down' ? { scale: 1.16, y: ['-4%', '4%'] } : motionName === 'pan-up' ? { scale: 1.16, y: ['4%', '-4%'] } : motionName === 'pan-right' ? { scale: 1.16, x: ['-4%', '4%'] } : motionName === 'pan-left' ? { scale: 1.16, x: ['4%', '-4%'] } : motionName === 'zoom-out' ? { scale: [1.18, 1.03] } : { scale: [1.02, 1.16] };
   const layoutMode = sceneLayout(photo, index);
   const textStyle = safeChoice(photo?.typographyStyle, TEXT_STYLES, 'cinematic_drift');
   const textBackground = safeChoice(photo?.textBackground, TEXT_BACKGROUNDS, 'transparent_shadow');
@@ -508,7 +531,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   return <div className="v-public v-story-shell" style={{ '--story-accent': photo?.colorAccent || story.theme?.accentColor || '#ff5a47', '--story-glow': photo?.glowColor || story.theme?.glowColor || 'rgba(255,90,71,.35)', '--story-secondary': photo?.secondaryColor || story.theme?.secondaryColor || '#151518', '--story-bg': story.theme?.backgroundColor || '#050506', '--story-text': story.theme?.textColor || '#ffffff', '--story-font-display': story.theme?.displayFont || "'Playfair Display', Georgia, serif", '--story-font-body': story.theme?.bodyFont || "'Plus Jakarta Sans', system-ui, sans-serif" }}>
   <div className="v-story-ambient" aria-hidden="true"><img src={displaySrc} alt="" /></div>
   <main className="v-story-canvas" id="main-content" ref={stage} onPointerDown={e => { if (e.pointerType !== 'mouse') touch.current = { x: e.clientX, y: e.clientY }; if (started) setHolding(true); }} onPointerUp={e => { setHolding(false); if (touch.current) { const dx = e.clientX - touch.current.x; const dy = e.clientY - touch.current.y; if (started && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) go(dx < 0 ? 1 : -1); touch.current = null; } }} onPointerCancel={() => { setHolding(false); touch.current = null; }} onPointerLeave={() => setHolding(false)}>
-   <StoryScene demo={demo} demoId={demoId} photos={photos} photo={photo} index={index} mode={layoutMode} started={started} finished={finished} reduced={reduced} displaySrc={displaySrc} displaySet={displaySet} motionForPhoto={motionForPhoto} accent={photo?.colorAccent || story.theme?.accentColor || '#ff5a47'} />
+   <StoryScene demo={demo} demoId={demoId} photos={photos} photo={photo} index={index} mode={layoutMode} started={started} finished={finished} reduced={reduced} displaySrc={displaySrc} displaySet={displaySet} motionForPhoto={motionForPhoto} accent={photo?.colorAccent || story.theme?.accentColor || '#ff5a47'} pace={story.theme?.pace} />
    <div className="v-story-shade" aria-hidden="true" />
    <div className="v-story-progress" role="progressbar" aria-label="Photo Story progress" aria-valuemin={1} aria-valuemax={photos.length} aria-valuenow={index + 1}>{photos.map((_, i) => <span key={i} className={i < index ? 'is-done' : i === index ? 'is-current' : ''}><i ref={i === index ? progress : null} /></span>)}</div>
    <header className="v-story-top"><div className="v-story-studio"><Link to={backDestination} onClick={handleBack} className="v-story-mark" aria-label={demo ? (isFromFormats ? 'Back to Photo Story on the formats page' : isFromNiche ? 'Back to the page you opened this story from' : 'Back to the Photo Story section on the homepage') : `${story.studioName || 'Studio'} home`}><DeliveryBrandMark branding={story.branding} /></Link><div><strong style={{ fontFamily: 'var(--story-font-display)' }}>{story.clientName || story.title}</strong><span style={{ fontFamily: 'var(--story-font-body)' }}>{story.studioName || story.occasion}</span></div></div><div className="v-story-top-actions"><button onClick={() => setMuted(value => !value)} aria-label={muted ? 'Turn sound on' : 'Turn sound off'}>{muted ? <VolumeX size={17} /> : <Volume2 size={17} />}</button><button onClick={share} aria-label="Share story"><Share2 size={17} /></button></div></header>

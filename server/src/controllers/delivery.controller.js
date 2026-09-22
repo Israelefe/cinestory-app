@@ -46,12 +46,25 @@ const reviewSchema = z.object({
   variation: z.object({
     composition: z.enum(['quiet', 'split', 'layered', 'grid', 'portrait-led', 'wide-led']),
     density: z.enum(['spacious', 'balanced', 'layered']),
-    imageTreatment: z.enum(['natural', 'warm', 'contrast', 'monochrome']),
+    imageTreatment: z.literal('natural'),
     captionTreatment: z.enum(['quiet', 'editorial', 'bold']),
     accentPlacement: z.enum(['corners', 'rules', 'labels', 'type'])
-  }).strict().default({ composition: 'quiet', density: 'balanced', imageTreatment: 'natural', captionTreatment: 'editorial', accentPlacement: 'rules' }),
-  sections: z.array(z.object({ id: z.string().regex(/^[a-z0-9-]{1,32}$/), title: z.string().trim().min(1).max(60), subtitle: z.string().trim().max(120), label: z.string().trim().max(40).default(''), delivery: z.string().trim().max(40).default(''), layout: z.enum(['hero', 'single', 'pair', 'triptych', 'grid', 'strip', 'spread', 'cluster', 'chapter-cover']) }).strict()).min(1).max(12),
-  frames: z.array(z.object({ assetId: z.string().min(1).max(100), headline: z.string().trim().max(70), caption: z.string().trim().min(18).max(180), eventType: z.enum(['people', 'programme', 'networking', 'details', '']).default(''), campaignType: z.enum(['hero', 'detail', 'lifestyle', 'kit', 'context', '']).default('') }).strict()).min(1).max(500),
+  }).strict().optional(),
+  sections: z.array(z.object({ id: z.string().regex(/^[a-z0-9-]{1,32}$/), title: z.string().trim().min(1).max(60), subtitle: z.string().trim().max(120), label: z.string().trim().max(40).default(''), delivery: z.string().trim().max(40).default(''), layout: z.enum(['hero', 'single', 'pair', 'triptych', 'grid', 'strip', 'spread', 'cluster', 'chapter-cover']), accent: z.string().regex(/^#[0-9a-f]{6}$/i).optional() }).strict()).min(1).max(12),
+  frames: z.array(z.object({
+    assetId: z.string().min(1).max(100),
+    headline: z.string().trim().max(70),
+    caption: z.string().trim().min(18).max(180),
+    eventType: z.enum(['people', 'programme', 'networking', 'details', '']).default(''),
+    campaignType: z.enum(['hero', 'detail', 'lifestyle', 'kit', 'context', '']).default(''),
+    layout: z.enum(creativeDirectorAllowlist.frameLayouts).optional(),
+    typographyStyle: z.enum(creativeDirectorAllowlist.frameTextStyles).optional(),
+    textBackground: z.enum(creativeDirectorAllowlist.frameTextBackgrounds).optional(),
+    captionPosition: z.enum(creativeDirectorAllowlist.frameCaptionPositions).optional(),
+    textAnimation: z.enum(creativeDirectorAllowlist.frameTextAnimations).optional(),
+    focalPoint: z.string().trim().regex(/^(?:100|[0-9]{1,2})%\s+(?:100|[0-9]{1,2})%$/).optional(),
+    colorAccent: z.string().regex(/^#[0-9a-f]{6}$/i).optional()
+  }).strict()).min(1).max(500),
   assetOrder: z.array(z.string().min(1).max(100)).min(1).max(500)
 }).strict();
 const shareGrantSchema = z.object({
@@ -763,9 +776,26 @@ export async function updateDeliveryReview(req, res) {
     delivery.creativeDirection.palette = parsed.data.palette;
     delivery.creativeDirection.typography = parsed.data.typography;
     delivery.creativeDirection.pace = parsed.data.pace;
+    // The visual variation is part of the approved direction. Previously the
+    // review request validated it but dropped it here, so a refresh silently
+    // returned the generic renderer defaults.
+    if (parsed.data.variation) delivery.creativeDirection.variation = parsed.data.variation;
     const editedFrames = new Map(delivery.creativeDirection.frames.map(frame => {
       const edit = frameEdits.get(frame.assetId);
-      return [frame.assetId, { ...frame, headline: edit.headline, caption: edit.caption, eventType: edit.eventType || frame.eventType || '', campaignType: edit.campaignType || frame.campaignType || '' }];
+      return [frame.assetId, {
+        ...frame,
+        headline: edit.headline,
+        caption: edit.caption,
+        eventType: edit.eventType || frame.eventType || '',
+        campaignType: edit.campaignType || frame.campaignType || '',
+        layout: edit.layout || frame.layout,
+        typographyStyle: edit.typographyStyle || frame.typographyStyle,
+        textBackground: edit.textBackground || frame.textBackground,
+        captionPosition: edit.captionPosition || frame.captionPosition,
+        textAnimation: edit.textAnimation || frame.textAnimation,
+        focalPoint: edit.focalPoint || frame.focalPoint,
+        colorAccent: edit.colorAccent || frame.colorAccent
+      }];
     }));
     // The order approved in Review is the order every client surface must use:
     // the gallery, Event Coverage scenes, and caption narration all read this
@@ -777,7 +807,7 @@ export async function updateDeliveryReview(req, res) {
     delivery.creativeDirection.sections = parsed.data.sections.map(section => {
       const existing = existingSections.get(section.id);
       const assetIds = (existing?.assetIds || []).filter(assetId => positions.has(assetId)).sort((left, right) => positions.get(left) - positions.get(right));
-      return { ...section, assetIds };
+      return { ...section, accent: section.accent || existing?.accent, assetIds };
     }).filter(section => section.assetIds.length);
     // Captions and order are the narration source of truth. Any review save makes old audio unsafe to reuse.
     delivery.narration = undefined;

@@ -97,3 +97,41 @@
 @media(min-width:768px){.vec-campaign-sets>div:last-child{gap:54px}.vec-campaign-sets article{display:grid;grid-template-columns:minmax(260px,.66fr) minmax(0,1fr);column-gap:34px;align-items:start}.vec-campaign-sets article>button{grid-column:1;grid-row:1/3}.vec-campaign-set-copy{grid-column:2;padding:17px 2px!important}.vec-campaign-set-support{grid-column:1/-1;grid-row:3;grid-template-columns:repeat(4,minmax(0,1fr));padding-top:18px!important}.vec-campaign-set-support button{min-height:220px}}
 @media(min-width:1024px){.vec-campaign-tools{top:72px}.vec-campaign-tools-head{padding-inline:max(4vw,44px)}.vec-campaign-set-nav{padding-inline:max(4vw,44px)}.vec-campaign-highlights{padding:92px 44px}.vec-campaign-highlight-grid button{min-height:260px}.vec-campaign-sets>div:last-child{max-width:1180px}.vec-campaign-set-support button{min-height:250px}}
 @media(max-width:520px){.vec-campaign-tools-head{align-items:flex-start;flex-direction:column}.vec-campaign-tools-actions{width:100%}.vec-campaign-tools-actions button{flex:1}.vec-campaign-tools-head>div:first-child strong{white-space:normal}}
+
+/* Section layouts are part of the saved creative direction. These selectors
+   keep the event archive and campaign handoff faithful to the choice instead
+   of treating every section as the same four-card grid. */
+.vec-event-scenes article[data-layout="pair"]{border-color:color-mix(in srgb,var(--section-accent,var(--fd-accent)) 48%,transparent)}
+.vec-event-scenes article[data-layout="pair"] .vec-scene-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.vec-event-scenes article[data-layout="triptych"],.vec-event-scenes article[data-layout="hero"],.vec-event-scenes article[data-layout="strip"],.vec-event-scenes article[data-layout="cluster"]{border-color:color-mix(in srgb,var(--section-accent,var(--fd-accent)) 48%,transparent)}
+.vec-event-scenes article[data-layout="pair"] .vec-scene-copy>span,.vec-event-scenes article[data-layout="triptych"] .vec-scene-copy>span,.vec-event-scenes article[data-layout="hero"] .vec-scene-copy>span,.vec-event-scenes article[data-layout="strip"] .vec-scene-copy>span,.vec-event-scenes article[data-layout="cluster"] .vec-scene-copy>span{color:var(--section-accent,var(--fd-accent))}
+.vec-event-scenes article[data-layout="triptych"] .vec-scene-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.vec-event-scenes article[data-layout="hero"] .vec-scene-grid button:first-child{min-height:390px}
+.vec-event-scenes article[data-layout="hero"] .vec-scene-grid button:first-child .v-photo{object-position:center}
+.vec-event-scenes article[data-layout="strip"] .vec-scene-grid{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(78vw,1fr);grid-template-columns:none;overflow-x:auto;padding-bottom:5px;scroll-snap-type:x mandatory}
+.vec-event-scenes article[data-layout="strip"] .vec-scene-grid button{scroll-snap-align:start}
+.vec-event-scenes article[data-layout="cluster"] .vec-scene-grid{grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}
+.vec-event-scenes article[data-layout="cluster"] .vec-scene-grid button:first-child{grid-row:span 2;min-height:420px}
+.vec-event-scenes .vec-scene-grid button[data-frame-layout="poster"],.vec-campaign-sets article>button[data-frame-layout="poster"]{border:7px solid color-mix(in srgb,var(--frame-accent,var(--fd-accent)) 26%,transparent)}
+.vec-event-scenes .vec-scene-grid button[data-frame-layout="split"],.vec-campaign-set-support button[data-frame-layout="split"]{border-radius:0 0 28px 0}
+.vec-event-scenes .vec-scene-grid button[data-frame-layout="collage"],.vec-campaign-set-support button[data-frame-layout="collage"]{transform:rotate(-.8deg)}
+.vec-event-scenes .vec-scene-grid button[data-type-style="typewriter"] .vec-photo-caption,.vec-campaign-set-support button[data-type-style="typewriter"]>span{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.vec-event-scenes .vec-scene-grid button[data-type-style="bold_banner"] .vec-photo-caption,.vec-campaign-set-support button[data-type-style="bold_banner"]>span{font-weight:800;text-transform:uppercase}
+.vec-event-scenes .vec-scene-grid button[data-text-background="neon_pill"] .vec-photo-caption,.vec-campaign-set-support button[data-text-background="neon_pill"]>span{right:8px;bottom:8px;left:8px;padding:6px 8px;border-radius:999px;background:var(--frame-accent,var(--fd-accent));color:var(--fd-bg);text-shadow:none}
+.vec-event-scenes .vec-scene-grid button[data-text-background="vogue_bordered"] .vec-photo-caption,.vec-campaign-set-support button[data-text-background="vogue_bordered"]>span{right:8px;bottom:8px;left:8px;padding:6px 8px;border:1px solid var(--frame-accent,var(--fd-accent));background:#070709d9}
+.vec-campaign-sets article[data-layout="spread"],.vec-campaign-sets article[data-layout="strip"],.vec-campaign-sets article[data-layout="cluster"]{border-color:color-mix(in srgb,var(--section-accent,var(--fd-accent)) 48%,transparent)}
+.vec-campaign-sets article[data-layout="spread"]>button{aspect-ratio:16/9}
+.vec-campaign-sets article[data-layout="spread"] .vec-campaign-set-support{grid-template-columns:repeat(3,minmax(0,1fr))}
+.vec-campaign-sets article[data-layout="strip"] .vec-campaign-set-support{display:flex;overflow-x:auto;scroll-snap-type:x mandatory}
+.vec-campaign-sets article[data-layout="strip"] .vec-campaign-set-support button{flex:0 0 min(72vw,300px);scroll-snap-align:start}
+.vec-campaign-sets article[data-layout="cluster"] .vec-campaign-set-support{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media(min-width:640px){
+  .vec-event-scenes article[data-layout="strip"] .vec-scene-grid{grid-auto-columns:minmax(280px,1fr)}
+  .vec-event-scenes article[data-layout="cluster"] .vec-scene-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .vec-event-scenes article[data-layout="cluster"] .vec-scene-grid button:first-child{grid-row:span 2}
+}
+@media(min-width:1024px){
+  .vec-event-scenes article[data-layout="hero"] .vec-scene-grid{grid-template-columns:1.5fr .75fr .75fr}
+  .vec-event-scenes article[data-layout="hero"] .vec-scene-grid button:first-child{grid-row:span 2}
+  .vec-event-scenes article[data-layout="strip"] .vec-scene-grid{grid-auto-columns:minmax(320px,1fr)}
+}
