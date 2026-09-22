@@ -22,15 +22,17 @@ function splitIntoGroups(photos, wantedGroups) {
 function resolveSections(delivery, photos, fallbackSections) {
   const fallbacks = fallbackSections.map(section => typeof section === 'string' ? { title: section } : section);
   const source = delivery?.creativeDirection?.sections || delivery?.formatConfig?.sections || [];
+  const useDemoFallbacks = !delivery && !source.length;
   const byId = new Map(photos.map(photo => [String(photo.assetId || photo.name), photo]));
   const generated = source.map((section, index) => {
     const assigned = (section.assetIds || section.photoIds || []).map(id => byId.get(String(id))).filter(Boolean);
+    const fallback = useDemoFallbacks ? fallbacks[index % fallbacks.length] : {};
     return {
       id: section.id || `section-${index + 1}`,
-      title: section.title || section.name || section.headline || fallbacks[index % fallbacks.length].title,
-      copy: section.copy || section.subtitle || section.caption || section.description || fallbacks[index % fallbacks.length].copy || '',
-      label: section.label || section.eyebrow || fallbacks[index % fallbacks.length].label || '',
-      delivery: section.delivery || section.output || fallbacks[index % fallbacks.length].delivery || '',
+      title: section.title || section.name || section.headline || fallback.title || `Scene ${String(index + 1).padStart(2, '0')}`,
+      copy: section.copy || section.subtitle || section.caption || section.description || fallback.copy || '',
+      label: section.label || section.eyebrow || fallback.label || '',
+      delivery: section.delivery || section.output || fallback.delivery || '',
       photos: assigned
     };
   }).filter(section => section.photos.length);
@@ -38,10 +40,10 @@ function resolveSections(delivery, photos, fallbackSections) {
   if (generated.length) return generated;
   return splitIntoGroups(photos, Math.min(fallbacks.length, photos.length)).map((group, index) => ({
     id: `section-${index + 1}`,
-    title: fallbacks[index % fallbacks.length].title,
-    copy: fallbacks[index % fallbacks.length].copy || '',
-    label: fallbacks[index % fallbacks.length].label || '',
-    delivery: fallbacks[index % fallbacks.length].delivery || '',
+    title: useDemoFallbacks ? fallbacks[index % fallbacks.length].title : `Scene ${String(index + 1).padStart(2, '0')}`,
+    copy: useDemoFallbacks ? fallbacks[index % fallbacks.length].copy || '' : '',
+    label: useDemoFallbacks ? fallbacks[index % fallbacks.length].label || '' : '',
+    delivery: useDemoFallbacks ? fallbacks[index % fallbacks.length].delivery || '' : '',
     photos: group
   }));
 }

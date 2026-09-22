@@ -50,8 +50,8 @@ const reviewSchema = z.object({
     captionTreatment: z.enum(['quiet', 'editorial', 'bold']),
     accentPlacement: z.enum(['corners', 'rules', 'labels', 'type'])
   }).strict().default({ composition: 'quiet', density: 'balanced', imageTreatment: 'natural', captionTreatment: 'editorial', accentPlacement: 'rules' }),
-  sections: z.array(z.object({ id: z.string().regex(/^[a-z0-9-]{1,32}$/), title: z.string().trim().min(1).max(60), subtitle: z.string().trim().max(120), layout: z.enum(['hero', 'single', 'pair', 'triptych', 'grid', 'strip', 'spread', 'cluster', 'chapter-cover']) }).strict()).min(1).max(12),
-  frames: z.array(z.object({ assetId: z.string().min(1).max(100), headline: z.string().trim().max(70), caption: z.string().trim().min(18).max(180) }).strict()).min(1).max(500),
+  sections: z.array(z.object({ id: z.string().regex(/^[a-z0-9-]{1,32}$/), title: z.string().trim().min(1).max(60), subtitle: z.string().trim().max(120), label: z.string().trim().max(40).default(''), delivery: z.string().trim().max(40).default(''), layout: z.enum(['hero', 'single', 'pair', 'triptych', 'grid', 'strip', 'spread', 'cluster', 'chapter-cover']) }).strict()).min(1).max(12),
+  frames: z.array(z.object({ assetId: z.string().min(1).max(100), headline: z.string().trim().max(70), caption: z.string().trim().min(18).max(180), eventType: z.enum(['people', 'programme', 'networking', 'details', '']).default('') }).strict()).min(1).max(500),
   assetOrder: z.array(z.string().min(1).max(100)).min(1).max(500)
 }).strict();
 const shareGrantSchema = z.object({
@@ -763,11 +763,24 @@ export async function updateDeliveryReview(req, res) {
     delivery.creativeDirection.palette = parsed.data.palette;
     delivery.creativeDirection.typography = parsed.data.typography;
     delivery.creativeDirection.pace = parsed.data.pace;
-    delivery.creativeDirection.sections = parsed.data.sections.map(section => ({ ...section, assetIds: delivery.creativeDirection.sections.find(current => current.id === section.id)?.assetIds || [] }));
-    delivery.creativeDirection.frames = delivery.creativeDirection.frames.map(frame => ({ ...frame, headline: frameEdits.get(frame.assetId).headline, caption: frameEdits.get(frame.assetId).caption }));
+    const editedFrames = new Map(delivery.creativeDirection.frames.map(frame => {
+      const edit = frameEdits.get(frame.assetId);
+      return [frame.assetId, { ...frame, headline: edit.headline, caption: edit.caption, eventType: edit.eventType || frame.eventType || '' }];
+    }));
+    // The order approved in Review is the order every client surface must use:
+    // the gallery, Event Coverage scenes, and caption narration all read this
+    // ordered frame list. Keeping the old generation order here made those
+    // surfaces disagree after a photographer moved a photograph.
+    delivery.creativeDirection.frames = parsed.data.assetOrder.map(assetId => editedFrames.get(assetId)).filter(Boolean);
+    const positions = new Map(parsed.data.assetOrder.map((id, index) => [id, index]));
+    const existingSections = new Map((delivery.creativeDirection.sections || []).map(section => [section.id, section]));
+    delivery.creativeDirection.sections = parsed.data.sections.map(section => {
+      const existing = existingSections.get(section.id);
+      const assetIds = (existing?.assetIds || []).filter(assetId => positions.has(assetId)).sort((left, right) => positions.get(left) - positions.get(right));
+      return { ...section, assetIds };
+    }).filter(section => section.assetIds.length);
     // Captions and order are the narration source of truth. Any review save makes old audio unsafe to reuse.
     delivery.narration = undefined;
-    const positions = new Map(parsed.data.assetOrder.map((id, index) => [id, index]));
     delivery.assets.forEach(asset => { asset.sortOrder = positions.get(asset.assetId); });
     delivery.markModified('creativeDirection');
     delivery.reviewApprovedAt = new Date();

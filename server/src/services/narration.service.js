@@ -32,9 +32,18 @@ export function captionSegments(delivery) {
   const frames = Array.isArray(delivery.creativeDirection?.frames)
     ? delivery.creativeDirection.frames
     : [];
+  const approvedPositions = new Map(
+    (Array.isArray(delivery.assets) ? delivery.assets : [])
+      .slice()
+      .sort((left, right) => Number(left.sortOrder || 0) - Number(right.sortOrder || 0))
+      .map((asset, index) => [String(asset.assetId), index])
+  );
+  const orderedFrames = approvedPositions.size
+    ? frames.slice().sort((left, right) => (approvedPositions.get(String(left.assetId)) ?? Number.MAX_SAFE_INTEGER) - (approvedPositions.get(String(right.assetId)) ?? Number.MAX_SAFE_INTEGER))
+    : frames;
   const sections = delivery.creativeDirection?.sections || [];
   const sectionById = new Map(sections.map(section => [section.id, section]));
-  const segments = frames.map((frame, index) => {
+  const segments = orderedFrames.map((frame, index) => {
     const caption = cleanLine(frame.caption, 220);
     if (caption.length < 8) return null;
     const section = sectionById.get(frame.sectionId);

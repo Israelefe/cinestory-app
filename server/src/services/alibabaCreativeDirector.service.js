@@ -509,8 +509,8 @@ export async function createGlobalDirection({ format, brief, shootType, clientNa
 }`;
 
   const formatDirectionRules = {
-    'event-coverage': `Event Coverage is a multi-subject event archive, not a personal celebration. Create 4-8 scenes that follow the actual event flow, such as arrivals, programme, people, networking, and details. Use plural or neutral language. Give every scene a useful label and delivery purpose. Do not write one-person chapters, wedding language, or generic portrait sections. Keep scene titles and subtitles grounded in the supplied brief and image analysis.`,
-    campaign: `Campaign Delivery is a commercial presentation followed by a practical asset handoff. Create 3-6 asset sets that reflect the actual brief, such as hero, detail, in-use, kit, and context when supported. Give every set a clear label and delivery purpose. Do not write celebration language, personal biography captions, or unsupported product claims.`,
+    'event-coverage': `Event Coverage is a multi-subject event archive, not a personal celebration. Create 4-8 scenes that follow the actual event flow, such as arrivals, programme, people, networking, and details. Use plural or neutral language. Give every scene a useful label and delivery purpose. Do not write one-person chapters, wedding language, or generic portrait sections. Keep scene titles and subtitles grounded in the supplied brief and image analysis. The live renderer owns the event layout: hero, event summary, highlights, sticky scene navigation, filters, scene grids, shared full gallery, and closing handoff. Use the direction fields to supply truthful scene copy and grouping for that renderer; do not invent a different page model.`,
+    campaign: `Campaign Delivery is a commercial presentation followed by a practical asset handoff. Create 3-6 asset sets that reflect the actual brief, such as hero, detail, in-use, kit, and context when supported. Give every set a clear label and delivery purpose. Do not write celebration language, personal biography captions, or unsupported product claims. The live renderer owns the campaign layout: lead presentation, approved asset sets, usage handoff, shared full gallery, and download controls. Use the direction fields to make those sets useful; do not invent a different page model.`,
     'photo-story': `Photo Story is a personal, paced sequence with an opening, development, and closing frame.`,
     editorial: `Editorial Page is a scrollable publication with a clear visual hierarchy, feature sections, details, and breathing space.`,
     'photo-reveal': `Photo Reveal is a client-paced sequence where each section supports anticipation and a deliberate first look.`,
@@ -590,7 +590,7 @@ Return one frame per photograph in the supplied order.`;
   };
 
   const captionFormatRules = {
-    'event-coverage': `This is multi-subject event coverage. Do not address one named client and do not assume a private celebration. Write each caption as a useful, human record of the people, scene, purpose, or atmosphere the photographer described. Use plural or neutral language where appropriate. Explain why the moment matters to the event, not only what is visible.`,
+    'event-coverage': `This is multi-subject event coverage. Do not address one named client and do not assume a private celebration. Write each caption as a useful, human record of the people, scene, purpose, or atmosphere the photographer described. Use plural or neutral language where appropriate. Explain why the moment matters to the event, not only what is visible. Classify each frame as people, programme, networking, or details so the event viewer can filter it.`,
     campaign: `This is a campaign handoff. Write for the brand, campaign objective, audience, and approved usage described in the brief. Captions should clarify the role of each frame in the campaign or asset set without inventing claims, sales copy, product specifications, or a private-person celebration.`,
     'photo-story': `This is a personal Photo Story. Address the named client naturally and connect each caption to the milestone, relationship, or purpose in the photographer's brief. Keep the voice intimate and reflective without becoming sentimental or generic.`,
     editorial: `This is an editorial delivery. Use the brief to give each frame a clear point of view and editorial role. Address the subject or story naturally, but do not write generic praise or describe pixels as alt text.`,
@@ -620,6 +620,17 @@ Return one frame per photograph in the supplied order.`;
       const frame = { ...matched };
       frame.assetId = id;
       if (!validSectionIds.includes(frame.sectionId)) frame.sectionId = defaultSectionId;
+      if (format === 'event-coverage' && !EVENT_FRAME_TYPES.includes(frame.eventType)) {
+        const section = (direction?.sections || []).find(item => item.id === frame.sectionId);
+        const sectionText = `${section?.title || ''} ${section?.subtitle || ''}`.toLowerCase();
+        frame.eventType = /network|between|partner|vendor|break/.test(sectionText)
+          ? 'networking'
+          : /detail|arrival|venue|room|setup|badge|atmosphere/.test(sectionText)
+            ? 'details'
+            : /program|stage|speaker|keynote|panel|performance|talk/.test(sectionText)
+              ? 'programme'
+              : 'people';
+      }
       if (!['opening', 'hero', 'supporting', 'detail', 'pair', 'finale'].includes(frame.role)) {
         frame.role = index === 0 ? 'hero' : 'supporting';
       }

@@ -36,6 +36,11 @@ const segments = captionSegments(delivery);
 assert.equal(segments.length, 2, 'Every approved frame must become a narration segment');
 assert.deepEqual(segments.map(segment => segment.assetIds[0]), ['asset-1', 'asset-2'], 'Narration segments must keep photograph order');
 assert.ok(segments.every(segment => segment.text.length >= 8), 'Narration must use the approved caption text');
+const reorderedSegments = captionSegments({
+  ...delivery,
+  assets: [{ assetId: 'asset-2', sortOrder: 0 }, { assetId: 'asset-1', sortOrder: 1 }]
+});
+assert.deepEqual(reorderedSegments.map(segment => segment.assetIds[0]), ['asset-2', 'asset-1'], 'Narration must follow the approved asset order after review reordering');
 assert.throws(() => captionSegments({ ...delivery, creativeDirection: { ...delivery.creativeDirection, frames: [{ ...delivery.creativeDirection.frames[0], caption: '' }] } }), /approved caption/, 'Narration must reject missing captions');
 const measured = timedSegments(segments, [
   { word: 'Amaka,', start: 0.11, end: 0.42 }, { word: 'the', start: 0.45, end: 0.58 }, { word: 'confidence', start: 0.6, end: 1.12 },
@@ -62,6 +67,13 @@ assert.doesNotMatch(narration, /function segmentTimings/, 'Narration must not es
 assert.doesNotMatch(narration, /createNarrationScript/, 'Narration must not generate a second script');
 assert.match(director, /Every photograph must have a meaningful caption/, 'Creative direction must require captions');
 assert.match(director, /captionFormatRules/, 'Creative direction must have format-specific caption rules');
+assert.match(director, /Event Coverage is a multi-subject event archive/, 'Event Coverage direction must use its multi-subject scene brief');
+assert.match(director, /The live renderer owns the event layout/, 'Event Coverage direction must target the live renderer contract');
+assert.match(director, /eventType/, 'Event Coverage captions must carry a filterable scene type');
+assert.match(director, /label.*short scene label/, 'Creative direction must return useful scene labels');
+assert.match(deliveryController, /eventType: z\.enum/, 'Review API must preserve Event Coverage scene types');
+assert.match(deliveryController, /delivery\.creativeDirection\.frames = parsed\.data\.assetOrder\.map/, 'Review API must persist the approved frame order');
+assert.match(deliveryController, /assetIds = \(existing\?\.assetIds \|\| \[\]\)\.filter/, 'Review API must keep Event Coverage scene photos in the approved order');
 assert.match(director, /approvedSoundtrackCatalogue:[\s\S]*sourcePageUrl/, 'Creative direction must expose the verified soundtrack source record to the AI');
 assert.doesNotMatch(director, /fallbackCaption/, 'Creative direction must never silently fabricate captions');
 assert.match(legacyPhotoStory, /PHOTO_STORY_CAPTIONS_UNAVAILABLE/, 'Legacy Photo Story caption generation must fail clearly when AI output is unusable');
