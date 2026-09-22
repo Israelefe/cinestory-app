@@ -64,6 +64,7 @@
 .veylo-assistant-heading h2 { margin: 0; font-size: .98rem; font-weight: 700; letter-spacing: -.01em; }
 .veylo-assistant-heading p { margin: .18rem 0 0; color: rgba(255, 255, 255, .46); font-size: .68rem; }
 .veylo-assistant-mark { display: grid; width: 2.15rem; height: 2.15rem; flex: 0 0 auto; place-items: center; border: 1px solid rgba(255, 155, 142, .42); border-radius: .7rem; color: #ff9b8e; background: rgba(255, 90, 71, .1); }
+.veylo-assistant-header-actions { display: flex; align-items: center; gap: .4rem; }
 .veylo-assistant-icon-button { display: grid; width: 2.45rem; height: 2.45rem; flex: 0 0 auto; place-items: center; border: 1px solid rgba(255, 255, 255, .1); border-radius: .7rem; color: rgba(255, 255, 255, .72); background: rgba(255, 255, 255, .04); transition: background .2s ease, color .2s ease, transform .2s ease; }
 .veylo-assistant-icon-button:hover { color: #fff; background: rgba(255, 255, 255, .1); transform: rotate(4deg); }
 

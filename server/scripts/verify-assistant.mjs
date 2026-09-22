@@ -28,6 +28,8 @@ assert.match(route, /optionalAuthMiddleware/);
 assert.match(route, /assistantChatLimit/);
 assert.match(client, /VeyloMarkdown/);
 assert.match(client, /AbortController/);
+assert.match(client, /sessionStorage/);
+assert.match(client, /Start a new Veylo Help chat/);
 assert.match(client, /Do not send passwords/);
 assert.match(markdown, /safeHref/);
 assert.match(markdown, /veylo-markdown-table/);

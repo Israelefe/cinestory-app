@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, CircleHelp, Copy, ExternalLink, LoaderCircle, MessageCircle, RefreshCw, Send, ShieldCheck, Square, X } from 'lucide-react';
+import { Check, CircleHelp, Copy, ExternalLink, LoaderCircle, MessageCircle, RefreshCw, RotateCcw, Send, ShieldCheck, Square, X } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import api, { apiMessage } from '../services/api.js';
 import { trackEvent } from '../services/analytics.js';
@@ -11,6 +11,27 @@ const INITIAL_SUGGESTIONS = {
   delivery: ['How do I download one photograph?', 'Why will the music not play?', 'How do I open the captions?'],
   public: ['What is Veylo?', 'How does a client delivery work?', 'What is included with Pro?']
 };
+
+const CHAT_STORAGE_PREFIX = 'veylo_help_chat_v1_';
+
+function storageKey(surface) { return `${CHAT_STORAGE_PREFIX}${surface}`; }
+
+function loadMessages(surface) {
+  try {
+    const parsed = JSON.parse(window.sessionStorage.getItem(storageKey(surface)) || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(message => ['assistant', 'user'].includes(message?.role) && typeof message?.content === 'string' && message.content.trim())
+      .slice(-30)
+      .map(message => ({ id: String(message.id || `${message.role}-${Math.random().toString(36).slice(2)}`), role: message.role, content: message.content.slice(0, 6000) }));
+  } catch { return []; }
+}
+
+function saveMessages(surface, messages) {
+  try {
+    window.sessionStorage.setItem(storageKey(surface), JSON.stringify(messages.slice(-30).map(({ role, content }) => ({ role, content }))));
+  } catch {}
+}
 
 function surfaceForPath(pathname, user) {
   if (/^\/(?:d|story|volume)(?:\/|$)/.test(pathname)) return 'delivery';
@@ -32,7 +53,10 @@ export default function VeyloAssistant({ user }) {
   const surface = useMemo(() => surfaceForPath(pathname, user), [pathname, user]);
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState(() => [newMessage('assistant', welcomeForSurface('public'))]);
+  const [messages, setMessages] = useState(() => {
+    const stored = loadMessages('public');
+    return stored.length ? stored : [newMessage('assistant', welcomeForSurface('public'))];
+  });
   const [suggestions, setSuggestions] = useState(INITIAL_SUGGESTIONS.public);
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState('');
@@ -42,11 +66,19 @@ export default function VeyloAssistant({ user }) {
   const launchRef = useRef(null);
   const panelRef = useRef(null);
   const controllerRef = useRef(null);
+  const skipPersistRef = useRef(false);
 
   useEffect(() => {
+    skipPersistRef.current = true;
     setSuggestions(INITIAL_SUGGESTIONS[surface]);
-    if (!messages.some(message => message.role === 'user')) setMessages([newMessage('assistant', welcomeForSurface(surface))]);
+    const stored = loadMessages(surface);
+    setMessages(stored.length ? stored : [newMessage('assistant', welcomeForSurface(surface))]);
   }, [surface]);
+
+  useEffect(() => {
+    if (skipPersistRef.current) { skipPersistRef.current = false; return; }
+    saveMessages(surface, messages);
+  }, [messages, surface]);
 
   useEffect(() => {
     if (!open) return;
@@ -117,6 +149,18 @@ export default function VeyloAssistant({ user }) {
     trackEvent('assistant.response.stopped', { surface }, { status: 'stopped' });
   };
 
+  const startNewChat = () => {
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    setStatus('idle');
+    setError('');
+    setInput('');
+    const welcome = [newMessage('assistant', welcomeForSurface(surface))];
+    setMessages(welcome);
+    setSuggestions(INITIAL_SUGGESTIONS[surface]);
+    try { window.sessionStorage.removeItem(storageKey(surface)); } catch {}
+  };
+
   const copyAnswer = async message => {
     try {
       await navigator.clipboard.writeText(message.content);
@@ -139,7 +183,7 @@ export default function VeyloAssistant({ user }) {
       <aside ref={panelRef} className="veylo-assistant-panel" role="dialog" aria-modal="true" aria-labelledby="veylo-assistant-title">
         <header className="veylo-assistant-header">
           <div className="veylo-assistant-heading"><span className="veylo-assistant-mark"><CircleHelp size={20} aria-hidden="true" /></span><div><h2 id="veylo-assistant-title">Veylo Help</h2><p>Answers about Veylo only</p></div></div>
-          <button type="button" className="veylo-assistant-icon-button" onClick={() => { setOpen(false); launchRef.current?.focus(); }} aria-label="Close Veylo Help"><X size={19} /></button>
+          <div className="veylo-assistant-header-actions"><button type="button" className="veylo-assistant-icon-button" onClick={startNewChat} aria-label="Start a new Veylo Help chat" title="New chat"><RotateCcw size={17} /></button><button type="button" className="veylo-assistant-icon-button" onClick={() => { setOpen(false); launchRef.current?.focus(); }} aria-label="Close Veylo Help"><X size={19} /></button></div>
         </header>
         <div className="veylo-assistant-disclosure"><ShieldCheck size={15} aria-hidden="true" /><span>This chat does not access private system or account data beyond the small status needed to answer your Veylo question.</span></div>
         <div className="veylo-assistant-messages" aria-live="polite" aria-busy={status === 'sending'}>
