@@ -9,6 +9,7 @@ import './DeliverySharingV2.css';
 const INITIAL_FORM = {
   role: 'organizer',
   label: '',
+  recipientEmail: '',
   allowIndividualDownloads: true,
   allowDownloadAll: false,
   usageTerms: '',
@@ -23,6 +24,7 @@ export default function DeliverySharing() {
   const [delivery, setDelivery] = useState(null);
   const [grants, setGrants] = useState([]);
   const [createdUrl, setCreatedUrl] = useState('');
+  const [createdMessage, setCreatedMessage] = useState('');
   const [form, setForm] = useState(INITIAL_FORM);
   const [photoScope, setPhotoScope] = useState('all');
   const [busy, setBusy] = useState(true);
@@ -86,6 +88,7 @@ export default function DeliverySharing() {
     setBusy(true);
     setError('');
     setCreatedUrl('');
+    setCreatedMessage('');
     try {
       const response = await api.post(`/v1/deliveries/${deliveryId}/share-grants`, {
         ...form,
@@ -94,7 +97,8 @@ export default function DeliverySharing() {
         expiresAt: form.expiresAt ? new Date(`${form.expiresAt}T23:59:59`).toISOString() : ''
       });
       setCreatedUrl(response.data.data.url);
-      setForm(current => ({ ...current, label: '', usageTerms: '' }));
+      setCreatedMessage(response.data.message || 'The private role link was created.');
+      setForm(current => ({ ...current, label: '', recipientEmail: '', usageTerms: '' }));
       await load();
     } catch (requestError) {
       setError(apiMessage(requestError, 'We could not create that role link.'));
@@ -154,6 +158,11 @@ export default function DeliverySharing() {
               <input value={form.label} onChange={event => setForm(current => ({ ...current, label: event.target.value }))} minLength={2} maxLength={100} required placeholder="Venue social media team" />
             </label>
 
+            <label>Recipient email <span className="ds-optional">Optional</span>
+              <input type="email" value={form.recipientEmail} onChange={event => setForm(current => ({ ...current, recipientEmail: event.target.value }))} maxLength={254} placeholder="vendor@example.com" />
+              <small className="ds-field-help">Add an email and Veylo will send the private link for you. Leave it blank if you only want to copy the link.</small>
+            </label>
+
             <fieldset className="ds-scope">
               <legend>Which photographs can they see?</legend>
               <div className="ds-scope-options">
@@ -198,7 +207,7 @@ export default function DeliverySharing() {
             <button disabled={busy}><Link2 size={16} />{busy ? 'Creating link…' : 'Create private role link'}</button>
             {createdUrl && <div className="ds-created" aria-live="polite">
               <ShieldCheck size={18} />
-              <p>This token is shown once. Copy it before leaving this page.</p>
+              <p>{createdMessage || 'The private role link was created.'}<br />Copy it before leaving this page; the token is shown once.</p>
               <button type="button" onClick={copyCreatedLink}><Copy size={15} />Copy link</button>
             </div>}
           </form>
@@ -211,6 +220,7 @@ export default function DeliverySharing() {
                 <strong>{grant.label}</strong>
                 <span>{grant.role} · {grant.sectionIds?.length ? `${grant.sectionIds.length} selected scene${grant.sectionIds.length === 1 ? '' : 's'}` : grant.assetIds?.length ? `${grant.assetIds.length} selected photographs` : 'every photograph'}</span>
                 <span>{grant.allowDownloadAll ? 'permitted gallery download' : grant.allowIndividualDownloads ? 'individual downloads' : 'view only'}</span>
+                {grant.recipientEmail && <small>{grant.recipientEmail}</small>}
                 {grant.expiresAt && <small>Expires {new Date(grant.expiresAt).toLocaleDateString('en-NG')}</small>}
               </div>
               <button type="button" onClick={() => revoke(grant._id)} aria-label={`Close ${grant.label} link`}><Trash2 size={16} /></button>

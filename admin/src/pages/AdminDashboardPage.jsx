@@ -104,21 +104,25 @@ const bytes = (value = 0) => {
 };
 
 function Status({ value }) {
-  const calm = ['success', 'active', 'published', 'pro'].includes(value);
+  const calm = ['success', 'active', 'published', 'pro', 'manual_pro'].includes(value);
   const warning = [
     'pending',
     'checkout_pending',
     'canceling',
     'past_due',
+    'grace_period',
     'partially_refunded',
     'refund pending'
   ].includes(value);
+  const danger = ['attention', 'failed', 'disputed', 'expired'].includes(value);
 
   return (
     <span
       className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[.12em] ${
         calm
           ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300'
+          : danger
+          ? 'border-red-300/25 bg-red-300/10 text-red-200'
           : warning
           ? 'border-amber-300/25 bg-amber-300/10 text-amber-200'
           : 'border-white/10 bg-white/[.05] text-white/55'
@@ -316,6 +320,69 @@ function TrafficAnalyticsPanel({ data, days, onDaysChange, error }) {
   </div>;
 }
 
+function BillingHealthPanel({ data, loading, error, actionLoading, onRefresh, onResync, onVerifyPayment, onProviderRefresh, canRepair, canProviderRefresh }) {
+  const [filter, setFilter] = useState('issues');
+  const items = data?.items || [];
+  const summary = data?.summary || {};
+  const visibleItems = items.filter(item => {
+    if (filter === 'issues') return item.issues?.length > 0;
+    if (filter === 'grace') return item.state === 'grace_period';
+    if (filter === 'canceling') return item.state === 'canceling';
+    if (filter === 'pro') return item.effectivePlan === 'pro';
+    if (filter === 'free') return item.effectivePlan === 'free';
+    if (filter === 'manual') return Boolean(item.manualGrant?.active);
+    return true;
+  });
+  const reasonLabel = (reason) => ({
+    paid_subscription: 'Paid subscription',
+    payment_grace: 'Payment grace period',
+    canceling_subscription: 'Canceling after paid term',
+    manual_grant: 'Manual Pro grant'
+  }[reason] || reason?.replaceAll('_', ' ') || 'No active Pro reason');
+
+  return (
+    <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Billing control room</p>
+          <h2 className="mt-1 text-xl font-medium">Who should have Pro right now?</h2>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-white/45">Veylo compares the saved account plan with the subscription, payment grace period, cancellation date, and manual Pro grant. A flagged account needs review before anyone changes access.</p>
+        </div>
+        <button type="button" onClick={onRefresh} disabled={loading || actionLoading} className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-white/15 px-4 text-xs font-semibold text-white/70 transition-colors hover:border-[#ff9b8e]/50 hover:text-white disabled:opacity-40"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} />{loading ? 'Checking billing…' : 'Check billing health'}</button>
+      </div>
+
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="rounded-2xl border border-white/10 bg-white/[.025] p-3"><p className="text-[10px] uppercase tracking-[.12em] text-white/35">Checked</p><p className="mt-2 text-xl font-medium">{number(summary.accountsChecked)}</p><p className="mt-1 text-[11px] text-white/40">candidate accounts</p></div>
+        <div className="rounded-2xl border border-red-300/15 bg-red-300/[.04] p-3"><p className="text-[10px] uppercase tracking-[.12em] text-red-100/55">Needs attention</p><p className="mt-2 text-xl font-medium text-red-100">{number(summary.needsAttention)}</p><p className="mt-1 text-[11px] text-red-100/55">mismatches or failures</p></div>
+        <div className="rounded-2xl border border-emerald-300/15 bg-emerald-300/[.04] p-3"><p className="text-[10px] uppercase tracking-[.12em] text-emerald-100/55">Effective Pro</p><p className="mt-2 text-xl font-medium text-emerald-100">{number(summary.effectivePro)}</p><p className="mt-1 text-[11px] text-emerald-100/55">paid or granted</p></div>
+        <div className="rounded-2xl border border-amber-300/15 bg-amber-300/[.04] p-3"><p className="text-[10px] uppercase tracking-[.12em] text-amber-100/55">Grace periods</p><p className="mt-2 text-xl font-medium text-amber-100">{number(summary.gracePeriods)}</p><p className="mt-1 text-[11px] text-amber-100/55">payment retry window</p></div>
+        <div className="rounded-2xl border border-white/10 bg-white/[.025] p-3"><p className="text-[10px] uppercase tracking-[.12em] text-white/35">Canceling</p><p className="mt-2 text-xl font-medium">{number(summary.canceling)}</p><p className="mt-1 text-[11px] text-white/40">paid time remains</p></div>
+        <div className="rounded-2xl border border-white/10 bg-white/[.025] p-3"><p className="text-[10px] uppercase tracking-[.12em] text-white/35">Manual grants</p><p className="mt-2 text-xl font-medium">{number(summary.manualGrants)}</p><p className="mt-1 text-[11px] text-white/40">active support access</p></div>
+      </div>
+
+      <div className="mt-6 flex flex-col gap-3 border-t border-white/10 pt-5 sm:flex-row sm:items-center sm:justify-between">
+        <div><h3 className="text-sm font-semibold text-white">Billing exceptions</h3><p className="mt-1 text-xs text-white/40">Resync locally after confirming the account’s provider status. Paystack refresh is available for subscriptions with a provider code.</p></div>
+        <label className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/40 sm:min-w-44">Show<select value={filter} onChange={(event) => setFilter(event.target.value)} className="mt-2 min-h-10 w-full rounded-xl border border-white/10 bg-[#141419] px-3 text-xs font-normal normal-case tracking-normal text-white outline-none focus:border-[#ff9b8e]/60"><option value="issues">Needs attention</option><option value="all">All checked accounts</option><option value="grace">Payment grace</option><option value="canceling">Canceling</option><option value="pro">Effective Pro</option><option value="free">Effective Free</option><option value="manual">Manual grants</option></select></label>
+      </div>
+
+      {error && !data && <div className="mt-5 rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-4 text-sm text-amber-100">Billing health is unavailable. <span className="text-amber-100/70">{error}</span></div>}
+      {loading && !error && <p className="py-10 text-center text-sm text-white/45">Checking subscription dates, payment events, and manual grants…</p>}
+      {!loading && !error && <div className="mt-4 space-y-3">
+        {visibleItems.map(item => <article key={item.id} className={`rounded-2xl border p-4 ${item.issues?.length ? 'border-red-300/20 bg-red-300/[.035]' : 'border-white/10 bg-white/[.02]'}`}>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold text-white">{item.name}</p><Status value={item.state} />{item.issues?.length ? <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[.12em] text-red-200"><TriangleAlert size={12} />{number(item.issues.length)} issue{item.issues.length === 1 ? '' : 's'}</span> : <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[.12em] text-emerald-200"><CheckCircle2 size={12} />consistent</span>}</div><p className="mt-1 truncate text-xs text-white/40">{item.email}{item.studio ? ` · ${item.studio}` : ''}</p></div>
+            <div className="flex flex-wrap gap-2 text-[11px] text-white/45"><span>Stored: <strong className="font-semibold text-white/70">{item.storedPlan}</strong></span><span>Effective: <strong className="font-semibold text-white/70">{item.effectivePlan}</strong></span>{item.accessUntil && <span>Access until: <strong className="font-semibold text-white/70">{shortDate(item.accessUntil)}</strong></span>}</div>
+          </div>
+          <div className="mt-4 grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-5"><div><p className="text-[10px] uppercase tracking-[.12em] text-white/30">Why Pro</p><p className="mt-1 text-white/65">{item.accessReasons?.length ? item.accessReasons.map(reasonLabel).join(' · ') : 'No active Pro reason'}</p></div><div><p className="text-[10px] uppercase tracking-[.12em] text-white/30">Subscription</p><p className="mt-1 text-white/65">{item.subscription?.status || 'None'}{item.subscription?.paidThrough ? ` · paid through ${shortDate(item.subscription.paidThrough)}` : ''}{item.subscription?.graceEndsAt ? ` · grace ends ${shortDate(item.subscription.graceEndsAt)}` : ''}</p></div><div><p className="text-[10px] uppercase tracking-[.12em] text-white/30">Latest payment</p><p className="mt-1 text-white/65">{item.latestPayment?.status || 'No payment record'}{item.latestPayment?.paidAt ? ` · ${shortDate(item.latestPayment.paidAt)}` : ''}</p></div><div><p className="text-[10px] uppercase tracking-[.12em] text-white/30">Manual grant</p><p className="mt-1 text-white/65">{item.manualGrant?.active ? `Active${item.manualGrant.expiresAt ? ` until ${shortDate(item.manualGrant.expiresAt)}` : ' · no expiry'}` : 'None'}</p></div><div><p className="text-[10px] uppercase tracking-[.12em] text-white/30">Data retention</p><p className="mt-1 text-white/65">{item.proRetentionUntil ? `Until ${shortDate(item.proRetentionUntil)}` : 'Not scheduled'}</p></div></div>
+          {item.issues?.length > 0 && <div className="mt-4 space-y-1 rounded-xl border border-red-300/15 bg-red-300/[.04] p-3">{item.issues.map(issue => <p key={`${issue.code}-${issue.subscriptionId || ''}`} className="text-xs leading-5 text-red-100/80"><span className="font-semibold text-red-100">{issue.code.replaceAll('_', ' ')}:</span> {issue.message}</p>)}</div>}
+          <div className="mt-4 flex flex-wrap gap-2"><button type="button" disabled={!canRepair || actionLoading} onClick={() => onResync(item)} className="min-h-9 rounded-xl border border-white/15 px-3 text-[11px] font-semibold text-white/70 transition-colors hover:border-[#ff9b8e]/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-35">Resync Veylo access</button>{item.paymentToVerify?.reference && item.issues?.some(issue => ['successful_payment_without_access', 'pending_payment_without_access'].includes(issue.code)) && <button type="button" disabled={!canRepair || actionLoading} onClick={() => onVerifyPayment(item)} className="min-h-9 rounded-xl border border-emerald-300/25 px-3 text-[11px] font-semibold text-emerald-200 transition-colors hover:border-emerald-200/60 disabled:cursor-not-allowed disabled:opacity-35">Verify payment</button>}{item.subscription?.hasProviderSubscription && <button type="button" disabled={!canProviderRefresh || actionLoading} onClick={() => onProviderRefresh(item)} className="min-h-9 rounded-xl border border-[#ff9b8e]/25 px-3 text-[11px] font-semibold text-[#ffb1a7] transition-colors hover:border-[#ff9b8e]/60 disabled:cursor-not-allowed disabled:opacity-35">Check Paystack</button>}</div>
+        </article>)}
+        {!visibleItems.length && <div className="rounded-2xl border border-emerald-300/15 bg-emerald-300/[.04] p-6 text-center"><CheckCircle2 className="mx-auto text-emerald-200" size={22} /><p className="mt-3 text-sm font-semibold text-emerald-100">No accounts match this view.</p><p className="mt-1 text-xs text-emerald-100/60">The selected billing filter is clear.</p></div>}
+      </div>}
+    </section>
+  );
+}
+
 export default function AdminDashboardPage({ admin, onLogout }) {
   const [tab, setTab] = useState('deliveries');
   const [analytics, setAnalytics] = useState(null);
@@ -324,6 +391,9 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const [users, setUsers] = useState([]);
   const [payments, setPayments] = useState([]);
   const [financeOverview, setFinanceOverview] = useState(null);
+  const [billingHealth, setBillingHealth] = useState(null);
+  const [billingHealthLoading, setBillingHealthLoading] = useState(false);
+  const [billingActionLoading, setBillingActionLoading] = useState(false);
   const [financeReconciliation, setFinanceReconciliation] = useState(null);
   const [financeReconciling, setFinanceReconciling] = useState(false);
   const [aiJobs, setAiJobs] = useState([]);
@@ -392,6 +462,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       deliveries: api.get('/v1/admin/deliveries', { params: { search, status: deliveryStatusFilter, format: deliveryFormatFilter } }),
       users: api.get('/v1/admin/users', { params: { search, plan: accountPlanFilter, status: accountStatusFilter, acquisitionSource: accountSourceFilter } }),
       finance: api.get('/v1/admin/finance', { params: { search } }),
+      billingHealth: api.get('/v1/admin/billing/health', { params: { search, filter: 'all', limit: 250 } }),
       aiJobs: api.get('/v1/admin/ai/jobs', { params: { search, status: aiJobStatusFilter, type: aiJobTypeFilter } }),
       access: api.get('/v1/admin/client-access', { params: { search } }),
       volume: api.get('/v1/admin/volume', { params: { search, category: volumeCategoryFilter, status: volumeStatusFilter } }),
@@ -416,6 +487,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         if (key === 'deliveries') setDeliveries(Array.isArray(data) ? data : []);
         if (key === 'users') setUsers(Array.isArray(data) ? data : []);
         if (key === 'finance') { setFinanceOverview(data || null); setPayments(Array.isArray(data?.payments) ? data.payments : []); }
+        if (key === 'billingHealth') setBillingHealth(data || null);
         if (key === 'aiJobs') { setAiJobs(Array.isArray(data) ? data : []); setAiSummary(result.value.data?.summary || null); }
         if (key === 'access') setAccessOverview(data || null);
         if (key === 'volume') setVolumeJobs(Array.isArray(data) ? data : []);
@@ -432,6 +504,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       const error = result.status === 'rejected' ? result.reason : new Error(result.value?.data?.message || 'This panel is unavailable.');
       if (key === 'productAnalytics') setProductAnalytics(null);
       if (key === 'visitorTraffic') setVisitorTraffic(null);
+      if (key === 'billingHealth') setBillingHealth(null);
       nextErrors[key] = error.response?.data?.message || error.message || 'This panel is unavailable.';
     });
     setPanelErrors(nextErrors);
@@ -642,6 +715,9 @@ export default function AdminDashboardPage({ admin, onLogout }) {
 
   const accountId = selectedAccount?.account?.id || selectedAccount?.account?._id || selectedAccount?.account;
   const canDeleteAccounts = ['superadmin', 'admin'].includes(String(admin?.role || '').toLowerCase());
+  const adminRole = String(admin?.role || '').toLowerCase();
+  const canBillingRepair = ['superadmin', 'admin', 'operations', 'finance'].includes(adminRole);
+  const canProviderRefresh = ['superadmin', 'admin', 'finance'].includes(adminRole);
   const focusAccountDeletion = () => {
     const section = document.getElementById('account-deletion-section');
     if (!section) return;
@@ -845,6 +921,61 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       toast.error(error.response?.data?.message || 'Paystack reconciliation could not be completed.');
     } finally {
       setFinanceReconciling(false);
+    }
+  };
+
+  const fetchBillingHealth = async () => {
+    setBillingHealthLoading(true);
+    try {
+      const response = await api.get('/v1/admin/billing/health', { params: { search, filter: 'all', limit: 250 } });
+      setBillingHealth(response.data?.data || null);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Billing health could not be checked.');
+    } finally {
+      setBillingHealthLoading(false);
+    }
+  };
+
+  const resyncBillingAccount = async (item) => {
+    if (!item?.id || !canBillingRepair) return;
+    try {
+      setBillingActionLoading(true);
+      await api.post(`/v1/admin/users/${item.id}/billing/resync`, { reason: 'Resolved from the billing control room after entitlement review.' });
+      toast.success(`${item.name || 'Account'} billing access was resynchronised.`);
+      await Promise.all([fetchAdminData(), refreshSelectedAccount()]);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Billing access could not be resynchronised.');
+    } finally {
+      setBillingActionLoading(false);
+    }
+  };
+
+  const verifyBillingPayment = async (item) => {
+    const reference = item?.paymentToVerify?.reference || item?.latestPayment?.reference;
+    if (!item?.id || !reference || !canBillingRepair) return;
+    try {
+      setBillingActionLoading(true);
+      await api.post(`/v1/admin/users/${item.id}/billing/verify-payment`, { reference, reason: 'Verified from the billing control room after Pro access was not present.' });
+      toast.success(`${item.name || 'Account'} payment was confirmed and Pro access was restored.`);
+      await Promise.all([fetchAdminData(), refreshSelectedAccount()]);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'The payment could not be verified.');
+    } finally {
+      setBillingActionLoading(false);
+    }
+  };
+
+  const refreshBillingFromPaystack = async (item) => {
+    if (!item?.id || !canProviderRefresh) return;
+    try {
+      setBillingActionLoading(true);
+      await api.post(`/v1/admin/users/${item.id}/billing/provider-refresh`, { reason: 'Provider status checked from the billing control room.' });
+      toast.success(`${item.name || 'Account'} Paystack status was refreshed.`);
+      await Promise.all([fetchAdminData(), refreshSelectedAccount()]);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Paystack status could not be refreshed.');
+    } finally {
+      setBillingActionLoading(false);
     }
   };
 
@@ -1415,7 +1546,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
               {panelErrors.configuration && !runtimeConfig && <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-5 text-sm text-amber-100">Runtime configuration is unavailable. {panelErrors.configuration}</div>}
               {runtimeConfig && <>
                 <section className="flex flex-col gap-4 rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6 md:flex-row md:items-center md:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Configuration</p><h2 className="mt-1 text-xl font-medium">What the product is allowed to do</h2><p className="mt-2 max-w-2xl text-xs leading-5 text-white/45">Changes here affect new requests and worker behaviour. Provider keys never appear in this view; only safe configuration and health are shown.</p></div><button type="button" disabled={runtimeConfigSaving} onClick={saveRuntimeConfig} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-5 text-xs font-bold text-black transition-transform hover:-translate-y-0.5 active:scale-95 disabled:opacity-50"><Save size={15} />{runtimeConfigSaving ? 'Saving…' : 'Save configuration'}</button></section>
-                <section className="grid gap-5 lg:grid-cols-2"><div className="rounded-3xl border border-red-300/15 bg-red-300/[.04] p-5 sm:p-6"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-red-200/70">Maintenance</p><h3 className="mt-1 text-xl font-medium">Pause client traffic</h3><p className="mt-2 text-xs leading-5 text-white/45">Admin, sign-in, and support remain available while public product requests receive a clear 503 response.</p></div><ConfigToggle label="" checked={runtimeConfig.maintenance?.enabled} onChange={(value) => setRuntimeConfigField('maintenance', 'enabled', value)} /></div><label className="mt-4 block text-[10px] font-semibold uppercase tracking-[.14em] text-white/40">Maintenance message<textarea value={runtimeConfig.maintenance?.message || ''} onChange={(event) => setRuntimeConfigField('maintenance', 'message', event.target.value)} maxLength={240} rows={3} className="mt-2 w-full resize-y rounded-xl border border-white/10 bg-black/20 p-3 text-xs leading-5 normal-case tracking-normal text-white outline-none focus:border-[#ff9b8e]/60" /></label></div><div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Feature flags</p><h3 className="mt-1 text-xl font-medium">Product surfaces</h3><div className="mt-4 grid gap-2 sm:grid-cols-2"><ConfigToggle label="AI delivery pipeline" checked={runtimeConfig.featureFlags?.deliveryPipeline} onChange={(value) => setRuntimeConfigField('featureFlags', 'deliveryPipeline', value)} note="Analysis, direction, revisions, and narration jobs" /><ConfigToggle label="Veylo Portfolio" checked={runtimeConfig.featureFlags?.portfolio} onChange={(value) => setRuntimeConfigField('featureFlags', 'portfolio', value)} /><ConfigToggle label="Music catalogue" checked={runtimeConfig.featureFlags?.music} onChange={(value) => setRuntimeConfigField('featureFlags', 'music', value)} /><ConfigToggle label="Narration" checked={runtimeConfig.featureFlags?.narration} onChange={(value) => setRuntimeConfigField('featureFlags', 'narration', value)} /><ConfigToggle label="Volume deliveries" checked={runtimeConfig.featureFlags?.volumeDeliveries} onChange={(value) => setRuntimeConfigField('featureFlags', 'volumeDeliveries', value)} /><ConfigToggle label="Optional analytics" checked={runtimeConfig.featureFlags?.optionalAnalytics} onChange={(value) => setRuntimeConfigField('featureFlags', 'optionalAnalytics', value)} note="Still respects visitor consent when enabled" /></div></div></section>
+                <section className="grid gap-5 lg:grid-cols-2"><div className="rounded-3xl border border-red-300/15 bg-red-300/[.04] p-5 sm:p-6"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-red-200/70">Maintenance</p><h3 className="mt-1 text-xl font-medium">Pause client traffic</h3><p className="mt-2 text-xs leading-5 text-white/45">Admin, sign-in, and support remain available while public product requests receive a clear 503 response.</p></div><ConfigToggle label="" checked={runtimeConfig.maintenance?.enabled} onChange={(value) => setRuntimeConfigField('maintenance', 'enabled', value)} /></div><label className="mt-4 block text-[10px] font-semibold uppercase tracking-[.14em] text-white/40">Maintenance message<textarea value={runtimeConfig.maintenance?.message || ''} onChange={(event) => setRuntimeConfigField('maintenance', 'message', event.target.value)} maxLength={240} rows={3} className="mt-2 w-full resize-y rounded-xl border border-white/10 bg-black/20 p-3 text-xs leading-5 normal-case tracking-normal text-white outline-none focus:border-[#ff9b8e]/60" /></label></div><div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Feature flags</p><h3 className="mt-1 text-xl font-medium">Product surfaces</h3><div className="mt-4 grid gap-2 sm:grid-cols-2"><ConfigToggle label="AI delivery pipeline" checked={runtimeConfig.featureFlags?.deliveryPipeline} onChange={(value) => setRuntimeConfigField('featureFlags', 'deliveryPipeline', value)} note="Analysis, direction, revisions, and narration jobs" /><ConfigToggle label="Veylo Help" checked={runtimeConfig.featureFlags?.veyloAssistant} onChange={(value) => setRuntimeConfigField('featureFlags', 'veyloAssistant', value)} note="Veylo-only client help assistant" /><ConfigToggle label="Veylo Portfolio" checked={runtimeConfig.featureFlags?.portfolio} onChange={(value) => setRuntimeConfigField('featureFlags', 'portfolio', value)} /><ConfigToggle label="Music catalogue" checked={runtimeConfig.featureFlags?.music} onChange={(value) => setRuntimeConfigField('featureFlags', 'music', value)} /><ConfigToggle label="Narration" checked={runtimeConfig.featureFlags?.narration} onChange={(value) => setRuntimeConfigField('featureFlags', 'narration', value)} /><ConfigToggle label="Volume deliveries" checked={runtimeConfig.featureFlags?.volumeDeliveries} onChange={(value) => setRuntimeConfigField('featureFlags', 'volumeDeliveries', value)} /><ConfigToggle label="Optional analytics" checked={runtimeConfig.featureFlags?.optionalAnalytics} onChange={(value) => setRuntimeConfigField('featureFlags', 'optionalAnalytics', value)} note="Still respects visitor consent when enabled" /></div></div></section>
                 <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Formats and plans</p><h3 className="mt-1 text-xl font-medium">Availability and limits</h3></div><span className="text-xs text-white/35">Prices are in Nigerian Naira</span></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><div className="grid gap-2 sm:grid-cols-2">{Object.values(runtimeConfig.formats || {}).map(format => <ConfigToggle key={format.id} label={format.label} checked={format.enabled} onChange={(value) => setRuntimeConfig(current => ({ ...current, formats: { ...(current.formats || {}), [format.id]: { ...format, enabled: value } } }))} note={format.id} />)}</div><div className="grid gap-3 sm:grid-cols-2"><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Free</p><label className="mt-3 block text-xs text-white/55">Deliveries / month<input type="number" min="0" max="100000" value={runtimeConfig.plans?.free?.deliveriesPerMonth ?? ''} onChange={(event) => setRuntimeConfig(current => ({ ...current, plans: { ...current.plans, free: { ...current.plans.free, deliveriesPerMonth: event.target.value === '' ? 0 : Number(event.target.value) } } }))} className="mt-1 min-h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-[#ff9b8e]/60" /></label><label className="mt-3 block text-xs text-white/55">Photos / delivery<input type="number" min="1" max="5000" value={runtimeConfig.plans?.free?.photosPerDelivery ?? ''} onChange={(event) => setRuntimeConfig(current => ({ ...current, plans: { ...current.plans, free: { ...current.plans.free, photosPerDelivery: Number(event.target.value) } } }))} className="mt-1 min-h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-[#ff9b8e]/60" /></label></div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Pro</p><label className="mt-3 block text-xs text-white/55">Monthly price (₦)<input type="number" min="0" max="100000000" value={runtimeConfig.plans?.pro?.monthlyPriceNaira ?? ''} onChange={(event) => setRuntimeConfig(current => ({ ...current, plans: { ...current.plans, pro: { ...current.plans.pro, monthlyPriceNaira: Number(event.target.value) } } }))} className="mt-1 min-h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-[#ff9b8e]/60" /></label><label className="mt-3 block text-xs text-white/55">Photos / delivery<input type="number" min="1" max="5000" value={runtimeConfig.plans?.pro?.photosPerDelivery ?? ''} onChange={(event) => setRuntimeConfig(current => ({ ...current, plans: { ...current.plans, pro: { ...current.plans.pro, photosPerDelivery: Number(event.target.value) } } }))} className="mt-1 min-h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-[#ff9b8e]/60" /></label><p className="mt-3 text-[11px] text-white/35">Storage: {bytes(runtimeConfig.plans?.pro?.personalStorageBytes)}</p></div></div></div></section>
                 <section className="grid gap-5 lg:grid-cols-2"><div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Narration and catalogue</p><h3 className="mt-1 text-xl font-medium">Audio defaults</h3><label className="mt-4 flex items-center gap-3 text-sm text-white/70"><input type="checkbox" checked={runtimeConfig.narration?.enabled !== false} onChange={(event) => setRuntimeConfigField('narration', 'enabled', event.target.checked)} className="h-4 w-4 accent-[#ff7867]" />Narration is available to photographers</label><label className="mt-4 block text-xs text-white/55">Default voice<select value={runtimeConfig.narration?.defaultVoiceId || ''} onChange={(event) => setRuntimeConfigField('narration', 'defaultVoiceId', event.target.value)} className="mt-2 min-h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-[#ff9b8e]/60">{(runtimeConfig.narration?.voices || []).map(voice => <option key={voice.id} value={voice.id}>{voice.name} · {voice.presentation} · {voice.tone}</option>)}</select></label><p className="mt-4 text-xs text-white/40">{number(runtimeConfig.music?.catalogueCount)} approved Pixabay tracks · {runtimeConfig.music?.verifiedCatalogue ? 'catalogue verified' : 'verification needed'}.</p></div><div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Providers</p><h3 className="mt-1 text-xl font-medium">Safe configuration status</h3><div className="mt-4 grid gap-2 sm:grid-cols-2">{Object.entries(runtimeConfig.providers || {}).map(([key, provider]) => <div key={key} className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-white">{provider.provider || key}</span><Status value={provider.configured ? 'active' : 'disabled'} /></div><p className="mt-2 text-[11px] leading-5 text-white/40">{provider.model || provider.from || (provider.enabled === false ? 'Disabled' : 'Configured')}</p></div>)}</div></div></section>
                 <section className="grid gap-5 lg:grid-cols-2"><div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Retention rules</p><h3 className="mt-1 text-xl font-medium">When retained Pro data is removed</h3><p className="mt-2 text-xs leading-5 text-white/45">Product analytics is automatically removed after its own window; it never stays forever just because an account is active.</p><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[['proRetentionDays','Pro retention (days)'],['orphanUploadHours','Orphan upload wait (hours)'],['workerIntervalHours','Worker interval (hours)'],['analyticsRetentionDays','Analytics retention (days)']].map(([key,label]) => <label key={key} className="text-xs text-white/55">{label}<input type="number" min={key === 'analyticsRetentionDays' ? 30 : 1} max={key === 'proRetentionDays' || key === 'analyticsRetentionDays' ? 3650 : 168} value={runtimeConfig.retention?.[key] ?? ''} onChange={(event) => setRuntimeConfigField('retention', key, Number(event.target.value))} className="mt-1 min-h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-[#ff9b8e]/60" /></label>)}</div></div><div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Rate limits</p><h3 className="mt-1 text-xl font-medium">Security protection, not product quotas</h3><p className="mt-2 text-xs leading-5 text-white/45">These high backstops protect the API from abuse. They do not replace the Free or Pro delivery and storage limits, and normal photography work should not reach them.</p><div className="mt-4 grid gap-3 sm:grid-cols-2">{rateLimitFields.map(([key,label,description]) => <label key={key} className="text-xs text-white/55"><span>{label}</span><input type="number" min={rateLimitMinimums[key] || 1} value={runtimeConfig.rateLimits?.[key] ?? ''} onChange={(event) => setRuntimeConfigField('rateLimits', key, Number(event.target.value))} className="mt-1 min-h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-[#ff9b8e]/60" /><small className="mt-1 block text-[11px] leading-4 text-white/35">{description}</small></label>)}</div></div></section>
@@ -1427,6 +1558,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
           {/* Payments Tab */}
           {!loading && tab === 'payments' && (
             <div className="mt-6 grid gap-4">
+              <BillingHealthPanel data={billingHealth} loading={billingHealthLoading || !billingHealth} error={panelErrors.billingHealth} actionLoading={billingActionLoading} onRefresh={fetchBillingHealth} onResync={resyncBillingAccount} onVerifyPayment={verifyBillingPayment} onProviderRefresh={refreshBillingFromPaystack} canRepair={canBillingRepair} canProviderRefresh={canProviderRefresh} />
               {panelErrors.finance && !financeOverview && <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-5 text-sm text-amber-100">Finance data is unavailable. {panelErrors.finance}</div>}
               {financeOverview && <>
                 <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><MetricCard icon={Banknote} label="Gross collected" value={nairaFromKobo(financeOverview.summary?.grossKobo)} note={`${number(financeOverview.summary?.successful)} successful payment records`} /><MetricCard icon={Banknote} label="Net after refunds" value={nairaFromKobo(financeOverview.summary?.netKobo)} note={`${nairaFromKobo(financeOverview.summary?.refundedKobo)} refunded`} /><MetricCard icon={TriangleAlert} label="Payment issues" value={number(Number(financeOverview.summary?.failed || 0) + Number(financeOverview.summary?.disputed || 0))} note={`${number(financeOverview.summary?.pastDueSubscriptions)} subscriptions past due`} /><MetricCard icon={ReceiptText} label="Billing events" value={number(financeOverview.summary?.billingEvents)} note={`${number(financeOverview.summary?.failedBillingEvents)} webhook failures`} /></section>
@@ -1655,6 +1787,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
                   <div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Storage</p><p className="mt-2 text-xl font-medium">{bytes(selectedAccount.storage?.bytes || selectedAccount.account.storageUsedBytes)}</p><p className="mt-1 text-xs text-white/45">{number(selectedAccount.storage?.count)} library assets · {selectedAccount.account.studio?.name || 'Independent photographer'}</p></div>
                 </section>
 
+                {selectedAccount.billing && <section className={`rounded-2xl border p-4 sm:p-5 ${selectedAccount.billing.issues?.length ? 'border-red-300/20 bg-red-300/[.035]' : 'border-white/10 bg-white/[.025]'}`}><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-semibold">Billing access</h3><Status value={selectedAccount.billing.state} />{selectedAccount.billing.issues?.length ? <Status value="attention" /> : <Status value="active" />}</div><p className="mt-2 text-xs leading-5 text-white/45">Effective access is {selectedAccount.billing.effectivePlan === 'pro' ? 'Pro' : 'Free'} because of {selectedAccount.billing.accessReasons?.length ? selectedAccount.billing.accessReasons.map(reason => reason.replaceAll('_', ' ')).join(', ') : 'no active Pro entitlement'}.</p></div><div className="flex flex-wrap gap-2"><button type="button" disabled={!canBillingRepair || accountActionLoading || billingActionLoading} onClick={() => resyncBillingAccount({ id: accountId, name: selectedAccount.account.name })} className="min-h-9 rounded-xl border border-white/15 px-3 text-[11px] font-semibold text-white/70 disabled:opacity-35">Resync access</button>{selectedAccount.billing.subscription?.hasProviderSubscription && <button type="button" disabled={!canProviderRefresh || accountActionLoading || billingActionLoading} onClick={() => refreshBillingFromPaystack({ id: accountId, name: selectedAccount.account.name })} className="min-h-9 rounded-xl border border-[#ff9b8e]/25 px-3 text-[11px] font-semibold text-[#ffb1a7] disabled:opacity-35">Check Paystack</button>}</div></div><div className="mt-4 grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4"><p><span className="block text-[10px] uppercase tracking-[.12em] text-white/30">Stored plan</span><span className="mt-1 block text-white/75">{selectedAccount.billing.storedPlan}</span></p><p><span className="block text-[10px] uppercase tracking-[.12em] text-white/30">Subscription</span><span className="mt-1 block text-white/75">{selectedAccount.billing.subscription?.status || 'None'}</span></p><p><span className="block text-[10px] uppercase tracking-[.12em] text-white/30">Paid through</span><span className="mt-1 block text-white/75">{selectedAccount.billing.subscription?.paidThrough ? shortDate(selectedAccount.billing.subscription.paidThrough) : '—'}</span></p><p><span className="block text-[10px] uppercase tracking-[.12em] text-white/30">Grace ends</span><span className="mt-1 block text-white/75">{selectedAccount.billing.subscription?.graceEndsAt ? shortDate(selectedAccount.billing.subscription.graceEndsAt) : '—'}</span></p></div>{selectedAccount.billing.issues?.length > 0 && <div className="mt-4 space-y-1 rounded-xl border border-red-300/15 bg-red-300/[.04] p-3">{selectedAccount.billing.issues.map(issue => <p key={`${issue.code}-${issue.subscriptionId || ''}`} className="text-xs leading-5 text-red-100/80"><span className="font-semibold text-red-100">{issue.code.replaceAll('_', ' ')}:</span> {issue.message}</p>)}</div>}<div className="mt-4 border-t border-white/10 pt-4"><p className="text-[10px] uppercase tracking-[.12em] text-white/30">Recent billing records</p><div className="mt-2 space-y-2">{(selectedAccount.billing.subscriptions || []).slice(0, 4).map(subscription => <div key={subscription.id} className="flex flex-col gap-1 rounded-xl border border-white/10 bg-black/10 p-3 sm:flex-row sm:items-center sm:justify-between"><span className="text-xs text-white/70">{subscription.status} · {subscription.state}</span><span className="text-[11px] text-white/40">{subscription.paidThrough ? `paid through ${shortDate(subscription.paidThrough)}` : subscription.graceEndsAt ? `grace ends ${shortDate(subscription.graceEndsAt)}` : 'No end date'}</span></div>)}{!selectedAccount.billing.subscriptions?.length && <p className="text-xs text-white/35">No subscription records.</p>}</div></div></section>}
+
                 <section className="flex flex-wrap gap-2">
                   {selectedAccount.account.accountStatus === 'suspended' ? <button type="button" disabled={accountActionLoading} onClick={() => changeAccountStatus('active')} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-emerald-300 px-4 text-xs font-bold text-[#07130e] disabled:opacity-50"><UserCheck size={15} /> Reactivate</button> : <button type="button" disabled={accountActionLoading} onClick={() => changeAccountStatus('suspended')} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-amber-300/30 px-4 text-xs font-semibold text-amber-200 disabled:opacity-50"><UserX size={15} /> Suspend</button>}
                   {selectedAccount.account.plan !== 'pro' && <label className="flex min-h-10 items-center gap-2 rounded-xl border border-white/10 px-3 text-[10px] text-white/45">Pro expiry <input type="date" value={proExpiry} onChange={(event) => setProExpiry(event.target.value)} className="min-w-0 bg-transparent text-xs text-white outline-none" /></label>}
@@ -1704,7 +1838,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
               Issue Payment Refund
             </h2>
             <p className="mt-2 text-xs leading-5 text-white/50">
-              Paystack will reverse the funds directly to the customer’s original payment method. An administrative audit log will record this action.
+              Paystack will reverse the funds directly to the customer’s original payment method. A full refund stops the recurring subscription connected to this payment; a partial refund does not. An administrative audit log records this action.
             </p>
 
             <div className="mt-6 space-y-4">

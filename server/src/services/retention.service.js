@@ -8,6 +8,7 @@ import { removeStorageAsset } from './storageMedia.service.js';
 import { cloudinary, configureCloudinary } from './cloudinary.service.js';
 import { recordWorkerHeartbeat } from './workerHeartbeat.service.js';
 import { recordAnalyticsEventAsync } from './analytics.service.js';
+import { sendProEndedEmail } from './email.service.js';
 import { getRuntimeConfig } from './runtimeConfig.service.js';
 
 let timer;
@@ -70,12 +71,36 @@ export async function purgeExpiredProData(now = new Date()) {
         { status: { $in: ['active', 'canceling'] }, paidThrough: { $gt: now } },
         { status: 'past_due', graceEndsAt: { $gt: now } }
       ] });
-      await User.updateOne({ _id: account._id }, { $set: { plan: paid ? 'pro' : 'free' }, $unset: { planOverride: 1 } });
+      await User.updateOne(
+        { _id: account._id },
+        paid
+          ? { $set: { plan: 'pro' }, $unset: { planOverride: 1, proRetentionUntil: 1 } }
+          : { $set: { plan: 'free', proRetentionUntil: new Date(now.getTime() + retentionDays * 24 * 60 * 60 * 1000) }, $unset: { planOverride: 1 } }
+      );
     }
     const endedSubscriptions = await Subscription.find({ status: { $in: ['past_due', 'canceling'] }, $or: [{ status: 'past_due', graceEndsAt: { $lte: now } }, { status: 'canceling', paidThrough: { $lte: now } }] }).select('userId');
     for (const subscription of endedSubscriptions) {
       subscription.status = 'expired'; subscription.canceledAt ||= now; await subscription.save();
-      await User.updateOne({ _id: subscription.userId }, { $set: { plan: 'free', proRetentionUntil: new Date(now.getTime() + retentionDays * 24 * 60 * 60 * 1000) } });
+      const [anotherPaidSubscription, owner] = await Promise.all([
+        Subscription.exists({
+          userId: subscription.userId,
+          _id: { $ne: subscription._id },
+          $or: [
+            { status: { $in: ['active', 'canceling'] }, paidThrough: { $gt: now } },
+            { status: 'past_due', graceEndsAt: { $gt: now } }
+          ]
+        }),
+        User.findById(subscription.userId).select('name email planOverride').lean()
+      ]);
+      const manualGrant = owner?.planOverride?.plan === 'pro' && (!owner.planOverride.expiresAt || new Date(owner.planOverride.expiresAt) > now);
+      const retentionUntil = new Date(now.getTime() + retentionDays * 24 * 60 * 60 * 1000);
+      await User.updateOne(
+        { _id: subscription.userId },
+        anotherPaidSubscription || manualGrant
+          ? { $set: { plan: 'pro' }, $unset: { proRetentionUntil: 1 } }
+          : { $set: { plan: 'free', proRetentionUntil: retentionUntil } }
+      );
+      if (!anotherPaidSubscription && !manualGrant && owner?.email) sendProEndedEmail({ to: owner.email, name: owner.name, retentionUntil, userId: owner._id, eventKey: `billing:subscription:${subscription._id}:ended` }).catch(error => console.error('[email/pro-ended]', error.message));
     }
     const users = await User.find({ proRetentionUntil: { $lte: now } }).select('_id').limit(50).lean();
     for (const user of users) {

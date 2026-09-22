@@ -6,6 +6,7 @@ import Payment from '../models/Payment.js';
 import BillingEvent from '../models/BillingEvent.js';
 import { PRO_PRICE_KOBO, publicPlans } from '../config/plans.js';
 import { resolveEntitlements } from '../services/entitlement.service.js';
+import { sendPaymentDisputeEmail, sendPaymentFailedEmail, sendPaymentReceiptEmail, sendProEndedEmail, sendProWelcomeEmail, sendRefundFailedEmail, sendRefundProcessedEmail, sendRenewalFailedEmail, sendSubscriptionCancellationEmail, sendSubscriptionResumedEmail } from '../services/email.service.js';
 import { billingConfigured, decryptBillingToken, encryptBillingToken, paystackRequest, validateConfiguredPlan, verifyPaystackSignature } from '../services/paystack.service.js';
 import { getRuntimeConfig } from '../services/runtimeConfig.service.js';
 
@@ -43,6 +44,9 @@ async function beginProRetention(userId) {
 
 async function syncPlanAfterSubscriptionEnds(userId, endedSubscriptionId) {
   const now = new Date();
+  const owner = await User.findById(userId).select('planOverride').lean();
+  const manualGrant = owner?.planOverride?.plan === 'pro' && (!owner.planOverride.expiresAt || owner.planOverride.expiresAt > now);
+  if (manualGrant) return grantPro(userId);
   const query = { userId, $or: [
     { status: { $in: ['active', 'canceling'] }, paidThrough: { $gt: now } },
     { status: 'past_due', graceEndsAt: { $gt: now } }
@@ -77,13 +81,17 @@ async function findSubscription(data, user) {
   return user ? Subscription.findOne({ userId: user._id }).sort({ createdAt: -1 }).select('+emailTokenEncrypted') : null;
 }
 
-async function activateSubscription({ data, user, subscription }) {
+export async function activateSubscription({ data, user, subscription }) {
   if (!user || Number(data.amount) !== PRO_PRICE_KOBO || String(data.currency || 'NGN') !== 'NGN') return null;
   const paidAt = asDate(data.paid_at || data.paidAt) || new Date();
   const periodEnd = asDate(data.next_payment_date || data.subscription?.next_payment_date || data.plan?.next_payment_date || data.period_end) || addOneMonth(paidAt);
   const code = data.subscription_code || data.subscription?.subscription_code || subscription?.subscriptionCode;
   const customerCode = data.customer?.customer_code || subscription?.customerCode;
   const emailToken = data.email_token || data.subscription?.email_token;
+  const reference = data.reference || data.transaction?.reference;
+  const previousSuccessfulPayment = reference
+    ? await Payment.exists({ userId: user._id, status: 'success', reference: { $ne: reference } })
+    : null;
   const update = {
     userId: user._id,
     provider: 'paystack',
@@ -104,7 +112,6 @@ async function activateSubscription({ data, user, subscription }) {
     ? await Subscription.findByIdAndUpdate(subscription._id, update, { new: true })
     : await Subscription.create(update);
   await grantPro(user._id);
-  const reference = data.reference || data.transaction?.reference;
   if (reference) {
     await Payment.findOneAndUpdate({ reference }, {
       userId: user._id,
@@ -118,6 +125,9 @@ async function activateSubscription({ data, user, subscription }) {
       paidAt,
       providerSnapshot: safeSnapshot(data)
     }, { upsert: true, new: true, setDefaultsOnInsert: true });
+    const emailData = { to: user.email, name: user.name, amountKobo: Number(data.amount), paidAt, paidThrough: periodEnd, reference, userId: user._id };
+    const notification = previousSuccessfulPayment ? sendPaymentReceiptEmail(emailData) : sendProWelcomeEmail(emailData);
+    notification.catch(error => console.error('[email/billing-success]', error.message));
   }
   return record;
 }
@@ -207,6 +217,8 @@ export async function cancelSubscription(req, res) {
     subscription.status = 'canceling';
     subscription.cancelRequestedAt = new Date();
     await subscription.save();
+    const owner = await User.findById(req.user.id).select('name email').lean();
+    if (owner) sendSubscriptionCancellationEmail({ to: owner.email, name: owner.name, paidThrough: subscription.paidThrough, userId: owner._id, eventKey: `billing:subscription:${subscription._id}:canceled` }).catch(error => console.error('[email/subscription-canceled]', error.message));
     res.json({ success: true, message: 'Your Pro plan will end after the current paid month.', data: await resolveEntitlements(await User.findById(req.user.id)) });
   } catch (error) {
     console.error('[billing/cancel]', error.message);
@@ -223,6 +235,8 @@ export async function resumeSubscription(req, res) {
     subscription.status = 'active';
     subscription.cancelRequestedAt = null;
     await subscription.save();
+    const owner = await User.findById(req.user.id).select('name email').lean();
+    if (owner) sendSubscriptionResumedEmail({ to: owner.email, name: owner.name, paidThrough: subscription.paidThrough, userId: owner._id, eventKey: `billing:subscription:${subscription._id}:resumed:${subscription.updatedAt?.getTime?.() || Date.now()}` }).catch(error => console.error('[email/subscription-resumed]', error.message));
     res.json({ success: true, message: 'Your Veylo Pro subscription will continue.', data: await resolveEntitlements(await User.findById(req.user.id)) });
   } catch (error) {
     console.error('[billing/resume]', error.message);
@@ -242,7 +256,7 @@ export async function getManageLink(req, res) {
   }
 }
 
-async function processWebhookEvent(event) {
+async function processWebhookEvent(event, eventKey = '') {
   const data = event.data || {};
   let user = await userFromPaystackData(data);
   const subscription = await findSubscription(data, user);
@@ -264,6 +278,10 @@ async function processWebhookEvent(event) {
     subscription.graceEndsAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
     subscription.providerSnapshot = safeSnapshot(data);
     await subscription.save();
+    if (user) {
+      await grantPro(user._id);
+      sendRenewalFailedEmail({ to: user.email, name: user.name, graceEndsAt: subscription.graceEndsAt, userId: user._id, eventKey: `billing:${eventKey || subscription._id}:renewal-failed` }).catch(error => console.error('[email/renewal-failed]', error.message));
+    }
     return subscription;
   }
   if (event.event === 'subscription.not_renew' || event.event === 'subscription.disable') {
@@ -273,7 +291,14 @@ async function processWebhookEvent(event) {
     subscription.cancelRequestedAt ||= new Date();
     if (!stillPaid) {
       subscription.canceledAt = new Date();
-      if (user) await syncPlanAfterSubscriptionEnds(user._id, subscription._id);
+      if (user) {
+        await syncPlanAfterSubscriptionEnds(user._id, subscription._id);
+        const owner = await User.findById(user._id).select('name email proRetentionUntil').lean();
+        if (owner?.proRetentionUntil) sendProEndedEmail({ to: owner.email, name: owner.name, retentionUntil: owner.proRetentionUntil, userId: owner._id, eventKey: `billing:subscription:${subscription._id}:ended` }).catch(error => console.error('[email/pro-ended]', error.message));
+      }
+    } else if (user) {
+      await grantPro(user._id);
+      sendSubscriptionCancellationEmail({ to: user.email, name: user.name, paidThrough: subscription.paidThrough, userId: user._id, eventKey: `billing:subscription:${subscription._id}:canceled` }).catch(error => console.error('[email/subscription-canceled]', error.message));
     }
     await subscription.save();
     return subscription;
@@ -282,13 +307,20 @@ async function processWebhookEvent(event) {
     if (subscription) await Subscription.updateOne({ _id: subscription._id }, { status: 'disputed' });
     const reference = data.transaction?.reference || data.reference;
     if (reference) await Payment.updateOne({ reference }, { status: 'disputed' });
-    if (user) await syncPlanAfterSubscriptionEnds(user._id, subscription?._id);
+    if (user) {
+      await syncPlanAfterSubscriptionEnds(user._id, subscription?._id);
+      sendPaymentDisputeEmail({ to: user.email, name: user.name, reference, userId: user._id, eventKey: `billing:${eventKey || reference || subscription?._id}:dispute` }).catch(error => console.error('[email/payment-dispute]', error.message));
+    }
     return subscription;
   }
   if (event.event === 'charge.failed') {
     const reference = data.reference || data.transaction?.reference;
     if (reference) await Payment.updateOne({ reference }, { status: 'failed', providerSnapshot: safeSnapshot(data) });
-    return subscription || (user ? { userId: user._id } : null);
+    const payment = reference ? await Payment.findOne({ reference }).lean() : null;
+    const paymentUser = user || (payment?.userId ? await User.findById(payment.userId) : null);
+    const initialPaymentFailure = !subscription || ['checkout_pending', 'free'].includes(subscription.status);
+    if (paymentUser && initialPaymentFailure) sendPaymentFailedEmail({ to: paymentUser.email, name: paymentUser.name, reference, amountKobo: payment?.amountKobo || data.amount, userId: paymentUser._id }).catch(error => console.error('[email/payment-failed]', error.message));
+    return subscription || (paymentUser ? { userId: paymentUser._id } : null);
   }
   if (event.event === 'refund.failed') {
     const reference = data.transaction?.reference || data.reference;
@@ -296,6 +328,8 @@ async function processWebhookEvent(event) {
     if (!payment) return null;
     payment.refundPendingAmountKobo = 0;
     await payment.save();
+    const paymentUser = await User.findById(payment.userId);
+    if (paymentUser) sendRefundFailedEmail({ to: paymentUser.email, name: paymentUser.name, reference, userId: paymentUser._id, eventKey: `billing:${eventKey || reference}:refund-failed` }).catch(error => console.error('[email/refund-failed]', error.message));
     return { userId: payment.userId };
   }
   if (event.event === 'refund.processed') {
@@ -307,6 +341,8 @@ async function processWebhookEvent(event) {
     payment.refundPendingAmountKobo = Math.max(0, payment.refundPendingAmountKobo - refunded);
     payment.status = payment.refundedAmountKobo >= payment.amountKobo ? 'refunded' : 'partially_refunded';
     await payment.save();
+    const paymentUser = await User.findById(payment.userId);
+    if (paymentUser) sendRefundProcessedEmail({ to: paymentUser.email, name: paymentUser.name, amountKobo: refunded, reference, userId: paymentUser._id, eventKey: `billing:${eventKey || reference}:refund-processed:${payment.refundedAmountKobo}` }).catch(error => console.error('[email/refund-processed]', error.message));
     if (payment.status === 'refunded') {
       const current = await Subscription.findById(payment.subscriptionId);
       if (current) {
@@ -314,6 +350,8 @@ async function processWebhookEvent(event) {
         await current.save();
       }
       await syncPlanAfterSubscriptionEnds(payment.userId, current?._id || payment.subscriptionId);
+      const owner = await User.findById(payment.userId).select('name email proRetentionUntil').lean();
+      if (owner?.proRetentionUntil) sendProEndedEmail({ to: owner.email, name: owner.name, retentionUntil: owner.proRetentionUntil, userId: owner._id, eventKey: `billing:subscription:${current?._id || payment.subscriptionId}:ended` }).catch(error => console.error('[email/pro-ended]', error.message));
     }
     return { userId: payment.userId };
   }
@@ -334,7 +372,7 @@ export async function paystackWebhook(req, res) {
     throw error;
   }
   try {
-    const handled = await processWebhookEvent(event);
+    const handled = await processWebhookEvent(event, eventKey);
     if (handled?.userId) record.userId = handled.userId;
     record.status = handled ? 'processed' : 'ignored';
     record.processedAt = new Date();

@@ -15,6 +15,7 @@ import portfolioRoutes from './src/routes/portfolio.routes.js';
 import supportRoutes from './src/routes/support.routes.js';
 import volumeRoutes from './src/routes/volume.routes.js';
 import analyticsRoutes from './src/routes/analytics.routes.js';
+import assistantRoutes from './src/routes/assistant.routes.js';
 import { paystackWebhook } from './src/controllers/billing.controller.js';
 import { resolveEdgeClientIp } from './src/middleware/clientIp.middleware.js';
 import { checkCloudinaryConnection } from './src/services/cloudinary.service.js';
@@ -102,6 +103,7 @@ app.use('/api/v1/portfolios', portfolioRoutes);
 app.use('/api/v1/support', supportRoutes);
 app.use('/api/v1/volume-jobs', volumeRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
+app.use('/api/v1/assistant', assistantRoutes);
 app.use('/api/v1/admin', adminRoutes);
 
 app.use((error, req, res, next) => {

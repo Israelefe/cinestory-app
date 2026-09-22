@@ -11,7 +11,10 @@
     "verify:delivery-v2": "node scripts/verify-delivery-v2.mjs",
     "verify:soundtracks": "node scripts/verify-soundtrack-catalogue.mjs",
     "verify:analytics": "node scripts/verify-analytics-privacy.mjs",
+    "verify:email-system": "node scripts/verify-email-system.mjs",
+    "verify:billing-admin": "node scripts/verify-billing-admin.mjs",
     "verify:admin-account-delete": "node scripts/verify-admin-account-delete.mjs",
+    "verify:assistant": "node scripts/verify-assistant.mjs",
     "verify:security": "node scripts/security-audit-delivery-v2.mjs",
     "verify:smoke": "node scripts/verify-production-smoke.mjs"
   },

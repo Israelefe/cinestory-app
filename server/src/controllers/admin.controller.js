@@ -29,8 +29,7 @@ import StoryView from '../models/StoryView.js';
 import PhotoLike from '../models/PhotoLike.js';
 import DeliveryShareGrant from '../models/DeliveryShareGrant.js';
 import SupportTicket from '../models/SupportTicket.js';
-import { paystackRequest } from '../services/paystack.service.js';
-import { billingConfigured } from '../services/paystack.service.js';
+import { billingConfigured, decryptBillingToken, paystackRequest } from '../services/paystack.service.js';
 import { checkCloudinaryConnection, cloudinary, configureCloudinary } from '../services/cloudinary.service.js';
 import { PLAN_DEFINITIONS, PRO_PRICE_KOBO } from '../config/plans.js';
 import { tokenDigest } from '../utils/auth.js';
@@ -40,6 +39,8 @@ import { NARRATION_RENDER_VERSION } from '../services/narration.service.js';
 import { DELIVERY_SOUNDTRACKS, deliverySoundtrackFile } from '../constants/deliverySoundtracks.js';
 import { DEFAULT_NARRATION_VOICE_ID, NARRATION_VOICES } from '../constants/narrationVoices.js';
 import { FORMAT_IDS, FORMAT_LABELS, getRuntimeConfig, updateRuntimeConfig } from '../services/runtimeConfig.service.js';
+import { buildBillingSnapshot, loadBillingSnapshot, synchronizeBillingState } from '../services/billingEntitlement.service.js';
+import { activateSubscription } from './billing.controller.js';
 
 function escaped(value) { return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
@@ -105,6 +106,7 @@ function accountSnapshot(user) {
       reason: user.planOverride.reason || '',
       grantedBy: user.planOverride.grantedBy || null
     } : null,
+    proRetentionUntil: user.proRetentionUntil || null,
     accountStatus: user.accountStatus,
     avatar: user.avatar || user.studio?.logoUrl || '',
     studio: user.studio || {},
@@ -407,6 +409,7 @@ export async function updateUserPlan(req, res) {
       update.planOverride = plan === 'pro'
         ? { plan: 'pro', expiresAt: expiresAt ? new Date(expiresAt) : null, reason: safeReason(reason, 'Support grant'), grantedBy: adminId(req) }
         : null;
+      if (plan === 'pro') update.$unset = { proRetentionUntil: 1 };
     }
     if (role) update.role = role;
 
@@ -422,8 +425,8 @@ export async function updateUserPlan(req, res) {
 }
 
 async function loadAccountDetail(accountId) {
-  const [user, subscriptions, deliveries, stories, volumeJobs, portfolio, storage, sessions, notes, deletionRequests, audit, events] = await Promise.all([
-    User.findById(accountId).select('name email role plan planOverride accountStatus emailVerifiedAt avatar studio acquisition onboardingStep onboardingCompletedAt storageUsedBytes storiesCount lastLoginAt createdAt updatedAt').lean(),
+  const [user, subscriptions, deliveries, stories, volumeJobs, portfolio, storage, sessions, notes, deletionRequests, audit, events, billingEvents, billingPayments] = await Promise.all([
+    User.findById(accountId).select('name email role plan planOverride proRetentionUntil accountStatus emailVerifiedAt avatar studio acquisition onboardingStep onboardingCompletedAt storageUsedBytes storiesCount lastLoginAt createdAt updatedAt').lean(),
     Subscription.find({ userId: accountId }).sort({ createdAt: -1 }).limit(50).select('provider status customerCode subscriptionCode planCode checkoutReference paidFrom paidThrough graceEndsAt cancelRequestedAt canceledAt lastPaymentAt lastPaymentReference createdAt updatedAt').lean(),
     Delivery.find({ userId: accountId }).sort({ updatedAt: -1 }).limit(100).select('publicId title clientName shootType format kind status assets soundtrack narration access publishedAt viewsCount downloadsCount likesCount createdAt updatedAt').lean(),
     PhotoStory.find({ userId: accountId }).sort({ updatedAt: -1 }).limit(100).select('storyId title clientName occasion status photos soundtrack viewsCount downloadsCount likesCount createdAt updatedAt').lean(),
@@ -434,13 +437,17 @@ async function loadAccountDetail(accountId) {
     AdminAccountNote.find({ userId: accountId }).sort({ createdAt: -1 }).limit(100).lean(),
     AccountDeletionRequest.find({ userId: accountId }).sort({ requestedAt: -1 }).limit(20).lean(),
     AdminAudit.find({ userId: accountId }).sort({ createdAt: -1 }).limit(50).select('adminId action resourceType resourceId details createdAt').lean(),
-    AnalyticsEvent.find({ userId: accountId }).sort({ occurredAt: -1 }).limit(50).select('name source status errorCode format route deviceType durationMs count bytes metadata occurredAt').lean()
+    AnalyticsEvent.find({ userId: accountId }).sort({ occurredAt: -1 }).limit(50).select('name source status errorCode format route deviceType durationMs count bytes metadata occurredAt').lean(),
+    BillingEvent.find({ userId: accountId }).sort({ createdAt: -1 }).limit(100).select('eventType provider status attempts processedAt failure createdAt').lean(),
+    Payment.find({ userId: accountId }).sort({ createdAt: -1 }).limit(25).select('reference status amountKobo refundedAmountKobo refundPendingAmountKobo currency channel paidAt createdAt updatedAt').lean()
   ]);
 
   if (!user) return null;
   const storageSummary = storage[0] || { count: 0, bytes: 0, formats: [], folders: [] };
+  const billing = buildBillingSnapshot(user, subscriptions, { billingEvents, payments: billingPayments });
   return {
     account: accountSnapshot(user),
+    billing,
     subscriptions,
     deliveries: deliveries.map(deliverySummary),
     legacyStories: stories.map(story => ({
@@ -1398,6 +1405,237 @@ export async function adminDeleteVolumeJob(req, res) {
   } catch (error) { console.error('[admin/volume-delete]', error.message); res.status(500).json({ success: false, message: 'We could not delete this volume delivery.' }); }
 }
 
+function billingDate(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function safePaystackSubscriptionSnapshot(subscription) {
+  if (!subscription || typeof subscription !== 'object') return {};
+  return {
+    status: subscription.status || null,
+    subscriptionCode: subscription.subscription_code || subscription.subscriptionCode || null,
+    customerCode: subscription.customer?.customer_code || subscription.customer_code || null,
+    planCode: subscription.plan?.plan_code || subscription.plan?.id || null,
+    amount: subscription.amount || subscription.plan?.amount || null,
+    currency: subscription.currency || subscription.plan?.currency || null,
+    nextPaymentDate: subscription.next_payment_date || subscription.nextPaymentDate || null,
+    lastChargeAt: subscription.last_charge_at || subscription.lastChargeAt || null,
+    updatedAt: subscription.updatedAt || subscription.updated_at || null
+  };
+}
+
+function accountBillingRow(user, snapshot) {
+  return {
+    id: user._id,
+    name: user.name || 'Unnamed account',
+    email: user.email || '',
+    studio: user.studio?.name || '',
+    accountStatus: user.accountStatus || 'unknown',
+    storedPlan: snapshot.storedPlan,
+    effectivePlan: snapshot.effectivePlan,
+    state: snapshot.state,
+    accessReasons: snapshot.accessReasons,
+    accessUntil: snapshot.accessUntil,
+    proRetentionUntil: snapshot.proRetentionUntil,
+    manualGrant: snapshot.manualGrant,
+    subscription: snapshot.subscription,
+    latestPayment: snapshot.latestPayment,
+    paymentToVerify: snapshot.paymentToVerify,
+    latestFailure: snapshot.latestFailure,
+    latestWebhook: snapshot.latestWebhook,
+    issues: snapshot.issues,
+    healthy: snapshot.healthy,
+    checkedAt: snapshot.checkedAt
+  };
+}
+
+export async function getBillingHealth(req, res) {
+  try {
+    const now = new Date();
+    const search = String(req.query.search || '').trim().slice(0, 100);
+    const filter = String(req.query.filter || 'all');
+    const limit = Math.min(250, Math.max(1, Number.parseInt(req.query.limit, 10) || 100));
+    const paymentCandidateSince = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const [subscriptions, paymentCandidateUserIds] = await Promise.all([
+      Subscription.find({})
+        .sort({ createdAt: -1 })
+        .limit(20000)
+        .select('userId provider status customerCode subscriptionCode planCode checkoutReference paidFrom paidThrough graceEndsAt cancelRequestedAt canceledAt lastPaymentAt lastPaymentReference createdAt updatedAt')
+        .lean(),
+      Payment.distinct('userId', { status: { $in: ['pending', 'success'] }, createdAt: { $gte: paymentCandidateSince } })
+    ]);
+    const subscriptionUserIds = [...new Set(subscriptions
+      .map(subscription => subscription.userId)
+      .filter(userId => mongoose.isValidObjectId(userId))
+      .map(userId => String(userId)))];
+    const recentPaymentUserIds = paymentCandidateUserIds
+      .filter(userId => mongoose.isValidObjectId(userId))
+      .map(userId => String(userId));
+    const accountMatch = { $or: [
+      { plan: { $in: ['pro', 'studio'] } },
+      { 'planOverride.plan': 'pro' },
+      { _id: { $in: [...new Set([...subscriptionUserIds, ...recentPaymentUserIds])] } }
+    ] };
+    if (search) {
+      const pattern = { $regex: escaped(search), $options: 'i' };
+      accountMatch.$and = [{ $or: [{ name: pattern }, { email: pattern }, { 'studio.name': pattern }] }];
+    }
+    const users = await User.find(accountMatch)
+      .select('name email plan planOverride proRetentionUntil studio accountStatus')
+      .sort({ updatedAt: -1 })
+      .limit(10000)
+      .lean();
+    const userIds = users.map(user => user._id);
+    const [billingEvents, payments, runtime] = await Promise.all([
+      BillingEvent.find({ userId: { $in: userIds }, createdAt: { $gte: new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000) } }).sort({ createdAt: -1 }).limit(30000).select('userId eventType provider status attempts processedAt failure createdAt').lean(),
+      Payment.find({ userId: { $in: userIds } }).sort({ createdAt: -1 }).limit(30000).select('userId reference status amountKobo refundedAmountKobo refundPendingAmountKobo currency channel paidAt createdAt updatedAt').lean(),
+      getRuntimeConfig()
+    ]);
+    const subscriptionsByUser = new Map();
+    for (const subscription of subscriptions) {
+      const key = String(subscription.userId);
+      const list = subscriptionsByUser.get(key) || [];
+      list.push(subscription);
+      subscriptionsByUser.set(key, list);
+    }
+    const eventsByUser = new Map();
+    for (const event of billingEvents) {
+      const key = String(event.userId);
+      const list = eventsByUser.get(key) || [];
+      list.push(event);
+      eventsByUser.set(key, list);
+    }
+    const paymentsByUser = new Map();
+    for (const payment of payments) {
+      const key = String(payment.userId);
+      const list = paymentsByUser.get(key) || [];
+      list.push(payment);
+      paymentsByUser.set(key, list);
+    }
+    const rows = users.map(user => accountBillingRow(user, buildBillingSnapshot(user, subscriptionsByUser.get(String(user._id)) || [], { billingEvents: eventsByUser.get(String(user._id)) || [], payments: paymentsByUser.get(String(user._id)) || [], now })));
+    const issueBreakdown = {};
+    const statusCounts = {};
+    for (const row of rows) {
+      statusCounts[row.state] = (statusCounts[row.state] || 0) + 1;
+      for (const item of row.issues) issueBreakdown[item.code] = (issueBreakdown[item.code] || 0) + 1;
+    }
+    const filtered = rows.filter(row => {
+      if (filter === 'issues') return row.issues.length > 0;
+      if (filter === 'grace') return row.state === 'grace_period';
+      if (filter === 'canceling') return row.state === 'canceling';
+      if (filter === 'pro') return row.effectivePlan === 'pro';
+      if (filter === 'free') return row.effectivePlan === 'free';
+      if (filter === 'manual') return Boolean(row.manualGrant?.active);
+      return true;
+    });
+    const attention = rows.filter(row => row.issues.length > 0).length;
+    res.json({ success: true, data: {
+      generatedAt: now,
+      retentionDays: Math.max(1, Number(runtime.retention?.proRetentionDays) || 30),
+      summary: {
+        accountsChecked: rows.length,
+        needsAttention: attention,
+        healthy: rows.length - attention,
+        effectivePro: rows.filter(row => row.effectivePlan === 'pro').length,
+        gracePeriods: rows.filter(row => row.state === 'grace_period').length,
+        canceling: rows.filter(row => row.state === 'canceling').length,
+        manualGrants: rows.filter(row => row.manualGrant?.active).length,
+        issueBreakdown
+      },
+      statusCounts,
+      total: filtered.length,
+      items: filtered.slice(0, limit)
+    } });
+  } catch (error) {
+    console.error('[admin/billing-health]', error.message);
+    res.status(500).json({ success: false, message: 'We could not load billing health.' });
+  }
+}
+
+export async function resyncAccountBilling(req, res) {
+  try {
+    const accountId = validId(req.params.id);
+    if (!accountId) return res.status(400).json({ success: false, message: 'That account identifier is not valid.' });
+    const reason = safeReason(req.body?.reason, 'Billing entitlement resynchronised by administrator');
+    const result = await synchronizeBillingState(accountId, { reason });
+    if (!result) return res.status(404).json({ success: false, message: 'Account not found.' });
+    await AdminAudit.create({ adminId: adminId(req), userId: accountId, action: 'billing.entitlement_resynced', resourceType: 'User', resourceId: String(accountId), details: { before: result.before.snapshot, after: result.after.snapshot, reason } });
+    res.json({ success: true, data: result.after.snapshot });
+  } catch (error) {
+    console.error('[admin/billing-resync]', error.message);
+    res.status(500).json({ success: false, message: 'We could not resynchronise this account billing state.' });
+  }
+}
+
+export async function verifyAccountPayment(req, res) {
+  try {
+    const accountId = validId(req.params.id);
+    if (!accountId) return res.status(400).json({ success: false, message: 'That account identifier is not valid.' });
+    if (!billingConfigured()) return res.status(503).json({ success: false, message: 'Paystack billing is disabled or incomplete.' });
+    const reference = String(req.body?.reference || '').trim();
+    const paymentQuery = { userId: accountId, status: { $in: ['pending', 'success'] } };
+    if (reference) paymentQuery.reference = reference;
+    const payment = await Payment.findOne(paymentQuery).sort({ createdAt: -1 }).lean();
+    if (!payment) return res.status(404).json({ success: false, message: 'No pending or successful payment is available to verify for this account.' });
+    const user = await User.findById(accountId);
+    if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
+    const provider = await paystackRequest(`/transaction/verify/${encodeURIComponent(payment.reference)}`);
+    const providerEmail = String(provider?.customer?.email || '').trim().toLowerCase();
+    if (provider?.status !== 'success' || Number(provider.amount) !== PRO_PRICE_KOBO || String(provider.currency || 'NGN') !== 'NGN' || (providerEmail && providerEmail !== String(user.email || '').trim().toLowerCase())) {
+      return res.status(409).json({ success: false, message: 'Paystack has not confirmed a matching Veylo Pro payment for this account.' });
+    }
+    const subscription = payment.subscriptionId ? await Subscription.findById(payment.subscriptionId).select('+emailTokenEncrypted') : null;
+    const activated = await activateSubscription({ data: provider, user, subscription });
+    if (!activated) return res.status(409).json({ success: false, message: 'The confirmed payment did not match the configured Veylo Pro plan.' });
+    const billing = await loadBillingSnapshot(accountId);
+    await AdminAudit.create({ adminId: adminId(req), userId: accountId, action: 'billing.payment_verified_by_admin', resourceType: 'Payment', resourceId: String(payment._id), details: { reference: payment.reference, amountKobo: Number(provider.amount), providerStatus: provider.status, reason: safeReason(req.body?.reason, 'Payment verified and Pro access restored by administrator') } });
+    res.json({ success: true, data: billing?.snapshot || null, message: 'Paystack confirmed the payment and Pro access was restored.' });
+  } catch (error) {
+    console.error('[admin/billing-payment-verify]', error.message);
+    res.status(error.status || 502).json({ success: false, message: 'Paystack payment verification could not be completed.' });
+  }
+}
+
+export async function refreshAccountBillingFromPaystack(req, res) {
+  try {
+    const accountId = validId(req.params.id);
+    if (!accountId) return res.status(400).json({ success: false, message: 'That account identifier is not valid.' });
+    if (!billingConfigured()) return res.status(503).json({ success: false, message: 'Paystack billing is disabled or incomplete.' });
+    const subscription = await Subscription.findOne({ userId: accountId, provider: 'paystack', subscriptionCode: { $exists: true, $ne: '' } }).sort({ createdAt: -1 }).select('+providerSnapshot').lean();
+    if (!subscription) return res.status(404).json({ success: false, message: 'No Paystack subscription is available for this account.' });
+    const provider = await paystackRequest(`/subscription/${encodeURIComponent(subscription.subscriptionCode)}`);
+    const providerStatus = String(provider?.status || '').trim().toLowerCase();
+    const nextPaymentDate = billingDate(provider?.next_payment_date || provider?.nextPaymentDate);
+    const now = new Date();
+    const update = { providerSnapshot: safePaystackSubscriptionSnapshot(provider) };
+    const cancellationStatuses = new Set(['non-renewing', 'non_renewing', 'cancelled', 'canceled', 'disabled', 'complete']);
+    if (providerStatus === 'active' && nextPaymentDate) {
+      update.status = 'active';
+      update.paidThrough = nextPaymentDate;
+      update.graceEndsAt = null;
+    } else if (cancellationStatuses.has(providerStatus)) {
+      const paidThrough = nextPaymentDate || billingDate(subscription.paidThrough);
+      update.status = paidThrough && paidThrough > now ? 'canceling' : 'expired';
+      update.paidThrough = paidThrough || null;
+      update.cancelRequestedAt = subscription.cancelRequestedAt || now;
+      if (update.status === 'expired') update.canceledAt = subscription.canceledAt || now;
+    } else if (['attention', 'past_due', 'past-due'].includes(providerStatus)) {
+      update.status = 'past_due';
+      update.graceEndsAt = subscription.graceEndsAt && billingDate(subscription.graceEndsAt) > now ? subscription.graceEndsAt : new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+    }
+    const before = await loadBillingSnapshot(accountId);
+    await Subscription.updateOne({ _id: subscription._id }, { $set: update });
+    const synced = await synchronizeBillingState(accountId, { reason: safeReason(req.body?.reason, 'Paystack billing status refreshed by administrator') });
+    await AdminAudit.create({ adminId: adminId(req), userId: accountId, action: 'billing.provider_refreshed', resourceType: 'Subscription', resourceId: String(subscription._id), details: { before: before?.snapshot || null, after: synced?.after?.snapshot || null, providerStatus, providerReference: subscription.subscriptionCode } });
+    res.json({ success: true, data: { provider: safePaystackSubscriptionSnapshot(provider), billing: synced?.after?.snapshot || null } });
+  } catch (error) {
+    console.error('[admin/billing-provider-refresh]', error.message);
+    res.status(error.status || 502).json({ success: false, message: 'Paystack billing status could not be refreshed.' });
+  }
+}
+
 export async function getPayments(req, res) {
   try {
     const search = String(req.query.search || '').trim().slice(0, 100);
@@ -1905,7 +2143,7 @@ const runtimePlanPatchSchema = z.object({
 const runtimeConfigPatchSchema = z.object({
   plans: z.object({ free: runtimePlanPatchSchema.optional(), pro: runtimePlanPatchSchema.optional() }).strict().optional(),
   formats: z.array(z.object({ id: z.enum(FORMAT_IDS), label: z.string().trim().min(2).max(80), enabled: z.boolean() }).strict()).max(FORMAT_IDS.length).optional(),
-  featureFlags: z.object({ deliveryPipeline: z.boolean().optional(), portfolio: z.boolean().optional(), music: z.boolean().optional(), narration: z.boolean().optional(), volumeDeliveries: z.boolean().optional(), optionalAnalytics: z.boolean().optional() }).strict().optional(),
+  featureFlags: z.object({ deliveryPipeline: z.boolean().optional(), veyloAssistant: z.boolean().optional(), portfolio: z.boolean().optional(), music: z.boolean().optional(), narration: z.boolean().optional(), volumeDeliveries: z.boolean().optional(), optionalAnalytics: z.boolean().optional() }).strict().optional(),
   maintenance: z.object({ enabled: z.boolean(), message: z.string().trim().min(10).max(240) }).strict().optional(),
   narration: z.object({ enabled: z.boolean().optional(), defaultVoiceId: z.enum(NARRATION_VOICES.map(voice => voice.id)).optional() }).strict().optional(),
   retention: z.object({ proRetentionDays: z.number().int().min(1).max(3650).optional(), orphanUploadHours: z.number().int().min(1).max(168).optional(), workerIntervalHours: z.number().int().min(1).max(168).optional(), analyticsRetentionDays: z.number().int().min(30).max(3650).optional() }).strict().optional(),
@@ -1952,6 +2190,7 @@ export async function updateRuntimeConfiguration(req, res) {
 export async function refundPayment(req, res) {
   let reserved = false;
   let payment;
+  let cancellationRequested = false;
   try {
     payment = await Payment.findById(req.params.id);
     if (!payment || !['success', 'partially_refunded'].includes(payment.status)) return res.status(404).json({ success: false, message: 'A refundable payment was not found.' });
@@ -1962,9 +2201,36 @@ export async function refundPayment(req, res) {
     const reservation = await Payment.updateOne({ _id: payment._id, refundPendingAmountKobo: 0 }, { $set: { refundPendingAmountKobo: requested } });
     if (!reservation.modifiedCount) return res.status(409).json({ success: false, message: 'A refund for this payment is already being processed.' });
     reserved = true;
+    const fullRefund = requested === available;
+    if (fullRefund && payment.subscriptionId) {
+      const subscription = await Subscription.findById(payment.subscriptionId).select('+emailTokenEncrypted');
+      const alreadyStopped = !subscription || subscription.provider !== 'paystack' || !subscription.subscriptionCode || ['canceling', 'expired', 'refunded', 'disputed'].includes(subscription.status);
+      if (!alreadyStopped) {
+        let token;
+        try { token = decryptBillingToken(subscription.emailTokenEncrypted); } catch {
+          await Payment.updateOne({ _id: payment._id }, { $set: { refundPendingAmountKobo: 0 } });
+          reserved = false;
+          return res.status(409).json({ success: false, message: 'Cancel the Paystack subscription before issuing a full refund. The saved billing token is invalid.' });
+        }
+        if (!token) {
+          await Payment.updateOne({ _id: payment._id }, { $set: { refundPendingAmountKobo: 0 } });
+          reserved = false;
+          return res.status(409).json({ success: false, message: 'Cancel the Paystack subscription before issuing a full refund. The saved billing token is unavailable.' });
+        }
+        try {
+          await paystackRequest('/subscription/disable', { method: 'POST', body: { code: subscription.subscriptionCode, token } });
+        } catch (error) {
+          await Payment.updateOne({ _id: payment._id }, { $set: { refundPendingAmountKobo: 0 } });
+          reserved = false;
+          throw error;
+        }
+        await Subscription.updateOne({ _id: subscription._id }, { $set: { status: 'canceling', cancelRequestedAt: new Date() } });
+        cancellationRequested = true;
+      }
+    }
     const result = await paystackRequest('/refund', { method: 'POST', body: { transaction: payment.reference, amount: requested, currency: 'NGN', customer_note: String(req.body.note || 'Veylo support refund').slice(0, 240), merchant_note: `Approved by Veylo admin ${req.admin._id}` } });
-    await AdminAudit.create({ adminId: req.admin._id, userId: payment.userId, action: 'payment.refund_requested', resourceType: 'Payment', resourceId: String(payment._id), details: { amountKobo: requested, paystackRefundId: result.id, note: String(req.body.note || '').slice(0, 240) } });
-    res.status(202).json({ success: true, message: 'Paystack accepted the refund request.', data: { refundId: result.id, status: result.status, amountKobo: requested } });
+    await AdminAudit.create({ adminId: req.admin._id, userId: payment.userId, action: 'payment.refund_requested', resourceType: 'Payment', resourceId: String(payment._id), details: { amountKobo: requested, fullRefund, cancellationRequested, paystackRefundId: result.id, note: String(req.body.note || '').slice(0, 240) } });
+    res.status(202).json({ success: true, message: fullRefund && cancellationRequested ? 'Paystack accepted the refund request and the recurring subscription was stopped.' : 'Paystack accepted the refund request.', data: { refundId: result.id, status: result.status, amountKobo: requested, fullRefund, cancellationRequested } });
   } catch (error) {
     if (reserved && payment && error.providerStatus && error.providerStatus < 500) await Payment.updateOne({ _id: payment._id }, { $set: { refundPendingAmountKobo: 0 } });
     console.error('[admin/refund]', error.message);

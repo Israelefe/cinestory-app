@@ -5,6 +5,7 @@ import { ToastContainer } from 'react-toastify';
 import Navbar from './components/Navbar.jsx';
 import ProductHeader from './components/ProductHeader.jsx';
 import CookiePreferences from './components/CookiePreferences.jsx';
+import VeyloAssistant from './components/VeyloAssistant.jsx';
 import LandingPage from './pages/LandingPage.jsx';
 import api from './services/api.js';
 import { installAnalyticsListeners, trackEvent } from './services/analytics.js';
@@ -192,7 +193,7 @@ export default function App() {
     window.location.assign('/');
   };
   const handlePlanChanged = plan => setUser(current => current ? { ...current, plan } : current);
-  return <MotionConfig reducedMotion="user"><BrowserRouter><RoutePosition /><CookiePreferences /><ToastContainer position="top-right" theme="dark" autoClose={3000} /><Suspense fallback={<div className="v-page-loading" role="status">Opening Veylo…</div>}><Routes>
+  return <MotionConfig reducedMotion="user"><BrowserRouter><RoutePosition /><CookiePreferences /><VeyloAssistant user={user} /><ToastContainer position="top-right" theme="dark" autoClose={3000} /><Suspense fallback={<div className="v-page-loading" role="status">Opening Veylo…</div>}><Routes>
     <Route path="/story/:storyId" element={<StoryViewer />} />
     <Route path="/d/:publicId" element={<DeliveryViewer />} />
     <Route path="/volume-deliveries" element={<Navigate to="/dashboard" replace />} />

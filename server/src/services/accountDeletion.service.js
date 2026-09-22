@@ -8,6 +8,7 @@ import StoryView from '../models/StoryView.js';
 import Subscription from '../models/Subscription.js';
 import Payment from '../models/Payment.js';
 import BillingEvent from '../models/BillingEvent.js';
+import EmailDelivery from '../models/EmailDelivery.js';
 import AccountDeletionRequest from '../models/AccountDeletionRequest.js';
 import DeliveryUsage from '../models/DeliveryUsage.js';
 import Delivery from '../models/Delivery.js';
@@ -183,6 +184,9 @@ async function deleteOwnedRecords({ accountId, deliveryIds, storyIds, volumeJobI
   await deleteMany('subscriptions', Subscription, { userId: accountId });
   await deleteMany('payments', Payment, { userId: accountId });
   await deleteMany('billingEvents', BillingEvent, { userId: accountId });
+  await deleteMany('emailDeliveries', EmailDelivery, deliveryIds.length
+    ? { $or: [{ userId: accountId }, { deliveryId: { $in: deliveryIds } }] }
+    : { userId: accountId });
   await deleteMany('deliveryUsage', DeliveryUsage, { userId: accountId });
   await deleteMany('deliveryLikes', PhotoLike, deliveryIds.length ? { deliveryId: { $in: deliveryIds } } : { _id: { $in: [] } });
   await deleteMany('deliveryViews', DeliveryView, deliveryIds.length ? { deliveryId: { $in: deliveryIds } } : { _id: { $in: [] } });

@@ -10,6 +10,7 @@ import DeliveryJob from '../models/DeliveryJob.js';
 import PhotoLike from '../models/PhotoLike.js';
 import DeliveryView from '../models/DeliveryView.js';
 import DeliveryShareGrant from '../models/DeliveryShareGrant.js';
+import EmailDelivery from '../models/EmailDelivery.js';
 import Portfolio from '../models/Portfolio.js';
 import User from '../models/User.js';
 import StorageAsset from '../models/StorageAsset.js';
@@ -17,7 +18,7 @@ import { CREATIVE_DIRECTOR_PROMPT_VERSION, CREATIVE_DIRECTOR_PROVIDER, creativeD
 import { confirmUploadedAsset, copyStorageImageToDelivery, createUploadSignature, deliveryFolder, removeDeliveryAudio, removeDeliveryImage, removeDeliveryMedia, signedArchiveUrl, signedImageUrl, signedOgImageUrl } from '../services/deliveryMedia.service.js';
 import { reservePublishSlot, resolveEntitlements } from '../services/entitlement.service.js';
 import { tokenDigest } from '../utils/auth.js';
-import { sendStoryReadyEmail } from '../services/email.service.js';
+import { sendShareGrantEmail, sendStoryReadyEmail } from '../services/email.service.js';
 import QRCode from 'qrcode';
 import { DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
 import { DELIVERY_SOUNDTRACKS, deliverySoundtrack, deliverySoundtrackFile } from '../constants/deliverySoundtracks.js';
@@ -56,6 +57,7 @@ const reviewSchema = z.object({
 const shareGrantSchema = z.object({
   role: z.enum(['organizer', 'vendor', 'guest']),
   label: z.string().trim().min(2).max(100),
+  recipientEmail: z.string().trim().email().max(254).transform(value => value.toLowerCase()).optional().or(z.literal('')),
   assetIds: z.array(z.string().min(1).max(100)).max(500).default([]),
   sectionIds: z.array(z.string().regex(/^[a-z0-9-]{1,32}$/)).max(12).default([]),
   allowIndividualDownloads: z.boolean().default(false),
@@ -277,7 +279,30 @@ export async function createShareGrant(req, res) {
     const token = crypto.randomBytes(32).toString('base64url');
     const grant = await DeliveryShareGrant.create({ deliveryId: delivery._id, userId: req.user.id, ...parsed.data, assetIds: scopedAssetIds, expiresAt: parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : undefined, tokenDigest: tokenDigest(token) });
     const url = `${String(process.env.CLIENT_URL || 'https://veylo.com.ng').replace(/\/$/, '')}/d/${delivery.publicId}?share=${encodeURIComponent(token)}`;
-    res.status(201).json({ success: true, data: { ...grant.toObject(), url } });
+    let emailSent = false;
+    if (parsed.data.recipientEmail) {
+      try {
+        await sendShareGrantEmail({
+          to: parsed.data.recipientEmail,
+          role: parsed.data.role,
+          label: parsed.data.label,
+          deliveryTitle: delivery.title,
+          clientName: delivery.clientName,
+          shareUrl: url,
+          expiresAt: grant.expiresAt,
+          usageTerms: parsed.data.usageTerms,
+          userId: req.user.id,
+          deliveryId: delivery._id,
+          eventKey: `share-grant:${grant._id}:invitation`
+        });
+        emailSent = true;
+      } catch (emailError) {
+        console.error('[deliveries/share-grant-email]', emailError.message);
+      }
+    }
+    const responseGrant = grant.toObject();
+    delete responseGrant.tokenDigest;
+    res.status(201).json({ success: true, data: { ...responseGrant, url, emailSent }, message: parsed.data.recipientEmail && !emailSent ? 'The link was created, but the invitation email could not be sent. Copy the link and send it directly.' : emailSent ? `The private link was created and emailed to ${parsed.data.recipientEmail}.` : 'The private role link was created.' });
   } catch (error) {
     console.error('[deliveries/share-grant]', error.message);
     res.status(500).json({ success: false, message: 'We could not create that sharing link.' });
@@ -376,6 +401,7 @@ export async function deleteDelivery(req, res) {
       },
       () => DeliveryJob.deleteMany({ deliveryId: removed._id }),
       () => DeliveryShareGrant.deleteMany({ deliveryId: removed._id }),
+      () => EmailDelivery.deleteMany({ deliveryId: removed._id }),
       () => PhotoLike.deleteMany({ deliveryId: removed._id }),
       () => DeliveryView.deleteMany({ deliveryId: removed._id }),
       () => removeDeliveryMedia(req.user.id, removed._id)
@@ -1075,7 +1101,8 @@ export async function emailClientDelivery(req, res) {
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery || delivery.status !== 'published') return res.status(404).json({ success: false, message: 'Publish this delivery before emailing it.' });
     const url = `${String(process.env.CLIENT_URL || 'https://veylo.com.ng').replace(/\/$/, '')}/d/${delivery.publicId}`;
-    await sendStoryReadyEmail({ to: parsed.data.email, clientName: delivery.clientName, storyTitle: delivery.title, storyUrl: url });
+    const photographer = await User.findById(req.user.id).select('name').lean();
+    await sendStoryReadyEmail({ to: parsed.data.email, clientName: delivery.clientName, storyTitle: delivery.title, storyUrl: url, photographerName: photographer?.name });
     res.json({ success: true, message: `Delivery email sent to ${parsed.data.email}.` });
   } catch (error) { console.error('[deliveries/email]', error.message); res.status(502).json({ success: false, message: 'The delivery email could not be sent. Copy the link and send it directly instead.' }); }
 }

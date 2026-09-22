@@ -48,6 +48,10 @@ import {
   getAllDeliveries,
   getPayments,
   getFinanceOverview,
+  getBillingHealth,
+  resyncAccountBilling,
+  verifyAccountPayment,
+  refreshAccountBillingFromPaystack,
   reconcileFinanceWithPaystack,
   exportFinance,
   adminDeleteStory,
@@ -147,6 +151,9 @@ router.get('/visitor-traffic', requireAdminRoles('superadmin', 'operations', 'an
 router.get('/users', getAllUsers);
 router.patch('/users/:id/plan', requireAdminRoles('superadmin', 'operations'), updateUserPlan);
 router.get('/users/:id', getAccountDetail);
+router.post('/users/:id/billing/resync', billingActionLimit, requireAdminRoles('superadmin', 'operations', 'finance'), resyncAccountBilling);
+router.post('/users/:id/billing/verify-payment', billingActionLimit, requireAdminRoles('superadmin', 'operations', 'finance'), verifyAccountPayment);
+router.post('/users/:id/billing/provider-refresh', billingActionLimit, requireAdminRoles('superadmin', 'finance'), refreshAccountBillingFromPaystack);
 router.delete('/users/:id', requireAdminRoles('superadmin'), adminDeleteAccount);
 router.patch('/users/:id/status', requireAdminRoles('superadmin', 'operations', 'support'), updateAccountStatus);
 router.post('/users/:id/force-logout', requireAdminRoles('superadmin', 'operations', 'support'), forceLogoutAccount);
@@ -189,6 +196,7 @@ router.get('/configuration', getRuntimeConfiguration);
 router.patch('/configuration', requireAdminRoles('superadmin'), updateRuntimeConfiguration);
 router.get('/payments', getPayments);
 router.get('/finance', getFinanceOverview);
+router.get('/billing/health', getBillingHealth);
 router.get('/finance/reconcile', requireAdminRoles('superadmin', 'finance'), reconcileFinanceWithPaystack);
 router.get('/finance/export', requireAdminRoles('superadmin', 'finance', 'analyst'), exportFinance);
 router.delete('/stories/:id', requireAdminRoles('superadmin', 'operations'), adminDeleteStory);

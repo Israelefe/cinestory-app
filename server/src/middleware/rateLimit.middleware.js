@@ -170,6 +170,16 @@ export const supportTicketLimit = limiter({
   identifier: 'support-tickets'
 });
 
+// Chat is a help surface, not a product quota. Keep a generous short burst
+// guard so a public page cannot be used to run an unattended model loop. The
+// key is the signed-in account where available and the connection otherwise.
+export const assistantChatLimit = limiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  message: 'Veylo Help is receiving many questions from this connection. Please try again shortly.',
+  identifier: 'assistant-chat'
+});
+
 // One request can contain up to 50 analytics events. This protects the
 // collector without affecting the page or delivery action being measured.
 export const clientAnalyticsLimit = limiter({

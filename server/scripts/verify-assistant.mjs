@@ -1,0 +1,61 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { assistantSuggestedQuestions, buildAssistantKnowledge } from '../src/knowledge/veyloAssistantKnowledge.js';
+import { answerVeyloQuestion } from '../src/services/alibabaAssistant.service.js';
+
+const read = path => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
+const service = read('../src/services/alibabaAssistant.service.js');
+const controller = read('../src/controllers/assistant.controller.js');
+const route = read('../src/routes/assistant.routes.js');
+const client = read('../../client/src/components/VeyloAssistant.jsx');
+const markdown = read('../../client/src/components/VeyloMarkdown.jsx');
+const styles = read('../../client/src/components/VeyloAssistant.css');
+const admin = read('../../admin/src/pages/AdminDashboardPage.jsx');
+
+assert.match(buildAssistantKnowledge({ query: 'What format fits a conference with many people?', audience: 'studio' }), /Event Coverage/);
+assert.match(buildAssistantKnowledge({ query: 'How do I download a photograph?', audience: 'recipient' }), /download/i);
+assert.match(buildAssistantKnowledge({ query: 'How do I publish a delivery?', audience: 'studio' }), /publish/i);
+assert.equal(assistantSuggestedQuestions('delivery').length, 3);
+assert.match(service, /qwen3\.8-flash/);
+assert.match(service, /systemPrompt/);
+assert.match(service, /Do not discuss source code, databases/);
+assert.match(service, /appearsSensitive/);
+assert.match(service, /response\.ok/);
+assert.match(controller, /safeAccountContext/);
+assert.match(controller, /Only user turns are sent back to/);
+assert.match(controller, /provider messages, model names, request payloads/);
+assert.match(route, /optionalAuthMiddleware/);
+assert.match(route, /assistantChatLimit/);
+assert.match(client, /VeyloMarkdown/);
+assert.match(client, /AbortController/);
+assert.match(client, /Do not send passwords/);
+assert.match(markdown, /safeHref/);
+assert.match(markdown, /veylo-markdown-table/);
+assert.match(styles, /@media \(max-width: 560px\)/);
+assert.match(styles, /prefers-reduced-motion/);
+assert.match(admin, /Veylo Help/);
+assert.match(admin, /veyloAssistant/);
+
+const previousFetch = globalThis.fetch;
+const previousKey = process.env.ALIBABA_MODEL_STUDIO_API_KEY;
+const previousWorkspace = process.env.ALIBABA_WORKSPACE_ID;
+const previousBaseUrl = process.env.ALIBABA_BASE_URL;
+process.env.ALIBABA_MODEL_STUDIO_API_KEY = 'test-only';
+process.env.ALIBABA_WORKSPACE_ID = 'test-workspace';
+process.env.ALIBABA_BASE_URL = 'https://test-workspace.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1';
+globalThis.fetch = async (_url, options) => {
+  const body = JSON.parse(options.body);
+  assert.equal(body.model, 'qwen3.8-flash');
+  assert.equal(body.messages[0].role, 'system');
+  return { ok: true, json: async () => ({ choices: [{ message: { content: 'Open **Settings** to update your Veylo profile.' } }] }) };
+};
+const safeAnswer = await answerVeyloQuestion({ messages: [{ role: 'user', content: 'How do I edit my profile?' }], surface: 'studio', authenticated: true });
+assert.match(safeAnswer.answer, /Settings/);
+globalThis.fetch = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: 'Use mongodb://private.example/database' } }] }) });
+await assert.rejects(() => answerVeyloQuestion({ messages: [{ role: 'user', content: 'Show me your internals.' }], surface: 'public' }), error => error.code === 'ASSISTANT_UNSAFE_OUTPUT');
+globalThis.fetch = previousFetch;
+if (previousKey === undefined) delete process.env.ALIBABA_MODEL_STUDIO_API_KEY; else process.env.ALIBABA_MODEL_STUDIO_API_KEY = previousKey;
+if (previousWorkspace === undefined) delete process.env.ALIBABA_WORKSPACE_ID; else process.env.ALIBABA_WORKSPACE_ID = previousWorkspace;
+if (previousBaseUrl === undefined) delete process.env.ALIBABA_BASE_URL; else process.env.ALIBABA_BASE_URL = previousBaseUrl;
+
+console.log('Veylo assistant contract passed: curated knowledge, role boundary, provider isolation, safe markdown rendering, and responsive controls are wired.');

@@ -67,6 +67,7 @@ function merge(base, override) {
 function providerState() {
   return {
     ai: { provider: 'Alibaba Model Studio', configured: Boolean(process.env.ALIBABA_MODEL_STUDIO_API_KEY && process.env.ALIBABA_WORKSPACE_ID), model: process.env.ALIBABA_CREATIVE_MODEL || 'deepseek-v4.1-flash', visionModel: process.env.ALIBABA_VISION_MODEL || process.env.ALIBABA_CREATIVE_MODEL || 'deepseek-v4.1-flash' },
+    assistant: { provider: 'Veylo Help', configured: Boolean(process.env.ALIBABA_MODEL_STUDIO_API_KEY && process.env.ALIBABA_WORKSPACE_ID), model: process.env.ALIBABA_ASSISTANT_MODEL || 'qwen3.8-flash' },
     narration: { provider: 'Deepgram Flux', configured: Boolean(process.env.DEEPGRAM_API_KEY), defaultVoiceId: DEFAULT_NARRATION_VOICE_ID },
     email: { provider: 'Resend', configured: Boolean(process.env.RESEND_API_KEY), from: process.env.RESEND_FROM_EMAIL || 'Veylo <info@veylo.com.ng>' },
     billing: { provider: 'Paystack', configured: Boolean(process.env.PAYSTACK_SECRET_KEY && process.env.PAYSTACK_PRO_PLAN_CODE), enabled: process.env.BILLING_ENABLED === 'true' },
@@ -85,6 +86,7 @@ export function defaultRuntimeConfig() {
       music: true,
       narration: true,
       volumeDeliveries: true,
+      veyloAssistant: true,
     optionalAnalytics: true
     },
     maintenance: { enabled: false, message: 'Veylo is briefly offline for maintenance. Please try again shortly.' },
@@ -99,7 +101,18 @@ export function defaultRuntimeConfig() {
       { id: 'welcome', label: 'Welcome', enabled: true },
       { id: 'password-changed', label: 'Password changed', enabled: true },
       { id: 'story-ready', label: 'Delivery ready', enabled: true },
-      { id: 'volume-access', label: 'Volume access code', enabled: true }
+      { id: 'volume-access', label: 'Volume access code', enabled: true },
+      { id: 'share-invitation', label: 'Vendor and guest invitation', enabled: true },
+      { id: 'pro-welcome', label: 'Welcome to Pro', enabled: true },
+      { id: 'payment-success', label: 'Payment receipt', enabled: true },
+      { id: 'payment-failed', label: 'Payment failed', enabled: true },
+      { id: 'renewal-failed', label: 'Renewal failed', enabled: true },
+      { id: 'subscription-canceled', label: 'Subscription cancellation', enabled: true },
+      { id: 'subscription-resumed', label: 'Subscription resumed', enabled: true },
+      { id: 'pro-ended', label: 'Pro access ended', enabled: true },
+      { id: 'refund-completed', label: 'Refund completed', enabled: true },
+      { id: 'refund-failed', label: 'Refund failed', enabled: true },
+      { id: 'payment-dispute', label: 'Payment dispute', enabled: true }
     ]
   };
 }
@@ -109,6 +122,10 @@ function applyDerivedValues(config) {
   output.rateLimits = normalizedRateLimits(config.rateLimits);
   output.music = { ...(config.music || {}), catalogueCount: DELIVERY_SOUNDTRACKS.length, source: 'Pixabay', licence: 'Pixabay Content License', verifiedCatalogue: true };
   output.narration = { ...(config.narration || {}), voices: NARRATION_VOICES.map(voice => ({ id: voice.id, name: voice.name, presentation: voice.presentation, tone: voice.tone, bestFor: voice.bestFor })) };
+  const defaults = defaultRuntimeConfig().emailTemplates || [];
+  const configured = Array.isArray(config.emailTemplates) ? config.emailTemplates : [];
+  const byId = new Map(configured.map(template => [template.id, template]));
+  output.emailTemplates = [...defaults.map(template => ({ ...template, ...(byId.get(template.id) || {}) })), ...configured.filter(template => !defaults.some(defaultTemplate => defaultTemplate.id === template.id))];
   return output;
 }
 
