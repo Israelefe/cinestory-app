@@ -18,7 +18,7 @@ import './CreateDeliveryNarration.css';
 import './CreateDeliveryMusicV2.css';
 
 const formats = FORMAT_REGISTRY.map(format => ({ ...format, copy: format.line }));
-const NARRATION_RENDER_VERSION = 'flux-hannah-biography-v2';
+const NARRATION_RENDER_VERSION = 'flux-hannah-captions-v5';
 
 const steps = ['Tell us about the shoot', 'Add finished photos', 'Choose the format', 'Review every detail', 'Publish and share'];
 

@@ -7,12 +7,12 @@ import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID } from '../constants/narra
 // The audio is generated from the approved per-photograph captions; no second script
 // is invented at narration time.
 const MODEL_ID = 'flux-hannah-en';
-export const NARRATION_RENDER_VERSION = 'flux-hannah-biography-v4';
+export const NARRATION_RENDER_VERSION = 'flux-hannah-captions-v5';
 const MAX_NARRATION_CHUNK_CHARACTERS = 2000;
 // Keep Hannah measured without flattening her natural pitch movement. Deepgram's
 // tuned expressivity default (0) sounds more like a person telling a story than
 // the narrow, evenly stressed delivery produced by the previous -1 setting.
-const VOICE_SETTINGS = Object.freeze({ speed: 0.86, expressivity: 0, sampleRate: 24000 });
+const VOICE_SETTINGS = Object.freeze({ speed: 0.85, expressivity: 0, sampleRate: 24000 });
 
 function cleanLine(value, max = 360) {
   return String(value || '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, max);

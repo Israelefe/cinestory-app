@@ -122,9 +122,12 @@ function AnimatedStoryText({ text, mode, animation, reduced }) {
    return <motion.span className="v-story-type-character" key={letterIndex} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: .06, delay }}>{character}</motion.span>;
   })}{wordIndex < words.length - 1 ? '\u00a0' : ''}</span>)}</h2>;
  }
- const byLetter = effect === 'letter_drift';
- const units = byLetter ? [...text] : text.split(/\s+/);
- return <motion.h2 initial="hidden" animate="visible" variants={{ visible: { transition: { staggerChildren: byLetter ? .018 : .055, delayChildren: .12 } } }}>{units.map((unit, i) => <motion.span className="v-story-word" key={i} variants={{ hidden: starts[effect] || starts.word_fade_up, visible: { opacity: 1, x: 0, y: 0, scale: 1, rotate: 0, filter: 'blur(0px)', transition: { type: 'spring', damping: 22, stiffness: 190 } } }}>{unit === ' ' ? '\u00a0' : unit}{!byLetter && i < units.length - 1 ? '\u00a0' : ''}</motion.span>)}</motion.h2>;
+ const letterVariants = { hidden: starts[effect] || starts.word_fade_up, visible: { opacity: 1, x: 0, y: 0, scale: 1, rotate: 0, filter: 'blur(0px)', transition: { type: 'spring', damping: 22, stiffness: 190 } } };
+ const words = text.trim().split(/\s+/);
+ if (effect === 'letter_drift') {
+  return <motion.h2 initial="hidden" animate="visible" variants={{ visible: { transition: { staggerChildren: .055, delayChildren: .12 } } }}>{words.map((word, wordIndex) => <React.Fragment key={wordIndex}><motion.span className="v-story-letter-word" variants={{ visible: { transition: { staggerChildren: .018 } } }}>{[...word].map((letter, letterIndex) => <motion.span className="v-story-letter" key={letterIndex} variants={letterVariants}>{letter}</motion.span>)}</motion.span>{wordIndex < words.length - 1 ? ' ' : ''}</React.Fragment>)}</motion.h2>;
+ }
+ return <motion.h2 initial="hidden" animate="visible" variants={{ visible: { transition: { staggerChildren: .055, delayChildren: .12 } } }}>{words.map((word, i) => <motion.span className="v-story-word" key={i} variants={letterVariants}>{word}{i < words.length - 1 ? '\u00a0' : ''}</motion.span>)}</motion.h2>;
 }
 
 function StoryScene({ demo, demoId, photos, photo, index, mode, started, finished, reduced, displaySrc, displaySet, motionForPhoto, accent, pace = 'warm' }) {
