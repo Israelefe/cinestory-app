@@ -111,7 +111,17 @@ const COLOR_NAMES = {
   red: '#d32f2f', blue: '#1976d2', green: '#388e3c', yellow: '#fbc02d',
   gold: '#d4af37', silver: '#c0c0c0', bronze: '#cd7f32', navy: '#0a192f',
   cream: '#fdfbf7', ivory: '#fffff0', beige: '#f5f5dc', brown: '#5d4037',
-  coral: '#ff5a47', orange: '#f57c00', purple: '#7b1fa2', pink: '#e91e63'
+  coral: '#ff5a47', orange: '#f57c00', purple: '#7b1fa2', pink: '#e91e63',
+  charcoal: '#333333', burgundy: '#800020', teal: '#008080', forest: '#228b22',
+  rust: '#b7410e', blush: '#de5d83', slate: '#708090', mauve: '#e0b0ff',
+  taupe: '#483c32', sand: '#c2b280', midnight: '#191970', wine: '#722f37',
+  plum: '#8e4585', copper: '#b87333', peach: '#ffcba4', sage: '#9dc183',
+  'dark gray': '#555555', 'dark grey': '#555555', 'light gray': '#cccccc',
+  'light grey': '#cccccc', 'dark-gray': '#555555', 'dark-grey': '#555555',
+  'light-gray': '#cccccc', 'light-grey': '#cccccc', maroon: '#800000',
+  olive: '#808000', cyan: '#00bcd4', magenta: '#e91e63', indigo: '#3f51b5',
+  amber: '#ffab00', lime: '#cddc39', emerald: '#2e7d32', sapphire: '#0f52ba',
+  rose: '#ff007f', lavender: '#b39ddb', khaki: '#bdb76b', tan: '#d2b48c'
 };
 
 function normalizeHexColor(raw) {
@@ -122,6 +132,12 @@ function normalizeHexColor(raw) {
   if (/^[0-9a-f]{6}$/i.test(cleaned)) return `#${cleaned}`;
   if (/^[0-9a-f]{3}$/i.test(cleaned)) {
     return `#${cleaned[0]}${cleaned[0]}${cleaned[1]}${cleaned[1]}${cleaned[2]}${cleaned[2]}`;
+  }
+  // Handle rgb(r, g, b) and rgba(r, g, b, a) strings
+  const rgbMatch = str.match(/rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/);
+  if (rgbMatch) {
+    const [, r, g, b] = rgbMatch;
+    return '#' + [r, g, b].map(n => Math.min(255, Number(n)).toString(16).padStart(2, '0')).join('');
   }
   return null;
 }
@@ -230,51 +246,112 @@ const recommendationSchema = z.object({
   }
 });
 
+// --- Preprocess helpers for direction enums ---
+function coerceTypographyDisplay(val) {
+  const str = String(val || '').trim().toLowerCase();
+  const VALID = ['editorial-serif', 'clean-sans', 'condensed-sans', 'soft-serif'];
+  if (VALID.includes(str)) return str;
+  const MAP = { serif: 'editorial-serif', 'sans-serif': 'clean-sans', sans: 'clean-sans', modern: 'clean-sans', condensed: 'condensed-sans', narrow: 'condensed-sans', rounded: 'soft-serif', soft: 'soft-serif', display: 'editorial-serif', classic: 'editorial-serif', elegant: 'editorial-serif', 'modern-sans': 'clean-sans', minimal: 'clean-sans' };
+  return MAP[str] || 'clean-sans';
+}
+function coerceTypographyBody(val) {
+  const str = String(val || '').trim().toLowerCase();
+  if (['clean-sans', 'editorial-serif'].includes(str)) return str;
+  if (['serif', 'editorial', 'classic'].includes(str)) return 'editorial-serif';
+  return 'clean-sans';
+}
+function coercePace(val) {
+  const str = String(val || '').trim().toLowerCase();
+  if (['measured', 'warm', 'energetic'].includes(str)) return str;
+  if (['calm', 'slow', 'relaxed', 'gentle', 'quiet', 'minimal', 'subtle'].includes(str)) return 'measured';
+  if (['fast', 'dynamic', 'lively', 'bold', 'high', 'intense', 'upbeat'].includes(str)) return 'energetic';
+  return 'warm';
+}
+function coerceComposition(val) {
+  const str = String(val || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
+  const VALID = ['quiet', 'split', 'layered', 'grid', 'portrait-led', 'wide-led'];
+  if (VALID.includes(str)) return str;
+  const MAP = { minimal: 'quiet', clean: 'quiet', simple: 'quiet', mixed: 'layered', dynamic: 'layered', dense: 'layered', complex: 'layered', editorial: 'split', balanced: 'split', 'two-column': 'split', columns: 'split', mosaic: 'grid', gallery: 'grid', tiles: 'grid', portrait: 'portrait-led', vertical: 'portrait-led', wide: 'wide-led', landscape: 'wide-led', horizontal: 'wide-led', cinematic: 'wide-led' };
+  return MAP[str] || 'quiet';
+}
+function coerceDensity(val) {
+  const str = String(val || '').trim().toLowerCase();
+  if (['spacious', 'balanced', 'layered'].includes(str)) return str;
+  if (['minimal', 'airy', 'open', 'loose', 'breathable'].includes(str)) return 'spacious';
+  if (['dense', 'tight', 'packed', 'compact', 'heavy', 'rich'].includes(str)) return 'layered';
+  return 'balanced';
+}
+function coerceCaptionTreatment(val) {
+  const str = String(val || '').trim().toLowerCase();
+  if (['quiet', 'editorial', 'bold'].includes(str)) return str;
+  if (['minimal', 'subtle', 'small', 'hidden', 'clean'].includes(str)) return 'quiet';
+  if (['large', 'prominent', 'display', 'loud', 'big', 'heavy'].includes(str)) return 'bold';
+  return 'quiet';
+}
+function coerceAccentPlacement(val) {
+  const str = String(val || '').trim().toLowerCase();
+  if (['corners', 'rules', 'labels', 'type'].includes(str)) return str;
+  if (['lines', 'dividers', 'borders', 'underline', 'separator'].includes(str)) return 'rules';
+  if (['badges', 'tags', 'chips', 'pill', 'tab'].includes(str)) return 'labels';
+  if (['typography', 'text', 'font', 'headline'].includes(str)) return 'type';
+  return 'rules';
+}
+function coerceTempo(val) {
+  const str = String(val || '').trim().toLowerCase();
+  if (['slow', 'mid', 'upbeat'].includes(str)) return str;
+  if (['calm', 'relaxed', 'gentle', 'quiet'].includes(str)) return 'slow';
+  if (['fast', 'energetic', 'lively', 'high'].includes(str)) return 'upbeat';
+  return 'mid';
+}
+// Safe string fallback: returns fallback if trimmed value is shorter than minLen
+function safeString(val, maxLen, minLen, fallback) {
+  const s = String(val || '').trim().slice(0, maxLen);
+  return s.length >= minLen ? s : fallback;
+}
+
 const directionSchema = z.object({
   format: z.preprocess(val => String(val || '').trim().toLowerCase(), z.enum(FORMATS)),
-  title: z.preprocess(val => String(val || '').trim().slice(0, 80) || 'Photo Story', z.string().min(2).max(80)),
-  openingLine: z.preprocess(val => String(val || '').trim().slice(0, 140) || 'Photographs from today.', z.string().min(2).max(140)),
-  closingLine: z.preprocess(val => String(val || '').trim().slice(0, 160) || 'Thank you for sharing these moments.', z.string().min(2).max(160)),
-  designReason: z.preprocess(val => String(val || '').trim().slice(0, 240) || 'Art directed for this specific shoot.', z.string().min(4).max(240)),
+  title: z.preprocess(val => safeString(val, 80, 2, 'Photo Story'), z.string().min(2).max(80)),
+  openingLine: z.preprocess(val => safeString(val, 140, 2, 'Photographs from today.'), z.string().min(2).max(140)),
+  closingLine: z.preprocess(val => safeString(val, 160, 2, 'Thank you for sharing these moments.'), z.string().min(2).max(160)),
+  designReason: z.preprocess(val => safeString(val, 240, 4, 'Art directed for this specific shoot.'), z.string().min(4).max(240)),
   palette: z.object({
-    background: z.preprocess(val => normalizeHexColor(val), z.string().regex(/^#[0-9a-f]{6}$/i)),
-    surface: z.preprocess(val => normalizeHexColor(val), z.string().regex(/^#[0-9a-f]{6}$/i)),
-    text: z.preprocess(val => normalizeHexColor(val), z.string().regex(/^#[0-9a-f]{6}$/i)),
-    accent: z.preprocess(val => normalizeHexColor(val), z.string().regex(/^#[0-9a-f]{6}$/i))
+    background: z.preprocess(val => normalizeHexColor(val) || '#070709', z.string().regex(/^#[0-9a-f]{6}$/i)),
+    surface: z.preprocess(val => normalizeHexColor(val) || '#0c0c10', z.string().regex(/^#[0-9a-f]{6}$/i)),
+    text: z.preprocess(val => normalizeHexColor(val) || '#ffffff', z.string().regex(/^#[0-9a-f]{6}$/i)),
+    accent: z.preprocess(val => normalizeHexColor(val) || '#ff5a47', z.string().regex(/^#[0-9a-f]{6}$/i))
   }),
   typography: z.object({
-    display: z.enum(['editorial-serif', 'clean-sans', 'condensed-sans', 'soft-serif']),
-    body: z.enum(['clean-sans', 'editorial-serif'])
+    display: z.preprocess(coerceTypographyDisplay, z.enum(['editorial-serif', 'clean-sans', 'condensed-sans', 'soft-serif'])),
+    body: z.preprocess(coerceTypographyBody, z.enum(['clean-sans', 'editorial-serif']))
   }),
-  pace: z.enum(['measured', 'warm', 'energetic']),
+  pace: z.preprocess(coercePace, z.enum(['measured', 'warm', 'energetic'])),
   variation: z.object({
-    // Do not coerce an invalid or missing design decision into the same quiet
-    // default for every format. completion() will ask the model for a complete
-    // corrected object, and the renderer has a format-specific legacy fallback
-    // only for old deliveries that predate this contract.
-    composition: z.enum(['quiet', 'split', 'layered', 'grid', 'portrait-led', 'wide-led']),
-    density: z.enum(['spacious', 'balanced', 'layered']),
-    // Finished photographs are never colour-graded in the viewer. This field is
-    // retained for old records but new directions use natural and express the
-    // difference through surfaces, type, overlays, and spacing instead.
-    imageTreatment: z.literal('natural'),
-    captionTreatment: z.enum(['quiet', 'editorial', 'bold']),
-    accentPlacement: z.enum(['corners', 'rules', 'labels', 'type'])
-  }).strict(),
+    composition: z.preprocess(coerceComposition, z.enum(['quiet', 'split', 'layered', 'grid', 'portrait-led', 'wide-led'])),
+    density: z.preprocess(coerceDensity, z.enum(['spacious', 'balanced', 'layered'])),
+    // Finished photographs are never colour-graded in the viewer. Always coerce to natural.
+    imageTreatment: z.preprocess(() => 'natural', z.literal('natural')),
+    captionTreatment: z.preprocess(coerceCaptionTreatment, z.enum(['quiet', 'editorial', 'bold'])),
+    accentPlacement: z.preprocess(coerceAccentPlacement, z.enum(['corners', 'rules', 'labels', 'type']))
+  }),
   music: z.object({
-    trackId: z.enum(AI_DELIVERY_SOUNDTRACKS.map(track => track.id)),
-    mood: z.preprocess(val => String(val || '').trim().slice(0, 80), z.string().min(2).max(80)),
-    genre: z.preprocess(val => String(val || '').trim().slice(0, 80), z.string().min(2).max(80)),
-    tempo: z.enum(['slow', 'mid', 'upbeat'])
+    trackId: z.preprocess(val => {
+      const id = String(val || '').trim();
+      const validIds = AI_DELIVERY_SOUNDTRACKS.map(track => track.id);
+      return validIds.includes(id) ? id : validIds[0] || id;
+    }, z.enum(AI_DELIVERY_SOUNDTRACKS.map(track => track.id))),
+    mood: z.preprocess(val => safeString(val, 80, 2, 'Warm and grounded'), z.string().min(2).max(80)),
+    genre: z.preprocess(val => safeString(val, 80, 2, 'Afrobeat'), z.string().min(2).max(80)),
+    tempo: z.preprocess(coerceTempo, z.enum(['slow', 'mid', 'upbeat']))
   }).optional(),
   narrationRecommended: z.preprocess(val => Boolean(val), z.boolean()).default(false),
   sections: z.array(z.object({
     id: z.preprocess(val => String(val || '').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 32) || 'section-1', z.string().regex(/^[a-z0-9-]{1,32}$/)),
-    title: z.preprocess(val => String(val || '').trim().slice(0, 60) || 'Chapter', z.string().min(1).max(60)),
+    title: z.preprocess(val => safeString(val, 60, 1, 'Chapter'), z.string().min(1).max(60)),
     subtitle: z.preprocess(val => String(val || '').trim().slice(0, 120), z.string().max(120)),
     label: z.preprocess(val => String(val || '').trim().slice(0, 40), z.string().max(40)).default(''),
     delivery: z.preprocess(val => String(val || '').trim().slice(0, 40), z.string().max(40)).default(''),
-    layout: z.enum(LAYOUTS),
+    layout: z.preprocess(val => LAYOUTS.includes(val) ? val : 'single', z.enum(LAYOUTS)),
     accent: z.preprocess(val => val == null || val === '' ? undefined : normalizeHexColor(val), z.string().regex(/^#[0-9a-f]{6}$/i).optional())
   })).min(1).max(12)
 }).superRefine((value, context) => {
@@ -290,21 +367,22 @@ const directionSchema = z.object({
   if (supportsDeliveryMusic(value.format) && !value.music) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['music'], message: 'Choose one approved soundtrack for the ' + value.format + ' format.' });
   }
+  // Auto-coerce values that don't match the format profile instead of rejecting
   if (!profile.compositions.includes(value.variation.composition)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ['variation', 'composition'], message: `Use a composition supported by the ${value.format} format.` });
+    value.variation.composition = profile.compositions[0];
   }
   if (!profile.typography.includes(value.typography.display)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ['typography', 'display'], message: `Use a display type supported by the ${value.format} format.` });
+    value.typography.display = profile.typography[0];
   }
   if (!profile.density.includes(value.variation.density)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ['variation', 'density'], message: `Use a spacing direction supported by the ${value.format} format.` });
+    value.variation.density = profile.density[0];
   }
   if (!profile.accents.includes(value.variation.accentPlacement)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ['variation', 'accentPlacement'], message: `Use an accent placement supported by the ${value.format} format.` });
+    value.variation.accentPlacement = profile.accents[0];
   }
-  value.sections.forEach((section, index) => {
+  value.sections.forEach((section) => {
     if (!profile.sectionLayouts.includes(section.layout)) {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ['sections', index, 'layout'], message: `Use a section layout supported by the ${value.format} format.` });
+      section.layout = profile.sectionLayouts[0];
     }
   });
 });

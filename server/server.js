@@ -7,7 +7,8 @@ import { connectDB } from './src/config/db.js';
 import authRoutes from './src/routes/auth.routes.js';
 import onboardingRoutes from './src/routes/onboarding.routes.js';
 import storyRoutes from './src/routes/story.routes.js';
-import adminRoutes from './src/routes/admin.routes.js';
+import adminRoutes, { adminAuthMiddleware, requireAdminRoles } from './src/routes/admin.routes.js';
+import contentStudioRoutes from './src/routes/contentStudio.routes.js';
 import billingRoutes from './src/routes/billing.routes.js';
 import deliveryRoutes from './src/routes/delivery.routes.js';
 import storageRoutes from './src/routes/storage.routes.js';
@@ -105,6 +106,7 @@ app.use('/api/v1/volume-jobs', volumeRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/assistant', assistantRoutes);
 app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/admin/content-studio', adminAuthMiddleware, requireAdminRoles('superadmin', 'operations', 'admin'), contentStudioRoutes);
 
 app.use((error, req, res, next) => {
   if (error?.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ success: false, message: 'The image must be 5 MB or smaller.' });

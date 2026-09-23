@@ -23,7 +23,7 @@ export function presentProject(project) {
     versions: project.versions.map(version => ({
       id: version.id, createdAt: version.createdAt, instruction: version.instruction, plan: version.plan,
       preview: compositionProps(project, version),
-      outputs: (version.outputs || []).map(output => ({ ...output, publicId: undefined, url: mediaUrl(output.publicId, { resourceType: output.format === 'video' ? 'video' : 'image', format: output.format === 'video' ? 'mp4' : 'png' }) }))
+      outputs: (version.outputs || []).map(output => ({ ...output, publicId: undefined, url: output.publicId ? mediaUrl(output.publicId, { resourceType: output.format === 'video' ? 'video' : 'image', format: output.format === 'video' ? 'mp4' : 'png' }) : undefined, localPath: output.localPath, filename: output.filename, exportFolder: output.exportFolder }))
     }))
   };
 }

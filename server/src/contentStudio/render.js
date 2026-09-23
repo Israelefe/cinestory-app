@@ -6,7 +6,6 @@ import { bundle } from '@remotion/bundler';
 import { selectComposition, renderMedia, renderStill, makeCancelSignal } from '@remotion/renderer';
 import { compositionProps } from './presentation.js';
 import { consumeUnits } from './allowance.js';
-import { uploadMedia } from './media.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const runtime = path.resolve(root, '.runtime/content-studio');
@@ -31,34 +30,71 @@ export async function exportCampaign({ project, version, signal, checkpoint, pro
   }
   // A separate cover travels with every video.
   if (version.brief.formats.includes('video') && !version.brief.formats.includes('story')) jobs.push({ id: 'cover-1', format: 'story', slide: 0, cover: true });
-  const dir = await fs.mkdtemp(path.join(runtime, 'export-'));
-  try {
-    for (let index = 0; index < jobs.length; index++) {
+
+  const safeTitle = (project.title || 'campaign')
+    .toLowerCase()
+    .replace(/[^a-z0-9_\-\s]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .slice(0, 40) || 'campaign';
+  const exportsDir = path.resolve(root, 'exports', `${safeTitle}-${String(project._id).slice(-6)}`);
+  await fs.mkdir(exportsDir, { recursive: true });
+
+  for (let index = 0; index < jobs.length; index++) {
+    signal.throwIfAborted();
+    const job = jobs[index];
+    if (version.outputs.some(output => output.id === job.id)) continue;
+    await consumeUnits(1);
+    const inputProps = compositionProps(project, version, job.format, job.slide);
+    const composition = await selectComposition({ serveUrl, id: 'VeyloContent', inputProps, browserExecutable, timeoutInMilliseconds: 60_000, logLevel: 'error' });
+    const outputFilename = `${job.id}.${job.format === 'video' ? 'mp4' : 'png'}`;
+    const outputLocation = path.join(exportsDir, outputFilename);
+    const { cancel, cancelSignal } = makeCancelSignal();
+    const onAbort = () => cancel();
+    signal.addEventListener('abort', onAbort, { once: true });
+    try {
       signal.throwIfAborted();
-      const job = jobs[index];
-      if (version.outputs.some(output => output.id === job.id)) continue;
-      await consumeUnits(1);
-      const inputProps = compositionProps(project, version, job.format, job.slide);
-      const composition = await selectComposition({ serveUrl, id: 'VeyloContent', inputProps, browserExecutable, timeoutInMilliseconds: 60_000, logLevel: 'error' });
-      const outputLocation = path.join(dir, `${job.id}.${job.format === 'video' ? 'mp4' : 'png'}`);
-      const { cancel, cancelSignal } = makeCancelSignal();
-      const onAbort = () => cancel();
-      signal.addEventListener('abort', onAbort, { once: true });
-      try {
-        signal.throwIfAborted();
-        const common = { serveUrl, composition, inputProps, outputLocation, browserExecutable, timeoutInMilliseconds: 60_000, logLevel: 'error' };
-        if (job.format === 'video') {
-          await renderMedia({ ...common, codec: 'h264', audioCodec: 'aac', audioBitrate: '192k', pixelFormat: 'yuv420p', crf: 18, concurrency: Math.max(1, Math.min(4, Number(process.env.CONTENT_RENDER_CONCURRENCY) || 2)), cancelSignal, onProgress: ({ progress: value }) => progress(`Rendering video · ${Math.round(value * 100)}%`, 65 + (index + value) / jobs.length * 29) });
-        } else await renderStill({ ...common, output: outputLocation, cancelSignal, imageFormat: 'png', frame: 0 });
-      } finally { signal.removeEventListener('abort', onAbort); }
-      signal.throwIfAborted();
-      const result = await uploadMedia(outputLocation, { projectId: project._id, key: `${version.id}/exports/${job.id}`, resourceType: job.format === 'video' ? 'video' : 'image', format: job.format === 'video' ? 'mp4' : 'png' });
-      version.outputs.push({ ...job, publicId: result.public_id, width: composition.width, height: composition.height, bytes: result.bytes, duration: job.format === 'video' ? composition.durationInFrames / composition.fps : undefined });
-      await checkpoint();
-      progress(`Exported ${index + 1} of ${jobs.length}`, 65 + (index + 1) / jobs.length * 29);
+      const common = { serveUrl, composition, inputProps, outputLocation, browserExecutable, timeoutInMilliseconds: 60_000, logLevel: 'error' };
+      if (job.format === 'video') {
+        await renderMedia({
+          ...common,
+          codec: 'h264',
+          audioCodec: 'aac',
+          audioBitrate: '192k',
+          pixelFormat: 'yuv420p',
+          crf: 18,
+          concurrency: Math.max(1, Math.min(4, Number(process.env.CONTENT_RENDER_CONCURRENCY) || 2)),
+          cancelSignal,
+          onProgress: ({ progress: value }) => progress(`Rendering video · ${Math.round(value * 100)}%`, 65 + (index + value) / jobs.length * 29)
+        });
+      } else {
+        await renderStill({ ...common, output: outputLocation, cancelSignal, imageFormat: 'png', frame: 0 });
+      }
+    } finally {
+      signal.removeEventListener('abort', onAbort);
     }
-  } finally {
-    const relative = path.relative(runtime, path.resolve(dir));
-    if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) await fs.rm(dir, { recursive: true, force: true });
+    signal.throwIfAborted();
+
+    const stat = await fs.stat(outputLocation);
+    version.outputs.push({
+      ...job,
+      localPath: outputLocation,
+      filename: outputFilename,
+      exportFolder: exportsDir,
+      width: composition.width,
+      height: composition.height,
+      bytes: stat.size,
+      duration: job.format === 'video' ? composition.durationInFrames / composition.fps : undefined
+    });
+    await checkpoint();
+    progress(`Exported ${index + 1} of ${jobs.length}`, 65 + (index + 1) / jobs.length * 29);
+  }
+
+  // Automatically open the exports folder in Windows File Explorer
+  if (process.platform === 'win32') {
+    try {
+      const { exec } = await import('node:child_process');
+      exec(`explorer.exe "${exportsDir}"`);
+    } catch {}
   }
 }
