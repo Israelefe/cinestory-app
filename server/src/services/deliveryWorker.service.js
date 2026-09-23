@@ -47,7 +47,8 @@ async function refreshProviderQuotas() {
   quotaFetchedAt = Date.now();
   const creativeModel = process.env.ALIBABA_CREATIVE_MODEL || 'deepseek-v4.1-flash';
   const visionModel = process.env.ALIBABA_VISION_MODEL || 'qwen3-vl-flash';
-  const quotas = await fetchAlibabaQuotas([creativeModel, visionModel]);
+  const captionModel = process.env.ALIBABA_CAPTION_MODEL || 'qwen3.7-flash';
+  const quotas = await fetchAlibabaQuotas([creativeModel, visionModel, captionModel]);
   if (!Object.keys(quotas).length) return;
   quotaSnapshot = quotas;
   effectiveJobConcurrency = workerSettings.maxJobConcurrency;
@@ -222,6 +223,7 @@ async function direct(job, delivery) {
     error.code = 'ANALYSIS_REQUIRED';
     throw error;
   }
+  const photoUrlsById = new Map(delivery.assets.map(asset => [String(asset.assetId), signedImageUrl(asset.publicId, { width: 1024 })]));
   let direction = job.result?.direction;
   let frames = Array.isArray(job.result?.frames) ? job.result.frames : [];
   if (!direction) {
@@ -251,7 +253,7 @@ async function direct(job, delivery) {
   const captionsStartedAt = Date.now();
   try {
     await mapConcurrent(pending, effectiveAiBatchConcurrency, async batch => {
-      const result = await withAiRequestSlot(() => createFrameBatch({ format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction, imageInsights: batch, revisionInstruction: job.input?.instruction || '', currentFrames: job.type === 'revise' ? (delivery.creativeDirection?.frames || []).filter(frame => batch.some(item => item.assetId === frame.assetId)) : [] }));
+      const result = await withAiRequestSlot(() => createFrameBatch({ format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction, imageInsights: batch, photoUrlsById, revisionInstruction: job.input?.instruction || '', currentFrames: job.type === 'revise' ? (delivery.creativeDirection?.frames || []).filter(frame => batch.some(item => item.assetId === frame.assetId)) : [] }));
       const frameMap = new Map((result.frames || []).map(frame => [String(frame.assetId), frame]));
       for (const item of batch) {
         const frame = frameMap.get(String(item.assetId));
@@ -334,9 +336,10 @@ async function revise(job, delivery) {
   const selected = new Set(assetIds);
   const insights = delivery.assets.filter(asset => selected.has(asset.assetId)).map(asset => asset.analysis).filter(Boolean);
   if (insights.length !== selected.size) throw Object.assign(new Error('One of the selected photographs has no analysis.'), { code: 'ANALYSIS_REQUIRED' });
+  const photoUrlsById = new Map(delivery.assets.filter(asset => selected.has(asset.assetId)).map(asset => [String(asset.assetId), signedImageUrl(asset.publicId, { width: 1024 })]));
   const currentFrames = delivery.creativeDirection.frames.filter(frame => selected.has(frame.assetId));
   await saveJob(job, { stage: 'revising-selected-photographs', progress: 20 });
-  const result = await withAiRequestSlot(() => createFrameBatch({ format: delivery.format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction: delivery.creativeDirection, imageInsights: insights, revisionInstruction: instruction, currentFrames }));
+  const result = await withAiRequestSlot(() => createFrameBatch({ format: delivery.format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction: delivery.creativeDirection, imageInsights: insights, photoUrlsById, revisionInstruction: instruction, currentFrames }));
   if (result.frames.some((frame, index) => frame.assetId !== insights[index]?.assetId)) throw Object.assign(new Error('The creative model changed the selected photograph order.'), { code: 'INVALID_FRAME_SEQUENCE' });
   const sectionIds = new Set(delivery.creativeDirection.sections.map(section => section.id));
   if (result.frames.some(frame => !sectionIds.has(frame.sectionId))) throw Object.assign(new Error('The creative model returned an unknown section.'), { code: 'INVALID_FRAME_SECTION' });
