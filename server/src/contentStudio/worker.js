@@ -135,8 +135,11 @@ export async function processProject(project, parentSignal) {
   } catch (error) {
     const current = await ContentProject.findOne(lease).select('job.cancelRequested').lean().catch(() => null);
     const cancelled = current?.job.cancelRequested;
-    await ContentProject.updateOne(lease, { $set: { 'job.status': cancelled ? 'cancelled' : 'failed', 'job.error': cancelled ? '' : error.safe ? error.message : 'This content job stopped before completion. Retry to resume from the last saved step.', 'job.stage': cancelled ? 'Cancelled' : 'Needs a retry', 'job.completedAt': new Date() } }).catch(() => {});
-    if (!cancelled) console.error('[content-studio/worker]', error.name || 'Error', error.safe ? error.message : 'Job failed; provider output withheld.');
+    const errorDetail = error.name === 'ZodError'
+      ? `Validation error: ${error.issues?.map(i => `${i.path.join('.') || 'field'}: ${i.message}`).join('; ')}`
+      : (error.safe ? error.message : (error.message || 'This content job stopped before completion. Retry to resume from the last saved step.'));
+    await ContentProject.updateOne(lease, { $set: { 'job.status': cancelled ? 'cancelled' : 'failed', 'job.error': cancelled ? '' : errorDetail, 'job.stage': cancelled ? 'Cancelled' : 'Needs a retry', 'job.completedAt': new Date() } }).catch(() => {});
+    if (!cancelled) console.error('[content-studio/worker]', error.name || 'Error:', errorDetail);
   } finally { clearInterval(heartbeat); parentSignal?.removeEventListener('abort', stop); }
 }
 
