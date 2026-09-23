@@ -7,7 +7,8 @@ import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID } from '../constants/narra
 // The audio is generated from the approved per-photograph captions; no second script
 // is invented at narration time.
 const MODEL_ID = 'flux-hannah-en';
-export const NARRATION_RENDER_VERSION = 'flux-hannah-biography-v3';
+export const NARRATION_RENDER_VERSION = 'flux-hannah-biography-v4';
+const MAX_NARRATION_CHUNK_CHARACTERS = 2000;
 // Keep Hannah measured without flattening her natural pitch movement. Deepgram's
 // tuned expressivity default (0) sounds more like a person telling a story than
 // the narrow, evenly stressed delivery produced by the previous -1 setting.
@@ -232,19 +233,24 @@ export function timedSegments(segments, words, duration = 0) {
   }));
 }
 
-function splitNarration(segments, maxCharacters = 2600) {
+function narrationChunkText(segments) {
+  return segments.map(segment => narrationLine(segment.text)).join('\n\n');
+}
+
+function splitNarration(segments, maxCharacters = MAX_NARRATION_CHUNK_CHARACTERS) {
   const chunks = [];
   let current = [];
-  let length = 0;
   for (const segment of segments) {
-    const extra = segment.text.length + (current.length ? 1 : 0);
-    if (current.length && length + extra > maxCharacters) {
+    const candidate = [...current, segment];
+    if (current.length && narrationChunkText(candidate).length > maxCharacters) {
       chunks.push(current);
-      current = [];
-      length = 0;
+      current = [segment];
+    } else {
+      current = candidate;
     }
-    current.push(segment);
-    length += extra;
+    if (narrationChunkText(current).length > maxCharacters) {
+      throw Object.assign(new Error('An approved caption is longer than the narration provider’s per-request limit.'), { code: 'NARRATION_CHUNK_TOO_LONG' });
+    }
   }
   if (current.length) chunks.push(current);
   return chunks;
@@ -261,25 +267,18 @@ export async function generateNarration(delivery) {
   if (!apiKey) throw Object.assign(new Error('Deepgram narration is not configured.'), { code: 'NARRATION_NOT_CONFIGURED' });
 
   const segments = captionSegments(delivery);
-  // A full stop between approved captions gives Flux a calm breath without inventing a script.
-  const transcriptLines = segments.map(segment => {
-    const line = cleanLine(segment.text, 220);
-    return /[.!?…]$/.test(line) ? line : `${line}.`;
-  });
   // A short paragraph break gives the narrator room to breathe between frames
   // while keeping every spoken word equal to an approved caption.
-  const spokenTranscriptLines = segments.map(segment => narrationLine(segment.text));
-  const transcript = spokenTranscriptLines.join('\n\n');
+  const transcript = narrationChunkText(segments);
   const chunks = splitNarration(segments);
   const audioBuffers = [];
   const measuredSegments = [];
   let offset = 0;
   for (const chunk of chunks) {
-    const chunkText = chunk.map(segment => {
-      const line = cleanLine(segment.text, 220);
-      return /[.!?…]$/.test(line) ? line : `${line}.`;
-    }).join('\n\n');
-    const spokenChunkText = chunk.map(segment => narrationLine(segment.text)).join('\n\n');
+    const spokenChunkText = narrationChunkText(chunk);
+    if (spokenChunkText.length > MAX_NARRATION_CHUNK_CHARACTERS) {
+      throw Object.assign(new Error('Narration exceeded the provider’s per-request character limit.'), { code: 'NARRATION_CHUNK_TOO_LONG' });
+    }
     const chunkAudio = await synthesize({ apiKey, text: spokenChunkText });
     const timing = await transcribeWordTimings({ apiKey, audio: chunkAudio });
     const chunkSegments = timedSegments(chunk, timing.words, timing.duration).map(segment => ({

@@ -17,6 +17,7 @@ const deliveryJobSchema = new mongoose.Schema({
   promptVersion: { type: String, trim: true, maxlength: 80 },
   renderVersion: { type: String, trim: true, maxlength: 100 },
   providerLatencyMs: { type: Number, min: 0 },
+  stageTimings: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
   captionFailures: { type: Number, min: 0, default: 0 },
   timingFailures: { type: Number, min: 0, default: 0 },
   cancelRequestedAt: Date,

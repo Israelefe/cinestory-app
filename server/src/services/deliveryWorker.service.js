@@ -14,6 +14,8 @@ let timer;
 let polling = false;
 const activeJobs = new Map();
 const activeDeliveryIds = new Set();
+let activeAiRequests = 0;
+const aiRequestWaiters = [];
 
 function positiveInt(value, fallback, { min = 1, max = 32 } = {}) {
   const parsed = Number(value);
@@ -22,9 +24,9 @@ function positiveInt(value, fallback, { min = 1, max = 32 } = {}) {
 
 const workerSettings = {
   maxJobConcurrency: 4,
-  aiBatchConcurrency: 6,
-  visionBatchSize: 12,
-  captionBatchSize: 8
+  aiBatchConcurrency: 8,
+  visionBatchSize: 16,
+  captionBatchSize: 12
 };
 let effectiveJobConcurrency = workerSettings.maxJobConcurrency;
 let effectiveAiBatchConcurrency = workerSettings.aiBatchConcurrency;
@@ -33,9 +35,9 @@ let quotaFetchedAt = 0;
 
 function readWorkerSettings() {
   workerSettings.maxJobConcurrency = positiveInt(process.env.DELIVERY_WORKER_CONCURRENCY, 4, { min: 1, max: 16 });
-  workerSettings.aiBatchConcurrency = positiveInt(process.env.DELIVERY_AI_CONCURRENCY, 6, { min: 1, max: 16 });
-  workerSettings.visionBatchSize = positiveInt(process.env.DELIVERY_VISION_BATCH_SIZE, 12, { min: 4, max: 24 });
-  workerSettings.captionBatchSize = positiveInt(process.env.DELIVERY_CAPTION_BATCH_SIZE, 8, { min: 4, max: 16 });
+  workerSettings.aiBatchConcurrency = positiveInt(process.env.DELIVERY_AI_CONCURRENCY, 8, { min: 1, max: 16 });
+  workerSettings.visionBatchSize = positiveInt(process.env.DELIVERY_VISION_BATCH_SIZE, 16, { min: 4, max: 24 });
+  workerSettings.captionBatchSize = positiveInt(process.env.DELIVERY_CAPTION_BATCH_SIZE, 12, { min: 4, max: 16 });
   effectiveJobConcurrency = workerSettings.maxJobConcurrency;
   effectiveAiBatchConcurrency = workerSettings.aiBatchConcurrency;
 }
@@ -67,6 +69,7 @@ async function refreshProviderQuotas() {
   if (providerConcurrency.length) {
     effectiveAiBatchConcurrency = Math.min(effectiveAiBatchConcurrency, Math.min(...providerConcurrency));
   }
+  aiRequestWaiters.splice(0).forEach(resolve => resolve());
 }
 
 async function mapConcurrent(items, limit, handler) {
@@ -90,6 +93,19 @@ async function mapConcurrent(items, limit, handler) {
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
   if (firstError) throw firstError;
   return results;
+}
+
+async function withAiRequestSlot(task) {
+  while (activeAiRequests >= effectiveAiBatchConcurrency) {
+    await new Promise(resolve => aiRequestWaiters.push(resolve));
+  }
+  activeAiRequests += 1;
+  try {
+    return await task();
+  } finally {
+    activeAiRequests -= 1;
+    aiRequestWaiters.splice(0).forEach(resolve => resolve());
+  }
 }
 
 function serialSaveJob(job) {
@@ -117,6 +133,15 @@ async function saveJob(job, update) {
   return true;
 }
 
+async function recordStageTiming(job, name, startedAt) {
+  const durationMs = Math.max(0, Date.now() - startedAt);
+  try {
+    await DeliveryJob.updateOne({ _id: job._id }, { $set: { [`stageTimings.${name}`]: durationMs } });
+  } catch (error) {
+    console.warn(`[delivery-worker/${job.type}] Could not save ${name} timing: ${error.message}`);
+  }
+}
+
 async function analyze(job, delivery) {
   delivery.status = 'analyzing';
   await delivery.save();
@@ -132,28 +157,40 @@ async function analyze(job, delivery) {
       photographerTags: asset.libraryTags || []
     })));
   }
-  const pending = batches.filter(batch => batch.some(asset => !insightsById.has(String(asset.assetId))));
+  const pending = batches.map(batch => batch.filter(asset => !insightsById.has(String(asset.assetId)))).filter(batch => batch.length);
   const saveProgress = serialSaveJob(job);
   let completed = assets.filter(asset => insightsById.has(String(asset.assetId))).length;
-  await mapConcurrent(pending, effectiveAiBatchConcurrency, async batch => {
-    const batchInsights = await analyzeImageBatch({ brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, assets: batch });
-    const contextByAsset = new Map(batch.map(asset => [String(asset.assetId), asset]));
-    for (const insight of batchInsights) {
-      const context = contextByAsset.get(String(insight.assetId));
-      if (!context) throw Object.assign(new Error(`The vision model returned an unknown photograph ${insight.assetId}.`), { code: 'INVALID_VISION_SEQUENCE' });
-      insightsById.set(String(insight.assetId), { ...insight, assetId: context.assetId, photographerCaption: context.photographerCaption, photographerTags: context.photographerTags });
-    }
-    if (batchInsights.length !== batch.length || batch.some(asset => !insightsById.has(String(asset.assetId)))) {
-      throw Object.assign(new Error('The vision model did not return one analysis for every photograph in the batch.'), { code: 'INVALID_VISION_SEQUENCE' });
-    }
-    completed = assets.filter(asset => insightsById.has(String(asset.assetId))).length;
-    const insights = assets.map(asset => insightsById.get(String(asset.assetId))).filter(Boolean);
-    await saveProgress({ stage: 'reading-photographs', cursor: completed, progress: Math.min(78, Math.round((completed / assets.length) * 78)), result: { insights } });
-  });
+  const visionStartedAt = Date.now();
+  try {
+    await mapConcurrent(pending, effectiveAiBatchConcurrency, async batch => {
+      const { images: batchInsights, missingAssetIds = [] } = await withAiRequestSlot(() => analyzeImageBatch({ brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, assets: batch }));
+      const contextByAsset = new Map(batch.map(asset => [String(asset.assetId), asset]));
+      for (const insight of batchInsights) {
+        const context = contextByAsset.get(String(insight.assetId));
+        if (!context) throw Object.assign(new Error(`The vision model returned an unknown photograph ${insight.assetId}.`), { code: 'INVALID_VISION_SEQUENCE' });
+        insightsById.set(String(insight.assetId), { ...insight, assetId: context.assetId, photographerCaption: context.photographerCaption, photographerTags: context.photographerTags });
+      }
+      completed = assets.filter(asset => insightsById.has(String(asset.assetId))).length;
+      const insights = assets.map(asset => insightsById.get(String(asset.assetId))).filter(Boolean);
+      await saveProgress({ stage: 'reading-photographs', cursor: completed, progress: Math.min(78, Math.round((completed / assets.length) * 78)), result: { insights } });
+      if (missingAssetIds.length || batch.some(asset => !insightsById.has(String(asset.assetId)))) {
+        const missingCount = missingAssetIds.length || batch.filter(asset => !insightsById.has(String(asset.assetId))).length;
+        throw Object.assign(new Error(`Analysis is saved for ${completed} photographs. Retry to finish the remaining ${missingCount} using only those photographs.`), { code: 'INVALID_VISION_SEQUENCE' });
+      }
+    });
+  } finally {
+    await recordStageTiming(job, 'visionAnalysisMs', visionStartedAt);
+  }
   const insights = assets.map(asset => insightsById.get(String(asset.assetId))).filter(Boolean);
   if (insights.length !== assets.length) throw Object.assign(new Error('The complete shoot could not be analysed.'), { code: 'INVALID_VISION_SEQUENCE' });
   await saveProgress({ stage: 'understanding-the-shoot', cursor: assets.length, progress: 82, result: { insights } });
-  const recommendation = await recommendFormats({ brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, imageInsights: insights });
+  const recommendationStartedAt = Date.now();
+  let recommendation;
+  try {
+    recommendation = await withAiRequestSlot(() => recommendFormats({ brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, imageInsights: insights }));
+  } finally {
+    await recordStageTiming(job, 'formatRecommendationMs', recommendationStartedAt);
+  }
   const byId = new Map(insights.map(item => [item.assetId, item]));
   delivery.assets.forEach(asset => { asset.analysis = byId.get(asset.assetId); });
   delivery.collectionAnalysis = { summary: recommendation.collectionSummary, clientThroughline: recommendation.clientThroughline };
@@ -188,7 +225,12 @@ async function direct(job, delivery) {
   let direction = job.result?.direction;
   let frames = Array.isArray(job.result?.frames) ? job.result.frames : [];
   if (!direction) {
-    direction = await createGlobalDirection({ format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, collectionAnalysis: delivery.collectionAnalysis, imageInsights: insights, revisionInstruction: job.input?.instruction || '', currentDirection: job.type === 'revise' ? delivery.creativeDirection : null });
+    const directionStartedAt = Date.now();
+    try {
+      direction = await withAiRequestSlot(() => createGlobalDirection({ format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, collectionAnalysis: delivery.collectionAnalysis, imageInsights: insights, revisionInstruction: job.input?.instruction || '', currentDirection: job.type === 'revise' ? delivery.creativeDirection : null }));
+    } finally {
+      await recordStageTiming(job, 'artDirectionMs', directionStartedAt);
+    }
     if (direction.format !== format) {
       direction.format = format;
     }
@@ -206,21 +248,26 @@ async function direct(job, delivery) {
   const pending = batches.filter(batch => batch.some(item => !frameById.has(String(item.assetId))));
   const saveProgress = serialSaveJob(job);
   let completed = insights.filter(item => frameById.has(String(item.assetId))).length;
-  await mapConcurrent(pending, effectiveAiBatchConcurrency, async batch => {
-    const result = await createFrameBatch({ format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction, imageInsights: batch, revisionInstruction: job.input?.instruction || '', currentFrames: job.type === 'revise' ? (delivery.creativeDirection?.frames || []).filter(frame => batch.some(item => item.assetId === frame.assetId)) : [] });
-    const frameMap = new Map((result.frames || []).map(frame => [String(frame.assetId), frame]));
-    for (const item of batch) {
-      const frame = frameMap.get(String(item.assetId));
-      if (!frame) throw Object.assign(new Error(`No approved caption was returned for photograph ${item.assetId}.`), { code: 'CAPTIONS_REQUIRED' });
-      if (!sectionIds.has(frame.sectionId)) frame.sectionId = defaultSectionId;
-      frame.assetId = item.assetId;
-      if (typeof frame.caption !== 'string' || frame.caption.trim().length < 18) throw Object.assign(new Error(`Caption is missing for photograph ${item.assetId}.`), { code: 'CAPTIONS_REQUIRED' });
-      frameById.set(String(item.assetId), frame);
-    }
-    completed = insights.filter(item => frameById.has(String(item.assetId))).length;
-    const orderedFrames = insights.map(item => frameById.get(String(item.assetId))).filter(Boolean);
-    await saveProgress({ stage: 'directing-photographs', cursor: completed, progress: 18 + Math.round((completed / insights.length) * 78), result: { direction, frames: orderedFrames } });
-  });
+  const captionsStartedAt = Date.now();
+  try {
+    await mapConcurrent(pending, effectiveAiBatchConcurrency, async batch => {
+      const result = await withAiRequestSlot(() => createFrameBatch({ format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction, imageInsights: batch, revisionInstruction: job.input?.instruction || '', currentFrames: job.type === 'revise' ? (delivery.creativeDirection?.frames || []).filter(frame => batch.some(item => item.assetId === frame.assetId)) : [] }));
+      const frameMap = new Map((result.frames || []).map(frame => [String(frame.assetId), frame]));
+      for (const item of batch) {
+        const frame = frameMap.get(String(item.assetId));
+        if (!frame) throw Object.assign(new Error(`No approved caption was returned for photograph ${item.assetId}.`), { code: 'CAPTIONS_REQUIRED' });
+        if (!sectionIds.has(frame.sectionId)) frame.sectionId = defaultSectionId;
+        frame.assetId = item.assetId;
+        if (typeof frame.caption !== 'string' || frame.caption.trim().length < 18) throw Object.assign(new Error(`Caption is missing for photograph ${item.assetId}.`), { code: 'CAPTIONS_REQUIRED' });
+        frameById.set(String(item.assetId), frame);
+      }
+      completed = insights.filter(item => frameById.has(String(item.assetId))).length;
+      const orderedFrames = insights.map(item => frameById.get(String(item.assetId))).filter(Boolean);
+      await saveProgress({ stage: 'directing-photographs', cursor: completed, progress: 18 + Math.round((completed / insights.length) * 78), result: { direction, frames: orderedFrames } });
+    });
+  } finally {
+    await recordStageTiming(job, 'captionGenerationMs', captionsStartedAt);
+  }
   frames = insights.map(item => frameById.get(String(item.assetId))).filter(Boolean);
   if (frames.length !== insights.length) throw Object.assign(new Error('The creative director did not return a caption for every photograph.'), { code: 'CAPTIONS_REQUIRED' });
   const captionKeys = new Set();
@@ -289,7 +336,7 @@ async function revise(job, delivery) {
   if (insights.length !== selected.size) throw Object.assign(new Error('One of the selected photographs has no analysis.'), { code: 'ANALYSIS_REQUIRED' });
   const currentFrames = delivery.creativeDirection.frames.filter(frame => selected.has(frame.assetId));
   await saveJob(job, { stage: 'revising-selected-photographs', progress: 20 });
-  const result = await createFrameBatch({ format: delivery.format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction: delivery.creativeDirection, imageInsights: insights, revisionInstruction: instruction, currentFrames });
+  const result = await withAiRequestSlot(() => createFrameBatch({ format: delivery.format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction: delivery.creativeDirection, imageInsights: insights, revisionInstruction: instruction, currentFrames }));
   if (result.frames.some((frame, index) => frame.assetId !== insights[index]?.assetId)) throw Object.assign(new Error('The creative model changed the selected photograph order.'), { code: 'INVALID_FRAME_SEQUENCE' });
   const sectionIds = new Set(delivery.creativeDirection.sections.map(section => section.id));
   if (result.frames.some(frame => !sectionIds.has(frame.sectionId))) throw Object.assign(new Error('The creative model returned an unknown section.'), { code: 'INVALID_FRAME_SECTION' });
@@ -303,6 +350,7 @@ async function revise(job, delivery) {
 
 async function run(job) {
   const startedAt = Date.now();
+  await recordStageTiming(job, 'queueWaitMs', Number(job.createdAt) || startedAt);
   try {
     const delivery = await Delivery.findOne({ _id: job.deliveryId, userId: job.userId });
     if (!delivery) throw Object.assign(new Error('This delivery no longer exists.'), { code: 'DELIVERY_NOT_FOUND' });

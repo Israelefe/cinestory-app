@@ -19,6 +19,23 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
   const allowIndividualDownloads = delivery ? delivery.access?.allowIndividualDownloads !== false : Boolean(onDownload);
   const allowLikes = delivery ? Boolean(delivery.access?.allowLikes && onLike) : Boolean(onLike);
   const resolvedPhotos = useMemo(() => photos.map((photo, index) => demoId ? { ...photo, name: `demo-${demoId}-${index + 1}`, url: `/veylo/web/demo-${demoId}-${index + 1}-1440.webp`, thumbnailUrl: `/veylo/web/demo-${demoId}-${index + 1}-480.webp` } : photo), [photos, demoId]);
+  const direction = delivery?.creativeDirection || {};
+  const palette = direction.palette || {};
+  const typography = direction.typography || {};
+  const displayFont = typography.display === 'soft-serif' ? "'Cormorant Garamond', 'Playfair Display', Georgia, serif"
+    : typography.display === 'condensed-sans' ? "'Outfit', 'Plus Jakarta Sans', sans-serif"
+      : typography.display === 'clean-sans' ? "'Plus Jakarta Sans', system-ui, sans-serif"
+        : "'Playfair Display', Georgia, serif";
+  const bodyFont = typography.body === 'editorial-serif' ? "'Playfair Display', Georgia, serif" : "'Plus Jakarta Sans', system-ui, sans-serif";
+  const galleryTheme = {
+    '--gallery-accent': palette.accent || '#ff9b8e',
+    '--gallery-bg': palette.background || '#08080b',
+    '--gallery-surface': palette.surface || '#0d0d11',
+    '--gallery-text': palette.text || '#f7f3ef',
+    '--gallery-display': displayFont,
+    '--gallery-body': bodyFont,
+    '--fd-caption-weight': direction.variation?.captionTreatment === 'bold' ? '650' : direction.variation?.captionTreatment === 'quiet' ? '400' : '500'
+  };
   const activePhoto = selected === null ? null : resolvedPhotos[selected];
   const activeKey = selected === null ? null : photoKey(activePhoto, selected);
   const resolvedBusy = busy ?? (allDownloading ? 'all' : downloading === null ? null : photoKey(resolvedPhotos[downloading], downloading));
@@ -48,7 +65,7 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
   const runLike = (photo, index) => onLike?.(photoKey(photo, index), index);
 
   return <motion.div className="client-gallery-overlay" initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={event => { if (event.target === event.currentTarget) onClose?.(); }}>
-    <motion.section ref={panel} className="client-gallery" role="dialog" aria-modal="true" aria-labelledby="client-gallery-title" tabIndex={-1} initial={reduced ? false : { opacity: 0, y: 24, scale: .985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={reduced ? { opacity: 0 } : { opacity: 0, y: 14 }} transition={reduced ? { duration: 0 } : { type: 'spring', damping: 28, stiffness: 270 }}>
+    <motion.section ref={panel} className="client-gallery" style={galleryTheme} role="dialog" aria-modal="true" aria-labelledby="client-gallery-title" tabIndex={-1} initial={reduced ? false : { opacity: 0, y: 24, scale: .985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={reduced ? { opacity: 0 } : { opacity: 0, y: 14 }} transition={reduced ? { duration: 0 } : { type: 'spring', damping: 28, stiffness: 270 }}>
       <header className="client-gallery-header">
         <div><p>{eyebrow} · {photos.length} {photos.length === 1 ? 'photograph' : 'photographs'}</p><h2 id="client-gallery-title">{selected === null ? title : `Photograph ${selected + 1}`}</h2></div>
         <div className="client-gallery-header-actions">
@@ -61,16 +78,16 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
       {selected === null ? <div className="client-gallery-grid">{resolvedPhotos.map((photo, index) => {
         const key = photoKey(photo, index);
         const isLiked = liked?.has(key);
-        return <motion.figure key={key} initial={reduced ? false : { opacity: 0, y: 15 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .12 }} transition={{ delay: reduced ? 0 : Math.min(index * .025, .2) }}>
+        return <motion.figure key={key} data-frame-layout={photo.layout || undefined} data-caption-position={photo.captionPosition || undefined} data-text-background={photo.textBackground || undefined} data-type-style={photo.typographyStyle || undefined} style={photo.colorAccent ? { '--frame-accent': photo.colorAccent } : undefined} initial={reduced ? false : { opacity: 0, y: 15 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .12 }} transition={{ delay: reduced ? 0 : Math.min(index * .025, .2) }}>
           <button className="client-gallery-photo" type="button" onClick={() => setSelected(index)} aria-label={`Open photograph ${index + 1}`}><Photo name={photo.name} url={photo.thumbnailUrl || photo.url} srcSet={photo.srcSet} alt={photo.alt || photo.caption || `Photograph ${index + 1}`} sizes="(max-width: 640px) 48vw, (max-width: 1024px) 31vw, 24vw" /></button>
-          <figcaption><span>{String(index + 1).padStart(2, '0')}</span><p>{photo.caption || ''}</p><div>
+          <figcaption data-text-animation={photo.textAnimation || undefined}><span>{String(index + 1).padStart(2, '0')}</span><p>{photo.caption || ''}</p><div>
             {allowLikes && <button className={isLiked ? 'is-liked' : ''} type="button" onClick={() => runLike(photo, index)} aria-label={isLiked ? 'Remove from favourites' : 'Add to favourites'}><Heart size={16} fill={isLiked ? 'currentColor' : 'none'} /></button>}
             {allowIndividualDownloads && <button type="button" onClick={() => runDownload(photo, index)} disabled={resolvedBusy === key || resolvedBusy === 'all'} aria-label={`Download photograph ${index + 1}`}>{resolvedBusy === key ? <LoaderCircle className="client-gallery-spin" size={16} /> : <Download size={16} />}</button>}
           </div></figcaption>
         </motion.figure>;
       })}</div> : <div className="client-gallery-lightbox">
-        <AnimatePresence mode="wait"><motion.img key={activeKey} src={imageUrl(activePhoto)} alt={activePhoto?.alt || activePhoto?.caption || `Photograph ${selected + 1}`} initial={reduced ? false : { opacity: 0, scale: .99 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .24 }} /></AnimatePresence>
-        <p className="client-gallery-lightbox-caption">{activePhoto?.caption || ''}</p>
+        <AnimatePresence mode="wait"><motion.img key={activeKey} src={imageUrl(activePhoto)} alt={activePhoto?.alt || activePhoto?.caption || `Photograph ${selected + 1}`} data-frame-motion={activePhoto?.motion || undefined} data-frame-transition={activePhoto?.transition || undefined} initial={reduced ? false : { opacity: 0, scale: .99 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .24 }} /></AnimatePresence>
+        <p className="client-gallery-lightbox-caption" data-caption-position={activePhoto?.captionPosition || undefined} data-text-background={activePhoto?.textBackground || undefined} data-type-style={activePhoto?.typographyStyle || undefined} style={activePhoto?.colorAccent ? { '--frame-accent': activePhoto.colorAccent } : undefined}>{activePhoto?.caption || ''}</p>
         <div className="client-gallery-lightbox-actions">
           <button className="client-gallery-icon" type="button" onClick={() => setSelected(value => Math.max(0, value - 1))} disabled={selected === 0} aria-label="Previous photograph"><ChevronLeft size={21} /></button>
           <button className="client-gallery-back" type="button" onClick={() => setSelected(null)}><ArrowLeft size={16} /><span>All photographs</span></button>

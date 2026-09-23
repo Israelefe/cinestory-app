@@ -135,3 +135,48 @@
   .vec-event-scenes article[data-layout="hero"] .vec-scene-grid button:first-child{grid-row:span 2}
   .vec-event-scenes article[data-layout="strip"] .vec-scene-grid{grid-auto-columns:minmax(320px,1fr)}
 }
+
+.vec-frame-motion{display:block;width:100%;height:100%;overflow:hidden}
+.vec-frame-motion>.v-photo,.vec-frame-motion>img,.vec-frame-motion .v-photo{display:block;width:100%;height:100%;object-fit:cover}
+.vec-viewer{width:100%;min-width:0;max-width:100%;overflow-x:clip}
+.vec-viewer>main,.vec-viewer main>section,.vec-viewer article{min-width:0;max-width:100%}
+.vec-scene-grid button[data-frame-layout="poster"],.vec-campaign-sets article>button[data-frame-layout="poster"]{outline:1px solid color-mix(in srgb,var(--frame-accent,var(--fd-accent)) 55%,transparent);outline-offset:-5px}
+.vec-scene-grid button[data-frame-layout="split"] .vec-photo-caption,.vec-campaign-sets article>button[data-frame-layout="split"]+div .vec-photo-caption{border-left:2px solid var(--frame-accent,var(--fd-accent));padding-left:9px}
+.vec-scene-grid button[data-caption-position="top"] .vec-photo-caption{position:absolute;top:12px;right:12px;bottom:auto;left:12px;margin:0}
+.vec-scene-grid button[data-caption-position="middle"] .vec-photo-caption{position:absolute;top:50%;right:12px;bottom:auto;left:12px;margin:0;transform:translateY(-50%)}
+.vec-campaign-sets article[data-layout="strip"]{grid-template-columns:minmax(0,1fr)}
+
+@media(max-width:640px){
+  .vec-viewer main{padding-top:60px}
+  .vec-event-hero{min-height:calc(100svh - 60px)}
+  .vec-event-hero>div{left:16px;right:16px;bottom:max(28px,env(safe-area-inset-bottom))}
+  .vec-event-summary>div{padding:18px 16px}
+  .vec-event-scenes,.vec-campaign-sets{padding-inline:14px}
+  .vec-scene-grid button{min-height:clamp(220px,70vw,360px)}
+  .vec-campaign-hero{min-height:auto;padding:22px 14px 14px}
+  .vec-campaign-hero>div:nth-child(2){padding:30px 2px 20px}
+  .vec-campaign-hero>figure{min-height:46svh;max-height:64svh}
+  .vec-campaign-note{padding:34px 15px;gap:11px}
+  .vec-campaign-highlights{padding:46px 14px}
+  .vec-campaign-highlight-grid{grid-auto-columns:minmax(80vw,1fr)}
+  .vec-campaign-handoff{padding:40px 14px}
+  .vec-event-hero button,.vec-event-close button,.vec-campaign-handoff button,.vec-campaign-close button{min-height:48px}
+}
+
+@media(min-width:641px) and (max-width:767px){
+  .vec-campaign-hero{min-height:auto}
+  .vec-campaign-hero>figure{min-height:58svh}
+  .vec-campaign-sets>div{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+@media(min-width:768px) and (max-width:1023px){
+  .vec-event-scenes,.vec-campaign-sets{padding-inline:28px}
+  .vec-campaign-hero{min-height:min(82svh,840px);grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);padding:34px 28px 24px;gap:18px}
+  .vec-campaign-hero>figure{min-height:60svh;max-height:72svh}
+  .vec-campaign-sets article{column-gap:22px}
+  .vec-campaign-set-support{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+
+@media(prefers-reduced-motion:reduce){
+  .vec-frame-motion{animation:none!important;transition:none!important}
+}

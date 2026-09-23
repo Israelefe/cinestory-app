@@ -185,6 +185,7 @@ export function deliverySoundtrackFile(trackId) {
 export function recommendSoundtracks(context, limit = 18) {
   const words = new Set(String(context || '').toLowerCase().split(/[^a-z0-9]+/).filter(word => word.length > 2));
   return DELIVERY_SOUNDTRACKS
+    .filter(track => track.category === 'afrobeat')
     .map(track => ({
       track,
       score: [...track.tags, ...track.bestFor, track.storyFunction, track.instrumentationCue].reduce((total, tag) => total + String(tag).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).reduce((tagScore, word) => tagScore + (words.has(word) ? 2 : 0), 0), 0)

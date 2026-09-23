@@ -7,6 +7,10 @@ import {
   DemoHeader,
   campaignPhotos,
   eventCoveragePhotos,
+  formatFrameAttributes,
+  formatFrameStyle,
+  frameMotionTransition,
+  frameMotionValues,
   getFormatThemeStyles,
   normalizeDeliveryPhotos
 } from '../../pages/FormatDemo.jsx';
@@ -138,11 +142,11 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
     <DemoHeader format="Event Coverage" client={title} sectionId="event-coverage" onGallery={() => { setGalleryIndex(null); setGallery(true); }} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     <main>
       <section className="vec-event-hero">
-        <motion.figure initial={reduced ? false : { opacity: 0, scale: 1.035 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: reduced ? 0 : 1.05, ease: [.22, 1, .36, 1] }}>
-          <OpeningPhoto photo={photos[0]} alt="Event opening photograph" />
+        <motion.figure {...formatFrameAttributes(photos[0])} style={formatFrameStyle(photos[0])} initial={reduced ? false : { opacity: 0, scale: 1.035 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: reduced ? 0 : 1.05, ease: [.22, 1, .36, 1] }}>
+          <motion.div className="vec-frame-motion" animate={frameMotionValues(photos[0], reduced)} transition={frameMotionTransition(photos[0], 0, reduced)}><OpeningPhoto photo={photos[0]} alt="Event opening photograph" /></motion.div>
           <i />
         </motion.figure>
-        <motion.div initial={reduced ? false : { opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .7, delay: reduced ? 0 : .18 }}>
+        <motion.div {...formatFrameAttributes(photos[0])} style={formatFrameStyle(photos[0])} initial={reduced ? false : { opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .7, delay: reduced ? 0 : .18 }}>
           <span><CalendarRange size={14} /> EVENT COVERAGE</span>
           <h1>{title}</h1>
           <p>{opening}</p>
@@ -172,8 +176,8 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
       <section className="vec-event-highlights" aria-label="Event highlights">
         <header><span>START HERE</span><h2>The moments that set the day in motion.</h2></header>
         <div className="vec-event-highlight-grid">
-          {highlights.map((photo, index) => <button type="button" key={photo.assetId || photo.name || index} onClick={() => openPhoto(photo)} aria-label={`Open highlight ${index + 1}`}>
-            <Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || `Event highlight ${index + 1}`} sizes="(max-width: 640px) 78vw, 23vw" />
+          {highlights.map((photo, index) => <button type="button" key={photo.assetId || photo.name || index} {...formatFrameAttributes(photo)} style={formatFrameStyle(photo)} onClick={() => openPhoto(photo)} aria-label={`Open highlight ${index + 1}`}>
+            <motion.div className="vec-frame-motion" animate={frameMotionValues(photo, reduced)} transition={frameMotionTransition(photo, index, reduced)}><Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || `Event highlight ${index + 1}`} sizes="(max-width: 640px) 78vw, 23vw" /></motion.div>
             <span>{photo.caption || `Highlight ${String(index + 1).padStart(2, '0')}`}</span>
           </button>)}
         </div>
@@ -192,8 +196,8 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
         {visibleSections.map((section, sectionIndex) => <motion.article id={sceneAnchorId(section, sectionIndex)} data-layout={section.layout || 'grid'} key={section.id} style={section.accent ? { '--section-accent': section.accent } : undefined} initial={reduced ? false : { opacity: 0, y: 28 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .12 }} transition={{ duration: reduced ? 0 : .6 }}>
           <div className="vec-scene-copy"><span>{String(sectionIndex + 1).padStart(2, '0')}</span><div>{section.label && <small>{section.label}</small>}<h3>{section.title}</h3>{section.copy && <p>{section.copy}</p>}</div><b>{section.photos.length} photos</b></div>
           <div className={`vec-scene-grid is-count-${Math.min(section.photos.length, 4)}`}>
-            {section.photos.map((photo, index) => <button type="button" key={photo.assetId || photo.name || index} data-frame-layout={photo.layout || undefined} data-type-style={photo.typographyStyle || undefined} data-text-background={photo.textBackground || undefined} style={photo.colorAccent ? { '--frame-accent': photo.colorAccent } : undefined} onClick={() => openPhoto(photo)} aria-label={`Open ${section.title} photograph ${index + 1}`}>
-              <span className="vec-scene-image"><Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || photo.caption || ''} style={photo.focalPoint ? { objectPosition: photo.focalPoint } : undefined} sizes="(max-width: 640px) 92vw, (max-width: 1024px) 46vw, 31vw" /></span>
+            {section.photos.map((photo, index) => <button type="button" key={photo.assetId || photo.name || index} {...formatFrameAttributes(photo)} style={formatFrameStyle(photo)} onClick={() => openPhoto(photo)} aria-label={`Open ${section.title} photograph ${index + 1}`}>
+              <motion.span className="vec-scene-image vec-frame-motion" animate={frameMotionValues(photo, reduced)} transition={frameMotionTransition(photo, index, reduced)}><Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || photo.caption || ''} style={photo.focalPoint ? { objectPosition: photo.focalPoint } : undefined} sizes="(max-width: 640px) 92vw, (max-width: 1024px) 46vw, 31vw" /></motion.span>
               <small className="vec-photo-caption">{photo.caption}</small>
             </button>)}
           </div>
@@ -252,8 +256,8 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
     <main>
       <section className="vec-campaign-hero">
         <div className="vec-campaign-number">01 <span>/ CAMPAIGN</span></div>
-        <motion.div initial={reduced ? false : { opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .75 }}><span>FINAL ASSET DELIVERY</span><h1>{title}</h1><p>{statement}</p><small>Prepared for {client}</small><button className="vec-campaign-hero-cta" type="button" onClick={() => document.getElementById('campaign-sets')?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth' })}>View approved sets<ArrowRight size={17} /></button></motion.div>
-        <motion.figure initial={reduced ? false : { opacity: 0, clipPath: 'inset(0 0 12% 0)' }} animate={{ opacity: 1, clipPath: 'inset(0 0 0% 0)' }} transition={{ duration: reduced ? 0 : .9, delay: reduced ? 0 : .14 }}><OpeningPhoto photo={heroPhoto} alt="Campaign lead photograph" /></motion.figure>
+        <motion.div {...formatFrameAttributes(heroPhoto)} style={formatFrameStyle(heroPhoto)} initial={reduced ? false : { opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .75 }}><span>FINAL ASSET DELIVERY</span><h1>{title}</h1><p>{statement}</p><small>Prepared for {client}</small><button className="vec-campaign-hero-cta" type="button" onClick={() => document.getElementById('campaign-sets')?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth' })}>View approved sets<ArrowRight size={17} /></button></motion.div>
+        <motion.figure {...formatFrameAttributes(heroPhoto)} style={formatFrameStyle(heroPhoto)} initial={reduced ? false : { opacity: 0, clipPath: 'inset(0 0 12% 0)' }} animate={{ opacity: 1, clipPath: 'inset(0 0 0% 0)' }} transition={{ duration: reduced ? 0 : .9, delay: reduced ? 0 : .14 }}><motion.div className="vec-frame-motion" animate={frameMotionValues(heroPhoto, reduced)} transition={frameMotionTransition(heroPhoto, 0, reduced)}><OpeningPhoto photo={heroPhoto} alt="Campaign lead photograph" /></motion.div></motion.figure>
       </section>
 
       <section className="vec-campaign-note"><BriefcaseBusiness size={21} /><p>{delivery?.creativeDirection?.closingLine || 'Review the campaign first. The organised files and photographer-supplied terms follow below.'}</p></section>
@@ -274,8 +278,8 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
       <section className="vec-campaign-highlights" aria-label="Campaign highlights">
         <header><span>START HERE</span><h2>The approved frames that carry the campaign.</h2></header>
         <div className="vec-campaign-highlight-grid">
-          {highlights.map((photo, index) => <button type="button" key={photo.assetId || photo.name || index} onClick={() => openPhoto(photo)} aria-label={`Open campaign highlight ${index + 1}`}>
-            <Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || `Campaign highlight ${index + 1}`} sizes="(max-width: 640px) 78vw, 23vw" />
+          {highlights.map((photo, index) => <button type="button" key={photo.assetId || photo.name || index} {...formatFrameAttributes(photo)} style={formatFrameStyle(photo)} onClick={() => openPhoto(photo)} aria-label={`Open campaign highlight ${index + 1}`}>
+            <motion.div className="vec-frame-motion" animate={frameMotionValues(photo, reduced)} transition={frameMotionTransition(photo, index, reduced)}><Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || `Campaign highlight ${index + 1}`} sizes="(max-width: 640px) 78vw, 23vw" /></motion.div>
             <span>{photo.caption || `Approved asset ${String(index + 1).padStart(2, '0')}`}</span>
           </button>)}
         </div>
@@ -287,10 +291,10 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
           {filterOptions.map(([value, label]) => <button type="button" key={value} className={activeFilter === value ? 'is-active' : ''} onClick={() => setActiveFilter(value)} aria-pressed={activeFilter === value}>{label}</button>)}
         </div>}
         <div>{visibleSets.map((set, setIndex) => <motion.article id={campaignAnchorId(set, setIndex)} data-layout={set.layout || 'grid'} key={set.id} style={set.accent ? { '--section-accent': set.accent } : undefined} initial={reduced ? false : { opacity: 0, y: 28 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .14 }} transition={{ duration: reduced ? 0 : .55, delay: reduced ? 0 : setIndex * .04 }}>
-          <button type="button" data-frame-layout={set.photos[0]?.layout || undefined} data-type-style={set.photos[0]?.typographyStyle || undefined} data-text-background={set.photos[0]?.textBackground || undefined} style={set.photos[0]?.colorAccent ? { '--frame-accent': set.photos[0].colorAccent } : undefined} onClick={() => openPhoto(set.photos[0])} aria-label={`Open ${set.title}`}><Photo name={set.photos[0]?.name} url={set.photos[0]?.url} srcSet={set.photos[0]?.srcSet} alt={set.photos[0]?.alt || ''} style={set.photos[0]?.focalPoint ? { objectPosition: set.photos[0].focalPoint } : undefined} sizes="(max-width: 640px) 92vw, (max-width: 1024px) 46vw, 31vw" /><span>{String(setIndex + 1).padStart(2, '0')}</span><small>{set.delivery || `${set.photos.length} approved files`}</small></button>
-          <div className="vec-campaign-set-copy">{set.label && <small className="vec-set-label">{set.label}</small>}<h3>{set.title}</h3>{set.copy && <p>{set.copy}</p>}<p className="vec-photo-caption">{set.photos[0]?.caption}</p><span>{set.photos.length} approved {set.photos.length === 1 ? 'file' : 'files'}</span></div>
+          <button type="button" {...formatFrameAttributes(set.photos[0])} style={formatFrameStyle(set.photos[0])} onClick={() => openPhoto(set.photos[0])} aria-label={`Open ${set.title}`}><motion.span className="vec-frame-motion" animate={frameMotionValues(set.photos[0] || {}, reduced)} transition={frameMotionTransition(set.photos[0] || {}, setIndex, reduced)}><Photo name={set.photos[0]?.name} url={set.photos[0]?.url} srcSet={set.photos[0]?.srcSet} alt={set.photos[0]?.alt || ''} style={set.photos[0]?.focalPoint ? { objectPosition: set.photos[0].focalPoint } : undefined} sizes="(max-width: 640px) 92vw, (max-width: 1024px) 46vw, 31vw" /></motion.span><span>{String(setIndex + 1).padStart(2, '0')}</span><small>{set.delivery || `${set.photos.length} approved files`}</small></button>
+          <div className="vec-campaign-set-copy" {...formatFrameAttributes(set.photos[0])} style={formatFrameStyle(set.photos[0])}>{set.label && <small className="vec-set-label">{set.label}</small>}<h3>{set.title}</h3>{set.copy && <p>{set.copy}</p>}<p className="vec-photo-caption">{set.photos[0]?.caption}</p><span>{set.photos.length} approved {set.photos.length === 1 ? 'file' : 'files'}</span></div>
           {set.photos.length > 1 && <div className="vec-campaign-set-support" aria-label={`${set.title} supporting photographs`}>
-            {set.photos.slice(1).map((photo, index) => <button type="button" key={photo.assetId || photo.name || index} data-frame-layout={photo.layout || undefined} data-type-style={photo.typographyStyle || undefined} data-text-background={photo.textBackground || undefined} style={photo.colorAccent ? { '--frame-accent': photo.colorAccent } : undefined} onClick={() => openPhoto(photo)} aria-label={`Open ${set.title} supporting photograph ${index + 1}`}><Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || photo.caption || ''} style={photo.focalPoint ? { objectPosition: photo.focalPoint } : undefined} sizes="(max-width: 640px) 44vw, (max-width: 1024px) 22vw, 18vw" /><span>{photo.caption || photo.deliveryLabel || 'Supporting asset'}</span></button>)}
+            {set.photos.slice(1).map((photo, index) => <button type="button" key={photo.assetId || photo.name || index} {...formatFrameAttributes(photo)} style={formatFrameStyle(photo)} onClick={() => openPhoto(photo)} aria-label={`Open ${set.title} supporting photograph ${index + 1}`}><motion.div className="vec-frame-motion" animate={frameMotionValues(photo, reduced)} transition={frameMotionTransition(photo, index, reduced)}><Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || photo.caption || ''} style={photo.focalPoint ? { objectPosition: photo.focalPoint } : undefined} sizes="(max-width: 640px) 44vw, (max-width: 1024px) 22vw, 18vw" /></motion.div><span>{photo.caption || photo.deliveryLabel || 'Supporting asset'}</span></button>)}
           </div>}
         </motion.article>)}</div>
       </section>
