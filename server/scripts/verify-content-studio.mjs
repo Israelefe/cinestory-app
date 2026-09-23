@@ -59,7 +59,7 @@ process.env.DEEPGRAM_API_KEY = 'verification-key';
 const calls = [];
 globalThis.fetch = async (url, options) => {
   calls.push({ url: String(url), body: options.body });
-  if (String(url).includes('/chat/completions')) return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ...fixture, shotList: [{ id: 'shot-1', label: 'Hook', description: 'Phone scroll', mediaType: 'screen_recording', aspectRatio: '9:16', duration: 3, required: true }], googleVidsPrompt: 'Photographer introducing Veylo delivery.', scenes: fixture.scenes.map(scene => ({ ...scene, headline: `Updated ${scene.id}` })) }) } }] }), { status: 200 });
+  if (String(url).includes('/chat/completions')) return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ...fixture, shotList: [{ id: 'shot-1', label: 'Hook', description: 'Phone scroll', mediaType: 'screen_recording', aspectRatio: '9:16', duration: 3, required: true }], scenes: fixture.scenes.map(scene => ({ ...scene, headline: `Updated ${scene.id}` })) }) } }] }), { status: 200 });
   if (String(url).includes('/v2/speak')) return new Response(Buffer.from('sample-audio'), { status: 200 });
   if (String(url).includes('/v1/listen')) return new Response(JSON.stringify({ results: { channels: [{ alternatives: [{ words: [{ word: 'Veylo', punctuated_word: 'Veylo.', start: 0, end: 1 }] }] }] } }), { status: 200 });
   throw new Error('Unexpected provider call');
@@ -70,7 +70,6 @@ try {
   assert.deepEqual(plan.scenes[1], fixture.scenes[1], 'A single-scene revision must preserve other scenes');
   assert.equal(plan.cta, fixture.cta);
   assert.ok(Array.isArray(plan.shotList), 'Plan must include shotList');
-  assert.ok(typeof plan.googleVidsPrompt === 'string', 'Plan must include googleVidsPrompt');
   await narrate('Hello Veylo', new AbortController().signal);
   const words = await wordTimings(Buffer.from('audio'), new AbortController().signal);
   assert.equal(words[0].text, 'Veylo.');

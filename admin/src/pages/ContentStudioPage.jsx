@@ -169,11 +169,6 @@ export default function ContentStudioPage({ admin, onLogout }) {
   });
   const caption = versionPlan ? `${versionPlan.captions[captionPlatform]}\n\n${versionPlan.hashtags.join(' ')}` : '';
   const copyCaption = () => perform('Copying caption', async () => { await navigator.clipboard.writeText(caption); toast.success('Caption copied.'); });
-  const copyGoogleVidsPrompt = () => perform('Copying script', async () => {
-    if (!versionPlan?.googleVidsPrompt) return;
-    await navigator.clipboard.writeText(versionPlan.googleVidsPrompt);
-    toast.success('Google Vids prompt copied.');
-  });
   const uploadForSlot = slotId => {
     activeSlotRef.current = slotId;
     input.current?.click();
@@ -341,26 +336,6 @@ export default function ContentStudioPage({ admin, onLogout }) {
                       </div>
                     );
                   })}
-                </div>
-              )}
-
-              {/* Google Vids Avatar Script (Optional) */}
-              {versionPlan?.googleVidsPrompt && (
-                <div className="cs-vids-card">
-                  <div className="cs-vids-header">
-                    <div className="cs-vids-title">
-                      <Camera size={15} />
-                      <strong>Google Vids Avatar Script</strong>
-                    </div>
-                    <button className="cs-vids-copy-btn" onClick={copyGoogleVidsPrompt} type="button">
-                      <Copy size={12} />
-                      <span>Copy script</span>
-                    </button>
-                  </div>
-                  <p className="cs-vids-desc">
-                    Optional AI Presenter: If you'd like an avatar host for this video, copy this prompt into Google Vids, download your video, and upload it to Shot 1.
-                  </p>
-                  <pre className="cs-vids-pre">{versionPlan.googleVidsPrompt}</pre>
                 </div>
               )}
 

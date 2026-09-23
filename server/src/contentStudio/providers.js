@@ -66,7 +66,6 @@ const examplePlan = {
   palette: 'ember',
   musicMood: 'warm',
   cta: 'Create your first story for free',
-  googleVidsPrompt: 'A confident 28-year-old Nigerian male photography studio founder in Lagos speaking directly to camera: "If you are still sending your clients wedding photos through Google Drive or WeTransfer links on WhatsApp, we need to talk. Nobody gets excited scrolling through raw file names. With Veylo, your finished shoot opens like a private digital magazine. Check it out at Veylo dot com dot N G."',
   captions: { instagram: 'Your delivery should match the care you put into the edit. Try Veylo at veylo.com.ng', tiktok: 'Stop sending Google Drive links to clients.', youtube: 'Elevate your photo delivery with Veylo.' },
   hashtags: ['#Veylo', '#NigerianPhotographer', '#LagosPhotographer'],
   requiredAssets: [],
@@ -92,9 +91,8 @@ Structure the commercial using the proven 4-Beat Commercial Arc:
 4. Beat 4: The Anchor (Conversion) — Brand mark, slogan ("Don't just deliver photos. Showcase them."), "veylo.com.ng", and clear CTA.
 
 MEDIA MIXING & SHOT LIST:
-You can request mixed media: short live-action video clips (video), screen recordings (screen_recording), and high-resolution still photos (photo).
+You can request mixed media: short live-action clips (video), screen recordings (screen_recording), and high-resolution still photos (photo).
 Generate a structured shotList array with slot items specifying format, title, description, and why it is needed.
-Also provide a googleVidsPrompt containing the exact script lines and actor direction in case the user wishes to generate an avatar in Google Vids.
 
 PRODUCT TRUTH:
 ${buildMarketingKnowledge()}

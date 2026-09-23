@@ -52,7 +52,6 @@ export const planSchema = z.object({
   palette: z.preprocess(v => ['ember', 'ivory', 'ink'].includes(v) ? v : 'ember', z.enum(['ember', 'ivory', 'ink'])),
   musicMood: z.preprocess(v => ['warm', 'editorial', 'bright'].includes(v) ? v : 'warm', z.enum(['warm', 'editorial', 'bright'])),
   cta: z.preprocess(v => String(v || '').trim().slice(0, 65) || 'Try Veylo today', copy(65).min(1)),
-  googleVidsPrompt: z.preprocess(v => String(v || '').slice(0, 2000), z.string()).default(''),
   captions: z.preprocess(v => ({
     instagram: String(v?.instagram || v?.caption || 'Showcase your finished shoots on Veylo. Link in bio.').slice(0, 1800),
     tiktok: String(v?.tiktok || v?.caption || 'Deliver client shoots with confidence.').slice(0, 1200),

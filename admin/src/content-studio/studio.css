@@ -34,13 +34,6 @@
 .cs-slot-asset-preview img{width:28px;height:28px;border-radius:4px;object-fit:cover}
 .cs-slot-asset-preview span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cs-slot-replace-btn{font-size:10px;color:#ff9b8e;background:transparent;border:0;padding:4px 6px;text-decoration:underline;cursor:pointer}
-.cs-vids-card{margin-top:20px;border:1px solid #f6b09f28;background:radial-gradient(ellipse at 50% 0%,#f6b09f0d,transparent 70%),#161214;border-radius:12px;padding:16px}
-.cs-vids-header{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px}
-.cs-vids-title{display:flex;align-items:center;gap:7px;color:#f6b09f;font-size:12px;font-weight:500}
-.cs-vids-copy-btn{display:inline-flex;align-items:center;gap:5px;font-size:10px;padding:5px 9px;border-radius:6px;background:#ffffff09;border:1px solid #ffffff1a;color:#eee}
-.cs-vids-copy-btn:hover{background:#ffffff15;color:#f6b09f}
-.cs-vids-desc{font-size:11px;color:#a8998f;line-height:1.6;margin-bottom:10px}
-.cs-vids-pre{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:10px;background:#09080a;border:1px solid #ffffff10;border-radius:7px;padding:10px;color:#dfd3c8;white-space:pre-wrap;max-height:130px;overflow-y:auto;line-height:1.6}
 .cs-general-upload{margin-top:22px;padding-top:18px;border-top:1px solid #ffffff10}
 .cs-asset-media-preview{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:8px;background:linear-gradient(135deg,#1b1517,#110e11);text-align:center}
 .cs-asset-media-preview svg{color:#f6b09f}
