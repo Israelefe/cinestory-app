@@ -21,9 +21,6 @@ async function work(job) {
       job.cursor = offset + batch.length; job.progress = Math.min(75, Math.round((job.cursor / portfolio.items.length) * 75)); job.stage = 'reading-selected-work'; job.result = { insights }; job.markModified('result'); await job.save();
     }
     const direction = await createPortfolioDirection({ studioName: portfolio.studioName, bio: portfolio.bio, location: portfolio.location, items: portfolio.items.map(item => ({ publicId: item.publicId, title: item.title, category: item.category })), imageInsights: insights });
-    const positions = new Map(direction.orderedPublicIds.map((id, index) => [id, index]));
-    portfolio.items.forEach(item => { item.sortOrder = positions.get(item.publicId); });
-    portfolio.headline = direction.headline; portfolio.introLine = direction.introLine; portfolio.direction = { background: direction.background, accent: direction.accent, typeStyle: direction.typeStyle, rhythm: direction.rhythm }; portfolio.markModified('items'); await portfolio.save();
     const latest = await PortfolioJob.findById(job._id).select('cancelRequestedAt status').lean();
     if (latest?.cancelRequestedAt || latest?.status === 'cancelled') {
       await PortfolioJob.updateOne({ _id: job._id }, { $set: { status: 'cancelled', stage: 'cancelled', cancelledAt: new Date(), completedAt: new Date(), providerLatencyMs: Date.now() - startedAt } });

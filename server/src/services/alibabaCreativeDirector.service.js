@@ -5,7 +5,7 @@ import { supportsDeliveryMusic, supportsDeliveryNarration } from '../constants/d
 const FORMATS = ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign'];
 const AI_DELIVERY_SOUNDTRACKS = DELIVERY_SOUNDTRACKS.filter(track => track.category === 'afrobeat');
 export const CREATIVE_DIRECTOR_PROVIDER = 'Alibaba Model Studio';
-export const CREATIVE_DIRECTOR_PROMPT_VERSION = 'creative-director-v6';
+export const CREATIVE_DIRECTOR_PROMPT_VERSION = 'creative-director-v7';
 const MOTIONS = ['slow-push', 'slow-pull', 'pan-left', 'pan-right', 'float', 'still'];
 const TRANSITIONS = ['fade', 'crossfade', 'wipe', 'slide', 'reveal', 'cut'];
 const LAYOUTS = ['hero', 'single', 'pair', 'triptych', 'grid', 'strip', 'spread', 'cluster', 'chapter-cover'];
@@ -377,6 +377,7 @@ const portfolioDirectionSchema = z.object({
   accent: z.preprocess(val => normalizeHexColor(val) || '#ff5a47', z.string().regex(/^#[0-9a-f]{6}$/i)),
   typeStyle: z.preprocess(val => ['editorial', 'modern', 'classic'].includes(val) ? val : 'editorial', z.enum(['editorial', 'modern', 'classic'])),
   rhythm: z.preprocess(val => ['measured', 'bold', 'quiet'].includes(val) ? val : 'measured', z.enum(['measured', 'bold', 'quiet'])),
+  layout: z.preprocess(val => ['editorial', 'grid', 'masonry'].includes(val) ? val : 'editorial', z.enum(['editorial', 'grid', 'masonry'])),
   heroPublicId: z.string().min(5).max(500),
   orderedPublicIds: z.array(z.string().min(5).max(500)).min(1).max(50),
   designReason: z.preprocess(val => String(val || '').trim().slice(0, 240) || 'Art directed for portfolio presentation.', z.string().min(4).max(240))
@@ -1083,6 +1084,7 @@ export async function createPortfolioDirection({ studioName, bio, location, item
   "accent": "<six-digit hex color, e.g. #ff5a47>",
   "typeStyle": "editorial" | "modern" | "classic",
   "rhythm": "measured" | "bold" | "quiet",
+  "layout": "editorial" | "grid" | "masonry",
   "heroPublicId": "<publicId of the single best lead photograph>",
   "orderedPublicIds": ["<all supplied publicIds ordered for optimal presentation>"],
   "designReason": "<rationale for the layout choices, 10-240 chars>"
@@ -1091,7 +1093,7 @@ export async function createPortfolioDirection({ studioName, bio, location, item
   const result = await completion({
     model: provider.creativeModel,
     messages: [
-      { role: 'system', content: `You are directing a public portfolio for a working Nigerian photographer or studio. Choose the visual treatment from the actual selected work. The headline must sound like the photographer speaking about their work and must make practical sense. ${voiceRules}\n\n${schemaInstructions}` },
+      { role: 'system', content: `You are directing a public portfolio for a working Nigerian photographer or studio. Choose the visual treatment and gallery layout from the actual selected work. The headline must sound like the photographer speaking about their work and must make practical sense. Preserve the photographer's selected work and brand identity; this is a proposal for the photographer to review and edit before saving. ${voiceRules}\n\n${schemaInstructions}` },
       { role: 'user', content: JSON.stringify({ task: 'Direct this photographer portfolio', studioName, photographerBio: bio, location, selectedItems: items, photographAnalysis: imageInsights }) }
     ],
     schema: portfolioDirectionSchema,

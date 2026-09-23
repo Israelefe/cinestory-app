@@ -24,12 +24,28 @@ const updateSchema = z.object({
   contactLabel: z.string().trim().min(2).max(50).default('Ask about a shoot'),
   instagram: z.string().trim().max(80).default(''),
   whatsapp: z.string().trim().max(30).default(''),
+  heroPublicId: z.string().max(500).default(''),
   items: z.array(z.object({ publicId: z.string().min(5).max(500), title: z.string().trim().max(100).default(''), category: z.string().trim().min(1).max(50).default('Selected work') }).strict()).max(50).default([]),
-  direction: z.object({ background: z.enum(['ink', 'warm-black', 'ivory']), accent: z.string().regex(/^#[0-9a-f]{6}$/i), typeStyle: z.enum(['editorial', 'modern', 'classic']), rhythm: z.enum(['measured', 'bold', 'quiet']) }).strict()
+  direction: z.object({
+    background: z.enum(['ink', 'warm-black', 'ivory']).default('ink'),
+    accent: z.string().regex(/^#[0-9a-f]{6}$/i).default('#ff9b8e'),
+    typeStyle: z.enum(['editorial', 'modern', 'classic']).default('editorial'),
+    rhythm: z.enum(['measured', 'bold', 'quiet']).default('measured'),
+    layout: z.enum(['editorial', 'grid', 'masonry']).default('editorial'),
+    motion: z.enum(['subtle', 'still']).default('subtle'),
+    showBio: z.boolean().default(true),
+    showLocation: z.boolean().default(true),
+    showCategories: z.boolean().default(true),
+    showPhotoTitles: z.boolean().default(true),
+    showContact: z.boolean().default(true)
+  }).strict().default({})
 }).strict();
 
 const RESERVED = new Set(['admin', 'api', 'app', 'billing', 'dashboard', 'delivery', 'formats', 'help', 'home', 'login', 'portfolio', 'pricing', 'settings', 'signup', 'support', 'veylo']);
-function safeHandle(value) { return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'studio'; }
+function safeHandle(value) {
+  const slug = String(value || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40).replace(/-+$/g, '');
+  return slug.length >= 3 ? slug : `${slug || 'my'}-studio`.slice(0, 40);
+}
 
 function portfolioVisitorDigest(req, res) {
   let id = req.cookies?.veylo_portfolio_client;
@@ -40,11 +56,21 @@ function portfolioVisitorDigest(req, res) {
   return tokenDigest(id);
 }
 function publicOutput(portfolio) {
+  const items = [...portfolio.items].sort((a, b) => a.sortOrder - b.sortOrder);
+  const direction = portfolio.direction?.toObject?.() || portfolio.direction || {};
   return {
     handle: portfolio.handle, studioName: portfolio.studioName, bio: portfolio.bio, headline: portfolio.headline, introLine: portfolio.introLine, location: portfolio.location,
     contactLabel: portfolio.contactLabel, instagram: portfolio.instagram, whatsapp: portfolio.whatsapp,
-    direction: portfolio.direction, publishedAt: portfolio.publishedAt,
-    items: [...portfolio.items].sort((a, b) => a.sortOrder - b.sortOrder).map(item => ({ publicId: item.publicId, title: item.title, category: item.category, url: signedImageUrl(item.publicId), thumbnailUrl: signedImageUrl(item.publicId, { thumbnail: true }) }))
+    heroPublicId: portfolio.heroPublicId || items[0]?.publicId || '',
+    direction: {
+      background: direction.background || 'ink', accent: direction.accent || '#ff9b8e',
+      typeStyle: direction.typeStyle || 'editorial', rhythm: direction.rhythm || 'measured',
+      layout: direction.layout || 'editorial', motion: direction.motion || 'subtle', showBio: direction.showBio ?? true,
+      showLocation: direction.showLocation ?? true, showCategories: direction.showCategories ?? true,
+      showPhotoTitles: direction.showPhotoTitles ?? true, showContact: direction.showContact ?? true
+    },
+    publishedAt: portfolio.publishedAt,
+    items: items.map(item => ({ publicId: item.publicId, title: item.title, category: item.category, url: signedImageUrl(item.publicId), thumbnailUrl: signedImageUrl(item.publicId, { thumbnail: true }) }))
   };
 }
 
@@ -122,6 +148,7 @@ export async function updateMyPortfolio(req, res) {
     if (entitlements.features.portfolioMode !== 'public') return res.status(403).json({ success: false, code: 'PRO_REQUIRED', message: 'Renew Pro to edit or publish your portfolio.' });
     const owned = await ownedPublicIds(user._id);
     if (parsed.data.items.some(item => !owned.has(item.publicId))) return res.status(403).json({ success: false, message: 'One of those photographs does not belong to your account.' });
+    if (parsed.data.heroPublicId && !parsed.data.items.some(item => item.publicId === parsed.data.heroPublicId)) return res.status(400).json({ success: false, message: 'Choose a cover photograph from your selected work.' });
     const current = await Portfolio.findOne({ userId: user._id });
     const now = new Date();
     const studioNameChanged = Boolean(current?.studioName) && current.studioName.trim() !== parsed.data.studioName.trim();
@@ -131,7 +158,7 @@ export async function updateMyPortfolio(req, res) {
     const handleNextChangeAt = nextChangeAt(current?.handleChangedAt, PORTFOLIO_HANDLE_CHANGE_COOLDOWN_MS);
     if (handleChanged && handleNextChangeAt) return res.status(429).json({ success: false, code: 'PORTFOLIO_HANDLE_COOLDOWN', nextChangeAt: isoDate(handleNextChangeAt), message: `Your portfolio address can be changed again on ${handleNextChangeAt.toLocaleDateString('en-NG', { dateStyle: 'medium' })}.` });
     const items = parsed.data.items.map((item, sortOrder) => ({ ...item, sortOrder }));
-    const update = { ...parsed.data, items };
+    const update = { ...parsed.data, heroPublicId: parsed.data.heroPublicId || parsed.data.items[0]?.publicId || '', items };
     if (handleChanged) {
       const previousHandles = Array.isArray(current.previousHandles) ? current.previousHandles.filter(entry => entry.handle !== current.handle && new Date(entry.reservedUntil) > now) : [];
       const ownReservedHandle = previousHandles.some(entry => entry.handle === parsed.data.handle && new Date(entry.reservedUntil) > now);

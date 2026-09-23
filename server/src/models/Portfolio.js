@@ -27,12 +27,20 @@ const portfolioSchema = new mongoose.Schema({
   contactLabel: { type: String, trim: true, maxlength: 50, default: 'Ask about a shoot' },
   instagram: { type: String, trim: true, maxlength: 80, default: '' },
   whatsapp: { type: String, trim: true, maxlength: 30, default: '' },
+  heroPublicId: { type: String, trim: true, maxlength: 500, default: '' },
   items: { type: [itemSchema], default: [] },
   direction: {
     background: { type: String, enum: ['ink', 'warm-black', 'ivory'], default: 'ink' },
     accent: { type: String, match: /^#[0-9a-f]{6}$/i, default: '#ff9b8e' },
     typeStyle: { type: String, enum: ['editorial', 'modern', 'classic'], default: 'editorial' },
-    rhythm: { type: String, enum: ['measured', 'bold', 'quiet'], default: 'measured' }
+    rhythm: { type: String, enum: ['measured', 'bold', 'quiet'], default: 'measured' },
+    layout: { type: String, enum: ['editorial', 'grid', 'masonry'], default: 'editorial' },
+    motion: { type: String, enum: ['subtle', 'still'], default: 'subtle' },
+    showBio: { type: Boolean, default: true },
+    showLocation: { type: Boolean, default: true },
+    showCategories: { type: Boolean, default: true },
+    showPhotoTitles: { type: Boolean, default: true },
+    showContact: { type: Boolean, default: true }
   },
   publishedAt: Date
 }, { timestamps: true });
