@@ -115,6 +115,11 @@ function scoreDocument(document, queryTerms, audience) {
   return score;
 }
 
+export function buildMarketingKnowledge() {
+  const topics = new Set(['what-veylo-is', 'delivery-formats', 'create-delivery', 'review-captions-and-design', 'music-and-narration', 'publish-and-access', 'portfolio', 'analytics']);
+  return DOCUMENTS.filter(document => topics.has(document.id)).map(document => `${document.title}\n${document.text}`).join('\n\n');
+}
+
 export function buildAssistantKnowledge({ query = '', audience = 'visitor' } = {}) {
   const queryTerms = terms(query);
   const selected = DOCUMENTS

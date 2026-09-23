@@ -3,6 +3,7 @@ import axios from 'axios';
 const browserOrigin = typeof window !== 'undefined' ? window.location.origin : '';
 
 function resolveApiBaseUrl() {
+  if (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname) && window.location.port === '5055') return '/api';
   let url = import.meta.env.VITE_API_URL || '';
   if (!url) {
     return import.meta.env.PROD ? '/api' : 'http://localhost:5000/api';

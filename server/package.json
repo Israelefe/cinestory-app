@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "content:worker": "node content-worker.js",
+    "content:local": "node content-local.js",
     "admin:create": "node scripts/createAdmin.js",
     "verify:client-ip": "node scripts/verify-client-ip.mjs",
     "verify:delivery-v2": "node scripts/verify-delivery-v2.mjs",
@@ -15,10 +17,13 @@
     "verify:billing-admin": "node scripts/verify-billing-admin.mjs",
     "verify:admin-account-delete": "node scripts/verify-admin-account-delete.mjs",
     "verify:assistant": "node scripts/verify-assistant.mjs",
+    "verify:content-studio": "node scripts/verify-content-studio.mjs",
     "verify:security": "node scripts/security-audit-delivery-v2.mjs",
     "verify:smoke": "node scripts/verify-production-smoke.mjs"
   },
   "dependencies": {
+    "@remotion/bundler": "4.0.527",
+    "@remotion/renderer": "4.0.527",
     "bcryptjs": "^2.4.3",
     "cloudinary": "^2.11.0",
     "cookie-parser": "^1.4.7",
@@ -33,6 +38,7 @@
     "multer": "^1.4.5-lts.1",
     "qrcode": "^1.5.4",
     "resend": "^6.28.0",
+    "sharp": "0.35.4",
     "zod": "^4.6.2"
   },
   "devDependencies": {

@@ -9,6 +9,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource/cormorant-garamond": "5.2.8",
+    "@fontsource/dm-sans": "5.2.8",
+    "@remotion/player": "4.0.527",
     "axios": "^1.6.8",
     "clsx": "^2.1.0",
     "framer-motion": "^11.0.8",
@@ -17,6 +20,7 @@
     "react-dom": "^18.2.0",
     "react-router-dom": "^7.18.3",
     "react-toastify": "^10.0.5",
+    "remotion": "4.0.527",
     "tailwind-merge": "^2.2.1"
   },
   "devDependencies": {

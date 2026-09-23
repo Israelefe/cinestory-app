@@ -1216,6 +1216,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
           </div>
 
           <div className="flex items-center gap-4">
+            {['admin', 'superadmin', 'operations'].includes(admin?.role) && <a href="http://127.0.0.1:5055/content-studio" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#ff9b8e]/25 bg-[#ff9b8e]/5 px-3 text-xs font-medium text-[#ffb7aa] transition-transform motion-safe:hover:-translate-y-0.5 motion-safe:active:scale-95"><Film size={15} /><span className="hidden sm:inline">Content Studio</span><span className="sm:hidden">Studio</span></a>}
             <div className="hidden text-right sm:block">
               <p className="text-xs font-medium text-white">{admin?.name || admin?.username}</p>
               <p className="text-[10px] uppercase tracking-wider text-white/40">{admin?.role || 'superadmin'}</p>

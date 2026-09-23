@@ -1,12 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { BrowserRouter, Route, Routes, Navigate } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import api, { clearAdminToken, getAdminToken, setAdminToken } from './services/api.js';
 import LoginPage from './pages/LoginPage.jsx';
 import AdminDashboardPage from './pages/AdminDashboardPage.jsx';
+const ContentStudioPage = lazy(() => import('./pages/ContentStudioPage.jsx'));
 
 export default function App() {
+  const localStudio = ['localhost', '127.0.0.1'].includes(window.location.hostname) && window.location.port === '5055';
   const [admin, setAdmin] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -67,6 +69,7 @@ export default function App() {
     <BrowserRouter>
       <ToastContainer position="top-right" theme="dark" autoClose={3000} />
       <Routes>
+        <Route path="/content-studio/:projectId?" element={admin ? <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-[#070709] text-sm text-white/60">Opening Content Studio…</div>}><ContentStudioPage admin={admin} onLogout={handleLogout} /></Suspense> : <Navigate to="/login" replace />} />
         <Route
           path="/login"
           element={
@@ -81,7 +84,7 @@ export default function App() {
           path="/"
           element={
             admin ? (
-              <AdminDashboardPage admin={admin} onLogout={handleLogout} />
+              localStudio ? <Navigate to="/content-studio" replace /> : <AdminDashboardPage admin={admin} onLogout={handleLogout} />
             ) : (
               <Navigate to="/login" replace />
             )
