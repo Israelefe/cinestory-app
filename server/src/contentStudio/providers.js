@@ -24,7 +24,17 @@ async function jsonRequest(messages, { vision = false, signal }) {
     body: JSON.stringify({ model: vision ? (process.env.ALIBABA_VISION_MODEL || 'qwen3-vl-flash') : (process.env.CONTENT_CREATIVE_MODEL || process.env.ALIBABA_CREATIVE_MODEL || 'deepseek-v4.1-flash'), messages, response_format: { type: 'json_object' }, temperature: vision ? 0.2 : 0.8, max_tokens: vision ? 900 : 6500, stream: false }),
     signal: AbortSignal.any([signal, AbortSignal.timeout(150_000)])
   });
-  if (!response.ok) throw studioError(`The creative service could not complete this request (${response.status}). Retry in a moment.`, 502);
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    let detail = '';
+    try {
+      const parsed = JSON.parse(errorText);
+      detail = parsed?.error?.message || parsed?.message || errorText;
+    } catch {
+      detail = errorText;
+    }
+    throw studioError(`The creative service could not complete this request (${response.status})${detail ? `: ${detail}` : ''}.`, 502);
+  }
   const payload = await response.json();
   const text = payload?.choices?.[0]?.message?.content;
   try { return JSON.parse(String(text).replace(/^```(?:json)?\s*|\s*```$/g, '').trim()); }
