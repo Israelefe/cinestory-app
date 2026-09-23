@@ -7,13 +7,26 @@ import ContentProject from '../models/ContentProject.js';
 import AdminAudit from '../models/AdminAudit.js';
 import WorkerHeartbeat from '../models/WorkerHeartbeat.js';
 import { briefSchema, revisionSchema, BUSY } from '../contentStudio/schema.js';
-import { normalizeImage, uploadMedia, studioError, mediaUrl, removeImage } from '../contentStudio/media.js';
+import { normalizeImage, uploadMedia, studioError, mediaUrl, removeImage, localMediaDir } from '../contentStudio/media.js';
 import { providerReadiness } from '../contentStudio/providers.js';
 import { presentProject } from '../contentStudio/presentation.js';
 import { allowance } from '../contentStudio/allowance.js';
+import path from 'node:path';
+import fs from 'node:fs';
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 1, fields: 2, parts: 3 }, fileFilter: (req, file, cb) => cb(null, ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 100 * 1024 * 1024, files: 1, fields: 5, parts: 6 },
+  fileFilter: (req, file, cb) => {
+    const allowed = [
+      'image/jpeg', 'image/png', 'image/webp',
+      'video/mp4', 'video/webm', 'video/quicktime',
+      'audio/mpeg', 'audio/wav', 'audio/mp3'
+    ];
+    cb(null, allowed.includes(file.mimetype));
+  }
+});
 const limited = rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: 'draft-7', legacyHeaders: false, keyGenerator: req => String(req.admin._id), message: { message: 'Please wait a minute before starting more content actions.' } });
 const action = fn => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
 const owner = req => ({ ownerId: req.admin._id });
@@ -52,27 +65,72 @@ router.patch('/projects/:id', limited, action(async (req, res) => {
   if (!project) throw studioError('Wait for the current job or upload to finish.', 409);
   res.json({ project: presentProject(project) });
 }));
-router.post('/projects/:id/assets', limited, (req, res, next) => upload.single('image')(req, res, error => {
-  if (error) return next(studioError(error.code === 'LIMIT_FILE_SIZE' ? 'Each image must be 15 MB or smaller.' : 'Upload one JPEG, PNG, or WebP image at a time.'));
+
+// Serve locally saved media directly without Cloudinary dependency
+router.get('/media/:projectId/:key(*)', (req, res) => {
+  const filePath = path.join(localMediaDir, req.params.projectId, req.params.key);
+  if (!fs.existsSync(filePath)) return res.status(404).send('Media not found');
+  res.sendFile(filePath);
+});
+
+router.post('/projects/:id/assets', limited, (req, res, next) => upload.single('media')(req, res, error => {
+  if (error) return next(studioError(error.code === 'LIMIT_FILE_SIZE' ? 'Files must be 100 MB or smaller.' : 'Upload one supported photo, video, or audio file at a time.'));
   next();
 }), action(async (req, res) => {
   await getProject(req);
-  if (!req.file) throw studioError('Choose a JPEG, PNG, or WebP image. Videos are not accepted.');
-  const kind = req.body.kind === 'screenshot' ? 'screenshot' : 'photo';
+  if (!req.file) throw studioError('Choose a valid photo (JPEG, PNG, WebP), video clip (MP4, WebM), or music file.');
+  const mime = req.file.mimetype;
+  const isVideo = mime.startsWith('video/');
+  const isAudio = mime.startsWith('audio/');
+  const kind = isVideo ? 'video' : isAudio ? 'music' : (req.body.kind === 'screenshot' ? 'screenshot' : 'photo');
+  const slotId = req.body.slotId || undefined;
   const token = crypto.randomUUID();
   const project = await ContentProject.findOneAndUpdate({ _id: req.params.id, ...owner(req), ...idle, ...unlocked(), 'assets.23': { $exists: false } }, { $set: { editLock: { token, expiresAt: new Date(Date.now() + 180_000) } } }, { new: true }).lean();
-  if (!project) throw studioError('A campaign holds up to 24 images. Wait for any running job or upload to finish.', 409);
+  if (!project) throw studioError('A campaign holds up to 24 assets. Wait for any running job or upload to finish.', 409);
   let uploaded;
   try {
-    const normalized = await normalizeImage(req.file.buffer);
     const id = crypto.randomUUID();
-    uploaded = await uploadMedia(normalized.buffer, { projectId: project._id, key: `assets/${id}` });
-    const asset = { id, kind, name: req.file.originalname.replace(/[<>\u0000-\u001f]/g, '').slice(0, 120), publicId: uploaded.public_id, width: normalized.width, height: normalized.height, bytes: uploaded.bytes };
+    let width = 1080, height = 1920;
+    let uploadFormat = 'png';
+    let bufferToUpload = req.file.buffer;
+
+    if (!isVideo && !isAudio) {
+      const normalized = await normalizeImage(req.file.buffer);
+      width = normalized.width;
+      height = normalized.height;
+      bufferToUpload = normalized.buffer;
+      uploadFormat = 'png';
+    } else if (isVideo) {
+      uploadFormat = mime.includes('webm') ? 'webm' : 'mp4';
+    } else if (isAudio) {
+      uploadFormat = mime.includes('wav') ? 'wav' : 'mp3';
+    }
+
+    uploaded = await uploadMedia(bufferToUpload, {
+      projectId: project._id,
+      key: `assets/${id}`,
+      resourceType: isVideo || isAudio ? 'video' : 'image',
+      format: uploadFormat
+    });
+
+    const asset = {
+      id,
+      kind,
+      slotId,
+      name: req.file.originalname.replace(/[<>\u0000-\u001f]/g, '').slice(0, 120),
+      publicId: uploaded.public_id,
+      url: uploaded.url || mediaUrl(uploaded.public_id),
+      localPath: uploaded.filePath,
+      width,
+      height,
+      bytes: uploaded.bytes
+    };
+
     const result = await ContentProject.findOneAndUpdate({ _id: project._id, 'editLock.token': token }, { $push: { assets: asset }, $unset: { editLock: 1 } }, { new: true }).lean();
     if (!result) throw studioError('The upload lock expired. Please retry.', 409);
     res.status(201).json({ project: presentProject(result) });
   } catch (error) {
-    if (uploaded) await removeImage(uploaded.public_id).catch(() => {});
+    if (uploaded?.public_id) await removeImage(uploaded.public_id).catch(() => {});
     throw error;
   } finally { await ContentProject.updateOne({ _id: project._id, 'editLock.token': token }, { $unset: { editLock: 1 } }); }
 }));

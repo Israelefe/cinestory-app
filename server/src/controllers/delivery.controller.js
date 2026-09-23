@@ -691,6 +691,7 @@ export async function queueAnalysis(req, res) {
     if (!(await isRuntimeFeatureEnabled('deliveryPipeline', process.env.DELIVERY_PIPELINE_ENABLED === 'true'))) return res.status(503).json({ success: false, message: 'The AI Creative Director is not available yet.' });
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    if (['published', 'archived'].includes(delivery.status)) return res.status(409).json({ success: false, message: 'This delivery is already published. Archive it first to make changes.' });
     if (!delivery.assets.length) return res.status(400).json({ success: false, message: 'Upload at least one finished photograph first.' });
     const running = await DeliveryJob.findOne({ deliveryId: delivery._id, status: { $in: ['queued', 'running'] } });
     if (running) return res.json({ success: true, data: running });
@@ -711,6 +712,7 @@ export async function queueDirection(req, res) {
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery?.formatRecommendations?.length) return res.status(409).json({ success: false, message: 'Let Veylo read the complete shoot before choosing a format.' });
+    if (['published', 'archived'].includes(delivery.status)) return res.status(409).json({ success: false, message: 'This delivery is already published. Archive it first to make changes.' });
     const user = await User.findById(req.user.id);
     const entitlements = await resolveEntitlements(user, { includeUsage: false });
     if (!entitlements.features.formats.includes(parsed.data.format)) return res.status(403).json({ success: false, code: 'FORMAT_UNAVAILABLE', message: 'That delivery format is currently unavailable.' });
@@ -840,11 +842,22 @@ export async function retryDeliveryJob(req, res) {
   try {
     const job = await DeliveryJob.findOne({ _id: req.params.jobId, deliveryId: req.params.id, userId: req.user.id }).select('+input');
     if (!job || job.status !== 'failed') return res.status(409).json({ success: false, message: 'This job is not waiting to be retried.' });
+    // Prevent retry if another job is already running for this delivery
+    const running = await DeliveryJob.findOne({ deliveryId: job.deliveryId, status: { $in: ['queued', 'running'] }, _id: { $ne: job._id } });
+    if (running) return res.status(409).json({ success: false, message: 'Another job is already running for this delivery.' });
     job.status = 'queued'; job.stage = 'queued'; job.errorCode = undefined; job.errorMessage = undefined; job.completedAt = undefined;
     if (job.attempts >= 3) { job.attempts = 0; job.cursor = 0; job.result = undefined; }
     await job.save();
+    // Reset delivery status to match the retried job type so the UI shows correct state
+    const statusMap = { analyze: 'analyzing', direct: 'directing', revise: 'directing', narrate: 'review' };
+    if (statusMap[job.type]) {
+      await Delivery.updateOne({ _id: job.deliveryId }, { status: statusMap[job.type] });
+    }
     res.status(202).json({ success: true, data: job });
-  } catch { res.status(404).json({ success: false, message: 'Generation job not found.' }); }
+  } catch (error) {
+    console.error('[deliveries/retry]', error.message);
+    res.status(error.name === 'CastError' ? 404 : 500).json({ success: false, message: 'Generation job not found.' });
+  }
 }
 
 export async function publishDelivery(req, res) {

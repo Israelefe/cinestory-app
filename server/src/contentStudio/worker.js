@@ -65,11 +65,22 @@ export async function processProject(project, parentSignal) {
       await checkpoint();
     }
     planSchema.parse(version.plan);
-    if (version.plan.requiredAssets.length) {
-      const settled = await ContentProject.updateOne({ ...lease, 'job.cancelRequested': { $ne: true } }, { $set: { 'job.status': 'needs_assets', 'job.stage': 'A few images are needed', 'job.progress': 25, 'job.completedAt': new Date() } });
+
+    // Concept-First check: If shotList has unfulfilled required slots and no assets uploaded yet, pause for user media
+    const unfulfilledSlots = (version.plan.shotList || []).filter(slot => slot.required && !project.assets.some(a => a.slotId === slot.id || a.id === slot.assetId));
+    if (unfulfilledSlots.length > 0 && project.job.kind !== 'render' && project.assets.length === 0) {
+      const settled = await ContentProject.updateOne({ ...lease, 'job.cancelRequested': { $ne: true } }, {
+        $set: {
+          'job.status': 'needs_assets',
+          'job.stage': 'Check the Shot List: your campaign needs a few assets',
+          'job.progress': 25,
+          'job.completedAt': new Date()
+        }
+      });
       if (!settled.matchedCount) throw studioError('The job was cancelled.', 409);
       return;
     }
+
     for (let i = 0; i < version.plan.scenes.length; i++) {
       signal.throwIfAborted();
       const scene = version.plan.scenes[i];
@@ -84,6 +95,7 @@ export async function processProject(project, parentSignal) {
       scene.assetIds = [id];
       await checkpoint();
     }
+
     if (version.brief.formats.includes('video')) {
       if (version.brief.narration) {
         for (let i = 0; i < version.plan.scenes.length; i++) {
@@ -96,34 +108,45 @@ export async function processProject(project, parentSignal) {
           if (!record) {
             audio = await narrate(scene.narration, signal);
             const uploaded = await uploadMedia(audio, { projectId: project._id, key: `${version.id}/voice/${scene.id}`, resourceType: 'video', format: 'mp3' });
-            if (!uploaded.duration || uploaded.duration > 30) throw studioError('A narration segment is too long. Shorten this scene and regenerate.');
-            record = { publicId: uploaded.public_id, duration: uploaded.duration, words: [] };
+            const wordCount = scene.narration.trim().split(/\s+/).length;
+            const estDuration = Math.max(1.5, wordCount / 2.2);
+            const duration = uploaded.duration || estDuration;
+            record = { publicId: uploaded.public_id, url: uploaded.url, localPath: uploaded.filePath, duration, words: [] };
             version.voice[scene.id] = record;
             await checkpoint();
           }
           if (!record.words?.length) {
-            if (!audio) {
-              const response = await fetch(mediaUrl(record.publicId, { resourceType: 'video', format: 'mp3' }), { signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]) });
-              if (!response.ok) throw studioError('Saved narration could not be loaded. Please retry.', 502);
-              audio = Buffer.from(await response.arrayBuffer());
+            try {
+              if (audio) {
+                record.words = await wordTimings(audio, signal);
+                await checkpoint();
+              }
+            } catch (timingErr) {
+              console.warn('[content-studio/worker] Subtitle timings warning:', timingErr.message);
             }
-            record.words = await wordTimings(audio, signal);
-            await checkpoint();
           }
         }
       }
+
       update('Arranging the score and scene timing', 59);
       const duration = timeline(version.plan, version.voice, version.brief.music ? MUSIC[version.plan.musicMood] : null).reduce((sum, entry) => sum + entry.frames / 30, 0);
       if (duration > 150) throw studioError('This script is too long for the content engine. Request a shorter version.');
-      if (version.brief.music && !version.music) {
+
+      // Check if user uploaded custom background music
+      const customMusic = project.assets.find(a => a.kind === 'music');
+      if (customMusic) {
+        version.music = { publicId: customMusic.publicId, url: customMusic.url, bpm: 108 };
+        await checkpoint();
+      } else if (version.brief.music && !version.music) {
         const score = makeScore(version.plan.musicMood, duration + 1);
         const uploaded = await uploadMedia(score.buffer, { projectId: project._id, key: `${version.id}/audio/score`, resourceType: 'video', format: 'wav' });
-        version.music = { publicId: uploaded.public_id, bpm: score.bpm };
+        version.music = { publicId: uploaded.public_id, url: uploaded.url, bpm: score.bpm };
         await checkpoint();
       }
+
       if (version.brief.soundDesign && !version.effect) {
         const uploaded = await uploadMedia(makeTransitionSound(), { projectId: project._id, key: `${version.id}/audio/transition`, resourceType: 'video', format: 'wav' });
-        version.effect = { publicId: uploaded.public_id };
+        version.effect = { publicId: uploaded.public_id, url: uploaded.url };
         await checkpoint();
       }
     }

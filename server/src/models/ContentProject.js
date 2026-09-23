@@ -2,9 +2,12 @@ import mongoose from 'mongoose';
 
 const assetSchema = new mongoose.Schema({
   id: { type: String, required: true },
-  publicId: { type: String, required: true },
-  kind: { type: String, enum: ['photo', 'screenshot', 'generated'], required: true },
-  name: String, width: Number, height: Number, bytes: Number,
+  publicId: { type: String, required: false },
+  url: String,
+  localPath: String,
+  kind: { type: String, enum: ['photo', 'screenshot', 'generated', 'video', 'music'], required: true },
+  name: String, width: Number, height: Number, bytes: Number, duration: Number,
+  slotId: String,
   analysis: mongoose.Schema.Types.Mixed
 }, { _id: false });
 

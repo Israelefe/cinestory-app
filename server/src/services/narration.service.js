@@ -12,7 +12,7 @@ const MAX_NARRATION_CHUNK_CHARACTERS = 2000;
 // Keep Hannah measured without flattening her natural pitch movement. Deepgram's
 // tuned expressivity default (0) sounds more like a person telling a story than
 // the narrow, evenly stressed delivery produced by the previous -1 setting.
-const VOICE_SETTINGS = Object.freeze({ speed: 0.85, expressivity: 0, sampleRate: 24000 });
+const VOICE_SETTINGS = Object.freeze({ speed: 0.86, expressivity: 0, sampleRate: 24000 });
 
 function cleanLine(value, max = 360) {
   return String(value || '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -93,52 +93,69 @@ async function synthesize({ apiKey, text }) {
     speed: String(VOICE_SETTINGS.speed),
     expressivity: String(VOICE_SETTINGS.expressivity)
   });
-  const response = await fetch(`https://api.deepgram.com/v2/speak?${query.toString()}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Token ${apiKey}`,
-      'Content-Type': 'application/json',
-      Accept: 'audio/mpeg'
-    },
-    body: JSON.stringify({ text }),
-    signal: AbortSignal.timeout(120_000)
-  });
-  if (!response.ok) {
-    const providerMessage = await response.text().catch(() => '');
-    throw Object.assign(new Error(`Deepgram could not create narration${providerMessage ? `: ${providerMessage.slice(0, 180)}` : '.'}`), { code: 'NARRATION_REQUEST_FAILED' });
+  const DELAYS = [1000, 3000, 6000];
+  for (let attempt = 0; attempt <= DELAYS.length; attempt++) {
+    const response = await fetch(`https://api.deepgram.com/v2/speak?${query.toString()}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Token ${apiKey}`,
+        'Content-Type': 'application/json',
+        Accept: 'audio/mpeg'
+      },
+      body: JSON.stringify({ text }),
+      signal: AbortSignal.timeout(120_000)
+    });
+    if (!response.ok) {
+      // Retry on transient errors
+      if ([429, 502, 503, 504].includes(response.status) && attempt < DELAYS.length) {
+        console.warn(`[narration/synthesize] Deepgram returned ${response.status}, retrying in ${DELAYS[attempt]}ms...`);
+        await new Promise(r => setTimeout(r, DELAYS[attempt]));
+        continue;
+      }
+      const providerMessage = await response.text().catch(() => '');
+      throw Object.assign(new Error(`Deepgram could not create narration${providerMessage ? `: ${providerMessage.slice(0, 180)}` : '.'}`), { code: 'NARRATION_REQUEST_FAILED' });
+    }
+    return Buffer.from(await response.arrayBuffer());
   }
-  return Buffer.from(await response.arrayBuffer());
 }
 
 async function transcribeWordTimings({ apiKey, audio }) {
   const query = new URLSearchParams({ model: 'nova-3', utterances: 'true', punctuate: 'true' });
-  const response = await fetch(`https://api.deepgram.com/v1/listen?${query.toString()}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Token ${apiKey}`,
-      'Content-Type': 'audio/mpeg',
-      Accept: 'application/json'
-    },
-    body: audio,
-    signal: AbortSignal.timeout(120_000)
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw Object.assign(new Error(`Deepgram could not measure narration timing${payload?.err_msg ? `: ${payload.err_msg.slice(0, 180)}` : '.'}`), { code: 'NARRATION_TIMING_FAILED' });
+  const DELAYS = [1000, 3000, 6000];
+  for (let attempt = 0; attempt <= DELAYS.length; attempt++) {
+    const response = await fetch(`https://api.deepgram.com/v1/listen?${query.toString()}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Token ${apiKey}`,
+        'Content-Type': 'audio/mpeg',
+        Accept: 'application/json'
+      },
+      body: audio,
+      signal: AbortSignal.timeout(120_000)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      if ([429, 502, 503, 504].includes(response.status) && attempt < DELAYS.length) {
+        console.warn(`[narration/timing] Deepgram returned ${response.status}, retrying in ${DELAYS[attempt]}ms...`);
+        await new Promise(r => setTimeout(r, DELAYS[attempt]));
+        continue;
+      }
+      throw Object.assign(new Error(`Deepgram could not measure narration timing${payload?.err_msg ? `: ${payload.err_msg.slice(0, 180)}` : '.'}`), { code: 'NARRATION_TIMING_FAILED' });
+    }
+    const words = payload?.results?.channels?.[0]?.alternatives?.[0]?.words || [];
+    if (!words.length) throw Object.assign(new Error('Deepgram returned no word timings for the generated narration.'), { code: 'NARRATION_TIMING_FAILED' });
+    return {
+      words: words.map(word => ({
+        word: String(word.punctuated_word || word.word || '').trim(),
+        start: Number(word.start),
+        end: Number(word.end)
+      })).filter(word => word.word && Number.isFinite(word.start) && Number.isFinite(word.end)),
+      // Include trailing silence in the next chunk's offset. Falling back to the
+      // last measured word keeps the alignment usable if a provider omits the
+      // duration metadata.
+      duration: Number(payload?.metadata?.duration)
+    };
   }
-  const words = payload?.results?.channels?.[0]?.alternatives?.[0]?.words || [];
-  if (!words.length) throw Object.assign(new Error('Deepgram returned no word timings for the generated narration.'), { code: 'NARRATION_TIMING_FAILED' });
-  return {
-    words: words.map(word => ({
-      word: String(word.punctuated_word || word.word || '').trim(),
-      start: Number(word.start),
-      end: Number(word.end)
-    })).filter(word => word.word && Number.isFinite(word.start) && Number.isFinite(word.end)),
-    // Include trailing silence in the next chunk's offset. Falling back to the
-    // last measured word keeps the alignment usable if a provider omits the
-    // duration metadata.
-    duration: Number(payload?.metadata?.duration)
-  };
 }
 
 function timingToken(value) {
@@ -234,7 +251,8 @@ export function timedSegments(segments, words, duration = 0) {
 }
 
 function narrationChunkText(segments) {
-  return segments.map(segment => narrationLine(segment.text)).join('\n\n');
+  const spokenTranscriptLines = segments.map(segment => narrationLine(segment.text));
+  return spokenTranscriptLines.join('\n\n');
 }
 
 function splitNarration(segments, maxCharacters = MAX_NARRATION_CHUNK_CHARACTERS) {

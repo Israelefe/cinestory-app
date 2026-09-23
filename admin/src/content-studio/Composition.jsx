@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AbsoluteFill, Audio, Img, Sequence, continueRender, delayRender, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, continueRender, delayRender, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import '@fontsource/dm-sans/latin-400.css';
 import '@fontsource/dm-sans/latin-500.css';
 import '@fontsource/dm-sans/latin-700.css';
@@ -7,103 +7,417 @@ import '@fontsource/cormorant-garamond/latin-500.css';
 import { timeline } from './timing.js';
 
 const palettes = {
-  ember: { background: '#100d0d', paper: '#eee6dc', ink: '#fff8ee', muted: '#cebab1', accent: '#ff9b8e' },
-  ivory: { background: '#eee8df', paper: '#171815', ink: '#191b17', muted: '#60594f', accent: '#963e30' },
-  ink: { background: '#080b0d', paper: '#e2e6df', ink: '#f4f5ed', muted: '#b6c0ba', accent: '#b3c7b5' }
+  ember: { background: '#0a0a0c', paper: '#141418', ink: '#ffffff', muted: '#a1a1aa', accent: '#ff5a47', highlight: '#ff9b8e' },
+  ivory: { background: '#f5f3ef', paper: '#ffffff', ink: '#18181b', muted: '#71717a', accent: '#963e30', highlight: '#c46859' },
+  ink: { background: '#050708', paper: '#0e1113', ink: '#f4f4f5', muted: '#9ca3af', accent: '#38bdf8', highlight: '#7dd3fc' }
 };
+
 const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' };
-function Photo({ image, scene, frame, frames, still, style }) {
-  if (!image) return null;
-  const progress = still ? 0.4 : Math.max(0, Math.min(1, frame / frames));
-  const zoom = scene.motion === 'push' ? 1 + progress * 0.075 : scene.motion === 'pull' ? 1.075 - progress * 0.075 : scene.motion === 'pan' ? 1.07 : 1;
-  const transform = `scale(${zoom}) translateX(${scene.motion === 'pan' ? (progress - 0.5) * 4 : 0}%)`;
-  const filter = image.kind === 'screenshot' ? 'none' : scene.grade === 'warm' ? 'sepia(.12) saturate(.94) contrast(1.03)' : scene.grade === 'mono' ? 'grayscale(1) contrast(1.05)' : 'none';
-  return <div style={{ overflow: 'hidden', background: '#171719', ...style }}><Img src={image.src} style={{ width: '100%', height: '100%', objectFit: image.kind === 'screenshot' ? 'contain' : 'cover', objectPosition: `${scene.focalPoint.x}% ${scene.focalPoint.y}%`, transform: image.kind === 'screenshot' ? undefined : transform, filter }} /></div>;
-}
-function Scene({ scene, images, palette, frames, index, count, still, reducedMotion, hasVoice, cta, standalone = false }) {
-  const frame = useCurrentFrame();
-  const { width, height, fps } = useVideoConfig();
-  const vertical = height / width > 1.6;
-  const p = palettes[palette] || palettes.ember;
-  const full = scene.layout === 'fullbleed';
-  const colour = full ? '#fff8ee' : p.ink;
-  const muted = full ? '#ece2d8' : p.muted;
-  const accent = full ? '#ffb3a7' : p.accent;
-  const x = vertical ? 90 : 76;
-  const right = vertical ? 150 : 76;
-  const top = vertical ? 185 : 125;
-  const bottom = vertical ? (hasVoice ? 480 : 390) : 110;
-  const innerHeight = height - top - bottom;
-  const innerWidth = width - x - right;
-  const photos = scene.assetIds.map(id => images[id]).filter(Boolean);
-  const animated = !still && !reducedMotion;
-  const arrive = animated ? spring({ frame, fps, config: { damping: 24, stiffness: 90 } }) : 1;
-  const opacity = !animated || scene.transition === 'cut' || index === 0 ? 1 : interpolate(frame, [0, 12], [0, 1], clamp);
-  const entrance = !animated ? undefined : scene.transition === 'slide' ? `translateX(${(1 - arrive) * 65}px)` : undefined;
-  const clipPath = animated && scene.transition === 'reveal' ? `inset(0 ${(1 - arrive) * 100}% 0 0)` : undefined;
-  const textMotion = { opacity: arrive, transform: `translateY(${(1 - arrive) * 26}px)` };
-  const headlineSize = scene.headline.length > 55 ? (vertical ? 83 : 65) : scene.headline.length > 32 ? (vertical ? 98 : 78) : (vertical ? 117 : 91);
-  const isLast = standalone || index === count - 1;
-  const text = (fontSize = headlineSize) => <div style={{ ...textMotion, position: 'relative', zIndex: 2 }}>
-    {scene.eyebrow && <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: 3, textTransform: 'uppercase', color: accent, marginBottom: 24 }}>{scene.eyebrow}</div>}
-    <div style={{ fontFamily: palette === 'ivory' ? 'Cormorant Garamond, Georgia, serif' : 'DM Sans, sans-serif', fontWeight: palette === 'ivory' ? 500 : 700, fontSize, lineHeight: 1.03, letterSpacing: -fontSize * 0.045, overflowWrap: 'break-word' }}>{scene.headline}</div>
-    {scene.body && <div style={{ fontSize: vertical ? 31 : 27, lineHeight: 1.42, color: muted, marginTop: 25, maxWidth: 690 }}>{scene.body}</div>}
-    {isLast && <div style={{ marginTop: 30, fontSize: 23, fontWeight: 500, color: accent, display: 'flex', gap: 15, alignItems: 'center' }}><span>{cta}</span><span aria-hidden="true">→</span></div>}
-  </div>;
-  const photoProps = { scene, frame, frames, still: !animated };
-  const editorialSize = vertical ? Math.min(headlineSize, 88) : Math.min(headlineSize, 66);
-  const estimatedTextHeight = Math.ceil(scene.headline.length * editorialSize * 0.59 / innerWidth) * editorialSize * 1.03
-    + (scene.eyebrow ? 52 : 0) + (scene.body ? Math.ceil(scene.body.length * (vertical ? 31 : 27) * 0.56 / innerWidth) * (vertical ? 44 : 39) + 25 : 0) + (isLast ? 88 : 0);
-  const imageHeight = Math.max(160, Math.min(innerHeight * (height / width > 1.1 ? 0.62 : 0.47), innerHeight - estimatedTextHeight - (vertical ? 42 : 27)));
-  return <AbsoluteFill style={{ background: p.background, color: colour, fontFamily: 'DM Sans, sans-serif', opacity, transform: entrance, clipPath, overflow: 'hidden' }}>
-    {full && <><Photo {...photoProps} image={photos[0]} style={{ position: 'absolute', inset: 0 }} /><AbsoluteFill style={{ background: scene.textPosition === 'top' ? 'linear-gradient(180deg,rgba(0,0,0,.88),rgba(0,0,0,.05) 85%)' : 'linear-gradient(180deg,rgba(0,0,0,.28),rgba(0,0,0,.1) 30%,rgba(0,0,0,.92))' }} /></>}
-    {!full && <AbsoluteFill style={{ background: `radial-gradient(ellipse at 95% 0%, ${palette === 'ivory' ? '#c4a58825' : '#ff9b8e0c'}, transparent 60%)` }} />}
-    <div style={{ position: 'absolute', top: vertical ? 104 : 65, left: x, right, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><div style={{ fontSize: 33, fontWeight: 700, letterSpacing: -1.5 }}>veylo<span style={{ color: accent }}>.</span></div><div style={{ fontSize: 15, letterSpacing: 2.3, textTransform: 'uppercase', opacity: 0.7 }}>For the finished work</div></div>
-    <div style={{ position: 'absolute', top, left: x, right, bottom, display: 'flex', flexDirection: 'column' }}>
-      {full ? <div style={{ marginTop: scene.textPosition === 'top' ? 65 : scene.textPosition === 'center' ? innerHeight * 0.3 : 'auto' }}>{text()}</div>
-        : scene.layout === 'type' ? <div style={{ marginTop: 'auto', marginBottom: 'auto' }}><div style={{ width: 66, height: 4, background: accent, marginBottom: 46 }} />{text(headlineSize * 1.12)}</div>
-        : scene.layout === 'split' && vertical ? <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', alignItems: 'center', gap: 34, height: '100%' }}><div>{text(72)}</div><Photo {...photoProps} image={photos[0]} style={{ height: '88%', borderRadius: 3 }} /></div>
-        : <><div style={{ height: imageHeight, flexShrink: 0, marginBottom: vertical ? 42 : 27, position: 'relative' }}>
-          {scene.layout === 'collage' && photos.length > 1 ? <div style={{ display: 'grid', gridTemplateColumns: '1.25fr 1fr', height: '100%', gap: 16 }}><Photo {...photoProps} image={photos[0]} style={{ height: '100%', transform: 'rotate(-2deg)' }} /><div style={{ display: 'grid', gridTemplateRows: photos.length > 2 ? '1fr 1fr' : '1fr', gap: 16, paddingTop: 32 }}><Photo {...photoProps} image={photos[1]} /><Photo {...photoProps} image={photos[2]} /></div></div>
-            : scene.layout === 'device' ? <div style={{ width: innerWidth * 0.79, height: '100%', margin: '0 auto', padding: 15, background: '#202124', border: '2px solid #707070', borderRadius: 30, boxShadow: '0 18px 50px #00000025' }}><Photo {...photoProps} image={photos[0]} style={{ height: '100%', borderRadius: 18 }} /></div>
-            : <Photo {...photoProps} image={photos[0]} style={{ height: '100%', borderRadius: 2 }} />}
-        </div>{text(editorialSize)}</>}
+
+// 3D Perspective Smartphone Frame with auto-scroll and mixed media (video or photo)
+function Device3D({ media, frame, frames, still, style }) {
+  if (!media?.src) return null;
+  const progress = still ? 0.3 : Math.min(1, Math.max(0, frame / frames));
+  const tiltX = still ? 0 : interpolate(frame, [0, 18], [10, 0], clamp);
+  const tiltY = still ? 0 : interpolate(frame, [0, 18], [-5, 0], clamp);
+  const scale = still ? 1 : interpolate(frame, [0, 18], [0.92, 1], clamp);
+  const translateY = still ? 0 : interpolate(frame, [0, 18], [50, 0], clamp);
+  const scrollY = still ? -120 : interpolate(frame, [15, frames], [0, -280], clamp);
+
+  const isVideo = media.kind === 'video';
+
+  return (
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        perspective: 1200,
+        ...style
+      }}
+    >
+      <div
+        style={{
+          width: 380,
+          height: 640,
+          background: '#16171b',
+          borderRadius: 44,
+          padding: 12,
+          border: '3px solid rgba(255, 255, 255, 0.15)',
+          boxShadow: '0 35px 90px -15px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.08)',
+          transform: `translateY(${translateY}px) scale(${scale}) rotateX(${tiltX}deg) rotateY(${tiltY}deg)`,
+          position: 'relative',
+          overflow: 'hidden'
+        }}
+      >
+        {/* Dynamic Island / Speaker */}
+        <div style={{ position: 'absolute', top: 18, left: '50%', transform: 'translateX(-50%)', width: 90, height: 22, background: '#000', borderRadius: 20, zIndex: 10 }} />
+        
+        {/* Screen Content Window */}
+        <div style={{ width: '100%', height: '100%', borderRadius: 32, overflow: 'hidden', background: '#070709', position: 'relative' }}>
+          {isVideo ? (
+            <OffthreadVideo
+              src={media.src}
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                transform: `translateY(${scrollY}px)`
+              }}
+            />
+          ) : (
+            <Img
+              src={media.src}
+              style={{
+                width: '100%',
+                height: 'auto',
+                minHeight: '100%',
+                objectFit: 'cover',
+                transform: `translateY(${scrollY}px)`
+              }}
+            />
+          )}
+
+          {/* Glass Specular Glare */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.02) 40%, transparent 60%)',
+              pointerEvents: 'none'
+            }}
+          />
+        </div>
+      </div>
     </div>
-    <div style={{ position: 'absolute', bottom: vertical ? 285 : 55, left: x, right, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: `1px solid ${full ? '#ffffff40' : palette === 'ivory' ? '#191b1730' : '#ffffff25'}`, paddingTop: 23, color: muted, fontSize: 18 }}><span>veylo.com.ng</span>{!standalone && <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: 15 }}>{String(index + 1).padStart(2, '0')} / {String(count).padStart(2, '0')}</span>}</div>
-  </AbsoluteFill>;
+  );
 }
+
+// WhatsApp Hook Notification Card with Spring Arrival
+function WhatsAppHook({ frame, fps }) {
+  const arrive = spring({ frame, fps, config: { damping: 18, stiffness: 140 } });
+  const translateY = (1 - arrive) * 60;
+  const scale = 0.9 + arrive * 0.1;
+
+  return (
+    <div
+      style={{
+        transform: `translateY(${translateY}px) scale(${scale})`,
+        opacity: arrive,
+        background: 'rgba(28, 30, 36, 0.92)',
+        backdropFilter: 'blur(20px)',
+        border: '1px solid rgba(255, 255, 255, 0.12)',
+        borderRadius: 20,
+        padding: '18px 24px',
+        boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 16,
+        maxWidth: 580,
+        margin: '0 auto 28px'
+      }}
+    >
+      <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#25D366', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, color: '#fff', fontWeight: 700 }}>
+        W
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+          <strong style={{ fontSize: 18, color: '#fff' }}>Bride (Kemi) · WhatsApp</strong>
+          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>now</span>
+        </div>
+        <p style={{ margin: 0, fontSize: 16, color: '#e4e4e7', lineHeight: 1.3 }}>
+          "Hi! Are our wedding photos ready yet? Everyone is asking 🥺"
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// Editorial High-Res Photo Reveal with Camera Shutter Flash
+function EditorialPhoto({ image, scene, frame, frames, still }) {
+  if (!image?.src) return null;
+  const progress = still ? 0.3 : Math.min(1, Math.max(0, frame / frames));
+  const zoom = 1 + progress * 0.06;
+  const flash = still ? 0 : interpolate(frame, [4, 7, 12], [0, 0.45, 0], clamp);
+
+  const isVideo = image.kind === 'video';
+
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', borderRadius: 16, border: '1px solid rgba(255,255,255,0.12)' }}>
+      {isVideo ? (
+        <OffthreadVideo
+          src={image.src}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${zoom})` }}
+        />
+      ) : (
+        <Img
+          src={image.src}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            objectPosition: `${scene.focalPoint.x}% ${scene.focalPoint.y}%`,
+            transform: `scale(${zoom})`
+          }}
+        />
+      )}
+      {/* Camera Shutter Flash effect */}
+      {flash > 0 && <div style={{ position: 'absolute', inset: 0, background: `rgba(255,255,255,${flash})`, pointerEvents: 'none' }} />}
+      {/* Subtle vignette */}
+      <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.6) 100%)', pointerEvents: 'none' }} />
+    </div>
+  );
+}
+
+// Mask-Reveal Kinetic Headline & Text
+function MaskText({ headline, body, eyebrow, accent, frame, fps }) {
+  const arrive = spring({ frame, fps, config: { damping: 22, stiffness: 200 } });
+  const translateY = (1 - arrive) * 100;
+
+  return (
+    <div style={{ position: 'relative', zIndex: 10 }}>
+      {eyebrow && (
+        <div style={{ overflow: 'hidden', marginBottom: 12 }}>
+          <div style={{ transform: `translateY(${translateY}%)`, fontSize: 16, fontWeight: 700, letterSpacing: 2.5, textTransform: 'uppercase', color: accent }}>
+            {eyebrow}
+          </div>
+        </div>
+      )}
+      <div style={{ overflow: 'hidden' }}>
+        <h2 style={{ transform: `translateY(${translateY}%)`, fontSize: 58, fontWeight: 800, lineHeight: 1.05, letterSpacing: -1.5, margin: 0, color: '#fff' }}>
+          {headline}
+        </h2>
+      </div>
+      {body && (
+        <div style={{ overflow: 'hidden', marginTop: 16 }}>
+          <p style={{ transform: `translateY(${translateY}%)`, fontSize: 24, lineHeight: 1.4, color: '#d4d4d8', maxWidth: 640, margin: 0 }}>
+            {body}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Scene Container Component
+function Scene({ scene, images, palette, frames, index, count, still, reducedMotion, cta }) {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const p = palettes[palette] || palettes.ember;
+  const photos = (scene.assetIds || []).map(id => images[id]).filter(Boolean);
+  const primaryMedia = photos[0] || Object.values(images)[0] || null;
+
+  const isHook = scene.sceneType === 'whatsapp_hook' || scene.beat === 'hook' || index === 0;
+  const isDevice = scene.sceneType === 'device_scroll' || scene.layout === 'device';
+  const isOutro = scene.sceneType === 'outro_cta' || scene.beat === 'cta' || index === count - 1;
+
+  return (
+    <AbsoluteFill
+      style={{
+        background: p.background,
+        color: p.ink,
+        fontFamily: 'DM Sans, sans-serif',
+        padding: '160px 80px 320px 80px', // Strict Social Safe Zone Compliance
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        overflow: 'hidden'
+      }}
+    >
+      {/* Background Ambient Warm Glow */}
+      <div style={{ position: 'absolute', top: '-15%', right: '-15%', width: 700, height: 700, borderRadius: '50%', background: `radial-gradient(circle, ${p.accent}20 0%, transparent 70%)`, pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', bottom: '-15%', left: '-15%', width: 600, height: 600, borderRadius: '50%', background: `radial-gradient(circle, ${p.highlight}15 0%, transparent 70%)`, pointerEvents: 'none' }} />
+
+      {/* Top Brand Tag */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 }}>
+        <div style={{ fontSize: 32, fontWeight: 800, letterSpacing: -1 }}>
+          veylo<span style={{ color: p.accent }}>.</span>
+        </div>
+        <div style={{ fontSize: 14, letterSpacing: 2, textTransform: 'uppercase', color: p.muted, fontWeight: 600 }}>
+          For the finished work
+        </div>
+      </div>
+
+      {/* Main Center Stage */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', position: 'relative', zIndex: 5, margin: '30px 0' }}>
+        {isHook && <WhatsAppHook frame={frame} fps={fps} />}
+
+        {isDevice && primaryMedia ? (
+          <Device3D media={primaryMedia} frame={frame} frames={frames} still={still} style={{ height: 620 }} />
+        ) : !isDevice && primaryMedia ? (
+          <div style={{ height: 520, marginBottom: 24 }}>
+            <EditorialPhoto image={primaryMedia} scene={scene} frame={frame} frames={frames} still={still} />
+          </div>
+        ) : null}
+
+        <MaskText
+          headline={scene.headline}
+          body={scene.body}
+          eyebrow={scene.eyebrow}
+          accent={p.accent}
+          frame={frame}
+          fps={fps}
+        />
+      </div>
+
+      {/* Bottom CTA & Safe Bar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.12)', paddingTop: 18, zIndex: 10 }}>
+        <span style={{ color: p.muted, fontSize: 18, fontWeight: 500 }}>veylo.com.ng</span>
+        <span style={{ color: p.accent, fontSize: 17, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span>{isOutro ? cta : 'Start free'}</span>
+          <span>→</span>
+        </span>
+      </div>
+    </AbsoluteFill>
+  );
+}
+
+// CapCut-Style Animated Subtitles
 function Subtitles({ words }) {
   const frame = useCurrentFrame();
   const time = frame / 30;
-  const wordIndex = words.findIndex(word => time >= word.start && time < word.end + 0.12);
+  if (!words || !words.length) return null;
+
+  const wordIndex = words.findIndex(w => time >= w.start && time < w.end + 0.12);
   if (wordIndex < 0) return null;
-  const from = Math.floor(wordIndex / 5) * 5;
-  return <div style={{ position: 'absolute', bottom: 374, left: 90, right: 150, textAlign: 'center', fontFamily: 'DM Sans, sans-serif', fontSize: 32, fontWeight: 500, lineHeight: 1.4 }}><span style={{ display: 'inline-block', padding: '12px 22px', borderRadius: 8, background: '#070709e8', color: '#fff' }}>{words.slice(from, from + 5).map((word, i) => <React.Fragment key={`${from + i}`}><span style={{ color: from + i === wordIndex ? '#ffb3a7' : '#fff' }}>{word.text}</span>{' '}</React.Fragment>)}</span></div>;
+
+  const startIdx = Math.max(0, wordIndex - 2);
+  const slice = words.slice(startIdx, startIdx + 5);
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        bottom: 340, // Inside safe area
+        left: 60,
+        right: 60,
+        textAlign: 'center',
+        zIndex: 50,
+        pointerEvents: 'none'
+      }}
+    >
+      <span
+        style={{
+          display: 'inline-block',
+          padding: '12px 24px',
+          borderRadius: 14,
+          background: 'rgba(10, 10, 12, 0.94)',
+          backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(255, 255, 255, 0.15)',
+          color: '#fff',
+          fontFamily: 'DM Sans, sans-serif',
+          fontSize: 32,
+          fontWeight: 700,
+          boxShadow: '0 10px 35px rgba(0,0,0,0.5)'
+        }}
+      >
+        {slice.map((w, i) => {
+          const isCurrent = startIdx + i === wordIndex;
+          return (
+            <React.Fragment key={`${startIdx + i}-${w.text}`}>
+              <span
+                style={{
+                  color: isCurrent ? '#ff9b8e' : '#fff',
+                  transform: isCurrent ? 'scale(1.12)' : 'scale(1)',
+                  display: 'inline-block',
+                  transition: 'transform 0.08s ease'
+                }}
+              >
+                {w.text}
+              </span>{' '}
+            </React.Fragment>
+          );
+        })}
+      </span>
+    </div>
+  );
 }
+
+// Master Content Composition
 export default function ContentComposition(props) {
   const { plan, images = {}, voice = {}, music, effect, still = false, sceneIndex = 0, reducedMotion = false } = props;
   const { durationInFrames } = useVideoConfig();
   const [fontHandle] = useState(() => delayRender('Loading Veylo typefaces'));
-  useEffect(() => { let active = true; document.fonts.ready.then(() => { if (active) continueRender(fontHandle); }); return () => { active = false; continueRender(fontHandle); }; }, [fontHandle]);
-  if (!plan?.scenes?.length) return <AbsoluteFill style={{ background: '#070709' }} />;
+
+  useEffect(() => {
+    let active = true;
+    document.fonts.ready.then(() => {
+      if (active) continueRender(fontHandle);
+    });
+    return () => {
+      active = false;
+      continueRender(fontHandle);
+    };
+  }, [fontHandle]);
+
+  if (!plan?.scenes?.length) return <AbsoluteFill style={{ background: '#0a0a0c' }} />;
+
   const entries = timeline(plan, voice, music);
+
   if (still) {
-    const index = Math.min(sceneIndex, plan.scenes.length - 1);
-    return <Scene scene={plan.scenes[index]} images={images} palette={plan.palette} frames={1} index={index} count={plan.scenes.length} still cta={plan.cta} standalone={props.format !== 'carousel'} />;
+    const idx = Math.min(sceneIndex, plan.scenes.length - 1);
+    return (
+      <Scene
+        scene={plan.scenes[idx]}
+        images={images}
+        palette={plan.palette}
+        frames={1}
+        index={idx}
+        count={plan.scenes.length}
+        still
+        cta={plan.cta}
+      />
+    );
   }
-  return <AbsoluteFill style={{ background: '#070709' }}>
-    {entries.map(({ scene, from, frames }, index) => <Sequence key={scene.id} from={from} durationInFrames={Math.min(frames + 12, durationInFrames - from)}>
-      <Scene scene={scene} images={images} palette={plan.palette} frames={frames} index={index} count={entries.length} reducedMotion={reducedMotion} hasVoice={Boolean(voice[scene.id])} cta={plan.cta} />
-    </Sequence>)}
-    {entries.map(({ scene, from, frames }) => voice[scene.id] && <Sequence key={`voice-${scene.id}`} from={from} durationInFrames={frames}>
-      <Audio src={voice[scene.id].src} volume={0.95} />
-      <Subtitles words={voice[scene.id].words || []} />
-    </Sequence>)}
-    {music?.src && <Audio src={music.src} volume={frame => {
-      const fade = Math.min(1, frame / 30, (durationInFrames - frame) / 45);
-      const speaking = entries.some(({ scene, from }) => voice[scene.id] && frame >= from - 8 && frame <= from + voice[scene.id].duration * 30 + 8);
-      return Math.max(0, fade) * (speaking ? 0.12 : 0.28);
-    }} />}
-    {effect && entries.slice(1).map(({ scene, from }) => scene.transition !== 'cut' && <Sequence key={`fx-${scene.id}`} from={Math.max(0, from - 3)} durationInFrames={24}><Audio src={effect} volume={0.14} /></Sequence>)}
-  </AbsoluteFill>;
+
+  return (
+    <AbsoluteFill style={{ background: '#0a0a0c' }}>
+      {/* Video Visual Sequences */}
+      {entries.map(({ scene, from, frames }, index) => (
+        <Sequence key={scene.id} from={from} durationInFrames={Math.min(frames + 12, durationInFrames - from)}>
+          <Scene
+            scene={scene}
+            images={images}
+            palette={plan.palette}
+            frames={frames}
+            index={index}
+            count={entries.length}
+            reducedMotion={reducedMotion}
+            cta={plan.cta}
+          />
+        </Sequence>
+      ))}
+
+      {/* Voiceover Audio Layers */}
+      {entries.map(({ scene, from, frames }) => voice[scene.id]?.src && (
+        <Sequence key={`voice-${scene.id}`} from={from} durationInFrames={frames}>
+          <Audio src={voice[scene.id].src} volume={1.0} />
+          <Subtitles words={voice[scene.id].words || []} />
+        </Sequence>
+      ))}
+
+      {/* Background Music with Automatic Sidechain Ducking */}
+      {music?.src && (
+        <Audio
+          src={music.src}
+          volume={frame => {
+            const fade = Math.min(1, frame / 20, (durationInFrames - frame) / 30);
+            const isSpeaking = entries.some(
+              ({ scene, from }) => voice[scene.id] && frame >= from - 6 && frame <= from + (voice[scene.id].duration || 4) * 30 + 6
+            );
+            return Math.max(0, fade) * (isSpeaking ? 0.12 : 0.38);
+          }}
+        />
+      )}
+
+      {/* Scene Transition Audio Effects */}
+      {effect && entries.slice(1).map(({ scene, from }) => (
+        <Sequence key={`fx-${scene.id}`} from={Math.max(0, from - 2)} durationInFrames={25}>
+          <Audio src={effect} volume={0.22} />
+        </Sequence>
+      ))}
+    </AbsoluteFill>
+  );
 }

@@ -46,6 +46,7 @@ export default function ContentStudioPage({ admin, onLogout }) {
   const [revisionScope, setRevisionScope] = useState('all');
   const [captionPlatform, setCaptionPlatform] = useState('instagram');
   const input = useRef(null);
+  const activeSlotRef = useRef(null);
   const activeVersionRef = useRef('');
   const currentRoute = useRef(projectId);
   currentRoute.current = projectId;
@@ -129,15 +130,30 @@ export default function ContentStudioPage({ admin, onLogout }) {
     const { data } = await api.post(`${BASE}/projects/${project.id}/${actionName}`);
     applyProject(data.project);
   });
-  async function uploadImages(files) {
+  async function uploadImages(files, targetSlotId = null) {
     const items = Array.from(files || []);
     if (!items.length || locked) return;
-    const invalid = items.find(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 15 * 1024 * 1024);
-    if (invalid) { setError('Choose still JPEG, PNG, or WebP images, up to 15 MB each.'); return; }
-    if (items.length + project.assets.length > 24) { setError('A campaign can hold up to 24 images.'); return; }
-    await perform('Uploading images', async () => {
+    const invalid = items.find(file => {
+      const isImg = ['image/jpeg', 'image/png', 'image/webp'].includes(file.type);
+      const isVid = ['video/mp4', 'video/webm', 'video/quicktime'].includes(file.type);
+      const isAud = ['audio/mpeg', 'audio/wav', 'audio/mp3'].includes(file.type);
+      return (!isImg && !isVid && !isAud) || file.size > 100 * 1024 * 1024;
+    });
+    if (invalid) { setError('Files must be supported photos (JPEG, PNG, WebP), videos (MP4, WebM), or music (MP3, WAV) up to 100 MB each.'); return; }
+    if (items.length + project.assets.length > 24) { setError('A campaign can hold up to 24 assets.'); return; }
+    const currentSlot = targetSlotId || activeSlotRef.current;
+    activeSlotRef.current = null;
+
+    await perform('Uploading media', async () => {
       for (let index = 0; index < items.length; index++) {
-        const form = new FormData(); form.append('image', items[index]); form.append('kind', assetKind);
+        const file = items[index];
+        const isVid = file.type.startsWith('video/');
+        const isAud = file.type.startsWith('audio/');
+        const kind = isVid ? 'video' : isAud ? 'music' : assetKind;
+        const form = new FormData();
+        form.append('media', file);
+        form.append('kind', kind);
+        if (currentSlot) form.append('slotId', currentSlot);
         setUploadProgress(`${index + 1} of ${items.length}`);
         const { data } = await api.post(`${BASE}/projects/${project.id}/assets`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 });
         applyProject(data.project);
@@ -153,6 +169,19 @@ export default function ContentStudioPage({ admin, onLogout }) {
   });
   const caption = versionPlan ? `${versionPlan.captions[captionPlatform]}\n\n${versionPlan.hashtags.join(' ')}` : '';
   const copyCaption = () => perform('Copying caption', async () => { await navigator.clipboard.writeText(caption); toast.success('Caption copied.'); });
+  const copyGoogleVidsPrompt = () => perform('Copying script', async () => {
+    if (!versionPlan?.googleVidsPrompt) return;
+    await navigator.clipboard.writeText(versionPlan.googleVidsPrompt);
+    toast.success('Google Vids prompt copied.');
+  });
+  const uploadForSlot = slotId => {
+    activeSlotRef.current = slotId;
+    input.current?.click();
+  };
+  const triggerRender = () => perform('Starting render', async () => {
+    const { data } = await api.post(`${BASE}/projects/${project.id}/jobs`, { kind: 'render' });
+    applyProject(data.project);
+  });
   const reveal = reducedMotion ? {} : { initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35 } };
 
   if (!allowed) return <main className="cs-page"><div className="cs-container cs-empty"><Clapperboard size={32} /><h1>Content Studio</h1><p>Content Studio is available to superadmins and operations administrators.</p><Link className="cs-button" to="/">Back to admin</Link></div></main>;
@@ -168,22 +197,227 @@ export default function ContentStudioPage({ admin, onLogout }) {
         {projects.length ? <div className="cs-campaign-grid">{projects.map((item, index) => <motion.div key={item.id} {...reveal} transition={{ duration: 0.3, delay: reducedMotion ? 0 : Math.min(index, 5) * 0.04 }}><Link className="cs-campaign-card" to={`/content-studio/${item.id}`}><div className="cs-card-top"><Clapperboard size={22} /><Status value={item.status} /></div><h3>{item.title}</h3><p>{item.formats.map(format => formats.find(value => value.id === format)?.label).join(' · ')}</p><div className="cs-card-bottom"><span>{new Date(item.updatedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}</span><ArrowRight size={18} /></div></Link></motion.div>)}</div> : <div className="cs-empty-list"><FolderOpen size={25} /><div><h3>Your campaigns will live here.</h3><p>Start one to turn your images into content promoting Veylo.</p></div></div>}
         {hasMore && <button className="cs-button cs-secondary cs-load-more" disabled={Boolean(acting)} onClick={() => perform('Loading campaigns', () => loadList(page + 1))}>Load more campaigns</button>}
       </> : project ? <>
-        <div className="cs-project-bar"><div><h2>{project.title}</h2><Status value={project.job.status} /></div><span>{project.assets.length} / 24 images</span></div>
+        <div className="cs-project-bar"><div><h2>{project.title}</h2><Status value={project.job.status} /></div><span>{project.assets.length} / 24 media assets</span></div>
         {busy && <section className="cs-job" aria-live="polite"><div><Loader2 size={19} className="cs-spin" /><div><strong>{project.job.stage}</strong><span>{project.job.status === 'queued' ? 'You can leave this page. Your campaign is saved.' : 'Working in the background. You can come back when it is ready.'}</span></div><button onClick={() => jobAction('cancel')} disabled={Boolean(acting) || project.job.cancelRequested} className="cs-button cs-secondary">{project.job.cancelRequested ? 'Cancelling…' : 'Cancel'}</button></div><progress max="100" value={project.job.progress || 0} aria-label="Campaign progress" /></section>}
         {project.job.status === 'failed' && <div className="cs-message cs-error" role="alert"><AlertCircle size={19} /><p>{project.job.error}</p><button className="cs-text-button" onClick={() => jobAction('retry')} disabled={Boolean(acting)}>Retry</button></div>}
         {project.job.status === 'cancelled' && <div className="cs-message"><p>This job was cancelled. Its completed steps are saved.</p><button className="cs-text-button" onClick={() => jobAction('retry')} disabled={Boolean(acting)}>Resume</button></div>}
-        {versionPlan?.requiredAssets?.length > 0 && <section className="cs-needs-assets"><h3><ImageIcon size={18} />A few images would help tell this story.</h3><ul>{versionPlan.requiredAssets.map(value => <li key={value}>{value}</li>)}</ul><p>Add them below, then generate a new version.</p></section>}
-        <div className="cs-workspace">
-          <aside className="cs-inputs"><section className="cs-panel"><div className="cs-panel-heading"><div><span className="cs-step">01 / Source material</span><h3>Your images</h3></div><ImageIcon size={19} /></div><p className="cs-description">Finished photographs and real Veylo screenshots. Use images you have permission to promote.</p><div className="cs-segmented" aria-label="Upload type"><button onClick={() => setAssetKind('photo')} aria-pressed={assetKind === 'photo'} disabled={locked}><Camera size={15} />Photographs</button><button onClick={() => setAssetKind('screenshot')} aria-pressed={assetKind === 'screenshot'} disabled={locked}><Monitor size={15} />Screenshots</button></div>
-            <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" multiple className="cs-file-input" onChange={event => uploadImages(event.target.files)} disabled={locked} aria-label="Upload campaign images" />
-            <button className="cs-dropzone" disabled={locked || project.assets.length >= 24} onClick={() => input.current?.click()} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); uploadImages(event.dataTransfer.files); }}><span className="cs-upload-icon">{acting === 'Uploading images' ? <Loader2 size={22} className="cs-spin" /> : <Upload size={22} />}</span><strong>{acting === 'Uploading images' ? `Uploading ${uploadProgress}` : 'Add your images'}</strong><span>Drop here or choose files</span><small>JPEG, PNG, WebP · Up to 15 MB each</small></button>
-            {project.assets.length > 0 && <div className="cs-assets">{project.assets.map(asset => <div key={asset.id} className="cs-asset"><img src={asset.url} alt={asset.name} loading="lazy" /><span>{asset.kind === 'screenshot' ? <Monitor size={12} /> : <Camera size={12} />}</span>{!project.versions.length && <button disabled={locked} onClick={() => removeAsset(asset.id)} aria-label={`Remove ${asset.name}`}><X size={13} /></button>}</div>)}</div>}
+        {project.job.status === 'needs_assets' && (
+          <section className="cs-needs-assets">
+            <div>
+              <Clapperboard size={20} />
+              <div>
+                <h3>Commercial Concept & Shot List Ready</h3>
+                <p>The Creative Director has prepared your 4-beat commercial arc. Review the shot list below, upload footage or photos for the slots, and click Render commercial on PC.</p>
+              </div>
+            </div>
+            <button className="cs-button cs-primary" disabled={locked} onClick={triggerRender}>
+              <Film size={16} />
+              Render commercial on PC
+            </button>
           </section>
-          <section className="cs-panel"><div className="cs-panel-heading"><div><span className="cs-step">02 / The brief</span><h3>What should this post do?</h3></div><Clapperboard size={19} /></div><label className="cs-label">Marketing goal<select value={brief.goal} disabled={locked} onChange={event => updateBrief('goal', event.target.value)}><option value="signups">Get photographers to try Veylo</option><option value="awareness">Introduce Veylo</option><option value="feature">Explain a Veylo feature</option><option value="pro">Promote Veylo Pro</option></select></label><label className="cs-label">Anything to keep in mind? <span>Optional</span><textarea rows={3} maxLength={1600} value={brief.notes} disabled={locked} onChange={event => updateBrief('notes', event.target.value)} placeholder="For example: focus on wedding photographers delivering finished shoots." /></label><p className="cs-field-note">Leave this empty to let the AI choose the idea and write the script.</p>
-            <div className="cs-output-options"><span className="cs-label">Create these formats</span>{formats.map(({ id, label, detail, icon: Icon }) => <label className="cs-format" key={id}><input type="checkbox" checked={brief.formats.includes(id)} disabled={locked} onChange={event => updateBrief('formats', event.target.checked ? [...brief.formats, id] : brief.formats.filter(value => value !== id))} /><span className="cs-check"><Check size={13} /></span><Icon size={17} /><span><strong>{label}</strong><small>{detail}</small></span></label>)}</div>
-            <details className="cs-settings"><summary><Settings2 size={16} />Image, motion & audio settings<ChevronDown size={15} /></summary><div>{brief.formats.includes('video') && <label className="cs-label">Target video length<select value={brief.duration} disabled={locked} onChange={event => updateBrief('duration', Number(event.target.value))}>{[15, 30, 45, 60].map(value => <option key={value} value={value}>{value} seconds</option>)}</select><small className="cs-field-note">Final length follows the spoken script and edit.</small></label>}<Toggle icon={ImageIcon} checked={brief.generateImages} onChange={value => updateBrief('generateImages', value)} disabled={locked} title="Supporting imagery" detail="Generate extra images when the idea needs them" />{brief.formats.includes('video') && <><Toggle icon={Mic2} checked={brief.narration} onChange={value => updateBrief('narration', value)} disabled={locked} title="Voice-over" detail="Natural narration with timed subtitles" /><Toggle icon={Music2} checked={brief.music} onChange={value => updateBrief('music', value)} disabled={locked} title="Instrumental score" detail="An original music bed shaped to the edit" /><Toggle icon={Volume2} checked={brief.soundDesign} onChange={value => updateBrief('soundDesign', value)} disabled={locked} title="Sound design" detail="Soft accents at scene transitions" /></>}</div></details>
-            <button className="cs-button cs-primary cs-generate" onClick={generate} disabled={locked || !brief.formats.length}>{locked ? <Loader2 size={17} className="cs-spin" /> : <Clapperboard size={17} />}{version ? 'Generate a new version' : 'Generate content'}<ArrowRight size={16} /></button><button className="cs-save" disabled={locked} onClick={() => perform('Saving brief', async () => { await saveBrief(); toast.success('Brief saved.'); })}>Save brief for later</button>
-          </section></aside>
+        )}
+        <div className="cs-workspace">
+          <aside className="cs-inputs">
+            {/* 01 / The Brief & Direction */}
+            <section className="cs-panel">
+              <div className="cs-panel-heading">
+                <div>
+                  <span className="cs-step">01 / Creative Brief</span>
+                  <h3>Direction & Goal</h3>
+                </div>
+                <Clapperboard size={19} />
+              </div>
+              <p className="cs-description">Direct the commercial. The AI Creative Director plans the 4-beat concept, script, and shot list first.</p>
+              <label className="cs-label">
+                Marketing goal
+                <select value={brief.goal} disabled={locked} onChange={event => updateBrief('goal', event.target.value)}>
+                  <option value="signups">Get photographers to try Veylo</option>
+                  <option value="awareness">Introduce Veylo</option>
+                  <option value="feature">Explain client delivery & WhatsApp sharing</option>
+                  <option value="pro">Promote Veylo Pro (₦25,000/mo)</option>
+                </select>
+              </label>
+              <label className="cs-label">
+                Creative angle or notes <span>Optional</span>
+                <textarea rows={3} maxLength={1600} value={brief.notes} disabled={locked} onChange={event => updateBrief('notes', event.target.value)} placeholder="e.g. Lagos wedding photographer delivering an owambe session with private WhatsApp links." />
+              </label>
+              <div className="cs-output-options">
+                <span className="cs-label">Output formats</span>
+                {formats.map(({ id, label, detail, icon: Icon }) => (
+                  <label className="cs-format" key={id}>
+                    <input type="checkbox" checked={brief.formats.includes(id)} disabled={locked} onChange={event => updateBrief('formats', event.target.checked ? [...brief.formats, id] : brief.formats.filter(value => value !== id))} />
+                    <span className="cs-check"><Check size={13} /></span>
+                    <Icon size={17} />
+                    <span><strong>{label}</strong><small>{detail}</small></span>
+                  </label>
+                ))}
+              </div>
+              <details className="cs-settings">
+                <summary><Settings2 size={16} />Video length & audio settings<ChevronDown size={15} /></summary>
+                <div>
+                  {brief.formats.includes('video') && (
+                    <label className="cs-label">
+                      Target video length
+                      <select value={brief.duration} disabled={locked} onChange={event => updateBrief('duration', Number(event.target.value))}>
+                        {[15, 30, 45, 60].map(value => <option key={value} value={value}>{value} seconds</option>)}
+                      </select>
+                      <small className="cs-field-note">Duration follows the spoken script and pacing.</small>
+                    </label>
+                  )}
+                  <Toggle icon={ImageIcon} checked={brief.generateImages} onChange={value => updateBrief('generateImages', value)} disabled={locked} title="Supporting imagery" detail="Generate extra visuals when the concept needs them" />
+                  {brief.formats.includes('video') && (
+                    <>
+                      <Toggle icon={Mic2} checked={brief.narration} onChange={value => updateBrief('narration', value)} disabled={locked} title="Voice-over" detail="Deepgram Flux narration with timed subtitles" />
+                      <Toggle icon={Music2} checked={brief.music} onChange={value => updateBrief('music', value)} disabled={locked} title="Instrumental score" detail="44.1kHz warm harmonic bed or custom uploaded track" />
+                      <Toggle icon={Volume2} checked={brief.soundDesign} onChange={value => updateBrief('soundDesign', value)} disabled={locked} title="Sound design" detail="Studio camera shutter and message chimes" />
+                    </>
+                  )}
+                </div>
+              </details>
+              <button className="cs-button cs-primary cs-generate" onClick={generate} disabled={locked || !brief.formats.length}>
+                {locked ? <Loader2 size={17} className="cs-spin" /> : <Clapperboard size={17} />}
+                {version ? 'Develop new direction' : 'Direct commercial concept'}
+                <ArrowRight size={16} />
+              </button>
+              <button className="cs-save" disabled={locked} onClick={() => perform('Saving brief', async () => { await saveBrief(); toast.success('Brief saved.'); })}>
+                Save brief for later
+              </button>
+            </section>
+
+            {/* 02 / Shot List & Media */}
+            <section className="cs-panel">
+              <div className="cs-panel-heading">
+                <div>
+                  <span className="cs-step">02 / Visual Assets</span>
+                  <h3>Shot List & Media</h3>
+                </div>
+                <Film size={19} />
+              </div>
+              <p className="cs-description">Upload your video clips, screen recordings, photos, or custom audio bed.</p>
+
+              {/* Multi-Media Shot List from AI Creative Director */}
+              {versionPlan?.shotList?.length > 0 && (
+                <div className="cs-shot-list">
+                  <div className="cs-shot-list-head">
+                    <div>
+                      <span className="cs-kicker">Director's Shot List</span>
+                      <h4>Assets needed for this edit</h4>
+                    </div>
+                    <span className="cs-shot-count">{versionPlan.shotList.length} shots</span>
+                  </div>
+                  {versionPlan.shotList.map((slot, sIdx) => {
+                    const assignedAsset = project.assets.find(a => a.slotId === slot.id);
+                    return (
+                      <div key={slot.id || sIdx} className={`cs-slot-card ${assignedAsset ? 'cs-slot-filled' : ''}`}>
+                        <div className="cs-slot-header">
+                          <div className="cs-slot-title">
+                            <span className="cs-slot-num">{String(sIdx + 1).padStart(2, '0')}</span>
+                            <strong>{slot.label}</strong>
+                          </div>
+                          <div className="cs-slot-badges">
+                            <span className={`cs-badge cs-badge-${slot.mediaType}`}>
+                              {slot.mediaType === 'video' ? <Film size={11} /> : slot.mediaType === 'screen_recording' ? <Monitor size={11} /> : <Camera size={11} />}
+                              {slot.mediaType === 'video' ? 'Video' : slot.mediaType === 'screen_recording' ? 'Screen record' : 'Photo'}
+                              {slot.duration ? ` · ${slot.duration}s` : ''}
+                            </span>
+                            {slot.required && <span className="cs-badge cs-badge-req">Required</span>}
+                          </div>
+                        </div>
+                        <p className="cs-slot-desc">{slot.description}</p>
+                        {assignedAsset ? (
+                          <div className="cs-slot-asset">
+                            <div className="cs-slot-asset-preview">
+                              {assignedAsset.kind === 'video' ? <Film size={15} /> : assignedAsset.kind === 'music' ? <Music2 size={15} /> : <img src={assignedAsset.url} alt="" />}
+                              <span>{assignedAsset.name}</span>
+                            </div>
+                            <button className="cs-slot-replace-btn" onClick={() => uploadForSlot(slot.id)} disabled={locked}>Replace</button>
+                          </div>
+                        ) : (
+                          <button className="cs-slot-upload-btn" onClick={() => uploadForSlot(slot.id)} disabled={locked}>
+                            <Upload size={13} />
+                            <span>Upload {slot.mediaType === 'video' ? 'video clip (MP4/WebM)' : 'media'} for this shot</span>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Google Vids Avatar Script (Optional) */}
+              {versionPlan?.googleVidsPrompt && (
+                <div className="cs-vids-card">
+                  <div className="cs-vids-header">
+                    <div className="cs-vids-title">
+                      <Camera size={15} />
+                      <strong>Google Vids Avatar Script</strong>
+                    </div>
+                    <button className="cs-vids-copy-btn" onClick={copyGoogleVidsPrompt} type="button">
+                      <Copy size={12} />
+                      <span>Copy script</span>
+                    </button>
+                  </div>
+                  <p className="cs-vids-desc">
+                    Optional AI Presenter: If you'd like an avatar host for this video, copy this prompt into Google Vids, download your video, and upload it to Shot 1.
+                  </p>
+                  <pre className="cs-vids-pre">{versionPlan.googleVidsPrompt}</pre>
+                </div>
+              )}
+
+              {/* Media Library Upload */}
+              <div className="cs-general-upload">
+                <span className="cs-kicker">Library & Uploads</span>
+                <div className="cs-segmented" aria-label="Upload type">
+                  <button onClick={() => setAssetKind('photo')} aria-pressed={assetKind === 'photo'} disabled={locked}><Camera size={14} />Photos</button>
+                  <button onClick={() => setAssetKind('video')} aria-pressed={assetKind === 'video'} disabled={locked}><Film size={14} />Footage</button>
+                  <button onClick={() => setAssetKind('music')} aria-pressed={assetKind === 'music'} disabled={locked}><Music2 size={14} />Music</button>
+                  <button onClick={() => setAssetKind('screenshot')} aria-pressed={assetKind === 'screenshot'} disabled={locked}><Monitor size={14} />Screenshots</button>
+                </div>
+                <input ref={input} type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/mp3" multiple className="cs-file-input" onChange={event => uploadImages(event.target.files)} disabled={locked} aria-label="Upload campaign media" />
+                <button className="cs-dropzone" disabled={locked || project.assets.length >= 24} onClick={() => { activeSlotRef.current = null; input.current?.click(); }} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); uploadImages(event.dataTransfer.files); }}>
+                  <span className="cs-upload-icon">{acting === 'Uploading media' ? <Loader2 size={22} className="cs-spin" /> : <Upload size={22} />}</span>
+                  <strong>{acting === 'Uploading media' ? `Uploading ${uploadProgress}` : 'Add media files'}</strong>
+                  <span>Drop MP4 footage, photos, or custom MP3 music</span>
+                  <small>MP4, WebM, JPEG, PNG, MP3 · Up to 100 MB each</small>
+                </button>
+                {project.assets.length > 0 && (
+                  <div className="cs-assets">
+                    {project.assets.map(asset => (
+                      <div key={asset.id} className="cs-asset">
+                        {asset.kind === 'video' ? (
+                          <div className="cs-asset-media-preview cs-asset-video">
+                            <Film size={20} />
+                            <span className="cs-asset-name">{asset.name}</span>
+                          </div>
+                        ) : asset.kind === 'music' ? (
+                          <div className="cs-asset-media-preview cs-asset-music">
+                            <Music2 size={20} />
+                            <span className="cs-asset-name">{asset.name}</span>
+                          </div>
+                        ) : (
+                          <img src={asset.url} alt={asset.name} loading="lazy" />
+                        )}
+                        <span className="cs-asset-badge">
+                          {asset.kind === 'video' ? <Film size={11} /> : asset.kind === 'music' ? <Music2 size={11} /> : asset.kind === 'screenshot' ? <Monitor size={11} /> : <Camera size={11} />}
+                          {asset.slotId ? 'Shot' : asset.kind}
+                        </span>
+                        <button disabled={locked} onClick={() => removeAsset(asset.id)} aria-label={`Remove ${asset.name}`}><X size={13} /></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {version && (
+                <div className="cs-render-action">
+                  <button className="cs-button cs-primary cs-render-btn" disabled={locked} onClick={triggerRender}>
+                    <Film size={16} />
+                    Render commercial on PC
+                  </button>
+                </div>
+              )}
+            </section>
+          </aside>
           <div className="cs-results"><section className="cs-preview-panel"><div className="cs-preview-top"><div><span className="cs-step">03 / The finished direction</span><h3>{version ? 'Your campaign' : 'The next post starts here.'}</h3></div>{project.versions.length > 0 && <label className="cs-version"><span className="sr-only">Campaign version</span><select value={version?.id || ''} onChange={event => { setVersionId(event.target.value); setSceneIndex(0); }}>{project.versions.map((value, index) => <option key={value.id} value={value.id}>Version {index + 1}</option>)}</select></label>}</div>
             {version ? <><div className="cs-preview-formats">{['video', 'portrait', 'square', 'story', 'carousel'].map(format => <button key={format} aria-pressed={previewFormat === format} onClick={() => setPreviewFormat(format)}>{format === 'video' ? 'Video' : format === 'portrait' ? '4:5' : format === 'square' ? '1:1' : format === 'carousel' ? 'Carousel' : '9:16 still'}</button>)}</div><Suspense fallback={<div className="cs-loading"><Loader2 className="cs-spin" size={22} /><span>Loading preview</span></div>}><Preview version={version} format={previewFormat} sceneIndex={sceneIndex} reducedMotion={Boolean(reducedMotion)} /></Suspense><div className="cs-scene-strip" aria-label="Campaign scenes">{versionPlan.scenes.map((scene, index) => <button key={scene.id} onClick={() => { setSceneIndex(index); if (previewFormat === 'video') setPreviewFormat('carousel'); }} aria-pressed={sceneIndex === index}><span>{String(index + 1).padStart(2, '0')}</span><strong>{scene.headline}</strong><small>{scene.layout}</small></button>)}</div></> : <div className="cs-preview-empty"><div className="cs-empty-frame"><span>veylo.</span><div><ImageIcon size={35} strokeWidth={1} /><p>Your images,<br /><em>with a purpose.</em></p></div><small>MADE FOR THE FINISHED WORK</small></div><p>Add your images and generate content.<br />Your concept, preview and exports will appear here.</p></div>}
           </section>

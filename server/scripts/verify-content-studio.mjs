@@ -22,9 +22,9 @@ const fixture = {
   title: 'A better first look', angle: 'Your final delivery deserves the same care as your photographs.', audience: 'Nigerian photographers', artDirection: 'Photographs first, short copy, clear contrast.', palette: 'ember', musicMood: 'warm', cta: 'Create your first delivery',
   captions: { instagram: 'Your edit is finished. Give the delivery the same care. Try Veylo at veylo.com.ng.', tiktok: 'A better way to deliver your finished photographs. veylo.com.ng', youtube: 'Give your photographs a better first look. Try Veylo.' }, hashtags: ['#Veylo'], requiredAssets: [],
   scenes: [
-    { id: 'scene-1', assetIds: ['photo-1'], generatedImagePrompt: '', layout: 'editorial', headline: 'The edit is finished.', body: 'Give the delivery the same care.', eyebrow: 'For photographers', narration: 'Give your finished photographs a better first look.', duration: 3, focalPoint: { x: 50, y: 35 }, motion: 'push', transition: 'fade', grade: 'original', textPosition: 'bottom' },
-    { id: 'scene-2', assetIds: ['photo-1'], generatedImagePrompt: '', layout: 'fullbleed', headline: 'One private link.', body: 'Ready to send on WhatsApp.', eyebrow: 'Made for the finished work', narration: 'Send one private link, ready for your clients.', duration: 3, focalPoint: { x: 50, y: 35 }, motion: 'pan', transition: 'slide', grade: 'original', textPosition: 'bottom' },
-    { id: 'scene-3', assetIds: [], generatedImagePrompt: '', layout: 'type', headline: 'Let the work do the talking.', body: 'Deliver your next shoot with Veylo.', eyebrow: 'Your next delivery', narration: 'Create your first delivery with Veylo.', duration: 3, focalPoint: { x: 50, y: 50 }, motion: 'still', transition: 'reveal', grade: 'original', textPosition: 'center' }
+    { id: 'scene-1', beat: 'hook', sceneType: 'standard', assetIds: ['photo-1'], generatedImagePrompt: '', layout: 'editorial', headline: 'The edit is finished.', body: 'Give the delivery the same care.', eyebrow: 'For photographers', narration: 'Give your finished photographs a better first look.', duration: 3, focalPoint: { x: 50, y: 35 }, motion: 'push', transition: 'fade', grade: 'original', textPosition: 'bottom' },
+    { id: 'scene-2', beat: 'flow', sceneType: 'standard', assetIds: ['photo-1'], generatedImagePrompt: '', layout: 'fullbleed', headline: 'One private link.', body: 'Ready to send on WhatsApp.', eyebrow: 'Made for the finished work', narration: 'Send one private link, ready for your clients.', duration: 3, focalPoint: { x: 50, y: 35 }, motion: 'pan', transition: 'slide', grade: 'original', textPosition: 'bottom' },
+    { id: 'scene-3', beat: 'cta', sceneType: 'outro_cta', assetIds: [], generatedImagePrompt: '', layout: 'type', headline: 'Let the work do the talking.', body: 'Deliver your next shoot with Veylo.', eyebrow: 'Your next delivery', narration: 'Create your first delivery with Veylo.', duration: 3, focalPoint: { x: 50, y: 50 }, motion: 'still', transition: 'reveal', grade: 'original', textPosition: 'center' }
   ]
 };
 const brief = briefSchema.parse({ formats: ['video', 'portrait', 'carousel'] });
@@ -41,7 +41,7 @@ await assert.rejects(fetchGeneratedImage('http://127.0.0.1/private', new AbortCo
 await assert.rejects(fetchGeneratedImage('https://evil-aliyuncs.com/private', new AbortController().signal));
 const score = makeScore('editorial', 10);
 assert.equal(score.buffer.toString('ascii', 0, 4), 'RIFF');
-assert.equal(score.buffer.length, 44 + 10 * 24000 * 2);
+assert.equal(score.buffer.length, 44 + 10 * 44100 * 2);
 assert.equal(makeTransitionSound().toString('ascii', 8, 12), 'WAVE');
 const timed = timeline(fixture, { 'scene-1': { duration: 7.8 } }, { bpm: 100 });
 assert.ok(timed[0].frames / 30 >= 8.45, 'Scene must not cut off narration');
@@ -59,7 +59,7 @@ process.env.DEEPGRAM_API_KEY = 'verification-key';
 const calls = [];
 globalThis.fetch = async (url, options) => {
   calls.push({ url: String(url), body: options.body });
-  if (String(url).includes('/chat/completions')) return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ...fixture, scenes: fixture.scenes.map(scene => ({ ...scene, headline: `Updated ${scene.id}` })) }) } }] }), { status: 200 });
+  if (String(url).includes('/chat/completions')) return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ...fixture, shotList: [{ id: 'shot-1', label: 'Hook', description: 'Phone scroll', mediaType: 'screen_recording', aspectRatio: '9:16', duration: 3, required: true }], googleVidsPrompt: 'Photographer introducing Veylo delivery.', scenes: fixture.scenes.map(scene => ({ ...scene, headline: `Updated ${scene.id}` })) }) } }] }), { status: 200 });
   if (String(url).includes('/v2/speak')) return new Response(Buffer.from('sample-audio'), { status: 200 });
   if (String(url).includes('/v1/listen')) return new Response(JSON.stringify({ results: { channels: [{ alternatives: [{ words: [{ word: 'Veylo', punctuated_word: 'Veylo.', start: 0, end: 1 }] }] }] } }), { status: 200 });
   throw new Error('Unexpected provider call');
@@ -69,6 +69,8 @@ try {
   assert.equal(plan.scenes[0].headline, 'Updated scene-1');
   assert.deepEqual(plan.scenes[1], fixture.scenes[1], 'A single-scene revision must preserve other scenes');
   assert.equal(plan.cta, fixture.cta);
+  assert.ok(Array.isArray(plan.shotList), 'Plan must include shotList');
+  assert.ok(typeof plan.googleVidsPrompt === 'string', 'Plan must include googleVidsPrompt');
   await narrate('Hello Veylo', new AbortController().signal);
   const words = await wordTimings(Buffer.from('audio'), new AbortController().signal);
   assert.equal(words[0].text, 'Veylo.');
@@ -94,10 +96,10 @@ try {
   assert.equal((await fetch(`${base}/projects/${projectId}`, { headers: { 'x-test-owner': ownerId } })).status, 200);
   assert.equal((await fetch(`${base}/projects/${projectId}`, { headers: { 'x-test-owner': '333333333333333333333333' } })).status, 404);
   assert.equal((await fetch(`${base}/projects/not-an-id`, { headers: { 'x-test-owner': ownerId } })).status, 404);
-  const form = new FormData(); form.append('image', new Blob(['video'], { type: 'video/mp4' }), 'clip.mp4');
+  const form = new FormData(); form.append('media', new Blob(['binary'], { type: 'application/x-msdownload' }), 'bad.exe');
   assert.equal((await fetch(`${base}/projects/${projectId}/assets`, { method: 'POST', headers: { 'x-test-owner': ownerId }, body: form })).status, 400);
 } finally { ContentProject.findOne = realFind; await new Promise(resolve => apiServer.close(resolve)); }
-console.log('PASS: campaign ownership, invalid identifiers, video upload rejection');
+console.log('PASS: campaign ownership, invalid identifiers, unsupported file rejection');
 
 const browserExecutable = process.env.CONTENT_BROWSER_EXECUTABLE || (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined);
 const images = { 'photo-1': { src: `data:image/png;base64,${image.buffer.toString('base64')}`, kind: 'photo', width: image.width, height: image.height } };

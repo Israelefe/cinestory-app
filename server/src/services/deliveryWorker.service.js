@@ -274,9 +274,18 @@ async function direct(job, delivery) {
   if (frames.length !== insights.length) throw Object.assign(new Error('The creative director did not return a caption for every photograph.'), { code: 'CAPTIONS_REQUIRED' });
   const captionKeys = new Set();
   for (const frame of frames) {
-    const key = String(frame.caption || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-    if (!key || captionKeys.has(key)) throw Object.assign(new Error(`The creative director repeated a caption for photograph ${frame.assetId}.`), { code: 'CAPTIONS_REQUIRED' });
-    captionKeys.add(key);
+    let key = String(frame.caption || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    if (!key) {
+      frame.caption = `Photograph from this ${delivery.shootType || 'shoot'}.`;
+      key = frame.caption.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    }
+    // If caption is a duplicate, append the section title to differentiate
+    if (captionKeys.has(key)) {
+      const section = direction.sections.find(s => s.id === frame.sectionId);
+      const suffix = section?.title || frame.sectionId || 'detail';
+      frame.caption = `${frame.caption.slice(0, 140)} — ${suffix}`.slice(0, 180);
+    }
+    captionKeys.add(String(frame.caption || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim());
   }
   const sections = direction.sections.map(section => ({ ...section, assetIds: frames.filter(frame => frame.sectionId === section.id).map(frame => frame.assetId) })).filter(section => section.assetIds.length);
   delivery.title = direction.title;
@@ -354,6 +363,10 @@ async function revise(job, delivery) {
 async function run(job) {
   const startedAt = Date.now();
   await recordStageTiming(job, 'queueWaitMs', Number(job.createdAt) || startedAt);
+  // Keep heartbeat alive during long model calls so tick() doesn't mark this job as stale
+  const heartbeat = setInterval(async () => {
+    await DeliveryJob.updateOne({ _id: job._id }, { heartbeatAt: new Date() }).catch(() => {});
+  }, 30_000);
   try {
     const delivery = await Delivery.findOne({ _id: job.deliveryId, userId: job.userId });
     if (!delivery) throw Object.assign(new Error('This delivery no longer exists.'), { code: 'DELIVERY_NOT_FOUND' });
@@ -381,7 +394,11 @@ async function run(job) {
     if (error.code === 'CAPTIONS_REQUIRED' || error.code === 'INVALID_MODEL_OUTPUT') failureUpdate.captionFailures = 1;
     if (error.code === 'NARRATION_TIMING_FAILED') failureUpdate.timingFailures = 1;
     await saveJob(job, failureUpdate);
-    await Delivery.updateOne({ _id: job.deliveryId }, { status: ['narrate', 'revise'].includes(job.type) ? 'review' : 'draft' });
+    // Preserve analysis progress: only 'analyze' failures reset to 'draft'.
+    // All other job types (direct, revise, narrate) fall back to 'review'
+    // so the photographer doesn't lose completed analysis and format recommendations.
+    const fallbackStatus = job.type === 'analyze' ? 'draft' : 'review';
+    await Delivery.updateOne({ _id: job.deliveryId }, { status: fallbackStatus });
     recordAnalyticsEventAsync({
       name: 'ai.job.failed',
       source: 'server',
@@ -395,6 +412,8 @@ async function run(job) {
     });
     if (job.type === 'narrate') recordAnalyticsEventAsync({ name: error.code === 'NARRATION_TIMING_FAILED' ? 'narration.timing.failed' : 'narration.failed', source: 'system', actorType: 'system', userId: job.userId, deliveryId: job.deliveryId, status: 'failed', durationMs: Date.now() - startedAt, errorCode: error.code || 'NARRATION_FAILED', metadata: { provider: 'Deepgram Flux', renderVersion: job.renderVersion || null } });
     console.error(`[delivery-worker/${job.type}]`, error.code || error.name, error.message);
+  } finally {
+    clearInterval(heartbeat);
   }
 }
 
@@ -406,7 +425,15 @@ async function tick() {
     await recordWorkerHeartbeat('delivery', { status: activeJobs.size ? 'busy' : 'idle', stage: 'polling', details: { activeJobs: activeJobs.size, maxJobs: effectiveJobConcurrency, aiConcurrency: effectiveAiBatchConcurrency, quotaModels: Object.keys(quotaSnapshot) } });
     const stale = new Date(Date.now() - 5 * 60 * 1000);
     await DeliveryJob.updateMany({ status: 'running', $or: [{ heartbeatAt: { $lt: stale } }, { heartbeatAt: { $exists: false } }], attempts: { $lt: 3 } }, { status: 'queued', lockedBy: null });
-    await DeliveryJob.updateMany({ status: 'running', $or: [{ heartbeatAt: { $lt: stale } }, { heartbeatAt: { $exists: false } }], attempts: { $gte: 3 } }, { status: 'failed', stage: 'failed', errorCode: 'WORKER_INTERRUPTED', errorMessage: 'The server stopped before this job finished. Retry it from the delivery review.', completedAt: new Date(), lockedBy: null });
+    // Mark stale jobs with 3+ attempts as failed AND unstick the parent delivery
+    const failedStaleJobs = await DeliveryJob.find({ status: 'running', $or: [{ heartbeatAt: { $lt: stale } }, { heartbeatAt: { $exists: false } }], attempts: { $gte: 3 } }).select('deliveryId type').lean();
+    if (failedStaleJobs.length) {
+      await DeliveryJob.updateMany({ _id: { $in: failedStaleJobs.map(j => j._id) } }, { status: 'failed', stage: 'failed', errorCode: 'WORKER_INTERRUPTED', errorMessage: 'The server stopped before this job finished. Retry it from the delivery review.', completedAt: new Date(), lockedBy: null });
+      for (const staleJob of failedStaleJobs) {
+        const fallbackStatus = staleJob.type === 'analyze' ? 'draft' : 'review';
+        await Delivery.updateOne({ _id: staleJob.deliveryId, status: { $in: ['analyzing', 'directing'] } }, { status: fallbackStatus });
+      }
+    }
 
     while (activeJobs.size < effectiveJobConcurrency) {
       const filter = { status: 'queued', attempts: { $lt: 3 }, cancelRequestedAt: null };
