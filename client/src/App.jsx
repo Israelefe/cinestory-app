@@ -43,6 +43,13 @@ const Changelog = lazyWithRecovery(() => import('./pages/Changelog.jsx'), 'chang
 const NotFound = lazyWithRecovery(() => import('./pages/NotFound.jsx'), 'not-found');
 const routeScrollPositions = new Map();
 
+function publicPortfolioHandle(pathname) {
+  let decodedPath = pathname;
+  try { decodedPath = decodeURIComponent(pathname); } catch {}
+  const match = decodedPath.match(/^\/@([^/]+)\/?$/);
+  return match?.[1] || '';
+}
+
 function RoutePosition() {
   const location = useLocation();
   const navigationType = useNavigationType();
@@ -142,7 +149,8 @@ const productRoutes = new Set(['/dashboard', '/create', '/sharing', '/settings',
 
 function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountDeleted, onPlanChanged }) {
   const { pathname } = useLocation();
-  if (/^\/@[^/]+\/?$/.test(pathname)) return <PublicStudioPortfolio />;
+  const portfolioHandle = publicPortfolioHandle(pathname);
+  if (portfolioHandle) return <PublicStudioPortfolio requestedHandle={portfolioHandle} />;
   const showPublicHeader = !focusedRoutes.has(pathname);
   return <div className="min-h-screen bg-[#070709] text-white">
     {showPublicHeader && <Navbar user={user} onLogout={onLogout} />}

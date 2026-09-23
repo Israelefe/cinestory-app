@@ -9,10 +9,10 @@ function pathHandle(pathname) {
   try { return decodeURIComponent(value); } catch { return value; }
 }
 
-export default function PublicStudioPortfolio() {
+export default function PublicStudioPortfolio({ requestedHandle = '' }) {
   const { handle: routeHandle } = useParams();
   const location = useLocation();
-  const handle = String(routeHandle || pathHandle(location.pathname)).replace(/^@/, '');
+  const handle = String(routeHandle || requestedHandle || pathHandle(location.pathname)).replace(/^@/, '');
   const [portfolio, setPortfolio] = useState(null);
   const [error, setError] = useState('');
   const [category, setCategory] = useState('All');
