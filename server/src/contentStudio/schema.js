@@ -2,16 +2,16 @@ import { z } from 'zod';
 
 const copy = (max) => z.string().trim().max(max).refine(value => !/[<>\u0000-\u0008]/.test(value), 'Use plain text.');
 export const briefSchema = z.object({
-  title: copy(100).default('New Veylo campaign'),
-  goal: z.enum(['awareness', 'signups', 'feature', 'pro']).default('signups'),
-  notes: copy(1600).default(''),
-  duration: z.enum([15, 30, 45, 60]).default(30),
-  formats: z.array(z.enum(['video', 'portrait', 'square', 'story', 'carousel'])).min(1).max(5).transform(v => [...new Set(v)]),
-  generateImages: z.boolean().default(true),
-  narration: z.boolean().default(true),
-  music: z.boolean().default(true),
-  soundDesign: z.boolean().default(true)
-}).strict();
+  title: z.preprocess(v => String(v || '').trim().slice(0, 100) || 'New Veylo campaign', copy(100)).default('New Veylo campaign'),
+  goal: z.preprocess(v => ['awareness', 'signups', 'feature', 'pro'].includes(v) ? v : 'signups', z.enum(['awareness', 'signups', 'feature', 'pro'])).default('signups'),
+  notes: z.preprocess(v => String(v || '').trim().slice(0, 1600), copy(1600)).default(''),
+  duration: z.preprocess(v => { const n = Number(v); return [15, 30, 45, 60].includes(n) ? n : 30; }, z.union([z.literal(15), z.literal(30), z.literal(45), z.literal(60)])).default(30),
+  formats: z.preprocess(v => Array.isArray(v) && v.length ? v.filter(f => ['video', 'portrait', 'square', 'story', 'carousel'].includes(f)) : ['video'], z.array(z.enum(['video', 'portrait', 'square', 'story', 'carousel'])).min(1).max(5).transform(v => [...new Set(v)])),
+  generateImages: z.preprocess(v => v !== false, z.boolean()).default(true),
+  narration: z.preprocess(v => v !== false, z.boolean()).default(true),
+  music: z.preprocess(v => v !== false, z.boolean()).default(true),
+  soundDesign: z.preprocess(v => v !== false, z.boolean()).default(true)
+}).passthrough();
 
 export const sceneSchema = z.object({
   id: z.string().regex(/^scene-[1-8]$/),

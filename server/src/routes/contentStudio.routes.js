@@ -131,8 +131,11 @@ router.get('/projects/:id/download/:versionId/:outputId', action(async (req, res
   res.json({ url: mediaUrl(output.publicId, { resourceType: output.format === 'video' ? 'video' : 'image', format: output.format === 'video' ? 'mp4' : 'png', download: true }) });
 }));
 router.use((error, req, res, next) => {
-  if (error.name === 'ZodError') return res.status(400).json({ message: 'Check the campaign settings. Use plain text and select at least one output format.' });
-  if (!error.safe) console.error('[content-studio/api]', error.name || 'Error');
+  if (error.name === 'ZodError') {
+    const details = error.issues?.map(i => `${i.path.join('.') || 'field'}: ${i.message}`).join(', ');
+    return res.status(400).json({ message: details || 'Check the campaign settings. Use plain text and select at least one output format.' });
+  }
+  if (!error.safe) console.error('[content-studio/api]', error.name || 'Error', error.message);
   res.status(error.safe ? error.status : 500).json({ message: error.safe ? error.message : 'Content Studio could not complete that action. Please retry.' });
 });
 export default router;
