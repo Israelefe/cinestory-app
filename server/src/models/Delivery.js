@@ -26,6 +26,10 @@ const accessSchema = new mongoose.Schema({
   allowIndividualDownloads: { type: Boolean, default: true },
   allowDownloadAll: { type: Boolean, default: true },
   allowLikes: { type: Boolean, default: true },
+  downloadsLocked: { type: Boolean, default: false },
+  downloadLockNote: { type: String, trim: true, maxlength: 200, default: '' },
+  watermarkEnabled: { type: Boolean, default: false },
+  watermarkText: { type: String, trim: true, maxlength: 40, default: '' },
   revokedAt: Date
 }, { _id: false });
 
@@ -48,6 +52,8 @@ const deliverySchema = new mongoose.Schema({
   formatConfig: { type: mongoose.Schema.Types.Mixed },
   presentationOrder: { type: [String], default: [] },
   galleryOrder: { type: [String], default: [] },
+  curatedAssetIds: { type: [String], default: [] },
+  galleryAssetIds: { type: [String], default: [] },
   soundtrack: { type: mongoose.Schema.Types.Mixed },
   narration: { type: mongoose.Schema.Types.Mixed },
   access: { type: accessSchema, default: () => ({}) },

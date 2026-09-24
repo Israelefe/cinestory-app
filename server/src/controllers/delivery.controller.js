@@ -18,7 +18,7 @@ import { CREATIVE_DIRECTOR_PROMPT_VERSION, CREATIVE_DIRECTOR_PROVIDER, creativeD
 import { confirmUploadedAsset, copyStorageImageToDelivery, createUploadSignature, deliveryFolder, removeDeliveryAudio, removeDeliveryImage, removeDeliveryMedia, signedArchiveUrl, signedImageUrl, signedOgImageUrl } from '../services/deliveryMedia.service.js';
 import { reservePublishSlot, resolveEntitlements } from '../services/entitlement.service.js';
 import { tokenDigest } from '../utils/auth.js';
-import { sendShareGrantEmail, sendStoryReadyEmail } from '../services/email.service.js';
+import { sendDeliveryDownloadedEmail, sendDeliveryViewedEmail, sendShareGrantEmail, sendStoryReadyEmail } from '../services/email.service.js';
 import QRCode from 'qrcode';
 import { DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
 import { DELIVERY_SOUNDTRACKS, deliverySoundtrack, deliverySoundtrackFile } from '../constants/deliverySoundtracks.js';
@@ -36,7 +36,18 @@ const narrationSchema = z.object({
 }).strict();
 const revisionSchema = z.object({ scope: z.enum(['selected', 'full']), instruction: z.string().trim().min(8).max(600), assetIds: z.array(z.string().min(1).max(100)).max(100).default([]) }).strict();
 const libraryAssetsSchema = z.object({ assetIds: z.array(z.string().min(8).max(100)).min(1).max(20) }).strict();
-const accessSchema = z.object({ pin: z.string().regex(/^\d{6}$/).optional().or(z.literal('')), expiresAt: z.string().datetime().optional().or(z.literal('')), allowIndividualDownloads: z.boolean().default(true), allowDownloadAll: z.boolean().default(true), allowLikes: z.boolean().default(true), narration: z.boolean().default(true) }).strict();
+const accessSchema = z.object({
+  pin: z.string().regex(/^\d{6}$/).optional().or(z.literal('')),
+  expiresAt: z.string().datetime().optional().or(z.literal('')),
+  allowIndividualDownloads: z.boolean().default(true),
+  allowDownloadAll: z.boolean().default(true),
+  allowLikes: z.boolean().default(true),
+  downloadsLocked: z.boolean().default(false),
+  downloadLockNote: z.string().trim().max(200).optional().default(''),
+  watermarkEnabled: z.boolean().default(false),
+  watermarkText: z.string().trim().max(40).optional().default(''),
+  narration: z.boolean().default(true)
+}).strict();
 const reviewSchema = z.object({
   title: z.string().trim().min(2).max(80),
   openingLine: z.string().trim().min(2).max(140),
@@ -90,11 +101,16 @@ function failValidation(res, parsed) {
   return res.status(400).json({ success: false, code: 'VALIDATION_ERROR', message: parsed.error.issues[0]?.message || 'Check the information you entered.' });
 }
 
-function ownerAsset(asset) {
-  const data = asset.toObject();
+function ownerAsset(asset, watermark = null) {
+  const data = typeof asset.toObject === 'function' ? asset.toObject() : { ...asset };
   delete data.libraryTags;
   delete data.libraryCaption;
-  return { ...data, url: signedImageUrl(asset.publicId), thumbnailUrl: signedImageUrl(asset.publicId, { thumbnail: true }), srcSet: [480, 960, 1600].map(width => `${signedImageUrl(asset.publicId, { width })} ${width}w`).join(', ') };
+  return {
+    ...data,
+    url: signedImageUrl(asset.publicId, { watermark }),
+    thumbnailUrl: signedImageUrl(asset.publicId, { thumbnail: true }),
+    srcSet: [480, 960, 1600].map(width => `${signedImageUrl(asset.publicId, { width, watermark })} ${width}w`).join(', ')
+  };
 }
 
 function soundtrackPreviewToken(userId) {
@@ -524,9 +540,13 @@ export async function addLibraryAssets(req, res) {
     const byId = new Map(stored.map(asset => [String(asset._id), asset]));
     if (stored.length !== parsed.data.assetIds.length) return res.status(403).json({ success: false, message: 'One of those library photographs does not belong to your account.' });
     const newAssets = [];
-    for (const id of parsed.data.assetIds) {
+    // Copy library photos in parallel (up to 4 at a time) instead of sequentially
+    const copyResults = await Promise.all(parsed.data.assetIds.map(async (id) => {
       const source = byId.get(id);
       const resource = await copyStorageImageToDelivery({ sourceUrl: signedImageUrl(source.publicId, { width: 8000 }), userId: user._id, deliveryId: delivery._id });
+      return { id, source, resource };
+    }));
+    for (const { source, resource } of copyResults) {
       copied.push(resource.public_id);
       newAssets.push({ assetId: crypto.randomUUID(), publicId: resource.public_id, resourceType: 'image', format: resource.format, width: resource.width, height: resource.height, bytes: resource.bytes, contentHash: resource.etag || undefined, hashAlgorithm: resource.etag ? 'cloudinary-etag' : undefined, hashVerifiedAt: resource.etag ? new Date() : undefined, originalFilename: source.originalFilename, libraryTags: source.tags || [], libraryCaption: source.caption || '', sortOrder: delivery.assets.length + newAssets.length });
     }
@@ -779,9 +799,11 @@ export async function updateDeliveryReview(req, res) {
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery || delivery.status !== 'review' || !delivery.creativeDirection) return res.status(409).json({ success: false, message: 'This delivery is not ready for edits.' });
     const known = new Set(delivery.assets.map(asset => asset.assetId));
-    if (parsed.data.assetOrder.length !== known.size || new Set(parsed.data.assetOrder).size !== known.size || parsed.data.assetOrder.some(id => !known.has(id))) return res.status(400).json({ success: false, message: 'The photograph order is incomplete.' });
+    if (!parsed.data.assetOrder.length || new Set(parsed.data.assetOrder).size !== parsed.data.assetOrder.length || parsed.data.assetOrder.some(id => !known.has(id))) return res.status(400).json({ success: false, message: 'The photograph order is invalid or contains unknown photographs.' });
     const frameEdits = new Map(parsed.data.frames.map(frame => [frame.assetId, frame]));
-    if (frameEdits.size !== known.size || [...known].some(id => !frameEdits.has(id))) return res.status(400).json({ success: false, message: 'Every photograph must remain in the delivery.' });
+    if (parsed.data.assetOrder.some(id => !frameEdits.has(id))) return res.status(400).json({ success: false, message: 'Every photograph in the presentation order must have direction details.' });
+    delivery.curatedAssetIds = parsed.data.assetOrder;
+    delivery.galleryAssetIds = delivery.assets.map(a => a.assetId);
     delivery.title = parsed.data.title;
     delivery.creativeDirection.title = parsed.data.title;
     delivery.creativeDirection.openingLine = parsed.data.openingLine;
@@ -824,7 +846,12 @@ export async function updateDeliveryReview(req, res) {
     }).filter(section => section.assetIds.length);
     // Captions and order are the narration source of truth. Any review save makes old audio unsafe to reuse.
     delivery.narration = undefined;
-    delivery.assets.forEach(asset => { asset.sortOrder = positions.get(asset.assetId); });
+    let extraIndex = parsed.data.assetOrder.length;
+    delivery.assets.forEach(asset => {
+      asset.sortOrder = positions.has(asset.assetId) ? positions.get(asset.assetId) : extraIndex++;
+    });
+    delivery.markModified('curatedAssetIds');
+    delivery.markModified('galleryAssetIds');
     delivery.markModified('creativeDirection');
     delivery.reviewApprovedAt = new Date();
     delivery.markModified('assets');
@@ -876,6 +903,10 @@ export async function publishDelivery(req, res) {
     delivery.access.allowIndividualDownloads = parsed.data.allowIndividualDownloads;
     delivery.access.allowDownloadAll = parsed.data.allowDownloadAll;
     delivery.access.allowLikes = parsed.data.allowLikes;
+    delivery.access.downloadsLocked = parsed.data.downloadsLocked;
+    delivery.access.downloadLockNote = parsed.data.downloadLockNote;
+    delivery.access.watermarkEnabled = parsed.data.watermarkEnabled;
+    delivery.access.watermarkText = parsed.data.watermarkText;
     delivery.access.expiresAt = parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : undefined;
     delivery.access.revokedAt = undefined;
     delivery.access.pinDigest = parsed.data.pin ? await bcrypt.hash(parsed.data.pin, 12) : undefined;
@@ -962,8 +993,10 @@ async function publicPayload(delivery, grant = null) {
   const visibleDeliveryAssets = grantAssets(delivery, grant);
   const visibleAssets = new Set(visibleDeliveryAssets.map(asset => asset.assetId));
   const fullAssetIds = new Set(delivery.assets.map(asset => asset.assetId));
-  const scoped = Boolean(grant && visibleAssets.size < fullAssetIds.size);
-  object.assets = visibleDeliveryAssets.map(ownerAsset);
+  const watermarkText = (delivery.access?.watermarkEnabled && delivery.access?.downloadsLocked)
+    ? (delivery.access?.watermarkText || owner.studio?.name || owner.name || 'PREVIEW')
+    : null;
+  object.assets = visibleDeliveryAssets.map(asset => ownerAsset(asset, watermarkText));
   if (grant) {
     if (object.creativeDirection) {
       object.creativeDirection = { ...object.creativeDirection };
@@ -1047,6 +1080,16 @@ export async function getPublicDelivery(req, res) {
       try {
         await DeliveryView.create({ deliveryId: delivery._id, visitorDigest: sessionDigest });
         await Delivery.updateOne({ _id: delivery._id }, { $inc: { viewsCount: 1 } });
+        if (delivery.userId?.email) {
+          sendDeliveryViewedEmail({
+            to: delivery.userId.email,
+            photographerName: delivery.userId.name,
+            clientName: delivery.clientName,
+            deliveryTitle: delivery.title,
+            deliveryId: delivery._id,
+            dashboardUrl: `${process.env.CLIENT_URL || 'https://veylo.com.ng'}/deliveries`
+          }).catch(err => console.warn('[delivery/notify-view]', err.message));
+        }
       } catch (error) { if (error.code !== 11000) throw error; }
     }
     res.json({ success: true, data: await publicPayload(delivery, grant) });
@@ -1115,6 +1158,9 @@ export async function getPhotoDownload(req, res) {
     const delivery = await publicDelivery(req.params.publicId);
     const grant = delivery ? await shareGrant(req, delivery) : null;
     if (!delivery || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
+    if (delivery.access?.downloadsLocked) {
+      return res.status(403).json({ success: false, code: 'DOWNLOADS_LOCKED', message: delivery.access?.downloadLockNote || 'Downloads are locked for this delivery. Contact your photographer to unlock.' });
+    }
     const individualAllowed = grant ? grant.allowIndividualDownloads : delivery.access?.allowIndividualDownloads;
     const galleryAllowed = grant ? grant.allowDownloadAll : delivery.access?.allowDownloadAll;
     if (!individualAllowed && !galleryAllowed) return res.status(403).json({ success: false, message: 'Downloads are turned off for this link.' });
@@ -1125,15 +1171,82 @@ export async function getPhotoDownload(req, res) {
   } catch (error) { res.status(500).json({ success: false, message: 'We could not prepare that download.' }); }
 }
 
+export async function streamPhotoDownload(req, res) {
+  try {
+    const delivery = await publicDelivery(req.params.publicId);
+    const grant = delivery ? await shareGrant(req, delivery) : null;
+    if (!delivery || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
+    if (delivery.access?.downloadsLocked) {
+      return res.status(403).json({ success: false, code: 'DOWNLOADS_LOCKED', message: delivery.access?.downloadLockNote || 'Downloads are locked for this delivery. Contact your photographer to unlock.' });
+    }
+    const individualAllowed = grant ? grant.allowIndividualDownloads : delivery.access?.allowIndividualDownloads;
+    const galleryAllowed = grant ? grant.allowDownloadAll : delivery.access?.allowDownloadAll;
+    if (!individualAllowed && !galleryAllowed) return res.status(403).json({ success: false, message: 'Downloads are turned off for this link.' });
+    const asset = grantAssets(delivery, grant).find(item => item.assetId === req.params.assetId);
+    if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
+    // Fetch the full-resolution image from Cloudinary
+    const imageUrl = signedImageUrl(asset.publicId, { original: true });
+    const upstream = await fetch(imageUrl, { signal: AbortSignal.timeout(60_000) });
+    if (!upstream.ok) return res.status(502).json({ success: false, message: 'Could not fetch the photograph from storage.' });
+    // Build a clean filename from the asset
+    const ext = (upstream.headers.get('content-type') || 'image/jpeg').includes('png') ? 'png' : 'jpg';
+    const safeName = String(asset.originalFilename || asset.assetId || 'photo').replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 80);
+    const filename = safeName.includes('.') ? safeName : `${safeName}.${ext}`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'image/jpeg');
+    if (upstream.headers.get('content-length')) res.setHeader('Content-Length', upstream.headers.get('content-length'));
+    res.setHeader('Cache-Control', 'private, no-store');
+    // Stream the response body directly
+    const reader = upstream.body.getReader();
+    const pump = async () => {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) { res.end(); return; }
+        if (!res.write(value)) await new Promise(r => res.once('drain', r));
+      }
+    };
+    await pump();
+    // Track download and notify on first download
+    if (delivery.downloadsCount === 0 && delivery.userId?.email) {
+      sendDeliveryDownloadedEmail({
+        to: delivery.userId.email,
+        photographerName: delivery.userId.name,
+        clientName: delivery.clientName,
+        deliveryTitle: delivery.title,
+        deliveryId: delivery._id,
+        dashboardUrl: `${process.env.CLIENT_URL || 'https://veylo.com.ng'}/deliveries`
+      }).catch(err => console.warn('[delivery/notify-download]', err.message));
+    }
+    await Delivery.updateOne({ _id: delivery._id }, { $inc: { downloadsCount: 1 } });
+    if (grant) await DeliveryShareGrant.updateOne({ _id: grant._id }, { $inc: { downloadCount: 1 }, $set: { lastDownloadAt: new Date() } });
+    recordAnalyticsEventAsync({ name: 'client.delivery.download_completed', source: 'server', actorType: grant ? 'guest' : 'client', deliveryId: delivery._id, sessionDigest: tokenDigest(visitorId(req, res)), format: delivery.format, status: 'completed', route: req.originalUrl, metadata: { downloadType: 'stream', role: grant?.role || null } });
+  } catch (error) {
+    if (!res.headersSent) res.status(500).json({ success: false, message: 'We could not download that photograph.' });
+  }
+}
+
 export async function trackPhotoDownload(req, res) {
   try {
     const delivery = await publicDelivery(req.params.publicId);
     const grant = delivery ? await shareGrant(req, delivery) : null;
     if (!delivery || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
+    if (delivery.access?.downloadsLocked) {
+      return res.status(403).json({ success: false, code: 'DOWNLOADS_LOCKED', message: delivery.access?.downloadLockNote || 'Downloads are locked for this delivery. Contact your photographer to unlock.' });
+    }
     const individualAllowed = grant ? grant.allowIndividualDownloads : delivery.access?.allowIndividualDownloads;
     const galleryAllowed = grant ? grant.allowDownloadAll : delivery.access?.allowDownloadAll;
     if (!individualAllowed && !galleryAllowed) return res.status(403).json({ success: false, message: 'Downloads are turned off for this link.' });
     if (!grantAssets(delivery, grant).some(asset => asset.assetId === req.params.assetId)) return res.status(404).json({ success: false, message: 'Photograph not found.' });
+    if (delivery.downloadsCount === 0 && delivery.userId?.email) {
+      sendDeliveryDownloadedEmail({
+        to: delivery.userId.email,
+        photographerName: delivery.userId.name,
+        clientName: delivery.clientName,
+        deliveryTitle: delivery.title,
+        deliveryId: delivery._id,
+        dashboardUrl: `${process.env.CLIENT_URL || 'https://veylo.com.ng'}/deliveries`
+      }).catch(err => console.warn('[delivery/notify-download]', err.message));
+    }
     await Delivery.updateOne({ _id: delivery._id }, { $inc: { downloadsCount: 1 } });
     if (grant) await DeliveryShareGrant.updateOne({ _id: grant._id }, { $inc: { downloadCount: 1 }, $set: { lastDownloadAt: new Date() } });
     recordAnalyticsEventAsync({ name: 'client.delivery.download_completed', source: 'server', actorType: grant ? 'guest' : 'client', deliveryId: delivery._id, sessionDigest: tokenDigest(visitorId(req, res)), format: delivery.format, status: 'completed', route: req.originalUrl, metadata: { downloadType: 'individual', role: grant?.role || null } });
@@ -1148,10 +1261,23 @@ export async function getGalleryDownload(req, res) {
     const delivery = await publicDelivery(req.params.publicId);
     const grant = delivery ? await shareGrant(req, delivery) : null;
     if (!delivery || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
+    if (delivery.access?.downloadsLocked) {
+      return res.status(403).json({ success: false, code: 'DOWNLOADS_LOCKED', message: delivery.access?.downloadLockNote || 'Downloads are locked for this delivery. Contact your photographer to unlock.' });
+    }
     if (grant ? !grant.allowDownloadAll : !delivery.access?.allowDownloadAll) return res.status(403).json({ success: false, message: 'Full gallery download is turned off for this link.' });
     const selectedAssets = grantAssets(delivery, grant);
     if (!selectedAssets.length) return res.status(404).json({ success: false, message: 'No photographs are available on this link.' });
     const url = signedArchiveUrl(selectedAssets.map(asset => asset.publicId), `${delivery.clientName || 'client'}-photographs`, grant?.assetIds?.length ? '' : deliveryFolder(delivery.userId._id, delivery._id));
+    if (delivery.downloadsCount === 0 && delivery.userId?.email) {
+      sendDeliveryDownloadedEmail({
+        to: delivery.userId.email,
+        photographerName: delivery.userId.name,
+        clientName: delivery.clientName,
+        deliveryTitle: delivery.title,
+        deliveryId: delivery._id,
+        dashboardUrl: `${process.env.CLIENT_URL || 'https://veylo.com.ng'}/deliveries`
+      }).catch(err => console.warn('[delivery/notify-download]', err.message));
+    }
     await Delivery.updateOne({ _id: delivery._id }, { $inc: { downloadsCount: 1 } });
     if (grant) await DeliveryShareGrant.updateOne({ _id: grant._id }, { $inc: { downloadCount: 1 }, $set: { lastDownloadAt: new Date() } });
     recordAnalyticsEventAsync({ name: 'client.delivery.download_completed', source: 'server', actorType: grant ? 'guest' : 'client', deliveryId: delivery._id, sessionDigest: tokenDigest(visitorId(req, res)), format: delivery.format, status: 'completed', route: req.originalUrl, count: selectedAssets.length, metadata: { downloadType: 'all', role: grant?.role || null } });
@@ -1159,6 +1285,37 @@ export async function getGalleryDownload(req, res) {
   } catch (error) {
     console.error('[deliveries/gallery-download]', error.message);
     res.status(500).json({ success: false, message: 'We could not prepare the full gallery.' });
+  }
+}
+
+export async function updateDownloadLock(req, res) {
+  try {
+    const parsed = z.object({
+      locked: z.boolean(),
+      note: z.string().trim().max(200).optional(),
+      watermarkEnabled: z.boolean().optional(),
+      watermarkText: z.string().trim().max(40).optional()
+    }).strict().safeParse(req.body);
+    if (!parsed.success) return failValidation(res, parsed);
+    const delivery = await ownedDelivery(req.params.id, req.user.id);
+    if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    delivery.access.downloadsLocked = parsed.data.locked;
+    if (parsed.data.note !== undefined) delivery.access.downloadLockNote = parsed.data.note;
+    if (parsed.data.watermarkEnabled !== undefined) delivery.access.watermarkEnabled = parsed.data.watermarkEnabled;
+    if (parsed.data.watermarkText !== undefined) delivery.access.watermarkText = parsed.data.watermarkText;
+    delivery.markModified('access');
+    await delivery.save();
+    res.json({
+      success: true,
+      data: {
+        downloadsLocked: delivery.access.downloadsLocked,
+        downloadLockNote: delivery.access.downloadLockNote,
+        watermarkEnabled: delivery.access.watermarkEnabled,
+        watermarkText: delivery.access.watermarkText
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Could not update download settings.' });
   }
 }
 

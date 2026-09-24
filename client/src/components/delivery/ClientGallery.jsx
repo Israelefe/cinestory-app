@@ -15,8 +15,9 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
   const [selected, setSelected] = useState(initialIndex);
   useDialogFocus(true, panel, onClose);
 
-  const allowDownloadAll = delivery ? delivery.access?.allowDownloadAll !== false : Boolean(onDownloadAll);
-  const allowIndividualDownloads = delivery ? delivery.access?.allowIndividualDownloads !== false : Boolean(onDownload);
+  const isLocked = Boolean(delivery?.access?.downloadsLocked);
+  const allowDownloadAll = delivery ? (delivery.access?.allowDownloadAll !== false && !isLocked) : Boolean(onDownloadAll);
+  const allowIndividualDownloads = delivery ? (delivery.access?.allowIndividualDownloads !== false && !isLocked) : Boolean(onDownload);
   const allowLikes = delivery ? Boolean(delivery.access?.allowLikes && onLike) : Boolean(onLike);
   const resolvedPhotos = useMemo(() => photos.map((photo, index) => demoId ? { ...photo, name: `demo-${demoId}-${index + 1}`, url: `/veylo/web/demo-${demoId}-${index + 1}-1440.webp`, thumbnailUrl: `/veylo/web/demo-${demoId}-${index + 1}-480.webp` } : photo), [photos, demoId]);
   const direction = delivery?.creativeDirection || {};
@@ -73,6 +74,11 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
           <button className="client-gallery-icon" type="button" onClick={onClose} aria-label="Close gallery"><X size={21} /></button>
         </div>
       </header>
+      {isLocked && (
+        <div style={{ margin: '12px 24px 0', padding: '10px 16px', background: 'rgba(255, 90, 71, 0.08)', border: '1px solid rgba(255, 90, 71, 0.2)', borderRadius: '6px', fontSize: '13px', color: '#ff9b8e', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span>{delivery.access?.downloadLockNote || 'Downloads are locked for this delivery. Contact your photographer to unlock.'}</span>
+        </div>
+      )}
       {downloadNotice && <p className="client-gallery-download-tip" role="status">{downloadNotice}</p>}
 
       {selected === null ? <div className="client-gallery-grid">{resolvedPhotos.map((photo, index) => {

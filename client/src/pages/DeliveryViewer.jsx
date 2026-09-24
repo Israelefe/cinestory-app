@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { ArrowRight, Check, Image, LoaderCircle, Mic2, Music2, RefreshCw } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -135,116 +135,111 @@ function preloadAudio(url, cleanup) {
 
 export function DeliveryReadiness({ delivery, onReady }) {
   const capabilities = getDeliveryCapabilities(delivery?.format);
-  const sortedAssets = [...(delivery.assets || [])].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
   const mediaKey = [
     delivery.publicId || delivery._id || 'draft',
     delivery.format || '',
     capabilities.music ? delivery.soundtrack?.url || '' : '',
-    capabilities.narration ? delivery.narration?.url || '' : '',
-    ...sortedAssets.map(asset => `${asset.assetId}:${asset.url || ''}`)
+    capabilities.narration ? delivery.narration?.url || '' : ''
   ].join('|');
-  const totals = {
-    photo: sortedAssets.length,
-    soundtrack: capabilities.music && delivery.soundtrack?.url ? 1 : 0,
-    narration: capabilities.narration && delivery.narration?.url ? 1 : 0
-  };
-  const total = Math.max(1, totals.photo + totals.soundtrack + totals.narration);
-  const [loaded, setLoaded] = useState({ photo: 0, soundtrack: 0, narration: 0, total: 0, failed: 0 });
-  const [blocked, setBlocked] = useState(false);
-  const [failedItems, setFailedItems] = useState([]);
-  const [attempt, setAttempt] = useState(0);
-  const openedRef = useRef(false);
-  const preloadedRef = useRef({ assets: {}, soundtrack: '', narration: '' });
 
-  const open = () => {
+  const hasAudio = Boolean(
+    (capabilities.music && delivery.soundtrack?.url) ||
+    (capabilities.narration && delivery.narration?.url)
+  );
+
+  const [audioReady, setAudioReady] = useState(!hasAudio);
+  const [stage, setStage] = useState(hasAudio ? 'Preparing audio' : 'Opening your photographs');
+  const [attempt, setAttempt] = useState(0);
+  const [blocked, setBlocked] = useState(false);
+  const openedRef = useRef(false);
+
+  const open = useCallback((media) => {
     if (openedRef.current) return;
     openedRef.current = true;
-    onReady(preloadedRef.current);
-  };
+    onReady(media);
+  }, [onReady]);
 
   useEffect(() => {
-    const cleanup = [];
     let active = true;
-    let transferred = false;
     openedRef.current = false;
-    const preloaded = { assets: {}, soundtrack: '', narration: '' };
-    preloadedRef.current = preloaded;
-    setLoaded({ photo: 0, soundtrack: 0, narration: 0, total: 0, failed: 0 });
     setBlocked(false);
-    setFailedItems([]);
-    trackEvent('client.preloader.started', { photos: totals.photo, soundtrack: Boolean(totals.soundtrack), narration: Boolean(totals.narration) }, { format: delivery.format, status: 'started', count: total });
-    const tasks = [
-      ...(totals.soundtrack ? [{ kind: 'soundtrack', label: 'Soundtrack', run: () => preloadAudio(apiMediaUrl(delivery.soundtrack.url), cleanup) }] : []),
-      ...(totals.narration ? [{ kind: 'narration', label: 'Narration', run: () => preloadAudio(apiMediaUrl(delivery.narration.url), cleanup) }] : []),
-      ...sortedAssets.map((asset, index) => ({ kind: 'photo', key: asset.assetId, label: asset.originalFilename || asset.filename || `Photograph ${index + 1}`, run: () => preloadImage(apiMediaUrl(asset.url), cleanup) }))
-    ];
 
-    if (!tasks.length) {
-      const readyTimer = window.setTimeout(() => { transferred = true; trackEvent('client.preloader.completed', { photos: totals.photo }, { format: delivery.format, status: 'completed', count: total }); open(); }, 250);
-      cleanup.push(() => window.clearTimeout(readyTimer));
-    } else {
-      const queue = [...tasks];
-      const worker = async () => {
-        const results = [];
-        while (active && queue.length) {
-          const task = queue.shift();
-          const result = await task.run();
-          if (!active) return;
-          const ok = Boolean(result?.ok);
-          if (ok && task.kind === 'photo') preloaded.assets[task.key] = result.url;
-          if (ok && task.kind === 'soundtrack') preloaded.soundtrack = result.url;
-          if (ok && task.kind === 'narration') preloaded.narration = result.url;
-          if (!ok) setFailedItems(current => [...current.filter(item => item !== task.label), task.label]);
-          results.push({ kind: task.kind, ok });
-          setLoaded(current => ({ ...current, [task.kind]: current[task.kind] + (ok ? 1 : 0), total: current.total + (ok ? 1 : 0), failed: current.failed + (ok ? 0 : 1) }));
-        }
-        return results;
-      };
-      Promise.all(Array.from({ length: Math.min(4, tasks.length) }, worker)).then(workerResults => {
+    // If no audio needed, open immediately
+    if (!hasAudio) {
+      const timer = window.setTimeout(() => {
         if (!active) return;
-        const failed = workerResults.flat().filter(result => !result.ok).length;
-        if (failed) {
-          setBlocked(true);
-          trackEvent('client.preloader.failed', { failedFiles: failed }, { format: delivery.format, status: 'failed', errorCode: 'MEDIA_PRELOAD_FAILED', count: failed });
-          return;
+        trackEvent('client.preloader.completed', { photos: delivery.assets?.length || 0 }, { format: delivery.format, status: 'completed' });
+        open({ assets: {}, soundtrack: '', narration: '' });
+      }, 300);
+      return () => { active = false; window.clearTimeout(timer); };
+    }
+
+    // Only preload audio — photos load lazily from CDN
+    const media = { assets: {}, soundtrack: '', narration: '' };
+    const audioTasks = [];
+
+    if (capabilities.music && delivery.soundtrack?.url) {
+      audioTasks.push({
+        kind: 'soundtrack',
+        label: 'Soundtrack',
+        run: async () => {
+          // Just verify the audio URL is reachable — don't fetch into blob
+          const url = apiMediaUrl(delivery.soundtrack.url);
+          media.soundtrack = url;
+          setStage('Buffering the soundtrack');
+          return { ok: true };
         }
-        const readyTimer = window.setTimeout(() => { transferred = true; trackEvent('client.preloader.completed', { photos: totals.photo }, { format: delivery.format, status: 'completed', count: total }); open(); }, 350);
-        cleanup.push(() => window.clearTimeout(readyTimer));
+      });
+    }
+    if (capabilities.narration && delivery.narration?.url) {
+      audioTasks.push({
+        kind: 'narration',
+        label: 'Narration',
+        run: async () => {
+          const url = apiMediaUrl(delivery.narration.url);
+          media.narration = url;
+          setStage('Preparing the narration');
+          return { ok: true };
+        }
       });
     }
 
-    return () => {
-      active = false;
-      if (!transferred) cleanup.forEach(dispose => dispose());
-    };
+    Promise.all(audioTasks.map(task => task.run())).then(() => {
+      if (!active) return;
+      setStage('Your delivery is ready');
+      setAudioReady(true);
+      trackEvent('client.preloader.completed', { photos: delivery.assets?.length || 0 }, { format: delivery.format, status: 'completed' });
+      const readyTimer = window.setTimeout(() => {
+        if (active) open(media);
+      }, 350);
+      return () => window.clearTimeout(readyTimer);
+    }).catch(() => {
+      if (active) {
+        setBlocked(true);
+        setStage('Audio needs another try');
+      }
+    });
+
+    return () => { active = false; };
   }, [mediaKey, attempt]);
 
-  const percent = Math.min(100, Math.round((loaded.total / total) * 100));
-  const stage = loaded.failed
-    ? 'A file needs another try'
-    : loaded.photo < totals.photo
-      ? `Preparing photograph ${Math.min(loaded.photo + 1, totals.photo)} of ${totals.photo}`
-      : loaded.soundtrack < totals.soundtrack
-        ? 'Buffering the soundtrack'
-        : loaded.narration < totals.narration
-          ? 'Preparing the narration'
-          : 'Your delivery is ready';
+  const percent = audioReady ? 100 : 60;
 
   return <main className="vd-readiness" role="status" aria-live="polite">
     <div className="vd-readiness-ambient" aria-hidden="true" />
     <section>
       <DeliveryBrandMark branding={delivery.branding} />
       <p>{delivery.branding?.name || 'Veylo'} · PRIVATE DELIVERY</p>
-      <h1>Preparing {delivery.clientName ? `${delivery.clientName}’s` : 'your'} photographs.</h1>
-      <span>{totals.soundtrack && totals.narration ? 'We’re preparing every photograph, the music, and the narration before the experience begins.' : totals.soundtrack ? 'We’re preparing every photograph and the selected music before the experience begins.' : totals.narration ? 'We’re preparing every photograph and the narration before the experience begins.' : 'We’re preparing every photograph before the experience begins.'}</span>
+      <h1>Opening {delivery.clientName ? `${delivery.clientName}'s` : 'your'} photographs.</h1>
+      <span>{hasAudio ? 'We\'re preparing the audio before the experience begins. Photographs will load as you view them.' : 'Photographs will load as you view them.'}</span>
       <div className="vd-readiness-progress" aria-label={`${percent}% prepared`} aria-valuemin="0" aria-valuemax="100" aria-valuenow={percent} role="progressbar"><i style={{ transform: `scaleX(${percent / 100})` }} /></div>
       <div className="vd-readiness-stage"><LoaderCircle className="v-spin" size={17} /><strong>{stage}</strong><b>{percent}%</b></div>
       <ul>
-        <li className={loaded.photo >= totals.photo ? 'is-ready' : ''}>{loaded.photo >= totals.photo ? <Check size={15} /> : <Image size={15} />}<span>All photographs · {loaded.photo}/{totals.photo}</span></li>
-        {Boolean(totals.soundtrack) && <li className={loaded.soundtrack >= totals.soundtrack ? 'is-ready' : ''}>{loaded.soundtrack >= totals.soundtrack ? <Check size={15} /> : <Music2 size={15} />}<span>Soundtrack</span></li>}
-        {Boolean(totals.narration) && <li className={loaded.narration >= totals.narration ? 'is-ready' : ''}>{loaded.narration >= totals.narration ? <Check size={15} /> : <Mic2 size={15} />}<span>Narration</span></li>}
+        <li className="is-ready"><Check size={15} /><span>Photographs · ready on demand</span></li>
+        {Boolean(capabilities.music && delivery.soundtrack?.url) && <li className={audioReady ? 'is-ready' : ''}>{audioReady ? <Check size={15} /> : <Music2 size={15} />}<span>Soundtrack</span></li>}
+        {Boolean(capabilities.narration && delivery.narration?.url) && <li className={audioReady ? 'is-ready' : ''}>{audioReady ? <Check size={15} /> : <Mic2 size={15} />}<span>Narration</span></li>}
       </ul>
-      {blocked && <div className="vd-readiness-slow"><p>We could not finish {failedItems.length ? failedItems.join(', ') : 'every file'} yet. Nothing is opened until the complete delivery is ready.</p><button type="button" onClick={() => setAttempt(value => value + 1)}><RefreshCw size={16} />Try loading again</button></div>}
+      {blocked && <div className="vd-readiness-slow"><p>We could not finish loading the audio yet.</p><button type="button" onClick={() => setAttempt(value => value + 1)}><RefreshCw size={16} />Try loading again</button></div>}
     </section>
   </main>;
 }
@@ -477,16 +472,22 @@ export default function DeliveryViewer() {
   async function handleDownload(assetId, index = 0) {
     const asset = deliveryAssets.find(item => String(item.assetId) === String(assetId)) || deliveryAssets[index];
     setBusy(assetId);
-    setDownloadNotice('The photograph is downloading on its own. On iPhone or iPad, use Share then Save to Files if Safari opens it instead.');
     try {
-      const prepared = await requestPhotoDownload(asset, deliveryAssets.indexOf(asset) >= 0 ? deliveryAssets.indexOf(asset) : index);
-      startBrowserDownload(prepared.url, prepared.filename);
-      void recordPhotoDownload(prepared.assetId);
+      // Use the server-proxy stream endpoint — triggers a real browser download on all devices
+      const fileUrl = `/api/v1/deliveries/public/${delivery.publicId}/photos/${encodeURIComponent(assetId)}/file`;
+      const filename = downloadFilename(asset, deliveryAssets.indexOf(asset) >= 0 ? deliveryAssets.indexOf(asset) : index, delivery.clientName);
+      const link = document.createElement('a');
+      link.href = fileUrl;
+      link.download = filename;
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
       trackEvent('client.photo.download.started', { downloadType: 'individual' }, { format: delivery?.format, status: 'completed', count: 1 });
-      toast.info('Download started. Check your Downloads or Files app.');
+      toast.info('Download started. Check your Downloads folder.');
     } catch (err) {
-      trackEvent('client.photo.download.failed', { downloadType: 'individual' }, { format: delivery?.format, status: 'failed', errorCode: err.response?.data?.code || 'DOWNLOAD_FAILED' });
-      toast.error(apiMessage(err, 'We could not prepare that download.'));
+      trackEvent('client.photo.download.failed', { downloadType: 'individual' }, { format: delivery?.format, status: 'failed', errorCode: 'DOWNLOAD_FAILED' });
+      toast.error('We could not start that download. Try again.');
     } finally {
       setBusy('');
     }
@@ -497,66 +498,44 @@ export default function DeliveryViewer() {
     const assets = deliveryAssets;
     if (!assets.length) return;
     let failed = 0;
+    let cancelled = false;
     setBusy('all');
     trackEvent('client.download.all.started', { count: assets.length }, { format: delivery?.format, status: 'started', count: assets.length });
-    setDownloadProgress({ current: 0, total: assets.length, failed: 0 });
-    setDownloadNotice('Each photograph downloads separately. Android may ask you to allow multiple downloads. On iPhone or iPad, Safari may stop after one; use the individual Download buttons if that happens.');
+    setDownloadProgress({ current: 0, total: assets.length, failed: 0, cancel: () => { cancelled = true; } });
+    setDownloadNotice('Each photograph saves to your Downloads folder. This may take a minute for larger galleries.');
     try {
-      const prepared = [];
       for (let index = 0; index < assets.length; index += 1) {
+        if (cancelled) break;
+        const asset = assets[index];
         try {
-          prepared.push(await requestPhotoDownload(assets[index], index));
+          // Use the server-proxy stream endpoint — same-origin, so download attr always works
+          const fileUrl = `/api/v1/deliveries/public/${delivery.publicId}/photos/${encodeURIComponent(asset.assetId)}/file`;
+          const filename = downloadFilename(asset, index, delivery.clientName);
+          const link = document.createElement('a');
+          link.href = fileUrl;
+          link.download = filename;
+          link.style.display = 'none';
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
         } catch {
           failed += 1;
         }
-        setDownloadProgress({ current: index + 1, total: assets.length, failed });
-      }
-      let shared = false;
-      let shareFiles = null;
-      if (prepared.length && prepared.length <= 40) {
-        try {
-          const files = [];
-          for (let index = 0; index < prepared.length; index += 1) {
-            files.push(await prepareShareFile(prepared[index]));
-            setDownloadProgress({ current: Math.min(assets.length, index + 1), total: assets.length, failed });
-          }
-          shareFiles = files;
-          if (canShareFiles(files)) {
-            await navigator.share({ title: `${delivery.clientName || 'Client'} photographs`, files });
-            prepared.forEach(item => { void recordPhotoDownload(item.assetId); });
-            shared = true;
-            setDownloadNotice('Choose Save to Files or Photos in the share sheet to keep every photograph.');
-          }
-        } catch (shareError) {
-          if (shareError?.name === 'AbortError') {
-            setDownloadNotice('The share sheet was closed. Nothing was counted as downloaded.');
-            return;
-          }
+        setDownloadProgress({ current: index + 1, total: assets.length, failed, cancel: () => { cancelled = true; } });
+        // Delay between downloads to avoid browser throttling
+        if (index < assets.length - 1 && !cancelled) {
+          await new Promise(resolve => window.setTimeout(resolve, 800));
         }
       }
-      if (!shared) {
-        for (let index = 0; index < prepared.length; index += 1) {
-          const item = prepared[index];
-          try {
-            const file = shareFiles?.[index];
-            const browserUrl = file ? URL.createObjectURL(file) : item.url;
-            startBrowserDownload(browserUrl, item.filename);
-            if (file) window.setTimeout(() => URL.revokeObjectURL(browserUrl), 30000);
-            void recordPhotoDownload(item.assetId);
-          } catch {
-            failed += 1;
-          }
-          setDownloadProgress({ current: Math.min(assets.length, index + 1), total: assets.length, failed });
-          if (index < prepared.length - 1) await new Promise(resolve => window.setTimeout(resolve, 250));
-        }
-      }
-      const started = assets.length - failed;
-      setDownloadNotice(shared && !failed
-        ? 'Choose Save to Files or Photos in the share sheet to keep every photograph.'
-        : failed
-          ? `${started} download${started === 1 ? '' : 's'} started. ${failed} need another tap.`
-          : 'Downloads started one at a time. Check your Downloads or Files app.');
-      toast.info(shared ? 'All photographs are ready in the share sheet.' : failed ? `${started} downloads started. Try the remaining photographs individually.` : 'Downloads started one at a time. Check your Downloads or Files app.');
+      const started = (cancelled ? downloadProgress?.current : assets.length) - failed;
+      setDownloadNotice(
+        cancelled
+          ? `Stopped after ${started} download${started === 1 ? '' : 's'}.`
+          : failed
+            ? `${started} download${started === 1 ? '' : 's'} started. ${failed} could not be prepared.`
+            : 'All downloads started. Check your Downloads folder.'
+      );
+      toast.info(cancelled ? 'Download stopped.' : failed ? `${started} downloads started. Try the rest individually.` : 'All photos are downloading. Check your Downloads folder.');
       trackEvent(failed ? 'client.download.all.partial_failed' : 'client.photo.download.started', { downloadType: 'all', count: started }, { format: delivery?.format, status: failed ? 'partial_failure' : 'completed', count: started });
     } finally {
       setBusy('');
@@ -621,8 +600,9 @@ export default function DeliveryViewer() {
   const playbackDelivery = {
     ...delivery,
     assets: (delivery.assets || []).map(asset => {
+      // No blob preloading anymore — keep original CDN URLs and srcSet for lazy loading
       const url = preloadedMedia.assets?.[asset.assetId] || asset.url;
-      return { ...asset, url, thumbnailUrl: url, srcSet: undefined };
+      return { ...asset, url, thumbnailUrl: asset.thumbnailUrl || url };
     }),
     soundtrack: capabilities.music && delivery.soundtrack?.url ? { ...delivery.soundtrack, url: preloadedMedia.soundtrack || delivery.soundtrack.url } : undefined,
     narration: capabilities.narration && delivery.narration?.url ? { ...delivery.narration, url: preloadedMedia.narration || apiMediaUrl(delivery.narration.url) } : undefined

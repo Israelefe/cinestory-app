@@ -1,6 +1,6 @@
 import Delivery from '../models/Delivery.js';
 import DeliveryJob from '../models/DeliveryJob.js';
-import { CREATIVE_DIRECTOR_PROVIDER, CREATIVE_DIRECTOR_PROMPT_VERSION, analyzeImageBatch, createFrameBatch, createGlobalDirection, recommendFormats } from './alibabaCreativeDirector.service.js';
+import { CREATIVE_DIRECTOR_PROVIDER, CREATIVE_DIRECTOR_PROMPT_VERSION, FORMAT_DIRECTION_PROFILES, analyzeImageBatch, createFrameBatch, createGlobalDirection, recommendFormats, selectCuratedPhotos } from './alibabaCreativeDirector.service.js';
 import { removeDeliveryAudio, signedImageUrl } from './deliveryMedia.service.js';
 import { generateNarration } from './narration.service.js';
 import { deliverySoundtrack } from '../constants/deliverySoundtracks.js';
@@ -200,8 +200,10 @@ async function analyze(job, delivery) {
   delivery.markModified('assets');
   delivery.markModified('collectionAnalysis');
   delivery.markModified('formatRecommendations');
-  await delivery.save();
-  await saveProgress({ status: 'review', stage: 'format-ready', progress: 100, result: { insights, recommendation }, completedAt: new Date() });
+  await Promise.all([
+    delivery.save(),
+    saveProgress({ status: 'review', stage: 'format-ready', progress: 100, result: { insights, recommendation }, completedAt: new Date() })
+  ]);
 }
 
 async function direct(job, delivery) {
@@ -217,12 +219,23 @@ async function direct(job, delivery) {
   delivery.markModified('narration');
   delivery.reviewApprovedAt = undefined;
   await delivery.save();
-  const insights = delivery.assets.sort((a, b) => a.sortOrder - b.sortOrder).map(asset => asset.analysis).filter(Boolean);
-  if (insights.length !== delivery.assets.length) {
+  const allInsights = delivery.assets.sort((a, b) => a.sortOrder - b.sortOrder).map(asset => asset.analysis).filter(Boolean);
+  if (allInsights.length !== delivery.assets.length) {
     const error = new Error('Analyze the complete shoot before choosing a format.');
     error.code = 'ANALYSIS_REQUIRED';
     throw error;
   }
+  const formatProfile = FORMAT_DIRECTION_PROFILES[format] || FORMAT_DIRECTION_PROFILES['photo-story'];
+  let insights = allInsights;
+  if (formatProfile.curate && Array.isArray(formatProfile.targetPhotos)) {
+    const [, maxPhotos] = formatProfile.targetPhotos;
+    if (allInsights.length > maxPhotos) {
+      insights = selectCuratedPhotos(allInsights, maxPhotos);
+    }
+  }
+  delivery.curatedAssetIds = insights.map(i => i.assetId);
+  delivery.galleryAssetIds = allInsights.map(i => i.assetId);
+
   const photoUrlsById = new Map(delivery.assets.map(asset => [String(asset.assetId), signedImageUrl(asset.publicId, { width: 1024 })]));
   let direction = job.result?.direction;
   let frames = Array.isArray(job.result?.frames) ? job.result.frames : [];
@@ -253,7 +266,7 @@ async function direct(job, delivery) {
   const captionsStartedAt = Date.now();
   try {
     await mapConcurrent(pending, effectiveAiBatchConcurrency, async batch => {
-      const result = await withAiRequestSlot(() => createFrameBatch({ format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction, imageInsights: batch, photoUrlsById, revisionInstruction: job.input?.instruction || '', currentFrames: job.type === 'revise' ? (delivery.creativeDirection?.frames || []).filter(frame => batch.some(item => item.assetId === frame.assetId)) : [] }));
+      const result = await withAiRequestSlot(() => createFrameBatch({ format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction, imageInsights: batch, photoUrlsById, collectionAnalysis: delivery.collectionAnalysis, revisionInstruction: job.input?.instruction || '', currentFrames: job.type === 'revise' ? (delivery.creativeDirection?.frames || []).filter(frame => batch.some(item => item.assetId === frame.assetId)) : [] }));
       const frameMap = new Map((result.frames || []).map(frame => [String(frame.assetId), frame]));
       for (const item of batch) {
         const frame = frameMap.get(String(item.assetId));
@@ -324,8 +337,10 @@ async function direct(job, delivery) {
   delivery.status = 'review';
   delivery.markModified('creativeDirection');
   delivery.markModified('soundtrack');
-  await delivery.save();
-  await saveJob(job, { status: 'review', stage: 'ready-to-review', progress: 100, result: { direction, frames }, completedAt: new Date() });
+  await Promise.all([
+    delivery.save(),
+    saveJob(job, { status: 'review', stage: 'ready-to-review', progress: 100, result: { direction, frames }, completedAt: new Date() })
+  ]);
 }
 
 async function narrate(job, delivery) {
@@ -335,8 +350,10 @@ async function narrate(job, delivery) {
   await saveJob(job, { stage: 'recording-narration', progress: 20 });
   delivery.narration = await generateNarration(delivery, job.input || {});
   delivery.markModified('narration');
-  await delivery.save();
-  await saveJob(job, { status: 'review', stage: 'narration-ready', progress: 100, result: { narration: delivery.narration }, completedAt: new Date() });
+  await Promise.all([
+    delivery.save(),
+    saveJob(job, { status: 'review', stage: 'narration-ready', progress: 100, result: { narration: delivery.narration }, completedAt: new Date() })
+  ]);
 }
 
 async function revise(job, delivery) {
@@ -356,8 +373,13 @@ async function revise(job, delivery) {
   delivery.creativeDirection.frames = delivery.creativeDirection.frames.map(frame => replacements.get(frame.assetId) || frame);
   delivery.creativeDirection.sections = delivery.creativeDirection.sections.map(section => ({ ...section, assetIds: delivery.creativeDirection.frames.filter(frame => frame.sectionId === section.id).map(frame => frame.assetId) })).filter(section => section.assetIds.length);
   delivery.narration = undefined;
-  delivery.status = 'review'; delivery.reviewApprovedAt = undefined; delivery.markModified('creativeDirection'); await delivery.save();
-  await saveJob(job, { status: 'review', stage: 'revision-ready', progress: 100, result: { frames: result.frames }, completedAt: new Date() });
+  delivery.status = 'review';
+  delivery.reviewApprovedAt = undefined;
+  delivery.markModified('creativeDirection');
+  await Promise.all([
+    delivery.save(),
+    saveJob(job, { status: 'review', stage: 'revision-ready', progress: 100, result: { frames: result.frames }, completedAt: new Date() })
+  ]);
 }
 
 async function run(job) {
@@ -421,7 +443,7 @@ async function tick() {
   if (polling) return;
   polling = true;
   try {
-    await refreshProviderQuotas();
+    refreshProviderQuotas().catch(err => console.warn('[delivery-worker] quota refresh failed:', err.message));
     await recordWorkerHeartbeat('delivery', { status: activeJobs.size ? 'busy' : 'idle', stage: 'polling', details: { activeJobs: activeJobs.size, maxJobs: effectiveJobConcurrency, aiConcurrency: effectiveAiBatchConcurrency, quotaModels: Object.keys(quotaSnapshot) } });
     const stale = new Date(Date.now() - 5 * 60 * 1000);
     await DeliveryJob.updateMany({ status: 'running', $or: [{ heartbeatAt: { $lt: stale } }, { heartbeatAt: { $exists: false } }], attempts: { $lt: 3 } }, { status: 'queued', lockedBy: null });

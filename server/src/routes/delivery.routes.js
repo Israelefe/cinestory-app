@@ -1,7 +1,7 @@
 import express from 'express';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { aiGenerationLimit, clientDeliveryEmailLimit, mediaSignatureLimit, publicAccessLimit, publicMediaLimit } from '../middleware/rateLimit.middleware.js';
-import { addLibraryAssets, archiveDelivery, confirmDeliveryUpload, confirmSoundtrackUpload, createDelivery, createShareGrant, deleteDelivery, deleteDeliveryAsset, deleteSoundtrack, emailClientDelivery, getDelivery, getDeliveryJob, getDeliveryQr, getDeliveryShareMeta, getGalleryDownload, getPhotoDownload, getPublicDelivery, getPublicSoundtrack, listDeliveries, listDeliverySoundtracks, listNarrationVoices, listShareGrants, publishDelivery, queueAnalysis, queueDirection, queueNarration, queueRevision, restoreDelivery, retryDeliveryJob, revokeShareGrant, selectCuratedSoundtrack, signDeliveryUpload, signSoundtrackUpload, streamDeliverySoundtrack, togglePhotoLike, trackPhotoDownload, unlockDelivery, updateDeliveryDetails, updateDeliveryReview } from '../controllers/delivery.controller.js';
+import { addLibraryAssets, archiveDelivery, confirmDeliveryUpload, confirmSoundtrackUpload, createDelivery, createShareGrant, deleteDelivery, deleteDeliveryAsset, deleteSoundtrack, emailClientDelivery, getDelivery, getDeliveryJob, getDeliveryQr, getDeliveryShareMeta, getGalleryDownload, getPhotoDownload, getPublicDelivery, getPublicSoundtrack, listDeliveries, listDeliverySoundtracks, listNarrationVoices, listShareGrants, publishDelivery, queueAnalysis, queueDirection, queueNarration, queueRevision, restoreDelivery, retryDeliveryJob, revokeShareGrant, selectCuratedSoundtrack, signDeliveryUpload, signSoundtrackUpload, streamDeliverySoundtrack, streamPhotoDownload, togglePhotoLike, trackPhotoDownload, unlockDelivery, updateDeliveryDetails, updateDeliveryReview, updateDownloadLock } from '../controllers/delivery.controller.js';
 
 const router = express.Router();
 
@@ -11,6 +11,7 @@ router.get('/public/:publicId/soundtrack', publicMediaLimit, getPublicSoundtrack
 router.post('/public/:publicId/unlock', publicAccessLimit, unlockDelivery);
 router.post('/public/:publicId/photos/:assetId/like', publicMediaLimit, togglePhotoLike);
 router.get('/public/:publicId/photos/:assetId/download', publicMediaLimit, getPhotoDownload);
+router.get('/public/:publicId/photos/:assetId/file', publicMediaLimit, streamPhotoDownload);
 router.post('/public/:publicId/photos/:assetId/downloaded', publicMediaLimit, trackPhotoDownload);
 router.get('/public/:publicId/download-all', publicMediaLimit, getGalleryDownload);
 router.get('/soundtracks/:trackId/audio', publicMediaLimit, streamDeliverySoundtrack);
@@ -22,6 +23,7 @@ router.get('/soundtracks', listDeliverySoundtracks);
 router.get('/narration/voices', listNarrationVoices);
 router.get('/:id', getDelivery);
 router.patch('/:id/details', updateDeliveryDetails);
+router.patch('/:id/download-lock', updateDownloadLock);
 router.post('/:id/archive', archiveDelivery);
 router.post('/:id/restore', restoreDelivery);
 router.get('/:id/share-grants', listShareGrants);

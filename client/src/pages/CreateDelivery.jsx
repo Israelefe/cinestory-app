@@ -183,7 +183,7 @@ export default function CreateDelivery({ user }) {
   const [failedJob, setFailedJob] = useState(null);
   const [reviewPage, setReviewPage] = useState(0);
   const [reviewPanel, setReviewPanel] = useState('overview');
-  const [access, setAccess] = useState({ pinEnabled: false, pin: '', expiresAt: '', allowIndividualDownloads: true, allowDownloadAll: true, allowLikes: true, narration: true, narrationVoiceId: DEFAULT_NARRATION_VOICE_ID });
+  const [access, setAccess] = useState({ pinEnabled: false, pin: '', expiresAt: '', allowIndividualDownloads: true, allowDownloadAll: true, allowLikes: true, downloadsLocked: false, downloadLockNote: '', watermarkEnabled: false, watermarkText: '', narration: true, narrationVoiceId: DEFAULT_NARRATION_VOICE_ID });
   const [audioRights, setAudioRights] = useState(false);
   const [audioTitle, setAudioTitle] = useState('');
   const [soundtrackTab, setSoundtrackTab] = useState('curated');
@@ -206,6 +206,15 @@ export default function CreateDelivery({ user }) {
   const [selectedFormat, setSelectedFormat] = useState(null);
   const [draggingPhotos, setDraggingPhotos] = useState(false);
   const [uploadQueue, setUploadQueue] = useState([]);
+  const lastFilesRef = useRef([]);
+
+  async function retryFailedUploads() {
+    const failedNames = new Set(uploadQueue.filter(item => item.status === 'failed').map(item => item.name));
+    const filesToRetry = lastFilesRef.current.filter(file => failedNames.has(file.name));
+    if (filesToRetry.length) {
+      await addPhotos(filesToRetry);
+    }
+  }
 
   const soundtrackCategories = useMemo(() => ['all', ...new Set(curatedSoundtracks.map(track => track.category))], [curatedSoundtracks]);
   const filteredSoundtracks = useMemo(() => {
@@ -355,11 +364,12 @@ export default function CreateDelivery({ user }) {
     const remaining = limits.photosPerDelivery - (delivery?.assets?.length || 0);
     if (!valid.length) return toast.error('Choose JPEG, PNG, or WebP photographs up to 50 MB each.');
     if (valid.length > remaining) return toast.error(`You can add ${remaining} more photograph${remaining === 1 ? '' : 's'} to this delivery.`);
+    lastFilesRef.current = [...valid];
     setUploadQueue(valid.map(file => ({ name: file.name, size: file.size, status: 'starting', progress: 0 })));
     trackEvent('upload.started', { surface: 'delivery', files: valid.length }, { count: valid.length, bytes: valid.reduce((sum, file) => sum + file.size, 0), status: 'started' });
     setBusy('upload'); setError(''); setProgress({ value: 0, stage: `Uploading ${valid.length} finished photograph${valid.length === 1 ? '' : 's'}…` });
     try {
-      await uploadDeliveryPhotos(delivery._id, valid, (value, meta) => {
+      const uploadResult = await uploadDeliveryPhotos(delivery._id, valid, (value, meta) => {
         setProgress(current => ({ ...current, value }));
         if (meta?.index === undefined) return;
         setUploadQueue(current => current.map((item, index) => index === meta.index
@@ -367,8 +377,13 @@ export default function CreateDelivery({ user }) {
           : item));
       });
       const current = await refreshDelivery();
-      toast.success(`${valid.length} photograph${valid.length === 1 ? '' : 's'} added`);
-      setProgress({ value: 100, stage: `${current.assets.length} photographs ready` });
+      if (uploadResult?.errors?.length) {
+        toast.warn(`${uploadResult.completed} of ${valid.length} photographs added. ${uploadResult.errors.length} failed to upload.`);
+        setProgress({ value: 100, stage: `${current.assets.length} photographs ready (${uploadResult.errors.length} need retry)` });
+      } else {
+        toast.success(`${valid.length} photograph${valid.length === 1 ? '' : 's'} added`);
+        setProgress({ value: 100, stage: `${current.assets.length} photographs ready` });
+      }
       trackEvent('upload.completed', { surface: 'delivery', files: valid.length }, { count: valid.length, bytes: valid.reduce((sum, file) => sum + file.size, 0), status: 'completed' });
     } catch (requestError) {
       setUploadQueue(current => current.map(item => item.status === 'complete' ? item : { ...item, status: 'failed' }));
@@ -468,7 +483,18 @@ export default function CreateDelivery({ user }) {
         const narration = await api.post(`/v1/deliveries/${delivery._id}/narrate`, { voiceId: DEFAULT_NARRATION_VOICE_ID });
         await waitForJob(delivery._id, narration.data.data._id, job => setProgress({ value: job.progress, stage: 'Recording the approved narration…' }));
       }
-      const response = await api.post(`/v1/deliveries/${delivery._id}/publish`, { pin: access.pinEnabled ? access.pin : '', expiresAt: access.expiresAt ? new Date(access.expiresAt).toISOString() : '', allowIndividualDownloads: access.allowIndividualDownloads, allowDownloadAll: access.allowDownloadAll, allowLikes: access.allowLikes, narration: narrationEnabled });
+      const response = await api.post(`/v1/deliveries/${delivery._id}/publish`, {
+        pin: access.pinEnabled ? access.pin : '',
+        expiresAt: access.expiresAt ? new Date(access.expiresAt).toISOString() : '',
+        allowIndividualDownloads: access.allowIndividualDownloads,
+        allowDownloadAll: access.allowDownloadAll,
+        allowLikes: access.allowLikes,
+        downloadsLocked: access.downloadsLocked,
+        downloadLockNote: access.downloadLockNote,
+        watermarkEnabled: access.watermarkEnabled,
+        watermarkText: access.watermarkText,
+        narration: narrationEnabled
+      });
       setDelivery(current => ({ ...current, status: 'published', publishedUrl: response.data.data.url }));
       setParams({}, { replace: true }); toast.success('Client delivery published');
       trackEvent('delivery.publish.succeeded', { format: delivery.format, narration: narrationEnabled, soundtrack: Boolean(delivery.soundtrack) }, { format: delivery.format, status: 'completed' });
@@ -699,10 +725,20 @@ export default function CreateDelivery({ user }) {
             <StageHead eyebrow="02 / Finished photographs" title="Add the files your client will receive." copy={`Upload the final edited photographs. Veylo will study the complete set without changing your retouching or colour grade.`} />
             <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={event => addPhotos(event.target.files)} />
             <button type="button" className={`v-create-drop${draggingPhotos ? ' is-dragging' : ''}`} onClick={() => inputRef.current?.click()} onDragEnter={event => { event.preventDefault(); setDraggingPhotos(true); }} onDragOver={event => { event.preventDefault(); setDraggingPhotos(true); }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget)) setDraggingPhotos(false); }} onDrop={event => { event.preventDefault(); setDraggingPhotos(false); if (!busy) addPhotos(event.dataTransfer.files); }} disabled={Boolean(busy)}><span><Upload size={25} /></span><strong>{busy === 'upload' ? progress.stage : draggingPhotos ? 'Drop the finished photographs here' : 'Choose or drop finished photographs'}</strong><small>JPEG, PNG, or WebP · up to 50 MB each · {delivery?.assets?.length || 0} of {limits.photosPerDelivery}</small>{busy === 'upload' && <i><b style={{ transform: `scaleX(${progress.value / 100})` }} /></i>}</button>
-            {busy === 'upload' && uploadQueue.length > 0 && <section className="v-upload-queue" aria-live="polite" aria-label="Upload progress">
-              <header><strong>Sending your photographs</strong><span>{uploadQueue.filter(item => item.status === 'complete').length} of {uploadQueue.length} confirmed</span></header>
-              <div>{uploadQueue.slice(0, 8).map((item, index) => <article key={`${item.name}-${index}`} className={`is-${item.status}`}><span>{item.status === 'complete' ? <Check size={14} /> : item.status === 'failed' ? <X size={14} /> : <LoaderCircle className="v-spin" size={14} />}</span><div><strong title={item.name}>{item.name}</strong><small>{item.status === 'complete' ? 'Added to this delivery' : item.status === 'failed' ? 'Upload stopped — try again' : item.status === 'starting' ? 'Preparing upload' : `Uploading ${item.progress}%`}</small></div><b>{item.status === 'complete' ? 'Done' : `${item.progress}%`}</b></article>)}</div>
-              {uploadQueue.length > 8 && <small className="v-upload-queue-more">Showing the first 8 files while the rest continue.</small>}
+            {(busy === 'upload' || uploadQueue.some(item => item.status === 'failed')) && uploadQueue.length > 0 && <section className="v-upload-queue" aria-live="polite" aria-label="Upload progress">
+              <header>
+                <strong>{busy === 'upload' ? 'Sending your photographs' : 'Upload summary'}</strong>
+                <span>{uploadQueue.filter(item => item.status === 'complete').length} of {uploadQueue.length} confirmed</span>
+              </header>
+              <div>{uploadQueue.slice(0, 8).map((item, index) => <article key={`${item.name}-${index}`} className={`is-${item.status}`}><span>{item.status === 'complete' ? <Check size={14} /> : item.status === 'failed' ? <X size={14} /> : <LoaderCircle className="v-spin" size={14} />}</span><div><strong title={item.name}>{item.name}</strong><small>{item.status === 'complete' ? 'Added to this delivery' : item.status === 'failed' ? 'Upload interrupted — tap retry below' : item.status === 'starting' ? 'Preparing upload' : `Uploading ${item.progress}%`}</small></div><b>{item.status === 'complete' ? 'Done' : `${item.progress}%`}</b></article>)}</div>
+              {uploadQueue.length > 8 && <small className="v-upload-queue-more">Showing the first 8 files.</small>}
+              {busy !== 'upload' && uploadQueue.some(item => item.status === 'failed') && (
+                <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                  <button type="button" className="v-btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }} onClick={retryFailedUploads}>
+                    <RefreshCw size={14} /> Retry failed photographs
+                  </button>
+                </div>
+              )}
             </section>}
             {limits.personalStorageBytes > 0 && <button type="button" className="v-create-library-open" onClick={openLibrary} disabled={Boolean(busy)}><Image size={17} /><span><strong>Choose from your Pro library</strong><small>Reuse finished photographs without uploading them from your device again.</small></span><ArrowRight size={16} /></button>}
             {orderedAssets.length > 0 && <div className="v-create-thumbs">{orderedAssets.slice(0, 24).map((asset, index) => <div key={asset.assetId}><img src={asset.thumbnailUrl || asset.url} alt="" /><span>{String(index + 1).padStart(2, '0')}</span><button type="button" onClick={() => removePhoto(asset.assetId)} disabled={Boolean(busy)} aria-label={`Remove photograph ${index + 1}`}><Trash2 size={13} /></button></div>)}{orderedAssets.length > 24 && <div className="v-create-more">+{orderedAssets.length - 24}</div>}</div>}
@@ -827,6 +863,42 @@ export default function CreateDelivery({ user }) {
                 <label className="v-publish-expiry"><span>Link expiry</span><small>Leave empty when the delivery should stay open.</small><input type="date" value={access.expiresAt} min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)} onChange={event => setAccess(current => ({ ...current, expiresAt: event.target.value }))} /></label>
                 <Toggle icon={Image} label="Individual photo downloads" copy="Let the client download one photograph at a time." checked={access.allowIndividualDownloads} onChange={value => setAccess(current => ({ ...current, allowIndividualDownloads: value }))} />
                 <Toggle icon={Clapperboard} label="Download all photographs" copy="Let the client start the photographs one by one from the gallery." checked={access.allowDownloadAll} onChange={value => setAccess(current => ({ ...current, allowDownloadAll: value }))} />
+                <Toggle
+                  icon={LockKeyhole}
+                  label="Lock downloads until balance is cleared"
+                  copy="Client can experience and view the story, but downloads stay locked until you unlock them."
+                  checked={access.downloadsLocked}
+                  onChange={value => setAccess(current => ({ ...current, downloadsLocked: value }))}
+                >
+                  {access.downloadsLocked && (
+                    <div style={{ marginTop: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <input
+                        value={access.downloadLockNote}
+                        onChange={event => setAccess(current => ({ ...current, downloadLockNote: event.target.value.slice(0, 200) }))}
+                        placeholder="e.g. Please clear remaining session balance to unlock downloads."
+                        aria-label="Note shown to client while downloads are locked"
+                        style={{ fontSize: '0.85rem' }}
+                      />
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', color: '#a8a19a', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={access.watermarkEnabled}
+                          onChange={event => setAccess(current => ({ ...current, watermarkEnabled: event.target.checked }))}
+                        />
+                        Watermark preview photographs while downloads are locked
+                      </label>
+                      {access.watermarkEnabled && (
+                        <input
+                          value={access.watermarkText}
+                          onChange={event => setAccess(current => ({ ...current, watermarkText: event.target.value.slice(0, 40) }))}
+                          placeholder="Studio name or PREVIEW watermark text"
+                          aria-label="Watermark text"
+                          style={{ fontSize: '0.85rem' }}
+                        />
+                      )}
+                    </div>
+                  )}
+                </Toggle>
                 <Toggle icon={Check} label="Photo likes" copy="Let the client mark the photographs they love." checked={access.allowLikes} onChange={value => setAccess(current => ({ ...current, allowLikes: value }))} />
                 {reviewCapabilities.narration && <Toggle icon={Play} label="Narration with Hannah" copy="On by default for Photo Story. Deepgram Flux reads the approved captions in a calm, measured voice." checked={access.narration} onChange={value => setAccess(current => ({ ...current, narration: value }))}>{access.narration && <small className="v-narration-voice-note">Deepgram Flux · Hannah · captions are read in photograph order.</small>}</Toggle>}
               </div>

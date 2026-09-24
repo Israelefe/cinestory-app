@@ -22,41 +22,62 @@ export async function uploadDeliveryPhotos(deliveryId, files, onProgress = () =>
     onProgress(Math.round((uploaded / totalBytes) * 100), { index, loaded: loadedBytes[index], total: Number(files[index].size || 0) });
   };
   let completed = 0;
-  return pool(files, 3, async (file, index) => {
-    onProgress(Math.round((loadedBytes.reduce((sum, value) => sum + value, 0) / totalBytes) * 100), { index, file, status: 'starting', loaded: 0, total: file.size });
-    const signResponse = await api.post(`/v1/deliveries/${deliveryId}/uploads/sign`);
-    const signature = signResponse.data.data;
-    const form = new FormData();
-    form.append('file', file);
-    form.append('api_key', signature.apiKey);
-    form.append('timestamp', signature.timestamp);
-    form.append('signature', signature.signature);
-    form.append('folder', signature.folder);
-    form.append('public_id', signature.public_id);
-    form.append('type', signature.type);
-    form.append('overwrite', String(signature.overwrite));
-    form.append('unique_filename', String(signature.unique_filename));
-    if (signature.allowed_formats) form.append('allowed_formats', signature.allowed_formats.join(','));
-    if (signature.eager) form.append('eager', signature.eager);
-    const result = await uploadToCloudinary(`https://api.cloudinary.com/v1_1/${signature.cloudName}/image/upload`, form, progress => {
-      const transferProgress = Math.min(progress, Math.max(0, file.size * 0.98));
-      report(index, transferProgress);
-      onProgress(Math.round((loadedBytes.reduce((sum, value) => sum + value, 0) / totalBytes) * 100), { index, file, status: 'uploading', loaded: transferProgress, total: file.size });
-    });
-    const response = result.response;
-    const payload = result.body;
-    // uploadToCloudinary uses XMLHttpRequest, which exposes `status` rather
-    // than fetch's boolean `ok`. Checking response.ok made every successful
-    // 2xx upload look like a failure and prevented confirmation from running.
-    if (response.status < 200 || response.status >= 300) {
-      throw new Error(payload?.error?.message || payload?.message || `Upload failed for ${file.name}.`);
+  const errors = [];
+  const successfulAssets = [];
+
+  await pool(files, 3, async (file, index) => {
+    const maxRetries = 2;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        onProgress(Math.round((loadedBytes.reduce((sum, value) => sum + value, 0) / totalBytes) * 100), { index, file, status: attempt > 0 ? 'starting' : 'starting', loaded: 0, total: file.size });
+        const signResponse = await api.post(`/v1/deliveries/${deliveryId}/uploads/sign`);
+        const signature = signResponse.data.data;
+        const form = new FormData();
+        form.append('file', file);
+        form.append('api_key', signature.apiKey);
+        form.append('timestamp', signature.timestamp);
+        form.append('signature', signature.signature);
+        form.append('folder', signature.folder);
+        form.append('public_id', signature.public_id);
+        form.append('type', signature.type);
+        form.append('overwrite', String(signature.overwrite));
+        form.append('unique_filename', String(signature.unique_filename));
+        if (signature.allowed_formats) form.append('allowed_formats', signature.allowed_formats.join(','));
+        if (signature.eager) form.append('eager', signature.eager);
+        const result = await uploadToCloudinary(`https://api.cloudinary.com/v1_1/${signature.cloudName}/image/upload`, form, progress => {
+          const transferProgress = Math.min(progress, Math.max(0, file.size * 0.98));
+          report(index, transferProgress);
+          onProgress(Math.round((loadedBytes.reduce((sum, value) => sum + value, 0) / totalBytes) * 100), { index, file, status: 'uploading', loaded: transferProgress, total: file.size });
+        });
+        const response = result.response;
+        const payload = result.body;
+        if (response.status < 200 || response.status >= 300) {
+          throw new Error(payload?.error?.message || payload?.message || `Upload failed for ${file.name}.`);
+        }
+        const confirmed = await api.post(`/v1/deliveries/${deliveryId}/uploads/confirm`, { publicId: payload.public_id, version: payload.version, signature: payload.signature, resourceType: 'image', originalFilename: file.name });
+        report(index, file.size);
+        completed += 1;
+        onProgress(Math.round((loadedBytes.reduce((sum, value) => sum + value, 0) / totalBytes) * 100), { index, file, status: 'complete', loaded: file.size, total: file.size, completed, count: files.length });
+        successfulAssets.push(confirmed.data.data);
+        return confirmed.data.data;
+      } catch (err) {
+        if (attempt < maxRetries) {
+          console.warn(`[upload] Retrying ${file.name} (attempt ${attempt + 1}/${maxRetries})...`);
+          await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+          continue;
+        }
+        console.error(`[upload] Failed ${file.name}:`, err.message);
+        errors.push({ file, index, error: err });
+        onProgress(Math.round((loadedBytes.reduce((sum, value) => sum + value, 0) / totalBytes) * 100), { index, file, status: 'failed', error: err.message, loaded: 0, total: file.size });
+      }
     }
-    const confirmed = await api.post(`/v1/deliveries/${deliveryId}/uploads/confirm`, { publicId: payload.public_id, version: payload.version, signature: payload.signature, resourceType: 'image', originalFilename: file.name });
-    report(index, file.size);
-    completed += 1;
-    onProgress(Math.round((loadedBytes.reduce((sum, value) => sum + value, 0) / totalBytes) * 100), { index, file, status: 'complete', loaded: file.size, total: file.size, completed, count: files.length });
-    return confirmed.data.data;
   });
+
+  if (errors.length && successfulAssets.length === 0) {
+    throw new Error(errors[0].error?.message || 'Could not upload any photographs. Check your connection and try again.');
+  }
+
+  return { successfulAssets, errors, completed, total: files.length };
 }
 
 function uploadToCloudinary(url, form, onProgress) {

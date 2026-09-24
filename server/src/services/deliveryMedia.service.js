@@ -43,13 +43,29 @@ export async function confirmUploadedAsset({ userId, deliveryId, publicId, versi
   return cloudinary.api.resource(publicId, { resource_type: resourceType, type: 'authenticated' });
 }
 
-export function signedImageUrl(publicId, { width = 1600, thumbnail = false, attachment = false, original = false, resourceType = 'image', format } = {}) {
+export function signedImageUrl(publicId, { width = 1600, thumbnail = false, attachment = false, original = false, resourceType = 'image', format, watermark = null } = {}) {
   ready();
-  const transformation = resourceType !== 'image' ? undefined : original
-    ? undefined
-    : thumbnail
-      ? [{ crop: 'fill', width: 800, height: 1000, gravity: 'auto', quality: 'auto:good', fetch_format: 'auto' }]
-      : [{ crop: 'limit', width, quality: 'auto:good', fetch_format: 'auto' }];
+  let transformation;
+  if (resourceType === 'image') {
+    if (original) {
+      transformation = undefined;
+    } else if (thumbnail) {
+      transformation = [{ crop: 'fill', width: 800, height: 1000, gravity: 'auto', quality: 'auto:good', fetch_format: 'auto' }];
+    } else {
+      const transforms = [{ crop: 'limit', width, quality: 'auto:good', fetch_format: 'auto' }];
+      if (watermark) {
+        transforms.push({
+          overlay: { font_family: 'Arial', font_size: 38, font_weight: 'bold', text: String(watermark).slice(0, 40) },
+          color: '#ffffff',
+          opacity: 28,
+          gravity: 'south_east',
+          x: 24,
+          y: 24
+        });
+      }
+      transformation = transforms;
+    }
+  }
   const audioFormat = resourceType === 'video' ? (format || 'mp3') : format;
   return cloudinary.url(publicId, { secure: true, resource_type: resourceType, type: 'authenticated', sign_url: true, transformation, flags: attachment ? 'attachment' : undefined, format: audioFormat });
 }

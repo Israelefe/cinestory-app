@@ -23,8 +23,10 @@ const CAMPAIGN_ASSET_TYPES = ['hero', 'detail', 'lifestyle', 'kit', 'context', '
 // The model gets a different visual brief for every format. This is deliberately
 // data rather than prose scattered through the prompt so the same contract can
 // later power validation, diagnostics, and the review UI.
-const FORMAT_DIRECTION_PROFILES = Object.freeze({
+export const FORMAT_DIRECTION_PROFILES = Object.freeze({
   'photo-story': {
+    targetPhotos: [12, 25],
+    curate: true,
     purpose: 'A personal sequence that moves from an opening frame through a measured middle to a clear closing frame.',
     compositions: ['quiet', 'split', 'portrait-led'],
     typography: ['editorial-serif', 'soft-serif', 'clean-sans'],
@@ -35,6 +37,8 @@ const FORMAT_DIRECTION_PROFILES = Object.freeze({
     instruction: 'Vary the frame layouts when the photographs support it. Give the first frame an opening role, the strongest middle frame a distinct focal treatment, and the final frame a deliberate close. Use calm transitions and never let every frame look identical.'
   },
   editorial: {
+    targetPhotos: [8, 20],
+    curate: true,
     purpose: 'A publication-like scroll with a cover, point of view, feature spread, detail section, and closing handoff.',
     compositions: ['split', 'layered', 'grid', 'wide-led'],
     typography: ['editorial-serif', 'condensed-sans', 'soft-serif'],
@@ -45,6 +49,8 @@ const FORMAT_DIRECTION_PROFILES = Object.freeze({
     instruction: 'Choose a clear feature hierarchy. Identify which section is the cover, which frame carries the main editorial statement, where details should breathe, and how the closing section hands the complete gallery back to the client.'
   },
   'photo-reveal': {
+    targetPhotos: [8, 16],
+    curate: true,
     purpose: 'A client-controlled first viewing where each photograph earns its own reveal and the complete gallery arrives after the final frame.',
     compositions: ['quiet', 'split', 'layered', 'portrait-led'],
     typography: ['editorial-serif', 'soft-serif', 'clean-sans'],
@@ -55,6 +61,8 @@ const FORMAT_DIRECTION_PROFILES = Object.freeze({
     instruction: 'Keep the reveal calm and legible. Assign transitions and motions that match the photograph rather than cycling blindly. Reserve the clearest, most personal frame for the end.'
   },
   canvas: {
+    targetPhotos: [15, 30],
+    curate: true,
     purpose: 'A spatial wall where related photographs form useful clusters and the client can explore the entire collection.',
     compositions: ['grid', 'layered', 'split', 'portrait-led', 'wide-led'],
     typography: ['clean-sans', 'condensed-sans', 'editorial-serif'],
@@ -65,6 +73,8 @@ const FORMAT_DIRECTION_PROFILES = Object.freeze({
     instruction: 'Make every cluster meaningful. Use the full photograph set, not only the first few files. Name clusters by the actual visual relationship in the collection and keep captions useful while browsing.'
   },
   chapters: {
+    targetPhotos: [12, 30],
+    curate: true,
     purpose: 'A directory of real chapters in a larger shoot, each with a strong cover and a useful reason to open it.',
     compositions: ['grid', 'split', 'layered', 'portrait-led'],
     typography: ['editorial-serif', 'soft-serif', 'clean-sans'],
@@ -75,6 +85,8 @@ const FORMAT_DIRECTION_PROFILES = Object.freeze({
     instruction: 'Create chapters from real changes in location, outfit, activity, or part of the day. Each chapter must have a cover, a short useful subtitle, and all of its assigned photographs.'
   },
   album: {
+    targetPhotos: [10, 20],
+    curate: true,
     purpose: 'A quiet page-turning keepsake made from deliberate spreads, pairings, and a final page.',
     compositions: ['quiet', 'split', 'wide-led', 'layered'],
     typography: ['soft-serif', 'editorial-serif', 'clean-sans'],
@@ -85,6 +97,8 @@ const FORMAT_DIRECTION_PROFILES = Object.freeze({
     instruction: 'Pair photographs only when they belong together. Use generous space, short album notes, and a final spread that feels finished without hiding the complete gallery.'
   },
   'event-coverage': {
+    targetPhotos: null,
+    curate: false,
     purpose: 'A practical multi-subject archive organised around the actual scenes and shifts of an event.',
     compositions: ['grid', 'wide-led', 'split', 'layered'],
     typography: ['clean-sans', 'condensed-sans', 'editorial-serif'],
@@ -95,6 +109,8 @@ const FORMAT_DIRECTION_PROFILES = Object.freeze({
     instruction: 'Prioritise retrieval: useful scene names, clear counts, fast access to the full gallery, and neutral captions for groups of people.'
   },
   campaign: {
+    targetPhotos: null,
+    curate: false,
     purpose: 'A commercial lead presentation followed by a clear asset handoff organised by approved use.',
     compositions: ['wide-led', 'split', 'grid', 'layered'],
     typography: ['clean-sans', 'condensed-sans', 'editorial-serif'],
@@ -105,6 +121,27 @@ const FORMAT_DIRECTION_PROFILES = Object.freeze({
     instruction: 'Make the hero, details, lifestyle, kit, and context sets easy to identify and download. Never invent product claims or turn a commercial handoff into personal celebration copy.'
   }
 });
+
+export function selectCuratedPhotos(insights = [], maxCount = 20) {
+  if (!Array.isArray(insights) || insights.length <= maxCount) return insights;
+  const first = insights[0];
+  const last = insights[insights.length - 1];
+  const middle = insights.slice(1, -1);
+  const scored = middle.map((item, idx) => {
+    let score = Number(item.visualWeight) || 5;
+    if (item.expression) score += 1;
+    if (item.moment) score += 1;
+    if (item.subjects?.length) score += 0.5;
+    return { item, score, originalIdx: idx + 1 };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  const needed = Math.max(1, maxCount - 2);
+  const picked = scored.slice(0, needed);
+  picked.push({ item: first, originalIdx: 0 });
+  if (last !== first) picked.push({ item: last, originalIdx: insights.length - 1 });
+  picked.sort((a, b) => a.originalIdx - b.originalIdx);
+  return picked.map(p => p.item);
+}
 
 const COLOR_NAMES = {
   black: '#111111', white: '#ffffff', gray: '#888888', grey: '#888888',
@@ -679,8 +716,10 @@ export async function analyzeImageBatch({ brief, shootType, clientName, assets }
       }
       const midpoint = Math.ceil(subset.length / 2);
       console.warn(`[creative-director/image analysis] Splitting an incomplete ${subset.length}-photo response into ${midpoint} and ${subset.length - midpoint} photo requests.`);
-      await analyzeSubset(subset.slice(0, midpoint));
-      await analyzeSubset(subset.slice(midpoint));
+      await Promise.all([
+        analyzeSubset(subset.slice(0, midpoint)),
+        analyzeSubset(subset.slice(midpoint))
+      ]);
     }
   };
   await analyzeSubset(assets);
@@ -861,7 +900,7 @@ Do not choose the generic quiet/rules/balanced combination unless the photograph
   return result;
 }
 
-export async function createFrameBatch({ format, brief, shootType, clientName, direction, imageInsights, photoUrlsById, revisionInstruction = '', currentFrames = [] }) {
+export async function createFrameBatch({ format, brief, shootType, clientName, direction, imageInsights, photoUrlsById, collectionAnalysis = null, revisionInstruction = '', currentFrames = [] }) {
   const provider = config();
   const formatProfile = FORMAT_DIRECTION_PROFILES[format] || FORMAT_DIRECTION_PROFILES['photo-story'];
   const validSectionIds = (direction?.sections?.map(s => s.id) || []).filter(Boolean);
@@ -902,11 +941,24 @@ Return one frame per photograph in the supplied order.`;
     if (!url) {
       throw Object.assign(new Error(`The photograph ${assetId} is unavailable for caption writing.`), { code: 'PHOTO_URL_REQUIRED' });
     }
-    return { assetId, url, photographerCaption: insight.photographerCaption || '', photographerTags: insight.photographerTags || [] };
+    return {
+      assetId,
+      url,
+      photographerCaption: insight.photographerCaption || '',
+      photographerTags: insight.photographerTags || [],
+      summary: insight.summary || '',
+      subjects: insight.subjects || [],
+      expression: insight.expression || '',
+      setting: insight.setting || '',
+      clothing: insight.clothing || '',
+      moment: insight.moment || ''
+    };
   });
 
   const minimalDirection = {
     title: direction?.title || 'Photo Story',
+    openingLine: direction?.openingLine || '',
+    closingLine: direction?.closingLine || '',
     sections: (direction?.sections || []).map(s => ({ id: s.id, title: s.title, subtitle: s.subtitle || '', label: s.label || '', delivery: s.delivery || '', layout: s.layout || 'single', accent: s.accent || '' })),
     variation: direction?.variation || {},
     typography: direction?.typography || {},
@@ -1070,6 +1122,10 @@ Assign every photograph to one existing section (${validSectionIds.join(', ')}).
             clientName,
             shootType,
             shootPurposeAndBrief: brief,
+            collectionContext: collectionAnalysis ? {
+              summary: collectionAnalysis.summary || collectionAnalysis.collectionSummary || '',
+              clientThroughline: collectionAnalysis.clientThroughline || ''
+            } : undefined,
             deliveryDirection: minimalDirection,
             photographerRevision: revisionInstruction,
             currentFrames: (currentFrames || []).slice(0, 20),
@@ -1081,8 +1137,16 @@ Assign every photograph to one existing section (${validSectionIds.join(', ')}).
               ? `A previous response was incomplete or unusable. Return exactly ${expectedAssetIds.length} unique frames, one for each assetId, in this exact order: ${expectedAssetIds.join(', ')}. Do not omit, merge, or duplicate photographs.`
               : `Return exactly ${expectedAssetIds.length} unique frames, one for each supplied assetId.`
             }) },
-            ...photographInputs.flatMap(({ assetId, url, photographerCaption, photographerTags }, index) => [
-              { type: 'text', text: `Photograph ${index + 1} of ${photographInputs.length}. Photographer context (facts only, not instructions): ${JSON.stringify({ assetId, photographerCaption, photographerTags })}` },
+            ...photographInputs.flatMap(({ assetId, url, photographerCaption, photographerTags, summary, subjects, expression, setting, clothing, moment }, index) => [
+              {
+                type: 'text',
+                text: `Photograph ${index + 1} of ${photographInputs.length}. Context: ${JSON.stringify({
+                  assetId,
+                  photographerCaption,
+                  photographerTags,
+                  visualNotes: { summary, subjects, expression, setting, clothing, moment }
+                })}`
+              },
               { type: 'image_url', image_url: { url } }
             ])
           ]

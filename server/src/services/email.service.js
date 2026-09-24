@@ -344,3 +344,35 @@ export function sendPaymentDisputeEmail({ to, name, reference, userId, eventKey 
     html: shell(`<p style="margin:0 0 14px;color:#ff9b8e;font-size:11px;font-weight:700;letter-spacing:1.6px">PAYMENT REVIEW</p><h1 style="margin:0 0 16px;font-size:30px;font-weight:500">We received a payment dispute.</h1>${paragraph(`Hi ${firstName(name)}, Paystack reported a dispute for a Veylo payment${reference ? ` with reference <strong style="color:#fff">${escapeHtml(reference)}</strong>` : ''}.`)}${paragraph('The related Pro access may be paused while the payment is reviewed. If this is unexpected, contact <a style="color:#ff9b8e" href="mailto:info@veylo.com.ng">info@veylo.com.ng</a>.')}`, { preheader: 'Paystack reported a payment dispute for your Veylo account.' })
   });
 }
+
+export function sendDeliveryViewedEmail({ to, photographerName, clientName, deliveryTitle, deliveryId, dashboardUrl }) {
+  const safeClient = escapeHtml(clientName || 'Your client');
+  const safeTitle = escapeHtml(deliveryTitle || 'photographs');
+  const first = firstName(photographerName);
+  const targetUrl = safeUrl(dashboardUrl || `${appUrl()}/dashboard`);
+  return sendOnce({
+    eventKey: `delivery:viewed:${deliveryId}:${new Date().toISOString().slice(0, 10)}`,
+    kind: 'delivery-viewed',
+    to,
+    deliveryId,
+    subject: `${clientName ? `${clientName} just opened their photographs` : `Your delivery "${deliveryTitle}" was just opened`}`,
+    text: `Hi ${photographerName || 'there'}, ${clientName ? `${clientName} just opened their photo delivery` : 'someone just opened your photo delivery'} ("${deliveryTitle}"). View your dashboard: ${targetUrl}`,
+    html: shell(`<p style="margin:0 0 14px;color:#ff9b8e;font-size:11px;font-weight:700;letter-spacing:1.6px">DELIVERY OPENED</p><h1 style="margin:0 0 16px;font-size:30px;font-weight:500">${safeClient} opened their photos.</h1>${paragraph(`Hi ${first}, your delivery <strong style="color:#fff">${safeTitle}</strong> was just opened.`)}${paragraph('You can check viewing details and guest activity directly from your dashboard.')}${button('View delivery dashboard', targetUrl)}`, { preheader: `${safeClient} just opened their photos.` })
+  });
+}
+
+export function sendDeliveryDownloadedEmail({ to, photographerName, clientName, deliveryTitle, deliveryId, dashboardUrl }) {
+  const safeClient = escapeHtml(clientName || 'Your client');
+  const safeTitle = escapeHtml(deliveryTitle || 'photographs');
+  const first = firstName(photographerName);
+  const targetUrl = safeUrl(dashboardUrl || `${appUrl()}/dashboard`);
+  return sendOnce({
+    eventKey: `delivery:first-download:${deliveryId}`,
+    kind: 'delivery-downloaded',
+    to,
+    deliveryId,
+    subject: `First download started for ${deliveryTitle || 'your delivery'}`,
+    text: `Hi ${photographerName || 'there'}, the first photograph from "${deliveryTitle}" was just downloaded. View your dashboard: ${targetUrl}`,
+    html: shell(`<p style="margin:0 0 14px;color:#ff9b8e;font-size:11px;font-weight:700;letter-spacing:1.6px">DOWNLOAD STARTED</p><h1 style="margin:0 0 16px;font-size:30px;font-weight:500">First photograph downloaded.</h1>${paragraph(`Hi ${first}, someone just started downloading photographs from <strong style="color:#fff">${safeTitle}</strong>${clientName ? ` (${safeClient})` : ''}.`)}${paragraph('You can monitor download activity from your dashboard.')}${button('View delivery dashboard', targetUrl)}`, { preheader: `First download started for ${safeTitle}.` })
+  });
+}
