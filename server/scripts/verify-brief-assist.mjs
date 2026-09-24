@@ -41,19 +41,23 @@ assert.deepEqual(complete.choices, []);
 modelReply = {
   ready: true,
   reason: '',
-  choices: ['Lora wanted portraits to mark this birthday.'],
-  suggestedBrief: 'Lora is celebrating her 25th birthday as she opens her own studio. This shoot brings both milestones together, marking her birthday and the start of her studio.'
+  choices: [
+    'The color palette for the session includes neutral tones with gold accents.',
+    'Props such as a birthday cake, balloons, or confetti may be included.',
+    'This is a milestone birthday for Ada.'
+  ],
+  suggestedBrief: "A portrait session celebrating Ada's 30th birthday and marking this milestone."
 };
-const rewrite = await assistPhotographerBrief({ clientName: 'Lora', shootType: 'Birthday', brief: 'Lora is turning 25 and opening her own studio.', mode: 'enhance' });
+const rewrite = await assistPhotographerBrief({ clientName: 'Ada', shootType: 'Birthday', brief: 'Ada 30th Birthday Shoot', mode: 'enhance' });
 assert.equal(rewrite.ready, true);
-assert.ok(rewrite.choices.length >= 3);
-assert.match(rewrite.suggestedBrief, /25th birthday/i);
-assert.match(rewrite.suggestedBrief, /opens her own studio/i);
-assert.match(rewrite.suggestedBrief, /both milestones/i);
+assert.deepEqual(rewrite.choices, []);
+assert.match(rewrite.suggestedBrief, /Ada's 30th birthday/i);
+assert.match(rewrite.suggestedBrief, /milestone/i);
 assert.doesNotMatch(rewrite.suggestedBrief, /create captions|distinct angle|describe the photograph/i);
 assert.match(lastSystemPrompt, /keep the original subject, occasion, purpose, emphasis, and meaning/i);
 assert.match(lastSystemPrompt, /go beyond proofreading/i);
 assert.doesNotMatch(lastSystemPrompt, /set a clear caption angle|each caption should add a different piece/i);
+assert.match(lastSystemPrompt, /always return ready true, reason empty, and choices as an empty array/i);
 
 modelReply = { ready: true, reason: '', choices: [], suggestedBrief: 'Lora is celebrating her 25th birthday at the beach.' };
 const invented = await assistPhotographerBrief({ clientName: 'Lora', shootType: 'Birthday', brief: 'Lora birthday', mode: 'enhance' });
