@@ -5,10 +5,15 @@ process.env.ALIBABA_MODEL_STUDIO_API_KEY = 'brief-assist-test-key';
 process.env.ALIBABA_BASE_URL = 'https://brief-assist.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1';
 
 let modelReply;
-globalThis.fetch = async () => ({
-  ok: true,
-  json: async () => ({ choices: [{ message: { content: JSON.stringify(modelReply) } }] })
-});
+let lastSystemPrompt = '';
+globalThis.fetch = async (_url, init) => {
+  const request = JSON.parse(init.body);
+  lastSystemPrompt = request.messages.find(message => message.role === 'system').content;
+  return {
+    ok: true,
+    json: async () => ({ choices: [{ message: { content: JSON.stringify(modelReply) } }] })
+  };
+};
 
 modelReply = {
   ready: false,
@@ -37,12 +42,18 @@ modelReply = {
   ready: true,
   reason: '',
   choices: ['Lora wanted portraits to mark this birthday.'],
-  suggestedBrief: 'Create captions for Lora’s birthday. Keep each caption focused on what the occasion means to Lora. Give each caption a distinct angle from supplied facts; do not describe the photograph or invent details.'
+  suggestedBrief: 'Lora is celebrating her 25th birthday as she opens her own studio. This shoot brings both milestones together, marking her birthday and the start of her studio.'
 };
-const rewrite = await assistPhotographerBrief({ clientName: 'Lora', shootType: 'Birthday', brief: 'Lora birthday', mode: 'enhance' });
+const rewrite = await assistPhotographerBrief({ clientName: 'Lora', shootType: 'Birthday', brief: 'Lora is turning 25 and opening her own studio.', mode: 'enhance' });
 assert.equal(rewrite.ready, true);
 assert.ok(rewrite.choices.length >= 3);
-assert.match(rewrite.suggestedBrief, /distinct angle/);
+assert.match(rewrite.suggestedBrief, /25th birthday/i);
+assert.match(rewrite.suggestedBrief, /opens her own studio/i);
+assert.match(rewrite.suggestedBrief, /both milestones/i);
+assert.doesNotMatch(rewrite.suggestedBrief, /create captions|distinct angle|describe the photograph/i);
+assert.match(lastSystemPrompt, /keep the original subject, occasion, purpose, emphasis, and meaning/i);
+assert.match(lastSystemPrompt, /go beyond proofreading/i);
+assert.doesNotMatch(lastSystemPrompt, /set a clear caption angle|each caption should add a different piece/i);
 
 modelReply = { ready: true, reason: '', choices: [], suggestedBrief: 'Lora is celebrating her 25th birthday at the beach.' };
 const invented = await assistPhotographerBrief({ clientName: 'Lora', shootType: 'Birthday', brief: 'Lora birthday', mode: 'enhance' });
