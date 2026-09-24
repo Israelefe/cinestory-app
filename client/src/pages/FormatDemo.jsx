@@ -119,10 +119,10 @@ export function frameMotionTransition(frame = {}, index = 0, reduced = false) {
     : { duration: 9 + Math.max(0, index), repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' };
 }
 
-export function normalizeDeliveryPhotos(delivery, fallbackPhotos) {
+export function normalizeDeliveryPhotos(delivery, fallbackPhotos, includeAll = false) {
   if (delivery?.assets?.length) {
     const frames = new Map((delivery.creativeDirection?.frames || []).map(frame => [String(frame.assetId), frame]));
-    return delivery.assets.map((a, i) => ({
+    const allPhotos = delivery.assets.map((a, i) => ({
       ...a,
       name: a.assetId,
       assetId: a.assetId,
@@ -144,6 +144,14 @@ export function normalizeDeliveryPhotos(delivery, fallbackPhotos) {
       url: a.url, // Original photographer upload quality preserved
       thumbnailUrl: a.thumbnailUrl || a.url
     }));
+    if (includeAll) return allPhotos;
+    const selectedIds = delivery.curatedAssetIds?.length
+      ? delivery.curatedAssetIds
+      : (delivery.creativeDirection?.frames || []).map(frame => frame.assetId);
+    if (!selectedIds.length) return allPhotos;
+    const byId = new Map(allPhotos.map(photo => [String(photo.assetId), photo]));
+    const selected = selectedIds.map(id => byId.get(String(id))).filter(Boolean);
+    return selected.length ? selected : allPhotos;
   }
   return fallbackPhotos.map(photo => ({ ...photo, caption: photo.caption || '' }));
 }
@@ -508,7 +516,7 @@ export function EditorialDemo({ delivery, galleryProps, audioState, toggleAudio,
         </div>
       </section>
     </main>
-    <AnimatePresence>{gallery && <DemoGallery photos={photos} title={client} onClose={() => setGallery(false)} delivery={delivery} {...galleryProps} />}</AnimatePresence>
+    <AnimatePresence>{gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} onClose={() => setGallery(false)} delivery={delivery} {...galleryProps} />}</AnimatePresence>
   </div>;
 }
 
@@ -688,7 +696,7 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio, on
       </motion.section>}
     </main>}
     {started && audioTrack && <button className={`fd-reveal-sound ${audioLoading ? 'is-loading' : ''} ${audioFailed ? 'is-error' : ''}`} type="button" onClick={toggleSound} aria-label={audioLoading ? 'Stop loading soundtrack' : audioFailed ? 'Try soundtrack again' : muted ? 'Turn soundtrack on' : 'Mute soundtrack'} aria-busy={audioLoading}>{audioLoading ? <LoaderCircle className="v-spin" size={17} /> : muted || audioFailed ? <VolumeX size={17} /> : <Volume2 size={17} />}<span aria-live="polite">{audioLoading ? 'Loading music…' : audioFailed ? 'Try music again' : muted ? 'Sound off' : 'Sound on'}</span></button>}
-    <AnimatePresence>{gallery && <DemoGallery photos={photos} title={client} onClose={() => setGallery(false)} delivery={delivery} {...galleryProps} />}</AnimatePresence>
+    <AnimatePresence>{gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} onClose={() => setGallery(false)} delivery={delivery} {...galleryProps} />}</AnimatePresence>
   </div>;
 }
 
@@ -827,7 +835,7 @@ export function CanvasDemo({ delivery, galleryProps, audioState, toggleAudio, on
       <footer className="fd-wall-controls"><span>Choose a group</span><nav aria-label="Canvas groups">{clusters.map((item, index) => <button type="button" key={item.name} className={activeCluster === index ? 'is-active' : ''} onClick={() => setActiveCluster(index)}><i>0{index + 1}</i><strong>{item.name}</strong></button>)}</nav><div className="fd-wall-arrows"><button type="button" onClick={() => moveCluster(-1)} disabled={activeCluster === 0} aria-label="Previous group"><ChevronLeft size={18} /></button><button type="button" onClick={() => moveCluster(1)} disabled={activeCluster === clusters.length - 1} aria-label="Next group"><ChevronRight size={18} /></button></div></footer>
     </main>
     <AnimatePresence>{selected !== null && <CanvasFocus photos={wallPhotos} index={selected} onSelect={selectPhoto} onClose={() => setSelected(null)} reduced={reduced} clientName={clientName} frames={frames} />}</AnimatePresence>
-    <AnimatePresence>{gallery && <DemoGallery photos={photos} title={client} onClose={() => setGallery(false)} delivery={delivery} {...galleryProps} />}</AnimatePresence>
+    <AnimatePresence>{gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} onClose={() => setGallery(false)} delivery={delivery} {...galleryProps} />}</AnimatePresence>
   </div>;
 }
 
@@ -930,7 +938,8 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
     return () => { narration.removeEventListener('timeupdate', syncChapter); narration.removeEventListener('ended', finish); narration.removeEventListener('pause', finish); };
   }, [narrationRef, delivery?.narration?.segments, delivery?.creativeDirection?.sections, chaptersData]);
   const openPhoto = photo => {
-    const photoIdx = photos.findIndex(item => (photo.assetId ? item.assetId === photo.assetId : item.name === photo.name));
+    const galleryPhotos = normalizeDeliveryPhotos(delivery, photos, true);
+    const photoIdx = galleryPhotos.findIndex(item => (photo.assetId ? item.assetId === photo.assetId : item.name === photo.name));
     setGalleryIndex(photoIdx >= 0 ? photoIdx : 0);
     setGallery(true);
     onNarrationNavigate?.(photo.assetId);
@@ -976,7 +985,7 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
       </motion.main>}
     </AnimatePresence>
 
-    <AnimatePresence>{gallery && <DemoGallery photos={photos} title={client} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} {...galleryProps} />}</AnimatePresence>
+    <AnimatePresence>{gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} {...galleryProps} />}</AnimatePresence>
   </div>;
 }
 
@@ -1235,7 +1244,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
       </footer>
     </main>}
     {started && audioTrack && <button className={`fd-album-sound ${audioLoading ? 'is-loading' : ''} ${audioFailed ? 'is-error' : ''}`} type="button" onClick={toggleSound} aria-label={audioLoading ? 'Stop loading album soundtrack' : audioFailed ? 'Try album soundtrack again' : muted ? 'Turn album soundtrack on' : 'Mute album soundtrack'} aria-busy={audioLoading}>{audioLoading ? <LoaderCircle className="v-spin" size={17} /> : muted || audioFailed ? <VolumeX size={17} /> : <Volume2 size={17} />}<span aria-live="polite">{audioLoading ? 'Loading music…' : audioFailed ? 'Try music again' : muted ? 'Sound off' : 'Sound on'}</span></button>}
-    <AnimatePresence>{gallery && <DemoGallery photos={photos} title={client} onClose={() => setGallery(false)} delivery={delivery} {...galleryProps} />}</AnimatePresence>
+    <AnimatePresence>{gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} onClose={() => setGallery(false)} delivery={delivery} {...galleryProps} />}</AnimatePresence>
   </div>;
 }
 

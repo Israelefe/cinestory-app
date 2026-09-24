@@ -177,6 +177,9 @@ export default function CreateDelivery({ user }) {
     ? { type: 'studio', name: user?.studio?.name || user?.name || 'Studio', logoUrl: user?.studio?.logoUrl || user?.avatar || '' }
     : { type: 'veylo', name: 'Veylo', logoUrl: '/veylo/veylo-mark.svg' });
   const [brief, setBrief] = useState({ clientName: '', shootType: '', brief: '' });
+  const [briefAdvice, setBriefAdvice] = useState(null);
+  const [briefSuggestion, setBriefSuggestion] = useState('');
+  const [briefAnswers, setBriefAnswers] = useState({});
   const [busy, setBusy] = useState('');
   const [progress, setProgress] = useState({ value: 0, stage: '' });
   const [error, setError] = useState('');
@@ -326,8 +329,15 @@ export default function CreateDelivery({ user }) {
 
   async function startDraft(event) {
     event.preventDefault();
-    setBusy('draft'); setError('');
+    setBusy('brief-check'); setError('');
     try {
+      const assessment = await api.post('/v1/deliveries/brief/assist', { ...brief, mode: 'assess' });
+      if (!assessment.data.data.ready) {
+        setBriefAdvice(assessment.data.data);
+        return;
+      }
+      setBriefAdvice(null);
+      setBusy('draft');
       const existingDelivery = delivery;
       const detailsChanged = Boolean(existingDelivery) && (
         existingDelivery.clientName !== brief.clientName
@@ -346,6 +356,29 @@ export default function CreateDelivery({ user }) {
       trackEvent('delivery.brief.saved', { hasExistingDelivery: Boolean(existingDelivery), detailsChanged }, { status: 'completed' });
     } catch (requestError) { trackEvent('delivery.brief.saved', {}, { status: 'failed', errorCode: requestError.response?.data?.code || 'BRIEF_SAVE_FAILED' }); setError(apiMessage(requestError, 'We could not start this delivery.')); }
     finally { setBusy(''); }
+  }
+
+  async function enhanceBrief() {
+    if (!brief.clientName.trim() || !brief.shootType || brief.brief.trim().length < 8) {
+      setError('Add the client, shoot type, and a few facts before improving the brief.');
+      return;
+    }
+    setBusy('brief-enhance'); setError(''); setBriefSuggestion('');
+    try {
+      const response = await api.post('/v1/deliveries/brief/assist', { ...brief, mode: 'enhance' });
+      setBriefAdvice(response.data.data.ready ? null : response.data.data);
+      setBriefSuggestion(response.data.data.suggestedBrief || '');
+    } catch (requestError) { setError(apiMessage(requestError, 'We could not improve that brief right now.')); }
+    finally { setBusy(''); }
+  }
+
+  function addBriefDetail(label) {
+    const answer = String(briefAnswers[label] || '').trim();
+    if (!answer) return;
+    setBrief(current => ({ ...current, brief: `${current.brief.trim()}\n${label}: ${answer}`.trim() }));
+    setBriefAnswers(current => ({ ...current, [label]: '' }));
+    setBriefAdvice(null);
+    setBriefSuggestion('');
   }
 
   async function removePhoto(assetId) {
@@ -444,13 +477,15 @@ export default function CreateDelivery({ user }) {
 
   function movePhoto(assetId, offset) {
     setDelivery(current => {
-      const assets = [...current.assets].sort((a, b) => a.sortOrder - b.sortOrder);
-      const index = assets.findIndex(asset => asset.assetId === assetId);
+      const order = current.curatedAssetIds?.length
+        ? [...current.curatedAssetIds]
+        : (current.creativeDirection?.frames || []).map(frame => frame.assetId);
+      const index = order.indexOf(assetId);
       const target = index + offset;
-      if (target < 0 || target >= assets.length) return current;
-      [assets[index], assets[target]] = [assets[target], assets[index]];
+      if (index < 0 || target < 0 || target >= order.length) return current;
+      [order[index], order[target]] = [order[target], order[index]];
       trackEvent('delivery.photo.reordered', { direction: offset < 0 ? 'earlier' : 'later' }, { format: current.format, status: 'changed' });
-      return { ...current, narration: undefined, assets: assets.map((asset, sortOrder) => ({ ...asset, sortOrder })) };
+      return { ...current, narration: undefined, curatedAssetIds: order };
     });
   }
 
@@ -462,7 +497,7 @@ export default function CreateDelivery({ user }) {
   async function saveReview() {
     setBusy('save'); setError('');
     try {
-      const ordered = [...delivery.assets].sort((a, b) => a.sortOrder - b.sortOrder);
+      const ordered = presentationAssets;
       const missingCaption = delivery.creativeDirection.frames.find(frame => String(frame.caption || '').trim().length < 18);
       if (missingCaption) throw new Error('Every photograph needs a meaningful caption before you approve this delivery.');
     const response = await api.patch(`/v1/deliveries/${delivery._id}/review`, { title: delivery.creativeDirection.title, openingLine: delivery.creativeDirection.openingLine, closingLine: delivery.creativeDirection.closingLine, palette: delivery.creativeDirection.palette, typography: delivery.creativeDirection.typography, pace: delivery.creativeDirection.pace, variation: { composition: 'quiet', density: 'balanced', captionTreatment: 'editorial', accentPlacement: 'rules', ...(delivery.creativeDirection.variation || {}), imageTreatment: 'natural' }, sections: (delivery.creativeDirection.sections || []).map(({ id, title, subtitle, label, delivery: deliveryLabel, layout, accent }) => ({ id, title, subtitle: subtitle || '', label: label || '', delivery: deliveryLabel || '', layout, accent })), frames: delivery.creativeDirection.frames.map(({ assetId, headline, caption, eventType, campaignType, layout, typographyStyle, textBackground, captionPosition, textAnimation, focalPoint, colorAccent }) => ({ assetId, headline: headline || '', caption: caption.trim(), eventType: eventType || '', campaignType: campaignType || '', layout, typographyStyle, textBackground, captionPosition, textAnimation, focalPoint, colorAccent })), assetOrder: ordered.map(asset => asset.assetId) });
@@ -614,17 +649,19 @@ export default function CreateDelivery({ user }) {
     setRevisionIds(current => current.includes(assetId) ? current.filter(id => id !== assetId) : [...current, assetId]);
   }
 
-  async function requestRevision(scope) {
-    const instruction = revisionInstruction.trim() || (scope === 'full'
+  async function requestRevision(scope, selectedIds = revisionIds, captionOnly = false) {
+    const instruction = (captionOnly ? '' : revisionInstruction.trim()) || (scope === 'full'
       ? "Rewrite every title and caption around the photographer's brief and details specific to each photograph. Remove lines that could fit another shoot unchanged."
-      : '');
+      : "Rewrite the selected caption around the shoot type and the photographer's brief. Keep it specific and natural. Do not describe the photograph.");
     if (instruction.length < 8) return setError('Tell Veylo what you want changed in at least eight characters.');
-    if (scope === 'selected' && !revisionIds.length) return setError('Choose at least one photograph to revise.');
+    if (scope === 'selected' && !selectedIds.length) return setError('Choose at least one photograph to revise.');
     setBusy('revise'); setError(''); setFailedJob(null); setProgress({ value: 2, stage: scope === 'full' ? 'Rethinking the full direction…' : 'Revising the selected photographs…' });
     try {
-      const response = await api.post(`/v1/deliveries/${delivery._id}/revise`, { scope, instruction, assetIds: scope === 'selected' ? revisionIds : [] });
+      const response = await api.post(`/v1/deliveries/${delivery._id}/revise`, { scope, instruction, assetIds: scope === 'selected' ? selectedIds : [], captionOnly });
       await waitForJob(delivery._id, response.data.data._id, job => setProgress({ value: job.progress, stage: scope === 'full' ? 'Rethinking the full direction…' : 'Revising the selected photographs…' }));
-      await refreshDelivery(); setRevisionIds([]); setRevisionInstruction(''); toast.success(scope === 'full' ? 'The full direction is ready to review.' : 'The selected photographs are ready to review.');
+      await refreshDelivery();
+      if (!captionOnly) { setRevisionIds([]); setRevisionInstruction(''); }
+      toast.success(captionOnly ? 'Caption regenerated.' : scope === 'full' ? 'The full direction is ready to review.' : 'The selected photographs are ready to review.');
     } catch (requestError) { setError(requestError.message || 'Veylo could not finish that revision.'); if (requestError.jobId) setFailedJob({ id: requestError.jobId, type: 'revise' }); }
     finally { setBusy(''); }
   }
@@ -677,8 +714,15 @@ export default function CreateDelivery({ user }) {
     if (step === 3 && !selectedFormat && recommendations[0]?.format) setSelectedFormat(recommendations[0].format);
   }, [step, selectedFormat, recommendations]);
   const orderedAssets = useMemo(() => [...(delivery?.assets || [])].sort((a, b) => a.sortOrder - b.sortOrder), [delivery]);
+  const presentationAssets = useMemo(() => {
+    const byId = new Map(orderedAssets.map(asset => [asset.assetId, asset]));
+    const selected = delivery?.curatedAssetIds?.length
+      ? delivery.curatedAssetIds
+      : (delivery?.creativeDirection?.frames || []).map(frame => frame.assetId);
+    return selected.length ? selected.map(id => byId.get(id)).filter(Boolean) : orderedAssets;
+  }, [orderedAssets, delivery?.curatedAssetIds, delivery?.creativeDirection?.frames]);
   const frameMap = useMemo(() => new Map((delivery?.creativeDirection?.frames || []).map(frame => [frame.assetId, frame])), [delivery]);
-  const pageAssets = orderedAssets.slice(reviewPage * 18, reviewPage * 18 + 18);
+  const pageAssets = presentationAssets.slice(reviewPage * 18, reviewPage * 18 + 18);
   const publishedUrl = delivery?.publishedUrl || (delivery?.status === 'published' ? `${APP_URL}/d/${delivery.publicId}` : '');
   const reviewCapabilities = getDeliveryCapabilities(delivery?.format);
 
@@ -708,18 +752,22 @@ export default function CreateDelivery({ user }) {
                   <small>Required</small>
                 </div>
                 <p className="v-create-field-hint">
-                  Tell us what the shoot celebrates, outfits or moments that matter, the mood on set, and anything the client should feel when opening their photos.
+                  Tell us what this shoot marks and any details the photographs cannot show. A birthday age, a family relationship, or the reason for a campaign helps Veylo write the right story.
                 </p>
                 <textarea
                   id="shoot-brief"
                   value={brief.brief}
-                  onChange={event => setBrief(current => ({ ...current, brief: event.target.value }))}
+                  onChange={event => { setBrief(current => ({ ...current, brief: event.target.value })); setBriefAdvice(null); setBriefSuggestion(''); }}
                   required
                   rows={6}
-                  placeholder="e.g. Ada’s 30th birthday studio session in Lagos. She wore a tailored green velvet suit. The mood was poised, joyous, and celebratory."
+                  maxLength={3000}
+                  placeholder="e.g. Ada is celebrating her 30th birthday. She opened her own studio this year and wants these photos to mark both milestones."
                 />
+                <div className="v-brief-actions"><span>{brief.brief.length}/3000 characters</span><button type="button" onClick={enhanceBrief} disabled={Boolean(busy) || brief.brief.trim().length < 8}>{busy === 'brief-enhance' ? <LoaderCircle className="v-spin" size={16} /> : <ListChecks size={16} />}{busy === 'brief-enhance' ? 'Improving brief…' : 'Improve this brief with AI'}</button></div>
+                {briefSuggestion && <section className="v-brief-suggestion" aria-live="polite"><strong>Suggested wording</strong><p>{briefSuggestion}</p><div><button type="button" onClick={() => { setBrief(current => ({ ...current, brief: briefSuggestion })); setBriefSuggestion(''); setBriefAdvice(null); }}>Use this brief</button><button type="button" onClick={() => setBriefSuggestion('')}>Keep mine</button></div></section>}
+                {briefAdvice && <section className="v-brief-advice" aria-live="polite"><strong>Tell us a little more about this shoot.</strong><p>{briefAdvice.reason || 'A few specific details will make the captions more personal.'}</p>{briefAdvice.missingDetails?.map((item, index) => <div className="v-brief-detail" key={`${item.label}-${index}`}><label htmlFor={`brief-detail-${index}`}>{item.question}</label><div><input id={`brief-detail-${index}`} value={briefAnswers[item.label] || ''} maxLength={240} onChange={event => setBriefAnswers(current => ({ ...current, [item.label]: event.target.value }))} placeholder="Your answer" /><button type="button" onClick={() => addBriefDetail(item.label)} disabled={!briefAnswers[item.label]?.trim()}>Add detail</button></div></div>)}</section>}
               </div>
-              <button className="v-create-primary" disabled={Boolean(busy)}>Add the finished photographs<ArrowRight size={17} /></button>
+              <button className="v-create-primary" disabled={Boolean(busy)}>{busy === 'brief-check' ? 'Checking your brief…' : 'Add the finished photographs'}{busy === 'brief-check' ? <LoaderCircle className="v-spin" size={17} /> : <ArrowRight size={17} />}</button>
             </form>
           </Stage> : step === 2 ? <Stage key="upload">
             <StageHead eyebrow="02 / Finished photographs" title="Add the files your client will receive." copy={`Upload the final edited photographs. Veylo will study the complete set without changing your retouching or colour grade.`} />
@@ -751,14 +799,15 @@ export default function CreateDelivery({ user }) {
             <div className="v-create-footer"><button type="button" onClick={() => goBackTo(2)}><ArrowLeft size={16} />Back to photographs</button><button type="button" className="v-create-primary" onClick={() => chooseFormat(selectedFormat)} disabled={!selectedFormat || Boolean(busy)}>{busy === 'direct' ? progress.stage : selectedFormat ? `Create ${formatName(selectedFormat)}` : 'Choose a format above'}{busy === 'direct' ? <LoaderCircle className="v-spin" size={17} /> : <ArrowRight size={17} />}</button></div>
           </Stage> : step === 4 ? <Stage key="review">
             <StageHead eyebrow={`04 / Review the ${formatName(delivery?.format)}`} title="Check the order. Read every line." copy="Veylo proposes the direction. You decide what reaches your client. Edit any line and move any photograph before you publish." />
-            <section className="v-review-summary" aria-label="Review summary"><div><strong>{orderedAssets.length}</strong><span>photographs</span></div><div><strong>{frameMap.size}/{orderedAssets.length}</strong><span>captions ready</span></div><div><strong>{reviewCapabilities.music ? (delivery?.soundtrack ? 'Ready' : 'Choose') : 'Not used'}</strong><span>soundtrack</span></div><div><strong>{reviewCapabilities.narration ? (access.narration ? 'On' : 'Off') : 'Not used'}</strong><span>Hannah narration</span></div></section>
+            <section className="v-review-summary" aria-label="Review summary"><div><strong>{presentationAssets.length}</strong><span>in presentation</span></div><div><strong>{frameMap.size}/{presentationAssets.length}</strong><span>captions ready</span></div><div><strong>{reviewCapabilities.music ? (delivery?.soundtrack ? 'Ready' : 'Choose') : 'Not used'}</strong><span>soundtrack</span></div><div><strong>{reviewCapabilities.narration ? (access.narration ? 'On' : 'Off') : 'Not used'}</strong><span>Hannah narration</span></div></section>
+            {orderedAssets.length > presentationAssets.length && <p className="v-review-gallery-count">{presentationAssets.length} selected for the presentation. All {orderedAssets.length} photographs remain in the client gallery.</p>}
             <nav className="v-review-nav" aria-label="Review sections"><button type="button" className={reviewPanel === 'overview' ? 'is-active' : ''} onClick={() => setReviewPanel('overview')}>Overview</button><button type="button" className={reviewPanel === 'design' ? 'is-active' : ''} onClick={() => setReviewPanel('design')}>Design</button><button type="button" className={reviewPanel === 'photos' ? 'is-active' : ''} onClick={() => setReviewPanel('photos')}>Photographs</button>{reviewCapabilities.music && <button type="button" className={reviewPanel === 'soundtrack' ? 'is-active' : ''} onClick={() => setReviewPanel('soundtrack')}>Soundtrack</button>}<button type="button" className={reviewPanel === 'client' ? 'is-active' : ''} onClick={() => setReviewPanel('client')}>Client preview</button></nav>
             {reviewPanel === 'overview' && <>
             <div className="v-review-opening"><label>Delivery title<input value={delivery?.creativeDirection?.title || ''} onChange={event => editDirection('title', event.target.value)} maxLength={80} /></label><label>Opening line<textarea value={delivery?.creativeDirection?.openingLine || ''} onChange={event => editDirection('openingLine', event.target.value)} maxLength={140} rows={3} /></label><label>Closing line<textarea value={delivery?.creativeDirection?.closingLine || ''} onChange={event => editDirection('closingLine', event.target.value)} maxLength={160} rows={3} /></label></div>
              {reviewCapabilities.music && <CurrentSoundtrackPlayer soundtrack={delivery?.soundtrack} />}
              {!delivery?.soundtrack && reviewCapabilities.music && <div className="v-review-audio-empty"><Music2 size={17} /><span><strong>No soundtrack is attached yet.</strong><small>Veylo can suggest one for this format, and you can listen before publishing.</small></span><button type="button" onClick={() => setStep(5)}>Choose music</button></div>}
             </>}
-            {reviewPanel === 'design' && <DeliveryDirectionStudio delivery={delivery} assets={orderedAssets} frameMap={frameMap} onDirectionChange={editDirectionSetting} onSectionChange={editSection} onFrameChange={editFrame} />}
+            {reviewPanel === 'design' && <DeliveryDirectionStudio delivery={delivery} assets={presentationAssets} frameMap={frameMap} onDirectionChange={editDirectionSetting} onSectionChange={editSection} onFrameChange={editFrame} />}
             {reviewPanel === 'soundtrack' && <section className="v-review-audio-panel" aria-label="Soundtrack review">{reviewCapabilities.music ? <><h2>Soundtrack for this delivery</h2><p>Listen to the selected track here. You do not need to open the catalogue just to hear what Veylo chose.</p>{delivery?.soundtrack ? <CurrentSoundtrackPlayer soundtrack={delivery.soundtrack} /> : <div className="v-review-audio-empty"><Music2 size={17} /><span><strong>No soundtrack is attached yet.</strong><small>Open the publish step to choose a track.</small></span><button type="button" onClick={() => setStep(5)}>Choose music</button></div>}</> : <p>This format is designed without music.</p>}</section>}
              {reviewPanel === 'client' && <section className="v-client-format-preview" aria-label="Exact client format preview">
                <header><div><p>EXACT CLIENT VIEW</p><h2>Open the same format your client will receive.</h2><span>This preview uses the selected format, order, captions, colour direction, and typography. It is the final viewer inside the studio.</span></div><span className="v-client-format-preview-badge">{formatName(delivery?.format)}</span></header>
@@ -766,8 +815,8 @@ export default function CreateDelivery({ user }) {
              </section>}
             {reviewPanel === 'photos' && <>
             <div className="v-review-revision"><div><ListChecks size={19} /><span><strong>Improve captions and direction</strong><small>Select photographs for a focused rewrite. Leave the instruction blank to regenerate the full delivery with more specific titles and captions.</small></span></div><textarea value={revisionInstruction} onChange={event => setRevisionInstruction(event.target.value)} maxLength={600} placeholder="For example: connect each caption to what this shoot means to the client; use image details only when they add context." /><footer><span>{revisionIds.length} photograph{revisionIds.length === 1 ? '' : 's'} selected</span><button type="button" onClick={() => requestRevision('selected')} disabled={Boolean(busy) || !revisionIds.length}>Revise selected</button><button type="button" onClick={() => requestRevision('full')} disabled={Boolean(busy)}>Regenerate full delivery</button></footer>{busy === 'revise' && <Progress value={progress.value} label={progress.stage} />}</div>
-            <div className="v-review-grid">{pageAssets.map((asset, localIndex) => { const index = reviewPage * 18 + localIndex; const frame = frameMap.get(asset.assetId) || {}; return <article key={asset.assetId}><button type="button" className={`v-review-select ${revisionIds.includes(asset.assetId) ? 'is-selected' : ''}`} onClick={() => toggleRevisionAsset(asset.assetId)}><Check size={13} />{revisionIds.includes(asset.assetId) ? 'Selected for revision' : 'Select for revision'}</button><div><img src={asset.thumbnailUrl || asset.url} alt="" /><span>{String(index + 1).padStart(2, '0')}</span><div><button type="button" onClick={() => movePhoto(asset.assetId, -1)} disabled={index === 0} aria-label="Move photograph earlier"><ChevronUp size={15} /></button><button type="button" onClick={() => movePhoto(asset.assetId, 1)} disabled={index === orderedAssets.length - 1} aria-label="Move photograph later"><ChevronDown size={15} /></button></div></div><label>Heading<input value={frame.headline || ''} onChange={event => editFrame(asset.assetId, 'headline', event.target.value)} maxLength={70} /></label><label>Caption<textarea value={frame.caption || ''} onChange={event => editFrame(asset.assetId, 'caption', event.target.value)} maxLength={180} rows={4} /></label><small>{frame.motion?.replaceAll('-', ' ')} · {frame.transition}</small></article>; })}</div>
-            {orderedAssets.length > 18 && <div className="v-review-pages"><button onClick={() => setReviewPage(value => Math.max(0, value - 1))} disabled={reviewPage === 0}>Previous</button><span>{reviewPage + 1} / {Math.ceil(orderedAssets.length / 18)}</span><button onClick={() => setReviewPage(value => Math.min(Math.ceil(orderedAssets.length / 18) - 1, value + 1))} disabled={reviewPage >= Math.ceil(orderedAssets.length / 18) - 1}>Next</button></div>}
+            <div className="v-review-grid">{pageAssets.map((asset, localIndex) => { const index = reviewPage * 18 + localIndex; const frame = frameMap.get(asset.assetId) || {}; return <article key={asset.assetId}><button type="button" className={`v-review-select ${revisionIds.includes(asset.assetId) ? 'is-selected' : ''}`} onClick={() => toggleRevisionAsset(asset.assetId)}><Check size={13} />{revisionIds.includes(asset.assetId) ? 'Selected for revision' : 'Select for revision'}</button><div><img src={asset.thumbnailUrl || asset.url} alt="" /><span>{String(index + 1).padStart(2, '0')}</span><div><button type="button" onClick={() => movePhoto(asset.assetId, -1)} disabled={index === 0} aria-label="Move photograph earlier"><ChevronUp size={15} /></button><button type="button" onClick={() => movePhoto(asset.assetId, 1)} disabled={index === presentationAssets.length - 1} aria-label="Move photograph later"><ChevronDown size={15} /></button></div></div><label>Heading<input value={frame.headline || ''} onChange={event => editFrame(asset.assetId, 'headline', event.target.value)} maxLength={70} /></label><label>Caption<textarea value={frame.caption || ''} onChange={event => editFrame(asset.assetId, 'caption', event.target.value)} maxLength={180} rows={4} /></label><button type="button" className="v-caption-regenerate" onClick={() => requestRevision('selected', [asset.assetId], true)} disabled={Boolean(busy)}><RefreshCw size={14} />Regenerate this caption</button><small>{frame.motion?.replaceAll('-', ' ')} · {frame.transition}</small></article>; })}</div>
+            {presentationAssets.length > 18 && <div className="v-review-pages"><button onClick={() => setReviewPage(value => Math.max(0, value - 1))} disabled={reviewPage === 0}>Previous</button><span>{reviewPage + 1} / {Math.ceil(presentationAssets.length / 18)}</span><button onClick={() => setReviewPage(value => Math.min(Math.ceil(presentationAssets.length / 18) - 1, value + 1))} disabled={reviewPage >= Math.ceil(presentationAssets.length / 18) - 1}>Next</button></div>}
             </>}
             <div className="v-create-footer"><button type="button" onClick={() => goBackTo(3)}><RefreshCw size={15} />Choose another format</button><button type="button" className="v-create-primary" onClick={saveReview} disabled={Boolean(busy)}>{busy === 'save' ? 'Saving your edits…' : 'Approve this direction'}<Check size={17} /></button></div>
           </Stage> : <Stage key="publish">

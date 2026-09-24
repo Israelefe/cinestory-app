@@ -349,9 +349,14 @@ export default function DeliveryViewer() {
     const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
     if (connection?.saveData || ['slow-2g', '2g'].includes(connection?.effectiveType)) return undefined;
     const cleanup = [];
-    const remaining = [...delivery.assets]
-      .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
-      .slice(4, 12);
+    const byId = new Map(delivery.assets.map(asset => [String(asset.assetId), asset]));
+    const selectedIds = delivery.curatedAssetIds?.length
+      ? delivery.curatedAssetIds
+      : (delivery.creativeDirection?.frames || []).map(frame => frame.assetId);
+    const presentation = selectedIds.length
+      ? selectedIds.map(id => byId.get(String(id))).filter(Boolean)
+      : [...delivery.assets].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+    const remaining = presentation.slice(1, 6);
     let cancelled = false;
     let index = 0;
     const loadNext = () => {

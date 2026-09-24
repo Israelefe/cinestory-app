@@ -16,6 +16,8 @@ const activeJobs = new Map();
 const activeDeliveryIds = new Set();
 let activeAiRequests = 0;
 const aiRequestWaiters = [];
+let aiRequestStartSpacingMs = 0;
+let nextAiRequestStartAt = 0;
 
 function positiveInt(value, fallback, { min = 1, max = 32 } = {}) {
   const parsed = Number(value);
@@ -40,6 +42,7 @@ function readWorkerSettings() {
   workerSettings.captionBatchSize = positiveInt(process.env.DELIVERY_CAPTION_BATCH_SIZE, 12, { min: 4, max: 16 });
   effectiveJobConcurrency = workerSettings.maxJobConcurrency;
   effectiveAiBatchConcurrency = workerSettings.aiBatchConcurrency;
+  aiRequestStartSpacingMs = 0;
 }
 
 async function refreshProviderQuotas() {
@@ -59,13 +62,14 @@ async function refreshProviderQuotas() {
   const providerConcurrency = Object.values(quotas)
     .map(quota => quota.concurrencyLimit)
     .filter(value => Number.isFinite(value) && value > 0);
-  // Leave most of the provider quota available for other workspaces and
-  // retries. The normal defaults are already small; this only lowers them
-  // when the account reports a genuinely smaller request window.
+  // A per-second request allowance is a start rate, not the number of
+  // requests that may be in flight. Vision batches often take many seconds.
+  // Keep a modest pipeline filled while respecting reported concurrency.
   if (requestsPerSecond.length) {
-    const safeRequests = Math.max(1, Math.floor(Math.min(...requestsPerSecond) * 0.5));
-    effectiveAiBatchConcurrency = Math.min(workerSettings.aiBatchConcurrency, safeRequests);
-    effectiveJobConcurrency = Math.min(workerSettings.maxJobConcurrency, Math.max(1, Math.floor(safeRequests / 2)));
+    const slowestRequestRate = Math.min(...requestsPerSecond);
+    const inFlightBudget = Math.max(1, Math.floor(slowestRequestRate * 12 * 0.8));
+    effectiveAiBatchConcurrency = Math.min(workerSettings.aiBatchConcurrency, inFlightBudget);
+    aiRequestStartSpacingMs = Math.ceil(1000 / (slowestRequestRate * 0.8));
   }
   if (providerConcurrency.length) {
     effectiveAiBatchConcurrency = Math.min(effectiveAiBatchConcurrency, Math.min(...providerConcurrency));
@@ -102,6 +106,10 @@ async function withAiRequestSlot(task) {
   }
   activeAiRequests += 1;
   try {
+    const now = Date.now();
+    const startsAt = Math.max(now, nextAiRequestStartAt);
+    nextAiRequestStartAt = startsAt + aiRequestStartSpacingMs;
+    if (startsAt > now) await new Promise(resolve => setTimeout(resolve, startsAt - now));
     return await task();
   } finally {
     activeAiRequests -= 1;
@@ -153,7 +161,7 @@ async function analyze(job, delivery) {
   for (let offset = 0; offset < assets.length; offset += workerSettings.visionBatchSize) {
     batches.push(assets.slice(offset, offset + workerSettings.visionBatchSize).map(asset => ({
       assetId: asset.assetId,
-      analysisUrl: signedImageUrl(asset.publicId, { width: 1024 }),
+      analysisUrl: signedImageUrl(asset.publicId, { width: 640 }),
       photographerCaption: asset.libraryCaption || '',
       photographerTags: asset.libraryTags || []
     })));
@@ -370,7 +378,11 @@ async function revise(job, delivery) {
   const sectionIds = new Set(delivery.creativeDirection.sections.map(section => section.id));
   if (result.frames.some(frame => !sectionIds.has(frame.sectionId))) throw Object.assign(new Error('The creative model returned an unknown section.'), { code: 'INVALID_FRAME_SECTION' });
   const replacements = new Map(result.frames.map(frame => [frame.assetId, frame]));
-  delivery.creativeDirection.frames = delivery.creativeDirection.frames.map(frame => replacements.get(frame.assetId) || frame);
+  delivery.creativeDirection.frames = delivery.creativeDirection.frames.map(frame => {
+    const replacement = replacements.get(frame.assetId);
+    if (!replacement) return frame;
+    return job.input?.captionOnly ? { ...frame, caption: replacement.caption } : replacement;
+  });
   delivery.creativeDirection.sections = delivery.creativeDirection.sections.map(section => ({ ...section, assetIds: delivery.creativeDirection.frames.filter(frame => frame.sectionId === section.id).map(frame => frame.assetId) })).filter(section => section.assetIds.length);
   delivery.narration = undefined;
   delivery.status = 'review';
