@@ -372,7 +372,7 @@ export default function CreateDelivery({ user }) {
     try {
       const response = await api.post('/v1/deliveries/brief/assist', { ...brief, mode: 'enhance' });
       if (response.data.data.suggestedBrief) setBriefSuggestion(response.data.data.suggestedBrief);
-      else setError('We could not safely enhance this brief. Try again or add a detail first.');
+      else setError(response.data.data.reason || 'The AI did not return an enhanced brief this time. Your original brief is unchanged. Try again.');
       setBriefSuggestionChoices(response.data.data.choices || []);
     } catch (requestError) { setError(apiMessage(requestError, 'We could not enhance that brief right now.')); }
     finally { setBusy(''); }

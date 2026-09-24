@@ -5,13 +5,15 @@ process.env.ALIBABA_MODEL_STUDIO_API_KEY = 'brief-assist-test-key';
 process.env.ALIBABA_BASE_URL = 'https://brief-assist.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1';
 
 let modelReply;
+let queuedModelReplies = [];
 let lastSystemPrompt = '';
 globalThis.fetch = async (_url, init) => {
   const request = JSON.parse(init.body);
   lastSystemPrompt = request.messages.find(message => message.role === 'system').content;
+  const reply = queuedModelReplies.shift() || modelReply;
   return {
     ok: true,
-    json: async () => ({ choices: [{ message: { content: JSON.stringify(modelReply) } }] })
+    json: async () => ({ choices: [{ message: { content: JSON.stringify(reply) } }] })
   };
 };
 
@@ -81,8 +83,21 @@ assert.match(lastSystemPrompt, /go beyond proofreading/i);
 assert.doesNotMatch(lastSystemPrompt, /set a clear caption angle|each caption should add a different piece/i);
 assert.match(lastSystemPrompt, /always return ready true, reason empty, and choices as an empty array/i);
 
-modelReply = { ready: true, reason: '', choices: [], suggestedBrief: 'Lora is celebrating her 25th birthday at the beach.' };
-const invented = await assistPhotographerBrief({ clientName: 'Lora', shootType: 'Birthday', brief: 'Lora birthday', mode: 'enhance' });
-assert.equal(invented.suggestedBrief, '');
+queuedModelReplies = [
+  { ready: true, reason: '', choices: [], suggestedBrief: '' },
+  { ready: true, reason: '', choices: [], suggestedBrief: "Lora's birthday shoot celebrates the occasion." }
+];
+const recovered = await assistPhotographerBrief({ clientName: 'Lora', shootType: 'Birthday', brief: 'Lora birthday', mode: 'enhance' });
+assert.match(recovered.suggestedBrief, /birthday shoot celebrates the occasion/i);
+assert.equal(queuedModelReplies.length, 0);
+
+queuedModelReplies = [
+  { ready: true, reason: '', choices: [], suggestedBrief: 'Lora celebrates her 25th birthday.' },
+  { ready: true, reason: '', choices: [], suggestedBrief: 'Lora celebrates her birthday with this dedicated shoot.' }
+];
+const corrected = await assistPhotographerBrief({ clientName: 'Lora', shootType: 'Birthday', brief: 'Lora birthday', mode: 'enhance' });
+assert.doesNotMatch(corrected.suggestedBrief, /25/);
+assert.match(corrected.suggestedBrief, /birthday/i);
+assert.equal(queuedModelReplies.length, 0);
 
 console.log('Brief assessment, selectable details, and creative brief enhancement verified.');

@@ -716,7 +716,10 @@ export async function assistDeliveryBrief(req, res) {
     res.json({ success: true, data });
   } catch (error) {
     console.error('[deliveries/brief-assist]', error.message);
-    res.status(503).json({ success: false, message: 'We could not check the brief right now. Please try again.' });
+    const message = req.body?.mode === 'enhance'
+      ? 'The AI could not return a complete enhancement this time. Your original brief is unchanged. Please try again.'
+      : 'We could not check the brief right now. Please try again.';
+    res.status(503).json({ success: false, message });
   }
 }
 
