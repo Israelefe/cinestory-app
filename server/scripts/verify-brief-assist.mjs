@@ -33,14 +33,19 @@ const complete = await assistPhotographerBrief({ clientName: 'Lora', shootType: 
 assert.equal(complete.ready, true);
 assert.deepEqual(complete.choices, []);
 
-modelReply = { ready: false, reason: 'Needs more detail.', choices: ['Lora is turning 25.'], suggestedBrief: 'This shoot celebrates Lora’s birthday.' };
+modelReply = {
+  ready: true,
+  reason: '',
+  choices: ['Lora wanted portraits to mark this birthday.'],
+  suggestedBrief: 'Create captions for Lora’s birthday. Keep each caption focused on what the occasion means to Lora. Give each caption a distinct angle from supplied facts; do not describe the photograph or invent details.'
+};
 const rewrite = await assistPhotographerBrief({ clientName: 'Lora', shootType: 'Birthday', brief: 'Lora birthday', mode: 'enhance' });
 assert.equal(rewrite.ready, true);
-assert.deepEqual(rewrite.choices, []);
-assert.equal(rewrite.suggestedBrief, 'This shoot celebrates Lora’s birthday.');
+assert.ok(rewrite.choices.length >= 3);
+assert.match(rewrite.suggestedBrief, /distinct angle/);
 
 modelReply = { ready: true, reason: '', choices: [], suggestedBrief: 'Lora is celebrating her 25th birthday at the beach.' };
 const invented = await assistPhotographerBrief({ clientName: 'Lora', shootType: 'Birthday', brief: 'Lora birthday', mode: 'enhance' });
 assert.equal(invented.suggestedBrief, '');
 
-console.log('Brief suggestions and factual rewrites verified.');
+console.log('Brief assessment, selectable details, and creative brief enhancement verified.');

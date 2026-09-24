@@ -179,6 +179,7 @@ export default function CreateDelivery({ user }) {
   const [brief, setBrief] = useState({ clientName: '', shootType: '', brief: '' });
   const [briefAdvice, setBriefAdvice] = useState(null);
   const [briefSuggestion, setBriefSuggestion] = useState('');
+  const [briefSuggestionChoices, setBriefSuggestionChoices] = useState([]);
   const [briefChoiceConfirmed, setBriefChoiceConfirmed] = useState(false);
   const [customBriefDetail, setCustomBriefDetail] = useState('');
   const [busy, setBusy] = useState('');
@@ -364,16 +365,25 @@ export default function CreateDelivery({ user }) {
 
   async function enhanceBrief() {
     if (!brief.clientName.trim() || !brief.shootType || brief.brief.trim().length < 8) {
-      setError('Add the client, shoot type, and a few facts before improving the brief.');
+      setError('Add the client, shoot type, and a few facts before enhancing the brief.');
       return;
     }
-    setBusy('brief-enhance'); setError(''); setBriefSuggestion('');
+    setBusy('brief-enhance'); setError(''); setBriefSuggestion(''); setBriefSuggestionChoices([]);
     try {
       const response = await api.post('/v1/deliveries/brief/assist', { ...brief, mode: 'enhance' });
       if (response.data.data.suggestedBrief) setBriefSuggestion(response.data.data.suggestedBrief);
-      else setError('We could not improve the wording without adding details you did not give us.');
-    } catch (requestError) { setError(apiMessage(requestError, 'We could not improve that brief right now.')); }
+      else setError('We could not safely enhance this brief. Try again or add a detail first.');
+      setBriefSuggestionChoices(response.data.data.choices || []);
+    } catch (requestError) { setError(apiMessage(requestError, 'We could not enhance that brief right now.')); }
     finally { setBusy(''); }
+  }
+
+  function addEnhancementDetail(choice) {
+    const nextBrief = `${briefSuggestion.trim()}\n\nConfirmed shoot detail: ${String(choice || '').trim()}`.trim();
+    if (nextBrief.length > 3000) return setError('This detail would make the enhanced brief too long.');
+    setBriefSuggestion(nextBrief);
+    setBriefSuggestionChoices(current => current.filter(item => item !== choice));
+    setError('');
   }
 
   function chooseBriefDetail(choice) {
@@ -385,6 +395,7 @@ export default function CreateDelivery({ user }) {
     setBriefChoiceConfirmed(true);
     setBriefAdvice(null);
     setBriefSuggestion('');
+    setBriefSuggestionChoices([]);
     setCustomBriefDetail('');
     setError('');
   }
@@ -746,10 +757,10 @@ export default function CreateDelivery({ user }) {
             <StageHead eyebrow="01 / The photographer's context" title="Tell Veylo what this shoot is about." copy="Give Veylo the facts it cannot learn from the photographs alone. This is where the personal details come from." />
             <form className="v-create-form" onSubmit={startDraft}>
               <label>Client name
-                <input value={brief.clientName} onChange={event => { setBrief(current => ({ ...current, clientName: event.target.value })); setBriefChoiceConfirmed(false); setBriefAdvice(null); }} maxLength={100} required placeholder="Ada" />
+                <input value={brief.clientName} onChange={event => { setBrief(current => ({ ...current, clientName: event.target.value })); setBriefChoiceConfirmed(false); setBriefAdvice(null); setBriefSuggestion(''); setBriefSuggestionChoices([]); }} maxLength={100} required placeholder="Ada" />
               </label>
               <label>Type of shoot
-                <select value={brief.shootType} onChange={event => { setBrief(current => ({ ...current, shootType: event.target.value })); setBriefChoiceConfirmed(false); setBriefAdvice(null); }} required>
+                <select value={brief.shootType} onChange={event => { setBrief(current => ({ ...current, shootType: event.target.value })); setBriefChoiceConfirmed(false); setBriefAdvice(null); setBriefSuggestion(''); setBriefSuggestionChoices([]); }} required>
                   <option value="" disabled>Choose the type of shoot</option>
                   {SHOOT_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
                 </select>
@@ -765,14 +776,14 @@ export default function CreateDelivery({ user }) {
                 <textarea
                   id="shoot-brief"
                   value={brief.brief}
-                  onChange={event => { setBrief(current => ({ ...current, brief: event.target.value })); setBriefChoiceConfirmed(false); setBriefAdvice(null); setBriefSuggestion(''); }}
+                  onChange={event => { setBrief(current => ({ ...current, brief: event.target.value })); setBriefChoiceConfirmed(false); setBriefAdvice(null); setBriefSuggestion(''); setBriefSuggestionChoices([]); }}
                   required
                   rows={6}
                   maxLength={3000}
                   placeholder="e.g. Ada is celebrating her 30th birthday. She opened her own studio this year and wants these photos to mark both milestones."
                 />
-                <div className="v-brief-actions"><span>{brief.brief.length}/3000 characters</span><button type="button" onClick={enhanceBrief} disabled={Boolean(busy) || brief.brief.trim().length < 8}>{busy === 'brief-enhance' ? <LoaderCircle className="v-spin" size={16} /> : <ListChecks size={16} />}{busy === 'brief-enhance' ? 'Improving brief…' : 'Improve this brief with AI'}</button></div>
-                {briefSuggestion && <section className="v-brief-suggestion" aria-live="polite"><strong>Improved wording</strong><p>{briefSuggestion}</p><div><button type="button" onClick={() => { setBrief(current => ({ ...current, brief: briefSuggestion })); setBriefChoiceConfirmed(false); setBriefSuggestion(''); setBriefAdvice(null); }}>Use this brief</button><button type="button" onClick={() => setBriefSuggestion('')}>Keep mine</button></div></section>}
+                <div className="v-brief-actions"><span>{brief.brief.length}/3000 characters</span><button type="button" onClick={enhanceBrief} disabled={Boolean(busy) || brief.brief.trim().length < 8}>{busy === 'brief-enhance' ? <LoaderCircle className="v-spin" size={16} /> : <ListChecks size={16} />}{busy === 'brief-enhance' ? 'Enhancing brief…' : 'Enhance this brief'}</button></div>
+                {briefSuggestion && <section className="v-brief-suggestion" aria-live="polite"><strong>Enhanced creative brief</strong><p>{briefSuggestion}</p>{briefSuggestionChoices.length > 0 && <div className="v-brief-enhance-choices"><strong>Add a detail only if it’s true</strong><div className="v-brief-choices">{briefSuggestionChoices.map((choice, index) => <button type="button" key={`${choice}-${index}`} onClick={() => addEnhancementDetail(choice)}>{choice}<Check size={16} aria-hidden="true" /></button>)}</div></div>}<div><button type="button" onClick={() => { setBrief(current => ({ ...current, brief: briefSuggestion })); setBriefChoiceConfirmed(false); setBriefSuggestion(''); setBriefSuggestionChoices([]); setBriefAdvice(null); }}>Use enhanced brief</button><button type="button" onClick={() => { setBriefSuggestion(''); setBriefSuggestionChoices([]); }}>Keep mine</button></div></section>}
                 {briefAdvice && <section className="v-brief-advice" aria-live="polite"><strong>Which detail fits this shoot?</strong><p>{briefAdvice.reason || 'Pick a detail that fits this shoot. We’ll add it to your brief.'}</p><div className="v-brief-choices">{briefAdvice.choices?.map((choice, index) => <button type="button" key={`${choice}-${index}`} onClick={() => chooseBriefDetail(choice)}>{choice}<Check size={16} aria-hidden="true" /></button>)}</div><div className="v-brief-custom"><label htmlFor="custom-brief-detail">None fit? Add your own detail</label><div><input id="custom-brief-detail" value={customBriefDetail} onChange={event => setCustomBriefDetail(event.target.value)} maxLength={240} placeholder="A detail the captions should know" /><button type="button" onClick={() => chooseBriefDetail(customBriefDetail)} disabled={!customBriefDetail.trim()}>Add my detail</button></div></div><button type="button" className="v-brief-keep" onClick={() => { setBriefChoiceConfirmed(true); setBriefAdvice(null); }}>Use my brief as written</button></section>}
               </div>
               <button className="v-create-primary" disabled={Boolean(busy)}>{busy === 'brief-check' ? 'Checking your brief…' : 'Add the finished photographs'}{busy === 'brief-check' ? <LoaderCircle className="v-spin" size={17} /> : <ArrowRight size={17} />}</button>
