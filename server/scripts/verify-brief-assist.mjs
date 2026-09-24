@@ -23,15 +23,37 @@ modelReply = {
 };
 const advice = await assistPhotographerBrief({ clientName: 'Lora', shootType: 'Birthday', brief: 'Lora birthday shoot', mode: 'assess' });
 assert.equal(advice.ready, false);
-assert.equal(advice.choices.length, 4);
-assert.ok(advice.choices.every(choice => !/\?|\b25\b|daughter/i.test(choice)));
+assert.equal(advice.choices.length, 3);
+assert.ok(advice.choices.every(choice => !/\?|\b25\b|daughter|beach|family|surprise|props|colour|color/i.test(choice)));
 assert.match(advice.choices[0], /birthday/i);
 assert.doesNotMatch(advice.reason, /relationship|who is lora/i);
+assert.match(advice.reason, /birthday important to lora/i);
+assert.match(lastSystemPrompt, /do not suggest colours, styling, outfits, props, decorations, venues/i);
 
-modelReply = { ready: true, reason: '', choices: [], suggestedBrief: '' };
+modelReply = {
+  ready: false,
+  reason: 'Add more detail.',
+  choices: [
+    'The colour palette uses neutral tones with gold accents.',
+    'Props such as a cake, balloons, and confetti are part of the set.',
+    'The photographs will be shared with family and friends.'
+  ],
+  suggestedBrief: ''
+};
 const sparse = await assistPhotographerBrief({ clientName: 'Lora', shootType: 'Birthday', brief: 'Lora birthday shoot', mode: 'assess' });
 assert.equal(sparse.ready, false);
-assert.ok(sparse.choices.length >= 3);
+assert.equal(sparse.choices.length, 3);
+assert.ok(sparse.choices.every(choice => !/colour|color|props|cake|balloons|family|friends/i.test(choice)));
+
+modelReply = {
+  ready: false,
+  reason: 'Add more detail.',
+  choices: ['The color palette is gold and neutral.', 'A cake and balloons are part of the set.'],
+  suggestedBrief: ''
+};
+const specific = await assistPhotographerBrief({ clientName: 'Ada', shootType: 'Birthday', brief: 'Ada 30th Birthday Shoot', mode: 'assess' });
+assert.equal(specific.ready, true);
+assert.deepEqual(specific.choices, []);
 
 modelReply = { ready: false, reason: 'Needs more detail.', choices: ['Lora wanted portraits to mark this birthday.'], suggestedBrief: '' };
 const complete = await assistPhotographerBrief({ clientName: 'Lora', shootType: 'Birthday', brief: 'Lora is turning 25.', mode: 'assess' });
