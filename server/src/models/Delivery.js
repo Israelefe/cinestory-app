@@ -13,10 +13,12 @@ const assetSchema = new mongoose.Schema({
   hashAlgorithm: { type: String, enum: ['cloudinary-etag', 'sha256'] },
   hashVerifiedAt: Date,
   originalFilename: { type: String, trim: true, maxlength: 180 },
+  alt: { type: String, maxlength: 180 },
   // Optional context carried over when a photograph is reused from the Pro library.
   libraryTags: [{ type: String, trim: true, maxlength: 40 }],
   libraryCaption: { type: String, trim: true, maxlength: 180 },
   sortOrder: { type: Number, default: 0 },
+  uploadId: { type: String, maxlength: 100 },
   analysis: { type: mongoose.Schema.Types.Mixed }
 }, { _id: false });
 
@@ -38,6 +40,11 @@ const deliverySchema = new mongoose.Schema({
   legacyStoryId: { type: String, index: true, sparse: true },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   schemaVersion: { type: Number, default: 2 },
+  sourceVersion: { type: Number, default: 0 },
+  draftRevisionId: { type: mongoose.Schema.Types.ObjectId, ref: 'DeliveryRevision' },
+  publishedRevisionId: { type: mongoose.Schema.Types.ObjectId, ref: 'DeliveryRevision' },
+  activePreparationId: { type: mongoose.Schema.Types.ObjectId, ref: 'DeliveryPreparation' },
+  publishingUntil: Date,
   kind: { type: String, enum: ['showcase', 'volume'], default: 'showcase', index: true },
   format: { type: String, enum: ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign'] },
   status: { type: String, enum: ['draft', 'analyzing', 'directing', 'review', 'published', 'archived'], default: 'draft', index: true },

@@ -3,6 +3,7 @@ import StorageAsset from '../models/StorageAsset.js';
 import User from '../models/User.js';
 import Subscription from '../models/Subscription.js';
 import Delivery from '../models/Delivery.js';
+import DeliveryRevision from '../models/DeliveryRevision.js';
 import AnalyticsEvent from '../models/AnalyticsEvent.js';
 import { removeStorageAsset } from './storageMedia.service.js';
 import { cloudinary, configureCloudinary } from './cloudinary.service.js';
@@ -17,6 +18,17 @@ let lastRunAt = 0;
 
 async function referencedMedia(ids, resourceType) {
   const referenced = new Set();
+  const revisions = await DeliveryRevision.find(resourceType === 'image'
+    ? { 'snapshot.assets.publicId': { $in: ids } }
+    : { $or: [{ 'snapshot.soundtrack.publicId': { $in: ids } }, { 'snapshot.narration.publicId': { $in: ids } }] }).select('snapshot.assets.publicId snapshot.soundtrack.publicId snapshot.narration.publicId').lean();
+  for (const revision of revisions) {
+    if (resourceType === 'image') {
+      for (const asset of revision.snapshot.assets || []) if (ids.includes(asset.publicId)) referenced.add(asset.publicId);
+    } else {
+      if (revision.snapshot.soundtrack?.publicId) referenced.add(revision.snapshot.soundtrack.publicId);
+      if (revision.snapshot.narration?.publicId) referenced.add(revision.snapshot.narration.publicId);
+    }
+  }
   if (resourceType === 'image') {
     const [deliveries, stored] = await Promise.all([
       Delivery.find({ 'assets.publicId': { $in: ids } }).select('assets.publicId').lean(),

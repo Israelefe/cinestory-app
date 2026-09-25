@@ -13,15 +13,27 @@ export function deliveryFolder(userId, deliveryId) {
   return `veylo/users/${userId}/deliveries/${deliveryId}`;
 }
 
-export function createUploadSignature({ userId, deliveryId, resourceType = 'image' }) {
+export function createUploadSignature({ userId, deliveryId, resourceType = 'image', uploadId }) {
   ready();
   const timestamp = Math.floor(Date.now() / 1000);
   const folder = deliveryFolder(userId, deliveryId);
-  const publicId = crypto.randomUUID();
+  const publicId = uploadId || crypto.randomUUID();
   const params = resourceType === 'image'
     ? { timestamp, folder, public_id: publicId, type: 'authenticated', overwrite: false, unique_filename: false, allowed_formats: ['jpg', 'jpeg', 'png', 'webp'], eager: 'c_limit,w_1600/f_auto,q_auto:good|c_fill,w_800,h_1000,g_auto/f_auto,q_auto:good' }
     : { timestamp, folder: `${folder}/audio`, public_id: publicId, type: 'authenticated', overwrite: false, unique_filename: false, allowed_formats: ['mp3', 'wav', 'm4a', 'ogg', 'aac'] };
   return { ...params, signature: cloudinary.utils.api_sign_request(params, process.env.CLOUDINARY_API_SECRET), apiKey: process.env.CLOUDINARY_API_KEY, cloudName: process.env.CLOUDINARY_CLOUD_NAME, resourceType };
+}
+
+export async function recoverImageUpload({ userId, deliveryId, uploadId }) {
+  ready();
+  const publicId = `${deliveryFolder(userId, deliveryId)}/${uploadId}`;
+  try {
+    const resource = await cloudinary.api.resource(publicId, { resource_type: 'image', type: 'authenticated' });
+    return { uploaded: { public_id: publicId, version: resource.version, signature: cloudinary.utils.api_sign_request({ public_id: publicId, version: resource.version }, process.env.CLOUDINARY_API_SECRET) } };
+  } catch (error) {
+    if ((error.http_code || error.error?.http_code) !== 404) throw error;
+    return { uploaded: null, signature: createUploadSignature({ userId, deliveryId, uploadId }) };
+  }
 }
 
 export async function confirmUploadedAsset({ userId, deliveryId, publicId, version, signature, resourceType = 'image' }) {
@@ -43,7 +55,7 @@ export async function confirmUploadedAsset({ userId, deliveryId, publicId, versi
   return cloudinary.api.resource(publicId, { resource_type: resourceType, type: 'authenticated' });
 }
 
-export function signedImageUrl(publicId, { width = 1600, thumbnail = false, attachment = false, original = false, resourceType = 'image', format, watermark = null } = {}) {
+export function signedImageUrl(publicId, { width = 1600, height, thumbnail = false, attachment = false, original = false, resourceType = 'image', format, watermark = null } = {}) {
   ready();
   let transformation;
   if (resourceType === 'image') {
@@ -52,7 +64,7 @@ export function signedImageUrl(publicId, { width = 1600, thumbnail = false, atta
     } else if (thumbnail) {
       transformation = [{ crop: 'fill', width: 800, height: 1000, gravity: 'auto', quality: 'auto:good', fetch_format: 'auto' }];
     } else {
-      const transforms = [{ crop: 'limit', width, quality: 'auto:good', fetch_format: 'auto' }];
+      const transforms = [{ crop: 'limit', width, ...(height ? { height } : {}), quality: 'auto:good', fetch_format: 'auto' }];
       if (watermark) {
         transforms.push({
           overlay: { font_family: 'Arial', font_size: 38, font_weight: 'bold', text: String(watermark).slice(0, 40) },

@@ -10,7 +10,7 @@ const formats = await read('src/constants/deliveryFormats.js');
 const capabilities = await read('src/constants/deliveryCapabilities.js');
 const viewer = await read('src/pages/DeliveryViewer.jsx');
 const storyViewer = await read('src/pages/StoryViewer.jsx');
-const create = await read('src/pages/CreateDelivery.jsx');
+const create = await read('src/pages/LegacyCreateDelivery.jsx');
 const gallery = await read('src/components/delivery/ClientGallery.jsx');
 const galleryCss = await read('src/components/delivery/ClientGallery.css');
 const brandMark = await read('src/components/delivery/DeliveryBrandMark.jsx');
@@ -27,7 +27,7 @@ const creationCss = await read('src/pages/CreateDelivery.css');
 const formatCss = await read('src/styles/format-demos.css');
 const eventCss = await read('src/components/delivery/EventCampaignViewers.css');
 const directionStudio = await read('src/components/delivery/DeliveryDirectionStudio.jsx');
-const createMusic = await read('src/pages/CreateDelivery.jsx');
+const createMusic = await read('src/pages/LegacyCreateDelivery.jsx');
 const deliveryUpload = await read('src/utils/deliveryUpload.js');
 const accountSettings = await read('src/pages/AccountSettings.jsx');
 const managePortfolio = await read('src/pages/ManagePortfolio.jsx');
@@ -41,7 +41,8 @@ assert.match(viewer, /setBlocked\(true\)/, 'Viewer must block until every asset 
 assert.match(viewer, /audio\.oncanplay = done/, 'Audio preload must confirm decodable audio on mobile browsers');
 assert.match(viewer, /response = await fetch\(url/, 'Readiness must download each media file before opening');
 assert.match(viewer, /URL\.createObjectURL\(blob\)/, 'Readiness must reuse downloaded media in the viewer');
-assert.match(viewer, /current\[task\.kind\] \+ \(ok \? 1 : 0\)/, 'Failed media must not count as ready');
+// V3 loads photographs on demand and tests loading/error behaviour in the browser suite.
+assert.match(viewer, /delivery.schemaVersion < 3/, 'Only legacy deliveries use the old readiness screen');
 assert.match(viewer, /playbackDelivery/, 'Viewer must render the same preloaded media it checked');
 assert.match(capabilities, /'photo-story': Object\.freeze\(\{ music: true, narration: true/ , 'Photo Story must own music and narration');
 assert.match(capabilities, /'photo-reveal': Object\.freeze\(\{ music: true, narration: false/ , 'Photo Reveal must own music without narration');
@@ -73,7 +74,7 @@ assert.match(create, /Narration with Hannah/, 'Narration must be visible and ena
 assert.match(create, /narration: true/, 'Narration must be enabled by default in the creation flow');
 assert.match(create, /narration: narrationEnabled/, 'Publish must carry the format-aware photographer narration choice');
 assert.match(create, /field === 'caption' \? \{ narration: undefined \}/, 'Editing an approved caption must invalidate stale narration before preview');
-assert.match(create, /return \{ \.\.\.current, narration: undefined, assets:/, 'Changing approved photo order must invalidate stale narration before preview');
+assert.match(create, /return \{ \.\.\.current, narration: undefined, curatedAssetIds:/, 'Changing approved presentation order must invalidate stale narration before preview');
 assert.match(create, /ClientDeliveryPreview/, 'Creation review must use the shared client experience preview');
 assert.match(create, /CurrentSoundtrackPlayer/, 'Creation review must let photographers play the selected soundtrack before changing it');
 assert.match(app, /function DeliveryChrome/, 'Global chrome must be route-aware');
@@ -103,8 +104,10 @@ assert.match(directionStudio, /Original file colour/, 'Creation UI must explain 
 assert.match(directionStudio, /FRAME_DIRECTION_OPTIONS|FRAME_DIRECTION_OPTIONS/, 'Review must expose the approved frame treatment choices');
 assert.match(directionStudio, /directionOptions\.typography\.includes/, 'Review must constrain display typography to the selected format');
 assert.match(create, /onFrameChange=\{editFrame\}/, 'Review must persist photographer frame treatment edits');
-assert.match(demos, /fd-reveal-frame-shell" data-frame-layout/, 'Photo Reveal must consume the saved frame layout');
-assert.match(demos, /fd-canvas-focus-copy" data-caption-position/, 'Canvas lightbox must consume the saved caption treatment');
+assert.match(demos, /fd-reveal-frame-shell" \{\.\.\.formatFrameAttributes\(activeFrame\)\}/, 'Photo Reveal must consume saved frame attributes');
+assert.match(demos, /fd-canvas-focus-copy" \{\.\.\.formatFrameAttributes\(frame\)\}/, 'Canvas lightbox must consume saved frame attributes');
+assert.match(demos, /'data-frame-layout': frame\.layout/, 'Shared frame attributes must include layout');
+assert.match(demos, /'data-caption-position': frame\.captionPosition/, 'Shared frame attributes must include caption position');
 for (const composition of ['split', 'layered', 'grid', 'portrait-led', 'wide-led']) {
   assert.match(formatCss, new RegExp(`data-composition=\\"${composition}\\"`), `Missing personal composition rules: ${composition}`);
   assert.match(eventCss, new RegExp(`data-composition=\\"${composition}\\"`), `Missing event/campaign composition rules: ${composition}`);
@@ -123,7 +126,7 @@ assert.match(registry, /campaign: CampaignDeliveryViewer/, 'Published Campaign m
 assert.match(event, /normalizeDeliveryPhotos\(delivery, eventCoveragePhotos\)/, 'Event Coverage must use real delivery assets through the demo renderer contract');
 assert.match(event, /resolveSections\(delivery, photos/, 'Event Coverage must render AI sections through the shared scene layout');
 assert.match(event, /data-layout=\{section\.layout/, 'Event Coverage must consume saved section layouts');
-assert.match(event, /data-frame-layout=\{photo\.layout/, 'Event Coverage must consume saved frame layouts');
+assert.match(event, /\{\.\.\.formatFrameAttributes\(photo\)\}/, 'Event Coverage must consume saved frame attributes');
 assert.match(event, /<DemoGallery photos=\{photos\}/, 'Event Coverage must use the shared Photo Story gallery');
 for (const viewerName of ['StoryViewer', 'EditorialDemo', 'RevealDemo', 'CanvasDemo', 'ChaptersDemo', 'AlbumDemo', 'EventCoverageViewer', 'CampaignDeliveryViewer']) assert.match(registry, new RegExp(viewerName), `Published delivery registry is missing ${viewerName}`);
 assert.match(preview, /<DeliveryFormatViewer format=\{format\}/, 'Creation preview must use the same format viewer as the published delivery');

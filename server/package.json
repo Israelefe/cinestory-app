@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "delivery:worker": "node delivery-worker.js",
+    "verify:delivery-v3": "node --test scripts/delivery-preparation.test.mjs",
     "content:worker": "node content-worker.js",
     "render": "node content-worker.js",
     "content:local": "node content-local.js",
@@ -43,6 +45,7 @@
     "zod": "^4.6.2"
   },
   "devDependencies": {
+    "mongodb-memory-server": "^11.3.0",
     "nodemon": "^3.1.0"
   },
   "overrides": {

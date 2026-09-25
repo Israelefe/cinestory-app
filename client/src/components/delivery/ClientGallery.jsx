@@ -17,7 +17,7 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
 
   const isLocked = Boolean(delivery?.access?.downloadsLocked);
   const allowDownloadAll = delivery ? (delivery.access?.allowDownloadAll !== false && !isLocked) : Boolean(onDownloadAll);
-  const allowIndividualDownloads = delivery ? (delivery.access?.allowIndividualDownloads !== false && !isLocked) : Boolean(onDownload);
+  const allowIndividualDownloads = Boolean(onDownload) && (!delivery || (delivery.access?.allowIndividualDownloads !== false && !isLocked));
   const allowLikes = delivery ? Boolean(delivery.access?.allowLikes && onLike) : Boolean(onLike);
   const resolvedPhotos = useMemo(() => photos.map((photo, index) => demoId ? { ...photo, name: `demo-${demoId}-${index + 1}`, url: `/veylo/web/demo-${demoId}-${index + 1}-1440.webp`, thumbnailUrl: `/veylo/web/demo-${demoId}-${index + 1}-480.webp` } : photo), [photos, demoId]);
   const direction = delivery?.creativeDirection || {};

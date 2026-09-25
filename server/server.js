@@ -21,6 +21,7 @@ import { paystackWebhook } from './src/controllers/billing.controller.js';
 import { resolveEdgeClientIp } from './src/middleware/clientIp.middleware.js';
 import { checkCloudinaryConnection } from './src/services/cloudinary.service.js';
 import { startDeliveryWorker } from './src/services/deliveryWorker.service.js';
+import { startPreparationWorker } from './src/services/deliveryPreparation.service.js';
 import { startRetentionWorker } from './src/services/retention.service.js';
 import { startPortfolioWorker } from './src/services/portfolioWorker.service.js';
 import { seedAdminFromEnv } from './src/utils/seedAdmin.js';
@@ -124,7 +125,12 @@ connectDB().then(async connection => {
       if (result.ok) console.info('[cloudinary] Connection verified.');
       else console.error(`[cloudinary] Configuration rejected: ${result.reason}`);
     });
-    if (process.env.DELIVERY_PIPELINE_ENABLED === 'true') { startDeliveryWorker(); startPortfolioWorker(); }
+    if (process.env.DELIVERY_PIPELINE_ENABLED === 'true') {
+      startPortfolioWorker();
+      // Keep existing installations processing legacy jobs until their worker migration is configured.
+      if (process.env.DELIVERY_WORKER_EMBEDDED !== 'false') startDeliveryWorker();
+      if (process.env.DELIVERY_WORKER_EMBEDDED === 'true') startPreparationWorker();
+    }
     startRetentionWorker();
   });
 });

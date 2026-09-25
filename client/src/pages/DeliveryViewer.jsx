@@ -339,7 +339,7 @@ export default function DeliveryViewer() {
   }, [preloadedMedia]);
 
   useEffect(() => {
-    if (!experienceReady || !delivery?.format) return;
+    if ((!experienceReady && delivery?.schemaVersion < 3) || !delivery?.format) return;
     trackEvent('client.format.opened', { format: delivery.format }, { format: delivery.format, status: 'opened' });
     trackEvent('client.first.photo.shown', { format: delivery.format }, { format: delivery.format, status: 'shown', count: 1 });
   }, [delivery?.format, experienceReady]);
@@ -596,7 +596,7 @@ export default function DeliveryViewer() {
     return <div className="vd-state"><Image size={28} /><strong>No photographs are available in this view.</strong><span>The photographer's access link does not include any finished photographs.</span></div>;
   }
 
-  if (!experienceReady) {
+  if (!experienceReady && delivery.schemaVersion < 3) {
     return <DeliveryReadiness delivery={delivery} onReady={media => { setPreloadedMedia(media); setExperienceReady(true); trackEvent('client.experience.started', { format: delivery.format }, { format: delivery.format, status: 'started' }); }} />;
   }
 
@@ -635,7 +635,7 @@ export default function DeliveryViewer() {
 
   return (
     <>
-      {playbackDelivery.soundtrack?.url && capabilities.soundtrackOwner === 'viewer' && (
+      {delivery.schemaVersion < 3 && playbackDelivery.soundtrack?.url && capabilities.soundtrackOwner === 'viewer' && (
         <audio
           ref={soundtrackRef}
           src={playbackDelivery.soundtrack.url}
@@ -648,7 +648,7 @@ export default function DeliveryViewer() {
           onEnded={() => setAudioState({ playing: '', loading: '' })}
         />
       )}
-      {playbackDelivery.narration?.url && capabilities.narrationOwner === 'viewer' && (
+      {delivery.schemaVersion < 3 && playbackDelivery.narration?.url && capabilities.narrationOwner === 'viewer' && (
         <audio
           ref={narrationRef}
           src={playbackDelivery.narration.url}

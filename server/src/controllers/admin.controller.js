@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { deliveryPreparationMetrics } from '../services/deliveryPreparationMetrics.js';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { z } from 'zod';
@@ -7,6 +8,9 @@ import User from '../models/User.js';
 import PhotoStory from '../models/PhotoStory.js';
 import Delivery from '../models/Delivery.js';
 import DeliveryJob from '../models/DeliveryJob.js';
+import DeliveryRevision from '../models/DeliveryRevision.js';
+import DeliveryPreparation from '../models/DeliveryPreparation.js';
+import DeliveryTask from '../models/DeliveryTask.js';
 import PortfolioJob from '../models/PortfolioJob.js';
 import VolumeJob from '../models/VolumeJob.js';
 import VolumeSubject from '../models/VolumeSubject.js';
@@ -868,7 +872,7 @@ export async function adminDeleteDelivery(req, res) {
     const userId = delivery.userId;
     const result = await Delivery.deleteOne({ _id: deliveryId });
     if (!result.deletedCount) return res.status(404).json({ success: false, message: 'Delivery was already removed.' });
-    await Promise.allSettled([DeliveryJob.deleteMany({ deliveryId }), DeliveryShareGrant.deleteMany({ deliveryId }), PhotoLike.deleteMany({ deliveryId }), DeliveryView.deleteMany({ deliveryId })]);
+    await Promise.allSettled([DeliveryJob.deleteMany({ deliveryId }), DeliveryRevision.deleteMany({ deliveryId }), DeliveryPreparation.deleteMany({ deliveryId }), DeliveryTask.deleteMany({ deliveryId }), DeliveryShareGrant.deleteMany({ deliveryId }), PhotoLike.deleteMany({ deliveryId }), DeliveryView.deleteMany({ deliveryId })]);
     void removeDeliveryMedia(userId, deliveryId).catch(error => console.error('[admin/delivery-media-cleanup]', error.message));
     await AdminAudit.create({ adminId: adminId(req), userId, action: 'delivery.deleted_by_admin', resourceType: 'Delivery', resourceId: String(deliveryId), details: { publicId: delivery.publicId, reason: safeReason(req.body.reason, 'Deleted by administrator') } });
     res.json({ success: true, message: 'Delivery deleted and its client link disabled.' });
@@ -973,7 +977,8 @@ export async function getAiJobs(req, res) {
       Delivery.countDocuments({ 'narration.renderVersion': { $exists: true, $ne: NARRATION_RENDER_VERSION } }),
       AnalyticsEvent.aggregate([{ $match: { name: { $in: ['ai.job.completed', 'ai.job.failed'] }, occurredAt: { $gte: dayAgo }, durationMs: { $gt: 0 } } }, { $group: { _id: '$metadata.provider', samples: { $sum: 1 }, averageMs: { $avg: '$durationMs' }, maxMs: { $max: '$durationMs' } } }, { $sort: { averageMs: -1 } }])
     ]);
-    res.json({ success: true, data: paged, pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) }, summary: { queueDepth: queuedDelivery + queuedPortfolio, queuedDelivery, queuedPortfolio, failedLast24Hours: failedDelivery + failedPortfolio, stale: staleDelivery + stalePortfolio, captionFailures, timingFailures, staleNarration, providerLatency: providerLatency.map(item => ({ provider: item._id || 'unknown', samples: item.samples, averageMs: Math.round(item.averageMs || 0), maxMs: Math.round(item.maxMs || 0) })) } });
+    const preparation = await deliveryPreparationMetrics();
+    res.json({ success: true, data: paged, pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) }, summary: { queueDepth: queuedDelivery + queuedPortfolio + preparation.queueDepth, queuedDelivery, queuedPortfolio, failedLast24Hours: failedDelivery + failedPortfolio + preparation.unavailableLast24Hours, stale: staleDelivery + stalePortfolio + preparation.stale, captionFailures, timingFailures, staleNarration, preparation, providerLatency: providerLatency.map(item => ({ provider: item._id || 'unknown', samples: item.samples, averageMs: Math.round(item.averageMs || 0), maxMs: Math.round(item.maxMs || 0) })) } });
   } catch (error) {
     console.error('[admin/ai-jobs]', error.message);
     res.status(500).json({ success: false, message: 'We could not load AI jobs.' });

@@ -49,13 +49,16 @@ export function captionSegments(delivery) {
       .sort((left, right) => Number(left.sortOrder || 0) - Number(right.sortOrder || 0))
       .map((asset, index) => [String(asset.assetId), index])
   );
-  const orderedFrames = approvedPositions.size
+  const orderedFrames = delivery.schemaVersion >= 3 ? frames : approvedPositions.size
     ? frames.slice().sort((left, right) => (approvedPositions.get(String(left.assetId)) ?? Number.MAX_SAFE_INTEGER) - (approvedPositions.get(String(right.assetId)) ?? Number.MAX_SAFE_INTEGER))
     : frames;
   const sections = delivery.creativeDirection?.sections || [];
   const sectionById = new Map(sections.map(section => [section.id, section]));
   const segments = orderedFrames.map((frame, index) => {
-    const caption = cleanLine(frame.caption, 220);
+    const lines = delivery.schemaVersion >= 3
+      ? [index === 0 ? delivery.creativeDirection?.openingLine : '', frame.caption, index === orderedFrames.length - 1 ? delivery.creativeDirection?.closingLine : '']
+      : [frame.caption];
+    const caption = [...new Set(lines.map(line => cleanLine(line, 220)).filter(Boolean))].join(' ');
     if (caption.length < 8) return null;
     const section = sectionById.get(frame.sectionId);
     return {
@@ -67,7 +70,7 @@ export function captionSegments(delivery) {
     };
   }).filter(Boolean);
 
-  if (segments.length !== frames.length || !segments.length) {
+  if ((delivery.schemaVersion < 3 && segments.length !== frames.length) || !segments.length) {
     throw Object.assign(new Error('Every photograph needs an approved caption before narration can be created.'), { code: 'NARRATION_CAPTIONS_REQUIRED' });
   }
   return segments;
