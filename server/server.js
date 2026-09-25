@@ -22,6 +22,7 @@ import { resolveEdgeClientIp } from './src/middleware/clientIp.middleware.js';
 import { checkCloudinaryConnection } from './src/services/cloudinary.service.js';
 import { startDeliveryWorker } from './src/services/deliveryWorker.service.js';
 import { startPreparationWorker } from './src/services/deliveryPreparation.service.js';
+import { creationPipelineVersion } from './src/services/deliveryPresentation.js';
 import { startRetentionWorker } from './src/services/retention.service.js';
 import { startPortfolioWorker } from './src/services/portfolioWorker.service.js';
 import { seedAdminFromEnv } from './src/utils/seedAdmin.js';
@@ -31,6 +32,7 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+let stopPreparationWorker;
 if (process.env.NODE_ENV === 'production') {
   const required = ['MONGODB_URI', 'JWT_SECRET', 'OTP_SECRET', 'RESEND_API_KEY', 'TURNSTILE_SECRET_KEY', 'GOOGLE_CLIENT_ID', 'CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET', 'CLIENT_URL'];
   const missing = required.filter(name => !process.env[name]);
@@ -94,7 +96,14 @@ app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 app.use(maintenanceMiddleware);
 
-app.get('/health', (req, res) => res.json({ status: 'healthy', app: 'Veylo API Server' }));
+app.get('/health', (req, res) => res.json({
+  status: 'healthy', app: 'Veylo API Server', revision: process.env.RENDER_GIT_COMMIT || null,
+  delivery: {
+    pipelineVersion: creationPipelineVersion(),
+    workerMode: process.env.DELIVERY_PIPELINE_ENABLED !== 'true' ? 'disabled' : process.env.DELIVERY_WORKER_EMBEDDED === 'false' ? 'external' : 'embedded',
+    embeddedWorkerStarted: Boolean(stopPreparationWorker)
+  }
+}));
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/onboarding', onboardingRoutes);
 app.use('/api/v1/stories', storyRoutes);
@@ -119,18 +128,28 @@ app.use((error, req, res, next) => {
 connectDB().then(async connection => {
   if (!connection && process.env.NODE_ENV === 'production') process.exit(1);
   await seedAdminFromEnv();
-  app.listen(PORT, () => {
-    console.log(`[Veylo] Server running at http://localhost:${PORT}`);
+  const server = app.listen(PORT, () => {
+    console.log(`[Veylo] Server running at http://localhost:${server.address().port}`);
     checkCloudinaryConnection().then(result => {
       if (result.ok) console.info('[cloudinary] Connection verified.');
       else console.error(`[cloudinary] Configuration rejected: ${result.reason}`);
     });
     if (process.env.DELIVERY_PIPELINE_ENABLED === 'true') {
       startPortfolioWorker();
-      // Keep existing installations processing legacy jobs until their worker migration is configured.
-      if (process.env.DELIVERY_WORKER_EMBEDDED !== 'false') startDeliveryWorker();
-      if (process.env.DELIVERY_WORKER_EMBEDDED === 'true') startPreparationWorker();
+      // Existing services need no new environment variables or extra process.
+      // Both queues remain available for old drafts and rebuilt deliveries.
+      if (process.env.DELIVERY_WORKER_EMBEDDED !== 'false') {
+        startDeliveryWorker();
+        stopPreparationWorker = startPreparationWorker();
+      }
     }
     startRetentionWorker();
   });
+  const shutdown = async () => {
+    server.close();
+    await stopPreparationWorker?.();
+    process.exit(0);
+  };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
 });

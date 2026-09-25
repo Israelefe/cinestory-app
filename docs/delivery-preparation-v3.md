@@ -14,7 +14,7 @@ Photo Story normally uses at most 12 photographs; a ten-photo upload includes al
 
 ## Preparation and recovery
 
-- The API stores preparation runs and tasks in MongoDB. `npm run delivery:worker` runs the separate worker. The API does not need to keep an HTTP request open for generation.
+- The API stores preparation runs and tasks in MongoDB and starts the preparation worker alongside the legacy worker by default. It does not need to keep an HTTP request open for generation. `npm run delivery:worker` remains available for an optional separate process.
 - Each original is visually observed once per owner, verified content identity, observation version and model. Observations support accessible descriptions, representative selection and grouping. They never supply personal facts for captions. Brief edits, caption regeneration and format switches reuse observations.
 - Observation requests contain up to eight 320px previews. Originals are unchanged. Successful observations are cached; partial responses retry only missing observations. Caption requests contain the brief and surrounding text, never photographs.
 - Tasks have bounded attempts, renewable leases and fencing tokens. Expired leases recover. Runs retain task input as an outbox so a process exit between run attachment and enqueue does not lose the request.
@@ -23,11 +23,11 @@ Photo Story normally uses at most 12 photographs; a ten-photo upload includes al
 
 ## Running and rollout
 
-Start the API from `server` with `npm start`, and start the worker in another process with `npm run delivery:worker`. Local development can instead set `DELIVERY_WORKER_EMBEDDED=true`.
+Start the API from `server` with `npm start`. With the existing `DELIVERY_PIPELINE_ENABLED=true` configuration and provider credentials, the API starts both delivery workers. New deliveries use version 3 in production and development. Neither `DELIVERY_V3_ENABLED` nor `DELIVERY_WORKER_EMBEDDED` needs to be added to an existing service: both behaviors default to enabled.
 
-`render.yaml` defines the separate worker and shared configuration. The worker uses a paid `starter` plan; this repository change does not provision or verify it. Keep `DELIVERY_WORKER_EMBEDDED=false` after the worker is deployed. Before removing an existing embedded worker, provision the replacement and verify its heartbeat to avoid interrupting legacy jobs.
+`render.yaml` keeps the existing API service and explicitly matches these defaults. It does not require a new paid worker service. Code deployment is sufficient to select and start the rebuilt pipeline when the new overrides are absent. Existing dashboard values still take precedence: an explicit `DELIVERY_V3_ENABLED=false` requests legacy creation, and `DELIVERY_WORKER_EMBEDDED=false` requests an external worker. Repository changes do not prove that a Render deploy completed. `/health` reports the running revision, creation pipeline version, configured worker mode, and whether the embedded preparation worker was started; the admin heartbeat confirms worker activity.
 
-The Render configuration deliberately leaves `DELIVERY_V3_ENABLED=false`; production also defaults to version 2 when the flag is absent. To activate new creation, deploy both processes, check the `delivery-preparation` heartbeat, run the staging checks below, then set `DELIVERY_V3_ENABLED=true` on the API. Roll back new creation by setting it to `false`; keep the worker running for existing version 3 drafts. Retain revision data and original media during rollback. Existing installations with no worker-mode setting keep their legacy embedded worker until `DELIVERY_WORKER_EMBEDDED=false` is explicitly configured.
+An optional dedicated worker can run `npm run delivery:worker` with the same database, media and provider settings. Confirm its `delivery-preparation` heartbeat before setting `DELIVERY_WORKER_EMBEDDED=false` on the API. Roll back new creation with `DELIVERY_V3_ENABLED=false`; keep workers running for existing version 3 drafts. Retain revision data and original media during rollback. The default embedded worker stops accepting new tasks and drains active preparation batches on shutdown; durable leases recover interrupted tasks after restart.
 
 `DELIVERY_PREPARATION_CONCURRENCY` defaults to 6, with a maximum of 32. `DELIVERY_AI_START_INTERVAL_MS` defaults to 100. Provider slots and start spacing are shared across new workers. Increasing worker count does not multiply these limits. Legacy workers use their existing settings. Verify account capacity before increasing concurrency; model catalogue quotas alone do not establish observed throughput. See [Alibaba rate limits](https://www.alibabacloud.com/help/en/model-studio/rate-limit) and [Render Blueprint configuration](https://render.com/docs/blueprint-spec).
 
@@ -35,7 +35,7 @@ The admin AI summary includes `preparation`: queue depth, expired leases, unavai
 
 ## Verification and measured limits
 
-- Server: `npm run verify:delivery-v3`, `npm run verify:delivery-v2`, `npm run verify:security`.
+- Server: `npm run verify:delivery-startup`, `npm run verify:delivery-v3`, `npm run verify:delivery-v2`, `npm run verify:security`. The startup suite launches the actual production API with no new delivery environment variables, an isolated database and fake providers; it checks authenticated creation, automatic preparation and public publication without a separate worker, plus explicit rollback and worker overrides.
 - Client: `npm run verify:delivery-v3`, `npm run verify:delivery-v2`, `npm run build`.
 - Live writing evaluation: `node scripts/evaluate-delivery-writing.mjs --live` from `server`.
 - Live preparation benchmark: `node scripts/benchmark-delivery-preparation.mjs --live --users=1 --concurrency=6`. Repeat with `--users=10` for the burst case. These calls use the configured provider and incur normal usage charges; they connect only to an isolated temporary MongoDB, never the database in `.env`.
@@ -52,4 +52,4 @@ The final brief evaluation covered Ada's 30th birthday, Lora's birthday with no 
 
 These are local preparation measurements, not a production SLA. Fixtures reuse 92 demo photographs as 100 asset identities and send previews as data URLs. They exclude original upload time, production database latency, Cloudinary transformation/network time and optional narration. Analysis normally begins during real uploads, which the cold-start benchmark does not simulate. The ten-delivery burst remains a rollout blocker for any promise that every concurrent delivery completes full AI preparation within one minute.
 
-Before activation, verify a real staged upload-to-publication flow with 100 originals, signed media, client PIN access, download permissions and the dedicated worker. Confirm provider capacity under the expected concurrent load. No production deployment or staging account test is implied by passing local tests.
+Production verification still requires a real upload-to-publication flow with 100 originals, signed media, client PIN access, download permissions and worker activity. Confirm provider capacity under the expected concurrent load. No production deployment or staging account test is implied by passing local tests.

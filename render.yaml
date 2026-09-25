@@ -81,12 +81,11 @@ services:
         sync: false
       - key: DELIVERY_PIPELINE_ENABLED
         value: "true"
-      # Enable new creation after the worker is healthy and the staging checks pass.
-      # Existing version 3 drafts and published links remain readable during rollback.
+      # Match the application defaults: the existing API runs both delivery queues.
       - key: DELIVERY_V3_ENABLED
-        value: "false"
+        value: "true"
       - key: DELIVERY_WORKER_EMBEDDED
-        value: "false"
+        value: "true"
       - key: ALIBABA_CAPTION_MODEL
         value: qwen3.7-flash
       - key: ALIBABA_BRIEF_MODEL
@@ -97,48 +96,3 @@ services:
         value: "100"
       - key: DELIVERY_PREPARATION_CONCURRENCY
         value: "6"
-
-  - type: worker
-    name: veylo-delivery-worker
-    runtime: node
-    plan: starter
-    region: frankfurt
-    rootDir: server
-    buildCommand: npm ci
-    startCommand: npm run delivery:worker
-    autoDeployTrigger: commit
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: DELIVERY_PIPELINE_ENABLED
-        value: "true"
-      - key: MONGODB_URI
-        fromService: { type: web, name: veylo-api, envVarKey: MONGODB_URI }
-      - key: CLIENT_URL
-        fromService: { type: web, name: veylo-api, envVarKey: CLIENT_URL }
-      - key: CLOUDINARY_CLOUD_NAME
-        fromService: { type: web, name: veylo-api, envVarKey: CLOUDINARY_CLOUD_NAME }
-      - key: CLOUDINARY_API_KEY
-        fromService: { type: web, name: veylo-api, envVarKey: CLOUDINARY_API_KEY }
-      - key: CLOUDINARY_API_SECRET
-        fromService: { type: web, name: veylo-api, envVarKey: CLOUDINARY_API_SECRET }
-      - key: ALIBABA_MODEL_STUDIO_API_KEY
-        fromService: { type: web, name: veylo-api, envVarKey: ALIBABA_MODEL_STUDIO_API_KEY }
-      - key: ALIBABA_WORKSPACE_ID
-        fromService: { type: web, name: veylo-api, envVarKey: ALIBABA_WORKSPACE_ID }
-      - key: ALIBABA_BASE_URL
-        fromService: { type: web, name: veylo-api, envVarKey: ALIBABA_BASE_URL }
-      - key: ALIBABA_VISION_MODEL
-        fromService: { type: web, name: veylo-api, envVarKey: ALIBABA_VISION_MODEL }
-      - key: ALIBABA_CREATIVE_MODEL
-        fromService: { type: web, name: veylo-api, envVarKey: ALIBABA_CREATIVE_MODEL }
-      - key: ALIBABA_CAPTION_MODEL
-        fromService: { type: web, name: veylo-api, envVarKey: ALIBABA_CAPTION_MODEL }
-      - key: DELIVERY_AI_CONCURRENCY
-        fromService: { type: web, name: veylo-api, envVarKey: DELIVERY_AI_CONCURRENCY }
-      - key: DELIVERY_AI_START_INTERVAL_MS
-        fromService: { type: web, name: veylo-api, envVarKey: DELIVERY_AI_START_INTERVAL_MS }
-      - key: DELIVERY_PREPARATION_CONCURRENCY
-        fromService: { type: web, name: veylo-api, envVarKey: DELIVERY_PREPARATION_CONCURRENCY }
-      - key: DEEPGRAM_API_KEY
-        fromService: { type: web, name: veylo-api, envVarKey: DEEPGRAM_API_KEY }

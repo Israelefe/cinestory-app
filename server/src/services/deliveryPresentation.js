@@ -1,7 +1,9 @@
 import crypto from 'node:crypto';
 
 export const PRESENTATION_VERSION = 3;
-export const creationPipelineVersion = () => process.env.DELIVERY_V3_ENABLED === 'true' || (process.env.DELIVERY_V3_ENABLED !== 'false' && process.env.NODE_ENV !== 'production') ? 3 : 2;
+// New creation uses the rebuilt pipeline in every environment. Keep an explicit
+// opt-out for rollback without changing existing drafts or published links.
+export const creationPipelineVersion = () => process.env.DELIVERY_V3_ENABLED === 'false' ? 2 : PRESENTATION_VERSION;
 export const OBSERVATION_VERSION = 'visual-observations-1';
 export const FORMATS = ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign'];
 export const LIMITS = { 'photo-story': 12, editorial: 20, 'photo-reveal': 16, canvas: 30, chapters: 30, album: 20, 'event-coverage': 12, campaign: 12 };

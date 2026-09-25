@@ -8,6 +8,7 @@
     "dev": "nodemon server.js",
     "delivery:worker": "node delivery-worker.js",
     "verify:delivery-v3": "node --test scripts/delivery-preparation.test.mjs",
+    "verify:delivery-startup": "node --test scripts/delivery-startup.test.mjs",
     "content:worker": "node content-worker.js",
     "render": "node content-worker.js",
     "content:local": "node content-local.js",
