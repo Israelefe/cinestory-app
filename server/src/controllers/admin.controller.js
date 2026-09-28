@@ -961,18 +961,21 @@ export async function getAiJobs(req, res) {
     const total = data.length;
     const paged = data.slice((page - 1) * limit, page * limit);
     const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const [queuedDelivery, queuedPortfolio, failedDelivery, failedPortfolio, staleDelivery, stalePortfolio, captionFailures, timingFailures, staleNarration, providerLatency] = await Promise.all([
+    const [queuedDelivery, queuedPortfolio, failedDelivery, failedPortfolio, staleDelivery, stalePortfolio, captionJobFailures, captionEventFailures, timingJobFailures, timingEventFailures, staleNarration, providerLatency] = await Promise.all([
       DeliveryJob.countDocuments({ status: { $in: ['queued', 'running'] } }),
       PortfolioJob.countDocuments({ status: { $in: ['queued', 'running'] } }),
       DeliveryJob.countDocuments({ status: 'failed', updatedAt: { $gte: dayAgo } }),
       PortfolioJob.countDocuments({ status: 'failed', updatedAt: { $gte: dayAgo } }),
       DeliveryJob.countDocuments({ status: 'running', $or: [{ heartbeatAt: { $lt: new Date(Date.now() - 5 * 60 * 1000) } }, { heartbeatAt: { $exists: false } }] }),
       PortfolioJob.countDocuments({ status: 'running', lockedAt: { $lt: new Date(Date.now() - 5 * 60 * 1000) } }),
-      DeliveryJob.countDocuments({ captionFailures: { $gt: 0 } }) + AnalyticsEvent.countDocuments({ name: 'ai.job.failed', errorCode: { $in: ['CAPTIONS_REQUIRED', 'INVALID_MODEL_OUTPUT'] } }),
-      DeliveryJob.countDocuments({ timingFailures: { $gt: 0 } }) + AnalyticsEvent.countDocuments({ name: 'ai.job.failed', errorCode: 'NARRATION_TIMING_FAILED' }),
+      DeliveryJob.countDocuments({ captionFailures: { $gt: 0 } }),
+      AnalyticsEvent.countDocuments({ name: 'ai.job.failed', errorCode: { $in: ['CAPTIONS_REQUIRED', 'INVALID_MODEL_OUTPUT'] } }),
+      DeliveryJob.countDocuments({ timingFailures: { $gt: 0 } }),
+      AnalyticsEvent.countDocuments({ name: 'ai.job.failed', errorCode: 'NARRATION_TIMING_FAILED' }),
       Delivery.countDocuments({ 'narration.renderVersion': { $exists: true, $ne: NARRATION_RENDER_VERSION } }),
       AnalyticsEvent.aggregate([{ $match: { name: { $in: ['ai.job.completed', 'ai.job.failed'] }, occurredAt: { $gte: dayAgo }, durationMs: { $gt: 0 } } }, { $group: { _id: '$metadata.provider', samples: { $sum: 1 }, averageMs: { $avg: '$durationMs' }, maxMs: { $max: '$durationMs' } } }, { $sort: { averageMs: -1 } }])
-    res.json({ success: true, data: paged, pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) }, summary: { queueDepth: queuedDelivery + queuedPortfolio, queuedDelivery, queuedPortfolio, failedLast24Hours: failedDelivery + failedPortfolio, stale: staleDelivery + stalePortfolio, captionFailures, timingFailures, staleNarration, providerLatency: providerLatency.map(item => ({ provider: item._id || 'unknown', samples: item.samples, averageMs: Math.round(item.averageMs || 0), maxMs: Math.round(item.maxMs || 0) })) } });
+    ]);
+    res.json({ success: true, data: paged, pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) }, summary: { queueDepth: queuedDelivery + queuedPortfolio, queuedDelivery, queuedPortfolio, failedLast24Hours: failedDelivery + failedPortfolio, stale: staleDelivery + stalePortfolio, captionFailures: captionJobFailures + captionEventFailures, timingFailures: timingJobFailures + timingEventFailures, staleNarration, providerLatency: providerLatency.map(item => ({ provider: item._id || 'unknown', samples: item.samples, averageMs: Math.round(item.averageMs || 0), maxMs: Math.round(item.maxMs || 0) })) } });
   } catch (error) {
     console.error('[admin/ai-jobs]', error.message);
     res.status(500).json({ success: false, message: 'We could not load AI jobs.' });
