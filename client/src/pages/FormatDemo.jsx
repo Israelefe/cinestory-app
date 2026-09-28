@@ -9,6 +9,26 @@ import { EVENT_COVERAGE_DEMO_PHOTOS } from '../constants/eventCoverageDemo.js';
 import { getDeliveryCapabilities } from '../constants/deliveryCapabilities.js';
 import '../styles/format-demos.css';
 
+const soundtrackRamps = new WeakMap();
+function fadeSoundtrack(element, target, duration = 900, onComplete) {
+  if (!element) return;
+  const activeRamp = soundtrackRamps.get(element);
+  if (activeRamp) cancelAnimationFrame(activeRamp);
+  const startVolume = Number.isFinite(element.volume) ? element.volume : 1;
+  const startedAt = performance.now();
+  const tick = now => {
+    const progress = duration <= 0 ? 1 : Math.min(1, (now - startedAt) / duration);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    element.volume = Math.max(0, Math.min(1, startVolume + (target - startVolume) * eased));
+    if (progress < 1) soundtrackRamps.set(element, requestAnimationFrame(tick));
+    else {
+      soundtrackRamps.delete(element);
+      onComplete?.();
+    }
+  };
+  soundtrackRamps.set(element, requestAnimationFrame(tick));
+}
+
 export const editorialPhotos = Array.from({ length: 5 }, (_, index) => ({ name: `demo-ada-${index + 1}`, alt: `Ada's fashion portrait ${index + 1}` }));
 export const revealPhotos = Array.from({ length: 4 }, (_, index) => ({ name: `demo-sharon-${index + 1}`, alt: `Sharon's studio portrait ${index + 1}` }));
 export const couragePhotos = Array.from({ length: 6 }, (_, index) => ({ name: `demo-courage-${index + 1}`, alt: `Courage's graduation portrait ${index + 1}` }));
@@ -661,6 +681,20 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio, on
     else if (started && !muted) playSoundtrack();
   }, [gallery, started, muted]);
 
+  useEffect(() => {
+    const player = audio.current;
+    if (!player || !started || gallery || muted) return undefined;
+    if (!finished) {
+      if (player.paused) playSoundtrack();
+      fadeSoundtrack(player, .52, 420);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => fadeSoundtrack(player, 0, 1900, () => {
+      if (audio.current === player && finished && !gallery) player.pause();
+    }), 250);
+    return () => window.clearTimeout(timer);
+  }, [finished, gallery, muted, started]);
+
   useEffect(() => () => audio.current?.pause(), []);
 
   useEffect(() => {
@@ -1205,6 +1239,20 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
     if (gallery) player.pause();
     else if (started && !muted) playSoundtrack();
   }, [gallery, started, muted]);
+
+  useEffect(() => {
+    const player = audio.current;
+    if (!player || !started || gallery || muted) return undefined;
+    if (page < spreadsData.length - 1) {
+      if (player.paused) playSoundtrack();
+      fadeSoundtrack(player, .32, 420);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => fadeSoundtrack(player, 0, 2100, () => {
+      if (audio.current === player && page >= spreadsData.length - 1 && !gallery) player.pause();
+    }), 250);
+    return () => window.clearTimeout(timer);
+  }, [gallery, muted, page, spreadsData.length, started]);
 
   useEffect(() => {
     const onKey = event => {

@@ -66,3 +66,24 @@
 .v3-design-preview .v-phone-caption{margin-top:0}
 @media(max-width:834px){.v3-progress{margin-top:0;padding-top:0}}
 @media(max-width:640px){.v3-create{padding-top:14px}.v3-progress{margin-top:0}.v3-error{top:10px}}
+
+.v3-design-colour-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.v3-design-colour-heading>.v3-panel-heading{margin:0}
+.v3-design-colour-heading>.v3-button{flex:none;min-height:42px;padding:9px 12px;font-size:11px}
+@media(min-width:1025px){
+  .v3-create.is-designing .v3-progress{grid-template-columns:minmax(0,1fr);gap:0;margin-top:0;padding-block:9px}
+  .v3-create.is-designing .v3-progress-copy,.v3-create.is-designing .v3-stepper{display:none}
+  .v3-create.is-designing .v3-progress-meter{margin:0}
+  .v3-main.is-designing{display:grid;grid-template-columns:minmax(360px,.9fr) minmax(340px,1.1fr);align-items:start;column-gap:clamp(24px,3vw,52px);row-gap:0}
+  .v3-main.is-designing>.v3-head{grid-column:1;grid-row:1;width:100%;margin:0 0 24px}
+  .v3-main.is-designing>.v3-design-grid{display:contents}
+  .v3-main.is-designing .v3-design-controls{grid-column:1;grid-row:2;min-width:0}
+  .v3-main.is-designing .v3-design-preview{position:sticky;top:16px;grid-column:2;grid-row:1 / span 2;align-self:start;gap:0}
+  .v3-main.is-designing .v3-design-preview .v-phone-presentation{align-content:start;padding:0}
+  .v3-main.is-designing>.v3-actions{grid-column:1;grid-row:3;margin-top:22px}
+}
+@media(max-width:640px){
+  .v3-design-colour-heading{flex-direction:column;align-items:stretch}
+  .v3-design-colour-heading>.v3-button{width:100%}
+}
+@media(max-width:900px){.v3-design-preview{order:-1}}

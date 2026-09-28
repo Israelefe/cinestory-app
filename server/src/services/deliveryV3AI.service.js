@@ -339,6 +339,39 @@ export async function directV3(delivery, insights) {
   return { selected, openingAssetId, closingAssetId, direction: { title: String(result.title || (delivery.clientName || 'Your') + "'s photographs").slice(0, 80), openingLine: openingLine.slice(0, 140), closingLine: closingLine.slice(0, 160), palette, typography: { display: V3_FONT_CHOICES.has(result.typography?.display) ? result.typography.display : 'Playfair Display', body: V3_FONT_CHOICES.has(result.typography?.body) ? result.typography.body : 'Outfit' }, frames: captions, assetOrder: selected, sections } };
 }
 
+export async function repickV3Palette({ format, brief, shootType, imageColors, currentPalette }) {
+  const current = Object.fromEntries(Object.keys(V3_DEFAULT_PALETTE).map(key => [key, String(currentPalette?.[key] || V3_DEFAULT_PALETTE[key]).toLowerCase()]));
+  const system = 'Return JSON {"palette":{"background":"#hex","surface":"#hex","text":"#hex","accent":"#hex"}}. Choose a readable visual palette for the opening and showcase surfaces from the supplied image colour analysis. Keep the photographer’s original photographs unchanged. Make the new background, panels, or accent visibly different from the current palette. Text must have at least 4.5:1 contrast against both background and panels. Do not write captions or change delivery content.';
+  const prompt = [
+    'Format: ' + format,
+    'Shoot type: ' + shootType,
+    'Photographer purpose: ' + brief,
+    'Image colour analysis: ' + JSON.stringify(imageColors),
+    'Current palette to move away from: ' + JSON.stringify(current)
+  ].join('\n');
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const result = await request(system + (attempt ? ' The previous answer repeated the current palette. Return a clearly different palette this time.' : ''), prompt, { maxTokens: 250 });
+    const palette = Object.fromEntries(Object.keys(V3_DEFAULT_PALETTE).map(key => [key, String(result.palette?.[key] || '').trim()]));
+    if (Object.values(palette).some(color => !/^#[0-9a-f]{6}$/i.test(color))) continue;
+
+    if (contrastRatio(palette.background, palette.text) < 4.5 || contrastRatio(palette.surface, palette.text) < 4.5) {
+      const readable = ['#fffaf6', '#ffffff', '#101010', '#000000'].find(color => contrastRatio(palette.background, color) >= 4.5 && contrastRatio(palette.surface, color) >= 4.5);
+      if (readable) palette.text = readable;
+      else {
+        palette.background = V3_DEFAULT_PALETTE.background;
+        palette.surface = V3_DEFAULT_PALETTE.surface;
+        palette.text = V3_DEFAULT_PALETTE.text;
+      }
+    }
+
+    const changed = ['background', 'surface', 'accent'].some(key => palette[key].toLowerCase() !== current[key]);
+    if (changed) return palette;
+  }
+
+  throw Object.assign(new Error('The colour picker returned the same palette. Choose another palette and try again.'), { code: 'V3_PALETTE_UNCHANGED', status: 422 });
+}
+
 export async function regenerateV3Caption(delivery, insight, instruction = '') {
   const limit = delivery.format === 'photo-story' ? 150 : 180;
   const prompt = "Photographer's purpose: " + delivery.brief + '\nPhotographer instruction: ' + instruction + '\nShoot type (light context only): ' + delivery.shootType + '\nFormat: ' + delivery.format + '\nImage observation (light context only): ' + (insight.summary || 'No clear visual detail available.');

@@ -5,7 +5,7 @@ import Delivery from '../models/Delivery.js';
 import DeliveryJob from '../models/DeliveryJob.js';
 import User from '../models/User.js';
 import { contrastRatio, V3_FONT_CHOICES, V3_FORMATS, V3_MUSIC_FORMATS, validShowcase } from '../constants/deliveryV3.js';
-import { improvePurpose, recommendV3Format, regenerateV3Caption } from '../services/deliveryV3AI.service.js';
+import { improvePurpose, recommendV3Format, regenerateV3Caption, repickV3Palette } from '../services/deliveryV3AI.service.js';
 import { reservePublishSlot, resolveEntitlements } from '../services/entitlement.service.js';
 import { removeDeliveryAudio } from '../services/deliveryMedia.service.js';
 
@@ -171,7 +171,30 @@ export async function v3Theme(req, res) {
     if (weak.length) return res.status(400).json({ success: false, code: 'V3_THEME_CONTRAST', field: 'palette.text', message: `Text is hard to read on the ${weak.join(' and ')}. Change the text colour or use Fix text contrast.` });
     const delivery = await owned(req); if (!editable(delivery) || !delivery.creativeDirection) return res.status(409).json({ success: false, message: 'Finish the showcase first.' });
     delivery.creativeDirection = { ...delivery.creativeDirection, palette: input.data.palette, typography: input.data.typography };
-    invalidateApproval(delivery); saveV3(delivery, { step: 'preview' }); delivery.markModified('creativeDirection'); await delivery.save();
+    invalidateApproval(delivery); saveV3(delivery, { step: 'design' }); delivery.markModified('creativeDirection'); await delivery.save();
+    res.json({ success: true, data: delivery });
+  } catch (error) { fail(res, error); }
+}
+
+export async function v3RepickTheme(req, res) {
+  try {
+    const delivery = await owned(req);
+    if (!editable(delivery) || !delivery.creativeDirection) return res.status(409).json({ success: false, message: 'Finish the showcase before choosing a colour palette.' });
+    const selected = new Set(delivery.curatedAssetIds || []);
+    const images = (delivery.collectionAnalysis?.images || []).filter(image => selected.has(image.assetId));
+    if (!images.length) return res.status(409).json({ success: false, code: 'V3_IMAGE_COLOURS_UNAVAILABLE', message: 'The photograph colour analysis is missing. Reopen the showcase step and try again.' });
+    const palette = await repickV3Palette({
+      format: delivery.format,
+      brief: delivery.brief,
+      shootType: delivery.shootType,
+      imageColors: images.map(({ assetId, colors }) => ({ assetId, colors })),
+      currentPalette: delivery.creativeDirection.palette
+    });
+    delivery.creativeDirection = { ...delivery.creativeDirection, palette };
+    invalidateApproval(delivery);
+    saveV3(delivery, { step: 'design' });
+    delivery.markModified('creativeDirection');
+    await delivery.save();
     res.json({ success: true, data: delivery });
   } catch (error) { fail(res, error); }
 }
@@ -194,7 +217,7 @@ export async function v3Access(req, res) {
 
 export async function v3Approve(req, res) {
   try {
-    const delivery = await owned(req); if (!editable(delivery) || !delivery.creativeDirection) return res.status(409).json({ success: false, message: 'Preview the delivery first.' });
+    const delivery = await owned(req); if (!editable(delivery) || !delivery.creativeDirection) return res.status(409).json({ success: false, message: 'Review the delivery design first.' });
     if (await DeliveryJob.exists({ deliveryId: delivery._id, status: { $in: ['queued', 'running'] } })) return res.status(409).json({ success: false, message: 'Wait for the current step to finish.' });
     const ids = new Set(delivery.assets.map(asset => asset.assetId));
     if (!validShowcase(delivery.format, delivery.curatedAssetIds, ids)) return res.status(409).json({ success: false, message: 'Review the showcase photo count.' });

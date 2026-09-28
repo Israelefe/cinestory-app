@@ -126,7 +126,7 @@ test('V3 keeps validation and API errors visible at the current scroll position'
   expect((await alert.boundingBox()).y).toBeLessThan(150);
 });
 
-test('V3 only shows a contrast warning when needed and fixes it before sending the theme', async ({ page }) => {
+test('V3 fixes contrast before approving and entering access settings', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 740 });
   let draft = { _id: draftId, schemaVersion: 3, status: 'review', clientName: 'Ada', shootType: 'Birthday', brief: "Ada's birthday", format: 'editorial', assets: [], creativeDirection: { title: "Ada's birthday", openingLine: 'A birthday to remember.', closingLine: 'Your full gallery is ready.', palette: { background: '#ffffff', surface: '#eeeeee', text: '#ffffff', accent: '#ff5a47' }, typography: { display: 'Playfair Display', body: 'Outfit' } }, v3: { step: 'design', revision: 2 }, access: {} };
   let themeRequests = 0;
@@ -135,7 +135,8 @@ test('V3 only shows a contrast warning when needed and fixes it before sending t
     const reply = data => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data }) });
     if (path.endsWith('/auth/me')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, user }) });
     if (path.endsWith('/billing/status')) return reply({ plan: 'free', usage: { deliveriesRemaining: 2 }, limits: { deliveriesPerMonth: 3 } });
-    if (path.endsWith('/v3/theme')) { themeRequests += 1; draft = { ...draft, creativeDirection: { ...draft.creativeDirection, ...route.request().postDataJSON() }, v3: { ...draft.v3, step: 'preview' } }; return reply(draft); }
+    if (path.endsWith('/v3/theme')) { themeRequests += 1; draft = { ...draft, creativeDirection: { ...draft.creativeDirection, ...route.request().postDataJSON() }, v3: { ...draft.v3, step: 'design' } }; return reply(draft); }
+    if (path.endsWith('/v3/approve')) { draft = { ...draft, v3: { ...draft.v3, step: 'access', approvedRevision: draft.v3.revision } }; return reply(draft); }
     if (path.endsWith('/deliveries/' + draftId)) return reply(draft);
     return reply({});
   });
@@ -144,7 +145,7 @@ test('V3 only shows a contrast warning when needed and fixes it before sending t
   if (await cookieButton.isVisible()) await cookieButton.click();
   await expect(page.getByText('Some text may be hard to read.')).toBeVisible();
   await expect(page.locator('.v3-contrast-row')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Preview delivery' }).click();
+  await page.getByRole('button', { name: 'Approve and set access' }).click();
   const alert = page.getByRole('alert');
   await expect(alert).toContainText('Text is hard to read on the background and panels.');
   await expect(alert).not.toContainText('HTTP 400');
@@ -152,8 +153,8 @@ test('V3 only shows a contrast warning when needed and fixes it before sending t
   await alert.getByRole('button', { name: 'Fix text contrast' }).click();
   await expect(page.getByText('Some text may be hard to read.')).toHaveCount(0);
   await expect(page.locator('.v3-contrast-row')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Preview delivery' }).click();
-  await expect(page.getByRole('heading', { name: 'See exactly what the client will see.' })).toBeVisible();
+  await page.getByRole('button', { name: 'Approve and set access' }).click();
+  await expect(page.getByRole('heading', { name: 'Set the rules for this link.' })).toBeVisible();
   expect(themeRequests).toBe(1);
 });
 
@@ -171,7 +172,7 @@ test('V3 gives a useful message for a legacy 400 response without showing HTTP 4
   await page.goto('/create?draft=' + draftId);
   const cookieButton = page.getByRole('button', { name: 'Got it' });
   if (await cookieButton.isVisible()) await cookieButton.click();
-  await page.getByRole('button', { name: 'Preview delivery' }).click();
+  await page.getByRole('button', { name: 'Approve and set access' }).click();
   const alert = page.getByRole('alert');
   await expect(alert).toContainText('Change the text colour or use Fix text contrast.');
   await expect(alert).not.toContainText('HTTP 400');
@@ -208,13 +209,22 @@ for (const width of [390, 834, 1440]) {
   test('Photo Story preview can go back and forward at ' + width + 'px', async ({ page }) => {
     await page.setViewportSize({ width, height: width >= 1025 ? 800 : 900 });
     const assets = Array.from({ length: 5 }, (_, index) => ({ assetId: 'photo-' + index, url: '/veylo/web/demo-lora-' + (index + 1) + '-960.webp', thumbnailUrl: '/veylo/web/demo-lora-' + (index + 1) + '-960.webp', originalFilename: 'photo-' + index + '.jpg' }));
-    let draft = { _id: draftId, publicId: 'preview-story', schemaVersion: 3, status: 'review', clientName: 'Ada', shootType: 'Birthday', brief: "Ada's 25th birthday celebration", format: 'photo-story', assets, curatedAssetIds: assets.map(asset => asset.assetId), creativeDirection: { title: "Ada's birthday", openingLine: 'Ada, here is your birthday story.', closingLine: 'Here is the full collection from your day.', frames: assets.map((asset, index) => ({ assetId: asset.assetId, headline: `A birthday year ${index + 1}`, caption: 'Ada, your 25th birthday is here, with another year of possibility waiting ahead.' })), palette: { background: '#ffffff', surface: '#eeeeee', text: '#101010', accent: '#006644' }, typography: { display: 'Playfair Display', body: 'Outfit' } }, v3: { step: 'preview', revision: 2, clarificationAnswers: [], narrationChoice: 'skip', openingAssetId: assets[0].assetId, closingAssetId: assets[4].assetId }, access: {} };
+    let draft = { _id: draftId, publicId: 'preview-story', schemaVersion: 3, status: 'review', clientName: 'Ada', shootType: 'Birthday', brief: "Ada's 25th birthday celebration", format: 'photo-story', assets, curatedAssetIds: assets.map(asset => asset.assetId), creativeDirection: { title: "Ada's birthday", openingLine: 'Ada, here is your birthday story.', closingLine: 'Here is the full collection from your day.', frames: assets.map((asset, index) => ({ assetId: asset.assetId, headline: `A birthday year ${index + 1}`, caption: 'Ada, your 25th birthday is here, with another year of possibility waiting ahead.' })), palette: { background: '#ffffff', surface: '#eeeeee', text: '#101010', accent: '#006644' }, typography: { display: 'Playfair Display', body: 'Outfit' } }, v3: { step: 'design', revision: 2, clarificationAnswers: [], narrationChoice: 'skip', openingAssetId: assets[0].assetId, closingAssetId: assets[4].assetId }, access: {} };
+    let repickCount = 0;
     await page.route('**/api/v1/**', route => {
       const path = new URL(route.request().url()).pathname;
       const reply = data => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data }) });
       if (path.endsWith('/auth/me')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, user }) });
       if (path.endsWith('/billing/status')) return reply({ plan: 'free', limits: { deliveriesPerMonth: 3, photosPerDelivery: 100 }, usage: { deliveriesRemaining: 3 } });
-      if (path.endsWith('/v3/theme')) { draft = { ...draft, v3: { ...draft.v3, step: 'preview', revision: 3 } }; return reply(draft); }
+      if (path.endsWith('/v3/theme/repick')) {
+        const palettes = [
+          { background: '#15222b', surface: '#25343a', text: '#fffaf6', accent: '#dfaa71' },
+          { background: '#282019', surface: '#403126', text: '#fffaf6', accent: '#91c1b6' }
+        ];
+        draft = { ...draft, creativeDirection: { ...draft.creativeDirection, palette: palettes[repickCount++ % palettes.length] }, v3: { ...draft.v3, step: 'design', revision: draft.v3.revision + 1 } };
+        return reply(draft);
+      }
+      if (path.endsWith('/v3/theme')) { draft = { ...draft, creativeDirection: { ...draft.creativeDirection, ...route.request().postDataJSON() }, v3: { ...draft.v3, step: 'design', revision: 3 } }; return reply(draft); }
       if (path.endsWith('/v3/approve')) { draft = { ...draft, v3: { ...draft.v3, step: 'access', approvedRevision: draft.v3.revision } }; return reply(draft); }
       if (path.endsWith('/deliveries/' + draftId)) return reply(draft);
       return reply({});
@@ -222,16 +232,23 @@ for (const width of [390, 834, 1440]) {
     await page.goto('/create?draft=' + draftId);
     const cookieButton = page.getByRole('button', { name: 'Got it' });
     if (await cookieButton.isVisible()) await cookieButton.click();
-    const clientPreview = width >= 1025 ? page.frameLocator('.v3-preview iframe') : page.locator('.v3-preview');
+    await expect(page.getByRole('heading', { name: 'See how your delivery will look.' })).toBeVisible();
+    await expect(page.getByText('09 / CLIENT PREVIEW')).toHaveCount(0);
+    const clientPreview = page.frameLocator('.v3-design-preview iframe');
     await expect(clientPreview.locator('.v-story-shell')).toBeVisible();
-    expect(await clientPreview.locator('.v-story-shell').evaluate(element => getComputedStyle(element).position)).toBe(width >= 1025 ? 'fixed' : 'relative');
     if (width >= 1025) {
-      const previewFrame = page.locator('.v3-preview .v-phone-screen iframe');
-      await expect.poll(() => page.locator('.v3-preview .v-phone-device').evaluate(element => element.getBoundingClientRect().bottom <= window.innerHeight - 24)).toBe(true);
-      await expect.poll(() => page.locator('.v3-preview .v-phone-device').evaluate(element => element.getBoundingClientRect().width)).toBeLessThanOrEqual(300.1);
+      const previewFrame = page.locator('.v3-design-preview .v-phone-screen iframe');
+      await expect.poll(() => page.locator('.v3-design-preview .v-phone-device').evaluate(element => element.getBoundingClientRect().bottom <= window.innerHeight - 24)).toBe(true);
+      await expect.poll(async () => Math.round(await page.locator('.v3-design-preview .v-phone-device').evaluate(element => element.getBoundingClientRect().width))).toBe(300);
+      await expect.poll(async () => Math.round(await page.locator('.v3-design-preview .v-phone-device').evaluate(element => element.getBoundingClientRect().height))).toBe(665);
       await expect.poll(() => previewFrame.evaluate(element => element.contentWindow.innerWidth)).toBe(360);
       await expect.poll(() => previewFrame.evaluate(element => element.contentWindow.innerHeight)).toBe(800);
-      await page.screenshot({ path: '../.visual-review/delivery-v3/create-mobile-preview-desktop.png' });
+      await page.screenshot({ path: '../.visual-review/delivery-v3/create-design-preview-desktop.png' });
+      const accentSwatch = page.locator('.v3-palette-swatch').nth(3).locator('span');
+      await page.getByRole('button', { name: 'Choose another palette' }).click();
+      await expect(accentSwatch).toHaveCSS('background-color', 'rgb(223, 170, 113)');
+      await page.getByRole('button', { name: 'Choose another palette' }).click();
+      await expect(accentSwatch).toHaveCSS('background-color', 'rgb(145, 193, 182)');
     }
     if (width === 390) {
       await expect(clientPreview.locator('.v-story-cover')).toContainText('Ada, here is your birthday story.');
@@ -248,25 +265,12 @@ for (const width of [390, 834, 1440]) {
       await expect.poll(() => clientPreview.locator('.v-story-caption.is-finale').evaluate(element => Number(getComputedStyle(element).opacity))).toBeGreaterThan(0.9);
       await clientPreview.locator('.v-story-shell').screenshot({ path: '../.visual-review/delivery-v3/v3-finale-390.png' });
       await clientPreview.getByRole('button', { name: 'Open your gallery' }).click();
-      const gallery = page.getByRole('dialog', { name: /Ada/ });
+      const gallery = clientPreview.getByRole('dialog', { name: /Ada/ });
       await expect(gallery).toBeVisible();
       expect(await gallery.evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgb(8, 8, 11)');
       await gallery.getByRole('button', { name: 'Close gallery' }).click();
     }
-    await page.getByRole('button', { name: 'Adjust design' }).first().click();
-    await expect(page.getByRole('heading', { name: 'See how your delivery will look.' })).toBeVisible();
-    if (width >= 1025) {
-      const designFrame = page.locator('.v3-design-preview .v-phone-screen iframe');
-      await expect.poll(() => page.locator('.v3-design-preview .v-phone-device').evaluate(element => element.getBoundingClientRect().bottom <= window.innerHeight - 24)).toBe(true);
-      await expect.poll(() => page.locator('.v3-design-preview .v-phone-device').evaluate(element => element.getBoundingClientRect().width)).toBeLessThanOrEqual(300.1);
-      await expect.poll(() => designFrame.evaluate(element => element.contentWindow.innerWidth)).toBe(360);
-      await expect.poll(() => designFrame.evaluate(element => element.contentWindow.innerHeight)).toBe(800);
-      await expect(page.frameLocator('.v3-design-preview iframe').locator('.v-story-shell')).toBeVisible();
-      await page.screenshot({ path: '../.visual-review/delivery-v3/create-design-preview-desktop.png', fullPage: true });
-    }
-    await page.getByRole('button', { name: 'Preview delivery' }).click();
-    await expect(clientPreview.locator('.v-story-shell')).toBeVisible();
-    await page.getByRole('button', { name: 'Approve and set access' }).first().click();
+    await page.getByRole('button', { name: 'Approve and set access' }).click();
     await expect(page.getByRole('heading', { name: 'Set the rules for this link.' })).toBeVisible();
   });
 }
@@ -274,12 +278,24 @@ for (const width of [390, 834, 1440]) {
 test('published V3 Photo Story keeps its opener, closer, numbers, and bookend voice files', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 740 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.addInitScript(() => {
+    HTMLMediaElement.prototype.play = function () {
+      Object.defineProperty(this, 'paused', { configurable: true, value: false });
+      this.dispatchEvent(new Event('playing'));
+      return Promise.resolve();
+    };
+    HTMLMediaElement.prototype.pause = function () {
+      Object.defineProperty(this, 'paused', { configurable: true, value: true });
+      this.dispatchEvent(new Event('pause'));
+    };
+  });
   const assets = Array.from({ length: 5 }, (_, index) => ({ assetId: 'photo-' + index, url: '/veylo/web/demo-lora-' + (index + 1) + '-960.webp', thumbnailUrl: '/veylo/web/demo-lora-' + (index + 1) + '-960.webp' }));
   const delivery = {
     _id: draftId, publicId: 'published-story', schemaVersion: 3, status: 'published', clientName: 'Lora', shootType: 'Birthday', format: 'photo-story', assets,
     curatedAssetIds: assets.map(asset => asset.assetId),
-    creativeDirection: { title: "Lora's 25th birthday", openingLine: 'Lora, this day was yours.', closingLine: 'Here are all your birthday photographs.', frames: assets.map(asset => ({ assetId: asset.assetId, caption: 'Lora, twenty-five opens a year to celebrate how far you have come and choose what matters next.' })), palette: { background: '#0c0c10', surface: '#17171c', text: '#fffaf6', accent: '#ff5a47' }, typography: { display: 'Playfair Display', body: 'Outfit' } },
+    creativeDirection: { title: "Lora's 25th birthday", openingLine: 'Lora, this day was yours.', closingLine: 'Here are all your birthday photographs.', frames: assets.map(asset => ({ assetId: asset.assetId, caption: 'Lora, twenty-five is a chance to celebrate how far you have come, enjoy the woman you are now, and choose what you want next.' })), palette: { background: '#0c0c10', surface: '#17171c', text: '#fffaf6', accent: '#ff5a47' }, typography: { display: 'Playfair Display', body: 'Outfit' } },
     v3: { openingAssetId: assets[0].assetId, closingAssetId: assets[4].assetId, narrationChoice: 'voice' },
+    soundtrack: { url: '/veylo/audio/story-soundtrack.mp3' },
     narration: { opening: { url: '/veylo/audio/opening.mp3' }, closing: { url: '/veylo/audio/closing.mp3' } }, access: { allowLikes: true }
   };
   await page.route('**/api/v1/**', route => {
@@ -292,16 +308,30 @@ test('published V3 Photo Story keeps its opener, closer, numbers, and bookend vo
   await expect(page.locator('audio[src$="opening.mp3"]')).toHaveCount(1);
   await expect(page.locator('audio[src$="closing.mp3"]')).toHaveCount(1);
   await page.getByRole('button', { name: 'Begin the story' }).click();
+  const soundtrack = page.locator('audio[src$="story-soundtrack.mp3"]');
+  await expect.poll(() => soundtrack.evaluate(element => element.volume)).toBeGreaterThan(.1);
+  await expect.poll(() => soundtrack.evaluate(element => element.volume)).toBeLessThan(.3);
+  await page.locator('audio[src$="opening.mp3"]').evaluate(element => element.dispatchEvent(new Event('ended')));
   await expect(page.locator('.v-story-canvas.is-playing-state')).toBeVisible();
+  await expect.poll(() => soundtrack.evaluate(element => element.volume)).toBeGreaterThan(.9);
   await page.getByRole('button', { name: 'Pause story' }).click();
   const storyCaption = page.locator('.v-story-caption:not(.is-finale) h2');
-  await expect(storyCaption).toContainText('Lora, twenty-five opens a year');
+  await expect(storyCaption).toContainText('Lora, twenty-five is a chance');
+  await expect(storyCaption).toContainText('choose what you want next.');
   expect(await storyCaption.evaluate(element => element.scrollHeight <= element.clientHeight + 1)).toBe(true);
   await page.getByRole('button', { name: 'Open gallery' }).click();
   await page.getByRole('button', { name: 'Add to favourites' }).first().click();
   await page.getByRole('button', { name: 'Close gallery' }).click();
   await expect(page.locator('.v-story-canvas.is-playing-state')).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  await page.getByRole('button', { name: 'Resume story' }).click();
+  for (let index = 0; index < 4; index += 1) await page.getByRole('button', { name: 'Next photograph' }).click();
+  await expect(page.locator('.v-story-canvas.is-finale-state')).toBeVisible({ timeout: 10000 });
+  await expect.poll(() => soundtrack.evaluate(element => element.volume)).toBeLessThan(.3);
+  await page.locator('audio[src$="closing.mp3"]').evaluate(element => element.dispatchEvent(new Event('ended')));
+  await expect.poll(() => soundtrack.evaluate(element => element.volume)).toBeGreaterThan(.9);
+  await expect.poll(() => soundtrack.evaluate(element => element.volume)).toBe(0);
+  expect(await soundtrack.evaluate(element => element.paused)).toBe(true);
 });
 
 test('desktop demo and public delivery fit the phone mockup on an 800px screen around a 360 by 800 mobile viewport', async ({ page }) => {
@@ -357,7 +387,7 @@ test('design opens the current client viewer, then publishes with access setting
     const reply = data => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': 'http://127.0.0.1:5178', 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ success: true, data }) });
     if (path.endsWith('/auth/me')) return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': 'http://127.0.0.1:5178', 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ success: true, user }) });
     if (path.endsWith('/billing/status')) return reply({ plan: 'free', limits: { deliveriesPerMonth: 3, photosPerDelivery: 100 }, usage: { deliveriesRemaining: 3 } });
-    if (path.endsWith('/deliveries/' + draftId + '/v3/theme')) { draft = { ...draft, creativeDirection: { ...draft.creativeDirection, ...body }, v3: { ...draft.v3, step: 'preview', revision: 3 } }; return reply(draft); }
+    if (path.endsWith('/deliveries/' + draftId + '/v3/theme')) { draft = { ...draft, creativeDirection: { ...draft.creativeDirection, ...body }, v3: { ...draft.v3, step: 'design', revision: 3 } }; return reply(draft); }
     if (path.endsWith('/deliveries/' + draftId + '/v3/approve')) { draft = { ...draft, reviewApprovedAt: new Date().toISOString(), v3: { ...draft.v3, step: 'access', approvedRevision: draft.v3.revision } }; return reply(draft); }
     if (path.endsWith('/deliveries/' + draftId + '/v3/access')) { savedAccess = body; draft = { ...draft, access: body, hasPin: Boolean(body.pin) }; return reply({ access: body, hasPin: Boolean(body.pin), formatConfig: {} }); }
     if (path.endsWith('/deliveries/' + draftId + '/v3/publish')) return reply({ publicId: draft.publicId, url: 'http://127.0.0.1:5178/d/' + draft.publicId });
@@ -367,10 +397,9 @@ test('design opens the current client viewer, then publishes with access setting
   await page.goto('/create?draft=' + draftId);
   const cookieButton = page.getByRole('button', { name: 'Got it' });
   if (await cookieButton.isVisible()) await cookieButton.click();
-  await page.getByRole('button', { name: 'Preview delivery' }).click();
-  await expect(page.getByRole('heading', { name: 'See exactly what the client will see.' })).toBeVisible();
-  await expect(page.locator('.v-client-preview-runtime .fd-editorial')).toBeVisible();
+  await expect(page.frameLocator('.v3-design-preview iframe').locator('.v-client-preview-runtime .fd-editorial')).toBeVisible();
   await page.getByRole('button', { name: 'Approve and set access' }).click();
+  await expect(page.getByRole('heading', { name: 'Set the rules for this link.' })).toBeVisible();
   await page.getByLabel('Six-digit PIN (optional)').fill('123');
   await page.getByRole('button', { name: 'Publish delivery' }).click();
   await expect(page.getByRole('alert')).toContainText('A PIN needs six digits.');

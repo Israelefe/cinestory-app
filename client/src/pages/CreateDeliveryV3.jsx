@@ -16,7 +16,7 @@ import './CreateDeliveryV3.css';
 const BOUNDS = { 'photo-story': [5, 10], editorial: [6, 14], 'photo-reveal': [5, 12], canvas: [8, 18], chapters: [8, 20], album: [6, 16], 'event-coverage': [10, 24], campaign: [6, 16] };
 const MUSIC = new Set(['photo-story', 'photo-reveal', 'album']);
 const FONTS = ['Playfair Display', 'Outfit', 'Plus Jakarta Sans', 'Cormorant Garamond', 'DM Sans', 'Libre Baskerville', 'Manrope'];
-const STEPS = [{ id: 'details', label: 'Shoot' }, { id: 'format', label: 'Format' }, { id: 'upload', label: 'Photos' }, { id: 'preparing', label: 'Preparing' }, { id: 'showcase', label: 'Showcase' }, { id: 'narration', label: 'Narration' }, { id: 'music', label: 'Music' }, { id: 'design', label: 'Design' }, { id: 'preview', label: 'Preview' }, { id: 'access', label: 'Publish' }];
+const STEPS = [{ id: 'details', label: 'Shoot' }, { id: 'format', label: 'Format' }, { id: 'upload', label: 'Photos' }, { id: 'preparing', label: 'Preparing' }, { id: 'showcase', label: 'Showcase' }, { id: 'narration', label: 'Narration' }, { id: 'music', label: 'Music' }, { id: 'design', label: 'Design' }, { id: 'access', label: 'Publish' }];
 const DEFAULT_ACCESS = { allowIndividualDownloads: true, allowDownloadAll: true, allowLikes: true, downloadsLocked: false, downloadLockNote: '', watermarkEnabled: false, watermarkText: '', expiresAt: '', usageTerms: '' };
 const defaultPalette = { background: '#0c0c10', surface: '#17171c', text: '#fffaf6', accent: '#ff5a47' };
 function contrastRatio(first, second) {
@@ -95,7 +95,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const [draft, setDraft] = useState(initialDelivery || null);
   const [entitlements, setEntitlements] = useState(null);
   const [billingLoading, setBillingLoading] = useState(true);
-  const [stage, setStage] = useState(initialDelivery?.v3?.step || 'details');
+  const [stage, setStage] = useState(initialDelivery?.v3?.step === 'preview' ? 'design' : initialDelivery?.v3?.step || 'details');
   const [clientName, setClientName] = useState(initialDelivery?.clientName || '');
   const [shootType, setShootType] = useState(initialDelivery?.shootType && !SHOOT_TYPES.includes(initialDelivery.shootType) ? 'Other' : initialDelivery?.shootType || '');
   const [customShoot, setCustomShoot] = useState(SHOOT_TYPES.includes(initialDelivery?.shootType) ? '' : initialDelivery?.shootType || '');
@@ -145,7 +145,6 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const previewBranding = entitlements?.features?.branding === 'studio' || (!entitlements && proFallback)
     ? { type: 'studio', name: user?.studio?.name || user?.name || 'Studio', logoUrl: user?.studio?.logoUrl || user?.avatar || '' }
     : { type: 'veylo', name: 'Veylo', logoUrl: '/veylo/veylo-mark.svg' };
-  const previewDelivery = useMemo(() => draft && ({ ...draft, branding: previewBranding }), [draft, previewBranding.type, previewBranding.name, previewBranding.logoUrl]);
   const designPreviewDelivery = useMemo(() => {
     if (!draft) return null;
     const savedFrames = new Map((draft.creativeDirection?.frames || []).map(frame => [frame.assetId, frame]));
@@ -384,17 +383,20 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
       await refresh(); setStage('design');
     });
   }
-  async function saveDesign() {
-    if (!themeStatus.valid) { setError({ text: themeStatus.message, fix: 'contrast' }); return; }
-    await action('design', async () => {
-      await api.patch('/v1/deliveries/' + draft._id + '/v3/theme', { palette, typography });
-      const next = await refresh(); syncShowcase(next); setStage('preview');
+  async function repickPalette() {
+    await action('palette', async () => {
+      const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/theme/repick');
+      const next = data.data;
+      setDraft(next);
+      setPalette(next.creativeDirection?.palette || defaultPalette);
     });
   }
-  async function approve() {
+  async function approveDesign() {
+    if (!themeStatus.valid) { setError({ text: themeStatus.message, fix: 'contrast' }); return; }
     await action('approve', async () => {
+      await api.patch('/v1/deliveries/' + draft._id + '/v3/theme', { palette, typography });
       await api.post('/v1/deliveries/' + draft._id + '/v3/approve');
-      await refresh(); setStage('access');
+      const next = await refresh(); syncShowcase(next); setStage('access');
     });
   }
   async function saveAccess() {
@@ -477,7 +479,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     }
   }
 
-  return <div className={'v3-create' + (stage === 'preview' ? ' is-previewing' : '')}>
+  return <div className={'v3-create' + (stage === 'design' ? ' is-designing' : '')}>
     <div className="v3-shell">
       {!published && <section className="v3-progress" aria-label="Creation progress">
         <div className="v3-progress-copy">
@@ -494,7 +496,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
       {error && <div className="v3-error" role="alert"><AlertCircle size={20} aria-hidden="true" /><div><strong>{typeof error === 'string' ? error : error.text}</strong>{typeof error === 'object' && error.fix === 'contrast' && <button type="button" className="v3-error-fix" onClick={() => { setPalette(current => readablePalette(current)); setError(''); }}>Fix text contrast</button>}{typeof error === 'object' && error.code && <small>Support reference: {error.code}</small>}</div><button type="button" onClick={() => setError('')} aria-label="Dismiss error">×</button></div>}
       {quotaReached && (stage === 'access' || stage === 'details' && !draft) && <div className="v3-quota-note" role="status"><Clock3 size={18} /><span>{freeMonthlyLimitMessage(entitlements)}</span><Link to="/billing">View Pro</Link></div>}
       <div className="v3-workspace">
-      <AnimatePresence mode="wait"><motion.main key={stage} className={'v3-main' + (stage === 'preview' ? ' is-client-preview' : '')} initial={reduced ? false : { opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} exit={reduced ? {} : { opacity: 0, x: -12 }} transition={{ duration: reduced ? 0 : .3 }}>
+      <AnimatePresence mode="wait"><motion.main key={stage} className={'v3-main' + (stage === 'design' ? ' is-designing' : '')} initial={reduced ? false : { opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} exit={reduced ? {} : { opacity: 0, x: -12 }} transition={{ duration: reduced ? 0 : .3 }}>
         {stage === 'details' && <>
           <Head eyebrow="01 / THE SHOOT" title="Tell us what this delivery is for.">Add the client, type of shoot, and the reason these photos were taken.</Head>
           <div className="v3-details-grid">
@@ -659,10 +661,10 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
           <div className="v3-actions"><StepButton secondary onClick={() => { audioRef.current?.pause(); setActiveTrack(''); setStage(format === 'photo-story' ? 'narration' : 'showcase'); }}><ArrowLeft size={17} /> Back</StepButton>{draft?.soundtrack && <StepButton onClick={() => { audioRef.current?.pause(); setActiveTrack(''); setStage('design'); }}><ArrowRight size={17} /> Continue to design</StepButton>}</div>
         </>}
         {stage === 'design' && <>
-          <Head eyebrow="08 / DESIGN" title="See how your delivery will look.">These colours and fonts change the opening and photo showcase. The full gallery and its controls keep Veylo's standard design.</Head>
+          <Head eyebrow={String(currentIndex + 1).padStart(2, '0') + ' / DESIGN'} title="See how your delivery will look.">These colours and fonts change the opening and photo showcase. The full gallery and its controls keep Veylo's standard design.</Head>
           <div className="v3-design-grid">
             <div className="v3-panel v3-design-controls">
-              <div className="v3-panel-heading"><span>01</span><div><h2>Colours from your photographs</h2><p>Veylo picked these for the opening and showcase.</p></div></div>
+              <div className="v3-design-colour-heading"><div className="v3-panel-heading"><span>01</span><div><h2>Colours from your photographs</h2><p>Choose another set until it feels right.</p></div></div><StepButton secondary onClick={repickPalette} disabled={!!busy}><RefreshCw size={15} className={busy === 'palette' ? 'v3-spin' : ''} />{busy === 'palette' ? 'Choosing colours…' : 'Choose another palette'}</StepButton></div>
               <div className="v3-palette-grid" aria-label="Selected colour palette">
                 {Object.keys(defaultPalette).map(role => <div className="v3-palette-swatch" key={role}><span style={{ background: palette[role] || defaultPalette[role] }} aria-hidden="true" /><div><strong>{{ background: 'Opening background', surface: 'Showcase panels', text: 'Showcase text', accent: 'Highlight colour' }[role]}</strong></div></div>)}
               </div>
@@ -671,17 +673,12 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
                 {['display', 'body'].map(role => <label className="v3-font" key={role}>{role === 'display' ? 'Headings and titles' : 'Captions and supporting text'}<select value={typography[role]} onChange={event => setTypography(current => ({ ...current, [role]: event.target.value }))}>{FONTS.map(font => <option key={font}>{font}</option>)}</select></label>)}
               </div>
             </div>
-            <div className="v3-design-preview"><p>Client view · updates as you change the design</p><ClientPreviewPhoneFrame delivery={designPreviewDelivery} narrationEnabled={false} access={access} isolate /></div>
+            <div className="v3-design-preview"><ClientPreviewPhoneFrame delivery={designPreviewDelivery} narrationEnabled={false} access={access} isolate /></div>
           </div>
-          <div className="v3-actions"><StepButton secondary onClick={() => setStage(MUSIC.has(format) ? 'music' : 'showcase')}><ArrowLeft size={17} /> Back</StepButton><StepButton onClick={saveDesign} disabled={!!busy}><ArrowRight size={17} /> Preview delivery</StepButton></div>
-        </>}
-        {stage === 'preview' && <>
-          <Head eyebrow="09 / CLIENT PREVIEW" title="See exactly what the client will see.">This preview uses the delivery as your client will see it, including the showcase and full gallery.</Head>
-          <div className="v3-preview-actions"><StepButton secondary onClick={() => setStage('design')}><ArrowLeft size={17} /> Adjust design</StepButton><StepButton onClick={approve} disabled={!!busy}>{busy === 'approve' ? <LoaderCircle className="v3-spin" size={17} /> : <Check size={17} />} Approve and set access</StepButton></div>
-          <div className="v3-preview"><ClientPreviewPhoneFrame delivery={previewDelivery} narrationEnabled={false} access={access} /></div>
+          <div className="v3-actions"><StepButton secondary onClick={() => setStage(MUSIC.has(format) ? 'music' : 'showcase')}><ArrowLeft size={17} /> Back</StepButton><StepButton onClick={approveDesign} disabled={!!busy}>{busy === 'approve' ? <LoaderCircle className="v3-spin" size={17} /> : <Check size={17} />} Approve and set access</StepButton></div>
         </>}
         {stage === 'access' && <>
-          <Head eyebrow="10 / ACCESS & PUBLISH" title="Set the rules for this link.">Choose the access and download rules, then publish when everything is ready.</Head>
+          <Head eyebrow={String(currentIndex + 1).padStart(2, '0') + ' / ACCESS & PUBLISH'} title="Set the rules for this link.">Choose the access and download rules, then publish when everything is ready.</Head>
           <div className="v3-access-layout">
             <section className="v3-panel v3-access-security">
               <div className="v3-panel-heading"><span>01</span><div><h2>Link security</h2><p>Set an optional PIN or expiry date.</p></div></div>
@@ -703,7 +700,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
             </section>
             {format === 'campaign' && <section className="v3-panel v3-campaign-terms"><div className="v3-panel-heading"><span>03</span><div><h2>Campaign usage terms</h2><p>Tell the client how these final files may be used.</p></div></div><textarea rows={4} maxLength={1000} value={access.usageTerms} onChange={event => setAccess(current => ({ ...current, usageTerms: event.target.value }))} placeholder="Add usage terms (optional)" /></section>}
           </div>
-          <div className="v3-actions"><StepButton secondary onClick={() => setStage('preview')}><ArrowLeft size={17} /> Back to preview</StepButton><StepButton secondary onClick={saveAccess} disabled={!!busy}>Save settings</StepButton><StepButton onClick={publish} disabled={!!busy || billingLoading || quotaReached}><Check size={17} /> Publish delivery</StepButton></div>
+          <div className="v3-actions"><StepButton secondary onClick={() => setStage('design')}><ArrowLeft size={17} /> Back to design preview</StepButton><StepButton secondary onClick={saveAccess} disabled={!!busy}>Save settings</StepButton><StepButton onClick={publish} disabled={!!busy || billingLoading || quotaReached}><Check size={17} /> Publish delivery</StepButton></div>
         </>}
         {stage === 'published' && <div className="v3-published"><span><Check size={30} /></span><Head eyebrow="DELIVERY PUBLISHED" title="Your delivery is ready.">Send the link to your client on WhatsApp, Instagram, or wherever you speak with them.</Head><div className="v3-share-link"><input readOnly value={published?.url || ''} aria-label="Delivery link" /><StepButton onClick={() => navigator.clipboard.writeText(published?.url || '').then(() => toast.success('Link copied.'))}>Copy link</StepButton></div><div className="v3-actions"><a className="v3-button is-secondary" href={'https://wa.me/?text=' + encodeURIComponent('Your photos are ready: ' + (published?.url || ''))} target="_blank" rel="noopener noreferrer">Share on WhatsApp <ExternalLink size={16} /></a><Link className="v3-button" to="/dashboard">Back to dashboard <ArrowRight size={16} /></Link></div></div>}
       </motion.main></AnimatePresence>

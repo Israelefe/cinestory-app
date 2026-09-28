@@ -1,5 +1,5 @@
 import express from 'express';
-import { v3Access, v3Approve, v3Assist, v3Caption, v3Create, v3Details, v3Format, v3Narration, v3Prepare, v3Publish, v3Showcase, v3SkipNarration, v3Theme } from '../controllers/deliveryV3.controller.js';
+import { v3Access, v3Approve, v3Assist, v3Caption, v3Create, v3Details, v3Format, v3Narration, v3Prepare, v3Publish, v3RepickTheme, v3Showcase, v3SkipNarration, v3Theme } from '../controllers/deliveryV3.controller.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { aiGenerationLimit, clientDeliveryEmailLimit, mediaSignatureLimit, publicAccessLimit, publicMediaLimit } from '../middleware/rateLimit.middleware.js';
 import {
@@ -43,6 +43,7 @@ router.post('/:id/v3/captions/:assetId/regenerate', aiGenerationLimit, v3Caption
 router.post('/:id/v3/narrate', aiGenerationLimit, v3Narration);
 router.post('/:id/v3/narration/skip', v3SkipNarration);
 router.patch('/:id/v3/theme', v3Theme);
+router.post('/:id/v3/theme/repick', aiGenerationLimit, v3RepickTheme);
 router.patch('/:id/v3/access', v3Access);
 router.post('/:id/v3/approve', v3Approve);
 router.post('/:id/v3/publish', v3Publish);

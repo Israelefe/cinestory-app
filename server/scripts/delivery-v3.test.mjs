@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { V3_FORMATS, contrastRatio, validShowcase } from '../src/constants/deliveryV3.js';
-import { analyzeAllV3, directV3, improvePurpose, recommendV3Format, regenerateV3Caption } from '../src/services/deliveryV3AI.service.js';
+import { analyzeAllV3, directV3, improvePurpose, recommendV3Format, regenerateV3Caption, repickV3Palette } from '../src/services/deliveryV3AI.service.js';
 import { narrationLine, NARRATION_RENDER_VERSION } from '../src/services/narration.service.js';
 
 const ids = Array.from({ length: 25 }, (_, index) => 'asset-' + index);
@@ -33,6 +33,28 @@ test('each format enforces its own inclusive showcase bounds and known unique as
 test('theme contrast check distinguishes readable and unreadable colour pairs', () => {
   assert.ok(contrastRatio('#0c0c10', '#fffaf6') > 4.5);
   assert.ok(contrastRatio('#ffffff', '#eeeeee') < 4.5);
+});
+
+test('palette repicking retries the current palette and keeps both text contrasts readable', async () => {
+  const calls = [];
+  const restore = mockModel([
+    { palette: { background: '#0c0c10', surface: '#17171c', text: '#fffaf6', accent: '#ff5a47' } },
+    { palette: { background: '#101820', surface: '#26333a', text: '#fffaf6', accent: '#e7a96c' } }
+  ], calls);
+  try {
+    const palette = await repickV3Palette({
+      format: 'photo-story',
+      brief: "Lora's 25th birthday celebration",
+      shootType: 'Birthday',
+      imageColors: [{ assetId: 'asset-1', colors: ['#e88761', '#184a3f'] }],
+      currentPalette: { background: '#0c0c10', surface: '#17171c', text: '#fffaf6', accent: '#ff5a47' }
+    });
+    assert.deepEqual(palette, { background: '#101820', surface: '#26333a', text: '#fffaf6', accent: '#e7a96c' });
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].model, 'deepseek-v4.1-flash');
+    assert.ok(contrastRatio(palette.background, palette.text) >= 4.5);
+    assert.ok(contrastRatio(palette.surface, palette.text) >= 4.5);
+  } finally { restore(); }
 });
 
 test('narration turns dashes into natural sentence pauses and keeps ordinary hyphenated words', () => {
