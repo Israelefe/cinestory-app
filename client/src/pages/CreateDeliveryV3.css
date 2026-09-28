@@ -47,8 +47,6 @@
 @media(max-width:640px){.v3-stepper{grid-template-columns:repeat(10,minmax(0,1fr));gap:4px;overflow:hidden}.v3-stepper li{justify-items:center}.v3-stepper li>span{width:23px;height:23px}.v3-stepper li small{display:none}}
 .v3-preview:has(.v-phone-presentation){display:grid;place-items:center;min-height:0;overflow:visible;border:0;background:transparent}
 .v3-preview .v-phone-presentation{width:100%;min-height:0;padding:20px 0 28px}
-.v3-preview .v-phone-device{height:min(894px,calc(100dvh - 235px))}
-@media(max-height:700px) and (min-width:1025px){.v3-preview .v-phone-device{height:calc(100dvh - 250px)}}
 @media(min-width:1025px){
   .v3-create.is-previewing .v3-progress{grid-template-columns:minmax(0,1fr);gap:0;padding-block:9px}
   .v3-create.is-previewing .v3-progress-copy,.v3-create.is-previewing .v3-stepper{display:none}
@@ -58,13 +56,10 @@
   .v3-main.is-client-preview>.v3-preview-actions{position:relative;top:auto;grid-column:1;grid-row:2;align-self:start;margin:0}
   .v3-main.is-client-preview>.v3-preview{grid-column:2;grid-row:1 / span 2;align-self:start}
   .v3-preview .v-phone-presentation{align-content:start;padding:0}
-  .v3-preview .v-phone-device{height:min(620px,calc(100dvh - 285px));min-height:500px}
 }
-@media(min-width:1025px) and (max-height:720px){.v3-preview .v-phone-device{height:min(560px,calc(100dvh - 230px));min-height:440px}}
 .v3-create{padding-top:24px}
 .v3-progress{margin-top:0;padding-top:0}
 .v3-error{top:14px}
-.v3-preview .v-phone-device{height:851px;min-height:851px}
 .v3-design-preview{position:relative;display:grid;align-content:start;justify-content:start;gap:12px;min-width:0;min-height:0;padding:0;border:0;border-radius:0;overflow:visible;background:transparent}
 .v3-design-preview>p{margin:0;color:#b4adaa;font-size:12px;line-height:1.5}
 .v3-design-preview .v-phone-presentation{min-height:0;padding:8px 0;background:transparent}

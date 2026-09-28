@@ -227,6 +227,8 @@ for (const width of [390, 834, 1440]) {
     expect(await clientPreview.locator('.v-story-shell').evaluate(element => getComputedStyle(element).position)).toBe(width >= 1025 ? 'fixed' : 'relative');
     if (width >= 1025) {
       const previewFrame = page.locator('.v3-preview .v-phone-screen iframe');
+      await expect.poll(() => page.locator('.v3-preview .v-phone-device').evaluate(element => Math.round(element.getBoundingClientRect().width))).toBe(300);
+      await expect.poll(() => page.locator('.v3-preview .v-phone-device').evaluate(element => Math.round(element.getBoundingClientRect().height))).toBe(665);
       await expect.poll(() => previewFrame.evaluate(element => element.contentWindow.innerWidth)).toBe(360);
       await expect.poll(() => previewFrame.evaluate(element => element.contentWindow.innerHeight)).toBe(800);
       await page.screenshot({ path: '../.visual-review/delivery-v3/create-mobile-preview-desktop.png' });
@@ -255,6 +257,8 @@ for (const width of [390, 834, 1440]) {
     await expect(page.getByRole('heading', { name: 'See how your delivery will look.' })).toBeVisible();
     if (width >= 1025) {
       const designFrame = page.locator('.v3-design-preview .v-phone-screen iframe');
+      await expect.poll(() => page.locator('.v3-design-preview .v-phone-device').evaluate(element => Math.round(element.getBoundingClientRect().width))).toBe(300);
+      await expect.poll(() => page.locator('.v3-design-preview .v-phone-device').evaluate(element => Math.round(element.getBoundingClientRect().height))).toBe(665);
       await expect.poll(() => designFrame.evaluate(element => element.contentWindow.innerWidth)).toBe(360);
       await expect.poll(() => designFrame.evaluate(element => element.contentWindow.innerHeight)).toBe(800);
       await expect(page.frameLocator('.v3-design-preview iframe').locator('.v-story-shell')).toBeVisible();
@@ -300,10 +304,12 @@ test('published V3 Photo Story keeps its opener, closer, numbers, and bookend vo
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
 });
 
-test('desktop demo and public delivery use an exact 360 by 800 mobile viewport inside the phone mockup', async ({ page }) => {
+test('desktop demo and public delivery use a 300 by 665 phone mockup around a 360 by 800 mobile viewport', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/demo');
   await expect(page.locator('.v-phone-device')).toBeVisible();
+  await expect.poll(() => page.locator('.v-phone-device').evaluate(element => Math.round(element.getBoundingClientRect().width))).toBe(300);
+  await expect.poll(() => page.locator('.v-phone-device').evaluate(element => Math.round(element.getBoundingClientRect().height))).toBe(665);
   let frame = page.locator('.v-phone-screen iframe');
   await expect.poll(() => frame.evaluate(element => element.contentWindow.innerWidth)).toBe(360);
   await expect.poll(() => frame.evaluate(element => element.contentWindow.innerHeight)).toBe(800);
@@ -324,6 +330,8 @@ test('desktop demo and public delivery use an exact 360 by 800 mobile viewport i
   });
   await page.goto('/d/phone-story');
   await expect(page.locator('.v-phone-device')).toBeVisible();
+  await expect.poll(() => page.locator('.v-phone-device').evaluate(element => Math.round(element.getBoundingClientRect().width))).toBe(300);
+  await expect.poll(() => page.locator('.v-phone-device').evaluate(element => Math.round(element.getBoundingClientRect().height))).toBe(665);
   frame = page.locator('.v-phone-screen iframe');
   await expect.poll(() => frame.evaluate(element => element.contentWindow.innerWidth)).toBe(360);
   await expect.poll(() => frame.evaluate(element => element.contentWindow.innerHeight)).toBe(800);

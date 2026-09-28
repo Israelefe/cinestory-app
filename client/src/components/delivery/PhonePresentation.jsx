@@ -58,8 +58,10 @@ export function DesktopPhoneFrame({ src, title, message, device = true }) {
 
   return <main className={'v-phone-presentation' + (!device ? ' is-inline' : '')} aria-label={title}>
     <section className="v-phone-device" aria-label={`${title}, shown at mobile size`}>
-      <div className="v-phone-status" aria-hidden="true"><strong>9:41</strong><span className="v-phone-island" /><span className="v-phone-status-icons"><Signal size={14} /><Wifi size={15} /><BatteryFull size={18} /></span></div>
-      <div className="v-phone-screen"><iframe ref={frame} src={src} title={title} allow="autoplay; clipboard-read; clipboard-write; fullscreen; web-share" /></div>
+      <div className="v-phone-device-scale">
+        <div className="v-phone-status" aria-hidden="true"><strong>9:41</strong><span className="v-phone-island" /><span className="v-phone-status-icons"><Signal size={14} /><Wifi size={15} /><BatteryFull size={18} /></span></div>
+        <div className="v-phone-screen"><iframe ref={frame} src={src} title={title} allow="autoplay; clipboard-read; clipboard-write; fullscreen; web-share" /></div>
+      </div>
     </section>
     <p className="v-phone-caption"><strong>Mobile client view</strong><span>360 × 800 px</span></p>
   </main>;

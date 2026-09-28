@@ -1,5 +1,6 @@
 .v-phone-presentation{display:grid;justify-items:center;gap:15px;min-height:calc(100dvh - 225px);padding:25px 16px 35px;background:radial-gradient(ellipse at 50% 40%,#ff9b8e12,transparent 43%)}
-.v-phone-device{--phone-view-width:360px;--phone-view-height:800px;position:relative;box-sizing:border-box;width:384px;height:851px;min-height:851px;padding:10px;border:1px solid #ffffff27;border-radius:43px;background:linear-gradient(145deg,#222226,#050507 42%,#19191d);box-shadow:0 36px 100px #000a,0 0 0 1px #000,0 0 60px #ff806f0a}
+.v-phone-device{position:relative;width:300px;height:665px;overflow:visible}
+.v-phone-device-scale{--phone-view-width:360px;--phone-view-height:800px;position:absolute;inset:0 auto auto 0;box-sizing:border-box;width:384px;height:851px;padding:10px;border:1px solid #ffffff27;border-radius:43px;background:linear-gradient(145deg,#222226,#050507 42%,#19191d);box-shadow:0 36px 100px #000a,0 0 0 1px #000,0 0 60px #ff806f0a;transform:scale(.78125);transform-origin:top left}
 .v-phone-status{position:relative;display:flex;align-items:center;justify-content:space-between;height:27px;padding:0 13px;color:#fff;font-size:10px}
 .v-phone-status>strong{font-size:10px;font-weight:700;letter-spacing:.01em}
 .v-phone-island{position:absolute;left:50%;top:3px;width:90px;height:20px;transform:translateX(-50%);border-radius:99px;background:#020203;box-shadow:inset 0 1px 2px #ffffff17}
@@ -14,8 +15,9 @@
 .v-phone-preview-page .v-client-preview-runtime-bar,.v-phone-preview-page .v-client-preview-note{display:none}
 .v-phone-preview-page,.v-phone-preview-page .v-client-preview-runtime{min-height:100%;height:100%;background:#050506}
 .v-phone-presentation.is-inline{display:block;min-height:0;padding:0;background:transparent}
-.v-phone-presentation.is-inline .v-phone-device{width:100%;height:min(680px,72dvh);min-height:440px;padding:0;border-radius:10px}
+.v-phone-presentation.is-inline .v-phone-device{width:100%;height:min(680px,72dvh);min-height:440px}
+.v-phone-presentation.is-inline .v-phone-device-scale{position:relative;inset:auto;width:100%;height:100%;padding:0;border:0;border-radius:10px;background:#070709;box-shadow:none;transform:none}
 .v-phone-presentation.is-inline .v-phone-status,.v-phone-presentation.is-inline .v-phone-caption{display:none}
 .v-phone-presentation.is-inline .v-phone-screen{box-sizing:border-box;width:100%;height:100%;border:0;border-radius:9px}
-@media(max-width:640px){.v-phone-presentation.is-inline .v-phone-device{height:min(620px,68dvh);min-height:420px;border-radius:7px}}
+@media(max-width:640px){.v-phone-presentation.is-inline .v-phone-device{height:min(620px,68dvh);min-height:420px}.v-phone-presentation.is-inline .v-phone-device-scale{border-radius:7px}}
 @media(prefers-reduced-motion:reduce){.v-phone-presentation *{scroll-behavior:auto!important;transition:none!important}}
