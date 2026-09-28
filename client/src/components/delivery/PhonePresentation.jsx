@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { BatteryFull, Signal, Wifi } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import ClientDeliveryPreview from './ClientDeliveryPreview.jsx';
@@ -34,9 +34,31 @@ export function PhonePresentationRoute({ children, title = 'Mobile client delive
 
 export function DesktopPhoneFrame({ src, title, message, device = true }) {
   const frame = useRef(null);
+  const phoneDevice = useRef(null);
   const ready = useRef(false);
+  const [phoneScale, setPhoneScale] = useState(.78125);
   const messageRef = useRef(message);
   messageRef.current = message;
+
+  useLayoutEffect(() => {
+    if (!device || !phoneDevice.current) return undefined;
+    const element = phoneDevice.current;
+    const updateScale = () => {
+      const top = Math.max(0, element.getBoundingClientRect().top);
+      const bottomSpace = element.closest('.v3-create') ? 24 : 64;
+      const availableHeight = Math.max(1, window.innerHeight - top - bottomSpace);
+      const nextScale = Math.min(.78125, availableHeight / 851);
+      setPhoneScale(current => Math.abs(current - nextScale) < .002 ? current : nextScale);
+    };
+    updateScale();
+    window.addEventListener('resize', updateScale);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateScale);
+    if (element.parentElement) observer?.observe(element.parentElement);
+    return () => {
+      window.removeEventListener('resize', updateScale);
+      observer?.disconnect();
+    };
+  }, [device]);
 
   useEffect(() => {
     const send = () => {
@@ -56,8 +78,10 @@ export function DesktopPhoneFrame({ src, title, message, device = true }) {
     if (ready.current && message !== undefined) frame.current?.contentWindow?.postMessage({ type: PREVIEW_DATA, payload: message }, window.location.origin);
   }, [message]);
 
+  const phoneStyle = device ? { width: `${384 * phoneScale}px`, height: `${851 * phoneScale}px`, '--phone-scale': phoneScale } : undefined;
+
   return <main className={'v-phone-presentation' + (!device ? ' is-inline' : '')} aria-label={title}>
-    <section className="v-phone-device" aria-label={`${title}, shown at mobile size`}>
+    <section ref={phoneDevice} className="v-phone-device" style={phoneStyle} aria-label={`${title}, shown at mobile size`}>
       <div className="v-phone-device-scale">
         <div className="v-phone-status" aria-hidden="true"><strong>9:41</strong><span className="v-phone-island" /><span className="v-phone-status-icons"><Signal size={14} /><Wifi size={15} /><BatteryFull size={18} /></span></div>
         <div className="v-phone-screen"><iframe ref={frame} src={src} title={title} allow="autoplay; clipboard-read; clipboard-write; fullscreen; web-share" /></div>
