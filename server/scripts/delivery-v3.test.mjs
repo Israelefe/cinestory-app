@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { V3_FORMATS, contrastRatio, validShowcase } from '../src/constants/deliveryV3.js';
-import { analyzeAllV3, directV3, improvePurpose } from '../src/services/deliveryV3AI.service.js';
+import { analyzeAllV3, directV3, improvePurpose, regenerateV3Caption } from '../src/services/deliveryV3AI.service.js';
 
 const ids = Array.from({ length: 25 }, (_, index) => 'asset-' + index);
 test('each format enforces its own inclusive showcase bounds and known unique assets', () => {
@@ -74,7 +74,10 @@ test('Photo Story chooses a bounded selection and keeps bookends outside it when
       title: "Ada's 25th birthday",
       openingLine: "Ada, your birthday photographs are ready.",
       closingLine: "Here is the full collection from your celebration.",
-      frames: selected.map(assetId => ({ assetId, caption: 'Ada, this moment belongs in your birthday story.' })),
+      frames: selected.map(assetId => ({ assetId, caption: 'Ada, this is your 25th birthday.' }))
+    },
+    {
+      frames: selected.map((assetId, index) => ({ assetId, caption: index === 0 ? 'Ada, this is your 25th birthday. That smile.' : 'A smiling woman poses in a red dress.' })),
       palette: { background: '#101010', surface: '#202020', text: '#ffffff', accent: '#ff5a47' },
       typography: { display: 'Playfair Display', body: 'Outfit' }
     }
@@ -86,10 +89,25 @@ test('Photo Story chooses a bounded selection and keeps bookends outside it when
     assert.deepEqual(result.selected, selected);
     assert.equal(result.direction.frames.length, 10);
     assert.equal(result.direction.frames.every(frame => frame.textAnimation === 'typewriter'), true);
+    assert.equal(result.direction.frames[0].caption, 'Ada, this is your 25th birthday. That smile.');
+    assert.equal(result.direction.frames.slice(1).every(frame => frame.caption === 'Ada, this is your 25th birthday.'), true);
+    const narrativePrompt = calls[1].messages[1].content[0].text;
+    assert.equal(narrativePrompt.includes('Visible birthday portrait'), false);
+    assert.match(narrativePrompt, /Ada's 25th birthday/);
     assert.equal(selected.includes(result.openingAssetId), false);
     assert.equal(selected.includes(result.closingAssetId), false);
     assert.notEqual(result.openingAssetId, result.closingAssetId);
     assert.equal(calls.every(call => call.model === 'deepseek-v4.1-flash'), true);
+  } finally { restore(); }
+});
+
+test('regenerated captions keep the purpose when a visual rewrite describes the photo', async () => {
+  const calls = [];
+  const restore = mockModel([{ caption: 'Ada, your 25th birthday is here.' }, { caption: 'A woman smiles at the camera.' }], calls);
+  try {
+    const caption = await regenerateV3Caption({ format: 'photo-story', brief: "Ada's 25th birthday", shootType: 'Birthday', v3: {} }, { summary: 'A woman smiles at the camera.' });
+    assert.equal(caption, 'Ada, your 25th birthday is here.');
+    assert.equal(calls[0].messages[1].content[0].text.includes('A woman smiles'), false);
   } finally { restore(); }
 });
 

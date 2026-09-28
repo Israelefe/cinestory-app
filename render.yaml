@@ -5,7 +5,7 @@ services:
     plan: free
     region: frankfurt
     rootDir: server
-    buildCommand: npm ci
+    buildCommand: npm ci && npm run verify:syntax
     startCommand: npm start
     healthCheckPath: /health
     autoDeployTrigger: commit

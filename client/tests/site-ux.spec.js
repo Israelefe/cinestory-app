@@ -60,6 +60,14 @@ test('public phone header keeps navigation in the menu', async ({ page }) => {
   await expect(menu.getByRole('link', { name: /Portfolio/ })).toBeVisible();
 });
 
+test('Veylo Help stays off creation and portfolio pages', async ({ page }) => {
+  await mockAccount(page);
+  for (const route of ['/create', '/portfolio/manage', '/portfolio', '/@amarastudio']) {
+    await page.goto(route);
+    await expect(page.locator('.veylo-assistant-launch'), `Veylo Help on ${route}`).toHaveCount(0);
+  }
+});
+
 test('portfolio preview keeps ordinary words on one line', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockAccount(page);
@@ -88,6 +96,10 @@ test('signed-in account menu is available on a narrow phone', async ({ page }) =
   const menu = page.getByRole('dialog', { name: 'Account menu' });
   await expect(menu.getByRole('link', { name: 'Settings' })).toBeVisible();
   await expect(menu.getByRole('link', { name: 'Portfolio' })).toBeVisible();
+  expect(await menu.locator('nav').evaluate(element => getComputedStyle(element).display)).toBe('grid');
+  const positions = await menu.locator('nav a').evaluateAll(links => links.map(link => ({ left: link.getBoundingClientRect().left, top: link.getBoundingClientRect().top, width: link.getBoundingClientRect().width })));
+  expect(positions.every(item => item.width > 250)).toBe(true);
+  expect(positions.every((item, index) => index === 0 || item.top > positions[index - 1].top)).toBe(true);
   await page.keyboard.press('Escape');
   await expect(menu).toHaveCount(0);
 });

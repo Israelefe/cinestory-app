@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "verify:syntax": "node scripts/verify-syntax.mjs",
     "dev": "nodemon server.js",
     "delivery:worker": "node delivery-worker.js",
     "content:worker": "node content-worker.js",

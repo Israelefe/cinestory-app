@@ -24,6 +24,8 @@ test('dashboard disables New Delivery after three Free publications', async ({ p
   await mockAccount(page);
   await page.goto('/dashboard');
   await expect(page.getByRole('button', { name: 'New delivery' })).toBeDisabled();
+  await expect(page.locator('.v-dashboard-deliveries>header .v-dashboard-new')).toBeVisible();
+  await expect(page.locator('.v-dashboard-hero .v-dashboard-new')).toHaveCount(0);
   await expect(page.getByText("You've published all 3 Free deliveries this month.", { exact: false })).toBeVisible();
   await expect(page.getByRole('link', { name: 'View Pro' }).last()).toHaveAttribute('href', '/billing');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -33,6 +35,7 @@ test('dashboard keeps New Delivery available before the Free limit', async ({ pa
   await mockAccount(page, null, { ...quota, usage: { deliveriesThisMonth: 2, deliveriesRemaining: 1 } });
   await page.goto('/dashboard');
   await expect(page.getByRole('link', { name: 'New delivery' })).toHaveAttribute('href', '/create');
+  await expect(page.locator('.v-dashboard-deliveries>header .v-dashboard-new')).toBeVisible();
 });
 
 test('dashboard keeps New Delivery available for Pro', async ({ page }) => {

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowLeft, ChevronLeft, ChevronRight, Download, Heart, LoaderCircle, X } from 'lucide-react';
 import { Photo } from '../PublicDesign.jsx';
@@ -21,18 +22,16 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
   const allowLikes = delivery ? Boolean(delivery.access?.allowLikes && onLike) : Boolean(onLike);
   const resolvedPhotos = useMemo(() => photos.map((photo, index) => demoId ? { ...photo, name: `demo-${demoId}-${index + 1}`, url: `/veylo/web/demo-${demoId}-${index + 1}-1440.webp`, thumbnailUrl: `/veylo/web/demo-${demoId}-${index + 1}-480.webp` } : photo), [photos, demoId]);
   const direction = delivery?.creativeDirection || {};
-  const palette = direction.palette || {};
   const typography = direction.typography || {};
-  const displayFont = typography.display === 'soft-serif' ? "'Cormorant Garamond', 'Playfair Display', Georgia, serif"
+  const allowedFonts = new Set(['Playfair Display', 'Outfit', 'Plus Jakarta Sans', 'Cormorant Garamond', 'DM Sans', 'Libre Baskerville', 'Manrope']);
+  const displayFont = allowedFonts.has(typography.display) ? `'${typography.display}', Georgia, serif`
+    : typography.display === 'soft-serif' ? "'Cormorant Garamond', 'Playfair Display', Georgia, serif"
     : typography.display === 'condensed-sans' ? "'Outfit', 'Plus Jakarta Sans', sans-serif"
       : typography.display === 'clean-sans' ? "'Plus Jakarta Sans', system-ui, sans-serif"
         : "'Playfair Display', Georgia, serif";
-  const bodyFont = typography.body === 'editorial-serif' ? "'Playfair Display', Georgia, serif" : "'Plus Jakarta Sans', system-ui, sans-serif";
+  const bodyFont = allowedFonts.has(typography.body) ? `'${typography.body}', system-ui, sans-serif`
+    : typography.body === 'editorial-serif' ? "'Playfair Display', Georgia, serif" : "'Plus Jakarta Sans', system-ui, sans-serif";
   const galleryTheme = {
-    '--gallery-accent': palette.accent || '#ff9b8e',
-    '--gallery-bg': palette.background || '#08080b',
-    '--gallery-surface': palette.surface || '#0d0d11',
-    '--gallery-text': palette.text || '#f7f3ef',
     '--gallery-display': displayFont,
     '--gallery-body': bodyFont,
     '--fd-caption-weight': direction.variation?.captionTreatment === 'bold' ? '650' : direction.variation?.captionTreatment === 'quiet' ? '400' : '500'
@@ -65,7 +64,7 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
   const runDownload = (photo, index) => onDownload?.(photoKey(photo, index), index);
   const runLike = (photo, index) => onLike?.(photoKey(photo, index), index);
 
-  return <motion.div className="client-gallery-overlay" initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={event => { if (event.target === event.currentTarget) onClose?.(); }}>
+  return createPortal(<motion.div className="client-gallery-overlay" initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={event => { if (event.target === event.currentTarget) onClose?.(); }}>
     <motion.section ref={panel} className="client-gallery" style={galleryTheme} role="dialog" aria-modal="true" aria-labelledby="client-gallery-title" tabIndex={-1} initial={reduced ? false : { opacity: 0, y: 24, scale: .985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={reduced ? { opacity: 0 } : { opacity: 0, y: 14 }} transition={reduced ? { duration: 0 } : { type: 'spring', damping: 28, stiffness: 270 }}>
       <header className="client-gallery-header">
         <div><p>{eyebrow} · {photos.length} {photos.length === 1 ? 'photograph' : 'photographs'}</p><h2 id="client-gallery-title">{selected === null ? title : `Photograph ${selected + 1}`}</h2></div>
@@ -103,5 +102,5 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
         </div>
       </div>}
     </motion.section>
-  </motion.div>;
+  </motion.div>, document.body);
 }

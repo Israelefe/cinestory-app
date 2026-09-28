@@ -16,9 +16,8 @@
 .v-policy-mobile-nav{display:none}
 .v-auth-panel-head h1{font-family:'Outfit','Plus Jakarta Sans',sans-serif;font-size:clamp(27px,5vw,38px);font-weight:550;letter-spacing:-.045em;line-height:1.12}
 .v-auth-password-help{margin-top:-6px;color:#ada49c;font-size:12px;line-height:1.5}
-.v-dashboard-hero-action{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:20px}
-.v-dashboard-hero-action .v-dashboard-new{min-height:48px}
-.v-dashboard-hero-action small{max-width:260px;color:#b9afa7;font-size:12px;line-height:1.45}
+.v-dashboard-head-actions{align-items:center}
+.v-dashboard-head-actions small{max-width:190px;color:#b9afa7;font-size:12px;line-height:1.45}
 .v-account-section-nav{display:flex;flex-wrap:wrap;gap:9px;margin-top:20px}
 .v-account-section-nav a{display:inline-flex;align-items:center;min-height:42px;padding:9px 13px;border:1px solid #ffffff25;color:#d4c9c1;font-size:12px;text-decoration:none;transition:transform .18s,border-color .18s}
 .v-account-section-nav a:hover{transform:translateY(-2px);border-color:#ff9b8e80;color:#ffb4aa}
@@ -92,8 +91,7 @@
   .v-onboarding-guide>h1{font-size:clamp(27px,7vw,38px)}
   .v-onboarding-guide>ol,.v-onboarding-guide>.v-onboarding-account{display:none}
   .v-onboarding-guide>p:not(.v-eyebrow){margin-top:6px}
-  .v-dashboard-hero-action{align-items:flex-start;flex-direction:column}
-  .v-dashboard-hero-action .v-dashboard-new{min-width:170px}
+  .v-dashboard-head-actions{align-items:flex-start;flex-direction:column}
   .v-pedit-preview-panel:not(.is-review){display:none}
   .v-pedit-color-choices,.v-pedit-layout-choices,.v-pedit-type-choices,.v-pedit-spacing-choices{grid-template-columns:repeat(2,minmax(0,1fr))}
   .v-pedit-picker-filters{padding:10px}
@@ -101,7 +99,7 @@
 }
 @media(min-width:768px) and (max-width:1024px){
   .v-portfolio-hero-actions,.v-pricing-early-actions{margin-top:26px}
-  .v-dashboard-hero-action{margin-top:25px}
+  .v-dashboard-head-actions{gap:10px}
   .v-pedit-preview-panel:not(.is-review){display:none}
 }
 @media(min-width:768px) and (max-width:1023px){

@@ -134,7 +134,11 @@ function DeliveryChrome({ user }) {
     || pathname === '/demo'
     || pathname.startsWith('/demo/');
   if (isDeliverySurface) return null;
-  return <><CookiePreferences /><VeyloAssistant user={user} /></>;
+  const hideAssistant = pathname === '/create'
+    || pathname === '/portfolio'
+    || pathname === '/portfolio/manage'
+    || Boolean(publicPortfolioHandle(pathname));
+  return <><CookiePreferences />{!hideAssistant && <VeyloAssistant user={user} />}</>;
 }
 
 function VerificationRoute({ user, loading, children }) {

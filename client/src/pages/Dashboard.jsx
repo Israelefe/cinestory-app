@@ -182,7 +182,6 @@ export default function Dashboard({ user }) {
           <div className="v-dashboard-studio"><span className="v-dashboard-avatar">{user?.avatar ? <img src={user.avatar} alt="" /> : <Camera size={24} />}</span><div><p>{studioName}</p><span>{user?.studio?.city ? `${user.studio.city}, ${user.studio.state}` : 'Your Veylo studio'}</span></div></div>
           <h1>Good to see you,<br /><em>{firstName}.</em></h1>
           <span>Open a client delivery or start with your next finished shoot.</span>
-          <div className="v-dashboard-hero-action">{newDeliveryDisabled ? <button type="button" className="v-dashboard-new" disabled aria-describedby={quotaReached || planStatus.error ? 'v-dashboard-quota-note' : undefined}><Plus size={17} />New delivery</button> : <Link to="/create" className="v-dashboard-new"><Plus size={17} />New delivery</Link>}{!isPro && planStatus.data?.usage?.deliveriesRemaining != null && <small>{freeMonthlyLimit - planStatus.data.usage.deliveriesRemaining} of {freeMonthlyLimit} Free deliveries published this month</small>}</div>
         </div>
         <div className="v-dashboard-plan-summary"><BadgeCheck size={19} /><div><span>{isPro ? 'Veylo Pro' : 'Veylo Free'}</span><small>{isPro ? 'Unlimited deliveries under fair use' : `${freeMonthlyLimit} deliveries each month`}</small></div><Link to="/billing">{isPro ? 'Manage plan' : 'View Pro'}</Link></div>
       </motion.header>
@@ -209,7 +208,7 @@ export default function Dashboard({ user }) {
       </motion.section>
 
       <section className="v-dashboard-deliveries">
-        <header><div><h2>Client deliveries</h2><span>{dataUnavailable ? 'Some delivery data is unavailable. Check the status below before making decisions.' : stories.length > 0 ? `${totalDownloads} downloads across your active deliveries.` : 'Your finished shoots will appear here.'}</span></div></header>
+        <header><div><h2>Client deliveries</h2><span>{dataUnavailable ? 'Some delivery data is unavailable. Check the status below before making decisions.' : stories.length > 0 ? `${totalDownloads} downloads across your active deliveries.` : 'Your finished shoots will appear here.'}</span></div><div className="v-dashboard-head-actions">{newDeliveryDisabled ? <button type="button" className="v-dashboard-new" disabled aria-describedby={quotaReached || planStatus.error ? 'v-dashboard-quota-note' : undefined}><Plus size={16} />New delivery</button> : <Link to="/create" className="v-dashboard-new"><Plus size={16} />New delivery</Link>}{!isPro && planStatus.data?.usage?.deliveriesRemaining != null && <small>{freeMonthlyLimit - planStatus.data.usage.deliveriesRemaining} of {freeMonthlyLimit} Free deliveries published this month</small>}</div></header>
 
         {(quotaReached || planStatus.error) && <div id="v-dashboard-quota-note" className="v-dashboard-quota-note" role="status"><Clock3 size={18} /><span>{quotaReached ? `You've published all ${freeMonthlyLimit} Free deliveries this month. You can create another next month, or move to Pro.` : 'We could not check your plan right now. Try again before starting a delivery.'}</span>{quotaReached ? <Link to="/billing">View Pro</Link> : <button type="button" onClick={fetchPlanStatus}>Try again</button>}</div>}
 
