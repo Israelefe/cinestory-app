@@ -53,14 +53,22 @@ async function request(system, user, { images = [], maxTokens = 4000 } = {}) {
 }
 
 export async function improvePurpose({ purpose, shootType }) {
-  const result = await request(
-    'You are lightly editing the photographer\'s purpose of a finished shoot. Return JSON {"improved":"..."} containing ONLY the edited purpose, with no field labels, shoot type, explanation, caption instructions, or extra lines. Fix spelling, grammar and punctuation only where needed. Keep the photographer\'s wording and every supplied fact; do not add any scene, emotion, relationship or detail. A short purpose should stay short. Example: "Lora 25th Birthday Celebration" becomes "Lora\'s 25th birthday celebration." If the original is already clear, return it unchanged.',
-    JSON.stringify({ shootType, purpose }),
-    { maxTokens: 250 }
-  );
-  const raw = String(result.improved || '').trim();
-  const purposeLine = raw.match(/(?:^|\n)\s*(?:photographer['\u2019]s\s+)?purpose\s*:\s*(.+)/i)?.[1];
-  const improved = String(purposeLine || raw).replace(/^\s*(?:improved\s+)?(?:photographer['\u2019]s\s+)?purpose\s*:\s*/i, '').trim().slice(0, 3000);
+  const readSuggestion = result => {
+    const raw = String(result?.improved || '').trim();
+    const purposeLine = raw.match(/(?:^|\n)\s*(?:photographer['\u2019]s\s+)?purpose\s*:\s*(.+)/i)?.[1];
+    return String(purposeLine || raw).replace(/^\s*(?:improved\s+)?(?:photographer['\u2019]s\s+)?purpose\s*:\s*/i, '').trim().slice(0, 3000);
+  };
+  const system = 'You are improving the photographer’s short description of why a finished shoot was taken. Return JSON {"improved":"..."} with only the improved purpose. Make a clear, natural improvement to grammar and wording, not just capitalization. Keep close to the original meaning and length, and preserve every name, age, event, date, and supplied fact. A fragment can become one natural sentence. Do not add a location, relationship, emotion, scene detail, or caption. Example: "Lora 25th Birthday Celebration" becomes "Celebrating Lora’s 25th birthday." If the original is already a clear natural sentence, return it unchanged.';
+  const result = await request(system, JSON.stringify({ shootType, purpose }), { maxTokens: 250 });
+  let improved = readSuggestion(result);
+  if (improved.toLocaleLowerCase() === String(purpose || '').trim().toLocaleLowerCase()) {
+    const retry = await request(
+      'Return JSON {"improved":"..."}. The previous wording was identical to the source. If the source is a phrase or title rather than a complete sentence, turn it into one natural sentence without adding any fact. Preserve the same purpose, names, ages, occasion, and meaning. Do not merely change capitalization.',
+      JSON.stringify({ shootType, purpose, previousSuggestion: improved }),
+      { maxTokens: 250 }
+    );
+    improved = readSuggestion(retry);
+  }
   if (!improved || /\n|(?:^|\b)shoot\s+type\s*:/i.test(improved)) throw Object.assign(new Error('The wording suggestion was not usable. Your original purpose is unchanged. Please try again.'), { code: 'V3_INVALID_AI_RESPONSE' });
   return improved;
 }
@@ -177,6 +185,113 @@ async function chooseV3Showcase(delivery, insights, maximum) {
   return chosen;
 }
 
+function wordCount(value) {
+  return String(value || '').trim().split(/\s+/).filter(Boolean).length;
+}
+
+function fitText(value, limit) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (text.length <= limit) return text;
+  const clipped = text.slice(0, limit + 1);
+  const boundary = clipped.lastIndexOf(' ');
+  return (boundary > 0 ? clipped.slice(0, boundary) : clipped.slice(0, limit)).replace(/[\s,;:]+$/, '').replace(/[.!?]+$/, '') + '.';
+}
+
+function purposeHeadline(delivery) {
+  const purpose = String(delivery.brief || '').replace(/\s+/g, ' ').trim();
+  const fallback = purpose || [delivery.clientName, delivery.shootType, 'Photographs'].filter(Boolean).join(' ');
+  return fitText(fallback.charAt(0).toLocaleUpperCase() + fallback.slice(1), 70);
+}
+
+function purposeCaption(delivery, limit) {
+  const purpose = String(delivery.brief || '').replace(/\s+/g, ' ').trim();
+  if (!purpose) return fitText('Your finished photographs are ready to revisit whenever you want, with the full collection gathered here for you to view and share.', limit);
+  return fitText('This collection marks ' + purpose.replace(/[.!?]+$/, '') + ', giving you finished photographs to revisit whenever you want to remember the occasion.', limit);
+}
+
+function headlineNeedsRepair(value) {
+  const headline = String(value || '').trim();
+  return wordCount(headline) < 2 || wordCount(headline) > 7 || headline.length > 70
+    || /^(?:the\s+(?:photograph|photo|image|moment|year ahead|next chapter)|a\s+(?:photograph|photo|moment|day to remember)|photo\s*#?\s*\d+|a beautiful memory|special moments?|new beginnings?)\b/i.test(headline);
+}
+
+function purposeTokens(delivery) {
+  const stopWords = new Set(['the', 'and', 'for', 'with', 'from', 'this', 'that', 'your', 'you', 'our', 'their', 'was', 'were', 'are', 'into', 'over', 'under', 'through', 'about', 'photograph', 'photographs', 'photo', 'photos', 'image', 'images', 'gallery', 'collection', 'delivery', 'shoot', 'session']);
+  const normalize = value => String(value || '').toLocaleLowerCase()
+    .replace(/\btwenty[-\s]+five\b/g, '25')
+    .replace(/\b(\d+)(?:st|nd|rd|th)\b/g, '$1')
+    .replace(/[’']s\b/gi, '')
+    .replace(/[’']/g, '')
+    .match(/[a-z0-9]+/g) || [];
+  const clientTokens = normalize(delivery.clientName);
+  const briefTokens = normalize(delivery.brief);
+  return new Set([...clientTokens, ...briefTokens].filter(token => clientTokens.includes(token) || (/^\d+$/.test(token) || token.length > 2) && !stopWords.has(token)));
+}
+
+function headlineHasPurposeAnchor(value, delivery) {
+  return textHasPurposeAnchor(value, delivery);
+}
+
+function textHasPurposeAnchor(value, delivery) {
+  const anchors = purposeTokens(delivery);
+  if (!anchors.size) return true;
+  const tokens = String(value || '').toLocaleLowerCase()
+    .replace(/\btwenty[-\s]+five\b/g, '25')
+    .replace(/\b(\d+)(?:st|nd|rd|th)\b/g, '$1')
+    .replace(/[’']s\b/gi, '')
+    .replace(/[’']/g, '')
+    .match(/[a-z0-9]+/g) || [];
+  return tokens.some(token => anchors.has(token));
+}
+
+function substantialCaption(value, delivery, limit) {
+  const caption = String(value || '').trim();
+  return fitText(wordCount(caption) < 18 ? purposeCaption(delivery, limit) : caption, limit);
+}
+
+function alignNarrativeFrames(value, selected) {
+  const rows = Array.isArray(value) ? value.filter(frame => frame && typeof frame === 'object') : [];
+  const used = new Set();
+  return selected.map((assetId, index) => {
+    const match = rows.find(frame => String(frame.assetId || '') === assetId && !used.has(frame));
+    const frame = match || rows[index] || {};
+    used.add(frame);
+    return { ...frame, assetId };
+  });
+}
+
+function frameNeedsRepair(frame, format, delivery) {
+  const headline = String(frame?.headline || '').trim();
+  const caption = String(frame?.caption || '').trim();
+  const minimumCaptionWords = 18;
+  const maximumCaptionWords = format === 'photo-story' ? 24 : 30;
+  return headlineNeedsRepair(headline) || !headlineHasPurposeAnchor(headline, delivery)
+    || !textHasPurposeAnchor(caption, delivery)
+    || wordCount(caption) < minimumCaptionWords || wordCount(caption) > maximumCaptionWords
+    || caption.length > (format === 'photo-story' ? 150 : 180);
+}
+
+function needsNarrativeRepair(frames, selected, format, delivery) {
+  const keys = frames.map(frame => String(frame?.headline || '').trim().toLocaleLowerCase());
+  const captionKeys = frames.map(frame => String(frame?.caption || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase());
+  return frames.length !== selected.length || frames.some(frame => frameNeedsRepair(frame, format, delivery))
+    || new Set(captionKeys).size !== captionKeys.length
+    || new Set(keys).size !== keys.length;
+}
+
+async function repairNarrativeFrames(delivery, selected, prompt, firstFrames) {
+  try {
+    const repair = await request(
+      'Return JSON {"frames":[{"assetId":"...","headline":"...","caption":"..."}]}. Repair the supplied draft for every asset ID, in the supplied order. Give each photograph a distinct, specific headline of 2-7 words that expresses the idea behind its caption and connects to the photographer’s purpose. Do not use generic titles. Write captions as complete, useful thoughts in plain, natural language a person would say aloud. For Photo Story use 18-24 words and no more than 150 characters. For other formats use 18-30 words and no more than 180 characters. The photographer’s purpose provides the meaning; image observations may add one subtle cue only. Do not invent facts, names, relationships, emotions, or event details. Avoid dashes, semicolons, fragments, stock praise, and decorative metaphors.',
+      prompt + '\nWriting standard: Let the photographer’s purpose supply nearly all the meaning. Use a visual observation only as one small, accurate cue. Every caption must be a thoughtful message about the reason this work was made, with at least one clear detail from the purpose. Every headline must name or clearly point to a detail from that purpose. For “Lora’s 25th birthday celebration,” “Lora at Twenty-Five” is specific; “The Year Ahead” alone is too broad. Do not turn the caption into an image description. Give every photograph a different thought.\nDraft text to repair: ' + JSON.stringify(firstFrames) + '\nPhotographer purpose: ' + delivery.brief,
+      { maxTokens: Math.min(9000, 700 + selected.length * 170) }
+    );
+    return Array.isArray(repair.frames) ? repair.frames : firstFrames;
+  } catch {
+    return firstFrames;
+  }
+}
+
 export async function directV3(delivery, insights) {
   const [minimum, maximum] = V3_FORMATS[delivery.format];
   const candidates = [...insights].sort((a, b) => b.score - a.score);
@@ -187,8 +302,9 @@ export async function directV3(delivery, insights) {
   const openingAssetId = extras[0]?.assetId || selected[0];
   const closingAssetId = extras[1]?.assetId || extras[0]?.assetId || selected.at(-1);
   const rows = insights.filter(row => selectedSet.has(row.assetId));
-  const captionLimit = delivery.format === 'photo-story' ? 95 : 180;
-  const narrativeSystem = "Return JSON {\"title\":\"...\",\"openingLine\":\"...\",\"closingLine\":\"...\",\"frames\":[{\"assetId\":\"...\",\"headline\":\"...\",\"caption\":\"...\"}]}. Include exactly one frame per supplied asset ID, in the same order. Write a distinct, useful headline and a human caption for every photograph. The photographer's stated purpose should determine 99% of the caption's meaning. Use the matching image observation for the remaining 1% only when it subtly grounds the thought; it is not permission to describe the photograph. Do not invent names, relationships, ages, feelings, or event facts. Keep the client and occasion present across the sequence without repeating the same sentence. Headlines should be concise (2-7 words), specific to the purpose or the idea of that frame, and different from one another. Never use generic labels such as The photograph, The moment, Photo 01, or A beautiful memory. Photo Story captions should carry a complete, thoughtful idea in 12-17 words, usually 75-95 characters, and never over 95 characters so the full caption fits within three short mobile lines. Other formats can use 18-27 words and up to 180 characters. Avoid poetry for its own sake, stock phrases, and empty praise. Use plain, warm language a photographer could send to this client. Keep the opening and closing distinct.";
+  const captionLimit = delivery.format === 'photo-story' ? 150 : 180;
+  const narrativeSystem = "Return JSON {\"title\":\"...\",\"openingLine\":\"...\",\"closingLine\":\"...\",\"frames\":[{\"assetId\":\"...\",\"headline\":\"...\",\"caption\":\"...\"}]}. Include exactly one frame per supplied asset ID, in the same order. Write a distinct, specific headline and a substantial, useful caption for every photograph. The photographer's stated purpose determines the caption's meaning; the matching image observation can add one subtle cue only when it helps ground the thought. Do not describe the photograph or let visual analysis take over. Do not invent names, relationships, ages, feelings, or event facts. Keep the client and occasion present across the sequence, but make each headline and caption add a different thought rather than repeating the same sentence. Headlines should be concise (2-7 words), meaningful, and clearly tied to the purpose or idea of their caption. Never use generic labels such as The photograph, The moment, Photo 01, or A beautiful memory. Photo Story captions should be complete, thoughtful ideas in 18-24 words and no more than 150 characters. Other formats should use 18-30 words and no more than 180 characters. Use plain, warm language that sounds natural when spoken aloud. Avoid fragments, dashes, semicolons, stock phrases, decorative metaphors, and empty praise. Keep the opening and closing distinct.";
+  const narrativeGuidance = ' Make every caption sound like a thoughtful message from the photographer to this client, tied to the actual occasion or reason they supplied. The purpose provides almost all the meaning. Use shoot type only as light context and any image observation as one small, accurate cue. For example, with purpose “Lora’s 25th birthday celebration,” a useful caption could be: “Lora, turning 25 is a chance to celebrate how far you have come and choose what you want from the year ahead.” A caption that only describes Lora smiling is not useful. Each headline must point to a real detail from the purpose, such as the person, occasion, age, or campaign. “The Year Ahead” is too broad by itself; “Lora at Twenty-Five” is tied to the brief. Make ideas and wording distinct across the set.';
   const narrativePrompt = [
     'Client: ' + delivery.clientName,
     "Photographer's purpose: " + delivery.brief,
@@ -196,23 +312,19 @@ export async function directV3(delivery, insights) {
     'Format: ' + delivery.format,
     'Selected photographs in order: ' + JSON.stringify(selected.map(assetId => ({ assetId, observation: rows.find(row => row.assetId === assetId)?.summary || '' })))
   ].join('\n');
-  const narrative = await request(narrativeSystem, narrativePrompt, { maxTokens: Math.min(12000, 1200 + selected.length * 180) });
-  const responseFrames = Array.isArray(narrative.frames) ? narrative.frames : [];
-  if (responseFrames.length !== selected.length || new Set(responseFrames.map(frame => String(frame.assetId))).size !== selected.length || responseFrames.some(frame => !selectedSet.has(String(frame.assetId)))) throw Object.assign(new Error('Some headlines or captions were missing. Retry this step.'), { code: 'V3_INCOMPLETE_CAPTIONS' });
-  const frameMap = new Map(responseFrames.map(frame => [String(frame.assetId), frame]));
-  const captions = selected.map(id => {
-    const frame = frameMap.get(id);
-    const headline = String(frame?.headline || '').trim();
-    const caption = String(frame?.caption || '').trim();
-    const headlineWords = headline.split(/\s+/).filter(Boolean).length;
-    const captionWords = caption.split(/\s+/).filter(Boolean).length;
-    const minimumCaptionWords = delivery.format === 'photo-story' ? 12 : 18;
-    const maximumCaptionWords = delivery.format === 'photo-story' ? 17 : 27;
-    if (headlineWords < 2 || headlineWords > 7 || headline.length > 70 || captionWords < minimumCaptionWords || captionWords > maximumCaptionWords || caption.length > captionLimit) throw Object.assign(new Error('Some headlines or captions were too short or too long. Retry this step.'), { code: 'V3_INCOMPLETE_CAPTIONS' });
-    return { assetId: id, headline, caption, textAnimation: delivery.format === 'photo-story' ? 'typewriter' : 'word_fade_up' };
+  let narrative = await request(narrativeSystem + narrativeGuidance, narrativePrompt, { maxTokens: Math.min(12000, 1200 + selected.length * 220) });
+  let responseFrames = alignNarrativeFrames(narrative.frames, selected);
+  if (needsNarrativeRepair(responseFrames, selected, delivery.format, delivery)) {
+    const repairedFrames = await repairNarrativeFrames(delivery, selected, narrativePrompt, narrative.frames);
+    responseFrames = alignNarrativeFrames(repairedFrames, selected);
+  }
+  const captions = responseFrames.map((frame, index) => {
+    const rawHeadline = String(frame?.headline || '').replace(/^\s*headline\s*:\s*/i, '').trim();
+    const rawCaption = String(frame?.caption || '').replace(/^\s*caption\s*:\s*/i, '').trim();
+    const headline = fitText(headlineNeedsRepair(rawHeadline) || !headlineHasPurposeAnchor(rawHeadline, delivery) ? purposeHeadline(delivery) : rawHeadline, 70);
+    const caption = substantialCaption(rawCaption, delivery, captionLimit);
+    return { assetId: selected[index], headline, caption, textAnimation: delivery.format === 'photo-story' ? 'typewriter' : 'word_fade_up' };
   });
-  const headlineKeys = captions.map(frame => frame.headline.toLocaleLowerCase());
-  if (new Set(headlineKeys).size !== headlineKeys.length || captions.some(frame => /^(?:the\s+(?:photograph|photo|image|moment)|a\s+(?:photograph|photo|moment)|photo\s*#?\s*\d+|a beautiful memory)(?:\b|$)/i.test(frame.headline))) throw Object.assign(new Error('Some headlines were repeated or too general. Retry this step.'), { code: 'V3_INCOMPLETE_CAPTIONS' });
   const visual = await request('Return JSON {"palette":{"background":"#hex","surface":"#hex","text":"#hex","accent":"#hex"},"typography":{"display":"Playfair Display","body":"Outfit"}}. Choose a readable palette from the supplied image colours. Do not write or change the title, opening, closing, headlines, or captions. Typography must use Playfair Display, Outfit, Plus Jakarta Sans, Cormorant Garamond, DM Sans, Libre Baskerville, or Manrope.', 'Image colours: ' + JSON.stringify(rows.map(({ assetId, colors }) => ({ assetId, colors }))) + '\nFormat: ' + delivery.format, { maxTokens: 450 });
   const result = { ...narrative, palette: visual.palette, typography: visual.typography };
   const palette = Object.fromEntries(Object.keys(V3_DEFAULT_PALETTE).map(key => [key, /^#[0-9a-f]{6}$/i.test(result.palette?.[key]) ? result.palette[key] : V3_DEFAULT_PALETTE[key]]));
@@ -221,20 +333,24 @@ export async function directV3(delivery, insights) {
     if (readable) palette.text = readable;
     else { palette.background = V3_DEFAULT_PALETTE.background; palette.surface = V3_DEFAULT_PALETTE.surface; palette.text = V3_DEFAULT_PALETTE.text; }
   }
-  if (String(result.openingLine || '').trim().length < 5 || String(result.closingLine || '').trim().length < 5) throw Object.assign(new Error('The opening or closing message was missing. Retry this step.'), { code: 'V3_INCOMPLETE_BOOKENDS' });
+  const openingLine = String(result.openingLine || '').trim().length >= 5 ? String(result.openingLine).trim() : 'These photographs were made for ' + String(delivery.brief || delivery.shootType || 'this occasion').trim() + '.';
+  const closingLine = String(result.closingLine || '').trim().length >= 5 ? String(result.closingLine).trim() : 'Your full gallery is ready.';
   const sections = await groupV3Sections(delivery, rows, selected);
-  return { selected, openingAssetId, closingAssetId, direction: { title: String(result.title || delivery.clientName + "'s photographs").slice(0, 80), openingLine: String(result.openingLine).slice(0, 140), closingLine: String(result.closingLine).slice(0, 160), palette, typography: { display: V3_FONT_CHOICES.has(result.typography?.display) ? result.typography.display : 'Playfair Display', body: V3_FONT_CHOICES.has(result.typography?.body) ? result.typography.body : 'Outfit' }, frames: captions, assetOrder: selected, sections } };
+  return { selected, openingAssetId, closingAssetId, direction: { title: String(result.title || (delivery.clientName || 'Your') + "'s photographs").slice(0, 80), openingLine: openingLine.slice(0, 140), closingLine: closingLine.slice(0, 160), palette, typography: { display: V3_FONT_CHOICES.has(result.typography?.display) ? result.typography.display : 'Playfair Display', body: V3_FONT_CHOICES.has(result.typography?.body) ? result.typography.body : 'Outfit' }, frames: captions, assetOrder: selected, sections } };
 }
 
 export async function regenerateV3Caption(delivery, insight, instruction = '') {
-  const limit = delivery.format === 'photo-story' ? 95 : 180;
-  const result = await request('Return JSON {"headline":"...","caption":"..."}. Rewrite the headline and caption for this one selected photograph. The photographer’s purpose must determine 99% of the caption’s meaning; the matching image observation can provide the remaining 1% only when it subtly grounds the thought. Do not describe the photograph or invent names, relationships, ages, feelings, or event facts. The headline should be specific, concise (2-7 words), and must not be The photograph, The moment, or a photo number. For Photo Story, write a complete and thoughtful caption in 12-17 words (usually 75-95 characters; hard limit 95) that fits within three short mobile lines. For other formats, use 18-27 words and no more than 180 characters. The instruction can guide tone or emphasis but cannot contradict the purpose. Use plain human language, with a clear meaning rather than empty praise.', "Photographer's purpose: " + delivery.brief + '\nPhotographer instruction: ' + instruction + '\nShoot type (light context only): ' + delivery.shootType + '\nFormat: ' + delivery.format + '\nImage observation (light context only): ' + (insight.summary || 'No clear visual detail available.'), { maxTokens: 500 });
-  const headline = String(result.headline || '').trim();
-  const caption = String(result.caption || '').trim();
-  const headlineWords = headline.split(/\s+/).filter(Boolean).length;
-  const captionWords = caption.split(/\s+/).filter(Boolean).length;
-  const minimumCaptionWords = delivery.format === 'photo-story' ? 12 : 18;
-  const maximumCaptionWords = delivery.format === 'photo-story' ? 17 : 27;
-  if (headlineWords < 2 || headlineWords > 7 || headline.length > 70 || captionWords < minimumCaptionWords || captionWords > maximumCaptionWords || caption.length > limit || /^(?:the\s+(?:photograph|photo|image|moment)|a\s+(?:photograph|photo|moment)|photo\s*#?\s*\d+)(?:\b|$)/i.test(headline)) throw Object.assign(new Error('The headline and caption could not be written. Retry.'), { code: 'V3_INVALID_AI_RESPONSE' });
-  return { headline, caption };
+  const limit = delivery.format === 'photo-story' ? 150 : 180;
+  const prompt = "Photographer's purpose: " + delivery.brief + '\nPhotographer instruction: ' + instruction + '\nShoot type (light context only): ' + delivery.shootType + '\nFormat: ' + delivery.format + '\nImage observation (light context only): ' + (insight.summary || 'No clear visual detail available.');
+  const system = 'Return JSON {"headline":"...","caption":"..."}. Write a meaningful 2-7 word headline tied to the photographer’s purpose and the caption’s idea. Do not use generic labels such as The photograph, The moment, or a photo number. Write a complete, useful caption in plain, natural language that sounds human when spoken aloud. The purpose determines its meaning; the image observation can add one subtle cue only. Do not describe the image or invent facts, names, relationships, ages, or feelings. For Photo Story, use 18-24 words and no more than 150 characters. Other formats use 18-30 words and no more than 180 characters. The instruction can guide tone but cannot contradict the purpose. Avoid fragments, dashes, semicolons, stock phrases, decorative metaphors, and empty praise.';
+  const meaningfulWritingGuidance = ' The caption should read like a thoughtful message from the photographer to the client, grounded in the actual occasion or reason they supplied. That purpose determines nearly all its meaning; image analysis may add one small, accurate cue. A birthday caption can speak to what turning that age means and the year ahead instead of merely saying someone is smiling. The headline must point to a real detail in the purpose, such as the person, occasion, age, or campaign; broad labels like “The Year Ahead” are not specific enough.';
+  let result = await request(system + meaningfulWritingGuidance, prompt, { maxTokens: 700 });
+  if (frameNeedsRepair(result, delivery.format, delivery)) {
+    const repaired = await repairNarrativeFrames(delivery, ['selected-photo'], prompt, [{ assetId: 'selected-photo', headline: result.headline, caption: result.caption }]);
+    result = repaired[0] || result;
+  }
+  const rawHeadline = String(result.headline || '').replace(/^\s*headline\s*:\s*/i, '').trim();
+  const rawCaption = String(result.caption || '').replace(/^\s*caption\s*:\s*/i, '').trim();
+  const headline = fitText(headlineNeedsRepair(rawHeadline) || !headlineHasPurposeAnchor(rawHeadline, delivery) ? purposeHeadline(delivery) : rawHeadline, 70);
+  return { headline, caption: substantialCaption(rawCaption, delivery, limit) };
 }

@@ -69,6 +69,6 @@ test('V3 music library uses the screen width and keeps the catalogue usable on p
 
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.getByRole('button', { name: 'Use track' }).first().click();
-  await expect(page.getByRole('heading', { name: 'Set the visual tone.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'See how your delivery will look.' })).toBeVisible();
   expect(draft.soundtrack?.catalogId).toBe('amapiano-1');
 });

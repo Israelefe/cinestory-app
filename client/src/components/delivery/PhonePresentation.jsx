@@ -32,7 +32,7 @@ export function PhonePresentationRoute({ children, title = 'Mobile client delive
   return <DesktopPhoneFrame src={src} title={title} />;
 }
 
-export function DesktopPhoneFrame({ src, title, message }) {
+export function DesktopPhoneFrame({ src, title, message, device = true }) {
   const frame = useRef(null);
   const ready = useRef(false);
   const messageRef = useRef(message);
@@ -56,18 +56,18 @@ export function DesktopPhoneFrame({ src, title, message }) {
     if (ready.current && message !== undefined) frame.current?.contentWindow?.postMessage({ type: PREVIEW_DATA, payload: message }, window.location.origin);
   }, [message]);
 
-  return <main className="v-phone-presentation" aria-label={title}>
+  return <main className={'v-phone-presentation' + (!device ? ' is-inline' : '')} aria-label={title}>
     <section className="v-phone-device" aria-label={`${title}, shown at mobile size`}>
       <div className="v-phone-status" aria-hidden="true"><strong>9:41</strong><span className="v-phone-island" /><span className="v-phone-status-icons"><Signal size={14} /><Wifi size={15} /><BatteryFull size={18} /></span></div>
       <div className="v-phone-screen"><iframe ref={frame} src={src} title={title} allow="autoplay; clipboard-read; clipboard-write; fullscreen; web-share" /></div>
     </section>
-    <p className="v-phone-caption"><strong>Mobile client view</strong><span>390 px wide</span></p>
+    <p className="v-phone-caption"><strong>Mobile client view</strong><span>360 × 800 px</span></p>
   </main>;
 }
 
-export function ClientPreviewPhoneFrame({ delivery, narrationEnabled = false, access = {}, accessPin = '' }) {
+export function ClientPreviewPhoneFrame({ delivery, narrationEnabled = false, access = {}, accessPin = '', isolate = false }) {
   const desktop = useDesktopPhoneMode();
   const message = useMemo(() => ({ delivery, narrationEnabled, access, accessPin }), [delivery, narrationEnabled, access, accessPin]);
-  if (!desktop) return <ClientDeliveryPreview delivery={delivery} narrationEnabled={narrationEnabled} access={access} accessPin={accessPin} />;
-  return <DesktopPhoneFrame src="/__phone-preview" title="Mobile client delivery preview" message={message} />;
+  if (!desktop && !isolate) return <ClientDeliveryPreview delivery={delivery} narrationEnabled={narrationEnabled} access={access} accessPin={accessPin} />;
+  return <DesktopPhoneFrame src="/__phone-preview" title="Mobile client delivery preview" message={message} device={desktop} />;
 }

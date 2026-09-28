@@ -15,7 +15,7 @@ for (const width of [320, 834, 1440]) {
       const reply = data => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': 'http://127.0.0.1:5178', 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ success: true, data }) });
       if (path.endsWith('/auth/me')) return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': 'http://127.0.0.1:5178', 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ success: true, user }) });
       if (path.endsWith('/deliveries/v3/assist')) {
-        if (body.mode === 'improve') return reply({ improved: "These photographs were taken for Ada's 25th birthday celebration." });
+        if (body.mode === 'improve') return reply({ improved: body.purpose === 'Lora' ? "Lora's birthday portraits." : "Celebrating Ada's 25th birthday." });
         if (body.mode === 'clarify') return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ success: false, message: 'The purpose must not be assessed.' }) });
         recommendationInputs.push(body);
         return reply({ format: 'photo-story', reason: 'A birthday shoot works well as a short personal sequence.' });
@@ -26,6 +26,7 @@ for (const width of [320, 834, 1440]) {
       return reply({});
     });
     await page.goto('/create');
+    await expect(page.locator('.v-product-header')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Tell us what this delivery is for.' })).toBeVisible();
     const cookieButton = page.getByRole('button', { name: 'Got it' });
     if (await cookieButton.isVisible()) await cookieButton.click();
@@ -34,6 +35,8 @@ for (const width of [320, 834, 1440]) {
     const suppliedPurpose = width === 320 ? 'Lora' : "Ada's 25th birthday celebration";
     await page.getByLabel('Purpose of the shoot').fill(suppliedPurpose);
     await page.getByRole('button', { name: 'Improve my wording' }).click();
+    await expect(page.getByLabel('Purpose of the shoot')).toHaveValue(width === 320 ? "Lora's birthday portraits." : "Celebrating Ada's 25th birthday.");
+    await expect(page.getByText('Wording improved. Your original is saved so you can restore it.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Revert to my words' })).toBeVisible();
     await page.getByRole('button', { name: 'Revert to my words' }).click();
     await expect(page.getByLabel('Purpose of the shoot')).toHaveValue(suppliedPurpose);
@@ -123,7 +126,7 @@ test('V3 keeps validation and API errors visible at the current scroll position'
   expect((await alert.boundingBox()).y).toBeLessThan(150);
 });
 
-test('V3 explains unreadable colours and fixes them before sending the theme', async ({ page }) => {
+test('V3 only shows a contrast warning when needed and fixes it before sending the theme', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 740 });
   let draft = { _id: draftId, schemaVersion: 3, status: 'review', clientName: 'Ada', shootType: 'Birthday', brief: "Ada's birthday", format: 'editorial', assets: [], creativeDirection: { title: "Ada's birthday", openingLine: 'A birthday to remember.', closingLine: 'Your full gallery is ready.', palette: { background: '#ffffff', surface: '#eeeeee', text: '#ffffff', accent: '#ff5a47' }, typography: { display: 'Playfair Display', body: 'Outfit' } }, v3: { step: 'design', revision: 2 }, access: {} };
   let themeRequests = 0;
@@ -139,14 +142,16 @@ test('V3 explains unreadable colours and fixes them before sending the theme', a
   await page.goto('/create?draft=' + draftId);
   const cookieButton = page.getByRole('button', { name: 'Got it' });
   if (await cookieButton.isVisible()) await cookieButton.click();
-  await expect(page.getByText('Too faint')).toHaveCount(2);
+  await expect(page.getByText('Some text may be hard to read.')).toBeVisible();
+  await expect(page.locator('.v3-contrast-row')).toHaveCount(0);
   await page.getByRole('button', { name: 'Preview delivery' }).click();
   const alert = page.getByRole('alert');
   await expect(alert).toContainText('Text is hard to read on the background and panels.');
   await expect(alert).not.toContainText('HTTP 400');
   expect(themeRequests).toBe(0);
   await alert.getByRole('button', { name: 'Fix text contrast' }).click();
-  await expect(page.getByText('Readable')).toHaveCount(2);
+  await expect(page.getByText('Some text may be hard to read.')).toHaveCount(0);
+  await expect(page.locator('.v3-contrast-row')).toHaveCount(0);
   await page.getByRole('button', { name: 'Preview delivery' }).click();
   await expect(page.getByRole('heading', { name: 'See exactly what the client will see.' })).toBeVisible();
   expect(themeRequests).toBe(1);
@@ -220,7 +225,12 @@ for (const width of [390, 834, 1440]) {
     const clientPreview = width >= 1025 ? page.frameLocator('.v3-preview iframe') : page.locator('.v3-preview');
     await expect(clientPreview.locator('.v-story-shell')).toBeVisible();
     expect(await clientPreview.locator('.v-story-shell').evaluate(element => getComputedStyle(element).position)).toBe(width >= 1025 ? 'fixed' : 'relative');
-    if (width >= 1025) await page.screenshot({ path: '../.visual-review/delivery-v3/create-mobile-preview-desktop.png' });
+    if (width >= 1025) {
+      const previewFrame = page.locator('.v3-preview .v-phone-screen iframe');
+      await expect.poll(() => previewFrame.evaluate(element => element.contentWindow.innerWidth)).toBe(360);
+      await expect.poll(() => previewFrame.evaluate(element => element.contentWindow.innerHeight)).toBe(800);
+      await page.screenshot({ path: '../.visual-review/delivery-v3/create-mobile-preview-desktop.png' });
+    }
     if (width === 390) {
       await expect(clientPreview.locator('.v-story-cover')).toContainText('Ada, here is your birthday story.');
       await expect(clientPreview.locator('.v-story-cover-photo img')).toHaveAttribute('src', /demo-lora-1-960\.webp/);
@@ -242,7 +252,14 @@ for (const width of [390, 834, 1440]) {
       await gallery.getByRole('button', { name: 'Close gallery' }).click();
     }
     await page.getByRole('button', { name: 'Adjust design' }).first().click();
-    await expect(page.getByRole('heading', { name: 'Set the visual tone.' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'See how your delivery will look.' })).toBeVisible();
+    if (width >= 1025) {
+      const designFrame = page.locator('.v3-design-preview .v-phone-screen iframe');
+      await expect.poll(() => designFrame.evaluate(element => element.contentWindow.innerWidth)).toBe(360);
+      await expect.poll(() => designFrame.evaluate(element => element.contentWindow.innerHeight)).toBe(800);
+      await expect(page.frameLocator('.v3-design-preview iframe').locator('.v-story-shell')).toBeVisible();
+      await page.screenshot({ path: '../.visual-review/delivery-v3/create-design-preview-desktop.png', fullPage: true });
+    }
     await page.getByRole('button', { name: 'Preview delivery' }).click();
     await expect(clientPreview.locator('.v-story-shell')).toBeVisible();
     await page.getByRole('button', { name: 'Approve and set access' }).first().click();
@@ -283,12 +300,14 @@ test('published V3 Photo Story keeps its opener, closer, numbers, and bookend vo
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
 });
 
-test('desktop demo and public delivery use a real 390px mobile viewport inside the phone mockup', async ({ page }) => {
+test('desktop demo and public delivery use an exact 360 by 800 mobile viewport inside the phone mockup', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/demo');
   await expect(page.locator('.v-phone-device')).toBeVisible();
   let frame = page.locator('.v-phone-screen iframe');
-  await expect.poll(() => frame.evaluate(element => element.contentWindow.innerWidth)).toBe(390);
+  await expect.poll(() => frame.evaluate(element => element.contentWindow.innerWidth)).toBe(360);
+  await expect.poll(() => frame.evaluate(element => element.contentWindow.innerHeight)).toBe(800);
+  await expect(page.locator('.v-phone-caption')).toContainText('360 × 800 px');
   await expect(page.frameLocator('.v-phone-screen iframe').locator('.v-story-shell')).toBeVisible();
   await page.screenshot({ path: '../.visual-review/delivery-v3/demo-phone-desktop.png' });
 
@@ -306,7 +325,8 @@ test('desktop demo and public delivery use a real 390px mobile viewport inside t
   await page.goto('/d/phone-story');
   await expect(page.locator('.v-phone-device')).toBeVisible();
   frame = page.locator('.v-phone-screen iframe');
-  await expect.poll(() => frame.evaluate(element => element.contentWindow.innerWidth)).toBe(390);
+  await expect.poll(() => frame.evaluate(element => element.contentWindow.innerWidth)).toBe(360);
+  await expect.poll(() => frame.evaluate(element => element.contentWindow.innerHeight)).toBe(800);
   await expect(page.frameLocator('.v-phone-screen iframe').locator('.v-story-cover')).toContainText('Lora, these photographs are for your birthday.');
   await page.screenshot({ path: '../.visual-review/delivery-v3/client-phone-desktop.png' });
 });

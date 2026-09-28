@@ -7,7 +7,7 @@ import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID } from '../constants/narra
 // The audio is generated from the approved per-photograph captions; no second script
 // is invented at narration time.
 const MODEL_ID = 'flux-hannah-en';
-export const NARRATION_RENDER_VERSION = 'flux-hannah-captions-v5';
+export const NARRATION_RENDER_VERSION = 'flux-hannah-captions-v6';
 const MAX_NARRATION_CHUNK_CHARACTERS = 2000;
 // Keep Hannah measured without flattening her natural pitch movement. Deepgram's
 // tuned expressivity default (0) sounds more like a person telling a story than
@@ -18,14 +18,17 @@ function cleanLine(value, max = 360) {
   return String(value || '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
-function narrationLine(value) {
+export function narrationLine(value) {
   const line = cleanLine(value, 220)
-    .replace(/[—–]/g, ', ')
-    .replace(/\s*;\s*/g, ', ')
-    .replace(/\s*,\s*/g, ', ')
+    .replace(/[\u2012\u2013\u2014\u2015]/g, '. ')
+    .replace(/\u2026/g, '. ')
+    .replace(/\s*[;:]\s*/g, '. ')
+    .replace(/\.{2,}/g, '.')
+    .replace(/\s+([,.!?])/g, '$1')
     .replace(/\s+/g, ' ')
-    .trim();
-  return /[.!?…]$/.test(line) ? line : `${line}.`;
+    .trim()
+    .replace(/(^|[.!?]\s+)([a-z])/g, (_match, boundary, letter) => boundary + letter.toLocaleUpperCase());
+  return line ? (/[.!?]$/.test(line) ? line : line + '.') : '';
 }
 
 export async function getNarrationVoiceCatalogue() {

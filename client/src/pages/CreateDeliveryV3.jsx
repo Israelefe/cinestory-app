@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { AlertCircle, ArrowLeft, ArrowRight, AudioLines, Check, ChevronLeft, ChevronRight, Clapperboard, Clock3, ExternalLink, Image, LoaderCircle, Mail, Mic2, Music2, Pause, Play, QrCode, RefreshCw, RotateCcw, Search, Share2, Trash2, Upload } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ArrowRight, AudioLines, Check, ChevronLeft, ChevronRight, Clock3, ExternalLink, Image, LoaderCircle, Mail, Mic2, Music2, Pause, Play, QrCode, RefreshCw, RotateCcw, Search, Share2, Trash2, Upload } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
 import { API_BASE_URL } from '../config/env.js';
@@ -101,6 +101,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const [customShoot, setCustomShoot] = useState(SHOOT_TYPES.includes(initialDelivery?.shootType) ? '' : initialDelivery?.shootType || '');
   const [purpose, setPurpose] = useState(initialDelivery?.brief || '');
   const [originalPurpose, setOriginalPurpose] = useState(initialDelivery?.v3?.originalPurpose || '');
+  const [purposeFeedback, setPurposeFeedback] = useState('');
   const [recommendation, setRecommendation] = useState(null);
   const [format, setFormat] = useState(initialDelivery?.format || '');
   const [uploads, setUploads] = useState({});
@@ -145,6 +146,33 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     ? { type: 'studio', name: user?.studio?.name || user?.name || 'Studio', logoUrl: user?.studio?.logoUrl || user?.avatar || '' }
     : { type: 'veylo', name: 'Veylo', logoUrl: '/veylo/veylo-mark.svg' };
   const previewDelivery = useMemo(() => draft && ({ ...draft, branding: previewBranding }), [draft, previewBranding.type, previewBranding.name, previewBranding.logoUrl]);
+  const designPreviewDelivery = useMemo(() => {
+    if (!draft) return null;
+    const savedFrames = new Map((draft.creativeDirection?.frames || []).map(frame => [frame.assetId, frame]));
+    const frames = selected.map(assetId => ({
+      ...(savedFrames.get(assetId) || {}),
+      assetId,
+      headline: headlines[assetId] ?? savedFrames.get(assetId)?.headline ?? '',
+      caption: captions[assetId] ?? savedFrames.get(assetId)?.caption ?? '',
+      textAnimation: format === 'photo-story' ? 'typewriter' : savedFrames.get(assetId)?.textAnimation
+    }));
+    return {
+      ...draft,
+      branding: previewBranding,
+      curatedAssetIds: selected,
+      creativeDirection: {
+        ...draft.creativeDirection,
+        title,
+        openingLine,
+        closingLine,
+        frames,
+        assetOrder: selected,
+        palette,
+        typography
+      },
+      v3: { ...draft.v3, openingAssetId, closingAssetId }
+    };
+  }, [draft, previewBranding.type, previewBranding.name, previewBranding.logoUrl, selected, headlines, captions, title, openingLine, closingLine, format, palette, typography, openingAssetId, closingAssetId]);
   const bounds = BOUNDS[format] || [5, 10];
   const recommendedFormat = DELIVERY_FORMATS.find(item => item.value === recommendation?.format);
   const assets = draft?.assets || [];
@@ -226,7 +254,10 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     if (!purpose.trim() || !actualShootType) { setError('Enter the shoot type and purpose first.'); return; }
     await action('improve', async () => {
       const { data } = await api.post('/v1/deliveries/v3/assist', { mode: 'improve', purpose, shootType: actualShootType });
-      setOriginalPurpose(current => current || purpose); setPurpose(data.data.improved);
+      const improved = String(data.data?.improved || '').trim();
+      if (!improved) throw new Error('Veylo could not improve that wording. Your original text is unchanged; try again.');
+      if (improved === purpose.trim()) { setPurposeFeedback('Your wording already reads clearly, so it was left unchanged.'); return; }
+      setOriginalPurpose(current => current || purpose); setPurpose(improved); setPurposeFeedback('Wording improved. Your original is saved so you can restore it.');
     });
   }
   async function detailsNext() {
@@ -448,7 +479,6 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
 
   return <div className={'v3-create' + (stage === 'preview' ? ' is-previewing' : '')}>
     <div className="v3-shell">
-      <header className="v3-top"><Link to="/dashboard" className="v3-back"><ArrowLeft size={17} /> Dashboard</Link><div><Clapperboard size={18} /><strong>New delivery</strong></div><span>{draft?._id ? 'Draft in progress' : 'Start here'}</span></header>
       {!published && <section className="v3-progress" aria-label="Creation progress">
         <div className="v3-progress-copy">
           <div><span>DELIVERY CREATION</span><strong>{visibleSteps[currentIndex]?.label || 'Shoot details'}</strong></div>
@@ -476,8 +506,8 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
             </section>
             <section className="v3-panel v3-purpose-panel">
               <div className="v3-panel-heading"><span>02</span><div><h2>What was the shoot for?</h2><p>Use your own words. A short, plain description is enough.</p></div></div>
-              <label className="v3-purpose-label"><span>Purpose of the shoot</span><textarea rows={8} maxLength={3000} value={purpose} onChange={event => setPurpose(event.target.value)} placeholder="These photos were taken for Ada's 25th birthday celebration…" /><small>Include names and the occasion if they matter to the story.</small></label>
-              <div className="v3-assist"><button type="button" onClick={improve} disabled={!!busy}>{busy === 'improve' ? <LoaderCircle className="v3-spin" size={16} /> : <RefreshCw size={16} />} Improve my wording</button>{originalPurpose && <button type="button" className="is-quiet" onClick={() => { setPurpose(originalPurpose); setOriginalPurpose(''); }}><RotateCcw size={16} /> Revert to my words</button>}<p>This only improves what you wrote. Your original stays available to restore.</p></div>
+              <label className="v3-purpose-label"><span>Purpose of the shoot</span><textarea rows={8} maxLength={3000} value={purpose} onChange={event => { setPurpose(event.target.value); setPurposeFeedback(''); }} placeholder="These photos were taken for Ada's 25th birthday celebration…" /><small>Include names and the occasion if they matter to the story.</small></label>
+              <div className="v3-assist"><button type="button" onClick={improve} disabled={!!busy}>{busy === 'improve' ? <LoaderCircle className="v3-spin" size={16} /> : <RefreshCw size={16} />} Improve my wording</button>{originalPurpose && <button type="button" className="is-quiet" onClick={() => { setPurpose(originalPurpose); setOriginalPurpose(''); setPurposeFeedback('Your original wording is back.'); }}><RotateCcw size={16} /> Revert to my words</button>}<p aria-live="polite">{purposeFeedback || 'Keeps your meaning and details. Your original wording is saved so you can restore it.'}</p></div>
             </section>
           </div>
           <div className="v3-actions"><StepButton onClick={detailsNext} disabled={!!busy || billingLoading || !draft && quotaReached}>{busy ? <LoaderCircle className="v3-spin" size={17} /> : <ArrowRight size={17} />} Continue to formats</StepButton></div>
@@ -629,35 +659,29 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
           <div className="v3-actions"><StepButton secondary onClick={() => { audioRef.current?.pause(); setActiveTrack(''); setStage(format === 'photo-story' ? 'narration' : 'showcase'); }}><ArrowLeft size={17} /> Back</StepButton>{draft?.soundtrack && <StepButton onClick={() => { audioRef.current?.pause(); setActiveTrack(''); setStage('design'); }}><ArrowRight size={17} /> Continue to design</StepButton>}</div>
         </>}
         {stage === 'design' && <>
-          <Head eyebrow="07 / COLOUR & TYPE" title="Set the visual tone.">Veylo selects a palette from the photographs. Set the display and body fonts, then check how the opening looks.</Head>
+          <Head eyebrow="08 / DESIGN" title="See how your delivery will look.">These colours and fonts change the opening and photo showcase. The full gallery and its controls keep Veylo's standard design.</Head>
           <div className="v3-design-grid">
             <div className="v3-panel v3-design-controls">
-              <div className="v3-panel-heading"><span>01</span><div><h2>Photo-led colours</h2><p>Selected to suit this set of photographs.</p></div></div>
+              <div className="v3-panel-heading"><span>01</span><div><h2>Colours from your photographs</h2><p>Veylo picked these for the opening and showcase.</p></div></div>
               <div className="v3-palette-grid" aria-label="Selected colour palette">
-                {Object.keys(defaultPalette).map(role => <div className="v3-palette-swatch" key={role}><span style={{ background: palette[role] || defaultPalette[role] }} aria-hidden="true" /><div><strong>{role === 'surface' ? 'Panels' : categoryLabel(role)}</strong><code>{palette[role] || defaultPalette[role]}</code></div></div>)}
+                {Object.keys(defaultPalette).map(role => <div className="v3-palette-swatch" key={role}><span style={{ background: palette[role] || defaultPalette[role] }} aria-hidden="true" /><div><strong>{{ background: 'Opening background', surface: 'Showcase panels', text: 'Showcase text', accent: 'Highlight colour' }[role]}</strong></div></div>)}
               </div>
-              <p className="v3-colour-guide">The palette is chosen for these photographs. The gallery's layout and controls keep their standard design.</p>
-              <div className="v3-contrast" aria-live="polite">
-                <strong>Text readability</strong>
-                <div className={'v3-contrast-row ' + (themeStatus.background >= 4.5 ? 'is-good' : 'is-poor')}><span>On background</span><span>{themeStatus.background >= 4.5 ? 'Readable' : 'Too faint'}</span></div>
-                <div className={'v3-contrast-row ' + (themeStatus.surface >= 4.5 ? 'is-good' : 'is-poor')}><span>On panels</span><span>{themeStatus.surface >= 4.5 ? 'Readable' : 'Too faint'}</span></div>
-                {!themeStatus.valid && <><p>{themeStatus.message}</p><button type="button" className="v3-contrast-fix" onClick={() => { setPalette(current => readablePalette(current)); setError(''); }}>Fix text contrast</button></>}
-              </div>
+              {!themeStatus.valid && <div className="v3-contrast" aria-live="polite"><strong>Some text may be hard to read.</strong><p>{themeStatus.message}</p><button type="button" className="v3-contrast-fix" onClick={() => { setPalette(current => readablePalette(current)); setError(''); }}>Fix text contrast</button></div>}
               <div className="v3-type-controls"><div className="v3-panel-heading"><span>02</span><div><h2>Typography</h2><p>Choose a pair that suits the delivery.</p></div></div>
-                {['display', 'body'].map(role => <label className="v3-font" key={role}>{role === 'display' ? 'Display font' : 'Body font'}<select value={typography[role]} onChange={event => setTypography(current => ({ ...current, [role]: event.target.value }))}>{FONTS.map(font => <option key={font}>{font}</option>)}</select></label>)}
+                {['display', 'body'].map(role => <label className="v3-font" key={role}>{role === 'display' ? 'Headings and titles' : 'Captions and supporting text'}<select value={typography[role]} onChange={event => setTypography(current => ({ ...current, [role]: event.target.value }))}>{FONTS.map(font => <option key={font}>{font}</option>)}</select></label>)}
               </div>
             </div>
-            <div className="v3-design-preview" style={{ background: palette.background, color: palette.text, borderColor: palette.accent }}><span style={{ color: palette.accent }}>A VEYLO DELIVERY</span><h2 style={{ fontFamily: typography.display }}>{title || draft?.clientName}</h2><p style={{ fontFamily: typography.body }}>{openingLine}</p><div style={{ background: palette.surface }}><img src={assetById.get(openingAssetId)?.thumbnailUrl || assets[0]?.thumbnailUrl} alt="Opening preview" /><small style={{ color: palette.accent }}>THE PHOTOGRAPHS</small></div><span className="v3-design-preview-format" style={{ color: palette.accent }}>{selectedFormat?.name || 'PHOTO SHOWCASE'}</span></div>
+            <div className="v3-design-preview"><p>Client view · updates as you change the design</p><ClientPreviewPhoneFrame delivery={designPreviewDelivery} narrationEnabled={false} access={access} isolate /></div>
           </div>
           <div className="v3-actions"><StepButton secondary onClick={() => setStage(MUSIC.has(format) ? 'music' : 'showcase')}><ArrowLeft size={17} /> Back</StepButton><StepButton onClick={saveDesign} disabled={!!busy}><ArrowRight size={17} /> Preview delivery</StepButton></div>
         </>}
         {stage === 'preview' && <>
-          <Head eyebrow="08 / CLIENT PREVIEW" title="See exactly what the client will see.">This preview uses the delivery as your client will see it, including the showcase and full gallery.</Head>
+          <Head eyebrow="09 / CLIENT PREVIEW" title="See exactly what the client will see.">This preview uses the delivery as your client will see it, including the showcase and full gallery.</Head>
           <div className="v3-preview-actions"><StepButton secondary onClick={() => setStage('design')}><ArrowLeft size={17} /> Adjust design</StepButton><StepButton onClick={approve} disabled={!!busy}>{busy === 'approve' ? <LoaderCircle className="v3-spin" size={17} /> : <Check size={17} />} Approve and set access</StepButton></div>
           <div className="v3-preview"><ClientPreviewPhoneFrame delivery={previewDelivery} narrationEnabled={false} access={access} /></div>
         </>}
         {stage === 'access' && <>
-          <Head eyebrow="09 / ACCESS & PUBLISH" title="Set the rules for this link.">Choose the access and download rules, then publish when everything is ready.</Head>
+          <Head eyebrow="10 / ACCESS & PUBLISH" title="Set the rules for this link.">Choose the access and download rules, then publish when everything is ready.</Head>
           <div className="v3-access-layout">
             <section className="v3-panel v3-access-security">
               <div className="v3-panel-heading"><span>01</span><div><h2>Link security</h2><p>Set an optional PIN or expiry date.</p></div></div>

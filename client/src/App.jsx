@@ -163,7 +163,7 @@ function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountD
     {showPublicHeader && <Navbar user={user} onLogout={onLogout} />}
     {authRoutes.has(pathname) && <ProductHeader mode="auth" />}
     {pathname === '/onboarding' && <ProductHeader mode="setup" user={user} onLogout={onLogout} />}
-    {productRoutes.has(pathname) && <ProductHeader user={user} onLogout={onLogout} />}
+    {productRoutes.has(pathname) && pathname !== '/create' && <ProductHeader user={user} onLogout={onLogout} />}
     <main id="main-content"><Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/dashboard" element={<ProtectedRoute user={user} loading={authLoading}><Dashboard user={user} onLogout={onLogout} /></ProtectedRoute>} />
