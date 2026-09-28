@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { ArrowRight, Check, Image, LoaderCircle, Mic2, Music2, RefreshCw } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -263,6 +263,24 @@ export default function DeliveryViewer() {
   const [narrationCue, setNarrationCue] = useState(null);
   const soundtrackRef = useRef(null);
   const narrationRef = useRef(null);
+  const playbackDelivery = useMemo(() => {
+    if (!delivery) return null;
+    const capabilities = getDeliveryCapabilities(delivery.format);
+    const bookendNarration = delivery.schemaVersion === 3 && delivery.narration?.opening?.url;
+    return {
+      ...delivery,
+      assets: (delivery.assets || []).map(asset => {
+        const url = preloadedMedia.assets?.[asset.assetId] || asset.url;
+        return { ...asset, url, thumbnailUrl: asset.thumbnailUrl || url };
+      }),
+      soundtrack: capabilities.music && delivery.soundtrack?.url ? { ...delivery.soundtrack, url: preloadedMedia.soundtrack || delivery.soundtrack.url } : undefined,
+      narration: capabilities.narration && bookendNarration
+        ? { ...delivery.narration, opening: { ...delivery.narration.opening, url: apiMediaUrl(delivery.narration.opening.url) }, closing: { ...delivery.narration.closing, url: apiMediaUrl(delivery.narration.closing?.url) } }
+        : capabilities.narration && delivery.narration?.url
+          ? { ...delivery.narration, url: preloadedMedia.narration || apiMediaUrl(delivery.narration.url) }
+          : undefined
+    };
+  }, [delivery, preloadedMedia]);
 
   const toggleAudio = async kind => {
     const capabilities = getDeliveryCapabilities(delivery?.format);
@@ -602,16 +620,6 @@ export default function DeliveryViewer() {
 
   const format = delivery.format || 'photo-story';
   const capabilities = getDeliveryCapabilities(format);
-  const playbackDelivery = {
-    ...delivery,
-    assets: (delivery.assets || []).map(asset => {
-      // No blob preloading anymore — keep original CDN URLs and srcSet for lazy loading
-      const url = preloadedMedia.assets?.[asset.assetId] || asset.url;
-      return { ...asset, url, thumbnailUrl: asset.thumbnailUrl || url };
-    }),
-    soundtrack: capabilities.music && delivery.soundtrack?.url ? { ...delivery.soundtrack, url: preloadedMedia.soundtrack || delivery.soundtrack.url } : undefined,
-    narration: capabilities.narration && delivery.narration?.url ? { ...delivery.narration, url: preloadedMedia.narration || apiMediaUrl(delivery.narration.url) } : undefined
-  };
   const galleryProps = {
     liked,
     onLike: handleLike,

@@ -1,4 +1,12 @@
-.v-story-v3-closer{position:absolute;inset:0;overflow:hidden}
-.v-story-v3-closer:after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,rgba(5,5,7,.28),rgba(5,5,7,.5))}
-.v-story-v3-closer img{width:100%;height:100%;object-fit:cover;filter:brightness(.74)}
 .v-story-shell.is-v3 .v-story-caption:not(.is-finale) h2{max-height:3.7em;overflow:hidden;line-height:1.2}
+.v-story-shell.is-v3 .v-story-canvas.is-playing-state .v-story-scene-number,
+.v-story-shell.is-v3 .v-story-canvas.is-playing-state .v-story-cinema-number,
+.v-story-shell.is-v3 .v-story-canvas.is-playing-state .v-story-cinema-label,
+.v-story-shell.is-v3 .v-story-canvas.is-playing-state .v-story-cinema-sweep,
+.v-story-shell.is-v3 .v-story-canvas.is-playing-state .v-story-collage-side{display:block}
+.v-story-shell.is-v3 .v-story-canvas.is-playing-state .v-story-scene.is-cinema::after{display:block}
+@media(max-width:767px){
+  .v-story-shell.is-v3 .v-story-canvas.is-playing-state .v-story-cinema-number,
+  .v-story-shell.is-v3 .v-story-canvas.is-playing-state .v-story-scene-number{right:clamp(22px,5vw,48px);top:15%;font-size:clamp(82px,24vw,120px);letter-spacing:-.07em}
+  .v-story-shell.is-v3 .v-story-canvas.is-playing-state .v-story-cinema-label{right:clamp(24px,5vw,50px)}
+}

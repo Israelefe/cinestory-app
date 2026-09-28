@@ -5,11 +5,11 @@ import Delivery from '../models/Delivery.js';
 import DeliveryJob from '../models/DeliveryJob.js';
 import User from '../models/User.js';
 import { contrastRatio, V3_FONT_CHOICES, V3_FORMATS, V3_MUSIC_FORMATS, validShowcase } from '../constants/deliveryV3.js';
-import { clarifyPurpose, improvePurpose, recommendV3Format, regenerateV3Caption } from '../services/deliveryV3AI.service.js';
+import { improvePurpose, recommendV3Format, regenerateV3Caption } from '../services/deliveryV3AI.service.js';
 import { reservePublishSlot, resolveEntitlements } from '../services/entitlement.service.js';
 import { removeDeliveryAudio } from '../services/deliveryMedia.service.js';
 
-const details = z.object({ clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().min(2).max(80), purpose: z.string().trim().min(8).max(3000), originalPurpose: z.string().trim().max(3000).default(''), clarificationAnswers: z.array(z.object({ question: z.string().trim().max(180), answer: z.string().trim().min(1).max(300) }).strict()).max(3).default([]) }).strict();
+const details = z.object({ clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().min(2).max(80), purpose: z.string().trim().min(1).max(3000), originalPurpose: z.string().trim().max(3000).default(''), clarificationAnswers: z.array(z.object({ question: z.string().trim().max(180), answer: z.string().trim().min(1).max(300) }).strict()).max(3).default([]) }).strict();
 const formatInput = z.object({ format: z.enum(Object.keys(V3_FORMATS)) }).strict();
 const idList = z.array(z.string().uuid()).max(24);
 const showcaseInput = z.object({ assetIds: idList, frames: z.array(z.object({ assetId: z.string().uuid(), caption: z.string().trim().min(5).max(180) }).strict()).max(24), title: z.string().trim().min(2).max(80), openingLine: z.string().trim().min(5).max(140), closingLine: z.string().trim().min(5).max(160), openingAssetId: z.string().uuid(), closingAssetId: z.string().uuid() }).strict();
@@ -47,8 +47,8 @@ export async function v3Assist(req, res) {
     const input = z.object({ mode: z.enum(['improve', 'clarify', 'recommend']), purpose: z.string().trim().max(3000).default(''), shootType: z.string().trim().min(2).max(80) }).strict().safeParse(req.body);
     if (!input.success) return bad(res, input);
     const { mode, purpose, shootType } = input.data;
-    if (mode !== 'recommend' && purpose.length < 8) return res.status(400).json({ success: false, message: 'Tell us a little more about why these photographs were taken.' });
-    const data = mode === 'improve' ? { improved: await improvePurpose({ purpose, shootType }) } : mode === 'clarify' ? await clarifyPurpose({ purpose, shootType }) : await recommendV3Format(shootType);
+    if (mode === 'improve' && !purpose) return res.status(400).json({ success: false, code: 'V3_PURPOSE_REQUIRED', field: 'purpose', message: 'Write the purpose of the shoot before improving it.' });
+    const data = mode === 'improve' ? { improved: await improvePurpose({ purpose, shootType }) } : mode === 'clarify' ? { clear: true, questions: [] } : await recommendV3Format(shootType);
     res.json({ success: true, data });
   } catch (error) { fail(res, error); }
 }

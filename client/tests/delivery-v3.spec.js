@@ -15,7 +15,7 @@ for (const width of [320, 834, 1440]) {
       if (path.endsWith('/auth/me')) return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': 'http://127.0.0.1:5178', 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ success: true, user }) });
       if (path.endsWith('/deliveries/v3/assist')) {
         if (body.mode === 'improve') return reply({ improved: "These photographs were taken for Ada's 25th birthday celebration." });
-        if (body.mode === 'clarify') return reply({ clear: true, questions: [] });
+        if (body.mode === 'clarify') return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ success: false, message: 'The purpose must not be assessed.' }) });
         return reply({ format: 'photo-story', reason: 'A birthday shoot works well as a short personal sequence.' });
       }
       if (path.endsWith('/deliveries/v3') && request.method() === 'POST') return reply(draft);
@@ -29,11 +29,12 @@ for (const width of [320, 834, 1440]) {
     if (await cookieButton.isVisible()) await cookieButton.click();
     await page.getByLabel('Client name').fill('Ada');
     await page.getByLabel('Type of shoot').selectOption('Birthday');
-    await page.getByLabel('Purpose of the shoot').fill("Ada's 25th birthday celebration");
+    const suppliedPurpose = width === 320 ? 'Lora' : "Ada's 25th birthday celebration";
+    await page.getByLabel('Purpose of the shoot').fill(suppliedPurpose);
     await page.getByRole('button', { name: 'Improve my wording' }).click();
     await expect(page.getByRole('button', { name: 'Revert to my words' })).toBeVisible();
     await page.getByRole('button', { name: 'Revert to my words' }).click();
-    await expect(page.getByLabel('Purpose of the shoot')).toHaveValue("Ada's 25th birthday celebration");
+    await expect(page.getByLabel('Purpose of the shoot')).toHaveValue(suppliedPurpose);
     await page.getByRole('button', { name: 'Continue to formats' }).click();
     await expect(page.getByRole('heading', { name: 'Choose how they first see the work.' })).toBeVisible();
     await expect(page.locator('.v3-featured-format')).toContainText('Photo Story');
@@ -197,7 +198,7 @@ test('V3 does not publish when the plan check fails', async ({ page }) => {
 for (const width of [390, 834, 1440]) {
   test('Photo Story preview can go back and forward at ' + width + 'px', async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
-    const assets = Array.from({ length: 5 }, (_, index) => ({ assetId: 'photo-' + index, url: '/veylo/web/demo-lora-1-960.webp', thumbnailUrl: '/veylo/web/demo-lora-1-960.webp', originalFilename: 'photo-' + index + '.jpg' }));
+    const assets = Array.from({ length: 5 }, (_, index) => ({ assetId: 'photo-' + index, url: '/veylo/web/demo-lora-' + (index + 1) + '-960.webp', thumbnailUrl: '/veylo/web/demo-lora-' + (index + 1) + '-960.webp', originalFilename: 'photo-' + index + '.jpg' }));
     let draft = { _id: draftId, publicId: 'preview-story', schemaVersion: 3, status: 'review', clientName: 'Ada', shootType: 'Birthday', brief: "Ada's 25th birthday celebration", format: 'photo-story', assets, curatedAssetIds: assets.map(asset => asset.assetId), creativeDirection: { title: "Ada's birthday", openingLine: 'Ada, here is your birthday story.', closingLine: 'Here is the full collection from your day.', frames: assets.map(asset => ({ assetId: asset.assetId, caption: 'Ada, your 25th birthday is here.' })), palette: { background: '#ffffff', surface: '#eeeeee', text: '#101010', accent: '#006644' }, typography: { display: 'Playfair Display', body: 'Outfit' } }, v3: { step: 'preview', revision: 2, clarificationAnswers: [], narrationChoice: 'skip', openingAssetId: assets[0].assetId, closingAssetId: assets[4].assetId }, access: {} };
     await page.route('**/api/v1/**', route => {
       const path = new URL(route.request().url()).pathname;
@@ -215,8 +216,19 @@ for (const width of [390, 834, 1440]) {
     await expect(page.locator('.v3-preview .v-story-shell')).toBeVisible();
     expect(await page.locator('.v3-preview .v-story-shell').evaluate(element => getComputedStyle(element).position)).toBe('relative');
     if (width === 390) {
+      await expect(page.locator('.v3-preview .v-story-cover')).toContainText('Ada, here is your birthday story.');
+      await expect(page.locator('.v3-preview .v-story-cover-photo img')).toHaveAttribute('src', /demo-lora-1-960\.webp/);
       await page.getByRole('button', { name: 'Begin the story' }).click();
-      await page.getByRole('button', { name: 'Open gallery' }).click();
+      await expect(page.locator('.v3-preview .v-story-cinema-number')).toBeVisible();
+      await page.locator('.v3-preview .v-story-shell').screenshot({ path: '../.visual-review/delivery-v3/v3-first-frame-390.png' });
+      for (let index = 0; index < 4; index += 1) await page.getByRole('button', { name: 'Next photograph' }).click();
+      await expect(page.locator('.v3-preview .v-story-finale')).toBeVisible({ timeout: 10000 });
+      await expect(page.locator('.v3-preview .v-story-finale-photos figure')).toHaveCount(3);
+      await expect(page.locator('.v3-preview .v-story-finale-photos figure').nth(1).locator('img')).toHaveAttribute('src', /demo-lora-5-960\.webp/);
+      await expect(page.locator('.v3-preview .v-story-caption.is-finale')).toContainText('Here is the full collection from your day.');
+      await expect.poll(() => page.locator('.v3-preview .v-story-caption.is-finale').evaluate(element => Number(getComputedStyle(element).opacity))).toBeGreaterThan(0.9);
+      await page.locator('.v3-preview .v-story-shell').screenshot({ path: '../.visual-review/delivery-v3/v3-finale-390.png' });
+      await page.getByRole('button', { name: 'Open your gallery' }).click();
       const gallery = page.getByRole('dialog', { name: /Ada/ });
       await expect(gallery).toBeVisible();
       expect(await gallery.evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgb(8, 8, 11)');
@@ -230,6 +242,35 @@ for (const width of [390, 834, 1440]) {
     await expect(page.getByRole('heading', { name: 'Set the rules for this link.' })).toBeVisible();
   });
 }
+
+test('published V3 Photo Story keeps its opener, closer, numbers, and bookend voice files', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const assets = Array.from({ length: 5 }, (_, index) => ({ assetId: 'photo-' + index, url: '/veylo/web/demo-lora-' + (index + 1) + '-960.webp', thumbnailUrl: '/veylo/web/demo-lora-' + (index + 1) + '-960.webp' }));
+  const delivery = {
+    _id: draftId, publicId: 'published-story', schemaVersion: 3, status: 'published', clientName: 'Lora', shootType: 'Birthday', format: 'photo-story', assets,
+    curatedAssetIds: assets.map(asset => asset.assetId),
+    creativeDirection: { title: "Lora's 25th birthday", openingLine: 'Lora, this day was yours.', closingLine: 'Here are all your birthday photographs.', frames: assets.map(asset => ({ assetId: asset.assetId, caption: 'Lora, your 25th birthday.' })), palette: { background: '#0c0c10', surface: '#17171c', text: '#fffaf6', accent: '#ff5a47' }, typography: { display: 'Playfair Display', body: 'Outfit' } },
+    v3: { openingAssetId: assets[0].assetId, closingAssetId: assets[4].assetId, narrationChoice: 'voice' },
+    narration: { opening: { url: '/veylo/audio/opening.mp3' }, closing: { url: '/veylo/audio/closing.mp3' } }, access: { allowLikes: true }
+  };
+  await page.route('**/api/v1/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(path.endsWith('/deliveries/public/published-story') ? { success: true, data: delivery } : { success: true, data: {} }) });
+  });
+  await page.goto('/d/published-story');
+  await expect(page.locator('.v-story-cover')).toContainText('Lora, this day was yours.');
+  await expect(page.locator('.v-story-cover-photo img')).toHaveAttribute('src', /demo-lora-1-960\.webp/);
+  await expect(page.locator('audio[src$="opening.mp3"]')).toHaveCount(1);
+  await expect(page.locator('audio[src$="closing.mp3"]')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Begin the story' }).click();
+  await expect(page.locator('.v-story-canvas.is-playing-state')).toBeVisible();
+  await page.getByRole('button', { name: 'Pause story' }).click();
+  await page.getByRole('button', { name: 'Open gallery' }).click();
+  await page.getByRole('button', { name: 'Add to favourites' }).first().click();
+  await page.getByRole('button', { name: 'Close gallery' }).click();
+  await expect(page.locator('.v-story-canvas.is-playing-state')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+});
 
 test('design opens the current client viewer, then publishes with access settings', async ({ page }) => {
   await page.setViewportSize({ width: 834, height: 900 });

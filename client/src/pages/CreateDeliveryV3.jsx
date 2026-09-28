@@ -94,9 +94,6 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const [customShoot, setCustomShoot] = useState(SHOOT_TYPES.includes(initialDelivery?.shootType) ? '' : initialDelivery?.shootType || '');
   const [purpose, setPurpose] = useState(initialDelivery?.brief || '');
   const [originalPurpose, setOriginalPurpose] = useState(initialDelivery?.v3?.originalPurpose || '');
-  const [clarifications, setClarifications] = useState([]);
-  const [answers, setAnswers] = useState(initialDelivery?.v3?.clarificationAnswers || []);
-  const [questionCheckedFor, setQuestionCheckedFor] = useState('');
   const [recommendation, setRecommendation] = useState(initialDelivery?.formatRecommendations?.[0] || null);
   const [format, setFormat] = useState(initialDelivery?.format || '');
   const [uploads, setUploads] = useState({});
@@ -212,27 +209,18 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     if (!purpose.trim() || !actualShootType) { setError('Enter the shoot type and purpose first.'); return; }
     await action('improve', async () => {
       const { data } = await api.post('/v1/deliveries/v3/assist', { mode: 'improve', purpose, shootType: actualShootType });
-      setOriginalPurpose(current => current || purpose); setPurpose(data.data.improved); setQuestionCheckedFor(''); setClarifications([]); setAnswers([]);
+      setOriginalPurpose(current => current || purpose); setPurpose(data.data.improved);
     });
   }
   async function detailsNext() {
     if (!draft && quotaReached) { setError(freeMonthlyLimitMessage(entitlements)); return; }
     if (clientName.trim().length < 2) { setError('Enter the client name before continuing.'); return; }
     if (actualShootType.length < 2) { setError(shootType === 'Other' ? 'Name the type of shoot before continuing.' : 'Choose a type of shoot before continuing.'); return; }
-    if (purpose.trim().length < 8) { setError('Write a short purpose for the shoot before continuing.'); return; }
+    if (!purpose.trim()) { setError('Write why this shoot was taken before continuing.'); return; }
     await action('details', async () => {
-      const signature = actualShootType + '\n' + purpose;
-      let currentAnswers = answers;
-      if (questionCheckedFor !== signature) {
-        const { data } = await api.post('/v1/deliveries/v3/assist', { mode: 'clarify', purpose, shootType: actualShootType });
-        setQuestionCheckedFor(signature);
-        if (data.data.questions?.length && !data.data.clear) { setClarifications(data.data.questions); setAnswers(data.data.questions.map(question => ({ question: question.question, answer: '' }))); return; }
-        setClarifications([]); setAnswers([]); currentAnswers = [];
-      }
-      if (questionCheckedFor === signature && clarifications.length && answers.some(item => !item.answer.trim())) { setError('Answer each question or add your own note.'); return; }
       const { data: rec } = await api.post('/v1/deliveries/v3/assist', { mode: 'recommend', purpose: '', shootType: actualShootType });
       setRecommendation(rec.data); if (!format) setFormat(rec.data.format);
-      const body = { clientName: clientName.trim(), shootType: actualShootType, purpose: purpose.trim(), originalPurpose, clarificationAnswers: currentAnswers.filter(item => item.answer.trim()) };
+      const body = { clientName: clientName.trim(), shootType: actualShootType, purpose: purpose.trim(), originalPurpose, clarificationAnswers: [] };
       if (draft?._id) await api.patch('/v1/deliveries/' + draft._id + '/v3/details', body);
       else {
         const { data } = await api.post('/v1/deliveries/v3', body);
@@ -409,11 +397,10 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
       <AnimatePresence mode="wait"><motion.main key={stage} className="v3-main" initial={reduced ? false : { opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} exit={reduced ? {} : { opacity: 0, x: -12 }} transition={{ duration: reduced ? 0 : .3 }}>
         {stage === 'details' && <><Head eyebrow="01 / THE SHOOT" title="Tell us what this delivery is for.">A few real details help the words feel like they belong to these photographs.</Head><div className="v3-panel v3-form">
           <label>Client name<input maxLength={100} value={clientName} onChange={event => setClientName(event.target.value)} placeholder="Ada" /></label>
-          <label>Type of shoot<select value={shootType} onChange={event => { setShootType(event.target.value); setQuestionCheckedFor(''); setClarifications([]); setAnswers([]); setRecommendation(null); }}><option value="">Choose a shoot type</option>{SHOOT_TYPES.map(value => <option key={value}>{value}</option>)}</select></label>
+          <label>Type of shoot<select value={shootType} onChange={event => { setShootType(event.target.value); setRecommendation(null); }}><option value="">Choose a shoot type</option>{SHOOT_TYPES.map(value => <option key={value}>{value}</option>)}</select></label>
           {shootType === 'Other' && <label>What type of shoot?<input maxLength={80} value={customShoot} onChange={event => setCustomShoot(event.target.value)} placeholder="e.g. bridal shower" /></label>}
-          <label className="v3-span">Purpose of the shoot<textarea rows={5} maxLength={3000} value={purpose} onChange={event => { setPurpose(event.target.value); setQuestionCheckedFor(''); setClarifications([]); setAnswers([]); }} placeholder="These photos were taken for Ada's 25th birthday celebration…" /><small>Write what you know. Names, occasion, and why this shoot matters are useful.</small></label>
-<div className="v3-assist v3-span"><button type="button" onClick={improve} disabled={!!busy}><RefreshCw size={16} /> Improve my wording</button>{originalPurpose && <button type="button" onClick={() => { setPurpose(originalPurpose); setOriginalPurpose(''); setQuestionCheckedFor(''); setClarifications([]); setAnswers([]); }}><RotateCcw size={16} /> Revert to my words</button>}<p>We will keep your facts and intent.</p></div>
-          {clarifications.length > 0 && <div className="v3-questions v3-span"><h2>A little more detail would help</h2><p>Choose a close answer or write your own.</p>{clarifications.map((item, index) => <fieldset key={item.question}><legend>{item.question}</legend><div className="v3-options">{item.options.map(option => <button type="button" key={option} className={answers[index]?.answer === option ? 'is-selected' : ''} onClick={() => setAnswers(current => current.map((answer, at) => at === index ? { ...answer, answer: option } : answer))}>{option}</button>)}</div><input aria-label={'Your answer to ' + item.question} value={answers[index]?.answer || ''} onChange={event => setAnswers(current => current.map((answer, at) => at === index ? { ...answer, answer: event.target.value } : answer))} placeholder="Or write your own answer" maxLength={300} /></fieldset>)}</div>}
+          <label className="v3-span">Purpose of the shoot<textarea rows={5} maxLength={3000} value={purpose} onChange={event => setPurpose(event.target.value)} placeholder="These photos were taken for Ada's 25th birthday celebration…" /><small>Write what you know. Names, occasion, and why this shoot matters are useful.</small></label>
+          <div className="v3-assist v3-span"><button type="button" onClick={improve} disabled={!!busy}><RefreshCw size={16} /> Improve my wording</button>{originalPurpose && <button type="button" onClick={() => { setPurpose(originalPurpose); setOriginalPurpose(''); }}><RotateCcw size={16} /> Revert to my words</button>}<p>We will keep your facts and intent.</p></div>
         </div><div className="v3-actions"><StepButton onClick={detailsNext} disabled={!!busy || billingLoading || !draft && quotaReached}>{busy ? <LoaderCircle className="v3-spin" size={17} /> : <ArrowRight size={17} />} Continue to formats</StepButton></div></>}
         {stage === 'format' && <>
           <Head eyebrow="02 / THE FORMAT" title="Choose how they first see the work.">We recommend one format for this shoot. You can choose any of the eight.</Head>

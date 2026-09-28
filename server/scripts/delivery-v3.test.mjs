@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { V3_FORMATS, contrastRatio, validShowcase } from '../src/constants/deliveryV3.js';
-import { analyzeAllV3, clarifyPurpose, directV3, improvePurpose, regenerateV3Caption } from '../src/services/deliveryV3AI.service.js';
+import { analyzeAllV3, directV3, improvePurpose, regenerateV3Caption } from '../src/services/deliveryV3AI.service.js';
 
 const ids = Array.from({ length: 25 }, (_, index) => 'asset-' + index);
 test('each format enforces its own inclusive showcase bounds and known unique assets', () => {
@@ -79,41 +79,6 @@ test('purpose improvement rejects unrelated model text', async () => {
   const restore = mockModel([{ improved: 'Shoot type: Birthday\nA lovely day full of joy.' }], []);
   try {
     await assert.rejects(improvePurpose({ purpose: 'Lora 25th Birthday Celebration', shootType: 'Birthday' }), { code: 'V3_INVALID_AI_RESPONSE' });
-  } finally { restore(); }
-});
-
-test('birthday purpose does not surface event planning questions', async () => {
-  const calls = [];
-  const restore = mockModel([{ clear: false, questions: [
-    { question: 'What is the exact date and time of the birthday celebration?', options: ['Saturday evening', 'Sunday afternoon'] },
-    { question: 'Where will the celebration take place?', options: ['At a restaurant'] },
-    { question: 'How many guests are expected to attend?', options: ['Fewer than 20'] }
-  ] }], calls);
-  try {
-    assert.deepEqual(await clarifyPurpose({ purpose: "Lora's 25th birthday celebration", shootType: 'Birthday' }), { clear: true, questions: [] });
-    assert.equal(calls.length, 0);
-  } finally { restore(); }
-});
-
-test('model planning questions are discarded for other finished shoots', async () => {
-  const restore = mockModel([{ clear: false, questions: [
-    { question: 'Where will the ceremony take place?', options: ['At a venue'] },
-    { question: 'How many guests are expected to attend?', options: ['20–50'] }
-  ] }], []);
-  try {
-    assert.deepEqual(await clarifyPurpose({ purpose: 'Nneka and Tobi wedding portraits', shootType: 'Wedding' }), { clear: true, questions: [] });
-  } finally { restore(); }
-});
-
-test('clarification can still ask for a missing detail that changes the delivery words', async () => {
-  const question = 'Whose graduation is this delivery celebrating?';
-  const restore = mockModel([{ clear: false, questions: [
-    { question: 'Where will the ceremony take place?', options: ['At a venue'] },
-    { question: 'How many guests are expected?', options: ['20–50'] },
-    { question, options: ['My client', 'A group of graduates'] }
-  ] }], []);
-  try {
-    assert.deepEqual(await clarifyPurpose({ purpose: 'Graduation portraits', shootType: 'Graduation' }), { clear: false, questions: [{ question, options: ['My client', 'A group of graduates'] }] });
   } finally { restore(); }
 });
 

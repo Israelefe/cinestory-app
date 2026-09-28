@@ -65,20 +65,6 @@ export async function improvePurpose({ purpose, shootType }) {
   return improved;
 }
 
-export async function clarifyPurpose({ purpose, shootType }) {
-  // A milestone birthday already identifies the occasion; the client name is collected separately.
-  if (/\b\d{1,3}(?:st|nd|rd|th)\s+birthday\b/i.test(purpose)) return { clear: true, questions: [] };
-  const result = await request(
-    'These are ALREADY FINISHED photographs being delivered to a client, not an event or shoot being planned. Return JSON {"clear":boolean,"questions":[{"question":"...","options":["...","..."]}]}. A purpose such as "Lora\'s 25th birthday celebration" is clear enough: return clear true and no questions. Ask at most two questions only when an answer is essential to writing a personal opening, closing or caption, and the photographer can reasonably know it. Never ask for the date, time, venue, number of guests, itinerary, outfits, props, lighting, or other planning or visual details. Do not ask for facts already in the purpose. When in doubt, return clear true with no questions. Options are possible answers, not assumed facts.',
-    JSON.stringify({ shootType, purpose }),
-    { maxTokens: 500 }
-  );
-  const planningQuestion = /\b(date|time|when|where|venue|location|place|restaurant|residence|guest|attend|expected|outfit|dress|wear|prop|decor|lighting|camera|itinerary|schedule|weather|photograph|photo|image|picture)\b/i;
-  const questions = (Array.isArray(result.questions) ? result.questions : []).map(item => ({ question: String(item.question || '').trim().slice(0, 180), options: (Array.isArray(item.options) ? item.options : []).slice(0, 3).map(value => String(value).trim().slice(0, 120)).filter(Boolean) })).filter(item => item.question && !planningQuestion.test(item.question)).slice(0, 2);
-  const clear = Boolean(result.clear) || questions.length === 0;
-  return { clear, questions: clear ? [] : questions };
-}
-
 export async function recommendV3Format(shootType) {
   const result = await request(`Return JSON {"format":"one-of-these","reason":"one practical sentence"}. Choose based ONLY on shoot type. Available formats: ${Object.keys(V3_FORMATS).join(', ')}. Photo Story suits one person or a close group; Event Coverage suits a whole gathering; Campaign suits commercial assets.`, `Shoot type: ${shootType}`, { maxTokens: 250 });
   if (!V3_FORMATS[result.format]) throw Object.assign(new Error('The format recommendation could not be read. Retry.'), { code: 'V3_INVALID_AI_RESPONSE' });
@@ -170,7 +156,7 @@ export async function directV3(delivery, insights) {
   const closingAssetId = extras[1]?.assetId || extras[0]?.assetId || selected.at(-1);
   const rows = insights.filter(row => selectedSet.has(row.assetId));
   const captionLimit = delivery.format === 'photo-story' ? 60 : 180;
-  const narrative = await request('Return JSON {"title":"...","openingLine":"...","closingLine":"...","frames":[{"assetId":"...","caption":"..."}]}. Write the opening, closing and one distinct caption for every selected asset ID from the photographer\'s stated purpose and clarifications. There are no image observations in this request. Do not describe an imagined photograph, invent a person or event, or use generic visual filler. The shoot type supplies only light context. Use plain, meaningful language a photographer might send to this client. Photo Story captions must be no more than 44 characters so a small visual cue can fit later; other captions must be no more than 140 characters. Keep the opening and closing distinct.', `Client: ${delivery.clientName}\nPhotographer's purpose: ${delivery.brief}\nClarifications: ${JSON.stringify(delivery.v3?.clarificationAnswers || [])}\nShoot type (light context only): ${delivery.shootType}\nFormat: ${delivery.format}\nSelected asset IDs in order: ${JSON.stringify(selected)}`, { maxTokens: Math.min(8000, 700 + selected.length * 110) });
+  const narrative = await request('Return JSON {"title":"...","openingLine":"...","closingLine":"...","frames":[{"assetId":"...","caption":"..."}]}. Write the opening, closing and one distinct caption for every selected asset ID from the photographer\'s stated purpose. There are no image observations in this request. Do not describe an imagined photograph, invent a person or event, or use generic visual filler. The shoot type supplies only light context. Use plain, meaningful language a photographer might send to this client. Photo Story captions must be no more than 44 characters so a small visual cue can fit later; other captions must be no more than 140 characters. Keep the opening and closing distinct.', `Client: ${delivery.clientName}\nPhotographer's purpose: ${delivery.brief}\nShoot type (light context only): ${delivery.shootType}\nFormat: ${delivery.format}\nSelected asset IDs in order: ${JSON.stringify(selected)}`, { maxTokens: Math.min(8000, 700 + selected.length * 110) });
   const frameMap = new Map((Array.isArray(narrative.frames) ? narrative.frames : []).map(frame => [String(frame.assetId), frame]));
   if (selected.some(id => !frameMap.get(id)?.caption)) throw Object.assign(new Error('Some captions were missing. Retry this step.'), { code: 'V3_INCOMPLETE_CAPTIONS' });
   const purposeFrames = selected.map(id => ({ assetId: id, caption: String(frameMap.get(id).caption).trim().slice(0, captionLimit) }));
@@ -196,7 +182,7 @@ export async function directV3(delivery, insights) {
 
 export async function regenerateV3Caption(delivery, insight, instruction = '') {
   const limit = delivery.format === 'photo-story' ? 60 : 180;
-  const purpose = await request('Return JSON {"caption":"..."}. Write one meaningful caption based on the photographer\'s purpose, clarifications and any photographer instruction. Do not describe or imagine a photograph. The shoot type is light context only. Use plain human language. For Photo Story use at most 44 characters, otherwise at most 140 characters.', `Photographer's purpose: ${delivery.brief}\nClarifications: ${JSON.stringify(delivery.v3?.clarificationAnswers || [])}\nPhotographer instruction: ${instruction}\nShoot type (light context only): ${delivery.shootType}\nFormat: ${delivery.format}`, { maxTokens: 200 });
+  const purpose = await request('Return JSON {"caption":"..."}. Write one meaningful caption based on the photographer\'s purpose and any photographer instruction. Do not describe or imagine a photograph. The shoot type is light context only. Use plain human language. For Photo Story use at most 44 characters, otherwise at most 140 characters.', `Photographer's purpose: ${delivery.brief}\nPhotographer instruction: ${instruction}\nShoot type (light context only): ${delivery.shootType}\nFormat: ${delivery.format}`, { maxTokens: 200 });
   const base = String(purpose.caption || '').trim().slice(0, limit);
   if (base.length < 5) throw Object.assign(new Error('The caption could not be written. Retry.'), { code: 'V3_INVALID_AI_RESPONSE' });
   const visual = await request('Return JSON {"caption":"..."}. Keep the purpose-led caption verbatim. Optionally append a brief visible cue from the image observation if it fits naturally and the total stays within the limit. Never replace the purpose message with a photo description, and never infer personal facts from the image. If there is no suitable cue, repeat the caption exactly.', `Purpose-led caption: ${base}\nVisible observation only: ${insight.summary}\nCharacter limit: ${limit}`, { maxTokens: 200 });

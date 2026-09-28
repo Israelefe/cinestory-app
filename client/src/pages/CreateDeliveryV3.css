@@ -29,12 +29,6 @@
 .v3-assist{display:flex;flex-wrap:wrap;align-items:center;gap:14px}
 .v3-assist button,.v3-caption-assist button{display:flex;align-items:center;gap:8px;color:#ffd0ca;background:rgba(255,90,71,.08);border:1px solid rgba(255,90,71,.25);border-radius:10px;padding:10px 14px;cursor:pointer}
 .v3-assist p{width:100%;margin:0;color:#a9a3a0;font-size:12px}
-.v3-questions{padding:24px;background:#171418;border:1px solid rgba(255,255,255,.12);border-radius:16px}
-.v3-questions h2{font-size:20px;margin:0 0 7px}.v3-questions>p{color:#aaa;margin:0 0 18px}
-.v3-questions fieldset{border:0;border-top:1px solid rgba(255,255,255,.1);padding:19px 0 0;margin:18px 0 0}
-.v3-questions legend{font-weight:600;padding:0 10px 0 0}.v3-options{display:flex;gap:9px;flex-wrap:wrap;margin:15px 0}
-.v3-options button{border-radius:100px;padding:9px 14px;background:#242126;border:1px solid rgba(255,255,255,.14);color:#fff;cursor:pointer}
-.v3-options button.is-selected{border-color:#ff7665;background:rgba(255,90,71,.18)}
 .v3-actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:flex-end;margin:32px 0}
 .v3-button{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:48px;padding:12px 21px;border:1px solid #ff5a47;border-radius:4px;background:#ff5a47;color:#0a0809;font:inherit;font-size:14px;font-weight:700;text-decoration:none;cursor:pointer;transition:transform .2s,background .2s,border-color .2s}
 .v3-button:hover:not(:disabled){transform:translateY(-2px);background:#ff8474}.v3-button:active:not(:disabled){transform:scale(.97)}
