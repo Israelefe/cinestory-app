@@ -70,7 +70,7 @@ export default function SignupPage({ onAuthenticated }) {
         <div className="v-auth-visual-shade" />
         <div className="v-auth-visual-copy">
           <p><Image size={15} />The photographs are ready</p>
-          <h1>Give the reveal<br /><em>the same care.</em></h1>
+          <h1 aria-hidden="true">Give the reveal<br /><em>the same care.</em></h1>
           <span>Your client remembers how the photographs arrived.</span>
         </div>
         <div className="v-auth-visual-note"><BadgeCheck size={17} /><span><strong>Veylo Free</strong>No payment card needed</span></div>
@@ -79,7 +79,7 @@ export default function SignupPage({ onAuthenticated }) {
       <div className="v-auth-panel">
         <header className="v-auth-panel-head">
           <p className="v-eyebrow"><ShieldCheck size={14} />Create your photographer account</p>
-          <h2>Start with Veylo Free.</h2>
+          <h1>Start with Veylo Free.</h1>
           <p className="v-auth-panel-subhead">Already have an account? <Link to="/signin">Sign in</Link></p>
         </header>
         <div className="v-auth-included" aria-label="Included with Veylo Free">
@@ -90,6 +90,7 @@ export default function SignupPage({ onAuthenticated }) {
         <form className="v-form" onSubmit={submit}>
           <div className="v-auth-two"><div className="v-field"><label htmlFor="signup-name">Your name</label><input id="signup-name" name="name" autoComplete="name" required minLength={2} maxLength={100} value={form.name} onChange={update} /></div><div className="v-field"><label htmlFor="signup-email">Email address</label><input id="signup-email" name="email" type="email" inputMode="email" autoComplete="email" required maxLength={254} value={form.email} onChange={update} /></div></div>
           <div className="v-auth-two"><PasswordField id="signup-password" name="password" label="Create a password" shown={showPasswords} value={form.password} onChange={update} /><PasswordField id="signup-confirm-password" name="confirmPassword" label="Confirm password" shown={showPasswords} value={form.confirmPassword} onChange={update} /></div>
+          <p className="v-auth-password-help" aria-live="polite">Use at least eight characters.{form.confirmPassword && form.password !== form.confirmPassword ? ' Your passwords do not match yet.' : ''}</p>
           <label className="v-password-toggle"><input type="checkbox" checked={showPasswords} onChange={event => setShowPasswords(event.target.checked)} /><span>{showPasswords ? <EyeOff size={16} /> : <Eye size={16} />}Show passwords</span></label>
           <label className="v-auth-consent"><input name="accepted" type="checkbox" checked={form.accepted} onChange={update} /><span>I agree to Veylo’s <Link to="/terms">terms of use</Link> and <Link to="/privacy">privacy policy</Link>.</span></label>
           <TurnstileCheck ref={challengeRef} action="register" onVerify={setTurnstileToken} />

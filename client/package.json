@@ -10,8 +10,7 @@
     "preview": "vite preview",
     "verify:share-meta": "node scripts/verify-share-meta.mjs",
     "verify:delivery-v2": "node scripts/verify-delivery-v2.mjs",
-    "verify:responsive": "node scripts/verify-responsive-contract.mjs",
-    "verify:delivery-v3": "playwright test delivery-v3.spec.js"
+    "verify:responsive": "node scripts/verify-responsive-contract.mjs"
   },
   "dependencies": {
     "axios": "^1.6.8",

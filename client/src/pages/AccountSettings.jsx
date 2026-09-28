@@ -114,7 +114,8 @@ export default function AccountSettings({ user, onAccountDeleted, onUserUpdated 
         <Link to="/dashboard" className="v-auth-text-button"><ArrowLeft size={16} />Back to my deliveries</Link>
         <p className="v-eyebrow"><Camera size={15} />Your Veylo account</p>
         <h1>Account settings.</h1>
-        <p>Review the account connected to your studio and permanently remove it when you no longer want Veylo to hold your data.</p>
+        <p>Update the studio details clients see and manage the account behind your deliveries.</p>
+        <nav className="v-account-section-nav" aria-label="Account settings sections"><a href="#account-profile">Studio details</a><a href="#account-tools">Your work</a><a href="#account-plan">Plan</a><a href="#account-delete">Delete account</a></nav>
       </Reveal>
 
       <Reveal className="v-account-summary" delay={.06}>
@@ -123,7 +124,7 @@ export default function AccountSettings({ user, onAccountDeleted, onUserUpdated 
         <span className="v-account-plan"><ShieldCheck size={15} />Veylo {user?.plan === 'pro' ? 'Pro' : 'Free'}</span>
       </Reveal>
 
-      <Reveal className="v-account-profile" delay={.08}>
+      <Reveal id="account-profile" className="v-account-profile" delay={.08}>
         <header className="v-account-profile-head">
           <div><p>PROFILE AND STUDIO</p><h2>Keep your details current.</h2><span>This is the information Veylo uses across your studio, portfolio, and client-facing pages.</span></div>
           <button type="button" className="v-profile-image-button" onClick={() => logoInputRef.current?.click()} disabled={profileStatus.uploading}>
@@ -152,7 +153,7 @@ export default function AccountSettings({ user, onAccountDeleted, onUserUpdated 
         </form>
       </Reveal>
 
-      <Reveal className="v-account-tools" delay={.1}>
+      <Reveal id="account-tools" className="v-account-tools" delay={.1}>
         <header><div><p>STUDIO TOOLS</p><span>Keep the parts of your studio you use between deliveries in one place.</span></div></header>
         <div className="v-account-tool-grid">
           <Link to="/library"><span className="v-account-tool-icon"><Images size={19} /></span><span><strong>Image library</strong><small>Reuse photographs you have already stored.</small></span><ArrowRight size={17} /></Link>
@@ -160,13 +161,13 @@ export default function AccountSettings({ user, onAccountDeleted, onUserUpdated 
         </div>
       </Reveal>
 
-      <Reveal className="v-account-billing" delay={.12}>
+      <Reveal id="account-plan" className="v-account-billing" delay={.12}>
         <span><CreditCard size={20} /></span>
         <div><small>PLAN AND BILLING</small><strong>Manage {user?.plan === 'pro' ? 'your Pro subscription' : 'your Veylo plan'}</strong><p>See plan limits, payment history, and monthly subscription controls.</p></div>
         <Link to="/billing">Open billing</Link>
       </Reveal>
 
-      <Reveal className="v-delete-account" delay={.14}>
+      <Reveal id="account-delete" className="v-delete-account" delay={.14}>
         <header><span><Trash2 size={20} /></span><div><p className="v-eyebrow">Permanent deletion</p><h2>Delete this account</h2></div></header>
         <p>This removes your profile, studio details, deliveries, account sessions, and Veylo-hosted files connected to this account. Published client links will stop working. This cannot be undone.</p>
         <div className="v-delete-list"><span>Account and studio profile</span><span>Every delivery and client link</span><span>Sessions, verification codes, and reset records</span><span>Veylo-hosted profile and delivery files</span></div>

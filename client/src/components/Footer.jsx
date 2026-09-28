@@ -52,7 +52,7 @@ export default function Footer() {
               <img src="/veylo/veylo-mark.svg" alt="" width="27" height="27" />
               veylo<span className="text-[#ff9b8e]">.</span>
             </Link>
-            <p className="v-copy">One finished shoot.<br />Six ways to deliver it.</p>
+            <p className="v-copy">One finished shoot.<br />Eight ways to show it.</p>
             <div className="v-footer-email-row">
               <button type="button" className="v-footer-email" onClick={copyEmail} aria-label={`Copy ${emailAddress}`}>
                 <span>{emailAddress}</span>

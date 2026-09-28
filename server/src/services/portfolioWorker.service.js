@@ -1,4 +1,5 @@
 import Portfolio from '../models/Portfolio.js';
+import User from '../models/User.js';
 import PortfolioJob from '../models/PortfolioJob.js';
 import { CREATIVE_DIRECTOR_PROVIDER, CREATIVE_DIRECTOR_PROMPT_VERSION, analyzeImageBatch, createPortfolioDirection } from './alibabaCreativeDirector.service.js';
 import { signedImageUrl } from './deliveryMedia.service.js';
@@ -13,14 +14,17 @@ async function work(job) {
   try {
     const portfolio = await Portfolio.findOne({ _id: job.portfolioId, userId: job.userId });
     if (!portfolio) throw new Error('This portfolio no longer exists.');
+    const draft = portfolio.draft || portfolio;
+    const user = await User.findById(job.userId).select('name studio.name').lean();
+    const studioName = user?.studio?.name || user?.name || draft.studioName;
     const insights = Array.isArray(job.result?.insights) ? job.result.insights : [];
-    for (let offset = job.cursor || 0; offset < portfolio.items.length; offset += 20) {
-      const batch = portfolio.items.slice(offset, offset + 20).map(item => ({ assetId: item.publicId, analysisUrl: signedImageUrl(item.publicId, { width: 1024 }) }));
-      const next = await analyzeImageBatch({ brief: portfolio.bio, shootType: 'Selected portfolio work', clientName: portfolio.studioName, assets: batch });
+    for (let offset = job.cursor || 0; offset < draft.items.length; offset += 20) {
+      const batch = draft.items.slice(offset, offset + 20).map(item => ({ assetId: item.publicId, analysisUrl: signedImageUrl(item.publicId, { width: 1024 }) }));
+      const next = await analyzeImageBatch({ brief: draft.bio, shootType: 'Selected portfolio work', clientName: studioName, assets: batch });
       insights.push(...next);
-      job.cursor = offset + batch.length; job.progress = Math.min(75, Math.round((job.cursor / portfolio.items.length) * 75)); job.stage = 'reading-selected-work'; job.result = { insights }; job.markModified('result'); await job.save();
+      job.cursor = offset + batch.length; job.progress = Math.min(75, Math.round((job.cursor / draft.items.length) * 75)); job.stage = 'reading-selected-work'; job.result = { insights }; job.markModified('result'); await job.save();
     }
-    const direction = await createPortfolioDirection({ studioName: portfolio.studioName, bio: portfolio.bio, location: portfolio.location, items: portfolio.items.map(item => ({ publicId: item.publicId, title: item.title, category: item.category })), imageInsights: insights });
+    const direction = await createPortfolioDirection({ studioName, bio: draft.bio, location: draft.location, items: draft.items.map(item => ({ publicId: item.publicId, title: item.title, category: item.category })), imageInsights: insights });
     const latest = await PortfolioJob.findById(job._id).select('cancelRequestedAt status').lean();
     if (latest?.cancelRequestedAt || latest?.status === 'cancelled') {
       await PortfolioJob.updateOne({ _id: job._id }, { $set: { status: 'cancelled', stage: 'cancelled', cancelledAt: new Date(), completedAt: new Date(), providerLatencyMs: Date.now() - startedAt } });

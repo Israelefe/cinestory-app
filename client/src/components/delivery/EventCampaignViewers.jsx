@@ -103,6 +103,9 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
   const [galleryIndex, setGalleryIndex] = useState(null);
   const [activeFilter, setActiveFilter] = useState('all');
   const photos = useMemo(() => normalizeDeliveryPhotos(delivery, eventCoveragePhotos), [delivery]);
+  const galleryPhotos = useMemo(() => delivery?.schemaVersion === 3 ? normalizeDeliveryPhotos(delivery, eventCoveragePhotos, true) : photos, [delivery, photos]);
+  const openingPhoto = delivery?.schemaVersion === 3 ? galleryPhotos.find(photo => photo.assetId === delivery.v3?.openingAssetId) || photos[0] : photos[0];
+  const closingPhoto = delivery?.schemaVersion === 3 ? galleryPhotos.find(photo => photo.assetId === delivery.v3?.closingAssetId) : null;
   const sections = useMemo(() => resolveSections(delivery, photos, [
     { title: 'Arrivals and check-in', copy: 'The room takes shape as people arrive, find their bearings, and start the first conversations.', label: 'OPENING SCENE', delivery: 'WELCOME' },
     { title: 'The main programme', copy: 'A shared point of focus: the speaker, the audience, and the room listening together.', label: 'PROGRAMME', delivery: 'KEY MOMENTS' },
@@ -133,7 +136,7 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
   const highlights = photos.slice(0, 4);
 
   const openPhoto = photo => {
-    setGalleryIndex(Math.max(0, photos.indexOf(photo)));
+    setGalleryIndex(Math.max(0, galleryPhotos.findIndex(item => item.assetId ? item.assetId === photo.assetId : item.name === photo.name)));
     setGallery(true);
     onNarrationNavigate?.(photo.assetId);
   };
@@ -142,8 +145,8 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
     <DemoHeader format="Event Coverage" client={title} sectionId="event-coverage" onGallery={() => { setGalleryIndex(null); setGallery(true); }} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     <main>
       <section className="vec-event-hero">
-        <motion.figure {...formatFrameAttributes(photos[0])} style={formatFrameStyle(photos[0])} initial={reduced ? false : { opacity: 0, scale: 1.035 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: reduced ? 0 : 1.05, ease: [.22, 1, .36, 1] }}>
-          <motion.div className="vec-frame-motion" animate={frameMotionValues(photos[0], reduced)} transition={frameMotionTransition(photos[0], 0, reduced)}><OpeningPhoto photo={photos[0]} alt="Event opening photograph" /></motion.div>
+        <motion.figure {...formatFrameAttributes(openingPhoto)} style={formatFrameStyle(openingPhoto)} initial={reduced ? false : { opacity: 0, scale: 1.035 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: reduced ? 0 : 1.05, ease: [.22, 1, .36, 1] }}>
+          <motion.div className="vec-frame-motion" animate={frameMotionValues(openingPhoto, reduced)} transition={frameMotionTransition(openingPhoto, 0, reduced)}><OpeningPhoto photo={openingPhoto} alt="Event opening photograph" /></motion.div>
           <i />
         </motion.figure>
         <motion.div {...formatFrameAttributes(photos[0])} style={formatFrameStyle(photos[0])} initial={reduced ? false : { opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .7, delay: reduced ? 0 : .18 }}>
@@ -155,7 +158,7 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
       </section>
 
       <section className="vec-event-summary" aria-label="Event summary">
-        <div><Images size={19} /><strong>{photos.length}</strong><span>finished photographs</span></div>
+        <div><Images size={19} /><strong>{galleryPhotos.length}</strong><span>finished photographs</span></div>
         <div><Users size={19} /><strong>{sections.length}</strong><span>event scenes</span></div>
         <div><MapPin size={19} /><strong>{delivery?.shootType || 'Conference'}</strong><span>coverage type</span></div>
       </section>
@@ -204,9 +207,9 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
         </motion.article>)}
       </section>
 
-      <footer className="vec-event-close"><span>{studio}</span><h2>The whole day, in one place.</h2><button type="button" onClick={() => { setGalleryIndex(null); setGallery(true); }}>Open all {photos.length} photographs<Images size={18} /></button></footer>
+      <footer className="vec-event-close">{closingPhoto && <img className="vec-v3-bookend-photo" src={closingPhoto.url} alt="" />}<span>{studio}</span><h2>{delivery?.schemaVersion === 3 ? delivery?.creativeDirection?.closingLine : 'The whole day, in one place.'}</h2><button type="button" onClick={() => { setGalleryIndex(null); setGallery(true); }}>Open all {galleryPhotos.length} photographs<Images size={18} /></button></footer>
     </main>
-    <AnimatePresence>{gallery && <DemoGallery photos={photos} title={title} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} {...galleryProps} />}</AnimatePresence>
+    <AnimatePresence>{gallery && <DemoGallery photos={galleryPhotos} title={title} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} {...galleryProps} />}</AnimatePresence>
   </div>;
 }
 
@@ -216,6 +219,7 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
   const [galleryIndex, setGalleryIndex] = useState(null);
   const [activeFilter, setActiveFilter] = useState('all');
   const photos = useMemo(() => normalizeDeliveryPhotos(delivery, campaignPhotos), [delivery]);
+  const galleryPhotos = useMemo(() => delivery?.schemaVersion === 3 ? normalizeDeliveryPhotos(delivery, campaignPhotos, true) : photos, [delivery, photos]);
   const fallbackSets = useMemo(() => [
     { campaignType: 'hero', title: 'Hero campaign', copy: 'The lead frame establishes the product, the palette, and the first impression.', label: '01 / MASTER', delivery: 'WEB + HERO' },
     { campaignType: 'detail', title: 'Craft and detail', copy: 'Close frames make the material, construction, and finish easy to inspect.', label: '02 / DETAIL', delivery: 'DETAIL CROP' },
@@ -240,13 +244,14 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
   const highlights = photos.slice(0, 4);
   const title = delivery?.title || delivery?.clientName || 'Carry it forward';
   const client = delivery?.clientName || 'Campaign team';
-  const heroPhoto = photos.find(photo => photo.campaignType === 'hero') || photos[0];
+  const heroPhoto = delivery?.schemaVersion === 3 ? galleryPhotos.find(photo => photo.assetId === delivery.v3?.openingAssetId) || photos[0] : photos.find(photo => photo.campaignType === 'hero') || photos[0];
+  const closingPhoto = delivery?.schemaVersion === 3 ? galleryPhotos.find(photo => photo.assetId === delivery.v3?.closingAssetId) : null;
   const statement = delivery?.creativeDirection?.openingLine || delivery?.brief || 'A clear campaign presentation first, followed by an organised handoff that makes the right file easy to find and use.';
-  const usage = delivery?.formatConfig?.usageTerms || 'Usage terms are supplied by the photographer. Contact the studio before any use outside the agreed brief.';
+  const usage = delivery?.formatConfig?.usageTerms || (delivery?.schemaVersion === 3 ? 'Contact the studio to confirm usage terms before using these files.' : 'Usage terms are supplied by the photographer. Contact the studio before any use outside the agreed brief.');
   const styles = getFormatThemeStyles(delivery, { bg: '#090908', surface: '#141411', text: '#f3f0e8', accent: '#d9c270', fontDisplay: "'Playfair Display', Georgia, serif" });
 
   const openPhoto = photo => {
-    setGalleryIndex(Math.max(0, photos.indexOf(photo)));
+    setGalleryIndex(Math.max(0, galleryPhotos.findIndex(item => item.assetId ? item.assetId === photo.assetId : item.name === photo.name)));
     setGallery(true);
     onNarrationNavigate?.(photo.assetId);
   };
@@ -300,12 +305,12 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
       </section>
 
       <section className="vec-campaign-handoff">
-        <div><span>03 / HANDOFF</span><h2>Ready for the team.</h2><p>{photos.length} final photographs are available in the complete gallery, with the campaign sets kept in the order they are meant to be used.</p>{galleryProps?.onDownloadAll && delivery?.access?.allowDownloadAll !== false && <button type="button" onClick={galleryProps.onDownloadAll} disabled={Boolean(galleryProps.busy)}>{galleryProps.busy === 'all' ? 'Starting downloads...' : 'Download all photos'}<Download size={17} /></button>}</div>
+        <div><span>03 / HANDOFF</span><h2>Ready for the team.</h2><p>{galleryPhotos.length} final photographs are available in the complete gallery, with the campaign sets kept in the order they are meant to be used.</p>{galleryProps?.onDownloadAll && delivery?.access?.allowDownloadAll !== false && <button type="button" onClick={galleryProps.onDownloadAll} disabled={Boolean(galleryProps.busy)}>{galleryProps.busy === 'all' ? 'Starting downloads...' : 'Download all photos'}<Download size={17} /></button>}</div>
         <aside><FileCheck2 size={23} /><span>USAGE TERMS</span><p>{usage}</p><div className="vec-handoff-notes"><span>MASTER</span><span>WEB CROP</span><span>SOCIAL CROP</span></div></aside>
       </section>
 
-      <footer className="vec-campaign-close"><span>04 / COMPLETE COLLECTION</span><h2>See every approved photograph.</h2><button type="button" onClick={() => { setGalleryIndex(null); setGallery(true); }}>Open the full gallery<Images size={18} /></button></footer>
+      <footer className="vec-campaign-close">{closingPhoto && <img className="vec-v3-bookend-photo" src={closingPhoto.url} alt="" />}<span>04 / COMPLETE COLLECTION</span><h2>{delivery?.schemaVersion === 3 ? delivery?.creativeDirection?.closingLine : 'See every approved photograph.'}</h2><button type="button" onClick={() => { setGalleryIndex(null); setGallery(true); }}>Open the full gallery<Images size={18} /></button></footer>
     </main>
-    <AnimatePresence>{gallery && <DemoGallery photos={photos} title={title} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} {...galleryProps} />}</AnimatePresence>
+    <AnimatePresence>{gallery && <DemoGallery photos={galleryPhotos} title={title} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} {...galleryProps} />}</AnimatePresence>
   </div>;
 }

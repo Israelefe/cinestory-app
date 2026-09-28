@@ -9,7 +9,7 @@ const sources = ['Instagram', 'TikTok', 'YouTube', 'Google Search', 'WhatsApp', 
 const stepCopy = [
   { label: 'Studio details', title: 'What do clients call your studio?', text: 'Add the name and location your clients already know.' },
   { label: 'Your work', title: 'What do you usually photograph?', text: 'Choose the shoots you deliver most often. You can change these later.' },
-  { label: 'How you found us', title: 'One last question.', text: 'Tell us where you first heard about Veylo.' }
+  { label: 'How you found us', title: 'One optional question.', text: 'Tell us where you found Veylo, or go straight to your dashboard.' }
 ];
 
 export default function OnboardingPage({ user, onAuthenticated }) {
@@ -57,7 +57,7 @@ export default function OnboardingPage({ user, onAuthenticated }) {
 
   async function next(event) {
     event.preventDefault();
-    const data = step === 1 ? studio : step === 2 ? work : discovery;
+    const data = step === 1 ? studio : step === 2 ? work : { ...discovery, source: discovery.source || 'Prefer not to say' };
     setStatus(currentStatus => ({ ...currentStatus, loading: true, error: '' }));
     try {
       const saved = await api.patch('/v1/onboarding', { step, data });
@@ -109,7 +109,7 @@ export default function OnboardingPage({ user, onAuthenticated }) {
             <div className="v-form-row"><div className="v-field"><label htmlFor="studio-instagram">Instagram <small>Optional</small></label><input id="studio-instagram" maxLength={80} value={work.instagram} onChange={event => setWork(value => ({ ...value, instagram: event.target.value }))} placeholder="@yourstudio" /></div><div className="v-field"><label htmlFor="studio-whatsapp">WhatsApp number <small>Optional</small></label><input id="studio-whatsapp" inputMode="tel" maxLength={30} value={work.whatsapp} onChange={event => setWork(value => ({ ...value, whatsapp: event.target.value }))} placeholder="+234" /></div></div>
           </>}
           {step === 3 && <>
-            <fieldset className="v-choice-field"><legend>Choose one</legend><div className="v-source-grid">{sources.map(item => <label key={item} className={discovery.source === item ? 'is-selected' : ''}><input type="radio" name="source" required checked={discovery.source === item} onChange={() => setDiscovery(value => ({ ...value, source: item }))} /><span>{item}</span></label>)}</div></fieldset>
+            <fieldset className="v-choice-field"><legend>Choose one if you like</legend><div className="v-source-grid">{sources.map(item => <label key={item} className={discovery.source === item ? 'is-selected' : ''}><input type="radio" name="source" checked={discovery.source === item} onChange={() => setDiscovery(value => ({ ...value, source: item }))} /><span>{item}</span></label>)}</div></fieldset>
             {discovery.source === 'Other' && <div className="v-field"><label htmlFor="other-source">Where did you hear about Veylo?</label><input id="other-source" required maxLength={120} value={discovery.otherSource} onChange={event => setDiscovery(value => ({ ...value, otherSource: event.target.value }))} /></div>}
           </>}
           {status.error && <p className="v-form-status" role="alert">{status.error}</p>}

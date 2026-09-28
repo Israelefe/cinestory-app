@@ -1,0 +1,88 @@
+.v-fguide-hero-jump,.v-pricing-early-actions a,.v-niche-hero-demo,.v-portfolio-hero-actions>a{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:44px;padding:11px 16px;border:1px solid #ff9b8e70;color:#ffb4aa;font-size:13px;font-weight:700;text-decoration:none;transition:transform .18s ease,border-color .18s ease,background .18s ease}
+.v-fguide-hero-jump:hover,.v-pricing-early-actions a:hover,.v-niche-hero-demo:hover,.v-portfolio-hero-actions>a:hover{transform:translateY(-2px);border-color:#ff9b8e;background:#ff9b8e12}
+.v-fguide-hero-jump{margin-top:22px}
+.v-pricing-early-actions,.v-portfolio-hero-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}
+.v-portfolio-hero-quick{max-width:570px;margin-top:20px;color:#c7bdb5;font-size:15px;line-height:1.7}
+.v-about-maker{margin-top:12px;color:#bdb3ab;font-size:13px;line-height:1.6}
+.v-portfolio-handle>span{color:#a89f98;font-size:11px}
+.v-pstudio-demo-contact{display:inline-flex;align-items:center;gap:7px;color:#bfb7af;font-size:12px}
+.v-niche-hero-demo{margin-top:15px}
+.v-policy-mobile-nav{display:none}
+.v-auth-panel-head h1{font-family:'Outfit','Plus Jakarta Sans',sans-serif;font-size:clamp(27px,5vw,38px);font-weight:550;letter-spacing:-.045em;line-height:1.12}
+.v-auth-password-help{margin-top:-6px;color:#ada49c;font-size:12px;line-height:1.5}
+.v-dashboard-hero-action{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:20px}
+.v-dashboard-hero-action .v-dashboard-new{min-height:48px}
+.v-dashboard-hero-action small{max-width:260px;color:#b9afa7;font-size:12px;line-height:1.45}
+.v-account-section-nav{display:flex;flex-wrap:wrap;gap:9px;margin-top:20px}
+.v-account-section-nav a{display:inline-flex;align-items:center;min-height:42px;padding:9px 13px;border:1px solid #ffffff25;color:#d4c9c1;font-size:12px;text-decoration:none;transition:transform .18s,border-color .18s}
+.v-account-section-nav a:hover{transform:translateY(-2px);border-color:#ff9b8e80;color:#ffb4aa}
+#account-profile,#account-tools,#account-plan,#account-delete{scroll-margin-top:92px}
+.v-pedit-preview-modal:not([open]){display:none!important}
+.v-pedit-section[hidden]{display:none!important}
+.v-pedit-steps button{display:flex;flex:none;align-items:center;gap:7px;min-height:44px;padding:9px 12px;border:1px solid transparent;color:#aca39c;background:transparent;font-size:11px;font-weight:650;white-space:nowrap;transition:color .18s,border-color .18s,background .18s}
+.v-pedit-steps button.is-active{border-color:#ff9b8e75;color:#ffb9af;background:#ff9b8e13}
+.v-pedit-steps button>span{color:#ff9b8e;font-size:10px}
+.v-pedit-step-actions{display:flex;justify-content:space-between;gap:12px;padding:4px 0 12px}
+.v-pedit-step-actions button{min-height:46px;padding:11px 17px;border:1px solid #ffffff29;color:#eee8e2;background:#171419;font-size:12px;font-weight:700}
+.v-pedit-step-actions button:last-child{margin-left:auto;border-color:#ff9b8e80;color:#ffb4aa}
+.v-pedit-step-actions button:active,.v-pedit-steps button:active{transform:scale(.98)}
+.v-pedit-shared-name{display:block;min-height:44px;padding:12px 13px;border:1px solid #ffffff20;background:#111115;color:#f3eee8;font-size:14px}
+.v-pedit-field small a,.v-pedit-contact-note a{color:#ffb4aa;text-decoration:underline;text-underline-offset:3px}
+.v-pedit-readiness{display:grid;gap:8px;margin:18px 0}
+.v-pedit-readiness button{display:flex;align-items:center;gap:11px;min-height:46px;padding:10px 13px;border:1px solid #ffffff20;color:#d7cec6;background:#111115;text-align:left}
+.v-pedit-readiness button svg{color:#8b827b}.v-pedit-readiness button.is-ready svg{color:#85d6a1}
+.v-pedit-readiness button span{flex:1}.v-pedit-readiness button strong{color:#ffb4aa;font-size:11px}.v-pedit-readiness button.is-ready strong{color:#85d6a1}
+.v-pedit-picker-filters{display:flex;flex-wrap:wrap;gap:10px;padding:12px 15px;border-bottom:1px solid #ffffff13}
+.v-pedit-picker-filters input{flex:1 1 220px;min-width:0;min-height:44px;padding:10px 12px;border:1px solid #ffffff28;background:#121217;color:#f3eee8;font:inherit;font-size:13px}
+.v-pedit-picker-filters>div{display:flex;gap:5px;flex-wrap:wrap}
+.v-pedit-picker-filters button{min-height:42px;padding:9px 12px;border:1px solid #ffffff25;color:#d1c7bf;font-size:12px}
+.v-pedit-picker-filters button.is-active{border-color:#ff9b8e;color:#ffb4aa;background:#ff9b8e12}
+.v-pedit-source-groups>button{padding-bottom:11px}.v-pedit-source-groups>button>img{aspect-ratio:16/10}.v-pedit-source-groups>button>strong{display:block;overflow:hidden;padding:10px 10px 0;color:#eee8e2;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.v-pedit-source-groups>button>small{padding:4px 10px}
+.v-pedit-source-groups>p{grid-column:1/-1;padding:30px 12px;color:#aaa19a;text-align:center}
+.v-pedit-source-more{min-height:42px;margin:10px auto;padding:9px 18px;border:1px solid #ff9b8e75;color:#ffb4aa;font-size:12px;font-weight:700}
+.v-pedit-source-error,.v-pedit-source-loading{padding:10px 15px;color:#ffb4aa;font-size:12px}
+.v-pedit-bulk-tools{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin:0 0 16px;padding:12px;border:1px solid #ffffff1b;background:#111115}
+.v-pedit-bulk-tools label,.v-pedit-bulk-mark,.v-pedit-move-to{display:inline-flex!important;align-items:center;gap:7px;color:#d6cdc5;font-size:11px}
+.v-pedit-bulk-tools input:not([type=checkbox]){flex:1 1 175px;min-width:0;min-height:40px;padding:9px;border:1px solid #ffffff20;background:#09090d;color:#f3eee8;font-size:12px}
+.v-pedit-bulk-tools button{min-height:40px;padding:9px 12px;border:1px solid #ff9b8e70;color:#ffb4aa;font-size:11px;font-weight:700}
+.v-pedit-bulk-tools button:disabled{opacity:.45;cursor:not-allowed}
+.v-pedit-bulk-mark{min-height:30px}.v-pedit-bulk-mark input,.v-pedit-bulk-tools input[type=checkbox]{width:17px;height:17px;accent-color:#ff9b8e}
+.v-pedit-photo-actions{flex-wrap:wrap}.v-pedit-move-to select{min-height:36px;padding:5px;border:1px solid #ffffff25;background:#111115;color:#f3eee8;font-size:11px}
+.v-pedit-ai-card{flex-wrap:wrap}.v-pedit-ai-card>button{min-height:44px}
+.v-pedit-control-title small,.v-pedit-layout-choices>button>small,.v-pedit-type-choices>button>small,.v-pedit-spacing-choices>button>small,.v-pedit-motion-choices small,.v-pedit-toggle-copy small{font-size:11px;line-height:1.5}
+.v-pedit-layout-choices>button>strong,.v-pedit-type-choices>button>strong,.v-pedit-spacing-choices>button>strong{font-size:12px}
+.v-pedit-preview-device.is-desktop{max-width:1024px}
+.v-pedit-preview-device.is-tablet{max-width:768px}
+.v-pedit-preview-modal .v-pedit-preview-device.is-scaled{flex:none;height:calc(100dvh - 112px);max-height:calc(100dvh - 112px);margin-inline:auto}
+.v-pedit-preview-modal .v-pedit-preview-device.is-scaled .v-pedit-preview-scroll{width:var(--preview-frame-width);height:calc(100% / var(--preview-scale));transform:scale(var(--preview-scale));transform-origin:top left}
+.veylo-assistant-launch.is-portfolio-editor{bottom:max(114px,calc(env(safe-area-inset-bottom) + 104px))}
+.veylo-assistant-panel.is-portfolio-editor{bottom:max(114px,calc(env(safe-area-inset-bottom) + 104px));height:min(720px,calc(100dvh - 130px))}
+@media(max-width:380px){.veylo-assistant-launch.is-portfolio-editor{bottom:max(150px,calc(env(safe-area-inset-bottom) + 140px))}.veylo-assistant-panel.is-portfolio-editor{bottom:max(150px,calc(env(safe-area-inset-bottom) + 140px));height:min(720px,calc(100dvh - 166px))}}
+@media(max-width:767px){
+  .landing-page .v-hero-grid{grid-template-areas:'title' 'after' 'art';row-gap:20px}
+  .landing-page .v-hero-after{display:block}
+  .landing-page .v-hero-after .v-copy{margin-top:0}
+  .landing-page .v-hero-art{margin-top:8px}
+  .v-policy-layout{display:block}
+  .v-policy-nav{display:none}
+  .v-policy-mobile-nav{display:block;margin:0 0 20px;border:1px solid #ffffff22;background:#121217}
+  .v-policy-mobile-nav summary{min-height:48px;padding:13px 16px;color:#f3eee8;font-size:13px;font-weight:700;cursor:pointer}
+  .v-policy-mobile-nav nav{display:grid;gap:0;padding:0 12px 12px}
+  .v-policy-mobile-nav nav a{min-height:42px;padding:11px 7px;border-top:1px solid #ffffff14;color:#c5bab2;font-size:12px}
+  .v-onboarding-guide{padding-bottom:10px}
+  .v-onboarding-guide>h1{font-size:clamp(27px,7vw,38px)}
+  .v-onboarding-guide>ol,.v-onboarding-guide>.v-onboarding-account{display:none}
+  .v-onboarding-guide>p:not(.v-eyebrow){margin-top:6px}
+  .v-dashboard-hero-action{align-items:flex-start;flex-direction:column}
+  .v-dashboard-hero-action .v-dashboard-new{min-width:170px}
+  .v-pedit-preview-panel:not(.is-review){display:none}
+  .v-pedit-color-choices,.v-pedit-layout-choices,.v-pedit-type-choices,.v-pedit-spacing-choices{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .v-pedit-picker-filters{padding:10px}
+  .v-pedit-preview-modal .v-pedit-preview-device.is-scaled{height:calc(100dvh - 148px);max-height:calc(100dvh - 148px)}
+}
+@media(min-width:768px) and (max-width:1024px){
+  .v-portfolio-hero-actions,.v-pricing-early-actions{margin-top:26px}
+  .v-dashboard-hero-action{margin-top:25px}
+  .v-pedit-preview-panel:not(.is-review){display:none}
+}
+@media(prefers-reduced-motion:reduce){.v-fguide-hero-jump,.v-pricing-early-actions a,.v-niche-hero-demo,.v-portfolio-hero-actions>a{transition:none;transform:none!important}}

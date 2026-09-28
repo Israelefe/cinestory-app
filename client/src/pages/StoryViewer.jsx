@@ -5,14 +5,17 @@ import { storyFrameDurationSeconds } from '../utils/storyPacing';
 import { Play, Pause, Volume2, VolumeX, Download, Share2, X, Grid, RotateCcw, ChevronLeft, ChevronRight, ArrowUpRight, Film, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api from '../services/api.js';
+import { API_BASE_URL } from '../config/env.js';
 import { trackEvent } from '../services/analytics.js';
 import { DEMO_PRESETS } from '../constants/demoStories.js';
 import { useDialogFocus } from '../components/useDialogFocus.js';
 import ClientGallery from '../components/delivery/ClientGallery.jsx';
 import DeliveryBrandMark from '../components/delivery/DeliveryBrandMark.jsx';
+import './StoryV3.css';
 export { DEMO_PRESETS } from '../constants/demoStories.js';
 
 function getFontFamily(type, fallback = "'Playfair Display', Georgia, serif") {
+  if (['Playfair Display', 'Outfit', 'Plus Jakarta Sans', 'Cormorant Garamond', 'DM Sans', 'Libre Baskerville', 'Manrope'].includes(type)) return "'" + type + "', Georgia, sans-serif";
   switch (type) {
     case 'editorial-serif':
       return "'Playfair Display', Georgia, serif";
@@ -29,7 +32,11 @@ function getFontFamily(type, fallback = "'Playfair Display', Georgia, serif") {
 
 function mediaUrl(value) {
  if (typeof value !== 'string' || !value) return '';
- try { const url = new URL(value, window.location.origin); return url.protocol === 'blob:' || url.protocol === 'https:' || (url.origin === window.location.origin && url.protocol === 'http:') ? url.href : ''; } catch { return ''; }
+ try {
+  const url = new URL(value, window.location.origin);
+  const apiOrigin = new URL(API_BASE_URL, window.location.origin).origin;
+  return url.protocol === 'blob:' || url.protocol === 'https:' || (url.protocol === 'http:' && (url.origin === window.location.origin || (import.meta.env.DEV && url.origin === apiOrigin))) ? url.href : '';
+ } catch { return ''; }
 }
 
 async function prepareStoryShareFile(photo, index, clientName) {
@@ -119,7 +126,7 @@ function AnimatedStoryText({ text, mode, animation, reduced }) {
  if (effect === 'typewriter') {
   let letterIndex = 0;
   return <h2 className="v-story-typewriter">{text.split(/\s+/).map((word, wordIndex, words) => <span className="v-story-type-word" key={wordIndex}>{[...word].map(character => {
-   const delay = Math.min(letterIndex++, 54) * .026;
+   const delay = Math.min(letterIndex++, 60) * .06;
    return <motion.span className="v-story-type-character" key={letterIndex} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: .06, delay }}>{character}</motion.span>;
   })}{wordIndex < words.length - 1 ? '\u00a0' : ''}</span>)}</h2>;
  }
@@ -131,7 +138,7 @@ function AnimatedStoryText({ text, mode, animation, reduced }) {
  return <motion.h2 initial="hidden" animate="visible" variants={{ visible: { transition: { staggerChildren: .055, delayChildren: .12 } } }}>{words.map((word, i) => <motion.span className="v-story-word" key={i} variants={letterVariants}>{word}{i < words.length - 1 ? '\u00a0' : ''}</motion.span>)}</motion.h2>;
 }
 
-function StoryScene({ demo, demoId, photos, photo, index, mode, started, finished, reduced, displaySrc, displaySet, motionForPhoto, accent, pace = 'warm' }) {
+function StoryScene({ demo, demoId, photos, photo, index, mode, started, finished, reduced, displaySrc, displaySet, motionForPhoto, accent, pace = 'warm', v3CloserSrc = '' }) {
  const adjacentIndex = index < photos.length - 1 ? index + 1 : Math.max(0, index - 1);
  const adjacentSrc = demo ? '/veylo/web/demo-' + demoId + '-' + (adjacentIndex + 1) + '-960.webp' : mediaUrl(photos[adjacentIndex]?.url);
  const finaleIndexes = [...new Set([0, Math.floor((photos.length - 1) / 2), photos.length - 1])];
@@ -148,7 +155,7 @@ function StoryScene({ demo, demoId, photos, photo, index, mode, started, finishe
 
  if (finished) return <motion.div className="v-story-scene v-story-finale" initial={reduced ? false : { opacity: 0, scale: .94 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: reduced ? 0 : .7, ease: [0.22, 1, 0.36, 1] }}>
   <div className="v-story-finale-number" aria-hidden="true">END</div>
-  <div className="v-story-finale-photos">{finaleIndexes.map((photoIndex, i) => <motion.figure key={photoIndex} initial={reduced ? false : { opacity: 0, y: 42, rotate: (i - 1) * 7 }} animate={{ opacity: 1, y: 0, rotate: (i - 1) * 4 }} transition={{ type: 'spring', damping: 24, stiffness: 150, delay: reduced ? 0 : i * .1 }}><motion.img src={finaleSource(photoIndex)} alt="" animate={reduced ? { scale: 1 } : { scale: i === 1 ? [1.03, 1.11] : [1.11, 1.03], x: i === 0 ? ['2%', '-2%'] : i === 2 ? ['-2%', '2%'] : 0 }} transition={{ duration: reduced ? 0 : 8 + i, ease: 'easeInOut', repeat: reduced ? 0 : Infinity, repeatType: 'mirror' }} /></motion.figure>)}</div>
+  {v3CloserSrc ? <div className="v-story-v3-closer"><img src={v3CloserSrc} alt="" /></div> : <div className="v-story-finale-photos">{finaleIndexes.map((photoIndex, i) => <motion.figure key={photoIndex} initial={reduced ? false : { opacity: 0, y: 42, rotate: (i - 1) * 7 }} animate={{ opacity: 1, y: 0, rotate: (i - 1) * 4 }} transition={{ type: 'spring', damping: 24, stiffness: 150, delay: reduced ? 0 : i * .1 }}><motion.img src={finaleSource(photoIndex)} alt="" animate={reduced ? { scale: 1 } : { scale: i === 1 ? [1.03, 1.11] : [1.11, 1.03], x: i === 0 ? ['2%', '-2%'] : i === 2 ? ['-2%', '2%'] : 0 }} transition={{ duration: reduced ? 0 : 8 + i, ease: 'easeInOut', repeat: reduced ? 0 : Infinity, repeatType: 'mirror' }} /></motion.figure>)}</div>}
  </motion.div>;
 
  const transitionKind = ['cut', 'fade', 'slide_left', 'rise', 'scale'].includes(photo?.transition) ? photo.transition : 'fade';
@@ -210,6 +217,10 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
  const [hidden, setHidden] = useState(document.hidden);
  const audio = useRef(null);
  const narrationRef = useRef(null);
+ const v3OpeningRef = useRef(null);
+ const v3ClosingRef = useRef(null);
+ const v3OpeningPlayed = useRef(false);
+ const [v3OpeningNarrating, setV3OpeningNarrating] = useState(false);
  const narrationLeadTimer = useRef(null);
  const narrationLeadRef = useRef(false);
  const progress = useRef(null);
@@ -233,6 +244,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   if (narrationLeadTimer.current) window.clearTimeout(narrationLeadTimer.current);
   narrationLeadRef.current = false;
   setStarted(false); setIndex(0); setPaused(false); setFinished(false); setGallery(false); setError(''); setLoading(true); elapsed.current = 0;
+  v3OpeningPlayed.current = false; setV3OpeningNarrating(false);
   if (deliveryProp) {
     const cd = deliveryProp.creativeDirection || {};
     const palette = cd.palette || {};
@@ -248,13 +260,13 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
         originalFilename: asset.originalFilename,
         caption: frame.caption || frame.headline || '',
         chapterTitle: frame.headline || '',
-        duration: storyFrameDurationSeconds(frame),
+        duration: deliveryProp.schemaVersion === 3 ? 6 : storyFrameDurationSeconds(frame),
         motion: storyMotion(frame.motion),
         sceneLayout: frame.layout || STORY_LAYOUTS[i % STORY_LAYOUTS.length],
-        typographyStyle: frame.typographyStyle || 'cinematic_drift',
+        typographyStyle: deliveryProp.schemaVersion === 3 ? 'typewriter' : frame.typographyStyle || 'cinematic_drift',
         textBackground: frame.textBackground || 'transparent_shadow',
         captionPosition: frame.captionPosition || 'bottom',
-        textAnimation: frame.textAnimation || undefined,
+        textAnimation: deliveryProp.schemaVersion === 3 ? 'typewriter' : frame.textAnimation || undefined,
         transition: storyTransition(frame.transition),
         focalPoint: frame.focalPoint || '50% 50%',
         colorAccent: frame.colorAccent || palette.accent || '#ff5a47'
@@ -295,7 +307,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
         textColor: palette.text || '#ffffff',
         displayFont: getFontFamily(typography.display),
         bodyFont: getFontFamily(typography.body, "'Plus Jakarta Sans', system-ui, sans-serif"),
-        pace: cd.pace || 'warm'
+        pace: deliveryProp.schemaVersion === 3 ? 'warm' : cd.pace || 'warm'
       }
     };
     setStory(derived);
@@ -328,7 +340,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   if (!running) return;
   if (audioLoading || (hasNarration && (narrationPlaying || narrationLoading))) return;
   let frame; let previous = performance.now();
-  const duration = storyFrameDurationSeconds(photo, story?.theme?.pace) * 1000;
+  const duration = (deliveryProp?.schemaVersion === 3 ? 6 : storyFrameDurationSeconds(photo, story?.theme?.pace)) * 1000;
   const tick = now => {
    elapsed.current += now - previous; previous = now;
    if (progress.current) progress.current.style.transform = 'scaleX(' + Math.min(1, elapsed.current / duration) + ')';
@@ -341,7 +353,17 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   };
   frame = requestAnimationFrame(tick);
   return () => cancelAnimationFrame(frame);
- }, [running, index, photo?.duration, photo?.caption, photos.length, hasNarration, narrationPlaying, narrationLoading, audioLoading]);
+ }, [running, index, photo?.duration, photo?.caption, photos.length, hasNarration, narrationPlaying, narrationLoading, audioLoading, deliveryProp?.schemaVersion]);
+ useEffect(() => {
+  if (deliveryProp?.schemaVersion !== 3 || !finished || muted || !v3ClosingRef.current) return;
+  if (audio.current) fadeAudioVolume(audio.current, .16, 320);
+  v3ClosingRef.current.currentTime = 0;
+  v3ClosingRef.current.play().catch(() => { if (audio.current) fadeAudioVolume(audio.current, 1, 320); });
+ }, [finished, muted, deliveryProp?.schemaVersion]);
+ useEffect(() => {
+  if (v3OpeningRef.current) v3OpeningRef.current.muted = muted;
+  if (v3ClosingRef.current) v3ClosingRef.current.muted = muted;
+ }, [muted]);
  useEffect(() => {
   const element = audio.current;
   if (!element) return;
@@ -511,9 +533,9 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
      setDownloadProgress(null);
    }
   };
- const start = () => {
+ const beginFrames = () => {
     if (narrationLeadTimer.current) window.clearTimeout(narrationLeadTimer.current);
-    setStarted(true); setPaused(false); setFinished(false); setIndex(0); elapsed.current = 0;
+    setV3OpeningNarrating(false); setStarted(true); setPaused(false); setFinished(false); setIndex(0); elapsed.current = 0;
     trackEvent('client.experience.started', { format: 'photo-story' }, { format: 'photo-story', status: 'started' });
     if (audio.current) {
       audio.current.currentTime = 0;
@@ -547,13 +569,26 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
       }
     }
   };
+  const start = () => {
+    if (finished) v3OpeningPlayed.current = false;
+    if (deliveryProp?.schemaVersion === 3 && v3OpeningRef.current && !muted && !v3OpeningPlayed.current) {
+      v3OpeningPlayed.current = true;
+      setV3OpeningNarrating(true);
+      v3OpeningRef.current.currentTime = 0;
+      v3OpeningRef.current.play().catch(() => beginFrames());
+      return;
+    }
+    beginFrames();
+  };
   const share = async () => {
    const url = window.location.href;
    try { if (navigator.share) await navigator.share({ title: story.title || 'A Veylo Photo Story', url }); else { await navigator.clipboard.writeText(url); toast.success('Story link copied.'); } } catch (e) { if (e.name !== 'AbortError') toast.info('Copy the link from your browser’s address bar to share this story.'); }
   };
   if (loading) return <div className="v-page-loading" role="status">Opening your Photo Story…</div>;
   if (error || !story) return <div className="v-public v-view-error"><Film size={30} /><h1>This story isn’t available.</h1><p>{error}</p><Link className="v-button" to={backDestination}>Back to Veylo<ArrowUpRight size={17} /></Link></div>;
-  const displaySrc = demo ? '/veylo/web/demo-' + demoId + '-' + (index + 1) + '-960.webp' : mediaUrl(photo?.url);
+  const v3OpeningAsset = deliveryProp?.schemaVersion === 3 ? deliveryProp.assets?.find(asset => asset.assetId === deliveryProp.v3?.openingAssetId) : null;
+  const v3ClosingAsset = deliveryProp?.schemaVersion === 3 ? deliveryProp.assets?.find(asset => asset.assetId === deliveryProp.v3?.closingAssetId) : null;
+  const displaySrc = demo ? '/veylo/web/demo-' + demoId + '-' + (index + 1) + '-960.webp' : mediaUrl(!started && v3OpeningAsset ? v3OpeningAsset.url : photo?.url);
   const displaySet = demo ? [480, 960, 1440].map(w => '/veylo/web/demo-' + demoId + '-' + (index + 1) + '-' + w + '.webp ' + w + 'w').join(', ') : photo?.srcSet;
   const motionName = String(photo?.motion || photo?.zoomEffect || 'zoom_in').replaceAll('_', '-');
  const motionForPhoto = reduced ? { scale: 1, x: 0, y: 0 } : motionName === 'pan-down' ? { scale: 1.16, y: ['-4%', '4%'] } : motionName === 'pan-up' ? { scale: 1.16, y: ['4%', '-4%'] } : motionName === 'pan-right' ? { scale: 1.16, x: ['-4%', '4%'] } : motionName === 'pan-left' ? { scale: 1.16, x: ['4%', '-4%'] } : motionName === 'zoom-out' ? { scale: [1.18, 1.03] } : { scale: [1.02, 1.16] };
@@ -563,14 +598,14 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   const captionPosition = safeChoice(photo?.captionPosition, CAPTION_POSITIONS, 'bottom');
   const opening = story.opening || {};
   const finale = story.finale || {};
-  return <div className="v-public v-story-shell" style={{ '--story-accent': photo?.colorAccent || story.theme?.accentColor || '#ff5a47', '--story-glow': photo?.glowColor || story.theme?.glowColor || 'rgba(255,90,71,.35)', '--story-secondary': photo?.secondaryColor || story.theme?.secondaryColor || '#151518', '--story-bg': story.theme?.backgroundColor || '#050506', '--story-text': story.theme?.textColor || '#ffffff', '--story-font-display': story.theme?.displayFont || "'Playfair Display', Georgia, serif", '--story-font-body': story.theme?.bodyFont || "'Plus Jakarta Sans', system-ui, sans-serif" }}>
+  return <div className={'v-public v-story-shell' + (deliveryProp?.schemaVersion === 3 ? ' is-v3' : '')} style={{ '--story-accent': photo?.colorAccent || story.theme?.accentColor || '#ff5a47', '--story-glow': photo?.glowColor || story.theme?.glowColor || 'rgba(255,90,71,.35)', '--story-secondary': photo?.secondaryColor || story.theme?.secondaryColor || '#151518', '--story-bg': story.theme?.backgroundColor || '#050506', '--story-text': story.theme?.textColor || '#ffffff', '--story-font-display': story.theme?.displayFont || "'Playfair Display', Georgia, serif", '--story-font-body': story.theme?.bodyFont || "'Plus Jakarta Sans', system-ui, sans-serif" }}>
   <div className="v-story-ambient" aria-hidden="true"><img src={displaySrc} alt="" /></div>
   <main className={'v-story-canvas ' + (!started ? 'is-cover-state' : finished ? 'is-finale-state' : 'is-playing-state')} id="main-content" ref={stage} onPointerDown={e => { if (e.pointerType !== 'mouse') touch.current = { x: e.clientX, y: e.clientY }; if (started) setHolding(true); }} onPointerUp={e => { setHolding(false); if (touch.current) { const dx = e.clientX - touch.current.x; const dy = e.clientY - touch.current.y; if (started && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) go(dx < 0 ? 1 : -1); touch.current = null; } }} onPointerCancel={() => { setHolding(false); touch.current = null; }} onPointerLeave={() => setHolding(false)}>
-   <StoryScene demo={demo} demoId={demoId} photos={photos} photo={photo} index={index} mode={layoutMode} started={started} finished={finished} reduced={reduced} displaySrc={displaySrc} displaySet={displaySet} motionForPhoto={motionForPhoto} accent={photo?.colorAccent || story.theme?.accentColor || '#ff5a47'} pace={story.theme?.pace} />
+   <StoryScene demo={demo} demoId={demoId} photos={photos} photo={photo} index={index} mode={layoutMode} started={started} finished={finished} reduced={reduced} displaySrc={displaySrc} displaySet={!started && v3OpeningAsset ? v3OpeningAsset.srcSet : displaySet} motionForPhoto={motionForPhoto} accent={photo?.colorAccent || story.theme?.accentColor || '#ff5a47'} pace={story.theme?.pace} v3CloserSrc={mediaUrl(v3ClosingAsset?.url)} />
    <div className="v-story-shade" aria-hidden="true" />
    <div className="v-story-progress" role="progressbar" aria-label="Photo Story progress" aria-valuemin={1} aria-valuemax={photos.length} aria-valuenow={index + 1}>{photos.map((_, i) => <span key={i} className={i < index ? 'is-done' : i === index ? 'is-current' : ''}><i ref={i === index ? progress : null} /></span>)}</div>
    <header className="v-story-top"><div className="v-story-studio"><Link to={backDestination} onClick={handleBack} className="v-story-mark" aria-label={demo ? (isFromFormats ? 'Back to Photo Story on the formats page' : isFromNiche ? 'Back to the page you opened this story from' : 'Back to the Photo Story section on the homepage') : `${story.studioName || 'Studio'} home`}><DeliveryBrandMark branding={story.branding} /></Link><div><strong style={{ fontFamily: 'var(--story-font-display)' }}>{story.clientName || story.title}</strong><span style={{ fontFamily: 'var(--story-font-body)' }}>{story.studioName || story.occasion}</span></div></div><div className="v-story-top-actions"><button onClick={() => setMuted(value => !value)} aria-label={muted ? 'Turn sound on' : 'Turn sound off'}>{muted ? <VolumeX size={17} /> : <Volume2 size={17} />}</button><button onClick={share} aria-label="Share story"><Share2 size={17} /></button></div></header>
-   {!started ? <section className="v-story-cover"><p className="v-story-kicker">{opening.eyebrow || (demo ? 'A Veylo Photo Story' : 'Your photographs are ready')}</p><h1 style={{ fontFamily: 'var(--story-font-display)' }}>{opening.headline || story.clientName || story.title}</h1><p className="v-story-cover-occasion">{story.occasion}</p><p className="v-story-summary">{opening.copy || story.storySummary || 'Your finished photographs, brought together for you.'}</p><button className="v-story-primary" onClick={start}><Play size={18} fill="currentColor" />{opening.buttonLabel || 'Begin the story'}</button><p className="v-story-hint">{opening.hint || 'Turn your sound on. Tap either side to move through the story.'}</p></section> : <>
+   {!started ? <section className="v-story-cover"><p className="v-story-kicker">{opening.eyebrow || (demo ? 'A Veylo Photo Story' : 'Your photographs are ready')}</p><h1 style={{ fontFamily: 'var(--story-font-display)' }}>{opening.headline || story.clientName || story.title}</h1><p className="v-story-cover-occasion">{story.occasion}</p><p className="v-story-summary">{opening.copy || story.storySummary || 'Your finished photographs, brought together for you.'}</p><button className="v-story-primary" onClick={start} disabled={v3OpeningNarrating}><Play size={18} fill="currentColor" />{v3OpeningNarrating ? 'Reading the introduction…' : opening.buttonLabel || 'Begin the story'}</button><p className="v-story-hint">{opening.hint || 'Turn your sound on. Tap either side to move through the story.'}</p></section> : <>
     <button className="v-story-tap v-story-tap-left" onClick={() => go(-1)} disabled={index === 0} aria-label="Previous photograph" />
     <button className="v-story-tap v-story-tap-right" onClick={() => go(1)} disabled={index === photos.length - 1} aria-label="Next photograph" />
     <section key={finished ? 'finale' : 'caption-' + index} className={'v-story-caption is-' + layoutMode + ' is-type-' + textStyle + ' has-' + textBackground + ' position-' + captionPosition + ' ' + (!captions ? 'is-hidden ' : '') + (finished ? 'is-finale' : '')} style={captions ? undefined : { display: 'none', visibility: 'hidden', opacity: 0, pointerEvents: 'none' }} aria-live={paused || finished ? 'polite' : 'off'}>{finished ? <><motion.p className="v-story-kicker" initial={reduced ? false : { opacity: 0, x: -18 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: reduced ? 0 : .18 }}>{finale.eyebrow || 'That’s the story'}</motion.p><AnimatedStoryText text={finale.headline || 'The full gallery is ready.'} mode="poster" animation={finale.textAnimation || 'word_fade_up'} reduced={reduced} /><motion.p initial={reduced ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: reduced ? 0 : .5 }}>{finale.copy || 'Take your time with every photograph. Save one, or keep the whole set.'}</motion.p><motion.button className="v-story-gallery-cta" onClick={() => setGallery(true)} initial={reduced ? false : { opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: reduced ? 0 : .65 }}>{finale.buttonLabel || 'Open your gallery'}<Grid size={16} /></motion.button></> : <><motion.p className="v-story-kicker" initial={reduced ? false : { opacity: 0, x: -18 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: reduced ? 0 : .08 }}>{photo?.chapterTitle || 'The photographs'}</motion.p><AnimatedStoryText text={photo?.caption || 'One more moment from the day.'} mode={layoutMode} animation={photo?.textAnimation} reduced={reduced} /></>}</section>
@@ -580,6 +615,8 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   </main>
   {story.soundtrack?.audioUrl && <audio ref={audio} src={mediaUrl(story.soundtrack.audioUrl)} loop preload="metadata" onWaiting={() => { if (started && !muted) setAudioLoading(true); }} onStalled={() => { if (started && !muted) setAudioLoading(true); }} onPlaying={() => { setAudioLoading(false); setAudioPlaying(true); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioPlaying(false); setAudioLoading(false); toast.info('The soundtrack could not load. The story will continue without it.'); }} />}
   {deliveryProp?.narration?.url && <audio ref={narrationRef} src={mediaUrl(deliveryProp.narration.url)} preload="metadata" onWaiting={() => { if (started && !muted) setNarrationLoading(true); }} onStalled={() => { if (started && !muted) setNarrationLoading(true); }} onPlaying={() => { setNarrationLoading(false); setNarrationPlaying(true); }} onEnded={handleNarrationEnded} onError={() => { setNarrationPlaying(false); setNarrationLoading(false); fadeAudioVolume(audio.current, 1); toast.info('The narration could not load. The story will continue without it.'); }} />}
+  {deliveryProp?.schemaVersion === 3 && deliveryProp?.narration?.opening?.url && <audio ref={v3OpeningRef} src={mediaUrl(deliveryProp.narration.opening.url)} preload="metadata" onEnded={beginFrames} />}
+  {deliveryProp?.schemaVersion === 3 && deliveryProp?.narration?.closing?.url && <audio ref={v3ClosingRef} src={mediaUrl(deliveryProp.narration.closing.url)} preload="metadata" onEnded={() => { if (audio.current) fadeAudioVolume(audio.current, 1, 300); }} />}
   <AnimatePresence>{gallery && <ClientGallery photos={galleryPhotos} title={story.clientName || story.title} demoId={demo ? demoId : null} delivery={deliveryProp} onClose={() => setGallery(false)} liked={galleryProps?.liked} onLike={galleryProps?.onLike} onDownload={galleryProps?.onDownload || ((_key, photoIndex) => download(photoIndex))} busy={galleryProps?.busy} downloading={downloading} onDownloadAll={galleryProps?.onDownloadAll || downloadAll} allDownloading={allDownloading} downloadNotice={galleryProps?.downloadNotice || downloadNotice} downloadProgress={galleryProps?.downloadProgress || downloadProgress} />}</AnimatePresence>
   </div>;
 }

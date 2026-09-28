@@ -13,7 +13,7 @@ import lazyWithRecovery from './utils/lazyWithRecovery.jsx';
 import 'react-toastify/dist/ReactToastify.css';
 
 const Dashboard = lazyWithRecovery(() => import('./pages/Dashboard.jsx'), 'dashboard');
-const CreateDelivery = lazyWithRecovery(() => import('./pages/CreateDelivery.jsx'), 'create-delivery');
+const CreateDelivery = lazyWithRecovery(() => import('./pages/CreateDeliveryRouter.jsx'), 'create-delivery');
 const StoryViewer = lazyWithRecovery(() => import('./pages/StoryViewer.jsx'), 'photo-story');
 const DeliveryViewer = lazyWithRecovery(() => import('./pages/DeliveryViewer.jsx'), 'client-delivery');
 const DeliverySharing = lazyWithRecovery(() => import('./pages/DeliverySharing.jsx'), 'delivery-sharing');
@@ -162,7 +162,7 @@ function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountD
       <Route path="/dashboard" element={<ProtectedRoute user={user} loading={authLoading}><Dashboard user={user} onLogout={onLogout} /></ProtectedRoute>} />
       <Route path="/create" element={<ProtectedRoute user={user} loading={authLoading}><CreateDelivery user={user} /></ProtectedRoute>} />
       <Route path="/sharing" element={<ProtectedRoute user={user} loading={authLoading}><DeliverySharing /></ProtectedRoute>} />
-      <Route path="/formats" element={<DeliveryFormats />} /><Route path="/portfolio" element={<PortfolioPage />} /><Route path="/pricing" element={<PricingPage />} />
+      <Route path="/formats" element={<DeliveryFormats />} /><Route path="/portfolio" element={<PortfolioPage user={user} />} /><Route path="/pricing" element={<PricingPage />} />
       <Route path="/signup" element={<GuestOnlyRoute user={user} loading={authLoading}><SignupPage onAuthenticated={onAuthenticated} /></GuestOnlyRoute>} />
       <Route path="/signin" element={<GuestOnlyRoute user={user} loading={authLoading}><SigninPage onAuthenticated={onAuthenticated} /></GuestOnlyRoute>} />
       <Route path="/verify-email" element={<VerificationRoute user={user} loading={authLoading}><VerifyEmailPage onAuthenticated={onAuthenticated} /></VerificationRoute>} />

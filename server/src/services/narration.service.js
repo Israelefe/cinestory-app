@@ -49,16 +49,13 @@ export function captionSegments(delivery) {
       .sort((left, right) => Number(left.sortOrder || 0) - Number(right.sortOrder || 0))
       .map((asset, index) => [String(asset.assetId), index])
   );
-  const orderedFrames = delivery.schemaVersion >= 3 ? frames : approvedPositions.size
+  const orderedFrames = approvedPositions.size
     ? frames.slice().sort((left, right) => (approvedPositions.get(String(left.assetId)) ?? Number.MAX_SAFE_INTEGER) - (approvedPositions.get(String(right.assetId)) ?? Number.MAX_SAFE_INTEGER))
     : frames;
   const sections = delivery.creativeDirection?.sections || [];
   const sectionById = new Map(sections.map(section => [section.id, section]));
   const segments = orderedFrames.map((frame, index) => {
-    const lines = delivery.schemaVersion >= 3
-      ? [index === 0 ? delivery.creativeDirection?.openingLine : '', frame.caption, index === orderedFrames.length - 1 ? delivery.creativeDirection?.closingLine : '']
-      : [frame.caption];
-    const caption = [...new Set(lines.map(line => cleanLine(line, 220)).filter(Boolean))].join(' ');
+    const caption = cleanLine(frame.caption, 220);
     if (caption.length < 8) return null;
     const section = sectionById.get(frame.sectionId);
     return {
@@ -70,7 +67,7 @@ export function captionSegments(delivery) {
     };
   }).filter(Boolean);
 
-  if ((delivery.schemaVersion < 3 && segments.length !== frames.length) || !segments.length) {
+  if (segments.length !== frames.length || !segments.length) {
     throw Object.assign(new Error('Every photograph needs an approved caption before narration can be created.'), { code: 'NARRATION_CAPTIONS_REQUIRED' });
   }
   return segments;
@@ -90,10 +87,10 @@ async function uploadAudio(buffer, delivery) {
   });
 }
 
-async function synthesize({ apiKey, text }) {
+async function synthesize({ apiKey, text, speed = VOICE_SETTINGS.speed }) {
   const query = new URLSearchParams({
     model: MODEL_ID,
-    speed: String(VOICE_SETTINGS.speed),
+    speed: String(speed),
     expressivity: String(VOICE_SETTINGS.expressivity)
   });
   const DELAYS = [1000, 3000, 6000];
@@ -119,6 +116,26 @@ async function synthesize({ apiKey, text }) {
       throw Object.assign(new Error(`Deepgram could not create narration${providerMessage ? `: ${providerMessage.slice(0, 180)}` : '.'}`), { code: 'NARRATION_REQUEST_FAILED' });
     }
     return Buffer.from(await response.arrayBuffer());
+  }
+}
+
+export async function synthesizeV3Bookends(delivery) {
+  const apiKey = String(process.env.DEEPGRAM_API_KEY || '').trim();
+  if (!apiKey) throw Object.assign(new Error('Narration is unavailable right now. Retry this step or skip narration.'), { code: 'NARRATION_UNAVAILABLE' });
+  const opening = narrationLine(delivery.creativeDirection?.openingLine);
+  const closing = narrationLine(delivery.creativeDirection?.closingLine);
+  if (opening.length < 8 || closing.length < 8) throw Object.assign(new Error('Write an opening and closing message first.'), { code: 'NARRATION_TEXT_REQUIRED' });
+  const uploaded = [];
+  try {
+    for (const [key, text] of [['opening', opening], ['closing', closing]]) {
+      const audio = await synthesize({ apiKey, text, speed: 0.85 });
+      const result = await uploadAudio(audio, delivery);
+      uploaded.push({ key, publicId: result.public_id, text });
+    }
+    return { voiceId: DEFAULT_NARRATION_VOICE_ID, renderVersion: 'flux-hannah-bookends-v3', opening: uploaded[0], closing: uploaded[1] };
+  } catch (error) {
+    await Promise.all(uploaded.map(item => cloudinary.uploader.destroy(item.publicId, { resource_type: 'video', type: 'authenticated' }).catch(() => {})));
+    throw error;
   }
 }
 

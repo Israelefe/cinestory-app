@@ -21,6 +21,7 @@ const storageAssetSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 storageAssetSchema.index({ userId: 1, createdAt: -1 });
+storageAssetSchema.index({ userId: 1, _id: -1 });
 storageAssetSchema.index({ userId: 1, originalFilename: 1 });
 
 export default mongoose.model('StorageAsset', storageAssetSchema);

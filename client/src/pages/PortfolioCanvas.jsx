@@ -88,6 +88,7 @@ export default function PortfolioCanvas({ portfolio, preview = false, onPhotoOpe
           {portfolio.introLine && <p className="vpc-intro">{portfolio.introLine}</p>}
           {direction.showBio && portfolio.bio && <p className="vpc-bio">{portfolio.bio}</p>}
           {direction.showLocation && portfolio.location && <span className="vpc-hero-location"><MapPin size={14} />{portfolio.location}</span>}
+          {canContact && <a className="vpc-hero-contact" href={preview ? '#' : contactHref} onClick={preview ? event => event.preventDefault() : undefined} target={preview ? undefined : '_blank'} rel={preview ? undefined : 'noreferrer'}>{whatsappDigits ? <MessageCircle size={17} /> : <Instagram size={17} />}{whatsappDigits ? portfolio.contactLabel || 'Ask about a shoot' : 'Message on Instagram'}</a>}
         </div>
         {cover && <motion.figure className="vpc-cover" initial={reduced || direction.motion === 'still' ? false : { opacity: 0, y: 12 }} whileInView={direction.motion === 'still' ? undefined : { opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.15 }} transition={{ duration: reduced || direction.motion === 'still' ? 0 : 0.45 }}>
           <button type="button" onClick={() => openPhoto(cover)} aria-label={`View ${cover.title || cover.category || 'cover photograph'}`}>

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { FORMATS } from './deliveryPresentation.js';
+import { FORMAT_IDS as FORMATS } from './runtimeConfig.service.js';
 
 export async function requestDeliveryJSON({ system, input, schema, images = [], vision = false, model, timeoutMs = 25000 }) {
   const workspace = String(process.env.ALIBABA_WORKSPACE_ID || '').trim();

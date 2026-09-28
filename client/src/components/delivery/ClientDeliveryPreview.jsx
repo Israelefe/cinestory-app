@@ -64,9 +64,11 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
     soundtrack: capabilities.music && delivery?.soundtrack?.url
       ? { ...delivery.soundtrack, url: preloadedMedia.soundtrack || mediaUrl(delivery.soundtrack.url) }
       : undefined,
-    narration: capabilities.narration && delivery?.narration?.url
-      ? { ...delivery.narration, url: preloadedMedia.narration || mediaUrl(delivery.narration.url) }
-      : undefined
+    narration: capabilities.narration && delivery?.schemaVersion === 3 && delivery?.narration?.opening?.url
+      ? { ...delivery.narration, opening: { ...delivery.narration.opening, url: mediaUrl(delivery.narration.opening.url) }, closing: { ...delivery.narration.closing, url: mediaUrl(delivery.narration.closing.url) } }
+      : capabilities.narration && delivery?.narration?.url
+        ? { ...delivery.narration, url: preloadedMedia.narration || mediaUrl(delivery.narration.url) }
+        : undefined
   }), [access.allowIndividualDownloads, access.allowDownloadAll, access.allowLikes, delivery, preloadedMedia]);
 
   const toggleAudio = async kind => {

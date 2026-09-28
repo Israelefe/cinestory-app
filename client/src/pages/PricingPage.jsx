@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { BadgeCheck, Camera, Check, ShieldCheck } from 'lucide-react';
 import { Page, Reveal, Plans, Questions, Eyebrow, TextLink, EndNote } from '../components/PublicDesign.jsx';
 
@@ -38,6 +39,7 @@ export default function PricingPage() {
         <Eyebrow>Pricing / Monthly in Nigerian naira</Eyebrow>
         <h1 className="v-title">Start free.<br /><em>Move to Pro when work gets busy.</em></h1>
         <p className="v-lead">Choose based on how often you deliver and whether your studio needs its own branding, portfolio, and storage. Every creative format is available on both plans.</p>
+        <div className="v-pricing-early-actions"><a href="#pricing-plans">Compare Free and Pro</a><Link to="/signup">Start free</Link></div>
         <div className="v-pricing-monthly"><span>MONTHLY PRICING</span><strong>No annual plan</strong><small>Free stays free. Pro is ₦25,000 each month.</small></div>
       </Reveal>
 
@@ -48,7 +50,7 @@ export default function PricingPage() {
       </Reveal>
     </header>
 
-    <section className="v-pricing-plans"><div className="v-wrap">
+    <section className="v-pricing-plans" id="pricing-plans"><div className="v-wrap">
       <Reveal className="v-pricing-section-intro"><Eyebrow number="01">Choose by volume</Eyebrow><h2 className="v-heading">Three deliveries to begin.<br /><em>Unlimited when you need it.</em></h2><p className="v-copy">Free is enough to send real client work and understand how Veylo fits your studio. Pro is for the month when three deliveries are no longer enough.</p></Reveal>
       <Plans />
       <Reveal className="v-pricing-fair-use"><ShieldCheck size={19} /><div><strong>Delivery hosting stays separate from your 50 GB.</strong><p>The 50 GB on Pro is personal image storage. Photographs inside published client deliveries do not use it.</p></div><TextLink to="/fair-use">Read the fair use policy</TextLink></Reveal>

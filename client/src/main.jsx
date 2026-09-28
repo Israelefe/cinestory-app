@@ -5,6 +5,7 @@ import AppErrorBoundary from './components/AppErrorBoundary.jsx';
 import { installPageLoadRecovery } from './utils/pageLoadRecovery.js';
 import './index.css';
 import './styles/public.css';
+import './styles/site-ux.css';
 
 installPageLoadRecovery();
 

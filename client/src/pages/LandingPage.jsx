@@ -119,7 +119,7 @@ export default function LandingPage() {
   return <Page className="landing-page">
     <section className="v-hero"><div className="v-wrap v-hero-grid">
       <Reveal className="v-hero-text v-hero-title-block">
-        <Eyebrow><span className="v-index">The AI Powered Photo Delivery Platform for Photographers</span></Eyebrow>
+        <Eyebrow><span className="v-index">Photo delivery for photographers and studios</span></Eyebrow>
         <TypedHeading className="v-hero-title" lines={[{ text: 'Don’t just' }, { text: 'deliver photos.' }, { text: 'Showcase them.', accent: true }]} />
       </Reveal>
 

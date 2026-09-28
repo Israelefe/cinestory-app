@@ -3,9 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowUpRight,
   Camera,
-  Check,
   Clapperboard,
-  Copy,
   Image,
   LayoutGrid,
   MapPin,
@@ -24,8 +22,7 @@ const studioProfile = {
   location: 'Lekki, Lagos',
   handle: 'veylo.com.ng/@kolawolemedia',
   bio: 'Photographing modern celebrations and distinctive portraits across Lagos, Abuja, and beyond.',
-  status: 'Taking bookings for 2026 and 2027',
-  whatsappMessage: 'Hello Kolawole Media, I found your portfolio on Veylo and would like to ask about booking a shoot.'
+  status: 'Taking bookings for 2026 and 2027'
 };
 
 const categories = [
@@ -123,20 +120,6 @@ const directionChoices = [
   { icon: Palette, label: 'Presentation', value: 'Let colour and spacing support the photographs' }
 ];
 
-function CopyButton({ copied, onCopy, compact = false }) {
-  return (
-    <button
-      type="button"
-      onClick={onCopy}
-      className={compact ? 'v-pstudio-copy' : 'v-portfolio-handle-copy'}
-      aria-label="Copy studio portfolio address"
-    >
-      {copied ? <Check size={14} /> : <Copy size={14} />}
-      <span>{copied ? 'Copied' : compact ? 'Share' : 'Copy address'}</span>
-    </button>
-  );
-}
-
 function ProjectContent({ work }) {
   return (
     <>
@@ -152,23 +135,14 @@ function ProjectContent({ work }) {
   );
 }
 
-export default function PortfolioPage() {
+export default function PortfolioPage({ user }) {
   const reduced = useReducedMotion();
   const [activeCategory, setActiveCategory] = useState('all');
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    if (!navigator?.clipboard?.writeText) return;
-    await navigator.clipboard.writeText(`https://${studioProfile.handle}`);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 2400);
-  };
 
   const visibleWorks = activeCategory === 'all'
     ? portfolioWorks
     : portfolioWorks.filter((work) => work.category === activeCategory);
 
-  const whatsappUrl = `https://wa.me/2348000000000?text=${encodeURIComponent(studioProfile.whatsappMessage)}`;
   return (
     <Page className="v-portfolio-page">
       <header className="v-wrap v-portfolio-hero">
@@ -178,6 +152,8 @@ export default function PortfolioPage() {
             Your strongest work deserves its own address.<br />
             <em>Give it a home that feels like your studio.</em>
           </h1>
+          <p className="v-portfolio-hero-quick">Show clients what you do best in one public portfolio.</p>
+          <div className="v-portfolio-hero-actions"><Action to={user ? '/portfolio/manage' : '/signup'}>{user ? 'Create or edit your portfolio' : 'Create your account'}</Action><a href="#portfolio-showcase">Explore the sample</a></div>
         </div>
 
         <motion.div
@@ -213,7 +189,7 @@ export default function PortfolioPage() {
           <div className="v-portfolio-handle">
             <Camera size={17} aria-hidden="true" />
             <strong>veylo.com.ng/@yourstudio</strong>
-            <CopyButton copied={copied} onCopy={handleCopy} />
+            <span>Example address</span>
           </div>
         </div>
       </header>
@@ -242,11 +218,7 @@ export default function PortfolioPage() {
               </div>
               <div className="v-pstudio-contact">
                 <span><MapPin size={14} />{studioProfile.location}</span>
-                <a href={whatsappUrl} target="_blank" rel="noopener noreferrer">
-                  <MessageSquare size={15} />
-                  Ask about a shoot
-                </a>
-                <CopyButton copied={copied} onCopy={handleCopy} compact />
+                <span className="v-pstudio-demo-contact"><MessageSquare size={15} />Example contact button</span>
               </div>
             </div>
 

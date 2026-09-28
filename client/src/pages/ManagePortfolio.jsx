@@ -9,6 +9,7 @@ import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
 import { APP_URL } from '../config/env.js';
 import PortfolioCanvas from './PortfolioCanvas.jsx';
+import { useDialogFocus } from '../components/useDialogFocus.js';
 import './ManagePortfolio.css';
 
 const directionDefaults = {
@@ -23,7 +24,8 @@ const sections = [
   { id: 'studio', number: '01', label: 'Studio', icon: Camera },
   { id: 'work', number: '02', label: 'Photographs', icon: ImageIcon },
   { id: 'design', number: '03', label: 'Design', icon: Palette },
-  { id: 'contact', number: '04', label: 'Contact', icon: Instagram }
+  { id: 'contact', number: '04', label: 'Contact', icon: Instagram },
+  { id: 'review', number: '05', label: 'Review', icon: Eye }
 ];
 const backgrounds = [
   { value: 'ink', label: 'Ink', detail: 'Deep black, crisp white', color: '#08080b', foreground: '#f4eee8' },
@@ -69,8 +71,7 @@ function brandHandle(value) {
 
 function normalizePortfolio(value = {}) {
   return {
-    ...empty,
-    ...value,
+    ...Object.fromEntries(Object.keys(empty).filter(key => key !== 'items' && key !== 'direction').map(key => [key, value[key] ?? empty[key]])),
     items: Array.isArray(value.items) ? value.items : [],
     direction: { ...directionDefaults, ...(value.direction || {}) }
   };
@@ -103,38 +104,87 @@ export default function ManagePortfolio() {
   const reduced = useReducedMotion();
   const [form, setForm] = useState(empty);
   const [sources, setSources] = useState([]);
+  const [sourceGroups, setSourceGroups] = useState([]);
+  const [sourceCursor, setSourceCursor] = useState(null);
+  const [sourceLoading, setSourceLoading] = useState(false);
+  const [sourceError, setSourceError] = useState('');
   const [status, setStatus] = useState('draft');
+  const [liveHandle, setLiveHandle] = useState('');
   const [access, setAccess] = useState('unavailable');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [picker, setPicker] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState('');
+  const [pickerKind, setPickerKind] = useState('delivery');
+  const [pickerDelivery, setPickerDelivery] = useState(null);
+  const [bulkSelected, setBulkSelected] = useState([]);
+  const [bulkCategory, setBulkCategory] = useState('');
+  const [activeStep, setActiveStep] = useState(0);
+  const [draftAhead, setDraftAhead] = useState(false);
   const [directing, setDirecting] = useState(false);
-  const [previewSize, setPreviewSize] = useState('desktop');
+  const [previewSize, setPreviewSize] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640 ? 'mobile' : typeof window !== 'undefined' && window.innerWidth < 1024 ? 'tablet' : 'desktop');
+  const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1440);
   const [previewExpanded, setPreviewExpanded] = useState(false);
-  const [handleFollowsBrand, setHandleFollowsBrand] = useState(false);
+  const [handleAvailability, setHandleAvailability] = useState(null);
   const [directionNote, setDirectionNote] = useState('');
   const [copied, setCopied] = useState(false);
   const [changePolicy, setChangePolicy] = useState({ studioNameNextChangeAt: null, handleNextChangeAt: null });
-  const [savedIdentity, setSavedIdentity] = useState({ studioName: '', handle: '' });
   const previewDialogRef = useRef(null);
+  const pickerRef = useRef(null);
+  const pickerTriggerRef = useRef(null);
+  const suggestionBackupRef = useRef(null);
+  const savedFormRef = useRef(empty);
+  useDialogFocus(picker, pickerRef, () => setPicker(false), pickerTriggerRef);
+  useEffect(() => { const update = () => setViewportWidth(window.innerWidth); window.addEventListener('resize', update); return () => window.removeEventListener('resize', update); }, []);
 
   useEffect(() => {
     let active = true;
-    Promise.allSettled([api.get('/v1/portfolios/mine'), api.get('/v1/portfolios/sources')]).then(([profile, sourceList]) => {
+    Promise.allSettled([api.get('/v1/portfolios/mine')]).then(([profile]) => {
       if (!active) return;
       if (profile.status === 'fulfilled') {
         const next = normalizePortfolio(profile.value.data.data);
         setForm(next);
-        setHandleFollowsBrand(!next.handle || next.handle === brandHandle(next.studioName));
-        setSavedIdentity({ studioName: next.studioName, handle: next.handle });
+        savedFormRef.current = next;
+        setDraftAhead(Boolean(profile.value.data.hasUnpublishedChanges));
         setChangePolicy(profile.value.data.changePolicy || { studioNameNextChangeAt: null, handleNextChangeAt: null });
         setStatus(profile.value.data.status || 'draft');
+        setLiveHandle(profile.value.data.live?.handle || '');
         setAccess(profile.value.data.access || 'unavailable');
       } else toast.error(apiMessage(profile.reason, 'We could not open your portfolio.'));
-      if (sourceList.status === 'fulfilled') setSources(sourceList.value.data.data || []);
     }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (!picker) return undefined;
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      setSourceLoading(true);
+      setSourceError('');
+      setSources([]);
+      setSourceGroups([]);
+      try {
+        const kind = pickerKind === 'delivery' ? pickerDelivery ? 'delivery' : 'deliveries' : 'library';
+        const { data } = await api.get('/v1/portfolios/sources', { params: { kind, sourceId: pickerDelivery?.sourceId, query: pickerQuery } });
+        if (!active) return;
+        if (kind === 'deliveries') setSourceGroups(data.data || []);
+        else setSources(data.data || []);
+        setSourceCursor(data.nextCursor || null);
+      } catch (error) { if (active) setSourceError(apiMessage(error, 'We could not load this work. Try again.')); }
+      finally { if (active) setSourceLoading(false); }
+    }, pickerQuery ? 250 : 0);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [picker, pickerKind, pickerDelivery, pickerQuery]);
+
+  useEffect(() => {
+    if (access !== 'public' || form.handle.length < 3) { setHandleAvailability(null); return undefined; }
+    let active = true;
+    setHandleAvailability(null);
+    const timer = window.setTimeout(() => {
+      api.get(`/v1/portfolios/handles/${encodeURIComponent(form.handle)}/availability`).then(({ data }) => { if (active) setHandleAvailability(data.available); }).catch(() => { if (active) setHandleAvailability(null); });
+    }, 300);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [access, form.handle]);
 
   useEffect(() => {
     const dialog = previewDialogRef.current;
@@ -144,6 +194,17 @@ export default function ManagePortfolio() {
   }, [previewExpanded]);
 
   const chosen = useMemo(() => new Set(form.items.map(item => item.publicId)), [form.items]);
+  const previewFrameWidth = { mobile: 390, tablet: 768, desktop: 1024 }[previewSize];
+  const previewScale = Math.min(1, (viewportWidth - 24) / previewFrameWidth);
+  const unsaved = JSON.stringify(form) !== JSON.stringify(savedFormRef.current);
+  const publishChecks = [
+    { label: 'Studio name', ready: form.studioName.trim().length >= 2, step: 0 },
+    { label: 'Portfolio address', ready: /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(form.handle) && form.handle.length >= 3 && handleAvailability !== false, step: 0 },
+    { label: 'Short studio bio', ready: Boolean(form.bio.trim()), step: 0 },
+    { label: 'At least four photographs', ready: form.items.length >= 4, step: 1 }
+  ];
+  const canPublish = publishChecks.every(check => check.ready);
+  const visibleSources = sources;
   const studioNameLocked = Boolean(changePolicy.studioNameNextChangeAt);
   const handleLocked = Boolean(changePolicy.handleNextChangeAt);
   const generatedHandle = brandHandle(form.studioName);
@@ -152,20 +213,33 @@ export default function ManagePortfolio() {
     setForm(current => ({ ...current, [key]: value }));
   }
 
+  function openPicker(event) {
+    pickerTriggerRef.current = event.currentTarget;
+    setPicker(true);
+  }
+
+  async function loadMoreSources() {
+    if (!sourceCursor || sourceLoading) return;
+    setSourceLoading(true);
+    setSourceError('');
+    try {
+      const kind = pickerKind === 'delivery' ? pickerDelivery ? 'delivery' : 'deliveries' : 'library';
+      const { data } = await api.get('/v1/portfolios/sources', { params: { kind, sourceId: pickerDelivery?.sourceId, query: pickerQuery, cursor: sourceCursor } });
+      if (kind === 'deliveries') setSourceGroups(current => [...current, ...(data.data || [])]);
+      else setSources(current => [...current, ...(data.data || [])]);
+      setSourceCursor(data.nextCursor || null);
+    } catch (error) { setSourceError(apiMessage(error, 'We could not load more photographs. Try again.')); }
+    finally { setSourceLoading(false); }
+  }
+
+  function goToStep(index) {
+    setActiveStep(index);
+    window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
+  }
+
   function setDirection(key, value) {
     setDirectionNote('');
     setForm(current => ({ ...current, direction: { ...current.direction, [key]: value } }));
-  }
-
-  function updateStudioName(value) {
-    const suggested = brandHandle(value);
-    const followName = !handleLocked && handleFollowsBrand && suggested.length >= 3;
-    if (handleFollowsBrand && (handleLocked || suggested.length < 3) && suggested !== form.handle) setHandleFollowsBrand(false);
-    setForm(current => ({
-      ...current,
-      studioName: value,
-      ...(followName ? { handle: suggested } : {})
-    }));
   }
 
   function useBrandName() {
@@ -173,13 +247,11 @@ export default function ManagePortfolio() {
       toast.error('Use a studio name with at least three letters or numbers for the address.');
       return;
     }
-    setHandleFollowsBrand(true);
     setField('handle', generatedHandle);
   }
 
   function updateHandle(value) {
     const next = value.toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
-    setHandleFollowsBrand(next === generatedHandle);
     setField('handle', next);
   }
 
@@ -209,6 +281,26 @@ export default function ManagePortfolio() {
     });
   }
 
+  function movePhotoTo(publicId, position) {
+    setForm(current => {
+      const items = [...current.items];
+      const from = items.findIndex(item => item.publicId === publicId);
+      if (from < 0 || position < 0 || position >= items.length) return current;
+      const [item] = items.splice(from, 1);
+      items.splice(position, 0, item);
+      return { ...current, items };
+    });
+  }
+
+  function applyBulkCategory() {
+    const next = bulkCategory.trim().slice(0, 50);
+    if (!next || !bulkSelected.length) return;
+    const selected = new Set(bulkSelected);
+    setForm(current => ({ ...current, items: current.items.map(item => selected.has(item.publicId) ? { ...item, category: next } : item) }));
+    setBulkSelected([]);
+    setBulkCategory('');
+  }
+
   async function save(showMessage = true) {
     if (form.studioName.trim().length < 2) {
       toast.error('Enter your photographer or studio name.');
@@ -218,20 +310,28 @@ export default function ManagePortfolio() {
       toast.error('Use a portfolio address with 3–40 letters, numbers, or single hyphens.');
       return false;
     }
-    const studioNameChanged = Boolean(savedIdentity.studioName) && form.studioName.trim() !== savedIdentity.studioName.trim();
-    const handleChanged = Boolean(savedIdentity.handle) && form.handle !== savedIdentity.handle;
-    if ((studioNameChanged || handleChanged) && typeof window !== 'undefined' && !window.confirm('Your old portfolio address will redirect for 90 days. Continue with these changes?')) return false;
     try {
       setSaving(true);
+      const snapshot = form;
       const payload = {
-        ...form,
-        items: form.items.map(({ publicId, title, category }) => ({ publicId, title, category: category.trim() || 'Selected work' }))
+        handle: snapshot.handle,
+        studioName: snapshot.studioName,
+        bio: snapshot.bio,
+        headline: snapshot.headline,
+        introLine: snapshot.introLine,
+        location: snapshot.location,
+        contactLabel: snapshot.contactLabel,
+        instagram: snapshot.instagram,
+        whatsapp: snapshot.whatsapp,
+        heroPublicId: snapshot.heroPublicId,
+        direction: snapshot.direction,
+        items: snapshot.items.map(({ publicId, title, category }) => ({ publicId, title, category: category.trim() || 'Selected work' }))
       };
       const { data } = await api.put('/v1/portfolios/mine', payload);
       const next = normalizePortfolio(data.data);
-      setForm(current => ({ ...current, ...next }));
-      setSavedIdentity({ studioName: next.studioName, handle: next.handle });
-      setHandleFollowsBrand(next.handle === brandHandle(next.studioName));
+      setForm(current => JSON.stringify(current) === JSON.stringify(snapshot) ? next : current);
+      savedFormRef.current = next;
+      setDraftAhead(Boolean(data.hasUnpublishedChanges));
       setChangePolicy(data.changePolicy || changePolicy);
       if (showMessage) toast.success('Your portfolio changes are saved.');
       return true;
@@ -246,10 +346,14 @@ export default function ManagePortfolio() {
       toast.error('Add a short studio bio and at least four photographs before publishing.');
       return;
     }
-    if (!await save(false)) return;
+    if (status === 'published' && liveHandle && form.handle !== liveHandle && !window.confirm('Publishing will change your public portfolio address. The old address will redirect for 90 days. Continue?')) return;
+    if (unsaved && !await save(false)) return;
     try {
       const { data } = await api.post('/v1/portfolios/mine/publish');
       setStatus(data.status);
+      setLiveHandle(data.data.handle);
+      setDraftAhead(false);
+      setChangePolicy(data.changePolicy || changePolicy);
       toast.success('Your portfolio is live.');
     } catch (error) { toast.error(apiMessage(error, 'We could not publish your portfolio.')); }
   }
@@ -266,6 +370,7 @@ export default function ManagePortfolio() {
     if (!suggestion) throw new Error('Veylo did not return a portfolio direction.');
     setDirectionNote(suggestion.designReason || 'The suggested order and style are ready to review.');
     setForm(current => {
+      suggestionBackupRef.current = current;
       const byId = new Map(current.items.map(item => [item.publicId, item]));
       const ordered = (suggestion.orderedPublicIds || []).map(id => byId.get(id)).filter(Boolean);
       const orderedIds = new Set(ordered.map(item => item.publicId));
@@ -314,7 +419,7 @@ export default function ManagePortfolio() {
 
   async function copyPortfolioLink() {
     try {
-      await navigator.clipboard.writeText(portfolioUrl(form.handle));
+      await navigator.clipboard.writeText(portfolioUrl(liveHandle));
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     } catch { toast.error('We could not copy the portfolio link. You can select and copy it instead.'); }
@@ -330,23 +435,23 @@ export default function ManagePortfolio() {
         <aside className="v-pedit-link-card">
           <div className={`v-pedit-status${status === 'published' ? ' is-live' : ''}`}><i />{status === 'published' ? 'Published' : 'Draft'}</div>
           <strong>{form.studioName || 'Your studio'}</strong>
-          <span className="v-pedit-url">{portfolioUrl(form.handle)}</span>
+          <span className="v-pedit-url">{status === 'published' ? portfolioUrl(liveHandle) : 'Your address will be ready when you publish.'}</span>
           <div className="v-pedit-link-actions">
-            <button type="button" onClick={copyPortfolioLink} disabled={!form.handle}><Copy size={15} />{copied ? 'Copied' : 'Copy link'}</button>
-            {status === 'published' && <a href={portfolioUrl(form.handle)} target="_blank" rel="noreferrer"><ExternalLink size={15} />Open live page</a>}
+            <button type="button" onClick={copyPortfolioLink} disabled={status !== 'published' || !liveHandle}><Copy size={15} />{copied ? 'Copied' : 'Copy link'}</button>
+            {status === 'published' && <a href={portfolioUrl(liveHandle)} target="_blank" rel="noreferrer"><ExternalLink size={15} />Open live page</a>}
           </div>
         </aside>
       </motion.header>
 
-      <nav className="v-pedit-steps" aria-label="Portfolio sections">{sections.map(({ id, number, label, icon: Icon }) => <a key={id} href={`#pedit-${id}`}><span>{number}</span><Icon size={15} />{label}</a>)}</nav>
+      <nav className="v-pedit-steps" aria-label="Portfolio steps">{sections.map(({ id, number, label, icon: Icon }, index) => <button type="button" key={id} className={activeStep === index ? 'is-active' : ''} aria-current={activeStep === index ? 'step' : undefined} onClick={() => goToStep(index)}><span>{number}</span><Icon size={15} />{label}</button>)}</nav>
 
       <div className="v-pedit-layout">
         <main className="v-pedit-form">
-          <section id="pedit-studio" className="v-pedit-section">
+          <section id="pedit-studio" className="v-pedit-section" hidden={activeStep !== 0}>
             <SectionHeading eyebrow="01 / Your name and story" title="Studio details" description="Give clients a clear introduction before they get to the photographs." />
             <div className="v-pedit-fields v-pedit-fields-two">
-              <label className="v-pedit-field"><span>Photographer or studio name</span><input value={form.studioName} onChange={event => updateStudioName(event.target.value)} maxLength={100} disabled={studioNameLocked} autoComplete="organization" /><small>This is the name clients see at the top of the page.</small></label>
-              <div className="v-pedit-field"><span>Portfolio link</span><div className={`v-pedit-handle${handleLocked ? ' is-locked' : ''}`}><b>@</b><input value={form.handle} onChange={event => updateHandle(event.target.value)} maxLength={40} disabled={handleLocked} autoCapitalize="none" autoComplete="off" aria-invalid={form.handle.length < 3} /><button type="button" onClick={useBrandName} disabled={handleLocked || generatedHandle.length < 3} title={handleLocked ? `This address can change again on ${changeDate(changePolicy.handleNextChangeAt)}` : 'Set the address from your studio name'}>Use brand name</button></div><small className="v-pedit-address-hint">{form.handle.length < 3 ? 'Use at least three letters or numbers.' : handleFollowsBrand ? 'This address follows your studio name.' : 'This address stays as entered.'} {handleLocked && `You can change it again on ${changeDate(changePolicy.handleNextChangeAt)}.`}</small></div>
+              <div className="v-pedit-field"><span>Photographer or studio name</span><strong className="v-pedit-shared-name">{form.studioName || 'Add your studio name in Settings'}</strong><small>This is your Account Settings studio name. <a href="/settings">Change it there</a>.</small></div>
+              <div className="v-pedit-field"><span>Portfolio link</span><div className={`v-pedit-handle${handleLocked ? ' is-locked' : ''}`}><b>@</b><input value={form.handle} onChange={event => updateHandle(event.target.value)} maxLength={40} disabled={handleLocked} autoCapitalize="none" autoComplete="off" aria-invalid={form.handle.length < 3 || handleAvailability === false} /><button type="button" onClick={useBrandName} disabled={handleLocked || generatedHandle.length < 3} title={handleLocked ? `This address can change again on ${changeDate(changePolicy.handleNextChangeAt)}` : 'Set the address from your studio name'}>Use brand name</button></div><small className="v-pedit-address-hint" aria-live="polite">{form.handle.length < 3 ? 'Use at least three letters or numbers.' : handleAvailability === false ? 'That address is already in use or reserved.' : handleAvailability === true ? 'Available now. We will check again when you publish.' : 'Checking this address…'} {handleLocked && `You can change it again on ${changeDate(changePolicy.handleNextChangeAt)}.`}</small></div>
             </div>
             {(studioNameLocked || handleLocked) && <p className="v-pedit-policy">{studioNameLocked && `Studio name changes open again ${changeDate(changePolicy.studioNameNextChangeAt)}.`} {handleLocked && `Portfolio address changes open again ${changeDate(changePolicy.handleNextChangeAt)}.`}</p>}
             <label className="v-pedit-field"><span>Short studio bio</span><textarea value={form.bio} onChange={event => setField('bio', event.target.value)} maxLength={600} rows={4} placeholder="What do you photograph, and what should a client know before enquiring?" /><small>{form.bio.length}/600 characters</small></label>
@@ -356,21 +461,22 @@ export default function ManagePortfolio() {
             </div>
           </section>
 
-          <section id="pedit-work" className="v-pedit-section">
-            <SectionHeading eyebrow="02 / Choose and arrange" title="Photographs" description="Choose a cover photo, then move the rest into the order clients should see." action={<button type="button" className="v-pedit-secondary" onClick={() => setPicker(true)}><Plus size={16} />Add photographs</button>} />
+          <section id="pedit-work" className="v-pedit-section" hidden={activeStep !== 1}>
+            <SectionHeading eyebrow="02 / Choose and arrange" title="Photographs" description="Choose a cover photo, then move the rest into the order clients should see." action={<button type="button" className="v-pedit-secondary" onClick={openPicker}><Plus size={16} />Add photographs</button>} />
             <div className="v-pedit-count-row"><span><strong>{form.items.length}</strong> selected</span><small>Choose up to 50 photographs</small></div>
-            {!form.items.length ? <button type="button" className="v-pedit-empty-work" onClick={() => setPicker(true)}><ImageIcon size={25} /><strong>Choose finished photographs</strong><span>Add work from a published delivery or your image library.</span></button> : <div className="v-pedit-selected-work">
+            {form.items.length > 1 && <div className="v-pedit-bulk-tools"><label><input type="checkbox" checked={bulkSelected.length === form.items.length} onChange={event => setBulkSelected(event.target.checked ? form.items.map(item => item.publicId) : [])} />Select all</label><input value={bulkCategory} onChange={event => setBulkCategory(event.target.value)} maxLength={50} placeholder="Category for selected photos" aria-label="Category for selected photos" /><button type="button" onClick={applyBulkCategory} disabled={!bulkSelected.length || !bulkCategory.trim()}>Apply to {bulkSelected.length} selected</button></div>}
+            {!form.items.length ? <button type="button" className="v-pedit-empty-work" onClick={openPicker}><ImageIcon size={25} /><strong>Choose finished photographs</strong><span>Add work from a published delivery or your image library.</span></button> : <div className="v-pedit-selected-work">
               {form.items.map((item, index) => <article key={item.publicId} className={item.publicId === form.heroPublicId ? 'is-cover' : ''}>
                 <div className="v-pedit-thumb"><img src={item.thumbnailUrl} alt={item.title || `Selected portfolio photograph ${index + 1}`} loading="lazy" /><span>{String(index + 1).padStart(2, '0')}</span>{item.publicId === form.heroPublicId && <b><Star size={12} fill="currentColor" />Cover</b>}</div>
-                <div className="v-pedit-photo-fields"><label><span>Photo title</span><input value={item.title} onChange={event => setForm(current => ({ ...current, items: current.items.map(photo => photo.publicId === item.publicId ? { ...photo, title: event.target.value } : photo) }))} maxLength={100} placeholder="Optional title" /></label><label><span>Category</span><input value={item.category} onChange={event => setForm(current => ({ ...current, items: current.items.map(photo => photo.publicId === item.publicId ? { ...photo, category: event.target.value } : photo) }))} maxLength={50} placeholder="e.g. Traditional wedding" /></label></div>
-                <div className="v-pedit-photo-actions"><button type="button" onClick={() => setField('heroPublicId', item.publicId)} aria-pressed={item.publicId === form.heroPublicId} disabled={item.publicId === form.heroPublicId}><Star size={14} />{item.publicId === form.heroPublicId ? 'Cover photo' : 'Make cover'}</button><div><button type="button" onClick={() => movePhoto(item.publicId, -1)} disabled={index === 0} aria-label={`Move photograph ${index + 1} earlier`}><ArrowUp size={15} /></button><button type="button" onClick={() => movePhoto(item.publicId, 1)} disabled={index === form.items.length - 1} aria-label={`Move photograph ${index + 1} later`}><ArrowDown size={15} /></button><button type="button" onClick={() => removePhoto(item.publicId)} aria-label={`Remove photograph ${index + 1}`}><Trash2 size={15} /></button></div></div>
+                <div className="v-pedit-photo-fields"><label className="v-pedit-bulk-mark"><input type="checkbox" checked={bulkSelected.includes(item.publicId)} onChange={event => setBulkSelected(current => event.target.checked ? [...current, item.publicId] : current.filter(id => id !== item.publicId))} />Select for category edit</label><label><span>Photo title</span><input value={item.title} onChange={event => setForm(current => ({ ...current, items: current.items.map(photo => photo.publicId === item.publicId ? { ...photo, title: event.target.value } : photo) }))} maxLength={100} placeholder="Optional title" /></label><label><span>Category</span><input value={item.category} onChange={event => setForm(current => ({ ...current, items: current.items.map(photo => photo.publicId === item.publicId ? { ...photo, category: event.target.value } : photo) }))} maxLength={50} placeholder="e.g. Traditional wedding" /></label></div>
+                <div className="v-pedit-photo-actions"><button type="button" onClick={() => setField('heroPublicId', item.publicId)} aria-pressed={item.publicId === form.heroPublicId} disabled={item.publicId === form.heroPublicId}><Star size={14} />{item.publicId === form.heroPublicId ? 'Cover photo' : 'Make cover'}</button><label className="v-pedit-move-to">Position <select value={index} onChange={event => movePhotoTo(item.publicId, Number(event.target.value))} aria-label={`Move photograph ${index + 1} to position`}>{form.items.map((_, target) => <option key={target} value={target}>{target + 1}</option>)}</select></label><div><button type="button" onClick={() => movePhoto(item.publicId, -1)} disabled={index === 0} aria-label={`Move photograph ${index + 1} earlier`}><ArrowUp size={15} /></button><button type="button" onClick={() => movePhoto(item.publicId, 1)} disabled={index === form.items.length - 1} aria-label={`Move photograph ${index + 1} later`}><ArrowDown size={15} /></button><button type="button" onClick={() => removePhoto(item.publicId)} aria-label={`Remove photograph ${index + 1}`}><Trash2 size={15} /></button></div></div>
               </article>)}
             </div>}
           </section>
 
-          <section id="pedit-design" className="v-pedit-section">
-            <SectionHeading eyebrow="03 / Make it yours" title="Page design" description="Every choice below is applied to the live portfolio preview. Your photographs stay untouched." />
-            <div className="v-pedit-ai-card"><div className="v-pedit-ai-copy"><span><Clapperboard size={16} />Direction from your photographs</span><p>Veylo can suggest an opening, photo order, colour and layout from this work. It appears in the preview first; nothing publishes until you save.</p>{directionNote && <blockquote>{directionNote}</blockquote>}</div><button type="button" onClick={directPortfolio} disabled={directing || saving || form.items.length < 4 || !form.bio.trim()}>{directing ? <LoaderCircle className="v-pedit-spin" size={16} /> : <Eye size={16} />}{directing ? 'Reading your work…' : 'Suggest a direction'}</button></div>
+          <section id="pedit-design" className="v-pedit-section" hidden={activeStep !== 2}>
+            <SectionHeading eyebrow="03 / Make it yours" title="Page design" description="Every choice below appears in your draft preview. Your photographs stay untouched." />
+            <div className="v-pedit-ai-card"><div className="v-pedit-ai-copy"><span><Clapperboard size={16} />Direction from your photographs</span><p>Veylo can suggest an opening, photo order, colour and layout. Review it before saving or publishing.</p>{directionNote && <blockquote>{directionNote}</blockquote>}</div><button type="button" onClick={directPortfolio} disabled={directing || saving || form.items.length < 4 || !form.bio.trim()}>{directing ? <LoaderCircle className="v-pedit-spin" size={16} /> : <Eye size={16} />}{directing ? 'Reading your work…' : 'Suggest a direction'}</button>{suggestionBackupRef.current && <button type="button" onClick={() => { setForm(suggestionBackupRef.current); suggestionBackupRef.current = null; setDirectionNote(''); }}>Undo suggestion</button>}</div>
             <div className="v-pedit-control-group"><div className="v-pedit-control-title"><Palette size={16} /><div><strong>Page colour</strong><small>Choose the surface clients will read against.</small></div></div><div className="v-pedit-color-choices">{backgrounds.map(choice => <button type="button" key={choice.value} className={form.direction.background === choice.value ? 'is-selected' : ''} onClick={() => setDirection('background', choice.value)} aria-pressed={form.direction.background === choice.value}><span style={{ background: choice.color, color: choice.foreground }}><i>Ag</i></span><strong>{choice.label}</strong><small>{choice.detail}</small></button>)}</div></div>
             <div className="v-pedit-control-group"><div className="v-pedit-control-title"><LayoutGrid size={16} /><div><strong>Photo layout</strong><small>Set the pace and shape of the gallery.</small></div></div><div className="v-pedit-layout-choices">{layouts.map(choice => <button type="button" key={choice.value} className={form.direction.layout === choice.value ? 'is-selected' : ''} onClick={() => setDirection('layout', choice.value)} aria-pressed={form.direction.layout === choice.value}><LayoutMark kind={choice.icon} /><strong>{choice.label}</strong><small>{choice.detail}</small></button>)}</div></div>
             <div className="v-pedit-fields v-pedit-fields-two">
@@ -388,7 +494,7 @@ export default function ManagePortfolio() {
             </div></div>
           </section>
 
-          <section id="pedit-contact" className="v-pedit-section">
+          <section id="pedit-contact" className="v-pedit-section" hidden={activeStep !== 3}>
             <SectionHeading eyebrow="04 / Help clients reach you" title="Contact details" description="These details appear on the public page only when you include the contact section." />
             <div className="v-pedit-fields v-pedit-fields-two">
               <label className="v-pedit-field"><span><MapPin size={14} />City or state</span><input value={form.location} onChange={event => setField('location', event.target.value)} maxLength={120} placeholder="Lagos, Nigeria" /></label>
@@ -398,30 +504,42 @@ export default function ManagePortfolio() {
             </div>
             {!form.whatsapp && !form.instagram && <p className="v-pedit-contact-note">Add WhatsApp or Instagram to give visitors a way to enquire. Your contact section will stay hidden until at least one is added.</p>}
           </section>
+          <section id="pedit-review" className="v-pedit-section" hidden={activeStep !== 4}>
+            <SectionHeading eyebrow="05 / Before your page goes live" title="Review and publish" description="Check the page on each screen size, then publish when it is ready." />
+            <div className="v-pedit-readiness">{publishChecks.map(check => <button type="button" key={check.label} onClick={() => goToStep(check.step)} className={check.ready ? 'is-ready' : ''}><Check size={16} /><span>{check.label}</span><strong>{check.ready ? 'Ready' : 'Needed'}</strong></button>)}</div>
+            {form.direction.showContact && !form.whatsapp && !form.instagram && <p className="v-pedit-contact-note">There is no WhatsApp or Instagram contact on this page. Visitors will see your work but will not have a way to enquire here.</p>}
+            {status === 'published' && <p className="v-pedit-contact-note">Your current page stays live until you publish these changes. <a href={portfolioUrl(liveHandle)} target="_blank" rel="noreferrer">Open the live page</a>.</p>}
+            {status === 'published' && !draftAhead && !unsaved && <p className="v-pedit-contact-note">Everything in this draft is already live.</p>}
+            <button type="button" className="v-pedit-secondary" onClick={() => setPreviewExpanded(true)}><Maximize2 size={16} />Open full preview</button>
+          </section>
+          <div className="v-pedit-step-actions">{activeStep > 0 && <button type="button" onClick={() => goToStep(activeStep - 1)}>Back</button>}{activeStep < sections.length - 1 && <button type="button" onClick={() => goToStep(activeStep + 1)}>Continue to {sections[activeStep + 1].label}</button>}</div>
         </main>
 
-        <aside className="v-pedit-preview-panel" aria-label="Live portfolio preview">
-          <div className="v-pedit-preview-heading"><div><p>LIVE PREVIEW</p><strong>What clients will see</strong></div><div className="v-pedit-preview-tools"><span><i />Updates as you edit</span><button type="button" onClick={() => setPreviewExpanded(true)} aria-label="Open a full-screen portfolio preview"><Maximize2 size={15} /></button></div></div>
-          <div className="v-pedit-preview-tabs" role="group" aria-label="Preview screen size">{previewSizes.map(({ value, label, icon: Icon }) => <button type="button" key={value} className={previewSize === value ? 'is-active' : ''} aria-pressed={previewSize === value} onClick={() => setPreviewSize(value)}><Icon size={15} />{label}</button>)}</div>
-          <div className={`v-pedit-preview-device is-${previewSize}`}><div className="v-pedit-preview-scroll"><PortfolioCanvas portfolio={form} preview="compact" /></div></div>
-          <p className="v-pedit-preview-note">This preview uses the same portfolio page your clients will open.</p>
+        <aside className={`v-pedit-preview-panel${activeStep === 4 ? ' is-review' : ''}`} aria-label="Portfolio draft preview">
+          <div className="v-pedit-preview-heading"><div><p>QUICK PREVIEW</p><strong>What clients will see after publishing</strong></div><div className="v-pedit-preview-tools"><span><i />Updates as you edit</span><button type="button" onClick={() => setPreviewExpanded(true)} aria-label="Open a full-screen portfolio preview"><Maximize2 size={15} /></button></div></div>
+          <div className="v-pedit-preview-device"><div className="v-pedit-preview-scroll"><PortfolioCanvas portfolio={form} preview="compact" /></div></div>
+          <p className="v-pedit-preview-note">Open the full preview to check phone, tablet, and desktop widths.</p>
         </aside>
       </div>
 
       <dialog ref={previewDialogRef} className="v-pedit-preview-modal" aria-label="Full-screen portfolio preview" onClose={() => setPreviewExpanded(false)}>
-        <header><div><p>LIVE PORTFOLIO PREVIEW</p><strong>{form.studioName || 'Your studio'}</strong></div><div className="v-pedit-preview-tabs" role="group" aria-label="Preview screen size">{previewSizes.map(({ value, label, icon: Icon }) => <button type="button" key={value} className={previewSize === value ? 'is-active' : ''} aria-pressed={previewSize === value} onClick={() => setPreviewSize(value)}><Icon size={15} />{label}</button>)}</div><button type="button" className="v-pedit-preview-close" onClick={() => setPreviewExpanded(false)} aria-label="Close full-screen preview"><X size={19} /></button></header>
-        <div className={`v-pedit-preview-device is-${previewSize}`}><div className="v-pedit-preview-scroll"><PortfolioCanvas portfolio={form} preview /></div></div>
+        <header><div><p>DRAFT PORTFOLIO PREVIEW</p><strong>{form.studioName || 'Your studio'}</strong></div><div className="v-pedit-preview-tabs" role="group" aria-label="Preview screen size">{previewSizes.map(({ value, label, icon: Icon }) => <button type="button" key={value} className={previewSize === value ? 'is-active' : ''} aria-pressed={previewSize === value} onClick={() => setPreviewSize(value)}><Icon size={15} />{label}</button>)}</div><button type="button" className="v-pedit-preview-close" onClick={() => setPreviewExpanded(false)} aria-label="Close full-screen preview"><X size={19} /></button></header>
+        <div className={`v-pedit-preview-device is-${previewSize} is-scaled`} style={{ width: previewFrameWidth * previewScale, maxWidth: 'none', '--preview-frame-width': `${previewFrameWidth}px`, '--preview-scale': previewScale }}><div className="v-pedit-preview-scroll"><PortfolioCanvas portfolio={form} preview /></div></div>
       </dialog>
 
-      <div className="v-pedit-publish-bar"><div><span className={`v-pedit-status${status === 'published' ? ' is-live' : ''}`}><i />{status === 'published' ? 'Published' : 'Draft'}</span><small>{form.items.length} photographs · {form.handle ? portfolioUrl(form.handle) : 'Choose an address'}</small></div><div className="v-pedit-publish-actions"><button type="button" className="v-pedit-save" onClick={() => save()} disabled={saving || directing}><Save size={16} />{saving ? 'Saving…' : 'Save changes'}</button>{status === 'published' ? <button type="button" className="v-pedit-unpublish" onClick={unpublish} disabled={saving || directing}>Make private</button> : <button type="button" className="v-pedit-publish" onClick={publish} disabled={saving || directing}><Send size={16} />Publish portfolio</button>}</div></div>
+      <div className="v-pedit-publish-bar"><div><span className={`v-pedit-status${status === 'published' ? ' is-live' : ''}`}><i />{status === 'published' ? 'Live page' : 'Private draft'}</span><small>{unsaved ? 'Unsaved changes' : draftAhead ? 'Saved draft awaiting publication' : `${form.items.length} photographs`}</small></div><div className="v-pedit-publish-actions"><button type="button" className="v-pedit-save" onClick={() => save()} disabled={saving || directing || !unsaved}><Save size={16} />{saving ? 'Saving…' : 'Save draft'}</button>{activeStep === 4 && <button type="button" className="v-pedit-publish" onClick={publish} disabled={saving || directing || !canPublish || (status === 'published' && !draftAhead && !unsaved)}><Send size={16} />{status === 'published' ? 'Publish changes' : 'Publish portfolio'}</button>}{status === 'published' && activeStep === 4 && <button type="button" className="v-pedit-unpublish" onClick={unpublish} disabled={saving || directing}>Make private</button>}</div></div>
     </div>
 
-    {picker && <div className="v-pedit-picker" role="presentation" onMouseDown={event => event.target === event.currentTarget && setPicker(false)} onKeyDown={event => event.key === 'Escape' && setPicker(false)}>
-      <section role="dialog" aria-modal="true" aria-labelledby="v-pedit-picker-title" tabIndex={-1}>
+    {picker && <div className="v-pedit-picker" role="presentation" onMouseDown={event => event.target === event.currentTarget && setPicker(false)}>
+      <section ref={pickerRef} role="dialog" aria-modal="true" aria-labelledby="v-pedit-picker-title" tabIndex={-1}>
         <header><div><p>YOUR FINISHED WORK</p><h2 id="v-pedit-picker-title">Add photographs</h2><span>Choose photographs from published deliveries and your library.</span></div><button type="button" onClick={() => setPicker(false)} aria-label="Close photograph picker"><X size={19} /></button></header>
-        {sources.length ? <div className="v-pedit-source-grid">{sources.map(source => <button type="button" key={source.publicId} className={chosen.has(source.publicId) ? 'is-selected' : ''} aria-pressed={chosen.has(source.publicId)} onClick={() => chosen.has(source.publicId) ? removePhoto(source.publicId) : addPhoto(source)} disabled={!chosen.has(source.publicId) && form.items.length >= 50}>
+        <div className="v-pedit-picker-filters">{pickerDelivery && <button type="button" onClick={() => { setPickerDelivery(null); setPickerQuery(''); }}>Back to deliveries</button>}<input type="search" value={pickerQuery} onChange={event => setPickerQuery(event.target.value)} placeholder={pickerDelivery ? 'Search file names in this delivery' : 'Search finished work'} aria-label="Search portfolio photographs" /><div role="group" aria-label="Photo source">{[['delivery','Deliveries'],['library','Library']].map(([kind,label]) => <button type="button" key={kind} className={pickerKind === kind ? 'is-active' : ''} onClick={() => { setPickerKind(kind); setPickerDelivery(null); setPickerQuery(''); }}>{label}</button>)}</div></div>
+        {pickerKind === 'delivery' && !pickerDelivery ? <div className="v-pedit-source-grid v-pedit-source-groups">{sourceGroups.map(group => <button type="button" key={group.sourceId} onClick={() => { setPickerDelivery(group); setPickerQuery(''); }}>{group.thumbnailUrl && <img src={group.thumbnailUrl} alt="" loading="lazy" />}<strong>{group.title}</strong><small>{group.photoCount} finished photographs</small></button>)}{!sourceGroups.length && !sourceLoading && <p>There are no published deliveries here yet.</p>}</div> : visibleSources.length ? <div className="v-pedit-source-grid">{visibleSources.map(source => <button type="button" key={source.publicId} className={chosen.has(source.publicId) ? 'is-selected' : ''} aria-pressed={chosen.has(source.publicId)} onClick={() => chosen.has(source.publicId) ? removePhoto(source.publicId) : addPhoto(source)} disabled={!chosen.has(source.publicId) && form.items.length >= 50}>
           <img src={source.thumbnailUrl} alt={source.title || 'Finished photograph'} loading="lazy" /><span className="v-pedit-source-check">{chosen.has(source.publicId) ? <Check size={15} /> : <Plus size={15} />}</span><small>{source.title || 'Finished photograph'}</small>
-        </button>)}</div> : <div className="v-pedit-picker-empty"><ImageIcon size={24} /><strong>No photographs to add yet</strong><span>Publish a delivery or add finished work to your Pro library first.</span></div>}
+        </button>)}</div> : !sourceLoading && <div className="v-pedit-picker-empty"><ImageIcon size={24} /><strong>No photographs here</strong><span>Try another search, delivery, or your image library.</span></div>}
+        {sourceError && <p className="v-pedit-source-error" role="alert">{sourceError}</p>}
+        {sourceCursor && <button type="button" className="v-pedit-source-more" onClick={loadMoreSources} disabled={sourceLoading}>Load more {pickerKind === 'delivery' && !pickerDelivery ? 'deliveries' : 'photographs'}</button>}
+        {sourceLoading && <p className="v-pedit-source-loading" role="status">Loading finished work…</p>}
         <footer><span>{form.items.length} of 50 selected</span><button type="button" onClick={() => setPicker(false)}>Done</button></footer>
       </section>
     </div>}

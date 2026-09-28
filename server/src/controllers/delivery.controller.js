@@ -7,12 +7,6 @@ import mongoose from 'mongoose';
 import { z } from 'zod';
 import Delivery from '../models/Delivery.js';
 import DeliveryJob from '../models/DeliveryJob.js';
-import DeliveryRevision from '../models/DeliveryRevision.js';
-import DeliveryPreparation from '../models/DeliveryPreparation.js';
-import DeliveryTask from '../models/DeliveryTask.js';
-import { observeUploads, cancelPreparation } from '../services/deliveryPreparation.service.js';
-import { recoverImageUpload } from '../services/deliveryMedia.service.js';
-import { creationPipelineVersion } from '../services/deliveryPresentation.js';
 import PhotoLike from '../models/PhotoLike.js';
 import DeliveryView from '../models/DeliveryView.js';
 import DeliveryShareGrant from '../models/DeliveryShareGrant.js';
@@ -21,7 +15,7 @@ import Portfolio from '../models/Portfolio.js';
 import User from '../models/User.js';
 import StorageAsset from '../models/StorageAsset.js';
 import { CREATIVE_DIRECTOR_PROMPT_VERSION, CREATIVE_DIRECTOR_PROVIDER, assistPhotographerBrief, creativeDirectorAllowlist } from '../services/alibabaCreativeDirector.service.js';
-import { confirmUploadedAsset, copyStorageImageToDelivery, createUploadSignature, deliveryFolder, removeDeliveryAudio, removeDeliveryImage, removeDeliveryMedia, signedArchiveUrl, signedImageUrl, signedOgImageUrl } from '../services/deliveryMedia.service.js';
+import { confirmUploadedAsset, copyStorageImageToDelivery, createUploadSignature, deliveryFolder, recoverImageUpload, removeDeliveryAudio, removeDeliveryImage, removeDeliveryMedia, signedArchiveUrl, signedImageUrl, signedOgImageUrl } from '../services/deliveryMedia.service.js';
 import { reservePublishSlot, resolveEntitlements } from '../services/entitlement.service.js';
 import { tokenDigest } from '../utils/auth.js';
 import { sendDeliveryDownloadedEmail, sendDeliveryViewedEmail, sendShareGrantEmail, sendStoryReadyEmail } from '../services/email.service.js';
@@ -102,6 +96,19 @@ async function ownedDelivery(id, userId, selectPin = false) {
   const query = Delivery.findOne({ _id: id, userId });
   if (selectPin) query.select('+access.pinDigest');
   return query;
+}
+
+function invalidateV3Music(delivery) {
+  if (delivery.schemaVersion !== 3) return;
+  delivery.reviewApprovedAt = undefined;
+  delivery.v3 = { ...delivery.v3, revision: Number(delivery.v3?.revision || 0) + 1, approvedRevision: null, step: 'music' };
+  delivery.markModified('v3');
+}
+
+async function discardV3Narration(delivery) {
+  if (delivery.schemaVersion !== 3) return;
+  const ids = [delivery.narration?.opening?.publicId, delivery.narration?.closing?.publicId].filter(Boolean);
+  await Promise.all(ids.map(id => removeDeliveryAudio(id).catch(() => {})));
 }
 
 function failValidation(res, parsed) {
@@ -204,7 +211,7 @@ export async function createDelivery(req, res) {
     if (!parsed.success) return failValidation(res, parsed);
     const openDrafts = await Delivery.countDocuments({ userId: req.user.id, status: { $in: ['draft', 'analyzing', 'directing', 'review'] } });
     if (openDrafts >= 20) return res.status(409).json({ success: false, code: 'DRAFT_LIMIT_REACHED', message: 'Finish or remove an existing draft before starting another one.' });
-    const delivery = await Delivery.create({ userId: req.user.id, schemaVersion: creationPipelineVersion(), ...parsed.data });
+    const delivery = await Delivery.create({ userId: req.user.id, ...parsed.data });
     res.status(201).json({ success: true, data: delivery });
   } catch (error) {
     console.error('[deliveries/create]', error.message);
@@ -217,18 +224,11 @@ export async function updateDeliveryDetails(req, res) {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
-    if (!delivery || (!['draft', 'review'].includes(delivery.status) && !(delivery.schemaVersion === 3 && delivery.status === 'published'))) return res.status(404).json({ success: false, message: 'This draft is not available for editing.' });
+    if (delivery?.schemaVersion === 3) return res.status(409).json({ success: false, message: 'Use the V3 shoot details step for this draft.' });
+    if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This draft is not available for editing.' });
     const detailsChanged = delivery.clientName !== parsed.data.clientName
       || delivery.shootType !== parsed.data.shootType
       || delivery.brief !== parsed.data.brief;
-    if (delivery.schemaVersion === 3) {
-      if (detailsChanged) await cancelPreparation(delivery);
-      const updated = detailsChanged ? await Delivery.findOneAndUpdate({ _id: delivery._id, userId: req.user.id }, {
-        $set: { ...parsed.data },
-        $inc: { sourceVersion: 1 }, $unset: { creativeDirection: 1, reviewApprovedAt: 1 }
-      }, { new: true }) : delivery;
-      return res.json({ success: true, data: { ...updated.toObject(), assets: updated.assets.map(ownerAsset) } });
-    }
     delivery.clientName = parsed.data.clientName;
     delivery.shootType = parsed.data.shootType;
     delivery.brief = parsed.data.brief;
@@ -237,12 +237,11 @@ export async function updateDeliveryDetails(req, res) {
     // and direction; unchanged details preserve the review the photographer was
     // already working on.
     if (detailsChanged) {
-      if (delivery.schemaVersion === 3) { await cancelPreparation(delivery); delivery.sourceVersion += 1; }
       delivery.collectionAnalysis = undefined;
       delivery.formatRecommendations = [];
       delivery.creativeDirection = undefined;
       delivery.reviewApprovedAt = undefined;
-      delivery.status = delivery.publishedRevisionId ? 'published' : 'draft';
+      delivery.status = 'draft';
     }
     await delivery.save();
     const data = delivery.toObject();
@@ -379,13 +378,6 @@ export async function getDelivery(req, res) {
     if (data.access) delete data.access.pinDigest;
     data.assets = delivery.assets.map(ownerAsset);
     data.generationJob = generationJob || null;
-    if (delivery.schemaVersion === 3 && delivery.draftRevisionId) {
-      const revision = await DeliveryRevision.findOne({ _id: delivery.draftRevisionId, deliveryId: delivery._id, userId: req.user.id, sourceVersion: delivery.sourceVersion }).lean();
-      if (revision) {
-        Object.assign(data, revision.snapshot, { assets: revision.snapshot.assets.map(ownerAsset) });
-        data.presentationOrigin = revision.origin;
-      } else { data.creativeDirection = null; }
-    }
     if (data.soundtrack?.catalogId && data.soundtrack?.source === 'curated') {
       data.soundtrack.url = curatedPreviewUrl(data.soundtrack.catalogId, soundtrackPreviewToken(req.user.id));
     }
@@ -394,6 +386,10 @@ export async function getDelivery(req, res) {
     }
     if (data.narration?.publicId && !data.narration.url) {
       data.narration.url = signedImageUrl(data.narration.publicId, { resourceType: 'video' });
+    }
+    if (data.schemaVersion === 3 && data.narration?.opening?.publicId) {
+      data.narration.opening.url = signedImageUrl(data.narration.opening.publicId, { resourceType: 'video' });
+      data.narration.closing.url = signedImageUrl(data.narration.closing.publicId, { resourceType: 'video' });
     }
     res.json({ success: true, data });
   } catch (error) {
@@ -461,9 +457,6 @@ export async function deleteDelivery(req, res) {
         await portfolio.save();
       },
       () => DeliveryJob.deleteMany({ deliveryId: removed._id }),
-      () => DeliveryRevision.deleteMany({ deliveryId: removed._id }),
-      () => DeliveryPreparation.deleteMany({ deliveryId: removed._id }),
-      () => DeliveryTask.deleteMany({ deliveryId: removed._id }),
       () => DeliveryShareGrant.deleteMany({ deliveryId: removed._id }),
       () => EmailDelivery.deleteMany({ deliveryId: removed._id }),
       () => PhotoLike.deleteMany({ deliveryId: removed._id }),
@@ -497,7 +490,7 @@ export async function signDeliveryUpload(req, res) {
     const input = z.object({ uploadId: z.string().uuid().optional() }).strict().safeParse(req.body || {});
     if (!input.success) return failValidation(res, input);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
-    if (!delivery || (!['draft', 'review'].includes(delivery.status) && !(delivery.schemaVersion === 3 && delivery.status === 'published'))) return res.status(404).json({ success: false, message: 'This delivery is not available for uploads.' });
+    if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This delivery is not available for uploads.' });
     const user = await User.findById(req.user.id);
     const entitlements = await resolveEntitlements(user, { includeUsage: false });
     if (delivery.assets.length >= entitlements.limits.photosPerDelivery) return res.status(403).json({ success: false, code: 'PHOTO_LIMIT_REACHED', message: `${entitlements.planName} allows up to ${entitlements.limits.photosPerDelivery} photographs in one delivery.` });
@@ -511,12 +504,15 @@ export async function signDeliveryUpload(req, res) {
 
 export async function recoverDeliveryUpload(req, res) {
   try {
-    const input = z.object({ uploadId: z.string().uuid() }).strict().safeParse(req.body);
-    if (!input.success) return failValidation(res, input);
+    const parsed = z.object({ uploadId: z.string().uuid() }).strict().safeParse(req.body);
+    if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
-    if (!delivery || delivery.schemaVersion !== 3 || delivery.status === 'archived') return res.status(404).json({ success: false, message: 'This delivery is not available for uploads.' });
-    res.json({ success: true, data: await recoverImageUpload({ userId: req.user.id, deliveryId: delivery._id, uploadId: input.data.uploadId }) });
-  } catch { res.status(503).json({ success: false, message: 'We could not check this upload yet. Your finished uploads are saved.' }); }
+    if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This draft is not available for uploads.' });
+    const entitlements = await resolveEntitlements(await User.findById(req.user.id), { includeUsage: false });
+    if (delivery.assets.length >= entitlements.limits.photosPerDelivery) return res.status(403).json({ success: false, code: 'PHOTO_LIMIT_REACHED', message: `${entitlements.planName} allows up to ${entitlements.limits.photosPerDelivery} photographs in one delivery.` });
+    const resource = await recoverImageUpload({ userId: req.user.id, deliveryId: delivery._id, uploadId: parsed.data.uploadId });
+    res.json({ success: true, data: resource });
+  } catch (error) { res.status(error.status || 500).json({ success: false, message: error.message || 'We could not check that upload.' }); }
 }
 
 export async function confirmDeliveryUpload(req, res) {
@@ -525,7 +521,7 @@ export async function confirmDeliveryUpload(req, res) {
     const parsed = confirmSchema.safeParse(req.body);
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
-    if (!delivery || (!['draft', 'review'].includes(delivery.status) && !(delivery.schemaVersion === 3 && delivery.status === 'published'))) return res.status(404).json({ success: false, message: 'This delivery is not available for uploads.' });
+    if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This delivery is not available for uploads.' });
     const existing = delivery.assets.find(asset => asset.publicId === parsed.data.publicId);
     if (existing) return res.json({ success: true, data: ownerAsset(existing) });
     const user = await User.findById(req.user.id);
@@ -541,14 +537,14 @@ export async function confirmDeliveryUpload(req, res) {
     const updated = await Delivery.findOneAndUpdate({
       _id: delivery._id,
       userId: req.user.id,
-      status: { $in: delivery.schemaVersion === 3 ? ['draft', 'review', 'published'] : ['draft', 'review'] },
+      status: { $in: ['draft', 'review'] },
       'assets.publicId': { $ne: resource.public_id },
       $expr: { $lt: [{ $size: '$assets' }, entitlements.limits.photosPerDelivery] }
     }, {
       $push: { assets: asset },
-      $inc: { sourceVersion: 1 },
-      $set: { ...(delivery.schemaVersion === 3 ? {} : { status: 'draft' }), formatRecommendations: [] },
-      $unset: { collectionAnalysis: 1, creativeDirection: 1, reviewApprovedAt: 1 }
+      $set: { status: 'draft', formatRecommendations: [], ...(delivery.schemaVersion === 3 ? { 'v3.step': 'upload', 'v3.approvedRevision': null, 'v3.narrationChoice': 'skip', curatedAssetIds: [], presentationOrder: [] } : {}) },
+      $inc: delivery.schemaVersion === 3 ? { 'v3.revision': 1 } : {},
+      $unset: { collectionAnalysis: 1, creativeDirection: 1, reviewApprovedAt: 1, ...(delivery.schemaVersion === 3 ? { narration: 1 } : {}) }
     }, { new: true, runValidators: true });
     if (!updated) {
       const confirmed = await Delivery.findOne({ _id: delivery._id, userId: req.user.id, 'assets.publicId': resource.public_id });
@@ -559,7 +555,7 @@ export async function confirmDeliveryUpload(req, res) {
     }
     const saved = updated.assets.find(item => item.assetId === asset.assetId);
     uploadedPublicId = '';
-    if (updated.schemaVersion === 3) observeUploads(updated).catch(error => console.error('[delivery/observe-upload]', error.name));
+    await discardV3Narration(delivery);
     recordAnalyticsEventAsync({ name: 'upload.completed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'completed', bytes: resource.bytes, format: delivery.format, metadata: { surface: 'delivery', resourceType: 'image' } });
     res.status(201).json({ success: true, data: ownerAsset(saved), limits: entitlements.limits });
   } catch (error) {
@@ -576,7 +572,7 @@ export async function addLibraryAssets(req, res) {
     const parsed = libraryAssetsSchema.safeParse(req.body);
     if (!parsed.success || new Set(parsed.data.assetIds).size !== parsed.data.assetIds.length) return res.status(400).json({ success: false, message: 'Choose between one and twenty different library photographs.' });
     const delivery = await ownedDelivery(req.params.id, req.user.id);
-    if (!delivery || (!['draft', 'review'].includes(delivery.status) && !(delivery.schemaVersion === 3 && delivery.status === 'published'))) return res.status(404).json({ success: false, message: 'This delivery is not available for photographs.' });
+    if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This delivery is not available for photographs.' });
     const user = await User.findById(req.user.id);
     const entitlements = await resolveEntitlements(user, { includeUsage: false });
     if (entitlements.features.storageMode !== 'read-write') return res.status(403).json({ success: false, code: 'PRO_REQUIRED', message: 'Renew Pro to reuse photographs from your personal library.' });
@@ -598,13 +594,13 @@ export async function addLibraryAssets(req, res) {
     const updated = await Delivery.findOneAndUpdate({
       _id: delivery._id,
       userId: user._id,
-      status: { $in: delivery.schemaVersion === 3 ? ['draft', 'review', 'published'] : ['draft', 'review'] },
+      status: { $in: ['draft', 'review'] },
       $expr: { $lte: [{ $add: [{ $size: '$assets' }, newAssets.length] }, entitlements.limits.photosPerDelivery] }
     }, {
       $push: { assets: { $each: newAssets } },
-      $inc: { sourceVersion: 1 },
-      $set: { ...(delivery.schemaVersion === 3 ? {} : { status: 'draft' }), formatRecommendations: [] },
-      $unset: { collectionAnalysis: 1, creativeDirection: 1, reviewApprovedAt: 1 }
+      $set: { status: 'draft', formatRecommendations: [], ...(delivery.schemaVersion === 3 ? { 'v3.step': 'upload', 'v3.approvedRevision': null, 'v3.narrationChoice': 'skip', curatedAssetIds: [], presentationOrder: [] } : {}) },
+      $inc: delivery.schemaVersion === 3 ? { 'v3.revision': 1 } : {},
+      $unset: { collectionAnalysis: 1, creativeDirection: 1, reviewApprovedAt: 1, ...(delivery.schemaVersion === 3 ? { narration: 1 } : {}) }
     }, { new: true, runValidators: true });
     if (!updated) {
       const error = new Error(`Those photographs could not be added. ${entitlements.planName} allows up to ${entitlements.limits.photosPerDelivery} photographs in one delivery.`);
@@ -612,8 +608,8 @@ export async function addLibraryAssets(req, res) {
       throw error;
     }
     const addedIds = new Set(newAssets.map(item => item.assetId));
-    if (updated.schemaVersion === 3) observeUploads(updated).catch(error => console.error('[delivery/observe-library]', error.name));
     const data = updated.assets.filter(item => addedIds.has(item.assetId)).map(ownerAsset);
+    await discardV3Narration(delivery);
     recordAnalyticsEventAsync({ name: 'upload.completed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'completed', count: data.length, bytes: newAssets.reduce((total, asset) => total + Number(asset.bytes || 0), 0), format: delivery.format, metadata: { surface: 'delivery', resourceType: 'library-copy' } });
     res.status(201).json({ success: true, data });
   } catch (error) {
@@ -627,27 +623,24 @@ export async function addLibraryAssets(req, res) {
 export async function deleteDeliveryAsset(req, res) {
   try {
     const delivery = await ownedDelivery(req.params.id, req.user.id);
-    if (!delivery || (!['draft', 'review'].includes(delivery.status) && !(delivery.schemaVersion === 3 && delivery.status === 'published'))) return res.status(404).json({ success: false, message: 'This draft is not available for editing.' });
+    if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This draft is not available for editing.' });
     const asset = delivery.assets.find(item => item.assetId === req.params.assetId);
     if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
-    if (delivery.schemaVersion === 3) {
-      await cancelPreparation(delivery);
-      const updated = await Delivery.findOneAndUpdate({ _id: delivery._id, userId: req.user.id }, {
-        $pull: { assets: { assetId: asset.assetId } }, $inc: { sourceVersion: 1 },
-        $unset: { creativeDirection: 1, reviewApprovedAt: 1 }
-      }, { new: true });
-      return res.json({ success: true, data: { ...updated.toObject(), assets: updated.assets.map(ownerAsset) } });
-    }
-    // Published revisions keep their originals until the entire delivery is removed.
-    if (delivery.schemaVersion !== 3) await removeDeliveryImage(asset.publicId);
-    if (delivery.schemaVersion === 3) { await cancelPreparation(delivery); delivery.sourceVersion += 1; }
+    const oldNarration = delivery.schemaVersion === 3 ? delivery.narration : null;
+    await removeDeliveryImage(asset.publicId);
     delivery.assets = delivery.assets.filter(item => item.assetId !== asset.assetId).map((item, sortOrder) => ({ ...item.toObject(), sortOrder }));
     delivery.collectionAnalysis = undefined;
     delivery.formatRecommendations = [];
     delivery.creativeDirection = undefined;
     delivery.reviewApprovedAt = undefined;
-    delivery.status = delivery.publishedRevisionId ? 'published' : 'draft';
+    delivery.status = 'draft';
+    if (delivery.schemaVersion === 3) {
+      delivery.curatedAssetIds = []; delivery.presentationOrder = []; delivery.narration = undefined;
+      delivery.v3 = { ...delivery.v3, step: 'upload', narrationChoice: 'skip', approvedRevision: null, revision: Number(delivery.v3?.revision || 0) + 1 };
+      delivery.markModified('v3');
+    }
     await delivery.save();
+    await discardV3Narration({ schemaVersion: delivery.schemaVersion, narration: oldNarration });
     res.json({ success: true, message: 'Photograph removed.', data: delivery });
   } catch (error) {
     recordAnalyticsEventAsync({ name: 'storage.delete.failed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'failed', errorCode: error.code || 'DELIVERY_PHOTO_DELETE_FAILED', metadata: { surface: 'delivery' } });
@@ -681,6 +674,7 @@ export async function confirmSoundtrackUpload(req, res) {
     if (!['mp3', 'wav', 'm4a', 'ogg', 'aac'].includes(String(resource.format).toLowerCase()) || resource.bytes > 20 * 1024 * 1024 || Number(resource.duration || 0) > 20 * 60) throw Object.assign(new Error('Use an MP3, WAV, M4A, OGG, or AAC track no larger than 20 MB and no longer than 20 minutes.'), { status: 400 });
     if (delivery.soundtrack?.publicId && delivery.soundtrack.publicId !== resource.public_id) await removeDeliveryAudio(delivery.soundtrack.publicId).catch(() => {});
     delivery.soundtrack = { publicId: resource.public_id, title: parsed.data.title, originalFilename: parsed.data.originalFilename, format: resource.format, bytes: resource.bytes, duration: resource.duration, contentHash: resource.etag || undefined, hashAlgorithm: resource.etag ? 'cloudinary-etag' : undefined, hashVerifiedAt: resource.etag ? new Date() : undefined, source: 'photographer', rightsConfirmedAt: new Date() };
+    invalidateV3Music(delivery);
     delivery.markModified('soundtrack');
     await delivery.save();
     recordAnalyticsEventAsync({ name: 'upload.completed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'completed', bytes: resource.bytes, metadata: { surface: 'soundtrack', resourceType: 'audio' } });
@@ -696,8 +690,10 @@ export async function deleteSoundtrack(req, res) {
   try {
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    if (delivery.schemaVersion === 3 && !['draft', 'review'].includes(delivery.status)) return res.status(409).json({ success: false, message: 'A published delivery soundtrack cannot be removed.' });
     if (delivery.soundtrack?.publicId) await removeDeliveryAudio(delivery.soundtrack.publicId);
     delivery.soundtrack = undefined;
+    invalidateV3Music(delivery);
     delivery.markModified('soundtrack');
     await delivery.save();
     res.json({ success: true, message: 'Soundtrack removed.' });
@@ -753,6 +749,7 @@ export async function selectCuratedSoundtrack(req, res) {
       catalogueBytes: track.bytes,
       rightsConfirmedAt: new Date()
     };
+    invalidateV3Music(delivery);
     delivery.markModified('soundtrack');
     await delivery.save();
     recordAnalyticsEventAsync({ name: previousTrackId && previousTrackId !== track.id ? 'soundtrack.replaced' : 'soundtrack.selected', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: delivery._id, format: delivery.format, status: 'selected', metadata: { trackId: track.id, previousTrackId, selectionType: 'photographer' } });
@@ -783,6 +780,7 @@ export async function queueAnalysis(req, res) {
   try {
     if (!(await isRuntimeFeatureEnabled('deliveryPipeline', process.env.DELIVERY_PIPELINE_ENABLED === 'true'))) return res.status(503).json({ success: false, message: 'The AI Creative Director is not available yet.' });
     const delivery = await ownedDelivery(req.params.id, req.user.id);
+    if (delivery?.schemaVersion === 3) return res.status(409).json({ success: false, message: 'Use the V3 preparation step for this draft.' });
     if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
     if (['published', 'archived'].includes(delivery.status)) return res.status(409).json({ success: false, message: 'This delivery is already published. Archive it first to make changes.' });
     if (!delivery.assets.length) return res.status(400).json({ success: false, message: 'Upload at least one finished photograph first.' });
@@ -804,6 +802,7 @@ export async function queueDirection(req, res) {
     const parsed = formatSchema.safeParse(req.body);
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
+    if (delivery?.schemaVersion === 3) return res.status(409).json({ success: false, message: 'Use the V3 format step for this draft.' });
     if (!delivery?.formatRecommendations?.length) return res.status(409).json({ success: false, message: 'Let Veylo read the complete shoot before choosing a format.' });
     if (['published', 'archived'].includes(delivery.status)) return res.status(409).json({ success: false, message: 'This delivery is already published. Archive it first to make changes.' });
     const user = await User.findById(req.user.id);
@@ -828,6 +827,7 @@ export async function queueNarration(req, res) {
     const parsed = narrationSchema.safeParse(req.body);
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
+    if (delivery?.schemaVersion === 3) return res.status(409).json({ success: false, message: 'Use the V3 narration step for this draft.' });
     if (!delivery?.creativeDirection) return res.status(409).json({ success: false, message: 'Narration is available after the delivery has been directed.' });
     if (!supportsDeliveryNarration(delivery.format)) return res.status(409).json({ success: false, code: 'NARRATION_FORMAT_UNSUPPORTED', message: 'This delivery format does not use narration.' });
     const running = await DeliveryJob.findOne({ deliveryId: delivery._id, status: { $in: ['queued', 'running'] } });
@@ -846,6 +846,7 @@ export async function queueRevision(req, res) {
     const parsed = revisionSchema.safeParse(req.body);
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
+    if (delivery?.schemaVersion === 3) return res.status(409).json({ success: false, message: 'Use the V3 showcase step for this draft.' });
     if (!delivery?.creativeDirection || delivery.status !== 'review') return res.status(409).json({ success: false, message: 'This delivery is not ready for revisions.' });
     const known = new Set(delivery.assets.map(asset => asset.assetId));
     if (parsed.data.scope === 'selected' && (!parsed.data.assetIds.length || parsed.data.assetIds.some(id => !known.has(id)))) return res.status(400).json({ success: false, message: 'Choose at least one photograph from this delivery.' });
@@ -870,6 +871,7 @@ export async function updateDeliveryReview(req, res) {
     const parsed = reviewSchema.safeParse(req.body);
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
+    if (delivery?.schemaVersion === 3) return res.status(409).json({ success: false, message: 'Use the V3 showcase step for this draft.' });
     if (!delivery || delivery.status !== 'review' || !delivery.creativeDirection) return res.status(409).json({ success: false, message: 'This delivery is not ready for edits.' });
     const known = new Set(delivery.assets.map(asset => asset.assetId));
     if (!parsed.data.assetOrder.length || new Set(parsed.data.assetOrder).size !== parsed.data.assetOrder.length || parsed.data.assetOrder.some(id => !known.has(id))) return res.status(400).json({ success: false, message: 'The photograph order is invalid or contains unknown photographs.' });
@@ -966,6 +968,7 @@ export async function publishDelivery(req, res) {
     const parsed = accessSchema.safeParse(req.body);
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id, true);
+    if (delivery?.schemaVersion === 3) return res.status(409).json({ success: false, message: 'Use the V3 publishing step for this draft.' });
     if (!delivery || delivery.status !== 'review' || !delivery.creativeDirection || !delivery.reviewApprovedAt) return res.status(409).json({ success: false, message: 'Review and approve the complete delivery before publishing it.' });
     const user = await User.findById(req.user.id);
     const narrationRequested = supportsDeliveryNarration(delivery.format) && parsed.data.narration;
@@ -1004,12 +1007,6 @@ function accessTokenValid(token, deliveryId) {
 
 async function publicDelivery(id) {
   const delivery = await Delivery.findOne({ publicId: id, status: 'published' }).select('+access.pinDigest').populate('userId', 'name plan planOverride studio avatar');
-  if (delivery?.schemaVersion === 3) {
-    const revision = await DeliveryRevision.findOne({ _id: delivery.publishedRevisionId, deliveryId: delivery._id }).lean();
-    if (!revision) return null;
-    for (const key of ['soundtrack', 'narration', 'creativeDirection']) delivery.set(key, undefined);
-    delivery.set(revision.snapshot);
-  }
   return delivery?.access?.revokedAt ? null : delivery;
 }
 
@@ -1068,7 +1065,8 @@ async function publicPayload(delivery, grant = null) {
   const studioBrand = entitlements.features.branding === 'studio';
   const object = delivery.toObject();
   delete object.userId;
-  for (const key of ['brief', 'sourceVersion', 'draftRevisionId', 'activePreparationId', 'publishingUntil', 'collectionAnalysis', 'formatRecommendations']) delete object[key];
+  for (const key of ['brief', 'collectionAnalysis', 'formatRecommendations']) delete object[key];
+  if (object.schemaVersion === 3 && object.v3) object.v3 = { openingAssetId: object.v3.openingAssetId, closingAssetId: object.v3.closingAssetId, narrationChoice: object.v3.narrationChoice };
   delete object.access?.pinDigest;
   const visibleDeliveryAssets = grantAssets(delivery, grant);
   const visibleAssets = new Set(visibleDeliveryAssets.map(asset => asset.assetId));
@@ -1098,6 +1096,10 @@ async function publicPayload(delivery, grant = null) {
     object.viewer = { role: grant.role, label: grant.label, usageTerms: grant.usageTerms || '' };
   }
   if (object.narration?.publicId) object.narration.url = signedImageUrl(object.narration.publicId, { resourceType: 'video' });
+  if (object.schemaVersion === 3 && object.narration?.opening?.publicId) {
+    object.narration.opening.url = signedImageUrl(object.narration.opening.publicId, { resourceType: 'video' });
+    object.narration.closing.url = signedImageUrl(object.narration.closing.publicId, { resourceType: 'video' });
+  }
   if (object.soundtrack?.publicId) object.soundtrack.url = signedImageUrl(object.soundtrack.publicId, { resourceType: 'video' });
   if (object.soundtrack?.catalogId && object.soundtrack?.source === 'curated') {
     const mediaToken = jwt.sign(

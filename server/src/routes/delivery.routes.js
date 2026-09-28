@@ -1,10 +1,17 @@
 import express from 'express';
-import { recoverDeliveryUpload } from '../controllers/delivery.controller.js';
-import Delivery from '../models/Delivery.js';
-import { deliveryConfiguration, assistPreparationBrief, prepareDelivery, getPreparation, cancelDeliveryPreparation, regenerateDeliveryCaption, prepareNarration, editPresentation, publishPresentation } from '../controllers/deliveryPreparation.controller.js';
+import { v3Access, v3Approve, v3Assist, v3Caption, v3Create, v3Details, v3Format, v3Narration, v3Prepare, v3Publish, v3Showcase, v3SkipNarration, v3Theme } from '../controllers/deliveryV3.controller.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { aiGenerationLimit, clientDeliveryEmailLimit, mediaSignatureLimit, publicAccessLimit, publicMediaLimit } from '../middleware/rateLimit.middleware.js';
-import { addLibraryAssets, archiveDelivery, assistDeliveryBrief, confirmDeliveryUpload, confirmSoundtrackUpload, createDelivery, createShareGrant, deleteDelivery, deleteDeliveryAsset, deleteSoundtrack, emailClientDelivery, getDelivery, getDeliveryJob, getDeliveryQr, getDeliveryShareMeta, getGalleryDownload, getPhotoDownload, getPublicDelivery, getPublicSoundtrack, listDeliveries, listDeliverySoundtracks, listNarrationVoices, listShareGrants, publishDelivery, queueAnalysis, queueDirection, queueNarration, queueRevision, restoreDelivery, retryDeliveryJob, revokeShareGrant, selectCuratedSoundtrack, signDeliveryUpload, signSoundtrackUpload, streamDeliverySoundtrack, streamPhotoDownload, togglePhotoLike, trackPhotoDownload, unlockDelivery, updateDeliveryDetails, updateDeliveryReview, updateDownloadLock } from '../controllers/delivery.controller.js';
+import {
+  addLibraryAssets, archiveDelivery, assistDeliveryBrief, confirmDeliveryUpload, confirmSoundtrackUpload,
+  createDelivery, createShareGrant, deleteDelivery, deleteDeliveryAsset, deleteSoundtrack, emailClientDelivery,
+  getDelivery, getDeliveryJob, getDeliveryQr, getDeliveryShareMeta, getGalleryDownload, getPhotoDownload,
+  getPublicDelivery, getPublicSoundtrack, listDeliveries, listDeliverySoundtracks, listNarrationVoices,
+  listShareGrants, publishDelivery, queueAnalysis, queueDirection, queueNarration, queueRevision,
+  restoreDelivery, retryDeliveryJob, recoverDeliveryUpload, revokeShareGrant, selectCuratedSoundtrack, signDeliveryUpload,
+  signSoundtrackUpload, streamDeliverySoundtrack, streamPhotoDownload, togglePhotoLike, trackPhotoDownload,
+  unlockDelivery, updateDeliveryDetails, updateDeliveryReview, updateDownloadLock
+} from '../controllers/delivery.controller.js';
 
 const router = express.Router();
 
@@ -20,29 +27,25 @@ router.get('/public/:publicId/download-all', publicMediaLimit, getGalleryDownloa
 router.get('/soundtracks/:trackId/audio', publicMediaLimit, streamDeliverySoundtrack);
 
 router.use(authMiddleware);
-// Old mutation contracts must never write into a revision-based delivery.
-router.use('/:id', async (req, res, next) => {
-  if (req.method === 'GET' || !/^\/(analyze|direct|revise|review|publish|narrate|jobs|soundtrack)(\/|$)/.test(req.path)) return next();
-  try {
-    if (await Delivery.exists({ _id: req.params.id, userId: req.user.id, schemaVersion: 3 })) return res.status(409).json({ success: false, message: 'Open this delivery in the current editor to save changes.' });
-    next();
-  } catch { res.status(400).json({ success: false, message: 'This delivery is not available.' }); }
-});
-router.get('/configuration', deliveryConfiguration);
-router.post('/brief/direction', aiGenerationLimit, assistPreparationBrief);
-router.post('/:id/prepare', aiGenerationLimit, prepareDelivery);
-router.get('/:id/preparation', getPreparation);
-router.post('/:id/preparation/cancel', cancelDeliveryPreparation);
-router.post('/:id/presentation/caption', aiGenerationLimit, regenerateDeliveryCaption);
-router.post('/:id/presentation/narration', aiGenerationLimit, prepareNarration);
-router.patch('/:id/presentation', editPresentation);
-router.post('/:id/presentation/publish', publishPresentation);
+router.post('/v3/assist', aiGenerationLimit, v3Assist);
+router.post('/v3', v3Create);
 router.get('/', listDeliveries);
 router.post('/', createDelivery);
 router.post('/brief/assist', aiGenerationLimit, assistDeliveryBrief);
 router.get('/soundtracks', listDeliverySoundtracks);
 router.get('/narration/voices', listNarrationVoices);
 router.get('/:id', getDelivery);
+router.patch('/:id/v3/details', v3Details);
+router.patch('/:id/v3/format', v3Format);
+router.post('/:id/v3/prepare', aiGenerationLimit, v3Prepare);
+router.patch('/:id/v3/showcase', v3Showcase);
+router.post('/:id/v3/captions/:assetId/regenerate', aiGenerationLimit, v3Caption);
+router.post('/:id/v3/narrate', aiGenerationLimit, v3Narration);
+router.post('/:id/v3/narration/skip', v3SkipNarration);
+router.patch('/:id/v3/theme', v3Theme);
+router.patch('/:id/v3/access', v3Access);
+router.post('/:id/v3/approve', v3Approve);
+router.post('/:id/v3/publish', v3Publish);
 router.patch('/:id/details', updateDeliveryDetails);
 router.patch('/:id/download-lock', updateDownloadLock);
 router.post('/:id/archive', archiveDelivery);

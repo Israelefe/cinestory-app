@@ -10,7 +10,7 @@ const formats = await read('src/constants/deliveryFormats.js');
 const capabilities = await read('src/constants/deliveryCapabilities.js');
 const viewer = await read('src/pages/DeliveryViewer.jsx');
 const storyViewer = await read('src/pages/StoryViewer.jsx');
-const create = await read('src/pages/LegacyCreateDelivery.jsx');
+const create = await read('src/pages/CreateDelivery.jsx');
 const gallery = await read('src/components/delivery/ClientGallery.jsx');
 const galleryCss = await read('src/components/delivery/ClientGallery.css');
 const brandMark = await read('src/components/delivery/DeliveryBrandMark.jsx');
@@ -27,7 +27,7 @@ const creationCss = await read('src/pages/CreateDelivery.css');
 const formatCss = await read('src/styles/format-demos.css');
 const eventCss = await read('src/components/delivery/EventCampaignViewers.css');
 const directionStudio = await read('src/components/delivery/DeliveryDirectionStudio.jsx');
-const createMusic = await read('src/pages/LegacyCreateDelivery.jsx');
+const createMusic = await read('src/pages/CreateDelivery.jsx');
 const deliveryUpload = await read('src/utils/deliveryUpload.js');
 const accountSettings = await read('src/pages/AccountSettings.jsx');
 const managePortfolio = await read('src/pages/ManagePortfolio.jsx');
@@ -41,8 +41,7 @@ assert.match(viewer, /setBlocked\(true\)/, 'Viewer must block until every asset 
 assert.match(viewer, /audio\.oncanplay = done/, 'Audio preload must confirm decodable audio on mobile browsers');
 assert.match(viewer, /response = await fetch\(url/, 'Readiness must download each media file before opening');
 assert.match(viewer, /URL\.createObjectURL\(blob\)/, 'Readiness must reuse downloaded media in the viewer');
-// V3 loads photographs on demand and tests loading/error behaviour in the browser suite.
-assert.match(viewer, /delivery.schemaVersion < 3/, 'Only legacy deliveries use the old readiness screen');
+assert.match(viewer, /<DeliveryReadiness/, 'Deliveries use the readiness screen');
 assert.match(viewer, /playbackDelivery/, 'Viewer must render the same preloaded media it checked');
 assert.match(capabilities, /'photo-story': Object\.freeze\(\{ music: true, narration: true/ , 'Photo Story must own music and narration');
 assert.match(capabilities, /'photo-reveal': Object\.freeze\(\{ music: true, narration: false/ , 'Photo Reveal must own music without narration');
@@ -127,7 +126,7 @@ assert.match(event, /normalizeDeliveryPhotos\(delivery, eventCoveragePhotos\)/, 
 assert.match(event, /resolveSections\(delivery, photos/, 'Event Coverage must render AI sections through the shared scene layout');
 assert.match(event, /data-layout=\{section\.layout/, 'Event Coverage must consume saved section layouts');
 assert.match(event, /\{\.\.\.formatFrameAttributes\(photo\)\}/, 'Event Coverage must consume saved frame attributes');
-assert.match(event, /<DemoGallery photos=\{photos\}/, 'Event Coverage must use the shared Photo Story gallery');
+assert.match(event, /<DemoGallery photos=\{(?:photos|galleryPhotos)\}/, 'Event Coverage must use the shared Photo Story gallery');
 for (const viewerName of ['StoryViewer', 'EditorialDemo', 'RevealDemo', 'CanvasDemo', 'ChaptersDemo', 'AlbumDemo', 'EventCoverageViewer', 'CampaignDeliveryViewer']) assert.match(registry, new RegExp(viewerName), `Published delivery registry is missing ${viewerName}`);
 assert.match(preview, /<DeliveryFormatViewer format=\{format\}/, 'Creation preview must use the same format viewer as the published delivery');
 assert.match(event, /useDemoFallbacks = !delivery/, 'Demo-only scene copy must not leak into real deliveries');
@@ -165,7 +164,7 @@ assert.match(createMusic, /Open Pixabay source/, 'Photographers must have the so
 assert.match(accountSettings, /profileChangePolicy/, 'Account settings must show the public studio-name change policy');
 assert.match(accountSettings, /window\.confirm/, 'Account settings must confirm a public studio-name change');
 assert.match(managePortfolio, /handleNextChangeAt/, 'Portfolio management must show the portfolio-address change policy');
-assert.match(managePortfolio, /old portfolio address will redirect for 90 days/, 'Portfolio management must explain the old-address redirect window');
+assert.match(managePortfolio, /old address will redirect for 90 days/, 'Portfolio management must explain the old-address redirect window');
 assert.match(publicPortfolio, /history\.replaceState/, 'Old portfolio addresses must canonicalise to the current address');
 assert.match(imageLibrary, /Caption note for future deliveries/, 'Image library captions must explain their delivery purpose');
 assert.match(imageLibrary, /carried into the Creative Director/, 'Image library must explain how saved context is reused');

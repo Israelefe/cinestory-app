@@ -399,6 +399,7 @@ export default function NichePage() {
               <Action to="#recommended">See the best format for this work</Action>
               <Action to="/signup" secondary>Get started</Action>
             </div>
+            <Link className="v-niche-hero-demo" to={item.recommendation.demo}>{item.recommendation.demoLabel} <ArrowRight size={16} /></Link>
           </Reveal>
           <HeroArtwork item={item} />
         </div>

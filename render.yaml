@@ -69,8 +69,14 @@ services:
         value: qwen3-vl-flash
       - key: ALIBABA_CREATIVE_MODEL
         value: deepseek-v4.1-flash
+      - key: ALIBABA_ASSISTANT_MODEL
+        value: qwen3.8-flash
+      # Existing V2 delivery jobs use this separate worker setting.
       - key: DELIVERY_WORKER_CONCURRENCY
         value: "4"
+      # V3 delivery preparation can run up to 50 jobs per API worker process.
+      - key: DELIVERY_V3_WORKER_CONCURRENCY
+        value: "50"
       - key: DELIVERY_AI_CONCURRENCY
         value: "6"
       - key: DELIVERY_VISION_BATCH_SIZE
@@ -81,18 +87,9 @@ services:
         sync: false
       - key: DELIVERY_PIPELINE_ENABLED
         value: "true"
-      # Match the application defaults: the existing API runs both delivery queues.
-      - key: DELIVERY_V3_ENABLED
-        value: "true"
-      - key: DELIVERY_WORKER_EMBEDDED
-        value: "true"
       - key: ALIBABA_CAPTION_MODEL
         value: qwen3.7-flash
       - key: ALIBABA_BRIEF_MODEL
         value: qwen3.8-flash
       - key: ALIBABA_BRIEF_REVIEW_MODEL
         value: deepseek-v4.1-flash
-      - key: DELIVERY_AI_START_INTERVAL_MS
-        value: "100"
-      - key: DELIVERY_PREPARATION_CONCURRENCY
-        value: "6"

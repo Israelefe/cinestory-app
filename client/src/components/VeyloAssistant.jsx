@@ -175,12 +175,12 @@ export default function VeyloAssistant({ user }) {
   };
 
   return <>
-    <button ref={launchRef} type="button" className={`veylo-assistant-launch${open ? ' is-open' : ''}`} onClick={() => { setOpen(true); trackEvent('assistant.opened', { surface }); }} aria-label="Open Veylo Help" aria-expanded={open} tabIndex={open ? -1 : 0}>
+    <button ref={launchRef} type="button" className={`veylo-assistant-launch${open ? ' is-open' : ''}${pathname === '/portfolio/manage' ? ' is-portfolio-editor' : ''}`} onClick={() => { setOpen(true); trackEvent('assistant.opened', { surface }); }} aria-label="Open Veylo Help" aria-expanded={open} tabIndex={open ? -1 : 0}>
       <MessageCircle size={20} aria-hidden="true" /><span>Veylo Help</span>
     </button>
     {open && <>
       <button type="button" className="veylo-assistant-backdrop" onClick={() => { setOpen(false); launchRef.current?.focus(); }} aria-label="Close Veylo Help" />
-      <aside ref={panelRef} className="veylo-assistant-panel" role="dialog" aria-modal="true" aria-labelledby="veylo-assistant-title">
+      <aside ref={panelRef} className={`veylo-assistant-panel${pathname === '/portfolio/manage' ? ' is-portfolio-editor' : ''}`} role="dialog" aria-modal="true" aria-labelledby="veylo-assistant-title">
         <header className="veylo-assistant-header">
           <div className="veylo-assistant-heading"><span className="veylo-assistant-mark"><CircleHelp size={20} aria-hidden="true" /></span><div><h2 id="veylo-assistant-title">Veylo Help</h2><p>Answers about Veylo only</p></div></div>
           <div className="veylo-assistant-header-actions"><button type="button" className="veylo-assistant-icon-button" onClick={startNewChat} aria-label="Start a new Veylo Help chat" title="New chat"><RotateCcw size={17} /></button><button type="button" className="veylo-assistant-icon-button" onClick={() => { setOpen(false); launchRef.current?.focus(); }} aria-label="Close Veylo Help"><X size={19} /></button></div>

@@ -40,11 +40,7 @@ const deliverySchema = new mongoose.Schema({
   legacyStoryId: { type: String, index: true, sparse: true },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   schemaVersion: { type: Number, default: 2 },
-  sourceVersion: { type: Number, default: 0 },
-  draftRevisionId: { type: mongoose.Schema.Types.ObjectId, ref: 'DeliveryRevision' },
-  publishedRevisionId: { type: mongoose.Schema.Types.ObjectId, ref: 'DeliveryRevision' },
-  activePreparationId: { type: mongoose.Schema.Types.ObjectId, ref: 'DeliveryPreparation' },
-  publishingUntil: Date,
+  v3: { type: mongoose.Schema.Types.Mixed },
   kind: { type: String, enum: ['showcase', 'volume'], default: 'showcase', index: true },
   format: { type: String, enum: ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign'] },
   status: { type: String, enum: ['draft', 'analyzing', 'directing', 'review', 'published', 'archived'], default: 'draft', index: true },
@@ -74,5 +70,6 @@ const deliverySchema = new mongoose.Schema({
 }, { timestamps: true });
 
 deliverySchema.index({ userId: 1, updatedAt: -1 });
+deliverySchema.index({ userId: 1, status: 1, _id: -1 });
 
 export default mongoose.model('Delivery', deliverySchema);

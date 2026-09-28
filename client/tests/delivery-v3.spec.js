@@ -1,143 +1,123 @@
-import { test, expect } from '@playwright/test';
-import { mkdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { expect, test } from '@playwright/test';
 
-const formats = ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign'];
-const viewportSizes = [[320, 740], [390, 844], [768, 1024], [834, 1112], [1024, 768], [1440, 900]];
-const user = { _id: '111111111111111111111111', name: 'Test photographer', email: 'test@example.test', emailVerified: true, onboardingComplete: true, emailVerifiedAt: '2026-01-01', onboardingCompletedAt: '2026-01-01', accountStatus: 'active', plan: 'pro', studio: { name: 'Test studio' } };
-function fixture(format = 'photo-story') {
-  const assets = Array.from({ length: 10 }, (_, i) => ({ assetId: `photo-${i}`, publicId: `test/photo-${i}`, originalFilename: `Ada-${i + 1}.jpg`, sortOrder: i, url: i % 2 ? '/veylo/sharon-4.jpeg' : '/veylo/pv-male-portrait.jpeg', thumbnailUrl: i % 2 ? '/veylo/sharon-4.jpeg' : '/veylo/pv-male-portrait.jpeg', alt: `Finished photograph ${i + 1}` }));
-  return { _id: '222222222222222222222222', schemaVersion: 3, sourceVersion: 1, draftRevisionId: '333333333333333333333333', publicId: 'test-delivery', userId: user._id, format, title: 'Ada’s 30th birthday', clientName: 'Ada', shootType: 'Birthday', brief: 'Ada’s 30th birthday shoot', status: 'review',
-    assets, presentationOrder: assets.map(a => a.assetId), galleryOrder: assets.map(a => a.assetId), access: { allowLikes: true, allowIndividualDownloads: true, allowDownloadAll: true },
-    creativeDirection: { openingLine: '', closingLine: '', frames: assets.map((a, i) => ({ assetId: a.assetId, caption: i % 3 === 0 ? 'Celebrating Ada turning thirty, with a birthday story that leaves room for her photographs.' : '', durationSec: 4.2, motion: 'zoom_in' })), sections: [{ id: 'studio', title: 'Studio portraits', assetIds: assets.map(a => a.assetId) }] } };
-}
-async function mockAPI(page, delivery = fixture()) {
-  const state = { delivery, published: null, edits: 0 };
-  await page.route('**/api/**', async route => {
-    const url = new URL(route.request().url()), path = url.pathname;
-    const respond = data => route.fulfill({ json: { success: true, data } });
-    if (path.endsWith('/auth/me')) return route.fulfill({ json: { user } });
-    if (path.endsWith('/configuration')) return respond({ pipelineVersion: 3 });
-    if (path.endsWith('/brief/direction')) {
-      const body = route.request().postDataJSON();
-      return respond({ ready: true, reason: '', choices: [], suggestedBrief: body.mode === 'enhance' ? 'A birthday shoot celebrating Ada turning 30. Keep the presentation centred on this milestone, with birthday-focused wording and a celebratory tone.' : '', recommendedFormat: 'photo-story' });
-    }
-    if (path.endsWith('/soundtracks')) return respond([]);
-    if (path.endsWith('/preparation')) return respond({ id: 'test-run', state: 'ready', kind: 'prepare', photographs: { completed: 10, total: 10 }, message: 'Your presentation is ready to review.', tasks: [{ kind: 'writing', state: 'done' }] });
-    if (path.endsWith('/preparation/cancel')) return respond({});
-    if (path.endsWith('/presentation/publish')) { state.published = route.request().postDataJSON(); return respond({ publicId: delivery.publicId, url: `http://127.0.0.1:5178/d/${delivery.publicId}` }); }
-    if (path.endsWith('/presentation/caption')) return respond({ id: 'new-caption' });
-    if (path.endsWith('/presentation') && route.request().method() === 'PATCH') {
-      const body = route.request().postDataJSON(); state.edits++;
-      state.delivery = { ...state.delivery, title: body.title, draftRevisionId: '444444444444444444444444', presentationOrder: body.frames.map(f => f.assetId), creativeDirection: { ...state.delivery.creativeDirection, frames: body.frames, openingLine: body.openingLine, closingLine: body.closingLine } };
-      return respond({ revisionId: state.delivery.draftRevisionId });
-    }
-    if (path.endsWith(`/public/${delivery.publicId}`) || path.endsWith(`/${delivery._id}`)) return respond(state.delivery);
-    if (path.endsWith('/details')) { state.delivery = { ...state.delivery, ...route.request().postDataJSON() }; return respond(state.delivery); }
-    if (path.endsWith('/deliveries') && route.request().method() === 'POST') { state.delivery = { ...state.delivery, ...route.request().postDataJSON(), assets: [], creativeDirection: null, draftRevisionId: null }; return respond(state.delivery); }
-    return respond([]);
-  });
-  return state;
-}
-async function fits(page) {
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
-  expect(overflow).toBe(false);
-  const buttons = await page.locator('.dp-controls button').evaluateAll(elements => elements.map(e => e.getBoundingClientRect().height));
-  expect(buttons.every(height => height >= 44)).toBe(true);
-}
+const draftId = '507f1f77bcf86cd799439011';
+const user = { _id: '507f1f77bcf86cd799439012', name: 'Amara', email: 'amara@example.com', emailVerified: true, onboardingComplete: true, plan: 'free' };
 
-for (const format of formats) for (const [width, height] of viewportSizes) {
-  test(`${format} at ${width}x${height}`, async ({ page }) => {
-    await page.setViewportSize({ width, height }); await mockAPI(page, fixture(format));
-    const errors = []; page.on('pageerror', error => errors.push(error.message));
-    await page.goto('/d/test-delivery');
-    await expect(page.locator('.dp-viewer')).toBeVisible();
-    await expect(page.locator('.dp-viewer img').first()).toBeVisible();
-    await fits(page);
-    if (format === 'photo-story') {
-      await page.getByRole('button', { name: 'Play story', exact: true }).click();
-      await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
-      await expect(page.locator('.dp-moving-photo')).toHaveCSS('animation-play-state', 'running');
-      await page.getByRole('button', { name: 'Pause', exact: true }).click();
-      await page.getByRole('button', { name: 'Next photograph', exact: true }).click();
-      await expect(page.locator('.dp-controls>span')).toHaveText('2 / 10');
-      await page.getByRole('button', { name: 'Previous photograph', exact: true }).click();
-      await page.emulateMedia({ reducedMotion: 'reduce' });
-      await expect(page.locator('.dp-scene img')).toHaveCSS('animation-name', 'none');
-    }
-    await page.getByRole('button', { name: 'Gallery · 10', exact: true }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-    await expect(page.locator('.client-gallery-photo')).toHaveCount(10);
-    await page.getByRole('button', { name: 'Close gallery', exact: true }).click();
-    await expect(page.getByRole('dialog')).toHaveCount(0);
-    expect(errors).toEqual([]);
-    if (['photo-story', 'album', 'editorial'].includes(format)) {
-      await mkdir(resolve('../.visual-review/delivery-v3'), { recursive: true });
-      await page.screenshot({ path: resolve(`../.visual-review/delivery-v3/${format}-${width}.png`), fullPage: true });
-    }
+for (const width of [320, 834, 1440]) {
+  test('V3 details and recommended format remain usable at ' + width + 'px', async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 320 ? 740 : 900 });
+    let draft = { _id: draftId, schemaVersion: 3, status: 'draft', clientName: 'Ada', shootType: 'Birthday', brief: "Ada's 25th birthday celebration", assets: [], curatedAssetIds: [], creativeDirection: null, v3: { step: 'format', revision: 1, clarificationAnswers: [], narrationChoice: 'skip' }, access: {} };
+    await page.route('**/api/v1/**', async route => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      const body = request.postDataJSON?.() || {};
+      const reply = data => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': 'http://127.0.0.1:5178', 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ success: true, data }) });
+      if (path.endsWith('/auth/me')) return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': 'http://127.0.0.1:5178', 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ success: true, user }) });
+      if (path.endsWith('/deliveries/v3/assist')) {
+        if (body.mode === 'improve') return reply({ improved: "These photographs were taken for Ada's 25th birthday celebration." });
+        if (body.mode === 'clarify') return reply({ clear: true, questions: [] });
+        return reply({ format: 'photo-story', reason: 'A birthday shoot works well as a short personal sequence.' });
+      }
+      if (path.endsWith('/deliveries/v3') && request.method() === 'POST') return reply(draft);
+      if (path.endsWith('/deliveries/' + draftId) && request.method() === 'GET') return reply(draft);
+      if (path.endsWith('/deliveries/' + draftId + '/v3/format')) { draft = { ...draft, format: body.format, v3: { ...draft.v3, step: 'upload' } }; return reply(draft); }
+      return reply({});
+    });
+    await page.goto('/create');
+    await expect(page.getByRole('heading', { name: 'Tell us what this delivery is for.' })).toBeVisible();
+    const cookieButton = page.getByRole('button', { name: 'Got it' });
+    if (await cookieButton.isVisible()) await cookieButton.click();
+    await page.getByLabel('Client name').fill('Ada');
+    await page.getByLabel('Type of shoot').selectOption('Birthday');
+    await page.getByLabel('Purpose of the shoot').fill("Ada's 25th birthday celebration");
+    await page.getByRole('button', { name: 'Improve my wording' }).click();
+    await expect(page.getByRole('button', { name: 'Revert to my words' })).toBeVisible();
+    await page.getByRole('button', { name: 'Revert to my words' }).click();
+    await expect(page.getByLabel('Purpose of the shoot')).toHaveValue("Ada's 25th birthday celebration");
+    await page.getByRole('button', { name: 'Continue to formats' }).click();
+    await expect(page.getByRole('heading', { name: 'Choose how they first see the work.' })).toBeVisible();
+    await expect(page.getByText('Recommended for this delivery: Photo Story')).toBeVisible();
+    await expect(page.locator('.v3-format-card')).toHaveCount(8);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+    const columns = await page.locator('.v3-format-grid').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length);
+    expect(columns).toBe(width <= 540 ? 1 : width <= 1024 ? 2 : 4);
+    if (width === 834) await page.screenshot({ path: '../.visual-review/delivery-v3/format-834.png', fullPage: true });
   });
 }
-for (const [width, height] of viewportSizes) test(`create and review at ${width}x${height}`, async ({ page }) => {
-  await page.setViewportSize({ width, height }); const state = await mockAPI(page);
-  await page.goto(`/create?draft=${state.delivery._id}`);
-  await page.getByRole('button', { name: 'Got it', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Photographs & text', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Photographs & text', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Regenerate', exact: true })).toHaveCount(10);
-  const caption = page.locator('.dc-frame textarea').first(); await caption.fill('Ada’s birthday, in her own style.');
-  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
-  await expect(page.locator('.dc-review-tabs>span')).toHaveText('Saved');
-  expect(state.edits).toBe(1); await fits(page);
-  await page.getByRole('button', { name: 'Share this presentation', exact: true }).click();
+
+test('Photo Story review stops removals at five and advances with the full photo pool intact', async ({ page }) => {
+  await page.setViewportSize({ width: 834, height: 900 });
+  const assetId = index => '00000000-0000-4000-8000-' + String(index).padStart(12, '0');
+  const assets = Array.from({ length: 12 }, (_, index) => ({ assetId: assetId(index), originalFilename: 'photo-' + (index + 1) + '.jpg', url: '/veylo/web/demo-lora-1-960.webp', thumbnailUrl: '/veylo/web/demo-lora-1-960.webp' }));
+  let draft = { _id: draftId, publicId: 'preview-id', schemaVersion: 3, status: 'review', clientName: 'Ada', shootType: 'Birthday', brief: "Ada's 25th birthday celebration", format: 'photo-story', assets, curatedAssetIds: assets.slice(0, 10).map(asset => asset.assetId), creativeDirection: { title: "Ada's birthday", openingLine: 'These photos are from your birthday celebration.', closingLine: 'Here is the full collection from your day.', frames: assets.slice(0, 10).map(asset => ({ assetId: asset.assetId, caption: 'A moment from your birthday celebration.' })), palette: { background: '#0c0c10', surface: '#17171c', text: '#fffaf6', accent: '#ff5a47' }, typography: { display: 'Playfair Display', body: 'Outfit' } }, v3: { step: 'showcase', revision: 1, clarificationAnswers: [], narrationChoice: 'skip', openingAssetId: assetId(10), closingAssetId: assetId(11) }, access: {} };
+  await page.route('**/api/v1/**', async route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    const reply = data => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': 'http://127.0.0.1:5178', 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ success: true, data }) });
+    if (path.endsWith('/auth/me')) return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': 'http://127.0.0.1:5178', 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ success: true, user }) });
+    if (path.endsWith('/deliveries/' + draftId + '/v3/showcase')) {
+      const body = request.postDataJSON();
+      draft = { ...draft, curatedAssetIds: body.assetIds, creativeDirection: { ...draft.creativeDirection, title: body.title, openingLine: body.openingLine, closingLine: body.closingLine, frames: body.frames }, v3: { ...draft.v3, step: 'narration' } };
+      return reply(draft);
+    }
+    if (path.endsWith('/deliveries/' + draftId)) return reply(draft);
+    return reply({});
+  });
+  await page.goto('/create?draft=' + draftId);
+  await expect(page.getByRole('heading', { name: 'Make the selection yours.' })).toBeVisible();
+  const cookieButton = page.getByRole('button', { name: 'Got it' });
+  if (await cookieButton.isVisible()) await cookieButton.click();
+  for (let count = 10; count > 5; count -= 1) await page.getByRole('button', { name: 'Remove from showcase' }).first().click();
+  await expect(page.getByText('5 chosen')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Remove from showcase' }).first()).toBeDisabled();
+  await page.setViewportSize({ width: 320, height: 740 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  await expect.poll(() => page.locator('.v3-progress').evaluate(nav => {
+    const current = nav.querySelector('.is-current')?.getBoundingClientRect();
+    const bounds = nav.getBoundingClientRect();
+    return Boolean(current && current.left >= bounds.left && current.right <= bounds.right);
+  })).toBe(true);
+  await page.screenshot({ path: '../.visual-review/delivery-v3/showcase-320.png', fullPage: true });
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Give the opening and closing a voice.' })).toBeVisible();
+  expect(draft.assets).toHaveLength(12);
+  expect(draft.curatedAssetIds).toHaveLength(5);
+});
+
+test('design opens the current client viewer, then publishes with access settings', async ({ page }) => {
+  await page.setViewportSize({ width: 834, height: 900 });
+  const assetId = index => '00000000-0000-4000-8000-' + String(index).padStart(12, '0');
+  const assets = Array.from({ length: 6 }, (_, index) => ({ assetId: assetId(index), originalFilename: `photo-${index + 1}.jpg`, url: '/veylo/web/demo-lora-1-960.webp', thumbnailUrl: '/veylo/web/demo-lora-1-960.webp' }));
+  let draft = {
+    _id: draftId, publicId: 'editorial-client-link', schemaVersion: 3, status: 'review', clientName: 'Ada', shootType: 'Birthday', brief: "Ada's 25th birthday celebration", format: 'editorial',
+    assets, curatedAssetIds: assets.map(asset => asset.assetId),
+    creativeDirection: { title: "Ada's birthday", openingLine: 'These photographs are from your 25th birthday.', closingLine: 'Here is the full collection from your day.', frames: assets.map(asset => ({ assetId: asset.assetId, caption: 'A moment from the birthday celebration.' })), sections: [{ id: 'showcase', title: 'The photographs', subtitle: '', assetIds: assets.map(asset => asset.assetId) }], palette: { background: '#0c0c10', surface: '#17171c', text: '#fffaf6', accent: '#ff5a47' }, typography: { display: 'Playfair Display', body: 'Outfit' } },
+    v3: { step: 'design', revision: 2, clarificationAnswers: [], narrationChoice: 'skip', openingAssetId: assetId(0), closingAssetId: assetId(5) }, access: {}
+  };
+  let savedAccess;
+  await page.route('**/api/v1/**', async route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    const body = request.postDataJSON?.() || {};
+    const reply = data => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': 'http://127.0.0.1:5178', 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ success: true, data }) });
+    if (path.endsWith('/auth/me')) return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': 'http://127.0.0.1:5178', 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ success: true, user }) });
+    if (path.endsWith('/deliveries/' + draftId + '/v3/theme')) { draft = { ...draft, creativeDirection: { ...draft.creativeDirection, ...body }, v3: { ...draft.v3, step: 'preview', revision: 3 } }; return reply(draft); }
+    if (path.endsWith('/deliveries/' + draftId + '/v3/approve')) { draft = { ...draft, reviewApprovedAt: new Date().toISOString(), v3: { ...draft.v3, step: 'access', approvedRevision: draft.v3.revision } }; return reply(draft); }
+    if (path.endsWith('/deliveries/' + draftId + '/v3/access')) { savedAccess = body; draft = { ...draft, access: body, hasPin: Boolean(body.pin) }; return reply({ access: body, hasPin: Boolean(body.pin), formatConfig: {} }); }
+    if (path.endsWith('/deliveries/' + draftId + '/v3/publish')) return reply({ publicId: draft.publicId, url: 'http://127.0.0.1:5178/d/' + draft.publicId });
+    if (path.endsWith('/deliveries/' + draftId)) return reply(draft);
+    return reply({});
+  });
+  await page.goto('/create?draft=' + draftId);
+  const cookieButton = page.getByRole('button', { name: 'Got it' });
+  if (await cookieButton.isVisible()) await cookieButton.click();
+  await page.getByRole('button', { name: 'Preview delivery' }).click();
+  await expect(page.getByRole('heading', { name: 'See exactly what the client will see.' })).toBeVisible();
+  await expect(page.locator('.v-client-preview-runtime .fd-editorial')).toBeVisible();
+  await page.getByRole('button', { name: 'Approve and set access' }).click();
   await page.getByLabel('Six-digit PIN (optional)').fill('123456');
-  await page.getByRole('button', { name: 'Publish this version', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Your delivery is published.' })).toBeVisible();
-  expect(state.published.revisionId).toBe('444444444444444444444444'); expect(state.published.pin).toBe('123456');
-  await page.getByRole('button', { name: /Shoot & photographs/ }).click(); await fits(page);
-  await mkdir(resolve('../.visual-review/delivery-v3'), { recursive: true });
-  await page.screenshot({ path: resolve(`../.visual-review/delivery-v3/create-${width}.png`), fullPage: true });
-});
-test('enhance preserves the original until explicitly accepted and blur assessment does not block the button', async ({ page }) => {
-  await mockAPI(page); await page.goto('/create');
-  await page.getByRole('button', { name: 'Got it', exact: true }).click();
-  await page.getByLabel('Client or project name').fill('Ada'); await page.getByLabel('Type of shoot').selectOption('Birthday');
-  await page.getByLabel('The brief', { exact: true }).fill('Ada 30th Birthday Shoot');
-  await page.getByRole('button', { name: 'Enhance brief', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Enhanced brief' })).toBeVisible();
-  await expect(page.getByLabel('The brief', { exact: true })).toHaveValue('Ada 30th Birthday Shoot');
-  await page.getByRole('button', { name: 'Use this brief', exact: true }).click();
-  await expect(page.getByLabel('The brief', { exact: true })).toHaveValue(/A birthday shoot celebrating Ada turning 30/);
-});
-
-test('an upload response lost in transit is recovered without uploading the photograph twice', async ({ page }) => {
-  const state = await mockAPI(page);
-  let transfers = 0, recoveries = 0;
-  await page.route('**/api/v1/deliveries/*/uploads/**', async route => {
-    const path = new URL(route.request().url()).pathname;
-    if (path.endsWith('/sign')) return route.fulfill({ json: { success: true, data: { cloudName: 'test', public_id: 'saved-photo', timestamp: 1, signature: 'test-signature' } } });
-    if (path.endsWith('/recover')) { recoveries++; return route.fulfill({ json: { success: true, data: { uploaded: { public_id: 'saved-photo', version: 1, signature: 'test-confirmation' } } } }); }
-    if (path.endsWith('/confirm')) {
-      const photo = { ...state.delivery.assets[0], assetId: 'recovered-photo', publicId: 'saved-photo', sortOrder: 10 };
-      state.delivery = { ...state.delivery, assets: [...state.delivery.assets, photo] };
-      return route.fulfill({ json: { success: true, data: photo } });
-    }
-    return route.fallback();
-  });
-  await page.route('https://api.cloudinary.com/**', route => { transfers++; return route.abort('failed'); });
-  await page.goto(`/create?draft=${state.delivery._id}`);
-  await page.getByRole('button', { name: 'Got it', exact: true }).click();
-  await page.getByRole('button', { name: /Shoot & photographs/ }).click();
-  await page.locator('input[type=file]').setInputFiles(resolve('public/veylo/pv-male-portrait.jpeg'));
-  await expect(page.locator('.dc-upload-progress')).toContainText('1 of 1 uploaded');
-  expect(transfers).toBe(1); expect(recoveries).toBe(1);
-  expect(state.delivery.assets).toHaveLength(11);
-});
-
-test('opening the gallery pauses the story and returning keeps it paused', async ({ page }) => {
-  await mockAPI(page); await page.goto('/d/test-delivery');
-  await page.getByRole('button', { name: 'Play story', exact: true }).click();
-  await page.getByRole('button', { name: 'All photos', exact: true }).click();
-  await expect(page.getByRole('dialog')).toBeVisible();
-  await page.getByRole('button', { name: 'Close gallery', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Play story', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Publish delivery' }).click();
+  await expect(page.getByRole('heading', { name: 'Your delivery is ready.' })).toBeVisible();
+  expect(savedAccess.pin).toBe('123456');
+  await expect(page.getByLabel('Delivery link')).toHaveValue('http://127.0.0.1:5178/d/editorial-client-link');
 });

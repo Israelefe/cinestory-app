@@ -729,3 +729,15 @@
   .fd-page [data-text-animation] :is(figcaption,.fd-wall-caption,.fd-chapter-directory-copy strong,.fd-chapter-directory-copy p,.fd-chapter-room-photos p,.fd-album-spread article h1,.fd-album-spread article p,.vec-photo-caption,.vec-campaign-set-copy h3,.vec-campaign-set-copy p),
   .fd-page [data-text-animation].fd-reveal-caption>:is(span,p),.fd-page .fd-canvas-focus-copy[data-text-animation]>p,.fd-page [data-frame-transition] .v-photo{animation:none!important;clip-path:none!important;filter:none!important}
 }
+.fd-v3-bookend{position:relative;isolation:isolate;display:flex;align-items:center;justify-content:center;min-height:min(86vh,700px);padding:85px 24px;overflow:hidden;text-align:center;background:#09090c;color:#fff}
+.fd-v3-bookend>img{position:absolute;inset:0;z-index:-2;width:100%;height:100%;object-fit:cover;filter:brightness(.62)}
+.fd-v3-bookend:before{content:'';position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,rgba(6,6,9,.78),rgba(6,6,9,.28),rgba(6,6,9,.78))}
+.fd-v3-bookend>div{max-width:700px}.fd-v3-bookend span{font-size:11px;letter-spacing:.22em;color:#ffb1a5;font-weight:700}
+.fd-v3-bookend h2{font-family:var(--fd-font-display,'Playfair Display',Georgia,serif);font-size:clamp(38px,6vw,78px);font-weight:500;line-height:1.03;margin:20px 0}
+.fd-v3-bookend p{font-family:var(--fd-font-body,'Outfit',sans-serif);font-size:clamp(16px,2vw,21px);line-height:1.6;max-width:600px;margin:0 auto 26px;text-wrap:balance}
+.fd-v3-bookend button{display:inline-flex;align-items:center;gap:10px;background:#ff5a47;color:#09090b;border:0;border-radius:10px;padding:14px 19px;font-weight:700;cursor:pointer}
+.fd-v3-reveal-closer{position:absolute;inset:0;overflow:hidden}
+.fd-v3-reveal-closer:after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,rgba(4,4,6,.78),rgba(4,4,6,.2))}
+.fd-v3-reveal-closer .v-photo{width:100%;height:100%;object-fit:cover;filter:brightness(.72)}
+.fd-reveal-finale:has(.fd-v3-reveal-closer) .fd-reveal-finale-copy{position:relative;z-index:1}
+@media(max-width:767px){.fd-v3-bookend{min-height:70vh;padding:70px 18px}}

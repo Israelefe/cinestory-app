@@ -60,14 +60,14 @@ export default function SigninPage({ onAuthenticated }) {
       <div className="v-auth-visual v-auth-visual-signin">
         <img src="/veylo/pv-photographer.jpeg" alt="A photographer returning to her Veylo studio" loading="eager" fetchPriority="high" decoding="async" />
         <div className="v-auth-visual-shade" />
-        <div className="v-auth-visual-copy"><p><Folder size={15} />Your studio is ready</p><h1>Pick up where<br /><em>you stopped.</em></h1><span>Your deliveries, client links, and studio details are waiting.</span></div>
+        <div className="v-auth-visual-copy"><p><Folder size={15} />Your studio is ready</p><h1 aria-hidden="true">Pick up where<br /><em>you stopped.</em></h1><span>Your deliveries, client links, and studio details are waiting.</span></div>
         <div className="v-auth-visual-note"><ShieldCheck size={17} /><span><strong>Private by default</strong>Your account stays behind secure sign-in</span></div>
       </div>
 
       <div className="v-auth-panel">
         <header className="v-auth-panel-head">
           <p className="v-eyebrow"><Camera size={14} />Photographer sign in</p>
-          <h2>Welcome back.</h2>
+          <h1>Welcome back.</h1>
           <p className="v-auth-panel-subhead">New to Veylo? <Link to="/signup">Create an account</Link></p>
         </header>
         <p className="v-auth-panel-copy">Use the email address connected to your photographer or studio account.</p>

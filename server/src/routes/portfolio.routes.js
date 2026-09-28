@@ -1,6 +1,6 @@
 import express from 'express';
 import { authMiddleware } from '../middleware/auth.middleware.js';
-import { directMyPortfolio, getMyPortfolio, getPortfolioJob, getPortfolioSources, getPublicPortfolio, publishMyPortfolio, recordPortfolioEngagement, unpublishMyPortfolio, updateMyPortfolio } from '../controllers/portfolio.controller.js';
+import { checkPortfolioHandle, directMyPortfolio, getMyPortfolio, getPortfolioJob, getPortfolioSources, getPublicPortfolio, publishMyPortfolio, recordPortfolioEngagement, unpublishMyPortfolio, updateMyPortfolio } from '../controllers/portfolio.controller.js';
 import { aiGenerationLimit } from '../middleware/rateLimit.middleware.js';
 import { publicAccessLimit } from '../middleware/rateLimit.middleware.js';
 
@@ -9,6 +9,7 @@ router.get('/public/:handle', publicAccessLimit, getPublicPortfolio);
 router.post('/public/:handle/engagement', publicAccessLimit, recordPortfolioEngagement);
 router.use(authMiddleware);
 router.get('/mine', getMyPortfolio);
+router.get('/handles/:handle/availability', checkPortfolioHandle);
 router.get('/sources', getPortfolioSources);
 router.put('/mine', updateMyPortfolio);
 router.post('/mine/publish', publishMyPortfolio);

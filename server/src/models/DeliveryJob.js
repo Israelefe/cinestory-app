@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 const deliveryJobSchema = new mongoose.Schema({
   deliveryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Delivery', required: true, index: true },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-  type: { type: String, enum: ['analyze', 'direct', 'revise', 'narrate'], required: true },
+  type: { type: String, enum: ['analyze', 'direct', 'revise', 'narrate', 'v3-prepare', 'v3-narrate'], required: true },
   status: { type: String, enum: ['queued', 'running', 'needs_input', 'review', 'failed', 'cancelled'], default: 'queued', index: true },
   stage: { type: String, trim: true, default: 'queued' },
   progress: { type: Number, default: 0, min: 0, max: 100 },

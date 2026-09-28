@@ -42,6 +42,9 @@ const portfolioSchema = new mongoose.Schema({
     showPhotoTitles: { type: Boolean, default: true },
     showContact: { type: Boolean, default: true }
   },
+  draft: { type: mongoose.Schema.Types.Mixed, default: null },
+  draftRevision: { type: Number, default: 0, min: 0 },
+  publishedRevision: { type: Number, default: 0, min: 0 },
   publishedAt: Date
 }, { timestamps: true });
 

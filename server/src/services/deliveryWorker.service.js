@@ -1,5 +1,7 @@
 import Delivery from '../models/Delivery.js';
 import DeliveryJob from '../models/DeliveryJob.js';
+import { analyzeAllV3, directV3 } from './deliveryV3AI.service.js';
+import { synthesizeV3Bookends } from './narration.service.js';
 import { CREATIVE_DIRECTOR_PROVIDER, CREATIVE_DIRECTOR_PROMPT_VERSION, FORMAT_DIRECTION_PROFILES, analyzeImageBatch, createFrameBatch, createGlobalDirection, recommendFormats, selectCuratedPhotos } from './alibabaCreativeDirector.service.js';
 import { removeDeliveryAudio, signedImageUrl } from './deliveryMedia.service.js';
 import { generateNarration } from './narration.service.js';
@@ -14,33 +16,39 @@ let timer;
 let polling = false;
 const activeJobs = new Map();
 const activeDeliveryIds = new Set();
+const activeV3JobIds = new Set();
+const activeLegacyJobIds = new Set();
 let activeAiRequests = 0;
 const aiRequestWaiters = [];
 let aiRequestStartSpacingMs = 0;
 let nextAiRequestStartAt = 0;
 
-function positiveInt(value, fallback, { min = 1, max = 32 } = {}) {
+function positiveInt(value, fallback) {
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.min(max, Math.max(min, Math.floor(parsed))) : fallback;
+  return Number.isFinite(parsed) && parsed >= 1 ? Math.floor(parsed) : fallback;
 }
 
 const workerSettings = {
   maxJobConcurrency: 4,
+  maxV3JobConcurrency: 50,
   aiBatchConcurrency: 8,
   visionBatchSize: 16,
   captionBatchSize: 12
 };
 let effectiveJobConcurrency = workerSettings.maxJobConcurrency;
+let effectiveV3JobConcurrency = workerSettings.maxV3JobConcurrency;
 let effectiveAiBatchConcurrency = workerSettings.aiBatchConcurrency;
 let quotaSnapshot = {};
 let quotaFetchedAt = 0;
 
 function readWorkerSettings() {
-  workerSettings.maxJobConcurrency = positiveInt(process.env.DELIVERY_WORKER_CONCURRENCY, 4, { min: 1, max: 16 });
-  workerSettings.aiBatchConcurrency = positiveInt(process.env.DELIVERY_AI_CONCURRENCY, 8, { min: 1, max: 16 });
-  workerSettings.visionBatchSize = positiveInt(process.env.DELIVERY_VISION_BATCH_SIZE, 16, { min: 4, max: 24 });
-  workerSettings.captionBatchSize = positiveInt(process.env.DELIVERY_CAPTION_BATCH_SIZE, 12, { min: 4, max: 16 });
+  workerSettings.maxJobConcurrency = positiveInt(process.env.DELIVERY_WORKER_CONCURRENCY, 4);
+  workerSettings.maxV3JobConcurrency = positiveInt(process.env.DELIVERY_V3_WORKER_CONCURRENCY, 50);
+  workerSettings.aiBatchConcurrency = positiveInt(process.env.DELIVERY_AI_CONCURRENCY, 8);
+  workerSettings.visionBatchSize = positiveInt(process.env.DELIVERY_VISION_BATCH_SIZE, 16);
+  workerSettings.captionBatchSize = positiveInt(process.env.DELIVERY_CAPTION_BATCH_SIZE, 12);
   effectiveJobConcurrency = workerSettings.maxJobConcurrency;
+  effectiveV3JobConcurrency = workerSettings.maxV3JobConcurrency;
   effectiveAiBatchConcurrency = workerSettings.aiBatchConcurrency;
   aiRequestStartSpacingMs = 0;
 }
@@ -55,24 +63,18 @@ async function refreshProviderQuotas() {
   if (!Object.keys(quotas).length) return;
   quotaSnapshot = quotas;
   effectiveJobConcurrency = workerSettings.maxJobConcurrency;
+  effectiveV3JobConcurrency = workerSettings.maxV3JobConcurrency;
   effectiveAiBatchConcurrency = workerSettings.aiBatchConcurrency;
   const requestsPerSecond = Object.values(quotas)
     .map(quota => quota.requestLimit && quota.requestPeriodSeconds ? quota.requestLimit / quota.requestPeriodSeconds : null)
     .filter(value => Number.isFinite(value) && value > 0);
-  const providerConcurrency = Object.values(quotas)
-    .map(quota => quota.concurrencyLimit)
-    .filter(value => Number.isFinite(value) && value > 0);
   // A per-second request allowance is a start rate, not the number of
   // requests that may be in flight. Vision batches often take many seconds.
-  // Keep a modest pipeline filled while respecting reported concurrency.
+  // Render's configured concurrency remains authoritative; quota data only
+  // controls request start spacing.
   if (requestsPerSecond.length) {
     const slowestRequestRate = Math.min(...requestsPerSecond);
-    const inFlightBudget = Math.max(1, Math.floor(slowestRequestRate * 12 * 0.8));
-    effectiveAiBatchConcurrency = Math.min(workerSettings.aiBatchConcurrency, inFlightBudget);
     aiRequestStartSpacingMs = Math.ceil(1000 / (slowestRequestRate * 0.8));
-  }
-  if (providerConcurrency.length) {
-    effectiveAiBatchConcurrency = Math.min(effectiveAiBatchConcurrency, Math.min(...providerConcurrency));
   }
   aiRequestWaiters.splice(0).forEach(resolve => resolve());
 }
@@ -404,7 +406,45 @@ async function run(job) {
   try {
     const delivery = await Delivery.findOne({ _id: job.deliveryId, userId: job.userId });
     if (!delivery) throw Object.assign(new Error('This delivery no longer exists.'), { code: 'DELIVERY_NOT_FOUND' });
-    if (job.type === 'analyze') await analyze(job, delivery);
+    if (job.type === 'v3-prepare') {
+      if (delivery.schemaVersion !== 3 || delivery.status !== 'analyzing') throw Object.assign(new Error('This draft changed. Start analysis again.'), { code: 'V3_DRAFT_CHANGED' });
+      const insights = await analyzeAllV3(delivery, async (done, total, partial) => {
+        await Delivery.updateOne({ _id: delivery._id, status: 'analyzing', 'v3.revision': job.input?.revision }, { $set: { collectionAnalysis: { images: partial, model: 'deepseek-v4.1-flash', complete: done === total } } });
+        await saveJob(job, { stage: 'analysing-photos', progress: Math.min(78, Math.round(done / total * 78)) });
+      });
+      await saveJob(job, { stage: 'writing-showcase', progress: 82 });
+      const result = await directV3(delivery, insights);
+      const latest = await Delivery.findById(delivery._id);
+      if (latest.status !== 'analyzing' || latest.v3?.revision !== job.input?.revision) throw Object.assign(new Error('This draft changed. Start analysis again.'), { code: 'V3_DRAFT_CHANGED' });
+      latest.collectionAnalysis = { images: insights, model: 'deepseek-v4.1-flash' };
+      latest.curatedAssetIds = result.selected;
+      latest.galleryAssetIds = latest.assets.map(asset => asset.assetId);
+      latest.presentationOrder = result.selected;
+      latest.galleryOrder = latest.galleryAssetIds;
+      latest.creativeDirection = result.direction;
+      latest.v3 = { ...latest.v3, step: 'showcase', openingAssetId: result.openingAssetId, closingAssetId: result.closingAssetId };
+      latest.markModified('v3'); latest.markModified('creativeDirection');
+      latest.status = 'review';
+      await latest.save();
+      await saveJob(job, { status: 'review', stage: 'showcase-ready', progress: 100, completedAt: new Date(), result: { selected: result.selected.length, analyzed: insights.length } });
+    } else if (job.type === 'v3-narrate') {
+      if (delivery.schemaVersion !== 3 || delivery.format !== 'photo-story') throw Object.assign(new Error('Narration is only available for Photo Story.'), { code: 'V3_NARRATION_UNAVAILABLE' });
+      await saveJob(job, { stage: 'recording-bookends', progress: 20 });
+      const narration = await synthesizeV3Bookends(delivery);
+      const latest = await Delivery.findById(delivery._id);
+      const latestJob = await DeliveryJob.findById(job._id);
+      if (latestJob?.cancelRequestedAt || latest.v3?.revision !== job.input?.revision) {
+        await Promise.all([narration.opening, narration.closing].map(item => removeDeliveryAudio(item.publicId).catch(() => {})));
+        throw Object.assign(new Error('The messages changed. Generate narration again.'), { code: 'V3_DRAFT_CHANGED' });
+      }
+      if (latest.narration?.opening?.publicId) await removeDeliveryAudio(latest.narration.opening.publicId).catch(() => {});
+      if (latest.narration?.closing?.publicId) await removeDeliveryAudio(latest.narration.closing.publicId).catch(() => {});
+      latest.narration = narration;
+      latest.v3 = { ...latest.v3, narrationChoice: 'voice', step: 'music' };
+      latest.markModified('v3'); latest.markModified('narration');
+      await latest.save();
+      await saveJob(job, { status: 'review', stage: 'narration-ready', progress: 100, completedAt: new Date() });
+    } else if (job.type === 'analyze') await analyze(job, delivery);
     else if (job.type === 'direct') await direct(job, delivery);
     else if (job.type === 'revise') await revise(job, delivery);
     else if (job.type === 'narrate') await narrate(job, delivery);
@@ -431,8 +471,8 @@ async function run(job) {
     // Preserve analysis progress: only 'analyze' failures reset to 'draft'.
     // All other job types (direct, revise, narrate) fall back to 'review'
     // so the photographer doesn't lose completed analysis and format recommendations.
-    const fallbackStatus = job.type === 'analyze' ? 'draft' : 'review';
-    await Delivery.updateOne({ _id: job.deliveryId }, { status: fallbackStatus });
+    const fallbackStatus = ['analyze', 'v3-prepare'].includes(job.type) ? 'draft' : 'review';
+    if (job.type !== 'v3-narrate') await Delivery.updateOne({ _id: job.deliveryId }, { status: fallbackStatus });
     recordAnalyticsEventAsync({
       name: 'ai.job.failed',
       source: 'server',
@@ -456,7 +496,7 @@ async function tick() {
   polling = true;
   try {
     refreshProviderQuotas().catch(err => console.warn('[delivery-worker] quota refresh failed:', err.message));
-    await recordWorkerHeartbeat('delivery', { status: activeJobs.size ? 'busy' : 'idle', stage: 'polling', details: { activeJobs: activeJobs.size, maxJobs: effectiveJobConcurrency, aiConcurrency: effectiveAiBatchConcurrency, quotaModels: Object.keys(quotaSnapshot) } });
+    await recordWorkerHeartbeat('delivery', { status: activeJobs.size ? 'busy' : 'idle', stage: 'polling', details: { activeJobs: activeJobs.size, activeV3Jobs: activeV3JobIds.size, maxV3Jobs: effectiveV3JobConcurrency, activeLegacyJobs: activeLegacyJobIds.size, maxLegacyJobs: effectiveJobConcurrency, aiConcurrency: effectiveAiBatchConcurrency, quotaModels: Object.keys(quotaSnapshot) } });
     const stale = new Date(Date.now() - 5 * 60 * 1000);
     await DeliveryJob.updateMany({ status: 'running', $or: [{ heartbeatAt: { $lt: stale } }, { heartbeatAt: { $exists: false } }], attempts: { $lt: 3 } }, { status: 'queued', lockedBy: null });
     // Mark stale jobs with 3+ attempts as failed AND unstick the parent delivery
@@ -464,28 +504,34 @@ async function tick() {
     if (failedStaleJobs.length) {
       await DeliveryJob.updateMany({ _id: { $in: failedStaleJobs.map(j => j._id) } }, { status: 'failed', stage: 'failed', errorCode: 'WORKER_INTERRUPTED', errorMessage: 'The server stopped before this job finished. Retry it from the delivery review.', completedAt: new Date(), lockedBy: null });
       for (const staleJob of failedStaleJobs) {
-        const fallbackStatus = staleJob.type === 'analyze' ? 'draft' : 'review';
-        await Delivery.updateOne({ _id: staleJob.deliveryId, status: { $in: ['analyzing', 'directing'] } }, { status: fallbackStatus });
+        const fallbackStatus = ['analyze', 'v3-prepare'].includes(staleJob.type) ? 'draft' : 'review';
+        if (staleJob.type !== 'v3-narrate') await Delivery.updateOne({ _id: staleJob.deliveryId, status: { $in: ['analyzing', 'directing'] } }, { status: fallbackStatus });
       }
     }
 
-    while (activeJobs.size < effectiveJobConcurrency) {
-      const filter = { status: 'queued', attempts: { $lt: 3 }, cancelRequestedAt: null };
+    while (activeV3JobIds.size < effectiveV3JobConcurrency || activeLegacyJobIds.size < effectiveJobConcurrency) {
+      const availableTypes = [];
+      if (activeV3JobIds.size < effectiveV3JobConcurrency) availableTypes.push('v3-prepare', 'v3-narrate');
+      if (activeLegacyJobIds.size < effectiveJobConcurrency) availableTypes.push('analyze', 'direct', 'revise', 'narrate');
+      const filter = { status: 'queued', attempts: { $lt: 3 }, cancelRequestedAt: null, type: { $in: availableTypes } };
       if (activeDeliveryIds.size) filter.deliveryId = { $nin: [...activeDeliveryIds] };
       const job = await DeliveryJob.findOneAndUpdate(filter, { $set: { status: 'running', stage: 'starting', lockedAt: new Date(), heartbeatAt: new Date(), lockedBy: workerId }, $inc: { attempts: 1 } }, { new: true, sort: { createdAt: 1 } }).select('+input');
       if (!job) break;
       const jobId = String(job._id);
       const deliveryId = String(job.deliveryId);
+      const activeTypeIds = job.type.startsWith('v3-') ? activeV3JobIds : activeLegacyJobIds;
+      activeTypeIds.add(jobId);
       activeDeliveryIds.add(deliveryId);
       const promise = (async () => {
-        await recordWorkerHeartbeat('delivery', { status: 'busy', stage: job.type, details: { jobId, activeJobs: activeJobs.size, maxJobs: effectiveJobConcurrency, aiConcurrency: effectiveAiBatchConcurrency } });
+        await recordWorkerHeartbeat('delivery', { status: 'busy', stage: job.type, details: { jobId, activeJobs: activeJobs.size, activeV3Jobs: activeV3JobIds.size, maxV3Jobs: effectiveV3JobConcurrency, activeLegacyJobs: activeLegacyJobIds.size, maxLegacyJobs: effectiveJobConcurrency, aiConcurrency: effectiveAiBatchConcurrency } });
         await run(job);
       })().catch(error => {
         console.error(`[delivery-worker/${job.type}]`, error.message);
       }).finally(async () => {
         activeJobs.delete(jobId);
+        activeTypeIds.delete(jobId);
         activeDeliveryIds.delete(deliveryId);
-        await recordWorkerHeartbeat('delivery', { status: activeJobs.size ? 'busy' : 'idle', stage: 'polling', details: { activeJobs: activeJobs.size, maxJobs: effectiveJobConcurrency, aiConcurrency: effectiveAiBatchConcurrency, quotaModels: Object.keys(quotaSnapshot) } });
+        await recordWorkerHeartbeat('delivery', { status: activeJobs.size ? 'busy' : 'idle', stage: 'polling', details: { activeJobs: activeJobs.size, activeV3Jobs: activeV3JobIds.size, maxV3Jobs: effectiveV3JobConcurrency, activeLegacyJobs: activeLegacyJobIds.size, maxLegacyJobs: effectiveJobConcurrency, aiConcurrency: effectiveAiBatchConcurrency, quotaModels: Object.keys(quotaSnapshot) } });
       });
       activeJobs.set(jobId, promise);
     }

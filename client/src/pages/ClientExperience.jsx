@@ -46,7 +46,7 @@ const assurances = [
   [FolderOpen, 'Everything is there', 'The full gallery and download files follow the first viewing.']
 ];
 
-const clientActions = ['Watch', 'Scroll', 'Tap', 'Move', 'Choose', 'Turn'];
+const clientActions = ['Watch', 'Scroll', 'Tap', 'Move', 'Choose', 'Turn', 'Browse', 'Review'];
 
 function PhoneStatus() {
   return <div className="v-ce-phone-status"><span>9:41</span><span><i /><i /><i /></span></div>;
@@ -169,7 +169,7 @@ export default function ClientExperience() {
     </div></section>
 
     <section className="v-section v-ce-actions-section"><div className="v-wrap">
-      <Reveal className="v-ce-actions-head"><Eyebrow number="02">Six ways to open a shoot</Eyebrow><h2 className="v-heading">Watch. Scroll. Tap.<br /><em>Move. Choose. Turn.</em></h2><p className="v-copy">Choose what suits the photographs. Whichever format you send, your client still reaches the full gallery at the end.</p></Reveal>
+      <Reveal className="v-ce-actions-head"><Eyebrow number="02">Eight ways to open a shoot</Eyebrow><h2 className="v-heading">Watch. Scroll. Tap.<br /><em>Or browse the whole day.</em></h2><p className="v-copy">Choose what suits the photographs. Event Coverage helps people find scenes from a busy day; Campaign Delivery keeps final commercial assets organised. Every format leads to the full gallery.</p></Reveal>
       <Reveal className="v-ce-format-line">
         {DELIVERY_FORMATS.map((format, index) => <Link key={format.id} to={`/formats#${format.id}`}><span>{String(index + 1).padStart(2, '0')}</span><strong>{clientActions[index]}</strong><small>{format.name}</small><ArrowRight size={15} /></Link>)}
       </Reveal>
