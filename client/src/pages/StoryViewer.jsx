@@ -14,6 +14,8 @@ import DeliveryBrandMark from '../components/delivery/DeliveryBrandMark.jsx';
 import './StoryV3.css';
 export { DEMO_PRESETS } from '../constants/demoStories.js';
 
+const EMPTY_NARRATION_SEGMENTS = Object.freeze([]);
+
 function getFontFamily(type, fallback = "'Playfair Display', Georgia, serif") {
   if (['Playfair Display', 'Outfit', 'Plus Jakarta Sans', 'Cormorant Garamond', 'DM Sans', 'Libre Baskerville', 'Manrope'].includes(type)) return "'" + type + "', Georgia, sans-serif";
   switch (type) {
@@ -216,6 +218,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   const [downloadProgress, setDownloadProgress] = useState(null);
  const [hidden, setHidden] = useState(document.hidden);
  const audio = useRef(null);
+ const audioPlayPending = useRef(false);
  const narrationRef = useRef(null);
  const v3OpeningRef = useRef(null);
  const v3ClosingRef = useRef(null);
@@ -233,7 +236,10 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
  const galleryPhotos = story?.galleryPhotos || photos;
  const photo = photos[index];
  const running = started && !paused && !finished && !gallery && !holding && !hidden;
- const hasNarration = Boolean(deliveryProp?.narration?.url);
+ const captionNarration = deliveryProp?.schemaVersion === 3 ? deliveryProp?.narration?.captions : deliveryProp?.narration;
+ const captionNarrationUrl = captionNarration?.url || (deliveryProp?.schemaVersion !== 3 ? deliveryProp?.narration?.url : '');
+ const narrationSegments = captionNarration?.segments || (deliveryProp?.schemaVersion !== 3 ? deliveryProp?.narration?.segments : null) || EMPTY_NARRATION_SEGMENTS;
+ const hasNarration = Boolean(captionNarrationUrl);
  const clearV3FinalFade = () => {
   if (v3FinalFadeTimer.current) window.clearTimeout(v3FinalFadeTimer.current);
   v3FinalFadeTimer.current = null;
@@ -250,6 +256,47 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
  const finishV3ClosingNarration = () => {
   if (audio.current) fadeAudioVolume(audio.current, 1, 800, () => fadeV3FinaleMusic(900));
   else fadeV3FinaleMusic(0);
+ };
+ const startStorySoundtrack = onStarted => {
+  const element = audio.current;
+  if (!element || muted || audioPlayPending.current) return;
+  if (!element.paused) {
+   setAudioLoading(false);
+   setAudioPlaying(true);
+   onStarted?.();
+   return;
+  }
+  audioPlayPending.current = true;
+  setAudioLoading(true);
+  let playback;
+  try { playback = element.play(); }
+  catch {
+   audioPlayPending.current = false;
+   setAudioPlaying(false);
+   setAudioLoading(false);
+   return;
+  }
+  if (!playback?.then) {
+   audioPlayPending.current = false;
+   setAudioLoading(false);
+   setAudioPlaying(!element.paused);
+   if (!element.paused) onStarted?.();
+   return;
+  }
+  playback.then(() => {
+   audioPlayPending.current = false;
+   if (!element.paused && !element.muted) {
+    setAudioLoading(false);
+    setAudioPlaying(true);
+    onStarted?.();
+   } else {
+    setAudioLoading(false);
+   }
+  }).catch(() => {
+   audioPlayPending.current = false;
+   setAudioPlaying(false);
+   setAudioLoading(false);
+  });
  };
 
  useEffect(() => {
@@ -345,8 +392,8 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   elapsed.current = 0; setFinished(false); setIndex(current => {
    const nextIndex = Math.max(0, Math.min(photos.length - 1, current + direction));
    const assetId = photos[nextIndex]?.id;
-   const segment = (deliveryProp?.narration?.segments || []).find(item => (item.assetIds || []).some(id => String(id) === String(assetId)));
-   if (narrationRef.current && segment) {
+   const segment = narrationSegments.find(item => (item.assetIds || []).some(id => String(id) === String(assetId)));
+   if (deliveryProp?.schemaVersion !== 3 && narrationRef.current && segment) {
     narrationRef.current.currentTime = Number(segment.startSec || 0);
     if (!muted && (narrationPlaying || narrationLoading)) narrationRef.current.play().catch(() => {});
    }
@@ -354,10 +401,10 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   });
   if (progress.current) progress.current.style.transform = 'scaleX(0)';
   trackEvent('client.photo.reveal.advanced', { direction }, { format: 'photo-story', status: 'advanced' });
- }, [photos, deliveryProp?.narration?.segments, muted, narrationPlaying, narrationLoading]);
+ }, [photos, narrationSegments, muted, narrationPlaying, narrationLoading, deliveryProp?.schemaVersion]);
  useEffect(() => {
   if (!running) return;
-  if (audioLoading || (hasNarration && (narrationPlaying || narrationLoading))) return;
+  if (deliveryProp?.schemaVersion !== 3 && (audioLoading || (hasNarration && (narrationPlaying || narrationLoading)))) return;
   let frame; let previous = performance.now();
   const duration = (deliveryProp?.schemaVersion === 3 ? 6 : storyFrameDurationSeconds(photo, story?.theme?.pace)) * 1000;
   const tick = now => {
@@ -399,9 +446,13 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   element.muted = muted;
   const v3SoundtrackDuringBookend = deliveryProp?.schemaVersion === 3 && !gallery && !muted && (v3OpeningNarrating || (started && finished));
   if ((running || v3SoundtrackDuringBookend) && !muted) {
-   setAudioLoading(true);
-   element.play().catch(() => { setAudioPlaying(false); setAudioLoading(false); });
-  } else { element.pause(); setAudioPlaying(false); setAudioLoading(false); }
+   startStorySoundtrack();
+  } else {
+   element.pause();
+   audioPlayPending.current = false;
+   setAudioPlaying(false);
+   setAudioLoading(false);
+  }
  }, [running, muted, story, v3OpeningNarrating, finished, gallery, deliveryProp?.schemaVersion]);
  useEffect(() => {
   const handle = e => {
@@ -428,6 +479,10 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
     narrationLeadRef.current = false;
     setNarrationPlaying(false);
     setNarrationLoading(false);
+    if (deliveryProp?.schemaVersion === 3) {
+      fadeAudioVolume(audio.current, 1, 600);
+      return;
+    }
     if (progress.current) progress.current.style.transform = 'scaleX(1)';
     setFinished(true);
     fadeAudioVolume(audio.current, 1);
@@ -450,11 +505,20 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
 
   useEffect(() => {
     const narration = narrationRef.current;
-    const segments = deliveryProp?.narration?.segments || [];
+    const segments = narrationSegments;
     if (!narration || !hasNarration || !segments.length) return;
     const onTimeUpdate = () => {
       if (narrationLeadRef.current) return;
       const time = narration.currentTime;
+      if (deliveryProp?.schemaVersion === 3) {
+        const activeAssetId = photos[index]?.id;
+        const activeSegment = segments.find(segment => (segment.assetIds || []).some(id => String(id) === String(activeAssetId)));
+        if (activeSegment && time >= Number(activeSegment.endSec || 0)) {
+          narration.pause();
+          fadeAudioVolume(audio.current, 1, 600);
+        }
+        return;
+      }
       const segmentIndex = segments.findIndex(segment => time >= Number(segment.startSec || 0) && time < Number(segment.endSec || 0));
       if (segmentIndex < 0) {
         const previousSegment = [...segments].reverse().find(segment => time >= Number(segment.endSec || 0));
@@ -473,7 +537,29 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
     };
     narration.addEventListener('timeupdate', onTimeUpdate);
     return () => narration.removeEventListener('timeupdate', onTimeUpdate);
-  }, [deliveryProp?.narration?.segments, hasNarration, photos]);
+  }, [narrationSegments, hasNarration, photos, index, deliveryProp?.schemaVersion]);
+
+  useEffect(() => {
+    if (deliveryProp?.schemaVersion !== 3 || !hasNarration || !running || muted) return;
+    const narration = narrationRef.current;
+    const assetId = photos[index]?.id;
+    const segment = narrationSegments.find(item => (item.assetIds || []).some(id => String(id) === String(assetId)));
+    if (!narration || !segment) return;
+    const segmentStart = Number(segment.startSec || 0);
+    const segmentEnd = Number(segment.endSec || 0);
+    const insideCurrentCaption = narration.currentTime >= segmentStart && narration.currentTime < segmentEnd;
+    if (insideCurrentCaption && !narration.paused) return;
+    if (!insideCurrentCaption) narration.currentTime = segmentStart;
+    narration.play().then(() => {
+      setNarrationPlaying(true);
+      setNarrationLoading(false);
+      fadeAudioVolume(audio.current, .16, 450);
+    }).catch(() => {
+      setNarrationPlaying(false);
+      setNarrationLoading(false);
+      fadeAudioVolume(audio.current, 1, 600);
+    });
+  }, [deliveryProp?.schemaVersion, hasNarration, running, muted, photos, index, narrationSegments]);
 
   const download = async (i, quiet = false) => {
    setDownloading(i);
@@ -573,41 +659,60 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
         audio.current.volume = 1;
       }
       if (!muted) {
-        setAudioLoading(true);
-        if (preserveSoundtrack) fadeAudioVolume(audio.current, 1, 800);
-        audio.current.play().catch(() => { setAudioPlaying(false); setAudioLoading(false); });
+        startStorySoundtrack(deliveryProp?.schemaVersion === 3 && hasNarration
+          ? () => fadeAudioVolume(audio.current, .16, preserveSoundtrack ? 0 : 450)
+          : preserveSoundtrack
+            ? () => fadeAudioVolume(audio.current, 1, 800)
+            : undefined);
       }
     }
     if (narrationRef.current && hasNarration) {
-      narrationRef.current.currentTime = 0;
-      narrationRef.current.volume = 0;
+      const firstAssetId = photos[0]?.id;
+      const firstSegment = narrationSegments.find(segment => (segment.assetIds || []).some(id => String(id) === String(firstAssetId)));
+      const v3CaptionVoice = deliveryProp?.schemaVersion === 3;
+      narrationRef.current.currentTime = v3CaptionVoice ? Number(firstSegment?.startSec || 0) : 0;
+      narrationRef.current.volume = v3CaptionVoice ? 1 : 0;
       if (!muted) {
-        narrationLeadRef.current = true;
+        narrationLeadRef.current = !v3CaptionVoice;
         setNarrationLoading(true);
-        // Prime narration inside the same user gesture as the music. The voice
-        // stays inaudible for a short musical lead-in, then starts again from
-        // the beginning so browsers do not block the delayed play request.
         narrationRef.current.play().then(() => {
           setNarrationPlaying(true);
           setNarrationLoading(false);
-          narrationLeadTimer.current = window.setTimeout(() => {
-            const narration = narrationRef.current;
-            if (!narration || narration.muted) return;
-            narrationLeadRef.current = false;
-            narration.currentTime = 0;
-            fadeAudioVolume(narration, 1, 180);
-            fadeAudioVolume(audio.current, .16, 520);
-          }, reduced ? 0 : 1400);
+          if (v3CaptionVoice) {
+            fadeAudioVolume(audio.current, .16, 450);
+          } else {
+            // Prime legacy narration inside the same user gesture as the music.
+            // Restart after its short musical lead-in so the browser allows playback.
+            narrationLeadTimer.current = window.setTimeout(() => {
+              const narration = narrationRef.current;
+              if (!narration || narration.muted) return;
+              narrationLeadRef.current = false;
+              narration.currentTime = 0;
+              fadeAudioVolume(narration, 1, 180);
+              fadeAudioVolume(audio.current, .16, 520);
+            }, reduced ? 0 : 1400);
+          }
         }).catch(() => { narrationLeadRef.current = false; setNarrationPlaying(false); setNarrationLoading(false); });
       }
     }
   };
   const start = () => {
     clearV3FinalFade();
-    if (finished) {
+    if (finished && deliveryProp?.schemaVersion === 3) {
       v3OpeningPlayed.current = false;
       v3ClosingStarted.current = false;
+      elapsed.current = 0;
+      if (narrationLeadTimer.current) window.clearTimeout(narrationLeadTimer.current);
+      narrationLeadRef.current = false;
+      setStarted(false); setIndex(0); setPaused(false); setFinished(false); setGallery(false); setHolding(false); setV3OpeningNarrating(false);
+      setNarrationPlaying(false); setNarrationLoading(false);
+      if (narrationRef.current) { narrationRef.current.pause(); narrationRef.current.currentTime = 0; }
+      if (v3ClosingRef.current) { v3ClosingRef.current.pause(); v3ClosingRef.current.currentTime = 0; }
+      if (v3OpeningRef.current) { v3OpeningRef.current.pause(); v3OpeningRef.current.currentTime = 0; }
+      if (audio.current) { audio.current.pause(); audio.current.currentTime = 0; audio.current.volume = 1; }
+      return;
     }
+    if (finished) { v3OpeningPlayed.current = false; v3ClosingStarted.current = false; }
     if (deliveryProp?.schemaVersion === 3 && v3OpeningRef.current && !muted && !v3OpeningPlayed.current) {
       v3OpeningPlayed.current = true;
       setV3OpeningNarrating(true);
@@ -615,11 +720,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
       if (audio.current) {
         audio.current.currentTime = 0;
         audio.current.volume = 0;
-        setAudioLoading(true);
-        audio.current.play().then(() => {
-          setAudioLoading(false);
-          fadeAudioVolume(audio.current, .16, 450);
-        }).catch(() => { setAudioPlaying(false); setAudioLoading(false); });
+        startStorySoundtrack(() => fadeAudioVolume(audio.current, .16, 450));
       }
       v3OpeningRef.current.play().catch(() => beginFrames(true));
       return;
@@ -659,8 +760,8 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
    </>}
    {(story.soundtrack?.audioUrl || hasNarration) && <div className={`v-story-sound ${audioLoading || narrationLoading ? 'is-loading' : ''}`} role="status" aria-live="polite"><span className={audioLoading || narrationLoading ? 'is-loading' : audioPlaying || narrationPlaying ? 'is-playing' : ''} /><p>{audioLoading && narrationLoading ? 'Loading music and narration…' : narrationLoading ? 'Loading narration…' : audioLoading ? 'Loading soundtrack…' : audioPlaying ? `Now playing · ${story.soundtrack?.title || 'Selected track'}` : narrationPlaying ? 'Narration playing' : muted ? 'Sound off' : `Soundtrack · ${story.soundtrack?.title || 'Selected track'}`}</p></div>}
   </main>
-  {story.soundtrack?.audioUrl && <audio ref={audio} src={mediaUrl(story.soundtrack.audioUrl)} loop preload="metadata" onWaiting={() => { if (started && !muted) setAudioLoading(true); }} onStalled={() => { if (started && !muted) setAudioLoading(true); }} onPlaying={() => { setAudioLoading(false); setAudioPlaying(true); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioPlaying(false); setAudioLoading(false); toast.info('The soundtrack could not load. The story will continue without it.'); }} />}
-  {deliveryProp?.narration?.url && <audio ref={narrationRef} src={mediaUrl(deliveryProp.narration.url)} preload="metadata" onWaiting={() => { if (started && !muted) setNarrationLoading(true); }} onStalled={() => { if (started && !muted) setNarrationLoading(true); }} onPlaying={() => { setNarrationLoading(false); setNarrationPlaying(true); }} onEnded={handleNarrationEnded} onError={() => { setNarrationPlaying(false); setNarrationLoading(false); fadeAudioVolume(audio.current, 1); toast.info('The narration could not load. The story will continue without it.'); }} />}
+  {story.soundtrack?.audioUrl && <audio ref={audio} src={mediaUrl(story.soundtrack.audioUrl)} loop preload="metadata" onWaiting={() => { if (started && !muted) setAudioLoading(true); }} onStalled={() => { if (started && !muted) setAudioLoading(true); }} onPlaying={() => { audioPlayPending.current = false; setAudioLoading(false); setAudioPlaying(true); }} onPause={() => { audioPlayPending.current = false; setAudioLoading(false); }} onError={() => { audioPlayPending.current = false; setAudioPlaying(false); setAudioLoading(false); toast.info('The soundtrack could not load. The story will continue without it.'); }} />}
+  {captionNarrationUrl && <audio ref={narrationRef} src={mediaUrl(captionNarrationUrl)} preload="metadata" onWaiting={() => { if (started && !muted) setNarrationLoading(true); }} onStalled={() => { if (started && !muted) setNarrationLoading(true); }} onPlaying={() => { setNarrationLoading(false); setNarrationPlaying(true); if (deliveryProp?.schemaVersion === 3) fadeAudioVolume(audio.current, .16, 450); }} onPause={() => { if (deliveryProp?.schemaVersion === 3) { setNarrationPlaying(false); setNarrationLoading(false); fadeAudioVolume(audio.current, 1, 600); } }} onEnded={handleNarrationEnded} onError={() => { setNarrationPlaying(false); setNarrationLoading(false); fadeAudioVolume(audio.current, 1); toast.info('The narration could not load. The story will continue without it.'); }} />}
   {deliveryProp?.schemaVersion === 3 && deliveryProp?.narration?.opening?.url && <audio ref={v3OpeningRef} src={mediaUrl(deliveryProp.narration.opening.url)} preload="metadata" onEnded={() => beginFrames(true)} onError={() => { if (v3OpeningPlayed.current) beginFrames(true); }} />}
   {deliveryProp?.schemaVersion === 3 && deliveryProp?.narration?.closing?.url && <audio ref={v3ClosingRef} src={mediaUrl(deliveryProp.narration.closing.url)} preload="metadata" onEnded={finishV3ClosingNarration} onError={finishV3ClosingNarration} />}
   <AnimatePresence>{gallery && <ClientGallery photos={galleryPhotos} title={story.clientName || story.title} demoId={demo ? demoId : null} delivery={deliveryProp} onClose={() => setGallery(false)} liked={galleryProps?.liked} onLike={galleryProps?.onLike} onDownload={galleryProps?.onDownload || ((_key, photoIndex) => download(photoIndex))} busy={galleryProps?.busy} downloading={downloading} onDownloadAll={galleryProps?.onDownloadAll || downloadAll} allDownloading={allDownloading} downloadNotice={galleryProps?.downloadNotice || downloadNotice} downloadProgress={galleryProps?.downloadProgress || downloadProgress} />}</AnimatePresence>

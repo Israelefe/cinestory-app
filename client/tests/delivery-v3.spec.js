@@ -93,11 +93,51 @@ test('Photo Story review stops removals at five and advances with the full photo
   await expect(page.getByRole('progressbar', { name: 'Delivery creation progress' })).toBeVisible();
   await page.screenshot({ path: '../.visual-review/delivery-v3/showcase-320.png', fullPage: true });
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Give the opening and closing a voice.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Choose what Hannah reads.' })).toBeVisible();
   await page.getByRole('button', { name: 'Back to showcase' }).click();
   await expect(page.getByRole('heading', { name: 'Make the selection yours.' })).toBeVisible();
   expect(draft.assets).toHaveLength(12);
   expect(draft.curatedAssetIds).toHaveLength(5);
+});
+
+test('V3 lets a photographer enable spoken captions without enabling bookend voice', async ({ page }) => {
+  const assets = Array.from({ length: 10 }, (_, index) => ({ assetId: `voice-photo-${index}`, originalFilename: `photo-${index + 1}.jpg`, url: '/veylo/web/demo-lora-1-960.webp', thumbnailUrl: '/veylo/web/demo-lora-1-960.webp' }));
+  let narrationRequest;
+  let draft = {
+    _id: draftId, schemaVersion: 3, status: 'review', clientName: 'Ada', shootType: 'Birthday', brief: "Ada's birthday",
+    format: 'photo-story', assets, curatedAssetIds: assets.map(asset => asset.assetId),
+    creativeDirection: { title: "Ada's birthday", openingLine: 'Ada, welcome to your birthday story.', closingLine: 'Here is your full collection.', frames: assets.map(asset => ({ assetId: asset.assetId, headline: 'A year of her own', caption: 'Ada, your birthday marks another year to make room for the things you want next.' })) },
+    v3: { step: 'narration', revision: 3, narrationChoice: 'skip', captionNarrationChoice: 'skip' }, access: {}
+  };
+  await page.route('**/api/v1/**', async route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    const reply = data => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data }) });
+    if (path.endsWith('/auth/me')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, user }) });
+    if (path.endsWith('/billing/status')) return reply({ plan: 'free', limits: { photosPerDelivery: 100, deliveriesPerMonth: 3 }, usage: { deliveriesRemaining: 3 } });
+    if (path.endsWith('/deliveries/' + draftId + '/v3/narrate')) {
+      narrationRequest = request.postDataJSON();
+      draft = { ...draft, v3: { ...draft.v3, step: 'music', captionNarrationChoice: 'voice' } };
+      return reply({ _id: 'job-1', type: 'v3-narrate', status: 'queued', progress: 0 });
+    }
+    if (path.endsWith('/deliveries/' + draftId) && request.method() === 'GET') return reply(draft);
+    if (path.endsWith('/deliveries/soundtracks')) return reply([]);
+    return reply({});
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/create?draft=' + draftId);
+  const cookieButton = page.getByRole('button', { name: 'Got it' });
+  if (await cookieButton.isVisible()) await cookieButton.click();
+  await expect(page.getByRole('heading', { name: 'Choose what Hannah reads.' })).toBeVisible();
+  const bookendVoice = page.getByRole('checkbox', { name: /Opening and closing/ });
+  const captionVoice = page.getByRole('checkbox', { name: /Photo captions/ });
+  await expect(bookendVoice).not.toBeChecked();
+  await expect(captionVoice).not.toBeChecked();
+  await expect(page.getByText('Spoken captions must fit the existing six-second photo timing.')).toBeVisible();
+  await captionVoice.check();
+  await page.getByRole('button', { name: 'Generate selected voice' }).click();
+  await expect.poll(() => narrationRequest).toEqual({ bookends: false, captions: true });
+  await expect(page.getByRole('heading', { name: 'Find the right soundtrack.' })).toBeVisible();
 });
 
 test('V3 keeps validation and API errors visible at the current scroll position', async ({ page }) => {
@@ -281,7 +321,6 @@ test('published V3 Photo Story keeps its opener, closer, numbers, and bookend vo
   await page.addInitScript(() => {
     HTMLMediaElement.prototype.play = function () {
       Object.defineProperty(this, 'paused', { configurable: true, value: false });
-      this.dispatchEvent(new Event('playing'));
       return Promise.resolve();
     };
     HTMLMediaElement.prototype.pause = function () {
@@ -311,6 +350,7 @@ test('published V3 Photo Story keeps its opener, closer, numbers, and bookend vo
   const soundtrack = page.locator('audio[src$="story-soundtrack.mp3"]');
   await expect.poll(() => soundtrack.evaluate(element => element.volume)).toBeGreaterThan(.1);
   await expect.poll(() => soundtrack.evaluate(element => element.volume)).toBeLessThan(.3);
+  await expect(page.locator('.v-story-sound')).not.toContainText('Loading soundtrack');
   await page.locator('audio[src$="opening.mp3"]').evaluate(element => element.dispatchEvent(new Event('ended')));
   await expect(page.locator('.v-story-canvas.is-playing-state')).toBeVisible();
   await expect.poll(() => soundtrack.evaluate(element => element.volume)).toBeGreaterThan(.9);
@@ -328,10 +368,73 @@ test('published V3 Photo Story keeps its opener, closer, numbers, and bookend vo
   for (let index = 0; index < 4; index += 1) await page.getByRole('button', { name: 'Next photograph' }).click();
   await expect(page.locator('.v-story-canvas.is-finale-state')).toBeVisible({ timeout: 10000 });
   await expect.poll(() => soundtrack.evaluate(element => element.volume)).toBeLessThan(.3);
+  await expect(page.locator('.v-story-sound')).not.toContainText('Loading soundtrack');
   await page.locator('audio[src$="closing.mp3"]').evaluate(element => element.dispatchEvent(new Event('ended')));
   await expect.poll(() => soundtrack.evaluate(element => element.volume)).toBeGreaterThan(.9);
   await expect.poll(() => soundtrack.evaluate(element => element.volume)).toBe(0);
   expect(await soundtrack.evaluate(element => element.paused)).toBe(true);
+  await page.getByRole('button', { name: 'Replay story' }).click();
+  await expect(page.locator('.v-story-cover')).toContainText('Lora, this day was yours.');
+  await expect(page.getByRole('button', { name: 'Begin the story' })).toBeVisible();
+  await expect(page.locator('audio[src$="opening.mp3"]').evaluate(element => element.paused)).resolves.toBe(true);
+  await page.getByRole('button', { name: 'Begin the story' }).click();
+  await expect(page.locator('audio[src$="opening.mp3"]').evaluate(element => element.paused)).resolves.toBe(false);
+  await page.locator('audio[src$="opening.mp3"]').evaluate(element => element.dispatchEvent(new Event('ended')));
+  await expect(page.locator('.v-story-canvas.is-playing-state')).toBeVisible();
+  await expect(page.getByRole('progressbar', { name: 'Photo Story progress' })).toHaveAttribute('aria-valuenow', '1');
+});
+
+test('spoken Photo Story captions stay visible while the six-second photo timer keeps moving', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.addInitScript(() => {
+    HTMLMediaElement.prototype.play = function () {
+      Object.defineProperty(this, 'paused', { configurable: true, value: false });
+      return Promise.resolve();
+    };
+    HTMLMediaElement.prototype.pause = function () {
+      Object.defineProperty(this, 'paused', { configurable: true, value: true });
+      this.dispatchEvent(new Event('pause'));
+    };
+  });
+  const assets = Array.from({ length: 3 }, (_, index) => ({ assetId: 'voice-photo-' + index, url: '/veylo/web/demo-lora-' + (index + 1) + '-960.webp', thumbnailUrl: '/veylo/web/demo-lora-' + (index + 1) + '-960.webp' }));
+  const captions = assets.map((asset, index) => `Lora, this birthday marks a year worth celebrating and leaves room for everything she wants to make of the next one.`);
+  const delivery = {
+    _id: draftId, publicId: 'spoken-caption-story', schemaVersion: 3, status: 'published', clientName: 'Lora', shootType: 'Birthday', format: 'photo-story', assets,
+    curatedAssetIds: assets.map(asset => asset.assetId),
+    creativeDirection: { title: "Lora's birthday", openingLine: 'Lora, your story begins here.', closingLine: 'Here is the full gallery.', frames: assets.map((asset, index) => ({ assetId: asset.assetId, headline: `A year of her own ${index + 1}`, caption: captions[index] })), palette: { background: '#0c0c10', surface: '#17171c', text: '#fffaf6', accent: '#ff5a47' }, typography: { display: 'Playfair Display', body: 'Outfit' } },
+    v3: { captionNarrationChoice: 'voice' },
+    soundtrack: { url: '/veylo/audio/story-soundtrack.mp3', title: 'Birthday soundtrack' },
+    narration: { captions: { url: '/veylo/audio/captions.mp3', duration: 30, segments: assets.map((asset, index) => ({ id: `caption-${index + 1}`, assetIds: [asset.assetId], startSec: index * 6, endSec: index * 6 + 5.2, text: captions[index] })) } },
+    access: {}
+  };
+  await page.route('**/api/v1/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(path.endsWith('/deliveries/public/spoken-caption-story') ? { success: true, data: delivery } : { success: true, data: {} }) });
+  });
+  await page.goto('/d/spoken-caption-story');
+  const narration = page.locator('audio[src$="captions.mp3"]');
+  await expect(narration).toHaveCount(1);
+  await page.getByRole('button', { name: 'Begin the story' }).click();
+  const progress = page.getByRole('progressbar', { name: 'Photo Story progress' });
+  await expect(progress).toHaveAttribute('aria-valuenow', '1');
+  await expect(page.locator('.v-story-caption:not(.is-finale)')).toContainText(captions[0]);
+  const soundtrack = page.locator('audio[src$="story-soundtrack.mp3"]');
+  await expect.poll(() => soundtrack.evaluate(element => element.volume)).toBeLessThan(.3);
+  await narration.evaluate(element => { element.currentTime = 2; });
+  await page.getByRole('button', { name: 'Pause story' }).click();
+  await expect.poll(() => narration.evaluate(element => element.paused)).toBe(true);
+  await page.getByRole('button', { name: 'Resume story' }).click();
+  await expect.poll(() => narration.evaluate(element => element.paused)).toBe(false);
+  expect(await narration.evaluate(element => element.currentTime)).toBe(2);
+  await soundtrack.evaluate(element => element.dispatchEvent(new Event('waiting')));
+  await page.waitForTimeout(6500);
+  await expect(progress).toHaveAttribute('aria-valuenow', '2');
+  await expect(narration.evaluate(element => element.paused)).resolves.toBe(false);
+  await expect(page.locator('.v-story-caption:not(.is-finale)')).toContainText(captions[1]);
+  await expect.poll(() => soundtrack.evaluate(element => element.volume)).toBeLessThan(.3);
+  await page.waitForTimeout(6500);
+  await expect(progress).toHaveAttribute('aria-valuenow', '3');
 });
 
 test('desktop demo and public delivery fit the phone mockup on an 800px screen around a 360 by 800 mobile viewport', async ({ page }) => {

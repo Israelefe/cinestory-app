@@ -1,7 +1,7 @@
 import Delivery from '../models/Delivery.js';
 import DeliveryJob from '../models/DeliveryJob.js';
 import { analyzeAllV3, directV3 } from './deliveryV3AI.service.js';
-import { synthesizeV3Bookends } from './narration.service.js';
+import { synthesizeV3Narration } from './narration.service.js';
 import { CREATIVE_DIRECTOR_PROVIDER, CREATIVE_DIRECTOR_PROMPT_VERSION, FORMAT_DIRECTION_PROFILES, analyzeImageBatch, createFrameBatch, createGlobalDirection, recommendFormats, selectCuratedPhotos } from './alibabaCreativeDirector.service.js';
 import { removeDeliveryAudio, signedImageUrl } from './deliveryMedia.service.js';
 import { generateNarration } from './narration.service.js';
@@ -429,18 +429,20 @@ async function run(job) {
       await saveJob(job, { status: 'review', stage: 'showcase-ready', progress: 100, completedAt: new Date(), result: { selected: result.selected.length, analyzed: insights.length } });
     } else if (job.type === 'v3-narrate') {
       if (delivery.schemaVersion !== 3 || delivery.format !== 'photo-story') throw Object.assign(new Error('Narration is only available for Photo Story.'), { code: 'V3_NARRATION_UNAVAILABLE' });
-      await saveJob(job, { stage: 'recording-bookends', progress: 20 });
-      const narration = await synthesizeV3Bookends(delivery);
+      const bookends = job.input?.bookends !== false;
+      const captions = job.input?.captions === true;
+      const narration = await synthesizeV3Narration(delivery, { bookends, captions }, (stage, progress) => saveJob(job, { stage, progress }));
+      const generatedAudioIds = [narration.opening?.publicId, narration.closing?.publicId, narration.captions?.publicId].filter(Boolean);
       const latest = await Delivery.findById(delivery._id);
       const latestJob = await DeliveryJob.findById(job._id);
-      if (latestJob?.cancelRequestedAt || latest.v3?.revision !== job.input?.revision) {
-        await Promise.all([narration.opening, narration.closing].map(item => removeDeliveryAudio(item.publicId).catch(() => {})));
-        throw Object.assign(new Error('The messages changed. Generate narration again.'), { code: 'V3_DRAFT_CHANGED' });
+      if (!latest || !latestJob || latestJob.cancelRequestedAt || latest.v3?.revision !== job.input?.revision) {
+        await Promise.all(generatedAudioIds.map(id => removeDeliveryAudio(id).catch(() => {})));
+        throw Object.assign(new Error('The Photo Story changed. Generate the selected voice again.'), { code: 'V3_DRAFT_CHANGED' });
       }
-      if (latest.narration?.opening?.publicId) await removeDeliveryAudio(latest.narration.opening.publicId).catch(() => {});
-      if (latest.narration?.closing?.publicId) await removeDeliveryAudio(latest.narration.closing.publicId).catch(() => {});
+      const previousAudioIds = [latest.narration?.opening?.publicId, latest.narration?.closing?.publicId, latest.narration?.captions?.publicId].filter(Boolean);
+      await Promise.all(previousAudioIds.map(id => removeDeliveryAudio(id).catch(() => {})));
       latest.narration = narration;
-      latest.v3 = { ...latest.v3, narrationChoice: 'voice', step: 'music' };
+      latest.v3 = { ...latest.v3, narrationChoice: bookends ? 'voice' : 'skip', captionNarrationChoice: captions ? 'voice' : 'skip', step: 'music' };
       latest.markModified('v3'); latest.markModified('narration');
       await latest.save();
       await saveJob(job, { status: 'review', stage: 'narration-ready', progress: 100, completedAt: new Date() });

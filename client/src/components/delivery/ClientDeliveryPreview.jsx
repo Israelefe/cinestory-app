@@ -44,7 +44,7 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
     setNarrationCue(null);
     setPreviewLiked(new Set());
     narrationInteractionRef.current = false;
-  }, [accessPin, access?.allowIndividualDownloads, access?.allowDownloadAll, access?.allowLikes, delivery?.publicId, delivery?._id, delivery?.format, delivery?.soundtrack?.url, delivery?.narration?.url, (delivery?.assets || []).map(asset => `${asset.assetId}:${asset.url || ''}`).join('|')]);
+  }, [accessPin, access?.allowIndividualDownloads, access?.allowDownloadAll, access?.allowLikes, delivery?.publicId, delivery?._id, delivery?.format, delivery?.soundtrack?.url, delivery?.narration?.url, delivery?.narration?.captions?.url, (delivery?.assets || []).map(asset => `${asset.assetId}:${asset.url || ''}`).join('|')]);
 
   useEffect(() => () => revokeMedia(preloadedMedia), [preloadedMedia]);
 
@@ -64,8 +64,13 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
     soundtrack: capabilities.music && delivery?.soundtrack?.url
       ? { ...delivery.soundtrack, url: preloadedMedia.soundtrack || mediaUrl(delivery.soundtrack.url) }
       : undefined,
-    narration: capabilities.narration && delivery?.schemaVersion === 3 && delivery?.narration?.opening?.url
-      ? { ...delivery.narration, opening: { ...delivery.narration.opening, url: mediaUrl(delivery.narration.opening.url) }, closing: { ...delivery.narration.closing, url: mediaUrl(delivery.narration.closing.url) } }
+    narration: capabilities.narration && delivery?.schemaVersion === 3 && delivery?.narration && (delivery.narration.opening?.url || delivery.narration.closing?.url || delivery.narration.captions?.url)
+      ? {
+          ...delivery.narration,
+          ...(delivery.narration.opening?.url ? { opening: { ...delivery.narration.opening, url: mediaUrl(delivery.narration.opening.url) } } : {}),
+          ...(delivery.narration.closing?.url ? { closing: { ...delivery.narration.closing, url: mediaUrl(delivery.narration.closing.url) } } : {}),
+          ...(delivery.narration.captions?.url ? { captions: { ...delivery.narration.captions, url: preloadedMedia.narration || mediaUrl(delivery.narration.captions.url) } } : {})
+        }
       : capabilities.narration && delivery?.narration?.url
         ? { ...delivery.narration, url: preloadedMedia.narration || mediaUrl(delivery.narration.url) }
         : undefined

@@ -107,7 +107,7 @@ function invalidateV3Music(delivery) {
 
 async function discardV3Narration(delivery) {
   if (delivery.schemaVersion !== 3) return;
-  const ids = [delivery.narration?.opening?.publicId, delivery.narration?.closing?.publicId].filter(Boolean);
+  const ids = [delivery.narration?.opening?.publicId, delivery.narration?.closing?.publicId, delivery.narration?.captions?.publicId].filter(Boolean);
   await Promise.all(ids.map(id => removeDeliveryAudio(id).catch(() => {})));
 }
 
@@ -387,9 +387,10 @@ export async function getDelivery(req, res) {
     if (data.narration?.publicId && !data.narration.url) {
       data.narration.url = signedImageUrl(data.narration.publicId, { resourceType: 'video' });
     }
-    if (data.schemaVersion === 3 && data.narration?.opening?.publicId) {
-      data.narration.opening.url = signedImageUrl(data.narration.opening.publicId, { resourceType: 'video' });
-      data.narration.closing.url = signedImageUrl(data.narration.closing.publicId, { resourceType: 'video' });
+    if (data.schemaVersion === 3 && data.narration) {
+      if (data.narration.opening?.publicId) data.narration.opening.url = signedImageUrl(data.narration.opening.publicId, { resourceType: 'video' });
+      if (data.narration.closing?.publicId) data.narration.closing.url = signedImageUrl(data.narration.closing.publicId, { resourceType: 'video' });
+      if (data.narration.captions?.publicId) data.narration.captions.url = signedImageUrl(data.narration.captions.publicId, { resourceType: 'video' });
     }
     res.json({ success: true, data });
   } catch (error) {
@@ -542,7 +543,7 @@ export async function confirmDeliveryUpload(req, res) {
       $expr: { $lt: [{ $size: '$assets' }, entitlements.limits.photosPerDelivery] }
     }, {
       $push: { assets: asset },
-      $set: { status: 'draft', formatRecommendations: [], ...(delivery.schemaVersion === 3 ? { 'v3.step': 'upload', 'v3.approvedRevision': null, 'v3.narrationChoice': 'skip', curatedAssetIds: [], presentationOrder: [] } : {}) },
+      $set: { status: 'draft', formatRecommendations: [], ...(delivery.schemaVersion === 3 ? { 'v3.step': 'upload', 'v3.approvedRevision': null, 'v3.narrationChoice': 'skip', 'v3.captionNarrationChoice': 'skip', curatedAssetIds: [], presentationOrder: [] } : {}) },
       $inc: delivery.schemaVersion === 3 ? { 'v3.revision': 1 } : {},
       $unset: { collectionAnalysis: 1, creativeDirection: 1, reviewApprovedAt: 1, ...(delivery.schemaVersion === 3 ? { narration: 1 } : {}) }
     }, { new: true, runValidators: true });
@@ -598,7 +599,7 @@ export async function addLibraryAssets(req, res) {
       $expr: { $lte: [{ $add: [{ $size: '$assets' }, newAssets.length] }, entitlements.limits.photosPerDelivery] }
     }, {
       $push: { assets: { $each: newAssets } },
-      $set: { status: 'draft', formatRecommendations: [], ...(delivery.schemaVersion === 3 ? { 'v3.step': 'upload', 'v3.approvedRevision': null, 'v3.narrationChoice': 'skip', curatedAssetIds: [], presentationOrder: [] } : {}) },
+      $set: { status: 'draft', formatRecommendations: [], ...(delivery.schemaVersion === 3 ? { 'v3.step': 'upload', 'v3.approvedRevision': null, 'v3.narrationChoice': 'skip', 'v3.captionNarrationChoice': 'skip', curatedAssetIds: [], presentationOrder: [] } : {}) },
       $inc: delivery.schemaVersion === 3 ? { 'v3.revision': 1 } : {},
       $unset: { collectionAnalysis: 1, creativeDirection: 1, reviewApprovedAt: 1, ...(delivery.schemaVersion === 3 ? { narration: 1 } : {}) }
     }, { new: true, runValidators: true });
@@ -636,7 +637,7 @@ export async function deleteDeliveryAsset(req, res) {
     delivery.status = 'draft';
     if (delivery.schemaVersion === 3) {
       delivery.curatedAssetIds = []; delivery.presentationOrder = []; delivery.narration = undefined;
-      delivery.v3 = { ...delivery.v3, step: 'upload', narrationChoice: 'skip', approvedRevision: null, revision: Number(delivery.v3?.revision || 0) + 1 };
+      delivery.v3 = { ...delivery.v3, step: 'upload', narrationChoice: 'skip', captionNarrationChoice: 'skip', approvedRevision: null, revision: Number(delivery.v3?.revision || 0) + 1 };
       delivery.markModified('v3');
     }
     await delivery.save();
@@ -1066,7 +1067,7 @@ async function publicPayload(delivery, grant = null) {
   const object = delivery.toObject();
   delete object.userId;
   for (const key of ['brief', 'collectionAnalysis', 'formatRecommendations']) delete object[key];
-  if (object.schemaVersion === 3 && object.v3) object.v3 = { openingAssetId: object.v3.openingAssetId, closingAssetId: object.v3.closingAssetId, narrationChoice: object.v3.narrationChoice };
+  if (object.schemaVersion === 3 && object.v3) object.v3 = { openingAssetId: object.v3.openingAssetId, closingAssetId: object.v3.closingAssetId, narrationChoice: object.v3.narrationChoice, captionNarrationChoice: object.v3.captionNarrationChoice };
   delete object.access?.pinDigest;
   const visibleDeliveryAssets = grantAssets(delivery, grant);
   const visibleAssets = new Set(visibleDeliveryAssets.map(asset => asset.assetId));
@@ -1096,9 +1097,10 @@ async function publicPayload(delivery, grant = null) {
     object.viewer = { role: grant.role, label: grant.label, usageTerms: grant.usageTerms || '' };
   }
   if (object.narration?.publicId) object.narration.url = signedImageUrl(object.narration.publicId, { resourceType: 'video' });
-  if (object.schemaVersion === 3 && object.narration?.opening?.publicId) {
-    object.narration.opening.url = signedImageUrl(object.narration.opening.publicId, { resourceType: 'video' });
-    object.narration.closing.url = signedImageUrl(object.narration.closing.publicId, { resourceType: 'video' });
+  if (object.schemaVersion === 3 && object.narration) {
+    if (object.narration.opening?.publicId) object.narration.opening.url = signedImageUrl(object.narration.opening.publicId, { resourceType: 'video' });
+    if (object.narration.closing?.publicId) object.narration.closing.url = signedImageUrl(object.narration.closing.publicId, { resourceType: 'video' });
+    if (object.narration.captions?.publicId) object.narration.captions.url = signedImageUrl(object.narration.captions.publicId, { resourceType: 'video' });
   }
   if (object.soundtrack?.publicId) object.soundtrack.url = signedImageUrl(object.soundtrack.publicId, { resourceType: 'video' });
   if (object.soundtrack?.catalogId && object.soundtrack?.source === 'curated') {

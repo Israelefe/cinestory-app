@@ -8,6 +8,7 @@ import { contrastRatio, V3_FONT_CHOICES, V3_FORMATS, V3_MUSIC_FORMATS, validShow
 import { improvePurpose, recommendV3Format, regenerateV3Caption, repickV3Palette } from '../services/deliveryV3AI.service.js';
 import { reservePublishSlot, resolveEntitlements } from '../services/entitlement.service.js';
 import { removeDeliveryAudio } from '../services/deliveryMedia.service.js';
+import { NARRATION_RENDER_VERSION } from '../services/narration.service.js';
 
 const details = z.object({ clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().min(2).max(80), purpose: z.string().trim().min(1).max(3000), originalPurpose: z.string().trim().max(3000).default(''), clarificationAnswers: z.array(z.object({ question: z.string().trim().max(180), answer: z.string().trim().min(1).max(300) }).strict()).max(3).default([]) }).strict();
 const formatInput = z.object({ format: z.enum(Object.keys(V3_FORMATS)) }).strict();
@@ -39,8 +40,14 @@ async function owned(req, { pin = false } = {}) {
 function editable(delivery) { return delivery && ['draft', 'review'].includes(delivery.status); }
 function saveV3(delivery, patch) { delivery.v3 = { ...delivery.v3, ...patch }; delivery.markModified('v3'); }
 function invalidateApproval(delivery) { delivery.reviewApprovedAt = undefined; saveV3(delivery, { approvedRevision: null, revision: Number(delivery.v3?.revision || 0) + 1 }); }
-function narrationAudioIds(delivery) { return [delivery.narration?.opening?.publicId, delivery.narration?.closing?.publicId].filter(Boolean); }
-async function removeAudioIds(ids) { await Promise.all(ids.map(id => removeDeliveryAudio(id).catch(() => {}))); }
+function narrationAudioIds(delivery) { return [delivery.narration?.opening?.publicId, delivery.narration?.closing?.publicId, delivery.narration?.captions?.publicId].filter(Boolean); }
+async function removeAudioIds(ids) { await Promise.all(ids.filter(Boolean).map(id => removeDeliveryAudio(id).catch(() => {}))); }
+function narrationSelectionsReady(delivery) {
+  const wantsBookends = delivery.v3?.narrationChoice === 'voice';
+  const wantsCaptions = delivery.v3?.captionNarrationChoice === 'voice';
+  return (!wantsBookends || delivery.narration?.renderVersion === 'flux-hannah-bookends-v3') &&
+    (!wantsCaptions || (delivery.narration?.captions?.renderVersion === NARRATION_RENDER_VERSION && delivery.narration?.captions?.publicId));
+}
 
 export async function v3Assist(req, res) {
   try {
@@ -60,7 +67,7 @@ export async function v3Create(req, res) {
     if (entitlements.plan === 'free' && entitlements.usage.deliveriesRemaining === 0) return res.status(403).json({ success: false, code: 'MONTHLY_DELIVERY_LIMIT_REACHED', message: `You have published all ${entitlements.limits.deliveriesPerMonth} Free deliveries this month. Start another next month or move to Pro.` });
     const count = await Delivery.countDocuments({ userId: req.user.id, status: { $in: ['draft', 'analyzing', 'directing', 'review'] } });
     if (count >= 20) return res.status(409).json({ success: false, message: 'Finish or remove an existing draft before starting another one.' });
-    const delivery = await Delivery.create({ userId: req.user.id, schemaVersion: 3, clientName: input.data.clientName, shootType: input.data.shootType, brief: input.data.purpose, v3: { step: 'format', revision: 1, originalPurpose: input.data.originalPurpose, clarificationAnswers: input.data.clarificationAnswers, narrationChoice: 'skip', approvedRevision: null } });
+    const delivery = await Delivery.create({ userId: req.user.id, schemaVersion: 3, clientName: input.data.clientName, shootType: input.data.shootType, brief: input.data.purpose, v3: { step: 'format', revision: 1, originalPurpose: input.data.originalPurpose, clarificationAnswers: input.data.clarificationAnswers, narrationChoice: 'skip', captionNarrationChoice: 'skip', approvedRevision: null } });
     res.status(201).json({ success: true, data: delivery });
   } catch (error) { fail(res, error); }
 }
@@ -72,7 +79,7 @@ export async function v3Details(req, res) {
     const changed = delivery.clientName !== input.data.clientName || delivery.shootType !== input.data.shootType || delivery.brief !== input.data.purpose || JSON.stringify(delivery.v3?.clarificationAnswers || []) !== JSON.stringify(input.data.clarificationAnswers);
     const discardedAudio = changed ? narrationAudioIds(delivery) : [];
     delivery.clientName = input.data.clientName; delivery.shootType = input.data.shootType; delivery.brief = input.data.purpose;
-    if (changed) { delivery.collectionAnalysis = undefined; delivery.creativeDirection = undefined; delivery.curatedAssetIds = []; delivery.narration = undefined; delivery.status = 'draft'; invalidateApproval(delivery); saveV3(delivery, { narrationChoice: 'skip' }); }
+    if (changed) { delivery.collectionAnalysis = undefined; delivery.creativeDirection = undefined; delivery.curatedAssetIds = []; delivery.narration = undefined; delivery.status = 'draft'; invalidateApproval(delivery); saveV3(delivery, { narrationChoice: 'skip', captionNarrationChoice: 'skip' }); }
     saveV3(delivery, { originalPurpose: input.data.originalPurpose, clarificationAnswers: input.data.clarificationAnswers, step: 'format' });
     await delivery.save(); await removeAudioIds(discardedAudio); res.json({ success: true, data: delivery });
   } catch (error) { fail(res, error); }
@@ -85,7 +92,7 @@ export async function v3Format(req, res) {
     const changed = delivery.format !== input.data.format;
     const discardedAudio = changed ? narrationAudioIds(delivery) : [];
     if (changed && !V3_MUSIC_FORMATS.has(input.data.format) && delivery.soundtrack?.publicId) discardedAudio.push(delivery.soundtrack.publicId);
-    if (changed) { delivery.format = input.data.format; delivery.creativeDirection = undefined; delivery.curatedAssetIds = []; delivery.collectionAnalysis = undefined; delivery.narration = undefined; delivery.soundtrack = V3_MUSIC_FORMATS.has(delivery.format) ? delivery.soundtrack : undefined; delivery.status = 'draft'; invalidateApproval(delivery); saveV3(delivery, { narrationChoice: 'skip' }); }
+    if (changed) { delivery.format = input.data.format; delivery.creativeDirection = undefined; delivery.curatedAssetIds = []; delivery.collectionAnalysis = undefined; delivery.narration = undefined; delivery.soundtrack = V3_MUSIC_FORMATS.has(delivery.format) ? delivery.soundtrack : undefined; delivery.status = 'draft'; invalidateApproval(delivery); saveV3(delivery, { narrationChoice: 'skip', captionNarrationChoice: 'skip' }); }
     saveV3(delivery, { step: 'upload' }); await delivery.save(); await removeAudioIds(discardedAudio); res.json({ success: true, data: delivery });
   } catch (error) { fail(res, error); }
 }
@@ -123,9 +130,24 @@ export async function v3Showcase(req, res) {
     delivery.title = input.data.title; delivery.curatedAssetIds = input.data.assetIds; delivery.presentationOrder = input.data.assetIds;
     delivery.galleryAssetIds = delivery.assets.map(asset => asset.assetId); delivery.galleryOrder = delivery.galleryAssetIds;
     const narrationTextChanged = previous.openingLine !== input.data.openingLine || previous.closingLine !== input.data.closingLine;
-    const discardedAudio = narrationTextChanged ? narrationAudioIds(delivery) : [];
-    if (narrationTextChanged) delivery.narration = undefined;
-    invalidateApproval(delivery); saveV3(delivery, { openingAssetId: input.data.openingAssetId, closingAssetId: input.data.closingAssetId, step: delivery.format === 'photo-story' ? 'narration' : V3_MUSIC_FORMATS.has(delivery.format) ? 'music' : 'design' });
+    const previousCaptionOrder = (previous.frames || []).map(frame => [String(frame.assetId), String(frame.caption || '')]);
+    const nextCaptionOrder = input.data.assetIds.map(assetId => {
+      const frame = input.data.frames.find(item => item.assetId === assetId);
+      return [String(assetId), String(frame?.caption || '')];
+    });
+    const captionsChanged = JSON.stringify(previousCaptionOrder) !== JSON.stringify(nextCaptionOrder);
+    const discardedAudio = [];
+    const remainingNarration = delivery.narration?.toObject ? delivery.narration.toObject() : { ...(delivery.narration || {}) };
+    if (narrationTextChanged) {
+      discardedAudio.push(remainingNarration.opening?.publicId, remainingNarration.closing?.publicId);
+      delete remainingNarration.opening; delete remainingNarration.closing; delete remainingNarration.renderVersion;
+    }
+    if (captionsChanged) {
+      discardedAudio.push(remainingNarration.captions?.publicId);
+      delete remainingNarration.captions;
+    }
+    delivery.narration = remainingNarration.opening || remainingNarration.closing || remainingNarration.captions ? remainingNarration : undefined;
+    invalidateApproval(delivery); saveV3(delivery, { openingAssetId: input.data.openingAssetId, closingAssetId: input.data.closingAssetId, step: delivery.format === 'photo-story' ? 'narration' : V3_MUSIC_FORMATS.has(delivery.format) ? 'music' : 'design', ...(narrationTextChanged ? { narrationChoice: 'skip' } : {}), ...(captionsChanged ? { captionNarrationChoice: 'skip' } : {}) });
     delivery.markModified('creativeDirection'); await delivery.save(); await removeAudioIds(discardedAudio); res.json({ success: true, data: delivery });
   } catch (error) { fail(res, error); }
 }
@@ -143,10 +165,13 @@ export async function v3Caption(req, res) {
 
 export async function v3Narration(req, res) {
   try {
+    const input = z.object({ bookends: z.boolean().default(true), captions: z.boolean().default(false) }).strict().safeParse(req.body || {});
+    if (!input.success) return bad(res, input);
+    if (!input.data.bookends && !input.data.captions) return res.status(400).json({ success: false, code: 'V3_NARRATION_SELECTION_REQUIRED', message: 'Choose opening and closing voice, spoken captions, or both.' });
     const delivery = await owned(req); if (!editable(delivery) || delivery.format !== 'photo-story' || !delivery.creativeDirection) return res.status(409).json({ success: false, message: 'Narration is available after Photo Story captions are ready.' });
     const existing = await DeliveryJob.findOne({ deliveryId: delivery._id, type: 'v3-narrate', status: { $in: ['queued', 'running'] } });
     if (existing) return res.status(202).json({ success: true, data: existing });
-    const job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'v3-narrate', provider: 'Deepgram Flux', promptVersion: 'delivery-v3', input: { revision: delivery.v3.revision } });
+    const job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'v3-narrate', provider: 'Deepgram Flux', promptVersion: 'delivery-v3', input: { revision: delivery.v3.revision, bookends: input.data.bookends, captions: input.data.captions } });
     res.status(202).json({ success: true, data: job });
   } catch (error) { fail(res, error); }
 }
@@ -156,8 +181,8 @@ export async function v3SkipNarration(req, res) {
     const delivery = await owned(req); if (!editable(delivery) || delivery.format !== 'photo-story') return res.status(409).json({ success: false, message: 'Photo Story draft not found.' });
     await DeliveryJob.updateMany({ deliveryId: delivery._id, type: 'v3-narrate', status: 'queued' }, { $set: { status: 'cancelled', cancelledAt: new Date(), completedAt: new Date() } });
     await DeliveryJob.updateMany({ deliveryId: delivery._id, type: 'v3-narrate', status: 'running' }, { $set: { cancelRequestedAt: new Date() } });
-    const old = [delivery.narration?.opening?.publicId, delivery.narration?.closing?.publicId].filter(Boolean);
-    delivery.narration = undefined; invalidateApproval(delivery); saveV3(delivery, { narrationChoice: 'skip', step: 'music' }); await delivery.save();
+    const old = narrationAudioIds(delivery);
+    delivery.narration = undefined; invalidateApproval(delivery); saveV3(delivery, { narrationChoice: 'skip', captionNarrationChoice: 'skip', step: 'music' }); await delivery.save();
     await Promise.all(old.map(id => removeDeliveryAudio(id).catch(() => {})));
     res.json({ success: true, data: delivery });
   } catch (error) { fail(res, error); }
@@ -222,7 +247,7 @@ export async function v3Approve(req, res) {
     const ids = new Set(delivery.assets.map(asset => asset.assetId));
     if (!validShowcase(delivery.format, delivery.curatedAssetIds, ids)) return res.status(409).json({ success: false, message: 'Review the showcase photo count.' });
     if (V3_MUSIC_FORMATS.has(delivery.format) && !delivery.soundtrack) return res.status(409).json({ success: false, message: 'Choose music for this format.' });
-    if (delivery.format === 'photo-story' && delivery.v3?.narrationChoice === 'voice' && delivery.narration?.renderVersion !== 'flux-hannah-bookends-v3') return res.status(409).json({ success: false, message: 'Generate the opening and closing narration first.' });
+    if (delivery.format === 'photo-story' && !narrationSelectionsReady(delivery)) return res.status(409).json({ success: false, message: 'Generate the selected Photo Story voice before approving it.' });
     delivery.reviewApprovedAt = new Date(); saveV3(delivery, { approvedRevision: delivery.v3.revision, step: 'access' }); await delivery.save();
     res.json({ success: true, data: delivery });
   } catch (error) { fail(res, error); }
@@ -237,7 +262,7 @@ export async function v3Publish(req, res) {
     const ids = new Set(delivery.assets.map(asset => asset.assetId));
     if (!validShowcase(delivery.format, delivery.curatedAssetIds, ids)) return res.status(409).json({ success: false, message: 'The showcase photo count has changed.' });
     if (V3_MUSIC_FORMATS.has(delivery.format) && !delivery.soundtrack) return res.status(409).json({ success: false, message: 'Choose music first.' });
-    if (delivery.format === 'photo-story' && delivery.v3?.narrationChoice === 'voice' && delivery.narration?.renderVersion !== 'flux-hannah-bookends-v3') return res.status(409).json({ success: false, message: 'Narration is not ready.' });
+    if (delivery.format === 'photo-story' && !narrationSelectionsReady(delivery)) return res.status(409).json({ success: false, message: 'The selected Photo Story voice is not ready.' });
     reservation = await reservePublishSlot(await User.findById(req.user.id), delivery.assets.length);
     const published = await Delivery.findOneAndUpdate(
       { _id: delivery._id, userId: req.user.id, schemaVersion: 3, status: { $in: ['draft', 'review'] }, reviewApprovedAt: { $ne: null }, 'v3.approvedRevision': delivery.v3.revision, 'v3.revision': delivery.v3.revision },

@@ -46,13 +46,18 @@ export function captionSegments(delivery) {
   const frames = Array.isArray(delivery.creativeDirection?.frames)
     ? delivery.creativeDirection.frames
     : [];
+  const v3Order = delivery.schemaVersion === 3
+    ? delivery.curatedAssetIds?.length ? delivery.curatedAssetIds : delivery.presentationOrder
+    : null;
   const approvedPositions = new Map(
     (Array.isArray(delivery.assets) ? delivery.assets : [])
       .slice()
       .sort((left, right) => Number(left.sortOrder || 0) - Number(right.sortOrder || 0))
       .map((asset, index) => [String(asset.assetId), index])
   );
-  const orderedFrames = approvedPositions.size
+  const orderedFrames = Array.isArray(v3Order) && v3Order.length
+    ? v3Order.map(assetId => frames.find(frame => String(frame.assetId) === String(assetId))).filter(Boolean)
+    : approvedPositions.size
     ? frames.slice().sort((left, right) => (approvedPositions.get(String(left.assetId)) ?? Number.MAX_SAFE_INTEGER) - (approvedPositions.get(String(right.assetId)) ?? Number.MAX_SAFE_INTEGER))
     : frames;
   const sections = delivery.creativeDirection?.sections || [];
@@ -303,7 +308,7 @@ function stripLeadingId3(buffer) {
   return buffer.subarray(Math.min(buffer.length, 10 + size));
 }
 
-export async function generateNarration(delivery) {
+export async function generateNarration(delivery, { speed = VOICE_SETTINGS.speed, maxSegmentDuration = 0 } = {}) {
   const apiKey = String(process.env.DEEPGRAM_API_KEY || '').trim();
   if (!apiKey) throw Object.assign(new Error('Deepgram narration is not configured.'), { code: 'NARRATION_NOT_CONFIGURED' });
 
@@ -320,7 +325,7 @@ export async function generateNarration(delivery) {
     if (spokenChunkText.length > MAX_NARRATION_CHUNK_CHARACTERS) {
       throw Object.assign(new Error('Narration exceeded the provider’s per-request character limit.'), { code: 'NARRATION_CHUNK_TOO_LONG' });
     }
-    const chunkAudio = await synthesize({ apiKey, text: spokenChunkText });
+    const chunkAudio = await synthesize({ apiKey, text: spokenChunkText, speed });
     const timing = await transcribeWordTimings({ apiKey, audio: chunkAudio });
     const chunkSegments = timedSegments(chunk, timing.words, timing.duration).map(segment => ({
       ...segment,
@@ -335,6 +340,13 @@ export async function generateNarration(delivery) {
     );
     offset += Math.max(0, measuredDuration);
     audioBuffers.push(chunkAudio);
+  }
+  if (maxSegmentDuration > 0) {
+    const tooLong = measuredSegments.find(segment => segment.endSec - segment.startSec > maxSegmentDuration);
+    if (tooLong) {
+      const photoNumber = Number(String(tooLong.id).replace(/^caption-/, '')) || 1;
+      throw Object.assign(new Error(`Caption ${photoNumber} needs to be shorter to fit the fixed six-second Photo Story timing. Shorten that caption and try again.`), { code: 'NARRATION_CAPTION_TOO_LONG' });
+    }
   }
   const buffer = Buffer.concat(audioBuffers.map((chunkAudio, index) => index === 0 ? chunkAudio : stripLeadingId3(chunkAudio)));
   const uploaded = await uploadAudio(buffer, delivery);
@@ -357,9 +369,46 @@ export async function generateNarration(delivery) {
     provider: 'Deepgram Flux',
     modelId: MODEL_ID,
     renderVersion: NARRATION_RENDER_VERSION,
-    settings: VOICE_SETTINGS,
+    settings: { ...VOICE_SETTINGS, speed },
     captionsRead: true,
     approvedAt: new Date(),
     segments: measuredSegments
   };
+}
+
+function v3NarrationAudioIds(narration) {
+  return [narration?.opening?.publicId, narration?.closing?.publicId, narration?.captions?.publicId].filter(Boolean);
+}
+
+export async function synthesizeV3Narration(delivery, { bookends = true, captions = false } = {}, onProgress) {
+  if (!bookends && !captions) {
+    throw Object.assign(new Error('Choose an opening or closing voice, spoken captions, or both.'), { code: 'V3_NARRATION_SELECTION_REQUIRED' });
+  }
+  const narration = { voiceId: DEFAULT_NARRATION_VOICE_ID };
+  try {
+    if (bookends) {
+      onProgress?.('recording-bookends', 18);
+      Object.assign(narration, await synthesizeV3Bookends(delivery));
+    }
+    if (captions) {
+      onProgress?.('recording-captions', bookends ? 58 : 24);
+      let lastError;
+      for (const speed of [1.2, 1.35, 1.5]) {
+        try {
+          narration.captions = await generateNarration(delivery, { speed, maxSegmentDuration: 5.45 });
+          break;
+        } catch (error) {
+          if (error.code !== 'NARRATION_CAPTION_TOO_LONG' || speed === 1.5) throw error;
+          lastError = error;
+        }
+      }
+      if (!narration.captions) throw lastError || Object.assign(new Error('Caption narration could not fit the fixed photo timing.'), { code: 'NARRATION_CAPTION_TOO_LONG' });
+    }
+    return narration;
+  } catch (error) {
+    await Promise.all(v3NarrationAudioIds(narration).map(publicId =>
+      cloudinary.uploader.destroy(publicId, { resource_type: 'video', type: 'authenticated' }).catch(() => {})
+    ));
+    throw error;
+  }
 }

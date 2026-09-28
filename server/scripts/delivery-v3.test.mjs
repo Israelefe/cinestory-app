@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { V3_FORMATS, contrastRatio, validShowcase } from '../src/constants/deliveryV3.js';
 import { analyzeAllV3, directV3, improvePurpose, recommendV3Format, regenerateV3Caption, repickV3Palette } from '../src/services/deliveryV3AI.service.js';
-import { narrationLine, NARRATION_RENDER_VERSION } from '../src/services/narration.service.js';
+import { captionSegments, generateNarration, narrationLine, NARRATION_RENDER_VERSION } from '../src/services/narration.service.js';
 
 const ids = Array.from({ length: 25 }, (_, index) => 'asset-' + index);
 const narrativeHeadlines = ['Twenty-five begins', "Ada's Birthday Year", 'Ada at Twenty-Five', "Ada's Next Birthday", "Ada's Birthday, Her Terms", 'Twenty-Five, Ada’s Way', 'Ada Turns Twenty-Five', 'A Birthday for Ada', "Ada's Celebration Ahead", 'Birthday Year for Ada'];
@@ -61,6 +61,48 @@ test('narration turns dashes into natural sentence pauses and keeps ordinary hyp
   assert.equal(narrationLine('Nothing staged about this laugh — it is the sound of a birthday feeling exactly right.'), 'Nothing staged about this laugh. It is the sound of a birthday feeling exactly right.');
   assert.equal(narrationLine('Twenty-five years, one good day.'), 'Twenty-five years, one good day.');
   assert.equal(NARRATION_RENDER_VERSION, 'flux-hannah-captions-v6');
+});
+
+test('spoken captions that exceed one photo slot fail with a caption-specific instruction', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousKey = process.env.DEEPGRAM_API_KEY;
+  let spokenText = '';
+  process.env.DEEPGRAM_API_KEY = 'test-key';
+  globalThis.fetch = async (url, options) => {
+    if (String(url).includes('/v2/speak')) {
+      spokenText = JSON.parse(options.body).text;
+      return { ok: true, arrayBuffer: async () => Buffer.from('mock-audio') };
+    }
+    const words = spokenText.split(/\s+/).filter(Boolean).map((word, index) => ({
+      punctuated_word: word,
+      start: index * 0.42,
+      end: index * 0.42 + 0.3
+    }));
+    return {
+      ok: true,
+      json: async () => ({
+        metadata: { duration: 8 },
+        results: { channels: [{ alternatives: [{ words }] }] }
+      })
+    };
+  };
+  try {
+    const assetId = 'spoken-photo';
+    const delivery = {
+      schemaVersion: 3,
+      curatedAssetIds: [assetId],
+      assets: [{ assetId }],
+      creativeDirection: { frames: [{ assetId, caption: 'Lora, this birthday marks a year worth celebrating and leaves room for everything she wants to make of the next one.' }] }
+    };
+    await assert.rejects(
+      generateNarration(delivery, { speed: 1.2, maxSegmentDuration: 5.45 }),
+      error => error.code === 'NARRATION_CAPTION_TOO_LONG' && /Caption 1 needs to be shorter/.test(error.message) && /fixed six-second/.test(error.message)
+    );
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousKey === undefined) delete process.env.DEEPGRAM_API_KEY;
+    else process.env.DEEPGRAM_API_KEY = previousKey;
+  }
 });
 
 function mockModel(responses, calls) {
@@ -122,6 +164,21 @@ test('purpose improvement rejects unrelated model text', async () => {
   try {
     await assert.rejects(improvePurpose({ purpose: 'Lora 25th Birthday Celebration', shootType: 'Birthday' }), { code: 'V3_INVALID_AI_RESPONSE' });
   } finally { restore(); }
+});
+
+test('V3 spoken captions follow the approved showcase order, not upload order', () => {
+  const ordered = captionSegments({
+    schemaVersion: 3,
+    curatedAssetIds: ['asset-2', 'asset-0', 'asset-1'],
+    assets: ids.slice(0, 3).map((assetId, sortOrder) => ({ assetId, sortOrder })),
+    creativeDirection: { frames: [
+      { assetId: 'asset-0', caption: 'First uploaded photograph caption.' },
+      { assetId: 'asset-1', caption: 'Last uploaded photograph caption.' },
+      { assetId: 'asset-2', caption: 'The chosen opening photograph caption.' }
+    ] }
+  });
+  assert.deepEqual(ordered.map(segment => segment.assetIds[0]), ['asset-2', 'asset-0', 'asset-1']);
+  assert.match(ordered[0].text, /chosen opening/);
 });
 
 test('purpose improvement asks again when the first suggestion exactly echoes the source', async () => {

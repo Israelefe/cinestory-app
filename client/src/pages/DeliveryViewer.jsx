@@ -135,16 +135,17 @@ function preloadAudio(url, cleanup) {
 
 export function DeliveryReadiness({ delivery, onReady }) {
   const capabilities = getDeliveryCapabilities(delivery?.format);
+  const narrationUrl = delivery?.schemaVersion === 3 ? delivery?.narration?.captions?.url : delivery?.narration?.url;
   const mediaKey = [
     delivery.publicId || delivery._id || 'draft',
     delivery.format || '',
     capabilities.music ? delivery.soundtrack?.url || '' : '',
-    capabilities.narration ? delivery.narration?.url || '' : ''
+    capabilities.narration ? narrationUrl || '' : ''
   ].join('|');
 
   const hasAudio = Boolean(
     (capabilities.music && delivery.soundtrack?.url) ||
-    (capabilities.narration && delivery.narration?.url)
+    (capabilities.narration && narrationUrl)
   );
 
   const [audioReady, setAudioReady] = useState(!hasAudio);
@@ -191,12 +192,12 @@ export function DeliveryReadiness({ delivery, onReady }) {
         }
       });
     }
-    if (capabilities.narration && delivery.narration?.url) {
+    if (capabilities.narration && narrationUrl) {
       audioTasks.push({
         kind: 'narration',
         label: 'Narration',
         run: async () => {
-          const url = apiMediaUrl(delivery.narration.url);
+          const url = apiMediaUrl(narrationUrl);
           media.narration = url;
           setStage('Preparing the narration');
           return { ok: true };
@@ -266,7 +267,7 @@ export default function DeliveryViewer() {
   const playbackDelivery = useMemo(() => {
     if (!delivery) return null;
     const capabilities = getDeliveryCapabilities(delivery.format);
-    const bookendNarration = delivery.schemaVersion === 3 && delivery.narration?.opening?.url;
+    const v3Narration = delivery.schemaVersion === 3 && delivery.narration && (delivery.narration.opening?.url || delivery.narration.closing?.url || delivery.narration.captions?.url);
     return {
       ...delivery,
       assets: (delivery.assets || []).map(asset => {
@@ -274,8 +275,13 @@ export default function DeliveryViewer() {
         return { ...asset, url, thumbnailUrl: asset.thumbnailUrl || url };
       }),
       soundtrack: capabilities.music && delivery.soundtrack?.url ? { ...delivery.soundtrack, url: preloadedMedia.soundtrack || delivery.soundtrack.url } : undefined,
-      narration: capabilities.narration && bookendNarration
-        ? { ...delivery.narration, opening: { ...delivery.narration.opening, url: apiMediaUrl(delivery.narration.opening.url) }, closing: { ...delivery.narration.closing, url: apiMediaUrl(delivery.narration.closing?.url) } }
+      narration: capabilities.narration && v3Narration
+        ? {
+            ...delivery.narration,
+            ...(delivery.narration.opening?.url ? { opening: { ...delivery.narration.opening, url: apiMediaUrl(delivery.narration.opening.url) } } : {}),
+            ...(delivery.narration.closing?.url ? { closing: { ...delivery.narration.closing, url: apiMediaUrl(delivery.narration.closing.url) } } : {}),
+            ...(delivery.narration.captions?.url ? { captions: { ...delivery.narration.captions, url: preloadedMedia.narration || apiMediaUrl(delivery.narration.captions.url) } } : {})
+          }
         : capabilities.narration && delivery.narration?.url
           ? { ...delivery.narration, url: preloadedMedia.narration || apiMediaUrl(delivery.narration.url) }
           : undefined
