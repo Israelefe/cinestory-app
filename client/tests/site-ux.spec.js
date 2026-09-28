@@ -49,15 +49,26 @@ test('public heroes show the visual before supporting copy on phones', async ({ 
   }
 });
 
-test('public phone header keeps navigation in the menu', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
-  await expect(page.locator('.v-nav-home')).toBeHidden();
-  await expect(page.locator('.v-nav-signin')).toBeHidden();
-  await page.getByRole('button', { name: 'Open menu' }).click();
-  const menu = page.getByRole('dialog', { name: 'Navigation menu' });
-  await expect(menu.getByRole('link', { name: 'Sign in' })).toBeVisible();
-  await expect(menu.getByRole('link', { name: /Portfolio/ })).toBeVisible();
+test('public phone header shows Sign in or Dashboard without opening the menu', async ({ page }) => {
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto('/');
+    await expect(page.locator('.v-nav a.v-nav-signin')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+    await expect(page.locator('.v-nav-home')).toBeHidden();
+    await page.getByRole('button', { name: 'Open menu' }).click();
+    const menu = page.getByRole('dialog', { name: 'Navigation menu' });
+    await expect(menu.getByRole('link', { name: /Portfolio/ })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await mockAccount(page);
+    await page.goto('/');
+    await expect(page.locator('.v-nav .v-nav-dashboard')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+    await expect(page.locator('.v-nav a.v-nav-signin')).toHaveCount(0);
+    await page.locator('.v-nav .v-nav-dashboard').click();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await page.unroute('**/api/v1/**');
+  }
 });
 
 test('Veylo Help stays off creation and portfolio pages', async ({ page }) => {

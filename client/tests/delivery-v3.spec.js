@@ -36,8 +36,13 @@ for (const width of [320, 834, 1440]) {
     await expect(page.getByLabel('Purpose of the shoot')).toHaveValue("Ada's 25th birthday celebration");
     await page.getByRole('button', { name: 'Continue to formats' }).click();
     await expect(page.getByRole('heading', { name: 'Choose how they first see the work.' })).toBeVisible();
-    await expect(page.getByText('Recommended for this delivery: Photo Story')).toBeVisible();
-    await expect(page.locator('.v3-format-card')).toHaveCount(8);
+    await expect(page.locator('.v3-featured-format')).toContainText('Photo Story');
+    await expect(page.locator('.v3-featured-format')).toBeVisible();
+    await expect(page.locator('.v3-format-card')).toHaveCount(7);
+    await page.locator('.v3-format-card').first().getByRole('button').click();
+    await expect(page.locator('.v3-format-card').first().getByRole('button')).toHaveAttribute('aria-pressed', 'true');
+    await page.locator('.v3-featured-format').getByRole('button', { name: 'Choose this format' }).click();
+    await expect(page.locator('.v3-featured-format').getByRole('button', { name: 'Selected' })).toHaveAttribute('aria-pressed', 'true');
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
     const columns = await page.locator('.v3-format-grid').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length);
     expect(columns).toBe(width <= 540 ? 1 : width <= 1024 ? 2 : 3);
@@ -81,6 +86,8 @@ test('Photo Story review stops removals at five and advances with the full photo
   await page.screenshot({ path: '../.visual-review/delivery-v3/showcase-320.png', fullPage: true });
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Give the opening and closing a voice.' })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to showcase' }).click();
+  await expect(page.getByRole('heading', { name: 'Make the selection yours.' })).toBeVisible();
   expect(draft.assets).toHaveLength(12);
   expect(draft.curatedAssetIds).toHaveLength(5);
 });
@@ -109,6 +116,55 @@ test('V3 keeps validation and API errors visible at the current scroll position'
   await expect(alert).toContainText('The writing service is unavailable. Try again shortly.');
   await expect(alert).toContainText('MODEL_UNAVAILABLE');
   expect((await alert.boundingBox()).y).toBeLessThan(150);
+});
+
+test('V3 explains unreadable colours and fixes them before sending the theme', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 740 });
+  let draft = { _id: draftId, schemaVersion: 3, status: 'review', clientName: 'Ada', shootType: 'Birthday', brief: "Ada's birthday", format: 'editorial', assets: [], creativeDirection: { title: "Ada's birthday", openingLine: 'A birthday to remember.', closingLine: 'Your full gallery is ready.', palette: { background: '#ffffff', surface: '#eeeeee', text: '#ffffff', accent: '#ff5a47' }, typography: { display: 'Playfair Display', body: 'Outfit' } }, v3: { step: 'design', revision: 2 }, access: {} };
+  let themeRequests = 0;
+  await page.route('**/api/v1/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    const reply = data => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data }) });
+    if (path.endsWith('/auth/me')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, user }) });
+    if (path.endsWith('/billing/status')) return reply({ plan: 'free', usage: { deliveriesRemaining: 2 }, limits: { deliveriesPerMonth: 3 } });
+    if (path.endsWith('/v3/theme')) { themeRequests += 1; draft = { ...draft, creativeDirection: { ...draft.creativeDirection, ...route.request().postDataJSON() }, v3: { ...draft.v3, step: 'preview' } }; return reply(draft); }
+    if (path.endsWith('/deliveries/' + draftId)) return reply(draft);
+    return reply({});
+  });
+  await page.goto('/create?draft=' + draftId);
+  const cookieButton = page.getByRole('button', { name: 'Got it' });
+  if (await cookieButton.isVisible()) await cookieButton.click();
+  await expect(page.getByText('Too faint')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Preview delivery' }).click();
+  const alert = page.getByRole('alert');
+  await expect(alert).toContainText('Text is hard to read on the background and panels.');
+  await expect(alert).not.toContainText('HTTP 400');
+  expect(themeRequests).toBe(0);
+  await alert.getByRole('button', { name: 'Fix text contrast' }).click();
+  await expect(page.getByText('Readable')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Preview delivery' }).click();
+  await expect(page.getByRole('heading', { name: 'See exactly what the client will see.' })).toBeVisible();
+  expect(themeRequests).toBe(1);
+});
+
+test('V3 gives a useful message for a legacy 400 response without showing HTTP 400', async ({ page }) => {
+  const draft = { _id: draftId, schemaVersion: 3, status: 'review', clientName: 'Ada', shootType: 'Birthday', brief: "Ada's birthday", format: 'editorial', assets: [], creativeDirection: { title: "Ada's birthday", openingLine: 'A birthday to remember.', closingLine: 'Your full gallery is ready.', palette: { background: '#0c0c10', surface: '#17171c', text: '#fffaf6', accent: '#ff5a47' }, typography: { display: 'Playfair Display', body: 'Outfit' } }, v3: { step: 'design', revision: 2 }, access: {} };
+  await page.route('**/api/v1/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    const reply = data => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data }) });
+    if (path.endsWith('/auth/me')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, user }) });
+    if (path.endsWith('/billing/status')) return reply({ plan: 'free', usage: { deliveriesRemaining: 2 }, limits: { deliveriesPerMonth: 3 } });
+    if (path.endsWith('/v3/theme')) return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ success: false, message: 'Text needs more contrast against the background and surface colours.' }) });
+    if (path.endsWith('/deliveries/' + draftId)) return reply(draft);
+    return reply({});
+  });
+  await page.goto('/create?draft=' + draftId);
+  const cookieButton = page.getByRole('button', { name: 'Got it' });
+  if (await cookieButton.isVisible()) await cookieButton.click();
+  await page.getByRole('button', { name: 'Preview delivery' }).click();
+  const alert = page.getByRole('alert');
+  await expect(alert).toContainText('Change the text colour or use Fix text contrast.');
+  await expect(alert).not.toContainText('HTTP 400');
 });
 
 test('V3 does not publish when the plan check fails', async ({ page }) => {
@@ -207,6 +263,9 @@ test('design opens the current client viewer, then publishes with access setting
   await expect(page.getByRole('heading', { name: 'See exactly what the client will see.' })).toBeVisible();
   await expect(page.locator('.v-client-preview-runtime .fd-editorial')).toBeVisible();
   await page.getByRole('button', { name: 'Approve and set access' }).click();
+  await page.getByLabel('Six-digit PIN (optional)').fill('123');
+  await page.getByRole('button', { name: 'Publish delivery' }).click();
+  await expect(page.getByRole('alert')).toContainText('A PIN needs six digits.');
   await page.getByLabel('Six-digit PIN (optional)').fill('123456');
   await page.getByRole('button', { name: 'Publish delivery' }).click();
   await expect(page.getByRole('heading', { name: 'Your delivery is ready.' })).toBeVisible();

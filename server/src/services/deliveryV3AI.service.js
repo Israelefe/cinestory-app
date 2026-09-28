@@ -53,15 +53,30 @@ async function request(system, user, { images = [], maxTokens = 4000 } = {}) {
 }
 
 export async function improvePurpose({ purpose, shootType }) {
-  const result = await request('Return JSON {"improved":"..."}. Improve spelling and clarity only. Preserve every fact, name and intent. Do not invent a scene, person, relationship, emotion, or occasion.', `Shoot type: ${shootType}\nPhotographer's purpose: ${purpose}`, { maxTokens: 350 });
-  const improved = String(result.improved || '').trim().slice(0, 3000);
-  if (!improved) throw Object.assign(new Error('The purpose could not be improved. Try again.'), { code: 'V3_INVALID_AI_RESPONSE' });
+  const result = await request(
+    'You are lightly editing the photographer\'s purpose of a finished shoot. Return JSON {"improved":"..."} containing ONLY the edited purpose, with no field labels, shoot type, explanation, caption instructions, or extra lines. Fix spelling, grammar and punctuation only where needed. Keep the photographer\'s wording and every supplied fact; do not add any scene, emotion, relationship or detail. A short purpose should stay short. Example: "Lora 25th Birthday Celebration" becomes "Lora\'s 25th birthday celebration." If the original is already clear, return it unchanged.',
+    JSON.stringify({ shootType, purpose }),
+    { maxTokens: 250 }
+  );
+  const raw = String(result.improved || '').trim();
+  const purposeLine = raw.match(/(?:^|\n)\s*(?:photographer['\u2019]s\s+)?purpose\s*:\s*(.+)/i)?.[1];
+  const improved = String(purposeLine || raw).replace(/^\s*(?:improved\s+)?(?:photographer['\u2019]s\s+)?purpose\s*:\s*/i, '').trim().slice(0, 3000);
+  if (!improved || /\n|(?:^|\b)shoot\s+type\s*:/i.test(improved)) throw Object.assign(new Error('The wording suggestion was not usable. Your original purpose is unchanged. Please try again.'), { code: 'V3_INVALID_AI_RESPONSE' });
   return improved;
 }
 
 export async function clarifyPurpose({ purpose, shootType }) {
-  const result = await request('Return JSON {"clear":boolean,"questions":[{"question":"...","options":["...","..."]}]}. Ask at most three short questions only if a missing factual detail would materially change the delivery copy. Never assume the answer. Options are plausible answers, not facts. Keep each question practical for a photographer.', `Shoot type: ${shootType}\nPurpose: ${purpose}`, { maxTokens: 700 });
-  return { clear: Boolean(result.clear), questions: (Array.isArray(result.questions) ? result.questions : []).slice(0, 3).map(item => ({ question: String(item.question || '').slice(0, 180), options: (Array.isArray(item.options) ? item.options : []).slice(0, 3).map(value => String(value).slice(0, 120)) })).filter(item => item.question) };
+  // A milestone birthday already identifies the occasion; the client name is collected separately.
+  if (/\b\d{1,3}(?:st|nd|rd|th)\s+birthday\b/i.test(purpose)) return { clear: true, questions: [] };
+  const result = await request(
+    'These are ALREADY FINISHED photographs being delivered to a client, not an event or shoot being planned. Return JSON {"clear":boolean,"questions":[{"question":"...","options":["...","..."]}]}. A purpose such as "Lora\'s 25th birthday celebration" is clear enough: return clear true and no questions. Ask at most two questions only when an answer is essential to writing a personal opening, closing or caption, and the photographer can reasonably know it. Never ask for the date, time, venue, number of guests, itinerary, outfits, props, lighting, or other planning or visual details. Do not ask for facts already in the purpose. When in doubt, return clear true with no questions. Options are possible answers, not assumed facts.',
+    JSON.stringify({ shootType, purpose }),
+    { maxTokens: 500 }
+  );
+  const planningQuestion = /\b(date|time|when|where|venue|location|place|restaurant|residence|guest|attend|expected|outfit|dress|wear|prop|decor|lighting|camera|itinerary|schedule|weather|photograph|photo|image|picture)\b/i;
+  const questions = (Array.isArray(result.questions) ? result.questions : []).map(item => ({ question: String(item.question || '').trim().slice(0, 180), options: (Array.isArray(item.options) ? item.options : []).slice(0, 3).map(value => String(value).trim().slice(0, 120)).filter(Boolean) })).filter(item => item.question && !planningQuestion.test(item.question)).slice(0, 2);
+  const clear = Boolean(result.clear) || questions.length === 0;
+  return { clear, questions: clear ? [] : questions };
 }
 
 export async function recommendV3Format(shootType) {

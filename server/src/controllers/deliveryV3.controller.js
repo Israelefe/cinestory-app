@@ -16,8 +16,20 @@ const showcaseInput = z.object({ assetIds: idList, frames: z.array(z.object({ as
 const themeInput = z.object({ palette: z.object({ background: z.string().regex(/^#[0-9a-f]{6}$/i), surface: z.string().regex(/^#[0-9a-f]{6}$/i), text: z.string().regex(/^#[0-9a-f]{6}$/i), accent: z.string().regex(/^#[0-9a-f]{6}$/i) }).strict(), typography: z.object({ display: z.string(), body: z.string() }).strict() }).strict();
 const accessInput = z.object({ pin: z.string().regex(/^\d{6}$/).optional().or(z.literal('')), expiresAt: z.string().datetime().optional().or(z.literal('')), allowIndividualDownloads: z.boolean(), allowDownloadAll: z.boolean(), allowLikes: z.boolean(), downloadsLocked: z.boolean(), downloadLockNote: z.string().trim().max(200), watermarkEnabled: z.boolean(), watermarkText: z.string().trim().max(40), usageTerms: z.string().trim().max(1000).default('') }).strict();
 
-function bad(res, parsed) { return res.status(400).json({ success: false, message: parsed.error.issues[0]?.message || 'Check what you entered.' }); }
-function fail(res, error) { console.error('[delivery-v3]', error.code || error.name, error.message); return res.status(error.status || 500).json({ success: false, code: error.code, message: error.status ? error.message : 'We could not complete this step. Please try again.' }); }
+function bad(res, parsed) {
+  const issue = parsed.error.issues[0];
+  const field = issue?.path?.join('.') || '';
+  const labels = { clientName: 'client name', shootType: 'shoot type', purpose: 'purpose of the shoot', title: 'delivery title', openingLine: 'opening message', closingLine: 'closing message', pin: 'PIN', expiresAt: 'expiry date', 'palette.background': 'background colour', 'palette.surface': 'panels colour', 'palette.text': 'text colour', 'palette.accent': 'accent colour' };
+  const label = /^frames\.\d+\.caption$/.test(field) ? `caption for photo ${Number(field.split('.')[1]) + 1}` : labels[field] || field.replaceAll('.', ' ') || 'this field';
+  const isText = issue?.origin === 'string' || typeof issue?.input === 'string' || /^(clientName|shootType|purpose|title|openingLine|closingLine|pin|downloadLockNote|watermarkText|usageTerms)$/.test(field) || /^frames\.\d+\.caption$/.test(field);
+  const message = issue?.code === 'too_small' && typeof issue.minimum === 'number' && isText
+    ? `The ${label} needs at least ${issue.minimum} characters.`
+    : issue?.code === 'too_big' && typeof issue.maximum === 'number' && isText
+      ? `Keep the ${label} under ${issue.maximum} characters.`
+      : `Check the ${label} and try again.`;
+  return res.status(400).json({ success: false, code: 'V3_INVALID_INPUT', field, message });
+}
+function fail(res, error) { console.error('[delivery-v3]', error.code || error.name, error.message); return res.status(error.status || 500).json({ success: false, code: error.code || 'V3_STEP_FAILED', message: error.status ? error.message : 'This step could not finish. Please try again.' }); }
 async function owned(req, { pin = false } = {}) {
   if (!mongoose.isValidObjectId(req.params.id)) return null;
   const query = Delivery.findOne({ _id: req.params.id, userId: req.user.id, schemaVersion: 3 });
@@ -154,8 +166,9 @@ export async function v3SkipNarration(req, res) {
 export async function v3Theme(req, res) {
   try {
     const input = themeInput.safeParse(req.body); if (!input.success) return bad(res, input);
-    if (!V3_FONT_CHOICES.has(input.data.typography.display) || !V3_FONT_CHOICES.has(input.data.typography.body)) return res.status(400).json({ success: false, message: 'Choose a font from the list.' });
-    if (contrastRatio(input.data.palette.background, input.data.palette.text) < 4.5 || contrastRatio(input.data.palette.surface, input.data.palette.text) < 4.5) return res.status(400).json({ success: false, message: 'Text needs more contrast against the background and surface colours.' });
+    if (!V3_FONT_CHOICES.has(input.data.typography.display) || !V3_FONT_CHOICES.has(input.data.typography.body)) return res.status(400).json({ success: false, code: 'V3_FONT_NOT_ALLOWED', field: 'typography', message: 'Choose a display and body font from the list.' });
+    const weak = [contrastRatio(input.data.palette.background, input.data.palette.text) < 4.5 ? 'background' : null, contrastRatio(input.data.palette.surface, input.data.palette.text) < 4.5 ? 'panels' : null].filter(Boolean);
+    if (weak.length) return res.status(400).json({ success: false, code: 'V3_THEME_CONTRAST', field: 'palette.text', message: `Text is hard to read on the ${weak.join(' and ')}. Change the text colour or use Fix text contrast.` });
     const delivery = await owned(req); if (!editable(delivery) || !delivery.creativeDirection) return res.status(409).json({ success: false, message: 'Finish the showcase first.' });
     delivery.creativeDirection = { ...delivery.creativeDirection, palette: input.data.palette, typography: input.data.typography };
     invalidateApproval(delivery); saveV3(delivery, { step: 'preview' }); delivery.markModified('creativeDirection'); await delivery.save();
@@ -168,7 +181,7 @@ export async function v3Access(req, res) {
     const input = accessInput.safeParse(req.body); if (!input.success) return bad(res, input);
     const delivery = await owned(req, { pin: true }); if (!editable(delivery)) return res.status(404).json({ success: false, message: 'Draft not found.' });
     const data = input.data;
-    if (data.expiresAt && new Date(data.expiresAt) <= new Date()) return res.status(400).json({ success: false, message: 'Choose an expiry date in the future.' });
+    if (data.expiresAt && new Date(data.expiresAt) <= new Date()) return res.status(400).json({ success: false, code: 'V3_EXPIRY_IN_PAST', field: 'expiresAt', message: 'Choose a future expiry date, or clear the field for a link that does not expire.' });
     Object.assign(delivery.access, { allowIndividualDownloads: data.allowIndividualDownloads, allowDownloadAll: data.allowDownloadAll, allowLikes: data.allowLikes, downloadsLocked: data.downloadsLocked, downloadLockNote: data.downloadLockNote, watermarkEnabled: data.watermarkEnabled, watermarkText: data.watermarkText, expiresAt: data.expiresAt ? new Date(data.expiresAt) : undefined });
     if (delivery.format === 'campaign') { delivery.formatConfig = { ...delivery.formatConfig, usageTerms: data.usageTerms }; delivery.markModified('formatConfig'); }
     if (data.pin !== undefined) delivery.access.pinDigest = data.pin ? await bcrypt.hash(data.pin, 12) : undefined;
