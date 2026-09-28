@@ -391,9 +391,12 @@ export default function NichePage() {
     <Page className={`v-niche-page is-${item.theme}`}>
       <header className="v-niche-hero">
         <div className="v-wrap v-niche-hero-grid">
-          <Reveal className="v-niche-hero-copy">
+          <Reveal className="v-niche-hero-copy v-niche-hero-title">
             <Eyebrow>{item.label}</Eyebrow>
             <h1>{item.title}<br /><em>{item.accent}</em></h1>
+          </Reveal>
+          <HeroArtwork item={item} />
+          <Reveal className="v-niche-hero-copy v-niche-hero-after">
             <p>{item.copy}</p>
             <div className="v-actions">
               <Action to="#recommended">See the best format for this work</Action>
@@ -401,7 +404,6 @@ export default function NichePage() {
             </div>
             <Link className="v-niche-hero-demo" to={item.recommendation.demo}>{item.recommendation.demoLabel} <ArrowRight size={16} /></Link>
           </Reveal>
-          <HeroArtwork item={item} />
         </div>
       </header>
       <RecommendedFormat item={item} slug={resolved} />

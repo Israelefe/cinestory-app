@@ -29,13 +29,55 @@ test('public pages fit phone, tablet, and desktop widths', async ({ page }) => {
   }
 });
 
-test('the main decision is visible early on key mobile pages', async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 700 });
-  for (const [route, selector] of [['/', '.v-hero-after .v-actions a'], ['/formats', '.v-fguide-hero-jump'], ['/portfolio', '.v-portfolio-hero-actions a'], ['/pricing', '.v-pricing-early-actions a'], ['/for/portrait-photographers', '.v-niche-hero-demo']]) {
-    await page.goto(route);
-    const box = await page.locator(selector).first().boundingBox();
-    expect(box?.y, `${route} mobile action position`).toBeLessThan(700);
+test('public heroes show the visual before supporting copy on phones', async ({ page }) => {
+  const cases = [
+    ['/', '.v-hero-title-block', '.v-hero-art', '.v-hero-after'],
+    ['/formats', '.v-fguide-hero-copy', '.v-fguide-brief', '.v-fguide-hero-after'],
+    ['/portfolio', '.v-portfolio-hero-title', '.v-portfolio-hero-art', '.v-portfolio-hero-after'],
+    ['/pricing', '.v-pricing-hero-copy:not(.v-pricing-hero-after)', '.v-pricing-format-board', '.v-pricing-hero-after'],
+    ['/for/portrait-photographers', '.v-niche-hero-title', '.v-niche-hero-art', '.v-niche-hero-after'],
+    ['/about', '.v-about-hero-title', '.v-editorial-image', '.v-about-hero-after']
+  ];
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 700 });
+    for (const [route, titleSelector, visualSelector, afterSelector] of cases) {
+      await page.goto(route);
+      const [title, visual, after] = await Promise.all([titleSelector, visualSelector, afterSelector].map(selector => page.locator(selector).first().boundingBox()));
+      expect(title?.y, `${route} title at ${width}px`).toBeLessThan(visual?.y);
+      expect(visual?.y, `${route} visual at ${width}px`).toBeLessThan(after?.y);
+    }
   }
+});
+
+test('public phone header keeps navigation in the menu', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await expect(page.locator('.v-nav-home')).toBeHidden();
+  await expect(page.locator('.v-nav-signin')).toBeHidden();
+  await page.getByRole('button', { name: 'Open menu' }).click();
+  const menu = page.getByRole('dialog', { name: 'Navigation menu' });
+  await expect(menu.getByRole('link', { name: 'Sign in' })).toBeVisible();
+  await expect(menu.getByRole('link', { name: /Portfolio/ })).toBeVisible();
+});
+
+test('portfolio preview keeps ordinary words on one line', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockAccount(page);
+  await page.goto('/portfolio/manage');
+  await page.getByLabel('Opening headline').fill('Welcome to Ada Studio');
+  await page.locator('.v-pedit-steps button').last().click();
+  const title = page.locator('.v-pedit-preview-panel .vpc-hero h1');
+  await expect(title).toHaveText('Welcome to Ada Studio');
+  const tops = await title.evaluate(element => {
+    const textNode = element.firstChild;
+    return Array.from({ length: 7 }, (_, index) => {
+      const range = document.createRange();
+      range.setStart(textNode, index);
+      range.setEnd(textNode, index + 1);
+      return Math.round(range.getBoundingClientRect().top);
+    });
+  });
+  expect(new Set(tops).size).toBe(1);
 });
 
 test('signed-in account menu is available on a narrow phone', async ({ page }) => {

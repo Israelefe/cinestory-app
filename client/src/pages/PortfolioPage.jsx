@@ -152,8 +152,6 @@ export default function PortfolioPage({ user }) {
             Your strongest work deserves its own address.<br />
             <em>Give it a home that feels like your studio.</em>
           </h1>
-          <p className="v-portfolio-hero-quick">Show clients what you do best in one public portfolio.</p>
-          <div className="v-portfolio-hero-actions"><Action to={user ? '/portfolio/manage' : '/signup'}>{user ? 'Create or edit your portfolio' : 'Create your account'}</Action><a href="#portfolio-showcase">Explore the sample</a></div>
         </div>
 
         <motion.div
@@ -186,6 +184,7 @@ export default function PortfolioPage({ user }) {
           <p className="v-lead">
             Put your strongest weddings, portraits, celebrations, and campaigns in one public place. When a potential client asks to see your work, you have one address ready to send.
           </p>
+          <div className="v-portfolio-hero-actions"><Action to={user ? '/portfolio/manage' : '/signup'}>{user ? 'Create or edit your portfolio' : 'Create your account'}</Action><a href="#portfolio-showcase">Explore the sample</a></div>
           <div className="v-portfolio-handle">
             <Camera size={17} aria-hidden="true" />
             <strong>veylo.com.ng/@yourstudio</strong>

@@ -93,3 +93,11 @@
 }
 @media(max-width:359px){.v-product-mobile-menu nav{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){.v-product-mobile-menu a,.v-product-mobile-menu>button,.v-product-menu-trigger{transition:none!important}}
+
+@media(max-width:1023px){
+  .v-nav .v-nav-home,
+  .v-nav .v-nav-actions>.v-nav-signin,
+  .v-nav .v-nav-actions>.v-nav-dashboard{display:none}
+  .v-nav .v-nav-inner{gap:12px}
+  .v-nav .v-nav-actions{gap:10px}
+}

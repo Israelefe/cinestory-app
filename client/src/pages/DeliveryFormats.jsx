@@ -233,10 +233,6 @@ export default function DeliveryFormats() {
             The shoot is finished.<br />
             <em>How should your client meet it?</em>
           </h1>
-          <p className="v-lead">
-            Some collections need a beginning and an ending. Some are better explored. Some should be revealed one photograph at a time. The format changes the first viewing, while your finished photographs remain untouched.
-          </p>
-          <a className="v-fguide-hero-jump" href="#format-guide">Compare all eight formats <ArrowDown size={16} /></a>
         </motion.div>
 
         <motion.div
@@ -255,6 +251,10 @@ export default function DeliveryFormats() {
             <small>The right answer depends on the shoot.</small>
           </div>
         </motion.div>
+        <div className="v-fguide-hero-after">
+          <p className="v-lead">Some collections need a beginning and an ending. Some are better explored. Some should be revealed one photograph at a time. The format changes the first viewing, while your finished photographs remain untouched.</p>
+          <a className="v-fguide-hero-jump" href="#format-guide">Compare all eight formats <ArrowDown size={16} /></a>
+        </div>
       </header>
 
       <section className="v-fguide-role-section" id="format-guide">

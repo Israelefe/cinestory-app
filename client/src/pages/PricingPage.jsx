@@ -38,15 +38,17 @@ export default function PricingPage() {
       <Reveal className="v-pricing-hero-copy">
         <Eyebrow>Pricing / Monthly in Nigerian naira</Eyebrow>
         <h1 className="v-title">Start free.<br /><em>Move to Pro when work gets busy.</em></h1>
-        <p className="v-lead">Choose based on how often you deliver and whether your studio needs its own branding, portfolio, and storage. Every creative format is available on both plans.</p>
-        <div className="v-pricing-early-actions"><a href="#pricing-plans">Compare Free and Pro</a><Link to="/signup">Start free</Link></div>
-        <div className="v-pricing-monthly"><span>MONTHLY PRICING</span><strong>No annual plan</strong><small>Free stays free. Pro is ₦25,000 each month.</small></div>
       </Reveal>
 
       <Reveal className="v-pricing-format-board" delay={.1}>
         <header><div><span>THE SHORT VERSION</span><strong>Pick the plan that matches your delivery volume.</strong></div><BadgeCheck size={22} /></header>
         <div>{priceSummary.map(([Icon, label, price, note], index) => <article key={label}><span>0{index + 1}</span><Icon size={18} /><div><strong>{label} · {price}</strong><small>{note}</small></div><Check size={15} /></article>)}</div>
         <footer><Check size={18} /><p>Monthly billing. No annual commitment.</p></footer>
+      </Reveal>
+      <Reveal className="v-pricing-hero-copy v-pricing-hero-after">
+        <p className="v-lead">Choose based on how often you deliver and whether your studio needs its own branding, portfolio, and storage. Every creative format is available on both plans.</p>
+        <div className="v-pricing-early-actions"><a href="#pricing-plans">Compare Free and Pro</a><Link to="/signup">Start free</Link></div>
+        <div className="v-pricing-monthly"><span>MONTHLY PRICING</span><strong>No annual plan</strong><small>Free stays free. Pro is ₦25,000 each month.</small></div>
       </Reveal>
     </header>
 
