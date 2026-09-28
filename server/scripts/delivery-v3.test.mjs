@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { V3_FORMATS, contrastRatio, validShowcase } from '../src/constants/deliveryV3.js';
-import { analyzeAllV3, directV3, improvePurpose, regenerateV3Caption } from '../src/services/deliveryV3AI.service.js';
+import { analyzeAllV3, directV3, improvePurpose, recommendV3Format, regenerateV3Caption } from '../src/services/deliveryV3AI.service.js';
 
 const ids = Array.from({ length: 25 }, (_, index) => 'asset-' + index);
 test('each format enforces its own inclusive showcase bounds and known unique assets', () => {
@@ -82,7 +82,18 @@ test('purpose improvement rejects unrelated model text', async () => {
   } finally { restore(); }
 });
 
-test('Photo Story chooses a bounded selection and keeps bookends outside it when available', async () => {
+test('personal birthdays recommend Photo Story while whole events recommend Event Coverage', async () => {
+  const birthday = await recommendV3Format('Birthday', "Ada's 25th birthday celebration");
+  const event = await recommendV3Format('Event', 'Annual studio gathering');
+  const commercial = await recommendV3Format('Fashion', 'Lookbook and product campaign assets');
+  assert.equal(birthday.format, 'photo-story');
+  assert.match(birthday.reason, /person being celebrated/i);
+  assert.equal(event.format, 'event-coverage');
+  assert.match(event.reason, /multiple people, scenes/i);
+  assert.equal(commercial.format, 'campaign');
+});
+
+test('Photo Story chooses a bounded selection and writes distinct purpose-led headlines and substantial captions', async () => {
   const calls = [];
   const selected = ids.slice(0, 10);
   const restore = mockModel([
@@ -91,10 +102,9 @@ test('Photo Story chooses a bounded selection and keeps bookends outside it when
       title: "Ada's 25th birthday",
       openingLine: "Ada, your birthday photographs are ready.",
       closingLine: "Here is the full collection from your celebration.",
-      frames: selected.map(assetId => ({ assetId, caption: 'Ada, this is your 25th birthday.' }))
+      frames: selected.map((assetId, index) => ({ assetId, headline: index === 0 ? 'Twenty-five begins' : `A year to remember ${index}`, caption: index === 0 ? 'Ada, twenty-five opens a year to celebrate how far you have come and choose what matters next.' : 'Ada, may this year bring new choices that keep what matters close.' }))
     },
     {
-      frames: selected.map((assetId, index) => ({ assetId, caption: index === 0 ? 'Ada, this is your 25th birthday. That smile.' : 'A smiling woman poses in a red dress.' })),
       palette: { background: '#101010', surface: '#202020', text: '#ffffff', accent: '#ff5a47' },
       typography: { display: 'Playfair Display', body: 'Outfit' }
     }
@@ -106,10 +116,12 @@ test('Photo Story chooses a bounded selection and keeps bookends outside it when
     assert.deepEqual(result.selected, selected);
     assert.equal(result.direction.frames.length, 10);
     assert.equal(result.direction.frames.every(frame => frame.textAnimation === 'typewriter'), true);
-    assert.equal(result.direction.frames[0].caption, 'Ada, this is your 25th birthday. That smile.');
-    assert.equal(result.direction.frames.slice(1).every(frame => frame.caption === 'Ada, this is your 25th birthday.'), true);
+    assert.equal(result.direction.frames[0].headline, 'Twenty-five begins');
+    assert.equal(new Set(result.direction.frames.map(frame => frame.headline)).size, 10);
+    assert.ok(result.direction.frames[0].caption.length > 60);
+    assert.ok(result.direction.frames.every(frame => frame.caption.length <= 95));
     const narrativePrompt = calls[1].messages[1].content[0].text;
-    assert.equal(narrativePrompt.includes('Visible birthday portrait'), false);
+    assert.equal(narrativePrompt.includes('Visible birthday portrait'), true);
     assert.match(narrativePrompt, /Ada's 25th birthday/);
     assert.equal(selected.includes(result.openingAssetId), false);
     assert.equal(selected.includes(result.closingAssetId), false);
@@ -118,13 +130,14 @@ test('Photo Story chooses a bounded selection and keeps bookends outside it when
   } finally { restore(); }
 });
 
-test('regenerated captions keep the purpose when a visual rewrite describes the photo', async () => {
+test('regenerated headline and caption use the purpose with only a light image cue', async () => {
   const calls = [];
-  const restore = mockModel([{ caption: 'Ada, your 25th birthday is here.' }, { caption: 'A woman smiles at the camera.' }], calls);
+  const restore = mockModel([{ headline: 'A year to remember', caption: 'Ada, twenty-five opens a year to celebrate how far you have come and choose what matters next.' }], calls);
   try {
-    const caption = await regenerateV3Caption({ format: 'photo-story', brief: "Ada's 25th birthday", shootType: 'Birthday', v3: {} }, { summary: 'A woman smiles at the camera.' });
-    assert.equal(caption, 'Ada, your 25th birthday is here.');
-    assert.equal(calls[0].messages[1].content[0].text.includes('A woman smiles'), false);
+    const text = await regenerateV3Caption({ format: 'photo-story', brief: "Ada's 25th birthday", shootType: 'Birthday', v3: {} }, { summary: 'A woman smiles at the camera.' });
+    assert.deepEqual(text, { headline: 'A year to remember', caption: 'Ada, twenty-five opens a year to celebrate how far you have come and choose what matters next.' });
+    assert.match(calls[0].messages[1].content[0].text, /A woman smiles at the camera/);
+    assert.match(calls[0].messages[0].content, /12-17 words/);
   } finally { restore(); }
 });
 

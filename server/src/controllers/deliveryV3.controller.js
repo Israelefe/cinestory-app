@@ -12,7 +12,7 @@ import { removeDeliveryAudio } from '../services/deliveryMedia.service.js';
 const details = z.object({ clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().min(2).max(80), purpose: z.string().trim().min(1).max(3000), originalPurpose: z.string().trim().max(3000).default(''), clarificationAnswers: z.array(z.object({ question: z.string().trim().max(180), answer: z.string().trim().min(1).max(300) }).strict()).max(3).default([]) }).strict();
 const formatInput = z.object({ format: z.enum(Object.keys(V3_FORMATS)) }).strict();
 const idList = z.array(z.string().uuid()).max(24);
-const showcaseInput = z.object({ assetIds: idList, frames: z.array(z.object({ assetId: z.string().uuid(), caption: z.string().trim().min(5).max(180) }).strict()).max(24), title: z.string().trim().min(2).max(80), openingLine: z.string().trim().min(5).max(140), closingLine: z.string().trim().min(5).max(160), openingAssetId: z.string().uuid(), closingAssetId: z.string().uuid() }).strict();
+const showcaseInput = z.object({ assetIds: idList, frames: z.array(z.object({ assetId: z.string().uuid(), headline: z.string().trim().max(70).default(''), caption: z.string().trim().min(5).max(180) }).strict()).max(24), title: z.string().trim().min(2).max(80), openingLine: z.string().trim().min(5).max(140), closingLine: z.string().trim().min(5).max(160), openingAssetId: z.string().uuid(), closingAssetId: z.string().uuid() }).strict();
 const themeInput = z.object({ palette: z.object({ background: z.string().regex(/^#[0-9a-f]{6}$/i), surface: z.string().regex(/^#[0-9a-f]{6}$/i), text: z.string().regex(/^#[0-9a-f]{6}$/i), accent: z.string().regex(/^#[0-9a-f]{6}$/i) }).strict(), typography: z.object({ display: z.string(), body: z.string() }).strict() }).strict();
 const accessInput = z.object({ pin: z.string().regex(/^\d{6}$/).optional().or(z.literal('')), expiresAt: z.string().datetime().optional().or(z.literal('')), allowIndividualDownloads: z.boolean(), allowDownloadAll: z.boolean(), allowLikes: z.boolean(), downloadsLocked: z.boolean(), downloadLockNote: z.string().trim().max(200), watermarkEnabled: z.boolean(), watermarkText: z.string().trim().max(40), usageTerms: z.string().trim().max(1000).default('') }).strict();
 
@@ -48,7 +48,7 @@ export async function v3Assist(req, res) {
     if (!input.success) return bad(res, input);
     const { mode, purpose, shootType } = input.data;
     if (mode === 'improve' && !purpose) return res.status(400).json({ success: false, code: 'V3_PURPOSE_REQUIRED', field: 'purpose', message: 'Write the purpose of the shoot before improving it.' });
-    const data = mode === 'improve' ? { improved: await improvePurpose({ purpose, shootType }) } : mode === 'clarify' ? { clear: true, questions: [] } : await recommendV3Format(shootType);
+    const data = mode === 'improve' ? { improved: await improvePurpose({ purpose, shootType }) } : mode === 'clarify' ? { clear: true, questions: [] } : await recommendV3Format(shootType, purpose);
     res.json({ success: true, data });
   } catch (error) { fail(res, error); }
 }
@@ -112,14 +112,14 @@ export async function v3Showcase(req, res) {
     if (!validShowcase(delivery.format, input.data.assetIds, assetIds)) return res.status(400).json({ success: false, message: 'Choose the allowed number of showcase photographs from this delivery.' });
     if (input.data.frames.length !== input.data.assetIds.length || new Set(input.data.frames.map(frame => frame.assetId)).size !== input.data.frames.length || input.data.frames.some(frame => !input.data.assetIds.includes(frame.assetId))) return res.status(400).json({ success: false, message: 'Every showcase photograph needs one caption.' });
     if (!assetIds.has(input.data.openingAssetId) || !assetIds.has(input.data.closingAssetId)) return res.status(400).json({ success: false, message: 'Choose photographs from this delivery for the opening and closing.' });
-    if (delivery.format === 'photo-story' && input.data.frames.some(frame => frame.caption.length > 60)) return res.status(400).json({ success: false, message: 'Photo Story captions must be 60 characters or less.' });
+    if (delivery.format === 'photo-story' && input.data.frames.some(frame => frame.caption.length > 150)) return res.status(400).json({ success: false, message: 'Photo Story captions must fit within 150 characters.' });
     const previous = delivery.creativeDirection;
     const selectedSet = new Set(input.data.assetIds);
     const sections = (previous.sections || []).map(section => ({ ...section, assetIds: (section.assetIds || []).filter(id => selectedSet.has(id)) })).filter(section => section.assetIds.length);
     const assigned = new Set(sections.flatMap(section => section.assetIds));
     if (!sections.length) sections.push({ id: 'showcase', title: 'The photographs', subtitle: '', layout: 'grid', assetIds: [] });
     sections[0].assetIds.push(...input.data.assetIds.filter(id => !assigned.has(id)));
-    delivery.creativeDirection = { ...previous, title: input.data.title, openingLine: input.data.openingLine, closingLine: input.data.closingLine, frames: input.data.assetIds.map(id => ({ assetId: id, caption: input.data.frames.find(frame => frame.assetId === id).caption, headline: '', textAnimation: delivery.format === 'photo-story' ? 'typewriter' : 'word_fade_up' })), assetOrder: input.data.assetIds, sections };
+    delivery.creativeDirection = { ...previous, title: input.data.title, openingLine: input.data.openingLine, closingLine: input.data.closingLine, frames: input.data.assetIds.map(id => ({ assetId: id, headline: input.data.frames.find(frame => frame.assetId === id).headline, caption: input.data.frames.find(frame => frame.assetId === id).caption, textAnimation: delivery.format === 'photo-story' ? 'typewriter' : 'word_fade_up' })), assetOrder: input.data.assetIds, sections };
     delivery.title = input.data.title; delivery.curatedAssetIds = input.data.assetIds; delivery.presentationOrder = input.data.assetIds;
     delivery.galleryAssetIds = delivery.assets.map(asset => asset.assetId); delivery.galleryOrder = delivery.galleryAssetIds;
     const narrationTextChanged = previous.openingLine !== input.data.openingLine || previous.closingLine !== input.data.closingLine;
@@ -137,7 +137,7 @@ export async function v3Caption(req, res) {
     const insight = delivery.collectionAnalysis.images?.find(row => row.assetId === req.params.assetId);
     if (!insight) return res.status(404).json({ success: false, message: 'Photograph not found.' });
     const caption = await regenerateV3Caption(delivery, insight, input.data.instruction);
-    res.json({ success: true, data: { caption } });
+    res.json({ success: true, data: caption });
   } catch (error) { fail(res, error); }
 }
 

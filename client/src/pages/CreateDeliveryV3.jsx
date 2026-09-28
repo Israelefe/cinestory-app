@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronLeft, ChevronRight, Clapperboard, Clock3, ExternalLink, Image, LoaderCircle, Mail, Mic2, Music2, Pause, Play, QrCode, RefreshCw, RotateCcw, Share2, Trash2, Upload } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ArrowRight, AudioLines, Check, ChevronLeft, ChevronRight, Clapperboard, Clock3, ExternalLink, Image, LoaderCircle, Mail, Mic2, Music2, Pause, Play, QrCode, RefreshCw, RotateCcw, Search, Share2, Trash2, Upload } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
 import { API_BASE_URL } from '../config/env.js';
@@ -10,7 +10,7 @@ import { uploadDeliveryPhotosV3 } from '../utils/deliveryUploadV3.js';
 import { SHOOT_TYPES } from '../constants/shootTypes.js';
 import { DELIVERY_FORMATS } from '../constants/deliveryFormats.js';
 import DeliveryFormatVisual from '../components/DeliveryFormatVisual.jsx';
-import ClientDeliveryPreview from '../components/delivery/ClientDeliveryPreview.jsx';
+import { ClientPreviewPhoneFrame } from '../components/delivery/PhonePresentation.jsx';
 import './CreateDeliveryV3.css';
 
 const BOUNDS = { 'photo-story': [5, 10], editorial: [6, 14], 'photo-reveal': [5, 12], canvas: [8, 18], chapters: [8, 20], album: [6, 16], 'event-coverage': [10, 24], campaign: [6, 16] };
@@ -63,6 +63,13 @@ function withMediaUrl(value) { return String(value || '').startsWith('/api/') ? 
 function nextAfterShowcase(format) { return format === 'photo-story' ? 'narration' : MUSIC.has(format) ? 'music' : 'design'; }
 function freeMonthlyLimitReached(entitlements) { return entitlements?.plan === 'free' && entitlements?.usage?.deliveriesRemaining === 0; }
 function freeMonthlyLimitMessage(entitlements) { return `You've published all ${entitlements?.limits?.deliveriesPerMonth || 3} Free deliveries this month. You can create another next month, or move to Pro.`; }
+function formatTrackTime(value) {
+  const seconds = Math.max(0, Math.floor(Number(value) || 0));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+function categoryLabel(value) {
+  return String(value || 'Soundtrack').split(/[\s-]+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+}
 
 function StepButton({ children, onClick, disabled, secondary = false, type = 'button' }) {
   return <button type={type} className={'v3-button' + (secondary ? ' is-secondary' : '')} onClick={onClick} disabled={disabled}>{children}</button>;
@@ -94,7 +101,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const [customShoot, setCustomShoot] = useState(SHOOT_TYPES.includes(initialDelivery?.shootType) ? '' : initialDelivery?.shootType || '');
   const [purpose, setPurpose] = useState(initialDelivery?.brief || '');
   const [originalPurpose, setOriginalPurpose] = useState(initialDelivery?.v3?.originalPurpose || '');
-  const [recommendation, setRecommendation] = useState(initialDelivery?.formatRecommendations?.[0] || null);
+  const [recommendation, setRecommendation] = useState(null);
   const [format, setFormat] = useState(initialDelivery?.format || '');
   const [uploads, setUploads] = useState({});
   const [failedFiles, setFailedFiles] = useState([]);
@@ -105,6 +112,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const [selected, setSelected] = useState(initialDelivery?.curatedAssetIds || []);
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [captions, setCaptions] = useState(Object.fromEntries((initialDelivery?.creativeDirection?.frames || []).map(frame => [frame.assetId, frame.caption])));
+  const [headlines, setHeadlines] = useState(Object.fromEntries((initialDelivery?.creativeDirection?.frames || []).map(frame => [frame.assetId, frame.headline || ''])));
   const [title, setTitle] = useState(initialDelivery?.creativeDirection?.title || '');
   const [openingLine, setOpeningLine] = useState(initialDelivery?.creativeDirection?.openingLine || '');
   const [closingLine, setClosingLine] = useState(initialDelivery?.creativeDirection?.closingLine || '');
@@ -112,8 +120,13 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const [closingAssetId, setClosingAssetId] = useState(initialDelivery?.v3?.closingAssetId || '');
   const [instructions, setInstructions] = useState({});
   const [tracks, setTracks] = useState([]);
+  const [musicLoading, setMusicLoading] = useState(false);
   const [activeTrack, setActiveTrack] = useState('');
   const [musicSearch, setMusicSearch] = useState('');
+  const [musicCategory, setMusicCategory] = useState('all');
+  const [musicTab, setMusicTab] = useState('curated');
+  const [trackTime, setTrackTime] = useState(0);
+  const [trackDuration, setTrackDuration] = useState(0);
   const audioRef = useRef(null);
   const [palette, setPalette] = useState(initialDelivery?.creativeDirection?.palette || defaultPalette);
   const themeStatus = themeReadability(palette);
@@ -143,6 +156,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const currentProgressId = stage === 'narration-job' ? 'narration' : stage;
   const currentIndex = visibleSteps.findIndex(item => item.id === currentProgressId);
   const statusProgress = Math.max(0, Math.round(((currentIndex + 1) / visibleSteps.length) * 100));
+  const selectedFormat = DELIVERY_FORMATS.find(item => item.value === format);
 
   async function refresh() {
     if (!draft?._id) return null;
@@ -155,6 +169,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   function syncShowcase(next) {
     setSelected(next.curatedAssetIds || []);
     setCaptions(Object.fromEntries((next.creativeDirection?.frames || []).map(frame => [frame.assetId, frame.caption])));
+    setHeadlines(Object.fromEntries((next.creativeDirection?.frames || []).map(frame => [frame.assetId, frame.headline || ''])));
     setTitle(next.creativeDirection?.title || '');
     setOpeningLine(next.creativeDirection?.openingLine || '');
     setClosingLine(next.creativeDirection?.closingLine || '');
@@ -192,17 +207,19 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   }, [draft?._id, stage]);
   useEffect(() => {
     if (stage !== 'music' || tracks.length) return;
-    api.get('/v1/deliveries/soundtracks').then(({ data }) => setTracks(data.data || [])).catch(failure => setError(message(failure)));
+    setMusicLoading(true);
+    api.get('/v1/deliveries/soundtracks').then(({ data }) => setTracks(data.data || [])).catch(failure => setError(message(failure))).finally(() => setMusicLoading(false));
   }, [stage, tracks.length]);
   useEffect(() => {
     if (stage !== 'format' || recommendation || !actualShootType) return;
     let active = true;
-    api.post('/v1/deliveries/v3/assist', { mode: 'recommend', purpose: '', shootType: actualShootType }).then(({ data }) => {
+    api.post('/v1/deliveries/v3/assist', { mode: 'recommend', purpose, shootType: actualShootType }).then(({ data }) => {
       if (active) { setRecommendation(data.data); setFormat(current => current || data.data.format); }
     }).catch(failure => { if (active) setError(message(failure)); });
     return () => { active = false; };
-  }, [stage, recommendation, actualShootType]);
+  }, [stage, recommendation, actualShootType, purpose]);
   useEffect(() => () => { audioRef.current?.pause(); }, []);
+  useEffect(() => { window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' }); }, [stage, reduced]);
   useEffect(() => { setActivePhotoIndex(current => Math.min(current, Math.max(0, selected.length - 1))); }, [selected.length]);
 
   async function improve() {
@@ -218,7 +235,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     if (actualShootType.length < 2) { setError(shootType === 'Other' ? 'Name the type of shoot before continuing.' : 'Choose a type of shoot before continuing.'); return; }
     if (!purpose.trim()) { setError('Write why this shoot was taken before continuing.'); return; }
     await action('details', async () => {
-      const { data: rec } = await api.post('/v1/deliveries/v3/assist', { mode: 'recommend', purpose: '', shootType: actualShootType });
+      const { data: rec } = await api.post('/v1/deliveries/v3/assist', { mode: 'recommend', purpose, shootType: actualShootType });
       setRecommendation(rec.data); if (!format) setFormat(rec.data.format);
       const body = { clientName: clientName.trim(), shootType: actualShootType, purpose: purpose.trim(), originalPurpose, clarificationAnswers: [] };
       if (draft?._id) await api.patch('/v1/deliveries/' + draft._id + '/v3/details', body);
@@ -268,7 +285,13 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   }
   function replaceSelected(index, id) {
     setSelected(current => current.map((value, at) => at === index ? id : value));
-    if (!captions[id]) setCaptions(current => ({ ...current, [id]: '' }));
+    setActivePhotoIndex(index);
+    void regenerate(id);
+  }
+  function addSelected(id) {
+    setSelected(current => [...current, id]);
+    setActivePhotoIndex(selected.length);
+    void regenerate(id);
   }
   function moveSelected(index, offset) {
     if (index + offset < 0 || index + offset >= selected.length) return;
@@ -278,6 +301,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   async function regenerate(id) {
     await action('caption-' + id, async () => {
       const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/captions/' + id + '/regenerate', { instruction: instructions[id] || '' });
+      setHeadlines(current => ({ ...current, [id]: data.data.headline }));
       setCaptions(current => ({ ...current, [id]: data.data.caption }));
     });
   }
@@ -287,15 +311,22 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     if (openingLine.trim().length < 5) { setError('Write an opening message with at least five characters.'); return; }
     if (closingLine.trim().length < 5) { setError('Write a closing message with at least five characters.'); return; }
     if (!assetById.has(openingAssetId) || !assetById.has(closingAssetId)) { setError('Choose a photo for both the opening and the closing.'); return; }
+    const missingHeadline = selected.findIndex(id => (headlines[id]?.trim().length || 0) < 2);
+    if (missingHeadline >= 0) {
+      setActivePhotoIndex(missingHeadline);
+      setError(`Add a headline for showcase photo ${missingHeadline + 1}, or regenerate its headline and caption.`);
+      window.requestAnimationFrame(() => document.querySelector('.v3-showcase-headline')?.focus());
+      return;
+    }
     const missingCaption = selected.findIndex(id => (captions[id]?.trim().length || 0) < 5);
     if (missingCaption >= 0) {
       setActivePhotoIndex(missingCaption);
-      setError(`Write at least five characters for showcase photo ${missingCaption + 1}.`);
+      setError(`Write a caption for showcase photo ${missingCaption + 1}, or regenerate its words.`);
       window.requestAnimationFrame(() => document.querySelector('.v3-showcase-item textarea')?.focus());
       return;
     }
     await action('showcase', async () => {
-      const body = { assetIds: selected, frames: selected.map(assetId => ({ assetId, caption: captions[assetId].trim() })), title: title.trim(), openingLine: openingLine.trim(), closingLine: closingLine.trim(), openingAssetId, closingAssetId };
+      const body = { assetIds: selected, frames: selected.map(assetId => ({ assetId, headline: headlines[assetId].trim(), caption: captions[assetId].trim() })), title: title.trim(), openingLine: openingLine.trim(), closingLine: closingLine.trim(), openingAssetId, closingAssetId };
       await api.patch('/v1/deliveries/' + draft._id + '/v3/showcase', body);
       const next = await refresh(); setStage(nextAfterShowcase(next.format));
     });
@@ -380,30 +411,79 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
       else { await navigator.clipboard.writeText(published?.url || ''); toast.success('Link copied.'); }
     } catch (failure) { if (failure.name !== 'AbortError') setError('The share menu could not open.'); }
   }
+  const musicCategories = ['all', 'afrobeat', 'amapiano', ...new Set(tracks.flatMap(track => [track.category, track.genre]).filter(Boolean).map(value => String(value).trim().toLowerCase()))].filter((value, index, all) => all.indexOf(value) === index);
   const filteredTracks = tracks.filter(track => {
-    const haystack = [track.title, track.genre, track.category, ...(track.tags || [])].join(' ').toLowerCase();
-    return haystack.includes(musicSearch.toLowerCase());
+    const haystack = [track.title, track.creator, track.genre, track.category, track.mood, track.storyFunction, ...(track.tags || []), ...(track.bestFor || [])].join(' ').toLowerCase();
+    const categoryMatch = musicCategory === 'all' || [track.category, track.genre, ...(track.tags || [])].some(value => String(value || '').toLowerCase().includes(musicCategory));
+    return categoryMatch && haystack.includes(musicSearch.trim().toLowerCase());
   }).sort((a, b) => {
-    const rank = track => /amapiano/i.test([track.title, track.genre, ...(track.tags || [])].join(' ')) ? 0 : track.category === 'afrobeat' ? 1 : 2;
+    const rank = track => /amapiano/i.test([track.title, track.genre, track.category, ...(track.tags || [])].join(' ')) ? 0 : /afrobeats?/i.test([track.title, track.genre, track.category, ...(track.tags || [])].join(' ')) ? 1 : 2;
     return rank(a) - rank(b);
   });
+  const currentPreviewTrack = tracks.find(track => track.id === activeTrack);
+  const selectedCatalogTrack = tracks.find(track => track.id === draft?.soundtrack?.catalogId);
+  const featureTrack = currentPreviewTrack || selectedCatalogTrack || draft?.soundtrack || null;
 
-  return <div className="v3-create">
+  function toggleTrack(track) {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (activeTrack === track.id) {
+      audio.pause();
+      setActiveTrack('');
+      return;
+    }
+    setActiveTrack(track.id);
+    setTrackTime(0);
+    setTrackDuration(0);
+    audio.src = withMediaUrl(track.previewUrl);
+    audio.play().catch(() => { setActiveTrack(''); setError('This preview could not play. Try another track.'); });
+  }
+  function seekTrack(event) {
+    const nextTime = Number(event.target.value);
+    if (audioRef.current && Number.isFinite(nextTime)) {
+      audioRef.current.currentTime = nextTime;
+      setTrackTime(nextTime);
+    }
+  }
+
+  return <div className={'v3-create' + (stage === 'preview' ? ' is-previewing' : '')}>
     <div className="v3-shell">
       <header className="v3-top"><Link to="/dashboard" className="v3-back"><ArrowLeft size={17} /> Dashboard</Link><div><Clapperboard size={18} /><strong>New delivery</strong></div><span>{draft?._id ? 'Draft in progress' : 'Start here'}</span></header>
-      {!published && <section className="v3-progress" aria-label="Creation progress"><div className="v3-progress-copy"><div><span>STEP {String(Math.max(1, currentIndex + 1)).padStart(2, '0')} / {String(visibleSteps.length).padStart(2, '0')}</span><strong>{visibleSteps[currentIndex]?.label || 'Shoot'}</strong></div><small>{visibleSteps[currentIndex + 1] ? `Next: ${visibleSteps[currentIndex + 1].label}` : 'Ready to publish'}</small></div><div className="v3-progress-meter" role="progressbar" aria-valuemin={0} aria-valuemax={visibleSteps.length} aria-valuenow={Math.max(0, currentIndex + 1)} aria-label="Delivery creation progress"><span style={{ transform: 'scaleX(' + statusProgress / 100 + ')' }} /></div></section>}
+      {!published && <section className="v3-progress" aria-label="Creation progress">
+        <div className="v3-progress-copy">
+          <div><span>DELIVERY CREATION</span><strong>{visibleSteps[currentIndex]?.label || 'Shoot details'}</strong></div>
+          <small>{visibleSteps[currentIndex + 1] ? `Next: ${visibleSteps[currentIndex + 1].label}` : 'Ready to publish'}</small>
+        </div>
+        <div className="v3-progress-meter" role="progressbar" aria-valuemin={0} aria-valuemax={visibleSteps.length} aria-valuenow={Math.max(0, currentIndex + 1)} aria-label="Delivery creation progress" aria-valuetext={`Step ${Math.max(1, currentIndex + 1)} of ${visibleSteps.length}`}><span style={{ transform: 'scaleX(' + statusProgress / 100 + ')' }} /></div>
+        <ol className="v3-stepper">
+          {visibleSteps.map((item, index) => <li key={item.id} aria-label={item.label} className={index === currentIndex ? 'is-current' : index < currentIndex ? 'is-complete' : ''} aria-current={index === currentIndex ? 'step' : undefined}>
+            <span>{index < currentIndex ? <Check size={13} /> : String(index + 1).padStart(2, '0')}</span><small>{item.label}</small>
+          </li>)}
+        </ol>
+      </section>}
       {error && <div className="v3-error" role="alert"><AlertCircle size={20} aria-hidden="true" /><div><strong>{typeof error === 'string' ? error : error.text}</strong>{typeof error === 'object' && error.fix === 'contrast' && <button type="button" className="v3-error-fix" onClick={() => { setPalette(current => readablePalette(current)); setError(''); }}>Fix text contrast</button>}{typeof error === 'object' && error.code && <small>Support reference: {error.code}</small>}</div><button type="button" onClick={() => setError('')} aria-label="Dismiss error">×</button></div>}
       {quotaReached && (stage === 'access' || stage === 'details' && !draft) && <div className="v3-quota-note" role="status"><Clock3 size={18} /><span>{freeMonthlyLimitMessage(entitlements)}</span><Link to="/billing">View Pro</Link></div>}
-      <AnimatePresence mode="wait"><motion.main key={stage} className="v3-main" initial={reduced ? false : { opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} exit={reduced ? {} : { opacity: 0, x: -12 }} transition={{ duration: reduced ? 0 : .3 }}>
-        {stage === 'details' && <><Head eyebrow="01 / THE SHOOT" title="Tell us what this delivery is for.">A few real details help the words feel like they belong to these photographs.</Head><div className="v3-panel v3-form">
-          <label>Client name<input maxLength={100} value={clientName} onChange={event => setClientName(event.target.value)} placeholder="Ada" /></label>
-          <label>Type of shoot<select value={shootType} onChange={event => { setShootType(event.target.value); setRecommendation(null); }}><option value="">Choose a shoot type</option>{SHOOT_TYPES.map(value => <option key={value}>{value}</option>)}</select></label>
-          {shootType === 'Other' && <label>What type of shoot?<input maxLength={80} value={customShoot} onChange={event => setCustomShoot(event.target.value)} placeholder="e.g. bridal shower" /></label>}
-          <label className="v3-span">Purpose of the shoot<textarea rows={5} maxLength={3000} value={purpose} onChange={event => setPurpose(event.target.value)} placeholder="These photos were taken for Ada's 25th birthday celebration…" /><small>Write what you know. Names, occasion, and why this shoot matters are useful.</small></label>
-          <div className="v3-assist v3-span"><button type="button" onClick={improve} disabled={!!busy}><RefreshCw size={16} /> Improve my wording</button>{originalPurpose && <button type="button" onClick={() => { setPurpose(originalPurpose); setOriginalPurpose(''); }}><RotateCcw size={16} /> Revert to my words</button>}<p>We will keep your facts and intent.</p></div>
-        </div><div className="v3-actions"><StepButton onClick={detailsNext} disabled={!!busy || billingLoading || !draft && quotaReached}>{busy ? <LoaderCircle className="v3-spin" size={17} /> : <ArrowRight size={17} />} Continue to formats</StepButton></div></>}
+      <div className="v3-workspace">
+      <AnimatePresence mode="wait"><motion.main key={stage} className={'v3-main' + (stage === 'preview' ? ' is-client-preview' : '')} initial={reduced ? false : { opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} exit={reduced ? {} : { opacity: 0, x: -12 }} transition={{ duration: reduced ? 0 : .3 }}>
+        {stage === 'details' && <>
+          <Head eyebrow="01 / THE SHOOT" title="Tell us what this delivery is for.">Add the client, type of shoot, and the reason these photos were taken.</Head>
+          <div className="v3-details-grid">
+            <section className="v3-panel v3-shoot-fields">
+              <div className="v3-panel-heading"><span>01</span><div><h2>Who is this delivery for?</h2><p>Set the client and shoot type.</p></div></div>
+              <label>Client name<input maxLength={100} value={clientName} onChange={event => setClientName(event.target.value)} placeholder="Ada" /></label>
+              <label>Type of shoot<select value={shootType} onChange={event => { setShootType(event.target.value); setRecommendation(null); setFormat(''); }}><option value="">Choose a shoot type</option>{SHOOT_TYPES.map(value => <option key={value}>{value}</option>)}</select></label>
+              {shootType === 'Other' && <label>What type of shoot?<input maxLength={80} value={customShoot} onChange={event => setCustomShoot(event.target.value)} placeholder="e.g. bridal shower" /></label>}
+            </section>
+            <section className="v3-panel v3-purpose-panel">
+              <div className="v3-panel-heading"><span>02</span><div><h2>What was the shoot for?</h2><p>Use your own words. A short, plain description is enough.</p></div></div>
+              <label className="v3-purpose-label"><span>Purpose of the shoot</span><textarea rows={8} maxLength={3000} value={purpose} onChange={event => setPurpose(event.target.value)} placeholder="These photos were taken for Ada's 25th birthday celebration…" /><small>Include names and the occasion if they matter to the story.</small></label>
+              <div className="v3-assist"><button type="button" onClick={improve} disabled={!!busy}>{busy === 'improve' ? <LoaderCircle className="v3-spin" size={16} /> : <RefreshCw size={16} />} Improve my wording</button>{originalPurpose && <button type="button" className="is-quiet" onClick={() => { setPurpose(originalPurpose); setOriginalPurpose(''); }}><RotateCcw size={16} /> Revert to my words</button>}<p>This only improves what you wrote. Your original stays available to restore.</p></div>
+            </section>
+          </div>
+          <div className="v3-actions"><StepButton onClick={detailsNext} disabled={!!busy || billingLoading || !draft && quotaReached}>{busy ? <LoaderCircle className="v3-spin" size={17} /> : <ArrowRight size={17} />} Continue to formats</StepButton></div>
+        </>}
         {stage === 'format' && <>
-          <Head eyebrow="02 / THE FORMAT" title="Choose how they first see the work.">We recommend one format for this shoot. You can choose any of the eight.</Head>
+          <Head eyebrow="02 / THE FORMAT" title="Choose how they first see the work.">Pick the format that fits this shoot. The recommendation is a starting point; you can choose any of the eight.</Head>
           {recommendedFormat && <section className="v3-featured-format" aria-label="Recommended format">
             <div className="v3-featured-art" aria-hidden="true" inert=""><DeliveryFormatVisual format={recommendedFormat} compact paused /></div>
             <div className="v3-featured-copy">
@@ -418,52 +498,192 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
           <div className="v3-format-grid">{DELIVERY_FORMATS.filter(item => item.value !== recommendedFormat?.value).map(item => <FormatCard key={item.value} item={item} selected={format === item.value} onSelect={() => setFormat(item.value)} />)}</div>
           <div className="v3-actions"><StepButton secondary onClick={() => setStage('details')}><ArrowLeft size={17} /> Back</StepButton><StepButton onClick={chooseFormat} disabled={!!busy}>{busy ? <LoaderCircle className="v3-spin" size={17} /> : <ArrowRight size={17} />} Continue to photos</StepButton></div>
         </>}
-        {stage === 'upload' && <><Head eyebrow="03 / THE PHOTOGRAPHS" title="Add the finished photographs.">Every photo stays in the full gallery. We will choose {bounds[0]}–{bounds[1]} for the {DELIVERY_FORMATS.find(item => item.value === format)?.name} showcase.</Head><div className="v3-upload-summary"><strong>{assets.length} / {limits}</strong><span>{planName} plan · JPEG, PNG or WebP · 50 MB each</span></div><label className="v3-drop"><Upload size={30} /><strong>Choose photographs to upload</strong><span>You can add more after these finish.</span><input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={event => { uploadFiles(event.target.files); event.target.value = ''; }} disabled={!!busy} /></label>{busy === 'upload' && <div className="v3-upload-progress" role="status"><span>Uploading photographs · {uploadPercent}%</span><div><i style={{ transform: 'scaleX(' + uploadPercent / 100 + ')' }} /></div></div>}{failedFiles.length > 0 && <StepButton secondary onClick={() => uploadFiles(failedFiles)} disabled={!!busy}><RefreshCw size={16} /> Retry {failedFiles.length} failed photo{failedFiles.length > 1 ? 's' : ''}</StepButton>}<div className="v3-photo-grid">{assets.map((asset, index) => <article key={asset.assetId}><button type="button" className="v3-photo-open" onClick={() => window.open(asset.url, '_blank', 'noopener,noreferrer')} aria-label={'Preview photo ' + (index + 1)}><img src={asset.thumbnailUrl || asset.url} alt={asset.originalFilename || 'Uploaded photograph'} loading="lazy" /></button><div><span>{index + 1}. {asset.originalFilename || 'Photograph'}</span><button type="button" onClick={() => deletePhoto(asset.assetId)} disabled={!!busy} aria-label={'Delete ' + (asset.originalFilename || 'photo')}><Trash2 size={16} /></button></div></article>)}</div><div className="v3-actions"><StepButton secondary onClick={() => setStage('format')}><ArrowLeft size={17} /> Back</StepButton><StepButton onClick={prepare} disabled={!!busy || assets.length < bounds[0]}><ArrowRight size={17} /> Analyse {assets.length} photos</StepButton></div></>}
-        {stage === 'preparing' && <div className="v3-working" role="status"><div className="v3-working-mark"><Image size={30} /></div><Head eyebrow="ANALYSING THE PHOTOGRAPHS" title="Choosing the showcase.">We are reviewing every uploaded photo, then writing captions for the selected set. Your full gallery will keep them all.</Head><strong>{job?.progress || 0}%</strong><div className="v3-upload-progress"><div><i style={{ transform: 'scaleX(' + (job?.progress || 0) / 100 + ')' }} /></div></div><p>{job?.stage === 'analysing-photos' ? 'Reviewing every photograph' : job?.stage === 'writing-showcase' ? 'Writing the showcase and captions' : 'Preparing your delivery'}</p>{job?.status === 'failed' && <StepButton onClick={prepare}><RefreshCw size={16} /> Retry analysis</StepButton>}</div>}
-        {stage === 'showcase' && <><Head eyebrow="04 / THE SHOWCASE" title="Make the selection yours.">These photos introduce the delivery. The full gallery still includes all {assets.length} photos.</Head><div className="v3-count"><strong>{selected.length} chosen</strong><span>{bounds[0]} minimum · {bounds[1]} maximum</span></div><div className="v3-panel v3-form"><label>Delivery title<input maxLength={80} value={title} onChange={event => setTitle(event.target.value)} /></label><label className="v3-span">Opening message<textarea value={openingLine} maxLength={140} rows={2} onChange={event => setOpeningLine(event.target.value)} /></label><label className="v3-span">Closing message<textarea value={closingLine} maxLength={160} rows={2} onChange={event => setClosingLine(event.target.value)} /></label><label>Opening photograph<select value={openingAssetId} onChange={event => setOpeningAssetId(event.target.value)}>{assets.map((asset, index) => <option key={asset.assetId} value={asset.assetId}>{index + 1}. {asset.originalFilename}</option>)}</select></label><label>Closing photograph<select value={closingAssetId} onChange={event => setClosingAssetId(event.target.value)}>{assets.map((asset, index) => <option key={asset.assetId} value={asset.assetId}>{index + 1}. {asset.originalFilename}</option>)}</select></label></div><div className="v3-showcase-editor">
-          <div className="v3-showcase-nav" aria-label="Showcase photographs">
-            {selected.map((id, index) => <button type="button" key={id} className={activeShowcaseIndex === index ? 'is-active' : ''} aria-current={activeShowcaseIndex === index ? 'true' : undefined} onClick={() => setActivePhotoIndex(index)} aria-label={'Edit showcase photo ' + (index + 1)}>
-              <img src={assetById.get(id)?.thumbnailUrl || assetById.get(id)?.url} alt="" loading="lazy" />
-              <span>{String(index + 1).padStart(2, '0')}</span>
-            </button>)}
+        {stage === 'upload' && <>
+          <Head eyebrow="03 / THE PHOTOGRAPHS" title="Add the finished photographs.">The complete upload goes into the client's gallery. We will select {bounds[0]}–{bounds[1]} photos for the {selectedFormat?.name || 'showcase'}.</Head>
+          <div className="v3-upload-heading">
+            <div className="v3-upload-total"><span>PHOTOS IN THIS DELIVERY</span><strong>{assets.length}<small> / {limits}</small></strong><p>{planName} plan · every uploaded photo stays in the full gallery</p></div>
+            <div className="v3-upload-specs"><span>JPEG, PNG or WebP</span><span>Up to 50 MB per photo</span><span>{bounds[0]}–{bounds[1]} photos in the showcase</span></div>
           </div>
-          {activeShowcaseId && <article className="v3-showcase-item">
-            <img src={assetById.get(activeShowcaseId)?.thumbnailUrl || assetById.get(activeShowcaseId)?.url} alt={assetById.get(activeShowcaseId)?.originalFilename || 'Selected photograph'} />
-            <div className="v3-showcase-controls">
-              <div className="v3-showcase-toolbar"><strong>{String(activeShowcaseIndex + 1).padStart(2, '0')} / {selected.length}</strong><button type="button" onClick={() => moveSelected(activeShowcaseIndex, -1)} disabled={activeShowcaseIndex === 0} aria-label="Move earlier"><ChevronLeft size={18} /></button><button type="button" onClick={() => moveSelected(activeShowcaseIndex, 1)} disabled={activeShowcaseIndex === selected.length - 1} aria-label="Move later"><ChevronRight size={18} /></button><button type="button" onClick={() => setSelected(current => current.filter(value => value !== activeShowcaseId))} disabled={selected.length <= bounds[0]} aria-label="Remove from showcase"><Trash2 size={17} /></button></div>
-              <label>Caption<textarea rows={3} maxLength={format === 'photo-story' ? 60 : 180} value={captions[activeShowcaseId] || ''} onChange={event => setCaptions(current => ({ ...current, [activeShowcaseId]: event.target.value }))} /><small>{(captions[activeShowcaseId] || '').length} / {format === 'photo-story' ? 60 : 180}</small></label>
-              <div className="v3-caption-assist"><input value={instructions[activeShowcaseId] || ''} maxLength={400} onChange={event => setInstructions(current => ({ ...current, [activeShowcaseId]: event.target.value }))} placeholder="Tell Veylo what to write (optional)" aria-label={'Instruction for photo ' + (activeShowcaseIndex + 1)} /><button type="button" onClick={() => regenerate(activeShowcaseId)} disabled={!!busy}><RefreshCw size={15} /> Regenerate</button></div>
-              <label>Replace with<select value="" onChange={event => replaceSelected(activeShowcaseIndex, event.target.value)}><option value="">Choose another photo</option>{unselected.map(asset => <option key={asset.assetId} value={asset.assetId}>{asset.originalFilename}</option>)}</select></label>
-              <div className="v3-showcase-pager"><button type="button" onClick={() => setActivePhotoIndex(activeShowcaseIndex - 1)} disabled={activeShowcaseIndex === 0}><ArrowLeft size={16} /> Previous photo</button><button type="button" onClick={() => setActivePhotoIndex(activeShowcaseIndex + 1)} disabled={activeShowcaseIndex === selected.length - 1}>Next photo <ArrowRight size={16} /></button></div>
+          <div className="v3-upload-workspace">
+            <label className="v3-drop"><span className="v3-drop-icon"><Upload size={25} /></span><strong>Add finished photographs</strong><span>Choose as many as you need, up to {limits} total.</span><b>Browse photos</b><input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={event => { uploadFiles(event.target.files); event.target.value = ''; }} disabled={!!busy} /></label>
+            <div className="v3-upload-side-note"><span>YOUR ORIGINALS STAY INTACT</span><h2>Full gallery and showcase are separate.</h2><p>Every photo you upload remains available to the client. The smaller showcase is selected after all photos have been reviewed.</p><div><Image size={17} /><span>Only finished JPEG, PNG or WebP photos</span></div></div>
+          </div>
+          {busy === 'upload' && <div className="v3-upload-progress" role="status"><span>Uploading photographs · {uploadPercent}%</span><div><i style={{ transform: 'scaleX(' + uploadPercent / 100 + ')' }} /></div></div>}
+          {failedFiles.length > 0 && <StepButton secondary onClick={() => uploadFiles(failedFiles)} disabled={!!busy}><RefreshCw size={16} /> Retry {failedFiles.length} failed photo{failedFiles.length > 1 ? 's' : ''}</StepButton>}
+          {assets.length > 0 ? <div className="v3-photo-grid">{assets.map((asset, index) => <article key={asset.assetId}><button type="button" className="v3-photo-open" onClick={() => window.open(asset.url, '_blank', 'noopener,noreferrer')} aria-label={'Preview photo ' + (index + 1)}><img src={asset.thumbnailUrl || asset.url} alt={asset.originalFilename || 'Uploaded photograph'} loading="lazy" /></button><div><span>{index + 1}. {asset.originalFilename || 'Photograph'}</span><button type="button" onClick={() => deletePhoto(asset.assetId)} disabled={!!busy} aria-label={'Delete ' + (asset.originalFilename || 'photo')}><Trash2 size={16} /></button></div></article>)}</div> : <div className="v3-gallery-empty"><Image size={28} /><div><strong>Your gallery will appear here.</strong><span>You can add more photos any time before analysis.</span></div></div>}
+          <div className="v3-actions"><StepButton secondary onClick={() => setStage('format')}><ArrowLeft size={17} /> Back to formats</StepButton><StepButton onClick={prepare} disabled={!!busy || assets.length < bounds[0]}><ArrowRight size={17} /> Review {assets.length} photos</StepButton></div>
+        </>}
+        {stage === 'preparing' && <div className="v3-working" role="status"><div className="v3-working-mark"><Image size={30} /></div><Head eyebrow="ANALYSING THE PHOTOGRAPHS" title="Choosing the showcase.">We are reviewing every uploaded photo, then writing captions for the selected set. Your full gallery will keep them all.</Head><strong>{job?.progress || 0}%</strong><div className="v3-upload-progress"><div><i style={{ transform: 'scaleX(' + (job?.progress || 0) / 100 + ')' }} /></div></div><p>{job?.stage === 'analysing-photos' ? 'Reviewing every photograph' : job?.stage === 'writing-showcase' ? 'Writing the showcase and captions' : 'Preparing your delivery'}</p>{job?.status === 'failed' && <StepButton onClick={prepare}><RefreshCw size={16} /> Retry analysis</StepButton>}</div>}
+        {stage === 'showcase' && <>
+          <Head eyebrow="04 / THE SHOWCASE" title="Make the selection yours.">Choose the photographs the client sees first. All {assets.length} uploaded photos remain in the full gallery.</Head>
+          <div className="v3-showcase-count"><div><strong>{selected.length} chosen</strong><span>photos in the showcase</span></div><small>{bounds[0]} minimum · {bounds[1]} maximum</small></div>
+          <div className="v3-showcase-settings">
+            <section className="v3-panel v3-showcase-words">
+              <div className="v3-panel-heading"><span>01</span><div><h2>Opening and closing words</h2><p>These messages frame the showcase for your client.</p></div></div>
+              <label>Delivery title<input maxLength={80} value={title} onChange={event => setTitle(event.target.value)} /></label>
+              <label>Opening message<textarea value={openingLine} maxLength={140} rows={3} onChange={event => setOpeningLine(event.target.value)} /></label>
+              <label>Closing message<textarea value={closingLine} maxLength={160} rows={3} onChange={event => setClosingLine(event.target.value)} /></label>
+            </section>
+            <div className="v3-bookends">
+              <article className="v3-bookend-card">
+                <div className="v3-bookend-image">{assetById.get(openingAssetId) ? <img src={assetById.get(openingAssetId)?.thumbnailUrl || assetById.get(openingAssetId)?.url} alt={assetById.get(openingAssetId)?.originalFilename || 'Opening photograph'} /> : <Image size={26} />}</div>
+                <label><span>Opening photograph</span><small>Shown before the showcase begins.</small><select value={openingAssetId} onChange={event => setOpeningAssetId(event.target.value)}>{assets.map((asset, index) => <option key={asset.assetId} value={asset.assetId}>{index + 1}. {asset.originalFilename}</option>)}</select></label>
+              </article>
+              <article className="v3-bookend-card">
+                <div className="v3-bookend-image">{assetById.get(closingAssetId) ? <img src={assetById.get(closingAssetId)?.thumbnailUrl || assetById.get(closingAssetId)?.url} alt={assetById.get(closingAssetId)?.originalFilename || 'Closing photograph'} /> : <Image size={26} />}</div>
+                <label><span>Closing photograph</span><small>Shown after the final showcase photo.</small><select value={closingAssetId} onChange={event => setClosingAssetId(event.target.value)}>{assets.map((asset, index) => <option key={asset.assetId} value={asset.assetId}>{index + 1}. {asset.originalFilename}</option>)}</select></label>
+              </article>
             </div>
-          </article>}
-        </div>{selected.length < bounds[1] && unselected.length > 0 && <label className="v3-add-photo">Add another showcase photo<select value="" onChange={event => { const id = event.target.value; if (id) setSelected(current => [...current, id]); }}><option value="">Choose a photograph</option>{unselected.map(asset => <option key={asset.assetId} value={asset.assetId}>{asset.originalFilename}</option>)}</select></label>}<div className="v3-actions"><StepButton secondary onClick={() => setStage('upload')}><ArrowLeft size={17} /> Back to photos</StepButton><StepButton onClick={saveShowcase} disabled={!!busy}><ArrowRight size={17} /> Continue</StepButton></div></>}
-        {(stage === 'narration' || stage === 'narration-job') && <><Head eyebrow="05 / OPTIONAL NARRATION" title="Give the opening and closing a voice.">Hannah will read the opening and closing messages. Photo captions stay on screen. The same words remain visible to the client.</Head><div className="v3-panel v3-narration"><Mic2 size={25} /><div><strong>Opening</strong><p>{openingLine}</p><strong>Closing</strong><p>{closingLine}</p></div></div>{stage === 'narration-job' && <div className="v3-upload-progress" role="status"><span>Recording with Hannah · {job?.progress || 0}%</span><div><i style={{ transform: 'scaleX(' + (job?.progress || 0) / 100 + ')' }} /></div></div>}<div className="v3-actions"><StepButton secondary onClick={() => setStage('showcase')}><ArrowLeft size={17} /> Back to showcase</StepButton><StepButton secondary onClick={skipNarration} disabled={!!busy}>Skip narration</StepButton><StepButton onClick={generateNarration} disabled={!!busy || stage === 'narration-job' && job?.status !== 'failed'}>{job?.status === 'failed' ? 'Retry narration' : 'Generate narration'}</StepButton></div></>}
-        {stage === 'music' && <><Head eyebrow="06 / MUSIC" title="Choose the soundtrack.">Afrobeat and Amapiano are shown first. Preview a track before choosing it.</Head>{draft?.soundtrack && <div className="v3-current-track"><Music2 size={17} /> Current choice: <strong>{draft.soundtrack.title}</strong></div>}<input className="v3-search" value={musicSearch} onChange={event => setMusicSearch(event.target.value)} placeholder="Search music" aria-label="Search music" /><div className="v3-track-list">{filteredTracks.map(track => <article key={track.id}><button type="button" onClick={() => { if (activeTrack === track.id) { audioRef.current?.pause(); setActiveTrack(''); } else { setActiveTrack(track.id); if (audioRef.current) { audioRef.current.src = withMediaUrl(track.previewUrl); audioRef.current.play().catch(() => setError('This preview could not play.')); } } }} aria-label={(activeTrack === track.id ? 'Pause ' : 'Play ') + track.title}>{activeTrack === track.id ? <Pause size={17} /> : <Play size={17} />}</button><div><strong>{track.title}</strong><small>{track.genre || track.category} · {track.creator || 'Instrumental'}</small></div><StepButton secondary onClick={() => selectTrack(track)} disabled={!!busy}>{draft?.soundtrack?.catalogId === track.id ? 'Selected' : 'Choose'}</StepButton></article>)}</div><audio ref={audioRef} onEnded={() => setActiveTrack('')} /><label className="v3-custom-track"><Upload size={18} /> Upload your own licensed music<input type="file" accept="audio/mpeg,audio/wav,audio/mp4,audio/ogg,audio/aac" onChange={event => { customTrack(event.target.files?.[0]); event.target.value = ''; }} disabled={!!busy} /></label><div className="v3-actions"><StepButton secondary onClick={() => setStage(format === 'photo-story' ? 'narration' : 'showcase')}><ArrowLeft size={17} /> Back</StepButton>{draft?.soundtrack && <StepButton onClick={() => setStage('design')}><ArrowRight size={17} /> Continue to design</StepButton>}</div></>}
+          </div>
+          <div className="v3-showcase-section-heading"><div><span>02 / THE SHOWCASE PHOTOS</span><h2>Review each photo and its caption.</h2></div><p>Drag-free ordering: use the arrows to change the sequence.</p></div>
+          <div className="v3-showcase-editor">
+            <div className="v3-showcase-nav" aria-label="Showcase photographs">
+              {selected.map((id, index) => <button type="button" key={id} className={activeShowcaseIndex === index ? 'is-active' : ''} aria-current={activeShowcaseIndex === index ? 'true' : undefined} onClick={() => setActivePhotoIndex(index)} aria-label={'Edit showcase photo ' + (index + 1)}>
+                <img src={assetById.get(id)?.thumbnailUrl || assetById.get(id)?.url} alt="" loading="lazy" />
+                <span>{String(index + 1).padStart(2, '0')}</span>
+              </button>)}
+            </div>
+            {activeShowcaseId && <article className="v3-showcase-item">
+              <img src={assetById.get(activeShowcaseId)?.thumbnailUrl || assetById.get(activeShowcaseId)?.url} alt={assetById.get(activeShowcaseId)?.originalFilename || 'Selected photograph'} />
+              <div className="v3-showcase-controls">
+                <div className="v3-showcase-toolbar"><strong>PHOTO {String(activeShowcaseIndex + 1).padStart(2, '0')} OF {String(selected.length).padStart(2, '0')}</strong><button type="button" onClick={() => moveSelected(activeShowcaseIndex, -1)} disabled={activeShowcaseIndex === 0} aria-label="Move earlier"><ChevronLeft size={18} /></button><button type="button" onClick={() => moveSelected(activeShowcaseIndex, 1)} disabled={activeShowcaseIndex === selected.length - 1} aria-label="Move later"><ChevronRight size={18} /></button><button type="button" onClick={() => setSelected(current => current.filter(value => value !== activeShowcaseId))} disabled={selected.length <= bounds[0]} aria-label="Remove from showcase"><Trash2 size={17} /></button></div>
+                <label>Headline<textarea className="v3-showcase-headline" rows={2} maxLength={70} value={headlines[activeShowcaseId] || ''} onChange={event => setHeadlines(current => ({ ...current, [activeShowcaseId]: event.target.value }))} /><small>{(headlines[activeShowcaseId] || '').length} / 70 · A short title for this photograph</small></label>
+                <label>Caption<textarea rows={format === 'photo-story' ? 4 : 5} maxLength={format === 'photo-story' ? 150 : 180} value={captions[activeShowcaseId] || ''} onChange={event => setCaptions(current => ({ ...current, [activeShowcaseId]: event.target.value }))} /><small>{(captions[activeShowcaseId] || '').length} / {format === 'photo-story' ? 150 : 180}{format === 'photo-story' ? ' · Written to fit within three mobile lines' : ''}</small></label>
+                <div className="v3-caption-assist"><input value={instructions[activeShowcaseId] || ''} maxLength={400} onChange={event => setInstructions(current => ({ ...current, [activeShowcaseId]: event.target.value }))} placeholder="Tell Veylo what to emphasize (optional)" aria-label={'Instruction for photo ' + (activeShowcaseIndex + 1)} /><button type="button" onClick={() => regenerate(activeShowcaseId)} disabled={!!busy}>{busy === 'caption-' + activeShowcaseId ? <LoaderCircle className="v3-spin" size={15} /> : <RefreshCw size={15} />} Regenerate headline and caption</button></div>
+                <label>Replace this photo<select value="" onChange={event => replaceSelected(activeShowcaseIndex, event.target.value)}><option value="">Choose another uploaded photo</option>{unselected.map(asset => <option key={asset.assetId} value={asset.assetId}>{asset.originalFilename}</option>)}</select></label>
+                <div className="v3-showcase-pager"><button type="button" onClick={() => setActivePhotoIndex(activeShowcaseIndex - 1)} disabled={activeShowcaseIndex === 0}><ArrowLeft size={16} /> Previous photo</button><button type="button" onClick={() => setActivePhotoIndex(activeShowcaseIndex + 1)} disabled={activeShowcaseIndex === selected.length - 1}>Next photo <ArrowRight size={16} /></button></div>
+              </div>
+            </article>}
+          </div>
+          {selected.length < bounds[1] && unselected.length > 0 && <label className="v3-add-photo">Add another showcase photo<select value="" onChange={event => { const id = event.target.value; if (id) addSelected(id); }}><option value="">Choose from your full gallery</option>{unselected.map(asset => <option key={asset.assetId} value={asset.assetId}>{asset.originalFilename}</option>)}</select></label>}
+          <div className="v3-actions"><StepButton secondary onClick={() => setStage('upload')}><ArrowLeft size={17} /> Back to photos</StepButton><StepButton onClick={saveShowcase} disabled={!!busy}><ArrowRight size={17} /> Continue</StepButton></div>
+        </>}
+        {(stage === 'narration' || stage === 'narration-job') && <>
+          <Head eyebrow="05 / OPTIONAL PHOTO STORY NARRATION" title="Give the opening and closing a voice.">The words stay visible either way. You can add Hannah's narration now or keep the messages as text.</Head>
+          <div className="v3-narration-layout">
+            <section className="v3-panel v3-narration-choice">
+              <div className="v3-narration-mark"><Mic2 size={26} /></div><span>OPTIONAL VOICE</span><h2>Hannah</h2><p>A clear narration for the opening and closing messages. Captions on each photo remain on screen as text.</p>
+              <div className="v3-narration-facts"><span>Opening message</span><span>Closing message</span><span>Photo captions stay visible</span></div>
+            </section>
+            <div className="v3-narration-messages">
+              <article><span>OPENING MESSAGE</span><p>{openingLine}</p></article>
+              <article><span>CLOSING MESSAGE</span><p>{closingLine}</p></article>
+            </div>
+          </div>
+          {stage === 'narration-job' && <div className="v3-upload-progress" role="status"><span>Preparing the narration · {job?.progress || 0}%</span><div><i style={{ transform: 'scaleX(' + (job?.progress || 0) / 100 + ')' }} /></div></div>}
+          <div className="v3-actions"><StepButton secondary onClick={() => setStage('showcase')}><ArrowLeft size={17} /> Back to showcase</StepButton><StepButton secondary onClick={skipNarration} disabled={!!busy}>Keep the messages as text</StepButton><StepButton onClick={generateNarration} disabled={!!busy || stage === 'narration-job' && job?.status !== 'failed'}>{job?.status === 'failed' ? <><RefreshCw size={16} /> Retry narration</> : <><Mic2 size={17} /> Generate narration</>}</StepButton></div>
+        </>}
+        {stage === 'music' && <>
+          <Head eyebrow="06 / MUSIC" title="Find the right soundtrack.">Preview the music, check how it fits the delivery, then choose a track. Afrobeat and Amapiano are listed first.</Head>
+          <section className="v3-music-layout" aria-label="Soundtrack library">
+            <div className="v3-music-library">
+              <div className="v3-music-tabs" role="tablist" aria-label="Music source">
+                <button type="button" className={musicTab === 'curated' ? 'is-active' : ''} role="tab" aria-selected={musicTab === 'curated'} onClick={() => setMusicTab('curated')}><Music2 size={17} /> Curated music <span>{tracks.length}</span></button>
+                <button type="button" className={musicTab === 'custom' ? 'is-active' : ''} role="tab" aria-selected={musicTab === 'custom'} onClick={() => setMusicTab('custom')}><Upload size={17} /> Upload your own</button>
+              </div>
+              {musicTab === 'curated' ? <>
+                <div className="v3-music-tools">
+                  <label className="v3-music-search"><Search size={18} /><input value={musicSearch} onChange={event => setMusicSearch(event.target.value)} placeholder="Search title, mood, genre or artist" aria-label="Search music" /></label>
+                  <div className="v3-music-categories" role="group" aria-label="Filter music by style">
+                    {musicCategories.map(category => <button type="button" key={category} className={musicCategory === category ? 'is-active' : ''} aria-pressed={musicCategory === category} onClick={() => setMusicCategory(category)}>{category === 'all' ? 'All music' : category.split(/[\s-]+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}</button>)}
+                  </div>
+                </div>
+                <div className="v3-music-results-head"><div><span>THE MUSIC LIBRARY</span><strong>{musicCategory === 'all' ? 'Afrobeat & Amapiano first' : categoryLabel(musicCategory)}</strong></div><small>{filteredTracks.length} {filteredTracks.length === 1 ? 'track' : 'tracks'}</small></div>
+                {musicLoading ? <div className="v3-music-empty" role="status"><LoaderCircle className="v3-spin" size={22} /><strong>Loading the music library</strong><span>This should only take a moment.</span></div> : filteredTracks.length ? <div className="v3-track-list">
+                  {filteredTracks.map((track, index) => {
+                    const isPlaying = activeTrack === track.id;
+                    const isSelected = draft?.soundtrack?.catalogId === track.id;
+                    return <article key={track.id} className={(isPlaying ? 'is-playing ' : '') + (isSelected ? 'is-selected' : '')}>
+                      <div className="v3-track-index"><span>{String(index + 1).padStart(2, '0')}</span><AudioLines size={23} /></div>
+                      <button type="button" className="v3-track-play" onClick={() => toggleTrack(track)} aria-label={(isPlaying ? 'Pause ' : 'Play ') + track.title} aria-pressed={isPlaying}>{isPlaying ? <Pause size={18} /> : <Play size={18} />}</button>
+                      <div className="v3-track-copy">
+                        <div className="v3-track-title"><strong>{track.title}</strong>{isSelected && <span><Check size={13} /> Selected</span>}</div>
+                        <small>{track.creator || 'Instrumental'}{track.genre || track.category ? ` · ${track.genre || categoryLabel(track.category)}` : ''}</small>
+                        {track.storyFunction && <p>{track.storyFunction}</p>}
+                        <div className="v3-track-tags"><span>{track.mood || track.genre || track.category || 'Soundtrack'}</span><small>{formatTrackTime(track.durationSec)}</small>{track.contentIdRegistered && <span>Content ID registered</span>}</div>
+                        {(track.bestFor?.length || track.avoidFor?.length || track.instrumentationCue || track.editingPace || track.narrationFit) && <details className="v3-track-notes"><summary>Track notes</summary><div>{track.bestFor?.length > 0 && <p><strong>Best for</strong>{track.bestFor.join(' · ')}</p>}{track.avoidFor?.length > 0 && <p><strong>Avoid for</strong>{track.avoidFor.join(' · ')}</p>}{(track.instrumentationCue || track.editingPace) && <p><strong>Sound</strong>{[track.instrumentationCue, track.editingPace].filter(Boolean).join(' · ')}</p>}{track.narrationFit && <p><strong>Narration</strong>{track.narrationFit} fit</p>}</div></details>}
+                      </div>
+                      <StepButton secondary onClick={() => selectTrack(track)} disabled={!!busy}>{isSelected ? 'Selected' : 'Use track'}</StepButton>
+                    </article>;
+                  })}
+                </div> : <div className="v3-music-empty"><Music2 size={22} /><strong>{tracks.length ? 'No tracks match this search.' : 'The music library is empty.'}</strong><span>{tracks.length ? 'Try another style or search term.' : 'Try again in a moment, or upload a track you have permission to use.'}</span></div>}
+              </> : <div className="v3-custom-music">
+                <div className="v3-custom-music-icon"><Upload size={24} /></div><span>YOUR OWN AUDIO</span><h2>Use a track from your studio.</h2><p>Choose audio you have permission to use in this client's delivery. We will attach it to this delivery and continue to design.</p>
+                <label className="v3-custom-music-picker"><Upload size={18} /><span>{busy === 'music' ? 'Adding your track…' : 'Choose an audio file'}</span><small>MP3, WAV, M4A, OGG or AAC</small><input type="file" accept="audio/mpeg,audio/wav,audio/mp4,audio/ogg,audio/aac" onChange={event => { customTrack(event.target.files?.[0]); event.target.value = ''; }} disabled={!!busy} /></label>
+              </div>}
+            </div>
+            <aside className="v3-music-player" aria-label="Track preview">
+              <div className="v3-player-art"><AudioLines size={42} /><span>VEYLO SOUNDTRACKS</span></div>
+              <div className="v3-player-state">{currentPreviewTrack ? 'NOW PREVIEWING' : draft?.soundtrack ? 'CURRENTLY SELECTED' : 'TRACK PREVIEW'}</div>
+              <h2>{featureTrack?.title || 'Choose a track to preview'}</h2>
+              <p>{featureTrack ? [featureTrack.creator || 'Instrumental', featureTrack.genre || featureTrack.category].filter(Boolean).join(' · ') : 'Listen before adding music to the delivery.'}</p>
+              <div className="v3-player-progress"><input type="range" min="0" max={Math.max(trackDuration, 1)} value={Math.min(trackTime, trackDuration || 1)} onChange={seekTrack} disabled={!activeTrack || !trackDuration} aria-label="Seek track preview" /><div><small>{formatTrackTime(trackTime)}</small><small>{formatTrackTime(trackDuration || featureTrack?.durationSec)}</small></div></div>
+              <div className="v3-player-actions">
+                {featureTrack?.previewUrl && <button type="button" className="v3-player-play" onClick={() => toggleTrack(featureTrack)} aria-label={(activeTrack === featureTrack.id ? 'Pause ' : 'Play ') + featureTrack.title}>{activeTrack === featureTrack.id ? <Pause size={18} /> : <Play size={18} />}</button>}
+                {featureTrack?.id && <StepButton onClick={() => selectTrack(featureTrack)} disabled={!!busy}>{draft?.soundtrack?.catalogId === featureTrack.id ? <><Check size={16} /> Selected</> : 'Use this track'}</StepButton>}
+              </div>
+              {draft?.soundtrack && <div className="v3-player-current"><Check size={15} /><span>Added to this delivery: <strong>{draft.soundtrack.title}</strong></span></div>}
+            </aside>
+          </section>
+          <audio ref={audioRef} onTimeUpdate={event => setTrackTime(event.currentTarget.currentTime || 0)} onLoadedMetadata={event => setTrackDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)} onEnded={() => { setActiveTrack(''); setTrackTime(0); }} />
+          <div className="v3-actions"><StepButton secondary onClick={() => { audioRef.current?.pause(); setActiveTrack(''); setStage(format === 'photo-story' ? 'narration' : 'showcase'); }}><ArrowLeft size={17} /> Back</StepButton>{draft?.soundtrack && <StepButton onClick={() => { audioRef.current?.pause(); setActiveTrack(''); setStage('design'); }}><ArrowRight size={17} /> Continue to design</StepButton>}</div>
+        </>}
         {stage === 'design' && <>
-          <Head eyebrow="07 / COLOUR & TYPE" title="Set the visual tone.">These colours shape the showcase. The full gallery keeps its dark reading layout.</Head>
+          <Head eyebrow="07 / COLOUR & TYPE" title="Set the visual tone.">Veylo selects a palette from the photographs. Set the display and body fonts, then check how the opening looks.</Head>
           <div className="v3-design-grid">
-            <div className="v3-panel">
-              <h2>Showcase colours</h2>
-              <p className="v3-colour-guide">Background sits behind the story. Panels hold supporting content. Text must be easy to read on both.</p>
-              {Object.keys(defaultPalette).map(role => <label className="v3-color" key={role}><span>{role === 'surface' ? 'Panels' : role}</span><input type="color" value={palette[role] || defaultPalette[role]} onChange={event => { setPalette(current => ({ ...current, [role]: event.target.value })); if (error?.fix === 'contrast') setError(''); }} aria-label={role === 'surface' ? 'Panels colour' : role + ' colour'} /><code>{palette[role]}</code></label>)}
+            <div className="v3-panel v3-design-controls">
+              <div className="v3-panel-heading"><span>01</span><div><h2>Photo-led colours</h2><p>Selected to suit this set of photographs.</p></div></div>
+              <div className="v3-palette-grid" aria-label="Selected colour palette">
+                {Object.keys(defaultPalette).map(role => <div className="v3-palette-swatch" key={role}><span style={{ background: palette[role] || defaultPalette[role] }} aria-hidden="true" /><div><strong>{role === 'surface' ? 'Panels' : categoryLabel(role)}</strong><code>{palette[role] || defaultPalette[role]}</code></div></div>)}
+              </div>
+              <p className="v3-colour-guide">The palette is chosen for these photographs. The gallery's layout and controls keep their standard design.</p>
               <div className="v3-contrast" aria-live="polite">
                 <strong>Text readability</strong>
                 <div className={'v3-contrast-row ' + (themeStatus.background >= 4.5 ? 'is-good' : 'is-poor')}><span>On background</span><span>{themeStatus.background >= 4.5 ? 'Readable' : 'Too faint'}</span></div>
                 <div className={'v3-contrast-row ' + (themeStatus.surface >= 4.5 ? 'is-good' : 'is-poor')}><span>On panels</span><span>{themeStatus.surface >= 4.5 ? 'Readable' : 'Too faint'}</span></div>
                 {!themeStatus.valid && <><p>{themeStatus.message}</p><button type="button" className="v3-contrast-fix" onClick={() => { setPalette(current => readablePalette(current)); setError(''); }}>Fix text contrast</button></>}
               </div>
-              <h2>Typography</h2>
-              {['display', 'body'].map(role => <label className="v3-font" key={role}>{role === 'display' ? 'Display font' : 'Body font'}<select value={typography[role]} onChange={event => setTypography(current => ({ ...current, [role]: event.target.value }))}>{FONTS.map(font => <option key={font}>{font}</option>)}</select></label>)}
+              <div className="v3-type-controls"><div className="v3-panel-heading"><span>02</span><div><h2>Typography</h2><p>Choose a pair that suits the delivery.</p></div></div>
+                {['display', 'body'].map(role => <label className="v3-font" key={role}>{role === 'display' ? 'Display font' : 'Body font'}<select value={typography[role]} onChange={event => setTypography(current => ({ ...current, [role]: event.target.value }))}>{FONTS.map(font => <option key={font}>{font}</option>)}</select></label>)}
+              </div>
             </div>
-            <div className="v3-design-preview" style={{ background: palette.background, color: palette.text, borderColor: palette.accent }}><span style={{ color: palette.accent }}>A VEYLO DELIVERY</span><h2 style={{ fontFamily: typography.display }}>{title || draft?.clientName}</h2><p style={{ fontFamily: typography.body }}>{openingLine}</p><div style={{ background: palette.surface }}><img src={assetById.get(openingAssetId)?.thumbnailUrl || assets[0]?.thumbnailUrl} alt="Opening preview" /><small style={{ color: palette.accent }}>THE PHOTOGRAPHS</small></div></div>
+            <div className="v3-design-preview" style={{ background: palette.background, color: palette.text, borderColor: palette.accent }}><span style={{ color: palette.accent }}>A VEYLO DELIVERY</span><h2 style={{ fontFamily: typography.display }}>{title || draft?.clientName}</h2><p style={{ fontFamily: typography.body }}>{openingLine}</p><div style={{ background: palette.surface }}><img src={assetById.get(openingAssetId)?.thumbnailUrl || assets[0]?.thumbnailUrl} alt="Opening preview" /><small style={{ color: palette.accent }}>THE PHOTOGRAPHS</small></div><span className="v3-design-preview-format" style={{ color: palette.accent }}>{selectedFormat?.name || 'PHOTO SHOWCASE'}</span></div>
           </div>
           <div className="v3-actions"><StepButton secondary onClick={() => setStage(MUSIC.has(format) ? 'music' : 'showcase')}><ArrowLeft size={17} /> Back</StepButton><StepButton onClick={saveDesign} disabled={!!busy}><ArrowRight size={17} /> Preview delivery</StepButton></div>
         </>}
-        {stage === 'preview' && <><Head eyebrow="08 / CLIENT PREVIEW" title="See exactly what the client will see.">Open the showcase and full gallery. Check the words, photographs, music, and layout before publishing.</Head><div className="v3-preview-actions"><StepButton secondary onClick={() => setStage('design')}><ArrowLeft size={17} /> Adjust design</StepButton><StepButton onClick={approve} disabled={!!busy}>{busy === 'approve' ? <LoaderCircle className="v3-spin" size={17} /> : <Check size={17} />} Approve and set access</StepButton></div><div className="v3-preview"><ClientDeliveryPreview delivery={previewDelivery} narrationEnabled={false} access={access} /></div></>}
-        {stage === 'access' && <><Head eyebrow="09 / ACCESS & PUBLISH" title="Set the rules for this link.">Choose what clients can do, then publish and send the private link.</Head><div className="v3-panel v3-access"><label>Six-digit PIN (optional)<input inputMode="numeric" autoComplete="off" maxLength={6} value={pin} onChange={event => setPin(event.target.value.replace(/\D/g, ''))} placeholder={draft?.hasPin ? 'PIN already set — leave blank to keep it' : 'Leave blank for no PIN'} /></label>{draft?.hasPin && <label className="v3-check"><input type="checkbox" checked={removePin} onChange={event => setRemovePin(event.target.checked)} /> Remove current PIN</label>}<label>Expiry date (optional)<input type="datetime-local" value={access.expiresAt} onChange={event => setAccess(current => ({ ...current, expiresAt: event.target.value }))} /></label>{[['allowIndividualDownloads', 'Allow individual downloads'], ['allowDownloadAll', 'Allow full gallery download'], ['allowLikes', 'Allow photo likes'], ['downloadsLocked', 'Lock downloads until ready'], ['watermarkEnabled', 'Show watermark when downloads are locked']].map(([key, label]) => <label className="v3-check" key={key}><input type="checkbox" checked={Boolean(access[key])} onChange={event => setAccess(current => ({ ...current, [key]: event.target.checked }))} /> {label}</label>)}{access.downloadsLocked && <label>Download lock note<input maxLength={200} value={access.downloadLockNote} onChange={event => setAccess(current => ({ ...current, downloadLockNote: event.target.value }))} placeholder="e.g. Downloads open after final balance is paid" /></label>}{access.watermarkEnabled && <label>Watermark text<input maxLength={40} value={access.watermarkText} onChange={event => setAccess(current => ({ ...current, watermarkText: event.target.value }))} placeholder="Studio name" /></label>}{format === 'campaign' && <label className="v3-span">Campaign usage terms (optional)<textarea rows={3} maxLength={1000} value={access.usageTerms} onChange={event => setAccess(current => ({ ...current, usageTerms: event.target.value }))} placeholder="Tell the client how these final files may be used" /></label>}</div><div className="v3-actions"><StepButton secondary onClick={() => setStage('preview')}><ArrowLeft size={17} /> Back to preview</StepButton><StepButton secondary onClick={saveAccess} disabled={!!busy}>Save settings</StepButton><StepButton onClick={publish} disabled={!!busy || billingLoading || quotaReached}><Check size={17} /> Publish delivery</StepButton></div></>}
+        {stage === 'preview' && <>
+          <Head eyebrow="08 / CLIENT PREVIEW" title="See exactly what the client will see.">This preview uses the delivery as your client will see it, including the showcase and full gallery.</Head>
+          <div className="v3-preview-actions"><StepButton secondary onClick={() => setStage('design')}><ArrowLeft size={17} /> Adjust design</StepButton><StepButton onClick={approve} disabled={!!busy}>{busy === 'approve' ? <LoaderCircle className="v3-spin" size={17} /> : <Check size={17} />} Approve and set access</StepButton></div>
+          <div className="v3-preview"><ClientPreviewPhoneFrame delivery={previewDelivery} narrationEnabled={false} access={access} /></div>
+        </>}
+        {stage === 'access' && <>
+          <Head eyebrow="09 / ACCESS & PUBLISH" title="Set the rules for this link.">Choose the access and download rules, then publish when everything is ready.</Head>
+          <div className="v3-access-layout">
+            <section className="v3-panel v3-access-security">
+              <div className="v3-panel-heading"><span>01</span><div><h2>Link security</h2><p>Set an optional PIN or expiry date.</p></div></div>
+              <label>Six-digit PIN (optional)<input inputMode="numeric" autoComplete="off" maxLength={6} value={pin} onChange={event => setPin(event.target.value.replace(/\D/g, ''))} placeholder={draft?.hasPin ? 'PIN already set — leave blank to keep it' : 'Leave blank for no PIN'} /></label>
+              {draft?.hasPin && <label className="v3-check"><input type="checkbox" checked={removePin} onChange={event => setRemovePin(event.target.checked)} /> Remove the current PIN</label>}
+              <label>Expiry date (optional)<input type="datetime-local" value={access.expiresAt} onChange={event => setAccess(current => ({ ...current, expiresAt: event.target.value }))} /></label>
+            </section>
+            <section className="v3-panel v3-access-permissions">
+              <div className="v3-panel-heading"><span>02</span><div><h2>Downloads and reactions</h2><p>Choose what the client can do with the gallery.</p></div></div>
+              {[
+                ['allowIndividualDownloads', 'Allow individual downloads', 'Clients can save one photo at a time.'],
+                ['allowDownloadAll', 'Allow full gallery download', 'Clients can download the complete set.'],
+                ['allowLikes', 'Allow photo likes', 'Clients can mark the photos they love.'],
+                ['downloadsLocked', 'Lock downloads until ready', 'Keep downloads closed until you release them.'],
+                ['watermarkEnabled', 'Show a watermark when downloads are locked', 'Use this while the final files are not ready.']
+              ].map(([key, label, description]) => <label className="v3-permission" key={key}><span><strong>{label}</strong><small>{description}</small></span><input type="checkbox" checked={Boolean(access[key])} onChange={event => setAccess(current => ({ ...current, [key]: event.target.checked }))} /></label>)}
+              {access.downloadsLocked && <label className="v3-access-extra">Download lock note<input maxLength={200} value={access.downloadLockNote} onChange={event => setAccess(current => ({ ...current, downloadLockNote: event.target.value }))} placeholder="e.g. Downloads open after final balance is paid" /></label>}
+              {access.watermarkEnabled && <label className="v3-access-extra">Watermark text<input maxLength={40} value={access.watermarkText} onChange={event => setAccess(current => ({ ...current, watermarkText: event.target.value }))} placeholder="Studio name" /></label>}
+            </section>
+            {format === 'campaign' && <section className="v3-panel v3-campaign-terms"><div className="v3-panel-heading"><span>03</span><div><h2>Campaign usage terms</h2><p>Tell the client how these final files may be used.</p></div></div><textarea rows={4} maxLength={1000} value={access.usageTerms} onChange={event => setAccess(current => ({ ...current, usageTerms: event.target.value }))} placeholder="Add usage terms (optional)" /></section>}
+          </div>
+          <div className="v3-actions"><StepButton secondary onClick={() => setStage('preview')}><ArrowLeft size={17} /> Back to preview</StepButton><StepButton secondary onClick={saveAccess} disabled={!!busy}>Save settings</StepButton><StepButton onClick={publish} disabled={!!busy || billingLoading || quotaReached}><Check size={17} /> Publish delivery</StepButton></div>
+        </>}
         {stage === 'published' && <div className="v3-published"><span><Check size={30} /></span><Head eyebrow="DELIVERY PUBLISHED" title="Your delivery is ready.">Send the link to your client on WhatsApp, Instagram, or wherever you speak with them.</Head><div className="v3-share-link"><input readOnly value={published?.url || ''} aria-label="Delivery link" /><StepButton onClick={() => navigator.clipboard.writeText(published?.url || '').then(() => toast.success('Link copied.'))}>Copy link</StepButton></div><div className="v3-actions"><a className="v3-button is-secondary" href={'https://wa.me/?text=' + encodeURIComponent('Your photos are ready: ' + (published?.url || ''))} target="_blank" rel="noopener noreferrer">Share on WhatsApp <ExternalLink size={16} /></a><Link className="v3-button" to="/dashboard">Back to dashboard <ArrowRight size={16} /></Link></div></div>}
       </motion.main></AnimatePresence>
+      </div>
       {published && <section className="v3-published-extra"><div className="v3-actions"><a className="v3-button is-secondary" href={published.url} target="_blank" rel="noopener noreferrer">Open client view <ExternalLink size={16} /></a><StepButton secondary onClick={shareDelivery}><Share2 size={16} /> Open share menu</StepButton><StepButton secondary onClick={downloadQr} disabled={!!busy}><QrCode size={16} /> Download QR</StepButton></div><form onSubmit={sendEmail}><label><Mail size={17} /><input type="email" required maxLength={254} value={clientEmail} onChange={event => setClientEmail(event.target.value)} placeholder="Client email address" aria-label="Client email address" /></label><StepButton type="submit" disabled={!!busy}>{busy === 'email' ? 'Sending…' : 'Send by email'}</StepButton></form></section>}
     </div>
   </div>;

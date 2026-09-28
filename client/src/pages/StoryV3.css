@@ -1,4 +1,6 @@
-.v-story-shell.is-v3 .v-story-caption:not(.is-finale) h2{max-height:3.7em;overflow:hidden;line-height:1.2}
+.v-story-shell.is-v3 .v-story-canvas.is-playing-state .v-story-caption:not(.is-finale) h2{max-height:3.6em;overflow:hidden;line-height:1.2;font-size:clamp(17px,5.6vw,23px)}
+.v-story-shell.is-v3 .v-story-canvas.is-playing-state .v-story-caption.is-type-typewriter:not(.is-finale) h2{font-family:var(--story-font-display,'Playfair Display',Georgia,serif)}
+@media(max-width:767px){.v-story-shell.is-v3 .v-story-canvas.is-playing-state .v-story-caption:not(.is-finale){left:16px;right:16px}}
 .v-story-shell.is-v3 .v-story-canvas.is-playing-state .v-story-scene-number,
 .v-story-shell.is-v3 .v-story-canvas.is-playing-state .v-story-cinema-number,
 .v-story-shell.is-v3 .v-story-canvas.is-playing-state .v-story-cinema-label,
