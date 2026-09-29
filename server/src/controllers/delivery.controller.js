@@ -1138,7 +1138,7 @@ export async function getPinboardStatusCard(req, res) {
     if (!parsed.success || new Set(parsed.data.assetIds).size !== parsed.data.assetIds.length) return res.status(400).json({ success: false, code: 'STATUS_CARD_SELECTION_INVALID', message: 'Choose one to four different photographs for the Status card.' });
     const delivery = await publicDelivery(req.params.publicId);
     const grant = delivery ? await shareGrant(req, delivery) : null;
-    if (!delivery || delivery.kind !== 'pinboard' || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This Pinboard is not available.' });
+    if (!delivery || delivery.kind !== 'pinboard' || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This GridBoard is not available.' });
     if (delivery.access?.downloadsLocked) return res.status(403).json({ success: false, code: 'DOWNLOADS_LOCKED', message: delivery.access?.downloadLockNote || 'Downloads are locked for this delivery.' });
     const individualAllowed = grant ? grant.allowIndividualDownloads : delivery.access?.allowIndividualDownloads;
     const galleryAllowed = grant ? grant.allowDownloadAll : delivery.access?.allowDownloadAll;
@@ -1272,12 +1272,12 @@ export async function getDeliveryShareMeta(req, res) {
     res.json({ success: true, data: locked ? {
       title: `A private photo delivery from ${brandName}`,
       description: 'Open the private link and enter the six-digit PIN from your photographer.',
-      ...(logo ? { image: logo } : {}), brandName, locked: true
+      ...(logo ? { image: logo } : {}), brandName, locked: true, kind: delivery.kind || 'showcase'
     } : {
       title: `${delivery.title || `${delivery.clientName}'s photographs`} — ${brandName}`,
       description: `${delivery.clientName}, your finished photographs are ready to experience and download.`,
       ...(delivery.assets[0]?.publicId || logo ? { image: delivery.assets[0]?.publicId ? signedOgImageUrl(delivery.assets[0].publicId) : logo } : {}),
-      brandName, locked: false
+      brandName, locked: false, kind: delivery.kind || 'showcase'
     } });
   } catch { res.status(500).json({ success: false, message: 'We could not prepare that link preview.' }); }
 }

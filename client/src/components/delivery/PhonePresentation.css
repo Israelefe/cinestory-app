@@ -1,4 +1,5 @@
 .v-phone-presentation{display:grid;justify-items:center;gap:15px;min-height:calc(100dvh - 225px);padding:25px 16px 35px;background:radial-gradient(ellipse at 50% 40%,#ff9b8e12,transparent 43%)}
+.v-phone-presentation-resolving{min-height:100svh;display:grid;place-items:center;background:#09090c;color:#d7d0c9;font:500 14px 'Outfit',Arial,sans-serif}
 .v-phone-device{position:relative;width:300px;height:665px;overflow:visible}
 .v-phone-device-scale{--phone-view-width:360px;--phone-view-height:800px;position:absolute;inset:0 auto auto 0;box-sizing:border-box;width:384px;height:851px;padding:10px;border:1px solid #ffffff27;border-radius:43px;background:linear-gradient(145deg,#222226,#050507 42%,#19191d);box-shadow:0 36px 100px #000a,0 0 0 1px #000,0 0 60px #ff806f0a;transform:scale(var(--phone-scale,.78125));transform-origin:top left}
 .v-phone-status{position:relative;display:flex;align-items:center;justify-content:space-between;height:27px;padding:0 13px;color:#fff;font-size:10px}

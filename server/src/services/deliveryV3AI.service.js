@@ -194,6 +194,7 @@ function buildPinboardLayouts(assets, moments, suggestions) {
 }
 
 export async function directV3Pinboard(delivery, insights) {
+  const gridboardPalette = { background: '#f8f5f0', surface: '#fffdf9', text: '#201b18', accent: '#a14f3c' };
   const assets = [...delivery.assets].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
   const insightById = new Map(insights.map(row => [row.assetId, row]));
   const rows = assets.map(asset => {
@@ -246,11 +247,11 @@ export async function directV3Pinboard(delivery, insights) {
   }
   const layouts = buildPinboardLayouts(assets, moments, layoutSuggestions);
   const rawPalette = generated.palette || {};
-  const palette = Object.fromEntries(Object.keys(V3_DEFAULT_PALETTE).map(key => [key, /^#[0-9a-f]{6}$/i.test(rawPalette[key] || '') ? rawPalette[key] : V3_DEFAULT_PALETTE[key]]));
+  const palette = Object.fromEntries(Object.keys(gridboardPalette).map(key => [key, /^#[0-9a-f]{6}$/i.test(rawPalette[key] || '') ? rawPalette[key] : gridboardPalette[key]]));
   if (contrastRatio(palette.background, palette.text) < 4.5 || contrastRatio(palette.surface, palette.text) < 4.5) {
     const readable = ['#fffaf6', '#ffffff', '#101010', '#000000'].find(color => contrastRatio(palette.background, color) >= 4.5 && contrastRatio(palette.surface, color) >= 4.5);
     if (readable) palette.text = readable;
-    else { palette.background = V3_DEFAULT_PALETTE.background; palette.surface = V3_DEFAULT_PALETTE.surface; palette.text = V3_DEFAULT_PALETTE.text; }
+    else { palette.background = gridboardPalette.background; palette.surface = gridboardPalette.surface; palette.text = gridboardPalette.text; }
   }
   const current = delivery.pinboard || {};
   const typography = {

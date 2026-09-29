@@ -10,7 +10,7 @@ const priceSummary = [
 
 const comparison = [
   ['Final photo deliveries', '3 each month', 'Unlimited under fair use'],
-  ['Delivery types', 'Showcase (8 formats) + Pinboard', 'Showcase (8 formats) + Pinboard'],
+  ['Delivery types', 'Showcase (8 formats) + GridBoard', 'Showcase (8 formats) + GridBoard'],
   ['Photos in one delivery', 'Up to 100', 'Up to 500'],
   ['Complete gallery and downloads', 'Included', 'Included'],
   ['Veylo Portfolio', '—', 'Included'],
@@ -20,10 +20,10 @@ const comparison = [
 ];
 
 const faqs = [
-  { q: 'How does Veylo Free work?', a: 'You can publish three final photo deliveries each month for ₦0. Pinboard and all eight Showcase formats are included, and Veylo branding remains on the client experience.' },
+  { q: 'How does Veylo Free work?', a: 'You can publish three final photo deliveries each month for ₦0. GridBoard and all eight Showcase formats are included, and Veylo branding remains on the client experience.' },
   { q: 'What counts as one delivery?', a: 'One published client project counts as one delivery, whichever format you choose. The complete downloadable gallery is included in that project.' },
   { q: 'How many photos can I add?', a: 'Free allows up to 100 finished photographs in one delivery. Pro allows up to 500. Veylo uses the photographs you upload and leaves the original files untouched.' },
-  { q: 'Do I pay separately for a Photo Story, Album, or Pinboard?', a: 'No. Pinboard and all eight Showcase formats are included on both plans.' },
+  { q: 'Do I pay separately for a Photo Story, Album, or GridBoard?', a: 'No. GridBoard and all eight Showcase formats are included on both plans.' },
   { q: 'What does unlimited under fair use mean?', a: 'Normal client delivery work for one photographer or studio is included. Fair use prevents automated bulk use and unrelated studios sharing one account.' },
   { q: 'How does the 50 GB storage work?', a: 'Pro includes 50 GB for your personal image storage. Photographs hosted inside client deliveries do not reduce that allowance.' },
   { q: 'What changes when I remove Veylo branding?', a: 'Your photographer or studio name leads the published delivery. Veylo branding can be removed from the experience your client receives.' },
@@ -46,7 +46,7 @@ export default function PricingPage() {
         <footer><Check size={18} /><p>Monthly billing. No annual commitment.</p></footer>
       </Reveal>
       <Reveal className="v-pricing-hero-copy v-pricing-hero-after">
-        <p className="v-lead">Choose based on how often you deliver and whether your studio needs its own branding, portfolio, and storage. Pinboard and all eight Showcase formats are available on both plans.</p>
+        <p className="v-lead">Choose based on how often you deliver and whether your studio needs its own branding, portfolio, and storage. GridBoard and all eight Showcase formats are available on both plans.</p>
         <div className="v-pricing-early-actions"><a href="#pricing-plans">Compare Free and Pro</a><Link to="/signup">Start free</Link></div>
         <div className="v-pricing-monthly"><span>MONTHLY PRICING</span><strong>No annual plan</strong><small>Free stays free. Pro is ₦25,000 each month.</small></div>
       </Reveal>
@@ -59,7 +59,7 @@ export default function PricingPage() {
     </div></section>
 
     <section className="v-section v-pricing-compare"><div className="v-wrap">
-      <Reveal className="v-pricing-section-intro"><Eyebrow number="02">Free and Pro</Eyebrow><h2 className="v-heading">What changes when<br /><em>you move to Pro.</em></h2><p className="v-copy">Pinboard and the eight Showcase formats are on both plans. Pro removes the monthly delivery limit and gives your studio more control over how clients see your name.</p></Reveal>
+      <Reveal className="v-pricing-section-intro"><Eyebrow number="02">Free and Pro</Eyebrow><h2 className="v-heading">What changes when<br /><em>you move to Pro.</em></h2><p className="v-copy">GridBoard and the eight Showcase formats are on both plans. Pro removes the monthly delivery limit and gives your studio more control over how clients see your name.</p></Reveal>
       <Reveal className="v-pricing-table" delay={.08}>
         <header><span>Plan detail</span><strong>Free</strong><strong>Pro</strong></header>
         {comparison.map(([label, free, pro]) => <div className="v-pricing-row" key={label}><span>{label}</span><p>{free === 'Included' && <Check size={15} />}{free}</p><p>{pro === 'Included' && <Check size={15} />}{pro}</p></div>)}

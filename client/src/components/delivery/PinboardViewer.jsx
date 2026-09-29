@@ -13,7 +13,28 @@ function accessHeaders(publicId) {
   return headers;
 }
 
-function photoUrl(asset) { return asset?.thumbnailUrl || asset?.url || ''; }
+function photoUrl(asset, full = false) { return full ? asset?.url || asset?.thumbnailUrl || '' : asset?.thumbnailUrl || asset?.url || ''; }
+
+const TILE_RATIOS = {
+  balanced: ['4 / 5', '1 / 1', '3 / 4', '5 / 4', '4 / 5', '1 / 1', '3 / 4', '4 / 3'],
+  moments: ['3 / 4', '1 / 1', '4 / 5', '4 / 3', '1 / 1', '3 / 4', '5 / 4', '4 / 5'],
+  'colour-flow': ['1 / 1', '4 / 5', '3 / 4', '1 / 1', '5 / 4', '4 / 5', '3 / 4', '1 / 1']
+};
+
+function tileRatio(asset, index, layoutId) {
+  const requested = (TILE_RATIOS[layoutId] || TILE_RATIOS.balanced)[index % 8];
+  const natural = Number(asset?.width) / Number(asset?.height);
+  if (natural > 0 && natural < 0.8 && (requested === '5 / 4' || requested === '4 / 3')) return '4 / 5';
+  if (natural > 1.7 && requested === '3 / 4') return '1 / 1';
+  return requested;
+}
+
+function accentInk(hex) {
+  const parts = String(hex || '').match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+  if (!parts) return '#fff';
+  const rgb = parts.slice(1).map(part => parseInt(part, 16) / 255).map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+  return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722 > 0.36 ? '#201b18' : '#fff';
+}
 
 export default function PinboardViewer({ delivery, preview = false, galleryProps = {} }) {
   const location = useLocation();
@@ -24,30 +45,47 @@ export default function PinboardViewer({ delivery, preview = false, galleryProps
   const [statusPage, setStatusPage] = useState(0);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [viewportWidth, setViewportWidth] = useState(() => typeof window === 'undefined' ? 390 : window.innerWidth);
   const board = delivery?.pinboard || {};
   const assets = useMemo(() => [...(delivery?.assets || [])].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)), [delivery?.assets]);
   const assetById = useMemo(() => new Map(assets.map(asset => [String(asset.assetId), asset])), [assets]);
   const moments = useMemo(() => (board.moments || []).filter(moment => !moment.hidden && moment.assetIds?.some(id => assetById.has(String(id)))), [board.moments, assetById]);
   const selectedLayout = (board.layouts || []).find(layout => layout.id === board.selectedLayoutId);
-  const ordered = (selectedLayout?.assetOrder || delivery?.galleryOrder || assets.map(asset => asset.assetId)).map(id => assetById.get(String(id))).filter(Boolean);
+  const orderedIds = [...new Set([...(selectedLayout?.assetOrder || delivery?.galleryOrder || []), ...assets.map(asset => asset.assetId)].map(String))];
+  const ordered = orderedIds.map(id => assetById.get(id)).filter(Boolean);
   const visible = activeMoment ? ordered.filter(asset => moments.find(moment => moment.id === activeMoment)?.assetIds?.includes(asset.assetId)) : ordered;
   const palette = board.palette || {};
   const typography = board.typography || {};
   const fonts = { display: typography.display || 'Playfair Display', body: typography.body || 'Outfit' };
   const grid = board.grid || {};
+  const columnCount = Math.max(1, Math.min(5, Number(viewportWidth <= 640 ? grid.mobileColumns || 2 : viewportWidth <= 1024 ? grid.tabletColumns || 3 : grid.desktopColumns || 4)));
+  const masonryColumns = Array.from({ length: columnCount }, () => []);
+  const columnHeights = Array.from({ length: columnCount }, () => 0);
+  visible.forEach((asset, index) => {
+    const ratio = tileRatio(asset, index, board.selectedLayoutId);
+    const [width, height] = ratio.split('/').map(Number);
+    const shortest = columnHeights.indexOf(Math.min(...columnHeights));
+    masonryColumns[shortest].push({ asset, index, ratio });
+    columnHeights[shortest] += height / width + 0.07;
+  });
   const style = {
-    '--pb-background': palette.background || '#0c0c10',
-    '--pb-surface': palette.surface || '#17171c',
-    '--pb-text': palette.text || '#fffaf6',
-    '--pb-accent': palette.accent || '#ff5a47',
+    '--pb-background': palette.background || '#f8f5f0',
+    '--pb-surface': palette.surface || '#fffdf9',
+    '--pb-text': palette.text || '#201b18',
+    '--pb-accent': palette.accent || '#a14f3c',
+    '--pb-on-accent': accentInk(palette.accent || '#a14f3c'),
     '--pb-display': `'${fonts.display}', Georgia, serif`,
     '--pb-body': `'${fonts.body}', Arial, sans-serif`,
     '--pb-gap': grid.gap === 'compact' ? '8px' : grid.gap === 'spacious' ? '22px' : '14px',
-    '--pb-mobile-columns': grid.mobileColumns || 2,
-    '--pb-tablet-columns': grid.tabletColumns || 3,
-    '--pb-desktop-columns': grid.desktopColumns || 4,
+    '--pb-active-columns': columnCount,
     '--pb-animation': board.animation === 'none' ? 'none' : board.animation === 'staggered' ? 'pb-arrive .48s both' : 'pb-arrive .34s both'
   };
+
+  useEffect(() => {
+    const update = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -121,26 +159,33 @@ export default function PinboardViewer({ delivery, preview = false, galleryProps
         {!preview && <div className="pb-header-actions">{delivery.access?.allowDownloadAll && !delivery.access?.downloadsLocked && <button type="button" onClick={() => galleryProps.onDownloadAll?.()}><ArrowDownToLine size={17} /> Download all</button>}{canDownload && <button type="button" className="pb-status-open" onClick={() => { setStatusSelection([]); setStatusPage(0); setStatusOpen(true); }}><MessageCircle size={17} /> Make a Status card</button>}</div>}
       </header>
       <section className="pb-intro">
-        <span className="pb-kicker">{board.analysisStatus === 'standard' ? 'PINBOARD GALLERY' : 'ARRANGED FOR EASY BROWSING'}</span>
+        <span className="pb-kicker">GRIDBOARD DELIVERY</span>
         <h1>{board.title || delivery?.title || `${delivery?.clientName || 'Your'}'s photographs`}</h1>
-        <p>{preview ? 'A free-flowing gallery, with every finished photograph in view.' : `A private gallery for ${delivery?.clientName || 'you'}. Browse the photographs or jump to a moment.`}</p>
-        <div className="pb-intro-meta"><span>{assets.length} finished photographs</span><i aria-hidden="true" />{!preview && <span>{delivery?.viewer?.label || 'Private link'}</span>}</div>
+        <p>{preview ? 'All the photographs from this shoot, ready to explore.' : `Made for ${delivery?.clientName || 'you'}. Explore the whole set or find a moment below.`}</p>
+        <div className="pb-intro-meta"><span>{assets.length} photographs</span><i aria-hidden="true" />{!preview && <span>{delivery?.viewer?.label || 'Private gallery'}</span>}</div>
       </section>
       {!!moments.length && <nav className="pb-moments" aria-label="Find a moment">
-        <div className="pb-moments-head"><span>FIND A MOMENT</span><span>{activeMoment ? <button type="button" onClick={() => setActiveMoment('')}>Show all photographs</button> : 'Choose a group to jump in'}</span></div>
-        <div className="pb-moment-list">{moments.map(moment => <div className="pb-moment-chip-wrap" id={`pb-moment-${moment.id}`} key={moment.id}><button type="button" className={activeMoment === moment.id ? 'is-active' : ''} onClick={() => setActiveMoment(current => current === moment.id ? '' : moment.id)}>{moment.title}<span>{moment.assetIds.filter(id => assetById.has(String(id))).length}</span></button>{!preview && <button type="button" className="pb-chip-share" aria-label={`Share ${moment.title} on WhatsApp`} onClick={() => openWhatsApp('moment', moment.id, `${moment.title} · ${delivery?.title || 'Photo gallery'}`)}><MessageCircle size={15} /></button>}</div>)}</div>
+        <div className="pb-moments-head"><span>FIND A MOMENT</span>{activeMoment && <button type="button" onClick={() => setActiveMoment('')}>Show all photos</button>}</div>
+        <div className="pb-moment-list">{moments.map(moment => {
+          const cover = moment.assetIds.map(id => assetById.get(String(id))).find(Boolean);
+          return <div className={'pb-moment-chip-wrap' + (activeMoment === moment.id ? ' is-active' : '')} id={`pb-moment-${moment.id}`} key={moment.id}>
+            {cover && <img src={photoUrl(cover)} alt="" loading="lazy" />}
+            <button type="button" aria-pressed={activeMoment === moment.id} onClick={() => setActiveMoment(current => current === moment.id ? '' : moment.id)}><strong>{moment.title}</strong><span>{moment.assetIds.filter(id => assetById.has(String(id))).length} photos</span></button>
+            {!preview && <button type="button" className="pb-chip-share" aria-label={`Share ${moment.title} on WhatsApp`} onClick={() => openWhatsApp('moment', moment.id, `${moment.title} · ${delivery?.title || 'Photo gallery'}`)}><MessageCircle size={15} /></button>}
+          </div>;
+        })}</div>
       </nav>}
-      <div className="pb-board-top"><span>{activeMoment ? moments.find(moment => moment.id === activeMoment)?.title : selectedLayout?.title || 'All photographs'}</span><span>{visible.length} PHOTOS</span></div>
+      <div className="pb-board-top"><span>{activeMoment ? moments.find(moment => moment.id === activeMoment)?.title : 'All photos'}</span><span>{visible.length} PHOTOS</span></div>
       <section className="pb-board" aria-label="Photographs">
-        {visible.map((asset, index) => <article className="pb-tile" id={`pb-photo-${asset.assetId}`} key={asset.assetId} style={{ animationDelay: board.animation === 'staggered' ? `${Math.min(index * 35, 520)}ms` : '0ms' }}>
-          <button type="button" className="pb-tile-open" onClick={() => setActivePhoto(asset.assetId)} aria-label={`Open photograph ${index + 1}`}><img loading={index < 6 ? 'eager' : 'lazy'} src={photoUrl(asset)} alt={asset.alt || `Finished photograph ${index + 1}`} /></button>
-          {!preview && <div className="pb-tile-tools"><button type="button" onClick={() => openWhatsApp('photo', asset.assetId, `${delivery?.title || 'Photo gallery'} · Photograph ${index + 1}`)} aria-label="Share this photo on WhatsApp"><MessageCircle size={15} /></button>{canDownload && <button type="button" onClick={() => galleryProps.onDownload?.(asset.assetId, index)} aria-label="Download this photo"><Download size={15} /></button>}</div>}
-        </article>)}
+        {masonryColumns.map((column, columnIndex) => <div className="pb-board-column" key={columnIndex}>{column.map(({ asset, index, ratio }) => <article className="pb-tile" id={`pb-photo-${asset.assetId}`} key={asset.assetId} style={{ '--pb-tile-ratio': ratio, animationDelay: board.animation === 'staggered' ? `${Math.min(index * 35, 520)}ms` : '0ms' }}>
+          <button type="button" className="pb-tile-open" onClick={() => setActivePhoto(asset.assetId)} aria-label={`Open photograph ${index + 1}`}><img loading={index < 6 ? 'eager' : 'lazy'} src={photoUrl(asset)} alt={asset.alt || `Finished photograph ${index + 1}`} /><span className="pb-tile-view">View photo</span></button>
+          {!preview && <div className="pb-tile-tools"><button type="button" onClick={() => openWhatsApp('photo', asset.assetId, `${delivery?.title || 'Photo gallery'} · Photograph ${index + 1}`)} aria-label="Share this photo on WhatsApp"><MessageCircle size={16} /></button>{canDownload && <button type="button" onClick={() => galleryProps.onDownload?.(asset.assetId, index)} aria-label="Download this photo"><Download size={16} /></button>}</div>}
+        </article>)}</div>)}
       </section>
-      <footer className="pb-footer"><span>End of this board</span><span>{assets.length} photographs · Original files stay unchanged</span></footer>
+      <footer className="pb-footer"><span>That’s the whole gallery.</span><span>{assets.length} photographs</span></footer>
     </div>
 
-    {modalAsset && <div className="pb-lightbox" role="dialog" aria-modal="true" aria-label="Photograph" onMouseDown={event => { if (event.target === event.currentTarget) setActivePhoto(''); }}><button type="button" className="pb-lightbox-close" onClick={() => setActivePhoto('')} aria-label="Close photograph"><X size={23} /></button><button type="button" className="pb-lightbox-nav is-left" onClick={() => setActivePhoto(visible[Math.max(0, modalIndex - 1)]?.assetId)} disabled={modalIndex <= 0} aria-label="Previous photograph"><ChevronLeft size={26} /></button><figure><img src={photoUrl(modalAsset)} alt={modalAsset.alt || 'Finished photograph'} /><figcaption>Photograph {modalIndex + 1} of {visible.length}</figcaption></figure><button type="button" className="pb-lightbox-nav is-right" onClick={() => setActivePhoto(visible[Math.min(visible.length - 1, modalIndex + 1)]?.assetId)} disabled={modalIndex >= visible.length - 1} aria-label="Next photograph"><ChevronRight size={26} /></button><div className="pb-lightbox-actions">{!preview && <button type="button" onClick={() => openWhatsApp('photo', modalAsset.assetId, delivery?.title || 'Photo gallery')}><MessageCircle size={17} /> Share on WhatsApp</button>}{canDownload && <button type="button" onClick={() => galleryProps.onDownload?.(modalAsset.assetId, modalIndex)}><Download size={17} /> Download photo</button>}</div></div>}
+    {modalAsset && <div className="pb-lightbox" role="dialog" aria-modal="true" aria-label="Photograph" onMouseDown={event => { if (event.target === event.currentTarget) setActivePhoto(''); }}><button type="button" className="pb-lightbox-close" onClick={() => setActivePhoto('')} aria-label="Close photograph"><X size={23} /></button><button type="button" className="pb-lightbox-nav is-left" onClick={() => setActivePhoto(visible[Math.max(0, modalIndex - 1)]?.assetId)} disabled={modalIndex <= 0} aria-label="Previous photograph"><ChevronLeft size={26} /></button><figure><img src={photoUrl(modalAsset, true)} alt={modalAsset.alt || 'Finished photograph'} /><figcaption>Photograph {modalIndex + 1} of {visible.length}</figcaption></figure><button type="button" className="pb-lightbox-nav is-right" onClick={() => setActivePhoto(visible[Math.min(visible.length - 1, modalIndex + 1)]?.assetId)} disabled={modalIndex >= visible.length - 1} aria-label="Next photograph"><ChevronRight size={26} /></button><div className="pb-lightbox-actions">{!preview && <button type="button" onClick={() => openWhatsApp('photo', modalAsset.assetId, delivery?.title || 'Photo gallery')}><MessageCircle size={17} /> Share on WhatsApp</button>}{canDownload && <button type="button" onClick={() => galleryProps.onDownload?.(modalAsset.assetId, modalIndex)}><Download size={17} /> Download photo</button>}</div></div>}
 
     {statusOpen && <div className="pb-status-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setStatusOpen(false); }}><section className="pb-status-dialog" role="dialog" aria-modal="true" aria-labelledby="pb-status-title"><button type="button" className="pb-dialog-close" onClick={() => setStatusOpen(false)} aria-label="Close"><X size={20} /></button><span className="pb-kicker">WHATSAPP SHARING</span><h2 id="pb-status-title">Make a Status card</h2><p>Choose up to four finished photos. Veylo makes a 9:16 card with a private link back to the gallery.</p><div className="pb-status-photos">{statusPageAssets.map((asset, index) => { const photoIndex = statusPage * statusPageSize + index; return <label key={asset.assetId} className={statusSelection.includes(asset.assetId) ? 'is-selected' : ''}><input type="checkbox" checked={statusSelection.includes(asset.assetId)} onChange={() => toggleStatusPhoto(asset.assetId)} disabled={!statusSelection.includes(asset.assetId) && statusSelection.length >= 4} /><img src={photoUrl(asset)} alt={`Select photo ${photoIndex + 1}`} loading="lazy" /><span>{statusSelection.includes(asset.assetId) && <Check size={15} />}{photoIndex + 1}</span></label>; })}</div>{statusPageCount > 1 && <div className="pb-status-pagination"><button type="button" onClick={() => setStatusPage(page => Math.max(0, page - 1))} disabled={statusPage === 0}>Previous photos</button><span>{statusPage + 1} / {statusPageCount}</span><button type="button" onClick={() => setStatusPage(page => Math.min(statusPageCount - 1, page + 1))} disabled={statusPage >= statusPageCount - 1}>More photos</button></div>}<div className="pb-status-bottom"><span>{statusSelection.length} of 4 selected</span><button type="button" disabled={!statusSelection.length || busy} onClick={createStatusCard}>{busy ? 'Preparing card…' : 'Prepare Status card'}<ExternalLink size={16} /></button></div>{message && <p className="pb-status-message" role="status">{message}</p>}</section></div>}
     {!statusOpen && message && <div className="pb-toast" role="status">{message}<button type="button" onClick={() => setMessage('')} aria-label="Dismiss"><X size={15} /></button></div>}

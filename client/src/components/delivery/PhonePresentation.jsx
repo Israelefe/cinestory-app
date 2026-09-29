@@ -1,7 +1,8 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { BatteryFull, Signal, Wifi } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
 import ClientDeliveryPreview from './ClientDeliveryPreview.jsx';
+import api from '../../services/api.js';
 import './PhonePresentation.css';
 
 const DESKTOP_QUERY = '(min-width: 1025px)';
@@ -30,6 +31,27 @@ export function PhonePresentationRoute({ children, title = 'Mobile client delive
   params.set('phoneView', '1');
   const src = `${location.pathname}?${params.toString()}${location.hash || ''}`;
   return <DesktopPhoneFrame src={src} title={title} />;
+}
+
+export function ClientDeliveryRoute({ children }) {
+  const { publicId } = useParams();
+  const location = useLocation();
+  const desktop = useDesktopPhoneMode();
+  const embedded = new URLSearchParams(location.search).get('phoneView') === '1';
+  const [resolved, setResolved] = useState({ publicId: '', kind: '' });
+
+  useEffect(() => {
+    if (!desktop || embedded || !publicId) return undefined;
+    let active = true;
+    api.get(`/v1/deliveries/public/${encodeURIComponent(publicId)}/share-meta`)
+      .then(({ data }) => { if (active) setResolved({ publicId, kind: data?.data?.kind || 'showcase' }); })
+      .catch(() => { if (active) setResolved({ publicId, kind: 'direct' }); });
+    return () => { active = false; };
+  }, [desktop, embedded, publicId]);
+
+  if (!desktop || embedded || resolved.kind === 'pinboard' || resolved.kind === 'direct') return children;
+  if (resolved.publicId !== publicId) return <main className="v-phone-presentation-resolving" role="status">Opening delivery...</main>;
+  return <PhonePresentationRoute title="Client delivery">{children}</PhonePresentationRoute>;
 }
 
 export function DesktopPhoneFrame({ src, title, message, device = true }) {

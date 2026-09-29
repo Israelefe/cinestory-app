@@ -80,7 +80,7 @@ function pinboardFallback(delivery) {
       { id: 'colour-flow', title: 'Colour flow', description: 'Keeps the original upload order as a simple visual path.', assetOrder: ids }
     ],
     moments: [],
-    palette: delivery.pinboard?.palette || { background: '#0c0c10', surface: '#17171c', text: '#fffaf6', accent: '#ff5a47' },
+    palette: delivery.pinboard?.palette || { background: '#f8f5f0', surface: '#fffdf9', text: '#201b18', accent: '#a14f3c' },
     typography: delivery.pinboard?.typography || { display: 'Playfair Display', body: 'Outfit' },
     grid: delivery.pinboard?.grid || { mobileColumns: 2, tabletColumns: 3, desktopColumns: 4, gap: 'regular' },
     animation: delivery.pinboard?.animation || 'soft-fade',
@@ -103,12 +103,12 @@ export async function v3Create(req, res) {
   try {
     const input = details.safeParse(req.body); if (!input.success) return bad(res, input);
     if (input.data.kind === 'showcase' && (input.data.shootType.length < 2 || !input.data.purpose)) return res.status(400).json({ success: false, code: 'V3_SHOWCASE_DETAILS_REQUIRED', message: 'Add the shoot type and purpose before creating a Showcase delivery.' });
-    if (input.data.kind === 'pinboard' && input.data.title.length < 2) return res.status(400).json({ success: false, code: 'V3_PINBOARD_TITLE_REQUIRED', message: 'Give this Pinboard a title before adding photographs.' });
+    if (input.data.kind === 'pinboard' && input.data.title.length < 2) return res.status(400).json({ success: false, code: 'V3_PINBOARD_TITLE_REQUIRED', message: 'Give this GridBoard a title before adding photographs.' });
     const entitlements = await resolveEntitlements(await User.findById(req.user.id));
     if (entitlements.plan === 'free' && entitlements.usage.deliveriesRemaining === 0) return res.status(403).json({ success: false, code: 'MONTHLY_DELIVERY_LIMIT_REACHED', message: `You have published all ${entitlements.limits.deliveriesPerMonth} Free deliveries this month. Start another next month or move to Pro.` });
     const count = await Delivery.countDocuments({ userId: req.user.id, status: { $in: ['draft', 'analyzing', 'directing', 'review'] } });
     if (count >= 20) return res.status(409).json({ success: false, message: 'Finish or remove an existing draft before starting another one.' });
-    const delivery = await Delivery.create({ userId: req.user.id, schemaVersion: 3, kind: input.data.kind, clientName: input.data.clientName, title: input.data.title || '', shootType: input.data.shootType, brief: input.data.purpose || (input.data.kind === 'pinboard' ? 'Pinboard delivery' : ''), v3: { step: input.data.kind === 'pinboard' ? 'photos' : 'format', revision: 1, originalPurpose: input.data.originalPurpose, clarificationAnswers: input.data.clarificationAnswers, narrationChoice: 'skip', captionNarrationChoice: 'skip', approvedRevision: null } });
+    const delivery = await Delivery.create({ userId: req.user.id, schemaVersion: 3, kind: input.data.kind, clientName: input.data.clientName, title: input.data.title || '', shootType: input.data.shootType, brief: input.data.purpose || (input.data.kind === 'pinboard' ? 'GridBoard delivery' : ''), v3: { step: input.data.kind === 'pinboard' ? 'photos' : 'format', revision: 1, originalPurpose: input.data.originalPurpose, clarificationAnswers: input.data.clarificationAnswers, narrationChoice: 'skip', captionNarrationChoice: 'skip', approvedRevision: null } });
     res.status(201).json({ success: true, data: delivery });
   } catch (error) { fail(res, error); }
 }
@@ -119,7 +119,7 @@ export async function v3Details(req, res) {
     const delivery = await owned(req); if (!editable(delivery)) return res.status(404).json({ success: false, message: 'Draft not found.' });
     if (delivery.kind !== input.data.kind) return res.status(409).json({ success: false, code: 'V3_DELIVERY_KIND_LOCKED', message: 'The delivery type cannot be changed after its draft is created.' });
     if (delivery.kind === 'showcase' && (input.data.shootType.length < 2 || !input.data.purpose)) return res.status(400).json({ success: false, code: 'V3_SHOWCASE_DETAILS_REQUIRED', message: 'Add the shoot type and purpose before continuing.' });
-    const purpose = input.data.purpose || (delivery.kind === 'pinboard' ? 'Pinboard delivery' : '');
+    const purpose = input.data.purpose || (delivery.kind === 'pinboard' ? 'GridBoard delivery' : '');
     const changed = delivery.clientName !== input.data.clientName || delivery.shootType !== input.data.shootType || delivery.brief !== purpose || JSON.stringify(delivery.v3?.clarificationAnswers || []) !== JSON.stringify(input.data.clarificationAnswers);
     const discardedAudio = changed ? narrationAudioIds(delivery) : [];
     delivery.clientName = input.data.clientName; delivery.shootType = input.data.shootType; delivery.brief = purpose; if (input.data.title) delivery.title = input.data.title;
@@ -144,7 +144,7 @@ export async function v3Format(req, res) {
 export async function v3Prepare(req, res) {
   try {
     const delivery = await owned(req); if (!editable(delivery) || (delivery.kind !== 'pinboard' && !delivery.format)) return res.status(409).json({ success: false, message: 'Choose a format first.' });
-    if (delivery.kind === 'pinboard' && delivery.assets.length < 1) return res.status(409).json({ success: false, code: 'V3_PINBOARD_PHOTO_REQUIRED', message: 'Add at least one finished photograph to this Pinboard.' });
+    if (delivery.kind === 'pinboard' && delivery.assets.length < 1) return res.status(409).json({ success: false, code: 'V3_PINBOARD_PHOTO_REQUIRED', message: 'Add at least one finished photograph to this GridBoard.' });
     if (delivery.kind !== 'pinboard' && delivery.assets.length < V3_FORMATS[delivery.format][0]) return res.status(409).json({ success: false, message: `Add at least ${V3_FORMATS[delivery.format][0]} photographs for this format.` });
     const existing = await DeliveryJob.findOne({ deliveryId: delivery._id, type: 'v3-prepare', status: { $in: ['queued', 'running'] } });
     if (existing) return res.status(202).json({ success: true, data: existing });
@@ -201,7 +201,7 @@ export async function v3Pinboard(req, res) {
   try {
     const input = pinboardInput.safeParse(req.body); if (!input.success) return bad(res, input);
     const delivery = await owned(req);
-    if (!editable(delivery) || delivery.kind !== 'pinboard' || !delivery.assets.length) return res.status(409).json({ success: false, code: 'PINBOARD_PHOTOS_REQUIRED', message: 'Add photographs before arranging this Pinboard.' });
+    if (!editable(delivery) || delivery.kind !== 'pinboard' || !delivery.assets.length) return res.status(409).json({ success: false, code: 'PINBOARD_PHOTOS_REQUIRED', message: 'Add photographs before arranging this GridBoard.' });
     if (!V3_FONT_CHOICES.has(input.data.typography.display) || !V3_FONT_CHOICES.has(input.data.typography.body)) return res.status(400).json({ success: false, code: 'V3_FONT_NOT_ALLOWED', field: 'typography', message: 'Choose a display and body font from the list.' });
     const weak = [contrastRatio(input.data.palette.background, input.data.palette.text) < 4.5 ? 'background' : null, contrastRatio(input.data.palette.surface, input.data.palette.text) < 4.5 ? 'panels' : null].filter(Boolean);
     if (weak.length) return res.status(400).json({ success: false, code: 'V3_THEME_CONTRAST', field: 'palette.text', message: `Text is hard to read on the ${weak.join(' and ')}. Change the text colour.` });
@@ -270,7 +270,7 @@ export async function v3Theme(req, res) {
     if (weak.length) return res.status(400).json({ success: false, code: 'V3_THEME_CONTRAST', field: 'palette.text', message: `Text is hard to read on the ${weak.join(' and ')}. Change the text colour or use Fix text contrast.` });
     const delivery = await owned(req);
     if (delivery?.kind === 'pinboard') {
-      if (!editable(delivery) || !delivery.pinboard) return res.status(409).json({ success: false, message: 'Analyse this Pinboard before choosing its design.' });
+      if (!editable(delivery) || !delivery.pinboard) return res.status(409).json({ success: false, message: 'Analyse this GridBoard before choosing its design.' });
       delivery.pinboard = { ...delivery.pinboard, palette: input.data.palette, typography: input.data.typography };
       invalidateApproval(delivery); saveV3(delivery, { step: 'pinboard' }); delivery.markModified('pinboard'); await delivery.save();
       return res.json({ success: true, data: delivery });
@@ -286,7 +286,7 @@ export async function v3RepickTheme(req, res) {
   try {
     const delivery = await owned(req);
     if (delivery?.kind === 'pinboard') {
-      if (!editable(delivery) || !delivery.pinboard) return res.status(409).json({ success: false, message: 'Analyse this Pinboard before choosing a colour palette.' });
+      if (!editable(delivery) || !delivery.pinboard) return res.status(409).json({ success: false, message: 'Analyse this GridBoard before choosing a colour palette.' });
       const images = delivery.assets.map(asset => ({ assetId: asset.assetId, colors: asset.analysis?.colors || [] })).filter(image => image.colors.length);
       if (!images.length) return res.status(409).json({ success: false, code: 'V3_IMAGE_COLOURS_UNAVAILABLE', message: 'Photograph colour analysis is missing. Retry the analysis or keep the current colours.' });
       const palette = await repickV3Palette({ format: 'pinboard', brief: delivery.brief, shootType: delivery.shootType, imageColors: images, currentPalette: delivery.pinboard.palette });

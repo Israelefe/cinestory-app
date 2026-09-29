@@ -12,6 +12,9 @@ import HeroFormatStage from '../components/HeroFormatStage.jsx';
 import TypedHeading from '../components/TypedHeading.jsx';
 import StudioReviewStage from '../components/StudioReviewStage.jsx';
 import { DELIVERY_FORMATS, DELIVERY_PROCESS } from '../constants/deliveryFormats.js';
+import './GridboardHome.css';
+
+const gridboardArtPhotos = [1, 6, 5, 3, 4, 2].map(number => `/veylo/web/demo-lora-${number}-480.webp`);
 
 const direction = [
   [Images, 'Order and hierarchy', 'Chooses the opening, the strongest frames, image groupings, and the order that suits the selected format.'],
@@ -182,7 +185,7 @@ export default function LandingPage() {
         <Reveal className="v-format-copy"><div className="v-format-tag"><span className="v-index">{format.roman || format.number}</span><span className="v-format-sep" aria-hidden="true">·</span><span className="v-format-verb">{format.verb}</span></div><h3>{format.name}</h3><p>{format.line}</p><TextLink to={demoLinks[format.id][0]} onClick={event => keepFormatAsBackDestination(event, format.id)}>{demoLinks[format.id][1]}</TextLink></Reveal>
         <Reveal className="v-format-art" delay={Math.min(i * .03, .12)}><DeliveryFormatVisual format={format} /></Reveal>
       </article>)}</div>
-      <Reveal className="v-home-pinboard-card"><div className="v-home-pinboard-art" aria-hidden="true"><i /><i /><i /><i /><i /><i /></div><div><Eyebrow>ANOTHER WAY TO DELIVER</Eyebrow><h3>Put the complete gallery on a Pinboard.</h3><p>Clients browse a responsive masonry board, jump to suggested moments, and share a private photo link from WhatsApp. Every finished photo stays in the board.</p><div className="v-home-pinboard-actions"><TextLink to="/demo/pinboard">See the Pinboard example</TextLink><TextLink to="/create?type=pinboard">Create a Pinboard</TextLink></div></div></Reveal>
+      <Reveal className="v-home-pinboard-card"><div className="v-home-pinboard-art" aria-hidden="true">{gridboardArtPhotos.map(photo => <span key={photo}><img src={photo} alt="" loading="lazy" decoding="async" /></span>)}</div><div><Eyebrow>ANOTHER WAY TO DELIVER</Eyebrow><h3>Every photo, on one beautiful GridBoard.</h3><p>Clients browse the complete shoot in a staggered photo grid, jump to a moment, and share a private photo link on WhatsApp.</p><div className="v-home-pinboard-actions"><TextLink to="/demo/gridboard">See the GridBoard example</TextLink><TextLink to="/create?type=pinboard">Create a GridBoard</TextLink></div></div></Reveal>
       <Reveal className="v-formats-explore">
         <div><span>All eight Showcase formats</span><p>See what each one does and which shoots it suits.</p></div>
         <Action to="/formats" onClick={event => keepFormatAsBackDestination(event, 'album')}>Explore all formats</Action>
@@ -260,7 +263,7 @@ export default function LandingPage() {
     </div></ScrollSection>
 
     <ScrollSection id="pricing" className="v-section v-workflow"><div className="v-wrap">
-      <Reveal className="v-section-head"><div><Eyebrow number="07">Plans in naira</Eyebrow><h2 className="v-heading">Start with three deliveries.<br /><em>Move to Pro when you need more.</em></h2></div><p className="v-copy">Both plans include Pinboard and all eight Showcase formats. The difference is delivery volume, storage, portfolio access, and whose branding your client sees.</p></Reveal>
+      <Reveal className="v-section-head"><div><Eyebrow number="07">Plans in naira</Eyebrow><h2 className="v-heading">Start with three deliveries.<br /><em>Move to Pro when you need more.</em></h2></div><p className="v-copy">Both plans include GridBoard and all eight Showcase formats. The difference is delivery volume, storage, portfolio access, and whose branding your client sees.</p></Reveal>
       <div className="v-home-plan-preview">
         <Reveal className="v-home-plan-card">
           <div className="v-home-plan-card-top"><span>FREE</span><small>For trying Veylo with client work</small></div>

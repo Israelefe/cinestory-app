@@ -1,0 +1,45 @@
+.v-home-pinboard-card {
+  grid-template-columns: minmax(0, 1fr) minmax(0, .94fr);
+  gap: clamp(26px, 5.4vw, 78px);
+  padding: clamp(22px, 4vw, 50px);
+  overflow: hidden;
+  background: radial-gradient(ellipse at 15% 50%, #a14f3c17, transparent 54%), #111114;
+}
+.v-home-pinboard-art {
+  width: 100%;
+  height: clamp(275px, 29vw, 410px);
+  padding: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  overflow: hidden;
+  border: 1px solid #ffffff20;
+  border-radius: 18px;
+  background: #211815;
+  box-shadow: 0 25px 60px #0006;
+  transform: none;
+}
+.v-home-pinboard-art span { min-width: 0; min-height: 0; overflow: hidden; border-radius: 9px; background: #b6532f; }
+.v-home-pinboard-art span:nth-child(1) { grid-column: 1; grid-row: 1 / 5; }
+.v-home-pinboard-art span:nth-child(2) { grid-column: 2; grid-row: 1 / 4; }
+.v-home-pinboard-art span:nth-child(3) { grid-column: 3; grid-row: 1 / 5; }
+.v-home-pinboard-art span:nth-child(4) { grid-column: 1; grid-row: 5 / 7; }
+.v-home-pinboard-art span:nth-child(5) { grid-column: 2; grid-row: 4 / 7; }
+.v-home-pinboard-art span:nth-child(6) { grid-column: 3; grid-row: 5 / 7; }
+.v-home-pinboard-art img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center 37%; transition: transform .45s ease; }
+.v-home-pinboard-card:hover .v-home-pinboard-art img { transform: scale(1.035); }
+.v-home-pinboard-card h3 { max-width: 570px; }
+.v-home-pinboard-card p { max-width: 550px; font-size: 14px; }
+@media (min-width: 701px) and (max-width: 1024px) {
+  .v-home-pinboard-card { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 26px; }
+  .v-home-pinboard-art { height: 295px; }
+}
+@media (max-width: 700px) {
+  .v-home-pinboard-card { grid-template-columns: 1fr; gap: 25px; }
+  .v-home-pinboard-art { max-width: none; height: clamp(265px, 75vw, 350px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .v-home-pinboard-art img { transition: none; }
+  .v-home-pinboard-card:hover .v-home-pinboard-art img { transform: none; }
+}

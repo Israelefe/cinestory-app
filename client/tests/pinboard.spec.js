@@ -24,7 +24,7 @@ function pinboardDraft() {
   };
 }
 
-test('new delivery offers Showcase and Pinboard, then opens Pinboard details at phone, tablet, and desktop sizes', async ({ page }) => {
+test('new delivery offers Showcase and GridBoard, then opens GridBoard details at phone, tablet, and desktop sizes', async ({ page }) => {
   for (const width of [320, 834, 1440]) {
     await page.setViewportSize({ width, height: width === 320 ? 740 : 900 });
     await page.unroute('**/api/v1/**');
@@ -42,9 +42,9 @@ test('new delivery offers Showcase and Pinboard, then opens Pinboard details at 
     await page.goto('/create');
     await expect(page.getByRole('heading', { name: 'How should this gallery open?' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Showcase Delivery' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Pinboard Delivery' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'GridBoard Delivery' })).toBeVisible();
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
-    await page.getByRole('link', { name: 'Create a Pinboard' }).click();
+    await page.getByRole('link', { name: 'Create a GridBoard' }).click();
     await expect(page.getByRole('heading', { name: 'Start with the gallery.' })).toBeVisible();
     await page.getByLabel('Client name').fill('Lora Ade');
     await page.getByLabel('Gallery title').fill("Lora's birthday");
@@ -55,7 +55,7 @@ test('new delivery offers Showcase and Pinboard, then opens Pinboard details at 
   }
 });
 
-test('published Pinboard shows every photo, moment navigation, and fits phone, tablet, and desktop widths', async ({ page }) => {
+test('published GridBoard shows every photo, moment navigation, and fits phone, tablet, and desktop widths', async ({ page }) => {
   const assets = Array.from({ length: 16 }, (_, index) => ({ assetId: `photo-${index + 1}`, sortOrder: index, url: '/veylo/demo/event/event-01-arrivals.webp', thumbnailUrl: '/veylo/demo/event/event-01-arrivals.webp', width: index % 2 ? 1600 : 1000, height: index % 2 ? 1000 : 1600 }));
   const delivery = { _id: draftId, publicId: 'pinboard-public', schemaVersion: 3, kind: 'pinboard', status: 'published', clientName: 'Lora Ade', title: 'The complete gallery', assets, access: { allowIndividualDownloads: true, allowDownloadAll: true, downloadsLocked: false }, branding: { type: 'veylo', name: 'Veylo', logoUrl: '' }, pinboard: { ...pinboardDraft().pinboard, title: 'The complete gallery' } };
   for (const width of [320, 834, 1440]) {
@@ -63,12 +63,15 @@ test('published Pinboard shows every photo, moment navigation, and fits phone, t
     await page.setViewportSize({ width, height: width === 320 ? 740 : 900 });
     await page.route('**/api/v1/**', async route => {
       const path = new URL(route.request().url()).pathname;
+      if (path.endsWith('/deliveries/public/pinboard-public/share-meta')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { kind: 'pinboard' } }) });
       if (path.endsWith('/deliveries/public/pinboard-public')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: delivery }) });
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: {} }) });
     });
-    await page.goto('/d/pinboard-public?phoneView=1');
+    await page.goto('/d/pinboard-public');
     await expect(page.getByRole('heading', { name: 'The complete gallery' })).toBeVisible();
     await expect(page.locator('.pb-tile')).toHaveCount(16);
+    await expect(page.locator('.v-phone-device')).toHaveCount(0);
+    await expect(page.locator('.pb-board-column')).toHaveCount(width === 320 ? 2 : width === 834 ? 3 : 4);
     await expect(page.getByRole('navigation', { name: 'Find a moment' })).toBeVisible();
     if (width === 320) {
       await page.evaluate(() => {
@@ -82,8 +85,17 @@ test('published Pinboard shows every photo, moment navigation, and fits phone, t
       expect(target.searchParams.get('share')).toBe('grant_token_012345678901234567890123456789');
       expect(target.searchParams.get('photo')).toBe('photo-1');
     }
-    await page.locator('.pb-moment-chip-wrap > button:first-child').click();
+    await page.locator('.pb-moment-chip-wrap > button:first-of-type').click();
     await expect(page.locator('.pb-tile')).toHaveCount(8);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   }
+});
+
+test('GridBoard demo opens as a full desktop board', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/demo/gridboard');
+  await expect(page.getByRole('heading', { name: 'The day, from every angle' })).toBeVisible();
+  await expect(page.locator('.pb-tile')).toHaveCount(16);
+  await expect(page.locator('.v-phone-device')).toHaveCount(0);
+  expect(await page.locator('.pb-board').evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThan(900);
 });
