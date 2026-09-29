@@ -6,7 +6,7 @@ import GoogleSignIn from '../components/GoogleSignIn.jsx';
 import { Page } from '../components/PublicDesign.jsx';
 import api, { apiMessage } from '../services/api.js';
 
-const included = ['Three client deliveries every month', 'All eight delivery formats', 'Full galleries and downloads'];
+const included = ['Three client deliveries every month', 'Pinboard and 8 Showcase formats', 'Full galleries and downloads'];
 
 function PasswordField({ id, name, label, shown, value, onChange }) {
   return <div className="v-field"><label htmlFor={id}>{label}</label><input id={id} name={name} type={shown ? 'text' : 'password'} autoComplete="new-password" required minLength={8} maxLength={128} value={value} onChange={onChange} /></div>;

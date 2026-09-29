@@ -149,7 +149,7 @@ export default function HeroFormatStage({ reduced = false, paused = false }) {
     touchStart.current = null;
     if (Math.abs(distance) > 45) moveFormat(distance < 0 ? 1 : -1);
   }}>
-    <div className="v-format-hero-top"><span>{format.shoot}</span><span>SIX DELIVERY FORMATS</span></div>
+    <div className="v-format-hero-top"><span>{format.shoot}</span><span>SHOWCASE DELIVERY</span></div>
     <div id="veylo-format-preview" className="v-format-hero-screen" role="tabpanel" aria-labelledby={`veylo-format-tab-${format.id}`}>
       <AnimatePresence initial={!pauseMotion} mode="sync">
         <motion.div key={format.id} className={'v-format-hero-scene is-' + format.id} initial={pauseMotion ? false : { clipPath: 'inset(0 0 100% 0)', scale: 1.025 }} animate={{ clipPath: 'inset(0 0 0% 0)', scale: 1 }} exit={pauseMotion ? { opacity: 0 } : { opacity: 0, scale: .985 }} transition={{ duration: pauseMotion ? 0 : .82, ease }}>

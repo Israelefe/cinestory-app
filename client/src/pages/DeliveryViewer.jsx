@@ -6,6 +6,7 @@ import api, { apiMessage } from '../services/api.js';
 import { API_BASE_URL } from '../config/env.js';
 import { trackEvent } from '../services/analytics.js';
 import { DeliveryFormatViewer } from '../components/delivery/viewerRegistry.jsx';
+import PinboardViewer from '../components/delivery/PinboardViewer.jsx';
 import DeliveryBrandMark from '../components/delivery/DeliveryBrandMark.jsx';
 import { getDeliveryCapabilities } from '../constants/deliveryCapabilities.js';
 import '../styles/format-demos.css';
@@ -645,7 +646,9 @@ export default function DeliveryViewer() {
     onNarrationNavigate: seekNarrationToAssets
   };
 
-  const content = <DeliveryFormatViewer format={format} {...sharedProps} delivery={playbackDelivery} />;
+  const content = delivery.kind === 'pinboard'
+    ? <PinboardViewer delivery={playbackDelivery} galleryProps={galleryProps} />
+    : <DeliveryFormatViewer format={format} {...sharedProps} delivery={playbackDelivery} />;
 
   return (
     <>

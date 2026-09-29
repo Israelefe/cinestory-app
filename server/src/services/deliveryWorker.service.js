@@ -1,6 +1,6 @@
 import Delivery from '../models/Delivery.js';
 import DeliveryJob from '../models/DeliveryJob.js';
-import { analyzeAllV3, directV3 } from './deliveryV3AI.service.js';
+import { analyzeAllV3, directV3, directV3Pinboard } from './deliveryV3AI.service.js';
 import { synthesizeV3Narration } from './narration.service.js';
 import { CREATIVE_DIRECTOR_PROVIDER, CREATIVE_DIRECTOR_PROMPT_VERSION, FORMAT_DIRECTION_PROFILES, analyzeImageBatch, createFrameBatch, createGlobalDirection, recommendFormats, selectCuratedPhotos } from './alibabaCreativeDirector.service.js';
 import { removeDeliveryAudio, signedImageUrl } from './deliveryMedia.service.js';
@@ -412,21 +412,37 @@ async function run(job) {
         await Delivery.updateOne({ _id: delivery._id, status: 'analyzing', 'v3.revision': job.input?.revision }, { $set: { collectionAnalysis: { images: partial, model: 'deepseek-v4.1-flash', complete: done === total } } });
         await saveJob(job, { stage: 'analysing-photos', progress: Math.min(78, Math.round(done / total * 78)) });
       });
-      await saveJob(job, { stage: 'writing-showcase', progress: 82 });
-      const result = await directV3(delivery, insights);
       const latest = await Delivery.findById(delivery._id);
       if (latest.status !== 'analyzing' || latest.v3?.revision !== job.input?.revision) throw Object.assign(new Error('This draft changed. Start analysis again.'), { code: 'V3_DRAFT_CHANGED' });
-      latest.collectionAnalysis = { images: insights, model: 'deepseek-v4.1-flash' };
-      latest.curatedAssetIds = result.selected;
-      latest.galleryAssetIds = latest.assets.map(asset => asset.assetId);
-      latest.presentationOrder = result.selected;
-      latest.galleryOrder = latest.galleryAssetIds;
-      latest.creativeDirection = result.direction;
-      latest.v3 = { ...latest.v3, step: 'showcase', openingAssetId: result.openingAssetId, closingAssetId: result.closingAssetId };
-      latest.markModified('v3'); latest.markModified('creativeDirection');
-      latest.status = 'review';
-      await latest.save();
-      await saveJob(job, { status: 'review', stage: 'showcase-ready', progress: 100, completedAt: new Date(), result: { selected: result.selected.length, analyzed: insights.length } });
+      latest.collectionAnalysis = { images: insights, model: 'deepseek-v4.1-flash', complete: true };
+      if (latest.kind === 'pinboard') {
+        await saveJob(job, { stage: 'designing-pinboard', progress: 84 });
+        latest.pinboard = await directV3Pinboard(latest, insights);
+        latest.galleryAssetIds = latest.assets.map(asset => asset.assetId);
+        latest.galleryOrder = latest.pinboard.layouts.find(layout => layout.id === latest.pinboard.selectedLayoutId)?.assetOrder || latest.galleryAssetIds;
+        latest.presentationOrder = latest.galleryOrder;
+        latest.v3 = { ...latest.v3, step: 'pinboard' };
+        latest.markModified('assets'); latest.markModified('collectionAnalysis'); latest.markModified('pinboard'); latest.markModified('v3');
+        latest.status = 'review';
+        await latest.save();
+        await saveJob(job, { status: 'review', stage: 'pinboard-ready', progress: 100, completedAt: new Date(), result: { analyzed: insights.length, moments: latest.pinboard.moments.length, layouts: latest.pinboard.layouts.length } });
+      } else {
+        await saveJob(job, { stage: 'writing-showcase', progress: 82 });
+        const result = await directV3(latest, insights);
+        const final = await Delivery.findById(delivery._id);
+        if (final.status !== 'analyzing' || final.v3?.revision !== job.input?.revision) throw Object.assign(new Error('This draft changed. Start analysis again.'), { code: 'V3_DRAFT_CHANGED' });
+        final.collectionAnalysis = { images: insights, model: 'deepseek-v4.1-flash', complete: true };
+        final.curatedAssetIds = result.selected;
+        final.galleryAssetIds = final.assets.map(asset => asset.assetId);
+        final.presentationOrder = result.selected;
+        final.galleryOrder = final.galleryAssetIds;
+        final.creativeDirection = result.direction;
+        final.v3 = { ...final.v3, step: 'showcase', openingAssetId: result.openingAssetId, closingAssetId: result.closingAssetId };
+        final.markModified('v3'); final.markModified('creativeDirection');
+        final.status = 'review';
+        await final.save();
+        await saveJob(job, { status: 'review', stage: 'showcase-ready', progress: 100, completedAt: new Date(), result: { selected: result.selected.length, analyzed: insights.length } });
+      }
     } else if (job.type === 'v3-narrate') {
       if (delivery.schemaVersion !== 3 || delivery.format !== 'photo-story') throw Object.assign(new Error('Narration is only available for Photo Story.'), { code: 'V3_NARRATION_UNAVAILABLE' });
       const bookends = job.input?.bookends !== false;

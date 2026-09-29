@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { V3_FORMATS, contrastRatio, validShowcase } from '../src/constants/deliveryV3.js';
-import { analyzeAllV3, directV3, improvePurpose, recommendV3Format, regenerateV3Caption, repickV3Palette } from '../src/services/deliveryV3AI.service.js';
+import { analyzeAllV3, directV3, directV3Pinboard, improvePurpose, recommendV3Format, regenerateV3Caption, repickV3Palette } from '../src/services/deliveryV3AI.service.js';
 import { captionSegments, generateNarration, narrationLine, NARRATION_RENDER_VERSION } from '../src/services/narration.service.js';
 
 const ids = Array.from({ length: 25 }, (_, index) => 'asset-' + index);
@@ -33,6 +33,29 @@ test('each format enforces its own inclusive showcase bounds and known unique as
 test('theme contrast check distinguishes readable and unreadable colour pairs', () => {
   assert.ok(contrastRatio('#0c0c10', '#fffaf6') > 4.5);
   assert.ok(contrastRatio('#ffffff', '#eeeeee') < 4.5);
+});
+
+test('Pinboard suggestions keep every supplied photo and produce three complete arrangements', async () => {
+  const assets = Array.from({ length: 6 }, (_, index) => ({ assetId: `pinboard-photo-${index}`, sortOrder: index, width: index % 2 ? 1600 : 1000, height: index % 2 ? 1000 : 1600, analysis: undefined }));
+  const current = { selectedLayoutId: 'balanced', palette: { background: '#0c0c10', surface: '#17171c', text: '#fffaf6', accent: '#ff5a47' }, typography: { display: 'Playfair Display', body: 'Outfit' } };
+  const calls = [];
+  const restore = mockModel([{ moments: [{ title: 'Portraits', assetIds: ['pinboard-photo-0', 'pinboard-photo-1', 'foreign-photo'] }, { title: 'Details', assetIds: ['pinboard-photo-4', 'pinboard-photo-5'] }], layouts: [{ id: 'balanced', title: 'A steady mix', description: 'Portrait and landscape photographs take turns.' }, { id: 'moments', title: 'Scenes together', description: 'Related photographs sit near each other.' }, { id: 'colour-flow', title: 'Colour flow', description: 'A colour-led order moves through the gallery.' }], palette: { background: '#15201e', surface: '#23322e', text: '#fffaf6', accent: '#d5a180' }, typography: { display: 'Cormorant Garamond', body: 'DM Sans' } }], calls);
+  try {
+    const result = await directV3Pinboard({ title: 'A complete gallery', clientName: 'Studio client', shootType: 'Event', brief: 'A complete event gallery', assets, pinboard: current }, assets.map((asset, index) => ({ assetId: asset.assetId, summary: `Visible event detail ${index}.`, score: 8, colors: ['#e88761', '#184a3f'], momentTags: index < 3 ? ['people together'] : ['details'] })));
+    const expected = assets.map(asset => asset.assetId).sort();
+    assert.equal(result.layouts.length, 3);
+    for (const layout of result.layouts) {
+      assert.equal(layout.assetOrder.length, assets.length);
+      assert.deepEqual([...layout.assetOrder].sort(), expected);
+    }
+    assert.deepEqual(result.moments[0].assetIds, ['pinboard-photo-0', 'pinboard-photo-1']);
+    assert.ok(result.moments.every(moment => moment.assetIds.every(assetId => expected.includes(assetId))));
+    assert.equal(result.analysisStatus, 'ready');
+    assert.deepEqual(result.typography, current.typography);
+    assert.equal(assets.length, 6);
+    assert.equal(calls[0].model, 'deepseek-v4.1-flash');
+    assert.match(calls[0].messages[0].content, /Do not use face recognition/);
+  } finally { restore(); }
 });
 
 test('palette repicking retries the current palette and keeps both text contrasts readable', async () => {

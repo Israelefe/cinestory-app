@@ -1,12 +1,12 @@
 import express from 'express';
-import { v3Access, v3Approve, v3Assist, v3Caption, v3Create, v3Details, v3Format, v3Narration, v3Prepare, v3Publish, v3RepickTheme, v3Showcase, v3SkipNarration, v3Theme } from '../controllers/deliveryV3.controller.js';
+import { v3Access, v3Approve, v3Assist, v3Caption, v3Create, v3Details, v3Format, v3Narration, v3Pinboard, v3Prepare, v3Publish, v3RepickTheme, v3Showcase, v3SkipNarration, v3Theme } from '../controllers/deliveryV3.controller.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { aiGenerationLimit, clientDeliveryEmailLimit, mediaSignatureLimit, publicAccessLimit, publicMediaLimit } from '../middleware/rateLimit.middleware.js';
 import {
   addLibraryAssets, archiveDelivery, assistDeliveryBrief, confirmDeliveryUpload, confirmSoundtrackUpload,
   createDelivery, createShareGrant, deleteDelivery, deleteDeliveryAsset, deleteSoundtrack, emailClientDelivery,
   getDelivery, getDeliveryJob, getDeliveryQr, getDeliveryShareMeta, getGalleryDownload, getPhotoDownload,
-  getPublicDelivery, getPublicSoundtrack, listDeliveries, listDeliverySoundtracks, listNarrationVoices,
+  getPublicDelivery, getPublicSoundtrack, getPinboardStatusCard, listDeliveries, listDeliverySoundtracks, listNarrationVoices,
   listShareGrants, publishDelivery, queueAnalysis, queueDirection, queueNarration, queueRevision,
   restoreDelivery, retryDeliveryJob, recoverDeliveryUpload, revokeShareGrant, selectCuratedSoundtrack, signDeliveryUpload,
   signSoundtrackUpload, streamDeliverySoundtrack, streamPhotoDownload, togglePhotoLike, trackPhotoDownload,
@@ -18,6 +18,7 @@ const router = express.Router();
 router.get('/public/:publicId', publicAccessLimit, getPublicDelivery);
 router.get('/public/:publicId/share-meta', publicAccessLimit, getDeliveryShareMeta);
 router.get('/public/:publicId/soundtrack', publicMediaLimit, getPublicSoundtrack);
+router.post('/public/:publicId/pinboard/status-card', publicMediaLimit, getPinboardStatusCard);
 router.post('/public/:publicId/unlock', publicAccessLimit, unlockDelivery);
 router.post('/public/:publicId/photos/:assetId/like', publicMediaLimit, togglePhotoLike);
 router.get('/public/:publicId/photos/:assetId/download', publicMediaLimit, getPhotoDownload);
@@ -39,6 +40,7 @@ router.patch('/:id/v3/details', v3Details);
 router.patch('/:id/v3/format', v3Format);
 router.post('/:id/v3/prepare', aiGenerationLimit, v3Prepare);
 router.patch('/:id/v3/showcase', v3Showcase);
+router.patch('/:id/v3/pinboard', v3Pinboard);
 router.post('/:id/v3/captions/:assetId/regenerate', aiGenerationLimit, v3Caption);
 router.post('/:id/v3/narrate', aiGenerationLimit, v3Narration);
 router.post('/:id/v3/narration/skip', v3SkipNarration);

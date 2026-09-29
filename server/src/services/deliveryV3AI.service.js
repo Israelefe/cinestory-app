@@ -113,12 +113,12 @@ export async function recommendV3Format(shootType, purpose = '') {
 
 async function analyzeBatch(batch, context) {
   const descriptors = batch.map((asset, index) => ({ index, assetId: asset.assetId }));
-  const result = await request('Return JSON {"images":[{"index":0,"summary":"visible facts only","score":1,"colors":["#hex"]}]}. Describe each supplied image by its numeric index. Include every index exactly once. Score visual showcase suitability 1-10 based on image quality, variety and clear subject. Do not infer names, age, relationships, emotion or event facts from pixels. If an image cannot be seen, say so and score 1.', `Shoot type: ${context.shootType}. Purpose: ${context.brief}. Images in order: ${JSON.stringify(descriptors)}`, { images: batch, maxTokens: Math.min(25000, 250 * batch.length) });
+  const result = await request('Return JSON {"images":[{"index":0,"summary":"visible facts only","score":1,"colors":["#hex"],"momentTags":["portraits"]}]}. Describe each supplied image by its numeric index. Include every index exactly once. Score visual showcase suitability 1-10 based on image quality, variety and clear subject. Return up to three short, reusable visual tags for practical client navigation, such as portraits, people together, ceremony, dancing, clothing, or details. Describe visible scenes only. Do not identify people or infer names, ages, relationships, emotions, or event facts from pixels. Never use face recognition. If an image cannot be seen, say so and score 1.', `Shoot type: ${context.shootType}. Purpose: ${context.brief}. Images in order: ${JSON.stringify(descriptors)}`, { images: batch, maxTokens: Math.min(25000, 280 * batch.length) });
   const rows = Array.isArray(result.images) ? result.images : [];
   if (rows.length !== batch.length) throw Object.assign(new Error('Some photographs were not analysed. Retry this step.'), { code: 'V3_INCOMPLETE_ANALYSIS' });
   const byIndex = new Map(rows.map(row => [Number(row.index), row]));
   if (byIndex.size !== batch.length || batch.some((_, index) => !byIndex.has(index))) throw Object.assign(new Error('Some photographs were not analysed. Retry this step.'), { code: 'V3_INCOMPLETE_ANALYSIS' });
-  return batch.map((asset, index) => ({ assetId: asset.assetId, summary: String(byIndex.get(index).summary || '').slice(0, 220), score: Math.max(1, Math.min(10, Number(byIndex.get(index).score) || 1)), colors: (Array.isArray(byIndex.get(index).colors) ? byIndex.get(index).colors : []).filter(color => /^#[0-9a-f]{6}$/i.test(color)).slice(0, 4) }));
+  return batch.map((asset, index) => ({ assetId: asset.assetId, summary: String(byIndex.get(index).summary || '').slice(0, 220), score: Math.max(1, Math.min(10, Number(byIndex.get(index).score) || 1)), colors: (Array.isArray(byIndex.get(index).colors) ? byIndex.get(index).colors : []).filter(color => /^#[0-9a-f]{6}$/i.test(color)).slice(0, 4), momentTags: (Array.isArray(byIndex.get(index).momentTags) ? byIndex.get(index).momentTags : []).map(value => String(value).toLowerCase().replace(/[^a-z0-9 -]/g, '').trim().slice(0, 32)).filter(Boolean).slice(0, 3) }));
 }
 
 export async function analyzeAllV3(delivery, onProgress = async () => {}) {
@@ -145,6 +145,130 @@ export async function analyzeAllV3(delivery, onProgress = async () => {}) {
     }
   }
   return assets.map(asset => byId.get(asset.assetId));
+}
+
+function pinboardSlug(value, fallback) {
+  const slug = String(value || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32);
+  return slug || fallback;
+}
+
+function dominantHue(colors = []) {
+  const hex = String(colors[0] || '').match(/^#([0-9a-f]{6})$/i)?.[1];
+  if (!hex) return 0;
+  const [r0, g0, b0] = [0, 2, 4].map(index => parseInt(hex.slice(index, index + 2), 16) / 255);
+  const max = Math.max(r0, g0, b0); const min = Math.min(r0, g0, b0); const delta = max - min;
+  if (!delta) return 0;
+  const hue = max === r0 ? ((g0 - b0) / delta) % 6 : max === g0 ? (b0 - r0) / delta + 2 : (r0 - g0) / delta + 4;
+  return (hue * 60 + 360) % 360;
+}
+
+function buildPinboardLayouts(assets, moments, suggestions) {
+  const ordered = [...assets].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+  const portrait = ordered.filter(asset => Number(asset.height || 0) >= Number(asset.width || 0));
+  const landscape = ordered.filter(asset => Number(asset.width || 0) > Number(asset.height || 0));
+  const balanced = [];
+  let takePortrait = portrait.length >= landscape.length;
+  while (portrait.length || landscape.length) {
+    const preferred = takePortrait ? portrait : landscape;
+    const other = takePortrait ? landscape : portrait;
+    if (preferred.length) balanced.push(preferred.shift());
+    else if (other.length) balanced.push(other.shift());
+    takePortrait = !takePortrait;
+  }
+  const byId = new Map(ordered.map(asset => [asset.assetId, asset]));
+  const momentOrder = [];
+  const seen = new Set();
+  for (const moment of moments) for (const id of moment.assetIds) if (byId.has(id) && !seen.has(id)) { seen.add(id); momentOrder.push(byId.get(id)); }
+  for (const asset of ordered) if (!seen.has(asset.assetId)) momentOrder.push(asset);
+  const colorOrder = [...ordered].sort((a, b) => dominantHue(a.analysis?.colors) - dominantHue(b.analysis?.colors) || Number(b.analysis?.score || 0) - Number(a.analysis?.score || 0) || Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+  const names = {
+    balanced: ['A balanced flow', 'Portrait and landscape frames take turns where the set allows it.'],
+    moments: ['Moments together', 'Photos from the same scenes sit near one another.'],
+    'colour-flow': ['Follow the colour', 'A gentle colour sequence gives the board its own rhythm.']
+  };
+  return [
+    { id: 'balanced', title: suggestions.balanced?.title || names.balanced[0], description: suggestions.balanced?.description || names.balanced[1], assetOrder: balanced.map(asset => asset.assetId) },
+    { id: 'moments', title: suggestions.moments?.title || names.moments[0], description: suggestions.moments?.description || names.moments[1], assetOrder: momentOrder.map(asset => asset.assetId) },
+    { id: 'colour-flow', title: suggestions['colour-flow']?.title || names['colour-flow'][0], description: suggestions['colour-flow']?.description || names['colour-flow'][1], assetOrder: colorOrder.map(asset => asset.assetId) }
+  ];
+}
+
+export async function directV3Pinboard(delivery, insights) {
+  const assets = [...delivery.assets].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+  const insightById = new Map(insights.map(row => [row.assetId, row]));
+  const rows = assets.map(asset => {
+    const insight = insightById.get(asset.assetId) || {};
+    asset.analysis = insight;
+    return { assetId: asset.assetId, shape: Number(asset.width || 0) && Number(asset.height || 0) ? Number(asset.width) >= Number(asset.height) ? 'landscape' : 'portrait' : 'unknown', summary: insight.summary || '', colors: (insight.colors || []).slice(0, 3), momentTags: (insight.momentTags || []).slice(0, 3) };
+  });
+  const fallbackGroups = new Map();
+  for (const row of rows) for (const tag of row.momentTags) {
+    if (!fallbackGroups.has(tag)) fallbackGroups.set(tag, []);
+    fallbackGroups.get(tag).push(row.assetId);
+  }
+  const compact = rows.map(({ assetId, shape, summary, colors, momentTags }) => ({ assetId, shape, summary, colors, momentTags }));
+  let generated = {};
+  try {
+    generated = await request(
+      'Return JSON {"moments":[{"title":"...","assetIds":["known-id"]}],"layouts":[{"id":"balanced","title":"...","description":"..."}],"palette":{"background":"#hex","surface":"#hex","text":"#hex","accent":"#hex"},"typography":{"display":"Playfair Display","body":"Outfit"}}. Create up to six useful groups of photographs based on visible subjects, activity, setting, or details. Use only supplied asset IDs and include at least two IDs in each group. A photograph may appear in more than one group. Do not identify people, infer family or other relationships, names, ages, or private traits. Do not use face recognition. Create exactly three board suggestions, one each for balanced, moments, and colour-flow. The names and short descriptions should reflect this collection without inventing facts. Choose a readable palette based on the supplied colours. Typography must use Playfair Display, Outfit, Plus Jakarta Sans, Cormorant Garamond, DM Sans, Libre Baskerville, or Manrope. Keep every supplied photograph in the board; these suggestions only affect presentation.',
+      ['Photographer context: ' + String(delivery.brief || '').slice(0, 600), 'Shoot type: ' + String(delivery.shootType || '').slice(0, 100), 'Photographs: ' + JSON.stringify(compact)].join('\n'),
+      { maxTokens: Math.min(22000, 2200 + rows.length * 24) }
+    );
+  } catch (error) {
+    if (!['V3_AI_REQUEST_FAILED', 'V3_INVALID_AI_RESPONSE', 'V3_IMAGE_BATCH_TOO_LARGE'].includes(error.code) && !['TimeoutError', 'AbortError'].includes(error.name)) throw error;
+  }
+  const known = new Set(assets.map(asset => asset.assetId));
+  const usedSlugs = new Set();
+  const moments = (Array.isArray(generated.moments) ? generated.moments : []).slice(0, 6).map((moment, index) => {
+    const title = String(moment.title || '').replace(/[<>]/g, '').trim().slice(0, 40);
+    const assetIds = [...new Set((Array.isArray(moment.assetIds) ? moment.assetIds : []).filter(id => known.has(id)))];
+    if (title.length < 2 || assetIds.length < 2) return null;
+    let id = pinboardSlug(title, `moment-${index + 1}`);
+    if (usedSlugs.has(id)) id = `${id}-${index + 1}`;
+    usedSlugs.add(id);
+    return { id, title, assetIds, hidden: false };
+  }).filter(Boolean);
+  if (!moments.length) {
+    for (const [tag, assetIds] of fallbackGroups) {
+      if (assetIds.length < 2 || moments.length >= 6) continue;
+      let id = pinboardSlug(tag, `moment-${moments.length + 1}`);
+      if (usedSlugs.has(id)) continue;
+      usedSlugs.add(id);
+      moments.push({ id, title: tag.split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '), assetIds: [...new Set(assetIds)], hidden: false });
+    }
+  }
+  const layoutSuggestions = {};
+  for (const row of Array.isArray(generated.layouts) ? generated.layouts : []) {
+    if (!['balanced', 'moments', 'colour-flow'].includes(row.id)) continue;
+    const title = String(row.title || '').replace(/[<>]/g, '').trim().slice(0, 36);
+    const description = String(row.description || '').replace(/[<>]/g, '').trim().slice(0, 120);
+    if (title && description) layoutSuggestions[row.id] = { title, description };
+  }
+  const layouts = buildPinboardLayouts(assets, moments, layoutSuggestions);
+  const rawPalette = generated.palette || {};
+  const palette = Object.fromEntries(Object.keys(V3_DEFAULT_PALETTE).map(key => [key, /^#[0-9a-f]{6}$/i.test(rawPalette[key] || '') ? rawPalette[key] : V3_DEFAULT_PALETTE[key]]));
+  if (contrastRatio(palette.background, palette.text) < 4.5 || contrastRatio(palette.surface, palette.text) < 4.5) {
+    const readable = ['#fffaf6', '#ffffff', '#101010', '#000000'].find(color => contrastRatio(palette.background, color) >= 4.5 && contrastRatio(palette.surface, color) >= 4.5);
+    if (readable) palette.text = readable;
+    else { palette.background = V3_DEFAULT_PALETTE.background; palette.surface = V3_DEFAULT_PALETTE.surface; palette.text = V3_DEFAULT_PALETTE.text; }
+  }
+  const current = delivery.pinboard || {};
+  const typography = {
+    display: V3_FONT_CHOICES.has(generated.typography?.display) ? generated.typography.display : current.typography?.display || 'Playfair Display',
+    body: V3_FONT_CHOICES.has(generated.typography?.body) ? generated.typography.body : current.typography?.body || 'Outfit'
+  };
+  return {
+    ...current,
+    title: String(current.title || delivery.title || `${delivery.clientName || 'Client'}'s photographs`).slice(0, 120),
+    layouts,
+    selectedLayoutId: layouts.some(layout => layout.id === current.selectedLayoutId) ? current.selectedLayoutId : 'balanced',
+    moments,
+    palette: current.palette || palette,
+    typography: current.typography || typography,
+    grid: current.grid || { mobileColumns: 2, tabletColumns: 3, desktopColumns: 4, gap: 'regular' },
+    animation: current.animation || 'soft-fade',
+    analysisStatus: 'ready'
+  };
 }
 
 async function groupV3Sections(delivery, rows, selected) {

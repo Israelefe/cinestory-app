@@ -5,6 +5,7 @@ import { API_BASE_URL } from '../../config/env.js';
 import { DeliveryFormatViewer } from './viewerRegistry.jsx';
 import { DeliveryReadiness } from '../../pages/DeliveryViewer.jsx';
 import { getDeliveryCapabilities } from '../../constants/deliveryCapabilities.js';
+import PinboardViewer from './PinboardViewer.jsx';
 import '../../pages/DeliveryViewer.css';
 import './ClientDeliveryPreview.css';
 
@@ -149,6 +150,8 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
   if (!experienceReady) {
     return <DeliveryReadiness delivery={delivery} onReady={media => { setPreloadedMedia(media); setExperienceReady(true); }} />;
   }
+
+  if (delivery?.kind === 'pinboard') return <div className="v-client-preview-runtime"><PinboardViewer delivery={playbackDelivery} preview galleryProps={{ onDownload: () => toast.info('Photo downloads will be available on the published client link.'), onDownloadAll: () => toast.info('The published link will download each photograph separately.') }} /></div>;
 
   const galleryProps = {
     liked: previewLiked,

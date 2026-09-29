@@ -169,7 +169,9 @@ export default function ClientExperience() {
     </div></section>
 
     <section className="v-section v-ce-actions-section"><div className="v-wrap">
-      <Reveal className="v-ce-actions-head"><Eyebrow number="02">Eight ways to open a shoot</Eyebrow><h2 className="v-heading">Watch. Scroll. Tap.<br /><em>Or browse the whole day.</em></h2><p className="v-copy">Choose what suits the photographs. Event Coverage helps people find scenes from a busy day; Campaign Delivery keeps final commercial assets organised. Every format leads to the full gallery.</p></Reveal>
+      <Reveal className="v-ce-actions-head"><Eyebrow number="02">Two delivery types</Eyebrow><h2 className="v-heading">A designed presentation.<br /><em>Or the gallery first.</em></h2><p className="v-copy">Showcase has eight ways to shape a first viewing. Pinboard opens the complete set as a free-flowing photo board with moment groups and private sharing.</p></Reveal>
+      <Reveal className="v-ce-delivery-types"><Link to="/formats"><span>SHOWCASE DELIVERY</span><strong>Begin with a presentation.</strong><small>Photo Story, Editorial Page, Photo Reveal, Canvas, Chapters, Album, Event Coverage, or Campaign Delivery.</small></Link><Link to="/demo/pinboard"><span>PINBOARD DELIVERY</span><strong>Browse the full gallery.</strong><small>Open a board, find a moment, or share a private link to a photo on WhatsApp.</small></Link></Reveal>
+      <Reveal className="v-ce-format-list-title"><h3>Eight Showcase formats</h3><p>Here is what the client can do in each one.</p></Reveal>
       <Reveal className="v-ce-format-line">
         {DELIVERY_FORMATS.map((format, index) => <Link key={format.id} to={`/formats#${format.id}`}><span>{String(index + 1).padStart(2, '0')}</span><strong>{clientActions[index]}</strong><small>{format.name}</small><ArrowRight size={15} /></Link>)}
       </Reveal>

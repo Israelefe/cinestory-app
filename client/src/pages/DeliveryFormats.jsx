@@ -253,14 +253,22 @@ export default function DeliveryFormats() {
         </motion.div>
         <div className="v-fguide-hero-after">
           <p className="v-lead">Some collections need a beginning and an ending. Some are better explored. Some should be revealed one photograph at a time. The format changes the first viewing, while your finished photographs remain untouched.</p>
-          <a className="v-fguide-hero-jump" href="#format-guide">Compare all eight formats <ArrowDown size={16} /></a>
+          <a className="v-fguide-hero-jump" href="#delivery-types">Compare two delivery types <ArrowDown size={16} /></a>
         </div>
       </header>
+
+      <section className="v-fguide-types" id="delivery-types"><div className="v-wrap">
+        <Reveal className="v-fguide-types-head"><Eyebrow number="01">Two delivery types</Eyebrow><h2>Lead with a presentation,<br /><em>or put the whole gallery first.</em></h2><p>Both deliver every finished photograph. Choose the first viewing that suits the job.</p></Reveal>
+        <div className="v-fguide-types-grid">
+          <Reveal className="v-fguide-type-card is-showcase"><span><Clapperboard size={20} /> SHOWCASE DELIVERY</span><h3>Give the shoot a designed first viewing.</h3><p>Start with a directed Photo Story, scrollable page, reveal, open canvas, chapters, album, event coverage, or commercial handoff. The complete gallery follows.</p><div><strong>8 formats</strong><Link to="#format-guide" onClick={event => { event.preventDefault(); document.getElementById('format-guide')?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth' }); }}>Compare Showcase formats <ArrowDown size={15} /></Link></div></Reveal>
+          <Reveal className="v-fguide-type-card is-pinboard" delay={.08}><span><Grid2X2 size={20} /> PINBOARD DELIVERY</span><h3>Let clients browse the complete board.</h3><p>Veylo suggests three masonry arrangements and groups visible moments. Clients can open, download, or share finished photographs from the same private link.</p><div><Link to="/demo/pinboard">See a Pinboard example <ArrowUpRight size={15} /></Link><Link to="/create?type=pinboard">Create a Pinboard <ArrowUpRight size={15} /></Link></div></Reveal>
+        </div>
+      </div></section>
 
       <section className="v-fguide-role-section" id="format-guide">
         <div className="v-wrap">
           <Reveal className="v-fguide-role-head">
-            <Eyebrow number="01">The clearest difference</Eyebrow>
+            <Eyebrow number="02">Showcase formats</Eyebrow>
             <h2>The format changes what your client does first.</h2>
           </Reveal>
           <nav className="v-fguide-role-track" aria-label="Jump to a delivery format">
@@ -384,7 +392,7 @@ export default function DeliveryFormats() {
           viewport={{ once: true, amount: 0.2 }}
           transition={reduced ? { duration: 0 } : { duration: 0.72, ease: [0.22, 1, 0.36, 1] }}
         >
-          <Eyebrow>Eight formats · One complete gallery</Eyebrow>
+          <Eyebrow>Two delivery types · One complete gallery</Eyebrow>
           <h2>Choose how the photographs arrive.<br /><em>Let the shoot shape everything else.</em></h2>
           <p>Start with the finished photographs and the story behind them. Review Veylo’s proposed direction before your client sees a thing.</p>
           <div className="v-actions">

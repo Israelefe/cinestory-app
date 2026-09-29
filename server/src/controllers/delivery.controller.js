@@ -20,6 +20,7 @@ import { reservePublishSlot, resolveEntitlements } from '../services/entitlement
 import { tokenDigest } from '../utils/auth.js';
 import { sendDeliveryDownloadedEmail, sendDeliveryViewedEmail, sendShareGrantEmail, sendStoryReadyEmail } from '../services/email.service.js';
 import QRCode from 'qrcode';
+import sharp from 'sharp';
 import { DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
 import { DELIVERY_SOUNDTRACKS, deliverySoundtrack, deliverySoundtrackFile } from '../constants/deliverySoundtracks.js';
 import { supportsDeliveryMusic, supportsDeliveryNarration } from '../constants/deliveryCapabilities.js';
@@ -543,7 +544,7 @@ export async function confirmDeliveryUpload(req, res) {
       $expr: { $lt: [{ $size: '$assets' }, entitlements.limits.photosPerDelivery] }
     }, {
       $push: { assets: asset },
-      $set: { status: 'draft', formatRecommendations: [], ...(delivery.schemaVersion === 3 ? { 'v3.step': 'upload', 'v3.approvedRevision': null, 'v3.narrationChoice': 'skip', 'v3.captionNarrationChoice': 'skip', curatedAssetIds: [], presentationOrder: [] } : {}) },
+      $set: { status: 'draft', formatRecommendations: [], ...(delivery.schemaVersion === 3 ? { 'v3.step': delivery.kind === 'pinboard' ? 'photos' : 'upload', 'v3.approvedRevision': null, 'v3.narrationChoice': 'skip', 'v3.captionNarrationChoice': 'skip', curatedAssetIds: [], presentationOrder: [], ...(delivery.kind === 'pinboard' ? { 'pinboard.layouts': [], 'pinboard.moments': [], 'pinboard.analysisStatus': 'pending' } : {}) } : {}) },
       $inc: delivery.schemaVersion === 3 ? { 'v3.revision': 1 } : {},
       $unset: { collectionAnalysis: 1, creativeDirection: 1, reviewApprovedAt: 1, ...(delivery.schemaVersion === 3 ? { narration: 1 } : {}) }
     }, { new: true, runValidators: true });
@@ -599,7 +600,7 @@ export async function addLibraryAssets(req, res) {
       $expr: { $lte: [{ $add: [{ $size: '$assets' }, newAssets.length] }, entitlements.limits.photosPerDelivery] }
     }, {
       $push: { assets: { $each: newAssets } },
-      $set: { status: 'draft', formatRecommendations: [], ...(delivery.schemaVersion === 3 ? { 'v3.step': 'upload', 'v3.approvedRevision': null, 'v3.narrationChoice': 'skip', 'v3.captionNarrationChoice': 'skip', curatedAssetIds: [], presentationOrder: [] } : {}) },
+      $set: { status: 'draft', formatRecommendations: [], ...(delivery.schemaVersion === 3 ? { 'v3.step': delivery.kind === 'pinboard' ? 'photos' : 'upload', 'v3.approvedRevision': null, 'v3.narrationChoice': 'skip', 'v3.captionNarrationChoice': 'skip', curatedAssetIds: [], presentationOrder: [], ...(delivery.kind === 'pinboard' ? { 'pinboard.layouts': [], 'pinboard.moments': [], 'pinboard.analysisStatus': 'pending' } : {}) } : {}) },
       $inc: delivery.schemaVersion === 3 ? { 'v3.revision': 1 } : {},
       $unset: { collectionAnalysis: 1, creativeDirection: 1, reviewApprovedAt: 1, ...(delivery.schemaVersion === 3 ? { narration: 1 } : {}) }
     }, { new: true, runValidators: true });
@@ -638,6 +639,7 @@ export async function deleteDeliveryAsset(req, res) {
     if (delivery.schemaVersion === 3) {
       delivery.curatedAssetIds = []; delivery.presentationOrder = []; delivery.narration = undefined;
       delivery.v3 = { ...delivery.v3, step: 'upload', narrationChoice: 'skip', captionNarrationChoice: 'skip', approvedRevision: null, revision: Number(delivery.v3?.revision || 0) + 1 };
+      if (delivery.kind === 'pinboard') { delivery.v3.step = 'photos'; delivery.pinboard = { ...delivery.pinboard, layouts: [], moments: [], analysisStatus: 'pending' }; delivery.markModified('pinboard'); }
       delivery.markModified('v3');
     }
     await delivery.save();
@@ -1076,7 +1078,18 @@ async function publicPayload(delivery, grant = null) {
   const watermarkText = (delivery.access?.watermarkEnabled && delivery.access?.downloadsLocked)
     ? (delivery.access?.watermarkText || owner.studio?.name || owner.name || 'PREVIEW')
     : null;
-  object.assets = visibleDeliveryAssets.map(asset => ownerAsset(asset, watermarkText));
+  object.assets = visibleDeliveryAssets.map(asset => {
+    const safe = ownerAsset(asset, watermarkText);
+    delete safe.analysis;
+    return safe;
+  });
+  if (object.kind === 'pinboard' && object.pinboard) {
+    const board = object.pinboard;
+    board.layouts = (board.layouts || []).map(layout => ({ ...layout, assetOrder: (layout.assetOrder || []).filter(assetId => visibleAssets.has(assetId)) }));
+    board.moments = (board.moments || []).map(moment => ({ ...moment, assetIds: (moment.assetIds || []).filter(assetId => visibleAssets.has(assetId)) })).filter(moment => moment.assetIds.length);
+    board.analysisStatus = board.analysisStatus === 'standard' ? 'standard' : 'ready';
+    delete board.model;
+  }
   if (grant) {
     if (object.creativeDirection) {
       object.creativeDirection = { ...object.creativeDirection };
@@ -1113,6 +1126,65 @@ async function publicPayload(delivery, grant = null) {
   }
   object.branding = studioBrand ? { type: 'studio', name: owner.studio?.name || owner.name, logoUrl: owner.studio?.logoUrl || owner.avatar || '' } : { type: 'veylo', name: 'Veylo', logoUrl: '/veylo/veylo-mark.svg' };
   return object;
+}
+
+function xmlSafe(value) {
+  return String(value || '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[character]).slice(0, 120);
+}
+
+export async function getPinboardStatusCard(req, res) {
+  try {
+    const parsed = z.object({ assetIds: z.array(z.string().uuid()).min(1).max(4) }).strict().safeParse(req.body);
+    if (!parsed.success || new Set(parsed.data.assetIds).size !== parsed.data.assetIds.length) return res.status(400).json({ success: false, code: 'STATUS_CARD_SELECTION_INVALID', message: 'Choose one to four different photographs for the Status card.' });
+    const delivery = await publicDelivery(req.params.publicId);
+    const grant = delivery ? await shareGrant(req, delivery) : null;
+    if (!delivery || delivery.kind !== 'pinboard' || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This Pinboard is not available.' });
+    if (delivery.access?.downloadsLocked) return res.status(403).json({ success: false, code: 'DOWNLOADS_LOCKED', message: delivery.access?.downloadLockNote || 'Downloads are locked for this delivery.' });
+    const individualAllowed = grant ? grant.allowIndividualDownloads : delivery.access?.allowIndividualDownloads;
+    const galleryAllowed = grant ? grant.allowDownloadAll : delivery.access?.allowDownloadAll;
+    if (!individualAllowed && !galleryAllowed) return res.status(403).json({ success: false, code: 'DOWNLOADS_DISABLED', message: 'Photo sharing is turned off for this link.' });
+    const allowed = new Map(grantAssets(delivery, grant).map(asset => [asset.assetId, asset]));
+    const assets = parsed.data.assetIds.map(id => allowed.get(id));
+    if (assets.some(asset => !asset)) return res.status(404).json({ success: false, code: 'STATUS_CARD_PHOTO_NOT_FOUND', message: 'One of those photographs is not available in this link.' });
+    const owner = delivery.userId;
+    const entitlement = await resolveEntitlements(owner, { includeUsage: false });
+    const studioName = entitlement.features.branding === 'studio' ? owner.studio?.name || owner.name : 'Veylo';
+    const label = xmlSafe(delivery.title || `${delivery.clientName || 'Client'}'s photographs`);
+    const brand = xmlSafe(studioName || 'Veylo');
+    const watermark = delivery.access?.watermarkEnabled ? (delivery.access.watermarkText || owner.studio?.name || owner.name || 'PREVIEW') : null;
+    const sources = await Promise.all(assets.map(async asset => {
+      const url = signedImageUrl(asset.publicId, { width: 1400, watermark });
+      const upstream = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+      if (!upstream.ok) throw Object.assign(new Error('A photograph could not be prepared.'), { status: 502 });
+      if (Number(upstream.headers.get('content-length') || 0) > 18 * 1024 * 1024) throw Object.assign(new Error('A photograph is too large to prepare for sharing.'), { status: 413 });
+      const buffer = Buffer.from(await upstream.arrayBuffer());
+      if (buffer.length > 18 * 1024 * 1024) throw Object.assign(new Error('A photograph is too large to prepare for sharing.'), { status: 413 });
+      return sharp(buffer).rotate().resize(920, 1180, { fit: 'cover', position: 'attention' }).jpeg({ quality: 82, mozjpeg: true }).toBuffer();
+    }));
+    const width = 1080, height = 1920, margin = 72, gap = 22, areaTop = 300, areaHeight = 1260;
+    const columns = sources.length === 1 ? 1 : 2;
+    const rows = Math.ceil(sources.length / columns);
+    const cellWidth = Math.floor((width - margin * 2 - gap * (columns - 1)) / columns);
+    const cellHeight = Math.floor((areaHeight - gap * (rows - 1)) / rows);
+    const cardImages = await Promise.all(sources.map(input => sharp(input).resize(cellWidth, cellHeight, { fit: 'cover', position: 'attention' }).jpeg({ quality: 84 }).toBuffer()));
+    const composites = cardImages.map((input, index) => ({ input, left: margin + (index % columns) * (cellWidth + gap), top: areaTop + Math.floor(index / columns) * (cellHeight + gap) }));
+    const headerSvg = Buffer.from(`<svg width="1080" height="1920" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#0c0c10"/><text x="72" y="128" fill="#f7f3ee" font-family="Arial" font-size="23" letter-spacing="5">PRIVATE PHOTO GALLERY</text><text x="72" y="218" fill="#f7f3ee" font-family="Arial" font-size="42" font-weight="600">${label}</text><text x="72" y="1780" fill="#c9c3bd" font-family="Arial" font-size="24">Open the gallery from your private link</text><text x="72" y="1840" fill="#f7f3ee" font-family="Arial" font-size="25" font-weight="600">${brand}</text></svg>`);
+    const clientBase = String(process.env.CLIENT_URL || 'https://veylo.com.ng').replace(/\/$/, '');
+    const privateUrl = new URL(`/d/${encodeURIComponent(delivery.publicId)}`, clientBase);
+    const grantToken = String(req.get('x-delivery-grant') || '');
+    if (grant && /^[A-Za-z0-9_-]{30,100}$/.test(grantToken)) privateUrl.searchParams.set('share', grantToken);
+    const qr = await QRCode.toBuffer(privateUrl.toString(), { type: 'png', width: 176, margin: 1, color: { dark: '#f7f3ee', light: '#0c0c10' }, errorCorrectionLevel: 'M' });
+    const output = await sharp({ create: { width, height, channels: 4, background: '#0c0c10' } }).composite([{ input: headerSvg }, ...composites, { input: qr, left: 832, top: 1624 }]).png({ compressionLevel: 8 }).toBuffer();
+    recordAnalyticsEventAsync({ name: 'client.pinboard.status_card.created', source: 'server', actorType: grant ? 'guest' : 'client', deliveryId: delivery._id, format: 'pinboard', status: 'completed', count: assets.length });
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Length', String(output.length));
+    res.setHeader('Content-Disposition', 'attachment; filename="veylo-photo-status.png"');
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.send(output);
+  } catch (error) {
+    console.error('[deliveries/pinboard-status-card]', error.message);
+    return res.status(error.status || 502).json({ success: false, code: error.status ? 'STATUS_CARD_MEDIA_FAILED' : 'STATUS_CARD_FAILED', message: error.status ? error.message : 'The Status card could not be prepared. Try again.' });
+  }
 }
 
 export async function getPublicSoundtrack(req, res) {
