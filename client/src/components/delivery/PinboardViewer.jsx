@@ -5,6 +5,7 @@ import { useLocation } from 'react-router-dom';
 import { API_BASE_URL } from '../../config/env.js';
 import api from '../../services/api.js';
 import { resolvedGridboardPalette } from '../../utils/gridboardPalette.js';
+import DeliveryBrandMark from './DeliveryBrandMark.jsx';
 import './PinboardViewer.css';
 
 function accessHeaders(publicId) {
@@ -59,6 +60,14 @@ function accentInk(hex) {
   return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722 > 0.36 ? '#201b18' : '#fff';
 }
 
+function SlideshowChoice({ title, detail, cover, onClick }) {
+  return <button type="button" className="pb-slideshow-choice" onClick={onClick}>
+    {cover && <img src={photoUrl(cover)} alt="" loading="lazy" />}
+    <span><strong>{title}</strong><small>{detail}</small></span>
+    <Play size={16} aria-hidden="true" />
+  </button>;
+}
+
 export default function PinboardViewer({ delivery, preview = false, demo = false, galleryProps = {} }) {
   const location = useLocation();
   const [activeMoment, setActiveMoment] = useState('');
@@ -75,6 +84,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   const [statusOpen, setStatusOpen] = useState(false);
   const [statusSelection, setStatusSelection] = useState([]);
   const [statusPage, setStatusPage] = useState(0);
+  const [statusCard, setStatusCard] = useState(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [photoDirection, setPhotoDirection] = useState(1);
@@ -122,13 +132,19 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   const columnCount = Math.max(1, Math.min(5, Number(viewportWidth <= 640 ? grid.mobileColumns || 2 : viewportWidth <= 1024 ? grid.tabletColumns || 3 : grid.desktopColumns || 4)));
   const masonryColumns = Array.from({ length: columnCount }, () => []);
   const columnHeights = Array.from({ length: columnCount }, () => 0);
-  visible.forEach((asset, index) => {
+  visible.slice(0, -1).forEach((asset, index) => {
     const ratio = tileRatio(asset, index, activeLayoutId);
     const [width, height] = ratio.split('/').map(Number);
     const shortest = columnHeights.indexOf(Math.min(...columnHeights));
     masonryColumns[shortest].push({ asset, index, ratio });
     columnHeights[shortest] += height / width + 0.07;
   });
+  if (visible.length) {
+    const asset = visible.at(-1);
+    const index = visible.length - 1;
+    const ratio = tileRatio(asset, index, activeLayoutId);
+    masonryColumns[0].push({ asset, index, ratio });
+  }
   const style = {
     '--pb-background': palette.background || '#13110f',
     '--pb-surface': palette.surface || '#211b18',
@@ -162,7 +178,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
           observer.unobserve(entry.target);
         }
       });
-    }, { rootMargin: '0px 0px 90px 0px', threshold: 0.04 });
+    }, { rootMargin: '0px 0px -35px 0px', threshold: 0.12 });
     tiles.forEach(tile => observer.observe(tile));
     return () => observer.disconnect();
   }, [activeMoment, activeColour, activeLayoutId, columnCount, assets.length, board.animation]);
@@ -235,6 +251,8 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
 
   useEffect(() => () => musicRef.current?.pause(), []);
 
+  useEffect(() => () => { if (statusCard?.url) URL.revokeObjectURL(statusCard.url); }, [statusCard?.url]);
+
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const photo = params.get('photo');
@@ -281,16 +299,15 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
     }
   }
 
-  async function startSlideshow(selection) {
-    const selectedAssets = selection === 'current' ? visible : ordered;
-    const assetIds = selectedAssets.map(asset => asset.assetId);
+  async function startSlideshow(selectedAssets, title) {
+    const assetIds = [...new Set(selectedAssets.map(asset => String(asset.assetId)).filter(id => assetById.has(id)))];
     if (!assetIds.length) return;
     setShowSlideshowSetup(false);
     setActivePhoto('');
     setSlideshowMessage('');
     setMusicMuted(false);
     setDisplayedSlide(null);
-    setSlideshow({ active: true, paused: false, assetIds, index: 0, interval: slideSeconds, remainingMs: slideSeconds * 1000 });
+    setSlideshow({ active: true, paused: false, assetIds, title, index: 0, interval: slideSeconds, remainingMs: slideSeconds * 1000 });
     if (soundtrackUrl && musicRef.current) {
       musicRef.current.volume = 0.72;
       try { await musicRef.current.play(); }
@@ -370,52 +387,89 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   function toggleStatusPhoto(id) {
     setStatusSelection(current => current.includes(id) ? current.filter(value => value !== id) : current.length < 4 ? [...current, id] : current);
   }
+  function closeStatusCard() {
+    setStatusOpen(false);
+    setStatusCard(null);
+    setMessage('');
+  }
+  function saveStatusCard() {
+    if (!statusCard) return;
+    const anchor = document.createElement('a');
+    anchor.href = statusCard.url;
+    anchor.download = 'veylo-gridboard-status.png';
+    anchor.click();
+    setMessage('Card saved. Add it to your WhatsApp Status or Instagram Story.');
+  }
+  async function copyStatusLink() {
+    if (!statusCard) return;
+    try {
+      await navigator.clipboard.writeText(statusCard.link);
+      setMessage('Gallery link copied. Add it to your Status or Story so people can open the photos.');
+    } catch { setMessage('Your browser could not copy the link. Open the gallery and copy its address instead.'); }
+  }
+  async function shareStatusCard() {
+    if (!statusCard || !navigator.share) return;
+    try {
+      const file = new File([statusCard.blob], 'veylo-gridboard-status.png', { type: 'image/png' });
+      if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: delivery?.title || 'The gallery is ready' });
+      else setMessage('This device cannot share the card directly. Save it and add it from your photos.');
+    } catch (error) { if (error?.name !== 'AbortError') setMessage('Sharing did not open. Save the card and add it from your photos.'); }
+  }
   async function createStatusCard() {
     if (statusSelection.length < 1 || statusSelection.length > 4) return;
+    setBusy(true); setMessage('');
     if (demo) {
       try {
-        const selected = assets.filter(asset => statusSelection.includes(asset.assetId));
-        const canvas = document.createElement('canvas'); canvas.width = 1080; canvas.height = 1920;
+        const selected = statusSelection.map(id => assetById.get(String(id))).filter(Boolean);
+        const canvas = document.createElement('canvas');
+        canvas.width = 1080; canvas.height = 1920;
         const context = canvas.getContext('2d');
         if (!context) throw new Error('Canvas is unavailable.');
-        context.fillStyle = '#171413'; context.fillRect(0, 0, canvas.width, canvas.height);
-        context.fillStyle = '#d7a984'; context.font = '700 22px Arial'; context.letterSpacing = '4px'; context.fillText('VEYLO · GRIDBOARD', 78, 105);
-        context.fillStyle = '#fff7ed'; context.font = `500 ${Math.max(40, Math.min(68, 840 / Math.max(1, String(delivery.title || '').length)))}px Georgia`; context.letterSpacing = '0'; context.fillText(String(delivery.title || 'Your photographs').slice(0, 44), 78, 195, 920);
-        context.fillStyle = '#c9bcb0'; context.font = '28px Arial'; context.fillText(`${selected.length} finished photograph${selected.length === 1 ? '' : 's'}`, 80, 250);
+        context.fillStyle = '#111115'; context.fillRect(0, 0, 1080, 1920);
+        context.fillStyle = palette.accent || '#d7a984'; context.fillRect(0, 0, 1080, 14);
+        context.font = '700 24px Arial'; context.letterSpacing = '4px';
+        context.fillText(`PHOTOGRAPHED BY ${String(delivery?.branding?.name || 'VEYLO').toUpperCase().slice(0, 30)}`, 72, 94, 930);
+        context.fillStyle = '#fffaf5'; context.font = '57px Georgia'; context.letterSpacing = '0';
+        context.fillText('The gallery is ready.', 72, 176);
+        context.fillStyle = '#e7dfd8'; context.font = '31px Arial';
+        context.fillText(String(delivery.title || 'Your photographs').slice(0, 44), 72, 245, 930);
+        context.fillStyle = '#c7bfb8'; context.font = '21px Arial'; context.letterSpacing = '3px';
+        context.fillText(`${assets.length} FINISHED PHOTOGRAPHS`, 72, 323);
         const photos = await Promise.all(selected.map(asset => new Promise((resolve, reject) => {
-          const image = new window.Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = photoUrl(asset, true);
+          const image = new window.Image(); image.crossOrigin = 'anonymous';
+          image.onload = () => resolve(image); image.onerror = reject; image.src = photoUrl(asset, true);
         })));
-        const left = 78, top = 310, width = 924, height = 1200, gap = 12;
-        const cells = photos.length === 1 ? [{ x: left, y: top, w: width, h: height }] : photos.length === 2
-          ? [{ x: left, y: top, w: width, h: (height - gap) / 2 }, { x: left, y: top + (height + gap) / 2, w: width, h: (height - gap) / 2 }]
-          : photos.map((_, index) => ({ x: left + (index % 2) * (width + gap) / 2, y: top + Math.floor(index / 2) * (height + gap) / 2, w: (width - gap) / 2, h: (height - gap) / 2 }));
+        const left = 72, top = 348, width = 936, height = 1170, gap = 18;
+        const halfWidth = (width - gap) / 2;
+        const cells = photos.length === 1 ? [{ x: left, y: top, w: width, h: height }]
+          : photos.length === 2 ? [{ x: left, y: top, w: width, h: 690 }, { x: left, y: top + 690 + gap, w: width, h: height - 690 - gap }]
+          : photos.length === 3 ? [{ x: left, y: top, w: width, h: 680 }, { x: left, y: top + 680 + gap, w: halfWidth, h: height - 680 - gap }, { x: left + halfWidth + gap, y: top + 680 + gap, w: halfWidth, h: height - 680 - gap }]
+          : photos.map((_, index) => ({ x: left + (index % 2) * (halfWidth + gap), y: top + Math.floor(index / 2) * (640 + gap), w: halfWidth, h: index < 2 ? 640 : height - 640 - gap }));
         photos.forEach((image, index) => {
           const cell = cells[index]; const scale = Math.max(cell.w / image.width, cell.h / image.height);
           const sourceWidth = cell.w / scale, sourceHeight = cell.h / scale;
-          const sourceX = (image.width - sourceWidth) / 2, sourceY = (image.height - sourceHeight) / 2;
-          context.save(); context.beginPath(); context.roundRect(cell.x, cell.y, cell.w, cell.h, 18); context.clip();
-          context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, cell.x, cell.y, cell.w, cell.h); context.restore();
+          context.drawImage(image, (image.width - sourceWidth) / 2, (image.height - sourceHeight) / 2, sourceWidth, sourceHeight, cell.x, cell.y, cell.w, cell.h);
         });
-        context.fillStyle = '#fff7ed'; context.font = '700 24px Arial'; context.letterSpacing = '3px'; context.fillText('YOUR PHOTOGRAPHS ARE READY', 78, 1640);
-        context.fillStyle = '#c9bcb0'; context.font = '28px Arial'; context.letterSpacing = '0'; context.fillText('Open the GridBoard to see the complete gallery.', 78, 1695, 920);
-        context.strokeStyle = '#ffffff38'; context.lineWidth = 2; context.beginPath(); context.moveTo(78, 1780); context.lineTo(1002, 1780); context.stroke();
-        context.fillStyle = '#d7a984'; context.font = '700 25px Arial'; context.fillText('OPEN THE PRIVATE DEMO', 78, 1840);
-        context.fillStyle = '#c9bcb0'; context.font = '21px Arial'; context.fillText(`${window.location.host}/demo/gridboard`, 78, 1880);
+        context.strokeStyle = palette.accent || '#d7a984'; context.lineWidth = 2;
+        context.beginPath(); context.moveTo(72, 1572); context.lineTo(1008, 1572); context.stroke();
+        context.fillStyle = '#fffaf5'; context.font = '46px Georgia'; context.letterSpacing = '0';
+        context.fillText('See the full gallery.', 72, 1664);
+        context.fillStyle = '#c7bfb8'; context.font = '26px Arial';
+        context.fillText('Open the link added to this Story.', 72, 1720);
+        context.fillStyle = palette.accent || '#d7a984'; context.font = '700 21px Arial'; context.letterSpacing = '3px';
+        context.fillText('VEYLO GRIDBOARD DEMO', 72, 1830);
+        context.fillStyle = '#a79f99'; context.font = '19px Arial'; context.letterSpacing = '0';
+        context.fillText(`${window.location.host}/demo/gridboard`, 72, 1871, 936);
         const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
         if (!blob) throw new Error('The Status card could not be drawn.');
-        const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'veylo-gridboard-status-demo.png'; anchor.click();
-        window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
-        setStatusOpen(false); setMessage('Your Status card is ready to save.');
+        setStatusCard({ blob, url: URL.createObjectURL(blob), link: new URL('/demo/gridboard', window.location.origin).toString() });
       } catch { setMessage('We could not prepare that Status card. Try again.'); }
+      finally { setBusy(false); }
       return;
     }
-    setBusy(true); setMessage('');
     try {
       const response = await api.post(`/v1/deliveries/public/${delivery.publicId}/pinboard/status-card`, { assetIds: statusSelection }, { headers: accessHeaders(delivery.publicId), responseType: 'blob' });
-      const url = URL.createObjectURL(response.data);
-      const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'veylo-photo-status.png'; anchor.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
-      setStatusOpen(false); setMessage('Your WhatsApp Status card is ready.');
+      setStatusCard({ blob: response.data, url: URL.createObjectURL(response.data), link: privateLink('', '') });
     } catch (error) {
       const fallback = error?.response?.status === 403 ? 'The photographer has turned off downloads for this gallery.' : 'We could not prepare that Status card. Try again.';
       setMessage(fallback);
@@ -427,6 +481,15 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   const suggestedTone = modalAsset?.dominantColor || modalAsset?.analysis?.colors?.[0];
   const modalTone = typeof suggestedTone === 'string' && /^#[0-9a-f]{6}$/i.test(suggestedTone) ? suggestedTone : palette.surface || '#211b18';
   const similarShots = similarShotsFor(modalAsset);
+  const similarSlideAssets = modalAsset ? [modalAsset, ...similarShots.filter(asset => asset.assetId !== modalAsset.assetId)] : [];
+  const momentSlides = moments.map(moment => {
+    const ids = new Set(moment.assetIds.map(String));
+    return { ...moment, photos: ordered.filter(asset => ids.has(String(asset.assetId))) };
+  }).filter(moment => moment.photos.length);
+  const colourSlides = colourGroups.map(group => {
+    const ids = new Set(group.assetIds.map(String));
+    return { ...group, photos: ordered.filter(asset => ids.has(String(asset.assetId))) };
+  }).filter(group => group.photos.length);
   const canDownload = !preview && !delivery?.access?.downloadsLocked && (delivery?.access?.allowIndividualDownloads || delivery?.access?.allowDownloadAll);
   function downloadPhoto(asset, index) {
     if (demo) {
@@ -441,15 +504,15 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   const statusPageSize = 18;
   const statusPageCount = Math.ceil(assets.length / statusPageSize);
   const statusPageAssets = assets.slice(statusPage * statusPageSize, (statusPage + 1) * statusPageSize);
-  const currentSelectionDescription = activeMoment
-    ? ` · ${moments.find(moment => moment.id === activeMoment)?.title || 'selected moment'}`
-    : selectedColourGroup ? ` · ${colorGroupLabel(selectedColourGroup)}` : '';
+  const currentSelectionName = activeMoment
+    ? moments.find(moment => moment.id === activeMoment)?.title || 'Selected moment'
+    : selectedColourGroup ? colorGroupLabel(selectedColourGroup) : '';
 
   return <main className={'pb-viewer' + (preview ? ' is-preview' : '') + (board.animation === 'none' ? '' : ' is-animated')} style={style}>
     <div className="pb-wrap">
       <header className="pb-header">
-        <div className="pb-brand"><span className="pb-brand-mark">{delivery?.branding?.logoUrl ? <img src={delivery.branding.logoUrl} alt="" /> : <Image size={18} />}</span><span>{delivery?.branding?.name || 'Veylo'}<small>GRIDBOARD</small></span></div>
-        {!preview && <div className="pb-header-actions">{delivery.access?.allowDownloadAll && !delivery.access?.downloadsLocked && <button type="button" aria-label="Download all photos" onClick={() => demo ? setMessage('Download all is available on published galleries.') : galleryProps.onDownloadAll?.()}><ArrowDownToLine size={17} /> Download all</button>}{canDownload && <button type="button" aria-label="Make a WhatsApp Status card" className="pb-status-open" onClick={() => { setStatusSelection([]); setStatusPage(0); setStatusOpen(true); }}><MessageCircle size={17} /> Make a Status card</button>}</div>}
+        <div className="pb-brand"><span className="pb-brand-mark"><DeliveryBrandMark branding={delivery?.branding} /></span><span>{delivery?.branding?.name || 'Veylo'}<small>GRIDBOARD</small></span></div>
+        {!preview && <div className="pb-header-actions">{delivery.access?.allowDownloadAll && !delivery.access?.downloadsLocked && <button type="button" aria-label="Download all photos" onClick={() => demo ? setMessage('Download all is available on published galleries.') : galleryProps.onDownloadAll?.()}><ArrowDownToLine size={17} /> Download all</button>}{canDownload && <button type="button" aria-label="Make a WhatsApp Status card" className="pb-status-open" onClick={() => { setStatusSelection([]); setStatusPage(0); setStatusCard(null); setMessage(''); setStatusOpen(true); }}><MessageCircle size={17} /> Make a Status card</button>}</div>}
       </header>
       <section className="pb-intro">
         <span className="pb-kicker">GRIDBOARD DELIVERY</span>
@@ -479,7 +542,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
       </div></div>
       <section className="pb-board" ref={boardRef} key={`${activeMoment || 'all'}-${activeColour || 'all'}-${activeLayoutId}`} aria-label="Photographs" aria-live="polite">
         {masonryColumns.map((column, columnIndex) => <div className="pb-board-column" key={columnIndex}>{column.map(({ asset, index, ratio }) => <article className={'pb-tile' + (board.animation === 'none' ? '' : ' is-revealing')} id={`pb-photo-${asset.assetId}`} key={asset.assetId} style={{ '--pb-tile-ratio': ratio, '--pb-tile-color': assetColors(asset)[0] || palette.surface, '--pb-reveal-delay': board.animation === 'staggered' ? `${(index % 5) * 65}ms` : '0ms' }}>
-          <button type="button" className="pb-tile-open" onClick={() => setActivePhoto(asset.assetId)} aria-label={`Open photograph ${index + 1}`}><img loading={index < 6 ? 'eager' : 'lazy'} src={photoUrl(asset)} alt={asset.alt || `Finished photograph ${index + 1}`} /><span className="pb-tile-view">View photo</span></button>
+          <button type="button" className="pb-tile-open" onClick={() => setActivePhoto(asset.assetId)} aria-label={`Open photograph ${index + 1}`}><img loading={index < 6 ? 'eager' : 'lazy'} src={photoUrl(asset)} alt={asset.alt || `Finished photograph ${index + 1}`} onLoad={event => event.currentTarget.classList.add('is-loaded')} /><span className="pb-tile-view">View photo</span></button>
           {!preview && <div className="pb-tile-tools"><button type="button" onClick={() => openWhatsApp('photo', asset.assetId, `${delivery?.title || 'Photo gallery'} · Photograph ${index + 1}`)} aria-label="Share this photo on WhatsApp"><MessageCircle size={16} /></button>{canDownload && <button type="button" onClick={() => downloadPhoto(asset, index)} aria-label="Download this photo"><Download size={16} /></button>}</div>}
         </article>)}</div>)}
       </section>
@@ -495,7 +558,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
           <img key={modalAsset.assetId} className={'pb-lightbox-photo-main ' + (photoDirection > 0 ? 'is-next' : 'is-previous')} src={photoUrl(modalAsset, true)} alt={modalAsset.alt || 'Finished photograph'} draggable="false" />
         </div>
         <figcaption>Photograph {modalIndex + 1} of {visible.length}{visible.length > 1 && <span className="pb-swipe-hint"> · Swipe to browse</span>}</figcaption>
-        {!!similarShots.length && <aside className="pb-similar-shot"><strong>Similar Shot</strong><div>{similarShots.map(asset => <button type="button" key={asset.assetId} onClick={() => showRelatedPhoto(asset)} aria-label={`Open a similar shot: ${asset.alt || 'photo'}`}><img src={photoUrl(asset)} alt="" loading="lazy" /></button>)}</div></aside>}
+        {!!similarShots.length && <aside className="pb-similar-shot"><div className="pb-similar-head"><strong>Similar Shot</strong><button type="button" onClick={() => setShowSlideshowSetup(true)}><Play size={13} />Play these photos</button></div><div className="pb-similar-list">{similarShots.map(asset => <button type="button" key={asset.assetId} onClick={() => showRelatedPhoto(asset)} aria-label={`Open a similar shot: ${asset.alt || 'photo'}`}><img src={photoUrl(asset)} alt="" loading="lazy" /></button>)}</div></aside>}
       </figure>
       <button type="button" className="pb-lightbox-nav is-right" onClick={() => navigatePhoto(1)} disabled={modalIndex >= visible.length - 1} aria-label="Next photograph"><ChevronRight size={26} /></button>
       <div className="pb-lightbox-actions">{!preview && <button type="button" onClick={() => openWhatsApp('photo', modalAsset.assetId, delivery?.title || 'Photo gallery')}><MessageCircle size={17} /> Share on WhatsApp</button>}{canDownload && <button type="button" onClick={() => downloadPhoto(modalAsset, modalIndex)}><Download size={17} /> Download photo</button>}</div>
@@ -503,21 +566,70 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
 
     {soundtrackUrl && <audio ref={musicRef} src={soundtrackUrl} preload="none" loop onError={() => { setMusicMuted(true); if (slideshow) setSlideshowMessage('Music could not load. The slideshow will keep playing without it.'); }} />}
 
-    {showSlideshowSetup && <div className="pb-status-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setShowSlideshowSetup(false); }}><section className="pb-slideshow-setup" role="dialog" aria-modal="true" aria-labelledby="pb-slideshow-setup-title"><button type="button" className="pb-dialog-close" onClick={() => setShowSlideshowSetup(false)} aria-label="Close slideshow settings"><X size={20} /></button><span className="pb-kicker">A QUIETER WAY TO BROWSE</span><h2 id="pb-slideshow-setup-title">Let the photographs play.</h2><p>Start when you are ready. Music will play with the slideshow if the photographer added a soundtrack.</p><div className="pb-slideshow-options">{(activeMoment || activeColour) && <button type="button" onClick={() => void startSlideshow('current')}><span><strong>Current selection</strong><small>{visible.length} photographs{currentSelectionDescription}</small></span><Play size={17} /></button>}<button type="button" onClick={() => void startSlideshow('all')}><span><strong>Every photograph</strong><small>{ordered.length} photographs · the full gallery</small></span><Play size={17} /></button></div><label className="pb-slideshow-speed">Time per photo<select value={slideSeconds} onChange={event => setSlideSeconds(Number(event.target.value))}><option value="4">4 seconds</option><option value="5">5 seconds</option><option value="7">7 seconds</option><option value="9">9 seconds</option></select></label></section></div>}
+    <AnimatePresence>
+      {showSlideshowSetup && <motion.div className="pb-status-backdrop pb-slideshow-backdrop" role="presentation" initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : .24 }} onMouseDown={event => { if (event.target === event.currentTarget) setShowSlideshowSetup(false); }}>
+        <motion.section className="pb-slideshow-setup" role="dialog" aria-modal="true" aria-labelledby="pb-slideshow-setup-title" initial={reducedMotion ? false : { opacity: 0, y: 22, scale: .975 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: .985 }} transition={{ duration: reducedMotion ? 0 : .38, ease: [0.22, 1, 0.36, 1] }}>
+          <button type="button" className="pb-dialog-close" onClick={() => setShowSlideshowSetup(false)} aria-label="Close slideshow settings"><X size={20} /></button>
+          <span className="pb-kicker">GRIDBOARD SLIDESHOW</span>
+          <h2 id="pb-slideshow-setup-title">Choose the photos to play.</h2>
+          <p>Play the whole board or follow one part of the shoot. Music starts with the slideshow if your photographer added it.</p>
+          <div className="pb-slideshow-options">
+            {similarSlideAssets.length > 1 && <section className="pb-slide-choice-section"><h3>FROM THIS PHOTO</h3><SlideshowChoice title="Similar Shot" detail={`${similarSlideAssets.length} photographs with a similar look`} cover={modalAsset} onClick={() => void startSlideshow(similarSlideAssets, 'Similar Shot')} /></section>}
+            {currentSelectionName && <section className="pb-slide-choice-section"><h3>YOUR CURRENT VIEW</h3><SlideshowChoice title={currentSelectionName} detail={`${visible.length} photographs`} cover={visible[0]} onClick={() => void startSlideshow(visible, currentSelectionName)} /></section>}
+            <section className="pb-slide-choice-section"><h3>THE COMPLETE BOARD</h3><SlideshowChoice title="Every photograph" detail={`${ordered.length} photographs`} cover={ordered[0]} onClick={() => void startSlideshow(ordered, 'Every photograph')} /></section>
+            {!!momentSlides.length && <section className="pb-slide-choice-section"><h3>FIND A MOMENT</h3><div className="pb-slide-choice-grid">{momentSlides.map(moment => <SlideshowChoice key={moment.id} title={moment.title} detail={`${moment.photos.length} photographs`} cover={moment.photos[0]} onClick={() => void startSlideshow(moment.photos, moment.title)} />)}</div></section>}
+            {!!colourSlides.filter(group => group.area === 'outfit').length && <section className="pb-slide-choice-section"><h3>OUTFITS</h3><div className="pb-slide-choice-grid">{colourSlides.filter(group => group.area === 'outfit').map(group => <SlideshowChoice key={group.key} title={colorGroupLabel(group)} detail={`${group.photos.length} photographs`} cover={group.photos[0]} onClick={() => void startSlideshow(group.photos, colorGroupLabel(group))} />)}</div></section>}
+            {!!colourSlides.filter(group => group.area === 'backdrop').length && <section className="pb-slide-choice-section"><h3>BACKGROUNDS</h3><div className="pb-slide-choice-grid">{colourSlides.filter(group => group.area === 'backdrop').map(group => <SlideshowChoice key={group.key} title={colorGroupLabel(group)} detail={`${group.photos.length} photographs`} cover={group.photos[0]} onClick={() => void startSlideshow(group.photos, colorGroupLabel(group))} />)}</div></section>}
+          </div>
+          <label className="pb-slideshow-speed">Time per photo<select value={slideSeconds} onChange={event => setSlideSeconds(Number(event.target.value))}><option value="4">4 seconds</option><option value="5">5 seconds</option><option value="7">7 seconds</option><option value="9">9 seconds</option></select></label>
+        </motion.section>
+      </motion.div>}
+    </AnimatePresence>
 
-    {slideshowAsset && <section className="pb-slideshow" role="dialog" aria-modal="true" aria-label="GridBoard slideshow">
-      <header><div><span>GRIDBOARD SLIDESHOW</span><small>{(displayedSlide?.index ?? slideshow.index) + 1} / {slideshow.assetIds.length} PHOTOGRAPHS</small></div><button type="button" onClick={() => setSlideshow(null)} aria-label="Close slideshow"><X size={20} />Close</button></header>
+    <AnimatePresence>
+      {slideshowAsset && <motion.section className="pb-slideshow" role="dialog" aria-modal="true" aria-label="GridBoard slideshow" initial={reducedMotion ? false : { opacity: 0, y: 26 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 18 }} transition={{ duration: reducedMotion ? 0 : .42, ease: [0.22, 1, 0.36, 1] }}>
+      <header><div><span>GRIDBOARD SLIDESHOW</span><small>{slideshow.title} · {(displayedSlide?.index ?? slideshow.index) + 1} / {slideshow.assetIds.length}</small></div><button type="button" onClick={() => setSlideshow(null)} aria-label="Close slideshow"><X size={20} />Close</button></header>
       <div className="pb-slideshow-image">
-        <AnimatePresence initial={false} mode="sync">{displayedSlide && <motion.figure className="pb-slideshow-frame" key={displayedSlide.assetId} initial={reducedMotion ? false : { opacity: 0, scale: 1.025 }} animate={{ opacity: 1, scale: 1 }} exit={reducedMotion ? undefined : { opacity: 0, scale: .985 }} transition={{ duration: reducedMotion ? 0 : .72, ease: [0.22, 1, 0.36, 1] }}><img className="pb-slideshow-ambient" src={displayedSlide.src} alt="" aria-hidden="true" /><img className="pb-slideshow-main-photo" src={displayedSlide.src} alt={displayedSlide.alt} style={{ animationDuration: `${slideshow.interval + 1}s`, animationPlayState: slideshow.paused ? 'paused' : 'running' }} /></motion.figure>}</AnimatePresence>
+        <AnimatePresence initial={false} mode="sync">{displayedSlide && <motion.figure className="pb-slideshow-frame" key={displayedSlide.assetId} initial={reducedMotion ? false : { opacity: 0, x: displayedSlide.index % 2 ? 32 : -32, scale: 1.055 }} animate={{ opacity: 1, x: 0, scale: 1 }} exit={reducedMotion ? undefined : { opacity: 0, x: displayedSlide.index % 2 ? 32 : -32, scale: 1.025 }} transition={{ duration: reducedMotion ? 0 : .82, ease: [0.22, 1, 0.36, 1] }}><img className="pb-slideshow-ambient" src={displayedSlide.src} alt="" aria-hidden="true" /><img className={'pb-slideshow-main-photo ' + (displayedSlide.index % 2 ? 'is-reverse' : '')} src={displayedSlide.src} alt={displayedSlide.alt} style={{ animationDuration: `${slideshow.interval + 1}s`, animationPlayState: slideshow.paused ? 'paused' : 'running' }} /></motion.figure>}</AnimatePresence>
         {!displayedSlide && <span className="pb-slide-loading" role="status">Opening photographs…</span>}
         {slideLoading && displayedSlide && <span className="pb-slide-loading-indicator" role="status">Loading next photograph</span>}
+        <div className="pb-slide-context">{slideshow.title}</div>
         <div className="pb-slide-index" aria-hidden="true"><strong>{String((displayedSlide?.index ?? slideshow.index) + 1).padStart(2, '0')}</strong><i />{String(slideshow.assetIds.length).padStart(2, '0')}</div>
       </div>
       <div className="pb-slideshow-progress" aria-hidden="true"><span style={{ width: `${((displayedSlide?.index ?? slideshow.index) / slideshow.assetIds.length) * 100}%` }} />{displayedSlide && !slideLoading && <i key={displayedSlide.assetId} className={slideshow.paused ? 'is-paused' : ''} style={{ left: `${(displayedSlide.index / slideshow.assetIds.length) * 100}%`, width: `${100 / slideshow.assetIds.length}%`, animationDuration: `${slideshow.interval}s` }} />}</div>
       <footer><span aria-live="polite">Photograph {(displayedSlide?.index ?? slideshow.index) + 1} of {slideshow.assetIds.length}</span><div><button type="button" onClick={() => setSlideshow(current => ({ ...current, index: Math.max(0, current.index - 1), remainingMs: current.interval * 1000 }))} disabled={slideshow.index === 0} aria-label="Previous photo"><SkipBack size={18} /></button><button type="button" onClick={toggleSlideshowPause} aria-label={slideshow.paused ? 'Resume slideshow' : 'Pause slideshow'}>{slideshow.paused ? <Play size={19} /> : <Pause size={19} />}</button><button type="button" onClick={() => setSlideshow(current => current.index >= current.assetIds.length - 1 ? null : ({ ...current, index: current.index + 1, remainingMs: current.interval * 1000 }))} aria-label="Next photo"><SkipForward size={18} /></button></div>{soundtrackUrl ? <button type="button" className="pb-slide-music" onClick={() => void toggleMusic()} aria-pressed={!musicMuted}>{musicMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}{musicMuted ? 'Sound off' : 'Sound on'}</button> : <span className="pb-slide-no-music">No soundtrack added</span>}</footer>{slideshowMessage && <p className="pb-slideshow-message" role="status">{slideshowMessage}</p>}
-    </section>}
+      </motion.section>}
+    </AnimatePresence>
 
-    {statusOpen && <div className="pb-status-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setStatusOpen(false); }}><section className="pb-status-dialog" role="dialog" aria-modal="true" aria-labelledby="pb-status-title"><button type="button" className="pb-dialog-close" onClick={() => setStatusOpen(false)} aria-label="Close"><X size={20} /></button><span className="pb-kicker">WHATSAPP SHARING</span><h2 id="pb-status-title">Make a Status card</h2><p>Choose up to four finished photos. Veylo makes a 9:16 card with a private link back to the gallery.</p><div className="pb-status-photos">{statusPageAssets.map((asset, index) => { const photoIndex = statusPage * statusPageSize + index; return <label key={asset.assetId} className={statusSelection.includes(asset.assetId) ? 'is-selected' : ''}><input type="checkbox" checked={statusSelection.includes(asset.assetId)} onChange={() => toggleStatusPhoto(asset.assetId)} disabled={!statusSelection.includes(asset.assetId) && statusSelection.length >= 4} /><img src={photoUrl(asset)} alt={`Select photo ${photoIndex + 1}`} loading="lazy" /><span>{statusSelection.includes(asset.assetId) && <Check size={15} />}{photoIndex + 1}</span></label>; })}</div>{statusPageCount > 1 && <div className="pb-status-pagination"><button type="button" onClick={() => setStatusPage(page => Math.max(0, page - 1))} disabled={statusPage === 0}>Previous photos</button><span>{statusPage + 1} / {statusPageCount}</span><button type="button" onClick={() => setStatusPage(page => Math.min(statusPageCount - 1, page + 1))} disabled={statusPage >= statusPageCount - 1}>More photos</button></div>}<div className="pb-status-bottom"><span>{statusSelection.length} of 4 selected</span><button type="button" disabled={!statusSelection.length || busy} onClick={createStatusCard}>{busy ? 'Preparing card…' : 'Prepare Status card'}<ExternalLink size={16} /></button></div>{message && <p className="pb-status-message" role="status">{message}</p>}</section></div>}
+    {statusOpen && <div className="pb-status-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) closeStatusCard(); }}>
+      <section className="pb-status-dialog" role="dialog" aria-modal="true" aria-labelledby="pb-status-title">
+        <button type="button" className="pb-dialog-close" onClick={closeStatusCard} aria-label="Close"><X size={20} /></button>
+        <span className="pb-kicker">SHARE YOUR GALLERY</span>
+        {statusCard ? <>
+          <h2 id="pb-status-title">Your card is ready.</h2>
+          <p>The card shows your photos and studio name. Add it to your WhatsApp Status or Instagram Story, then add the gallery link so people can open the full set.</p>
+          <div className="pb-status-result">
+            <img src={statusCard.url} alt="Finished vertical Status card with selected photographs and gallery details" />
+            <div className="pb-status-result-actions">
+              <span className="pb-kicker">1080 × 1920 · READY TO SHARE</span>
+              <h3>Give people a way in.</h3>
+              <p>Save the image, post it to your Status or Story, and paste the private gallery link alongside it. The card also includes a QR code on published galleries.</p>
+              <button type="button" className="pb-status-primary" onClick={saveStatusCard}><Download size={17} /> Save card</button>
+              <button type="button" onClick={() => void copyStatusLink()}><ExternalLink size={17} /> Copy gallery link</button>
+              {typeof navigator !== 'undefined' && !!navigator.share && <button type="button" onClick={() => void shareStatusCard()}><MessageCircle size={17} /> Share from this device</button>}
+              <button type="button" className="pb-status-back" onClick={() => { setStatusCard(null); setMessage(''); }}>Choose different photos</button>
+            </div>
+          </div>
+        </> : <>
+          <h2 id="pb-status-title">Make a Status card.</h2>
+          <p>Choose up to four finished photos. We’ll make a vertical card for WhatsApp Status or Instagram Story that points people to this gallery.</p>
+          <div className="pb-status-photos">{statusPageAssets.map((asset, index) => { const photoIndex = statusPage * statusPageSize + index; return <label key={asset.assetId} className={statusSelection.includes(asset.assetId) ? 'is-selected' : ''}><input type="checkbox" checked={statusSelection.includes(asset.assetId)} onChange={() => toggleStatusPhoto(asset.assetId)} disabled={!statusSelection.includes(asset.assetId) && statusSelection.length >= 4} /><img src={photoUrl(asset)} alt={`Select photo ${photoIndex + 1}`} loading="lazy" /><span>{statusSelection.includes(asset.assetId) && <Check size={15} />}{photoIndex + 1}</span></label>; })}</div>
+          {statusPageCount > 1 && <div className="pb-status-pagination"><button type="button" onClick={() => setStatusPage(page => Math.max(0, page - 1))} disabled={statusPage === 0}>Previous photos</button><span>{statusPage + 1} / {statusPageCount}</span><button type="button" onClick={() => setStatusPage(page => Math.min(statusPageCount - 1, page + 1))} disabled={statusPage >= statusPageCount - 1}>More photos</button></div>}
+          <div className="pb-status-bottom"><span>{statusSelection.length} of 4 selected</span><button type="button" disabled={!statusSelection.length || busy} onClick={createStatusCard}>{busy ? 'Preparing card…' : 'Preview Status card'}<ExternalLink size={16} /></button></div>
+        </>}
+        {message && <p className="pb-status-message" role="status">{message}</p>}
+      </section>
+    </div>}
     {!statusOpen && message && <div className="pb-toast" role="status">{message}<button type="button" onClick={() => setMessage('')} aria-label="Dismiss"><X size={15} /></button></div>}
   </main>;
 }

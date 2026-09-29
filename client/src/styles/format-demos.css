@@ -741,3 +741,4 @@
 .fd-v3-reveal-closer .v-photo{width:100%;height:100%;object-fit:cover;filter:brightness(.72)}
 .fd-reveal-finale:has(.fd-v3-reveal-closer) .fd-reveal-finale-copy{position:relative;z-index:1}
 @media(max-width:767px){.fd-v3-bookend{min-height:70vh;padding:70px 18px}}
+.fd-header-brand .delivery-brand-mark { width: 24px; height: 24px; flex: none; border-radius: 50%; object-fit: cover; }

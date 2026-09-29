@@ -19,6 +19,53 @@ function hsl(hue, saturation, lightness) {
   return '#' + [r, g, b].map(value => Math.round((value + offset) * 255).toString(16).padStart(2, '0')).join('');
 }
 
+function luminance(hex) {
+  if (!/^#[0-9a-f]{6}$/i.test(hex || '')) return 0;
+  const channels = [1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16) / 255);
+  const linear = channels.map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4);
+  return linear[0] * .2126 + linear[1] * .7152 + linear[2] * .0722;
+}
+
+function contrast(first, second) {
+  const a = luminance(first), b = luminance(second);
+  return (Math.max(a, b) + .05) / (Math.min(a, b) + .05);
+}
+
+function blend(first, second, secondShare) {
+  return '#' + [1, 3, 5].map(index => Math.round(parseInt(first.slice(index, index + 2), 16) * (1 - secondShare) + parseInt(second.slice(index, index + 2), 16) * secondShare).toString(16).padStart(2, '0')).join('');
+}
+
+export function gridboardPaletteContrast(palette) {
+  return {
+    background: contrast(palette?.background, palette?.text),
+    surface: contrast(palette?.surface, palette?.text),
+    accent: Math.min(contrast(palette?.background, palette?.accent), contrast(palette?.surface, palette?.accent))
+  };
+}
+
+export function gridboardAccentInk(accent) {
+  return contrast(accent, '#111115') >= contrast(accent, '#fffaf5') ? '#111115' : '#fffaf5';
+}
+
+export function readableGridboardPalette(input, changedKey = '') {
+  const palette = Object.fromEntries(Object.keys(DEFAULT_PALETTE).map(key => [key, /^#[0-9a-f]{6}$/i.test(input?.[key] || '') ? input[key].toLowerCase() : DEFAULT_PALETTE[key]]));
+  const textChoices = [palette.text, '#fffaf5', '#111115', '#ffffff', '#000000'];
+  let text = textChoices.find(candidate => contrast(palette.background, candidate) >= 4.5 && contrast(palette.surface, candidate) >= 4.5);
+  if (!text) {
+    if (changedKey === 'surface') palette.background = blend(palette.background, palette.surface, .8);
+    else palette.surface = blend(palette.surface, palette.background, .8);
+    text = textChoices.find(candidate => contrast(palette.background, candidate) >= 4.5 && contrast(palette.surface, candidate) >= 4.5);
+  }
+  palette.text = text || (luminance(palette.background) > .18 ? '#111115' : '#fffaf5');
+  const accentReadable = color => contrast(palette.background, color) >= 3 && contrast(palette.surface, color) >= 3;
+  if (!accentReadable(palette.accent)) {
+    const hue = colorProfile(palette.accent)?.hue ?? colorProfile(palette.background)?.hue ?? 20;
+    const candidates = [hsl(hue, .52, .7), hsl(hue, .6, .28), '#fffaf5', '#111115'];
+    palette.accent = candidates.find(accentReadable) || palette.text;
+  }
+  return palette;
+}
+
 export function photoLedPalette(assets = []) {
   const buckets = Array.from({ length: 18 }, () => ({ weight: 0, hue: 0, saturation: 0 }));
   let brightness = 0, brightnessWeight = 0;
@@ -51,5 +98,5 @@ export function photoLedPalette(assets = []) {
 
 export function resolvedGridboardPalette(palette, assets = []) {
   const isDefault = !palette || Object.keys(DEFAULT_PALETTE).every(key => String(palette[key] || '').toLowerCase() === DEFAULT_PALETTE[key]);
-  return isDefault ? photoLedPalette(assets) : palette;
+  return readableGridboardPalette(isDefault ? photoLedPalette(assets) : palette);
 }

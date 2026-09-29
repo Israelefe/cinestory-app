@@ -20,5 +20,5 @@ export default function DeliveryBrandMark({ branding, className = '' }) {
     return <span className={`${classes} delivery-brand-mark-initials`} aria-label={name}>{studioInitials(name)}</span>;
   }
 
-  return <img className={classes} src={branding?.logoUrl || '/veylo/veylo-mark.svg'} alt={`${name} logo`} />;
+  return <img className={`${classes} ${studio ? 'is-studio-photo' : 'is-veylo-mark'}`} src={branding?.logoUrl || '/veylo/veylo-mark.svg'} alt={`${name} logo`} />;
 }

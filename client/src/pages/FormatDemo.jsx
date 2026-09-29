@@ -5,6 +5,7 @@ import { ArrowLeft, BookOpen, Check, ChevronLeft, ChevronRight, Download, Grid2X
 import { Photo } from '../components/PublicDesign.jsx';
 import { useDialogFocus } from '../components/useDialogFocus.js';
 import ClientGallery from '../components/delivery/ClientGallery.jsx';
+import DeliveryBrandMark from '../components/delivery/DeliveryBrandMark.jsx';
 import { EVENT_COVERAGE_DEMO_PHOTOS } from '../constants/eventCoverageDemo.js';
 import { getDeliveryCapabilities } from '../constants/deliveryCapabilities.js';
 import '../styles/format-demos.css';
@@ -214,9 +215,7 @@ export function DemoHeader({ format, client, sectionId, onGallery, light = false
   return <header className={'fd-header ' + (light ? 'is-light' : '')}>
     {delivery ? (
       <div className="fd-header-brand">
-        {delivery.branding?.logoUrl && (
-          <img src={delivery.branding.logoUrl} alt="" className="fd-header-logo" />
-        )}
+        {delivery.branding?.logoUrl && <DeliveryBrandMark branding={delivery.branding} className="fd-header-logo" />}
         <span>{brandName}</span>
       </div>
     ) : (

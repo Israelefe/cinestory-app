@@ -1,4 +1,4 @@
-.v-phone-presentation{display:grid;justify-items:center;align-content:start;gap:10px;min-height:calc(100dvh - 130px);padding:12px 16px 16px;background:radial-gradient(ellipse at 50% 42%,#ff9b8e12,transparent 47%)}
+.v-phone-presentation{box-sizing:border-box;display:grid;width:100%;min-width:0;justify-items:center;align-content:start;gap:10px;min-height:calc(100dvh - 130px);padding:12px 16px 16px;background:radial-gradient(ellipse at 50% 42%,#ff9b8e12,transparent 47%)}
 .v-phone-device{position:relative;width:300px;height:665px;overflow:visible}
 .v-phone-device-scale{--phone-view-width:420px;--phone-view-height:800px;position:absolute;inset:0 auto auto 0;box-sizing:border-box;width:444px;height:851px;padding:10px;border:1px solid #ffffff38;border-radius:43px;background:linear-gradient(145deg,#29292e,#050507 38%,#1b1b20);box-shadow:0 28px 80px #000b,0 0 0 1px #000,0 0 0 5px #ffffff07,0 0 70px #ff806f0b;transform:scale(var(--phone-scale,1));transform-origin:top left}
 .v-phone-status{position:relative;display:flex;align-items:center;justify-content:space-between;height:27px;padding:0 13px;color:#fff;font-size:10px}

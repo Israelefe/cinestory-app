@@ -20,7 +20,7 @@ import { reservePublishSlot, resolveEntitlements } from '../services/entitlement
 import { tokenDigest } from '../utils/auth.js';
 import { sendDeliveryDownloadedEmail, sendDeliveryViewedEmail, sendShareGrantEmail, sendStoryReadyEmail } from '../services/email.service.js';
 import QRCode from 'qrcode';
-import sharp from 'sharp';
+import { renderGridboardStatusCard } from '../services/gridboardStatusCard.service.js';
 import { DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
 import { DELIVERY_SOUNDTRACKS, deliverySoundtrack, deliverySoundtrackFile } from '../constants/deliverySoundtracks.js';
 import { supportsDeliveryMusic, supportsDeliveryNarration } from '../constants/deliveryCapabilities.js';
@@ -102,7 +102,7 @@ async function ownedDelivery(id, userId, selectPin = false) {
 function invalidateV3Music(delivery) {
   if (delivery.schemaVersion !== 3) return;
   delivery.reviewApprovedAt = undefined;
-  delivery.v3 = { ...delivery.v3, revision: Number(delivery.v3?.revision || 0) + 1, approvedRevision: null, step: 'music' };
+  delivery.v3 = { ...delivery.v3, revision: Number(delivery.v3?.revision || 0) + 1, approvedRevision: null, step: delivery.kind === 'pinboard' ? 'pinboard' : 'music' };
   delivery.markModified('v3');
 }
 
@@ -656,7 +656,7 @@ export async function signSoundtrackUpload(req, res) {
   try {
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This delivery is not available for audio uploads.' });
-    if (!supportsDeliveryMusic(delivery.format)) return res.status(409).json({ success: false, code: 'MUSIC_FORMAT_UNSUPPORTED', message: 'This delivery format does not use music.' });
+    if (delivery.kind !== 'pinboard' && !supportsDeliveryMusic(delivery.format)) return res.status(409).json({ success: false, code: 'MUSIC_FORMAT_UNSUPPORTED', message: 'This delivery format does not use music.' });
     res.json({ success: true, data: createUploadSignature({ userId: req.user.id, deliveryId: delivery._id, resourceType: 'video' }) });
   } catch (error) {
     recordAnalyticsEventAsync({ name: 'upload.failed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'failed', errorCode: error.code || 'SOUNDTRACK_UPLOAD_SIGNATURE_FAILED', metadata: { surface: 'soundtrack', stage: 'signature' } });
@@ -671,7 +671,7 @@ export async function confirmSoundtrackUpload(req, res) {
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This delivery is not available for audio uploads.' });
-    if (!supportsDeliveryMusic(delivery.format)) return res.status(409).json({ success: false, code: 'MUSIC_FORMAT_UNSUPPORTED', message: 'This delivery format does not use music.' });
+    if (delivery.kind !== 'pinboard' && !supportsDeliveryMusic(delivery.format)) return res.status(409).json({ success: false, code: 'MUSIC_FORMAT_UNSUPPORTED', message: 'This delivery format does not use music.' });
     const resource = await confirmUploadedAsset({ userId: req.user.id, deliveryId: delivery._id, publicId: parsed.data.publicId, version: parsed.data.version, signature: parsed.data.signature, resourceType: 'video' });
     uploadedPublicId = resource.public_id;
     if (!['mp3', 'wav', 'm4a', 'ogg', 'aac'].includes(String(resource.format).toLowerCase()) || resource.bytes > 20 * 1024 * 1024 || Number(resource.duration || 0) > 20 * 60) throw Object.assign(new Error('Use an MP3, WAV, M4A, OGG, or AAC track no larger than 20 MB and no longer than 20 minutes.'), { status: 400 });
@@ -1144,10 +1144,6 @@ async function publicPayload(delivery, grant = null) {
   return object;
 }
 
-function xmlSafe(value) {
-  return String(value || '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[character]).slice(0, 120);
-}
-
 export async function getPinboardStatusCard(req, res) {
   try {
     const parsed = z.object({ assetIds: z.array(z.string().uuid()).min(1).max(4) }).strict().safeParse(req.body);
@@ -1165,32 +1161,21 @@ export async function getPinboardStatusCard(req, res) {
     const owner = delivery.userId;
     const entitlement = await resolveEntitlements(owner, { includeUsage: false });
     const studioName = entitlement.features.branding === 'studio' ? owner.studio?.name || owner.name : 'Veylo';
-    const label = xmlSafe(delivery.title || `${delivery.clientName || 'Client'}'s photographs`);
-    const brand = xmlSafe(studioName || 'Veylo');
     const watermark = delivery.access?.watermarkEnabled ? (delivery.access.watermarkText || owner.studio?.name || owner.name || 'PREVIEW') : null;
     const sources = await Promise.all(assets.map(async asset => {
-      const url = signedImageUrl(asset.publicId, { width: 1400, watermark });
+      const url = signedImageUrl(asset.publicId, { width: 1600, watermark });
       const upstream = await fetch(url, { signal: AbortSignal.timeout(30_000) });
       if (!upstream.ok) throw Object.assign(new Error('A photograph could not be prepared.'), { status: 502 });
       if (Number(upstream.headers.get('content-length') || 0) > 18 * 1024 * 1024) throw Object.assign(new Error('A photograph is too large to prepare for sharing.'), { status: 413 });
       const buffer = Buffer.from(await upstream.arrayBuffer());
       if (buffer.length > 18 * 1024 * 1024) throw Object.assign(new Error('A photograph is too large to prepare for sharing.'), { status: 413 });
-      return sharp(buffer).rotate().resize(920, 1180, { fit: 'cover', position: 'attention' }).jpeg({ quality: 82, mozjpeg: true }).toBuffer();
+      return buffer;
     }));
-    const width = 1080, height = 1920, margin = 72, gap = 22, areaTop = 300, areaHeight = 1260;
-    const columns = sources.length === 1 ? 1 : 2;
-    const rows = Math.ceil(sources.length / columns);
-    const cellWidth = Math.floor((width - margin * 2 - gap * (columns - 1)) / columns);
-    const cellHeight = Math.floor((areaHeight - gap * (rows - 1)) / rows);
-    const cardImages = await Promise.all(sources.map(input => sharp(input).resize(cellWidth, cellHeight, { fit: 'cover', position: 'attention' }).jpeg({ quality: 84 }).toBuffer()));
-    const composites = cardImages.map((input, index) => ({ input, left: margin + (index % columns) * (cellWidth + gap), top: areaTop + Math.floor(index / columns) * (cellHeight + gap) }));
-    const headerSvg = Buffer.from(`<svg width="1080" height="1920" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#0c0c10"/><text x="72" y="128" fill="#f7f3ee" font-family="Arial" font-size="23" letter-spacing="5">PRIVATE PHOTO GALLERY</text><text x="72" y="218" fill="#f7f3ee" font-family="Arial" font-size="42" font-weight="600">${label}</text><text x="72" y="1780" fill="#c9c3bd" font-family="Arial" font-size="24">Open the gallery from your private link</text><text x="72" y="1840" fill="#f7f3ee" font-family="Arial" font-size="25" font-weight="600">${brand}</text></svg>`);
     const clientBase = String(process.env.CLIENT_URL || 'https://veylo.com.ng').replace(/\/$/, '');
     const privateUrl = new URL(`/d/${encodeURIComponent(delivery.publicId)}`, clientBase);
     const grantToken = String(req.get('x-delivery-grant') || '');
     if (grant && /^[A-Za-z0-9_-]{30,100}$/.test(grantToken)) privateUrl.searchParams.set('share', grantToken);
-    const qr = await QRCode.toBuffer(privateUrl.toString(), { type: 'png', width: 176, margin: 1, color: { dark: '#f7f3ee', light: '#0c0c10' }, errorCorrectionLevel: 'M' });
-    const output = await sharp({ create: { width, height, channels: 4, background: '#0c0c10' } }).composite([{ input: headerSvg }, ...composites, { input: qr, left: 832, top: 1624 }]).png({ compressionLevel: 8 }).toBuffer();
+    const output = await renderGridboardStatusCard({ imageBuffers: sources, title: delivery.title || `${delivery.clientName || 'Client'}'s photographs`, studioName, gallerySize: allowed.size, privateUrl: privateUrl.toString(), palette: delivery.pinboard?.palette });
     recordAnalyticsEventAsync({ name: 'client.pinboard.status_card.created', source: 'server', actorType: grant ? 'guest' : 'client', deliveryId: delivery._id, format: 'pinboard', status: 'completed', count: assets.length });
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('Content-Length', String(output.length));

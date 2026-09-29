@@ -263,6 +263,36 @@ function acceptableGridboardPalette(palette, imageColors) {
   return background.saturation <= .4 && surface.saturation <= .4 && accent.saturation <= .75 && (!profile.hasHue || Math.min(hueDistance, 360 - hueDistance) <= 50);
 }
 
+export function nextGridboardPalette(imageColors, currentPalette) {
+  const profile = photoColourProfile(imageColors);
+  const hue = profile.hue;
+  const baseSaturation = Math.max(.21, Math.min(.44, .2 + profile.saturation * .3));
+  const variants = [
+    { light: false, offset: 0, depth: .085, accent: .71 },
+    { light: true, offset: 0, depth: .95, accent: .28 },
+    { light: false, offset: -18, depth: .125, accent: .66 },
+    { light: true, offset: 18, depth: .91, accent: .32 },
+    { light: false, offset: 18, depth: .07, accent: .75 },
+    { light: true, offset: -18, depth: .97, accent: .25 },
+    { light: false, offset: -28, depth: .16, accent: .69 },
+    { light: true, offset: 28, depth: .88, accent: .34 },
+    { light: false, offset: 28, depth: .11, accent: .78 },
+    { light: true, offset: -28, depth: .94, accent: .29 },
+    { light: false, offset: 0, depth: .15, accent: .77 },
+    { light: true, offset: 0, depth: .87, accent: .36 }
+  ];
+  const palettes = variants.map(item => {
+    const tone = (hue + item.offset + 360) % 360;
+    const background = hexFromHsl(tone, baseSaturation * (item.light ? .6 : 1), item.depth);
+    const surface = hexFromHsl(tone, baseSaturation * .7, item.light ? Math.min(.99, item.depth + .035) : Math.min(.25, item.depth + .058));
+    return { background, surface, text: item.light ? '#17191b' : '#fffaf5', accent: hexFromHsl(tone, Math.min(.64, baseSaturation + .14), item.accent) };
+  }).filter(palette => acceptableGridboardPalette(palette, imageColors) && contrastRatio(palette.accent, palette.background) >= 3 && contrastRatio(palette.accent, palette.surface) >= 3);
+  if (!palettes.length) return calmGridboardPalette(imageColors, photoColor(currentPalette?.background)?.lightness > .5 ? 'dark' : 'light');
+  const difference = (first, second) => ['background', 'surface', 'accent'].reduce((sum, key) => sum + [1, 3, 5].reduce((channelSum, index) => channelSum + Math.abs(parseInt(first[key].slice(index, index + 2), 16) - parseInt(String(second?.[key] || '#000000').slice(index, index + 2), 16)), 0), 0);
+  const closest = palettes.reduce((best, palette, index) => difference(palette, currentPalette) < difference(palettes[best], currentPalette) ? index : best, 0);
+  return palettes[(closest + 1) % palettes.length];
+}
+
 function buildPinboardLayouts(assets, moments) {
   const ordered = [...assets].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
   const portrait = ordered.filter(asset => Number(asset.height || 0) >= Number(asset.width || 0));
@@ -557,6 +587,7 @@ export async function directV3(delivery, insights) {
 export async function repickV3Palette({ format, brief, shootType, imageColors, currentPalette }) {
   const current = Object.fromEntries(Object.keys(V3_DEFAULT_PALETTE).map(key => [key, String(currentPalette?.[key] || V3_DEFAULT_PALETTE[key]).toLowerCase()]));
   const gridboard = format === 'pinboard';
+  if (gridboard) return nextGridboardPalette(imageColors, current);
   const gridboardSystem = 'Return JSON {"palette":{"background":"#hex","surface":"#hex","text":"#hex","accent":"#hex"}}. Choose another calm GridBoard palette from the colours that dominate the complete photograph set. Keep background and panels subdued and close in tone, with one muted accent from the dominant hue family. Do not use neon, highly saturated surfaces, or a colour unrelated to the photographs. Make it visibly different from the current palette while keeping text contrast at least 4.5:1 on background and panels. Do not alter the photographs or delivery content.';
   const system = 'Return JSON {"palette":{"background":"#hex","surface":"#hex","text":"#hex","accent":"#hex"}}. Choose a readable visual palette for the opening and showcase surfaces from the supplied image colour analysis. Keep the photographer’s original photographs unchanged. Make the new background, panels, or accent visibly different from the current palette. Text must have at least 4.5:1 contrast against both background and panels. Do not write captions or change delivery content.';
   const prompt = [

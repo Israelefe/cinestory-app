@@ -8,6 +8,7 @@ import { trackEvent } from '../services/analytics.js';
 import { DeliveryFormatViewer } from '../components/delivery/viewerRegistry.jsx';
 import PinboardViewer from '../components/delivery/PinboardViewer.jsx';
 import DeliveryBrandMark from '../components/delivery/DeliveryBrandMark.jsx';
+import { resolvedGridboardPalette } from '../utils/gridboardPalette.js';
 import { getDeliveryCapabilities } from '../constants/deliveryCapabilities.js';
 import '../styles/format-demos.css';
 import './DeliveryViewer.css';
@@ -17,6 +18,19 @@ function accessHeaders(publicId) {
   const token = sessionStorage.getItem(`veylo_delivery_${publicId}`);
   const grant = sessionStorage.getItem(`veylo_delivery_grant_${publicId}`);
   return { ...(token ? { 'X-Delivery-Access': token } : {}), ...(grant ? { 'X-Delivery-Grant': grant } : {}) };
+}
+
+function readinessTheme(delivery) {
+  const palette = delivery?.kind === 'pinboard'
+    ? resolvedGridboardPalette(delivery.pinboard?.palette, delivery.assets || [])
+    : delivery?.creativeDirection?.palette || delivery?.theme || {};
+  const colour = (value, fallback) => /^#[0-9a-f]{6}$/i.test(value || '') ? value : fallback;
+  return {
+    '--vd-ready-bg': colour(palette.background || palette.backgroundColor, '#070709'),
+    '--vd-ready-surface': colour(palette.surface || palette.surfaceColor, '#111115'),
+    '--vd-ready-text': colour(palette.text || palette.textColor, '#f3ece6'),
+    '--vd-ready-accent': colour(palette.accent || palette.accentColor, '#ff9b8e')
+  };
 }
 
 const volumeRamps = new WeakMap();
@@ -227,7 +241,7 @@ export function DeliveryReadiness({ delivery, onReady }) {
 
   const percent = audioReady ? 100 : 60;
 
-  return <main className="vd-readiness" role="status" aria-live="polite">
+  return <main className="vd-readiness" style={readinessTheme(delivery)} role="status" aria-live="polite">
     <div className="vd-readiness-ambient" aria-hidden="true" />
     <section>
       <DeliveryBrandMark branding={delivery.branding} />

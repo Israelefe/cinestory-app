@@ -87,7 +87,7 @@ export function DesktopPhoneFrame({ src, title, message, device = true }) {
     <section ref={phoneDevice} className="v-phone-device" style={phoneStyle} aria-label={`${title}, shown at mobile size`}>
       <div className="v-phone-device-scale">
         <div className="v-phone-status" aria-hidden="true"><strong>9:41</strong><span className="v-phone-island" /><span className="v-phone-status-icons"><Signal size={14} /><Wifi size={15} /><BatteryFull size={18} /></span></div>
-        <div className="v-phone-screen"><iframe ref={frame} src={src} title={title} allow="autoplay; clipboard-read; clipboard-write; fullscreen; web-share" /></div>
+        <div className="v-phone-screen"><iframe ref={frame} src={src} title={title} allow="autoplay; clipboard-read; clipboard-write; fullscreen; web-share" onLoad={() => { ready.current = true; if (messageRef.current !== undefined) frame.current?.contentWindow?.postMessage({ type: PREVIEW_DATA, payload: messageRef.current }, window.location.origin); }} /></div>
       </div>
     </section>
     <p className="v-phone-caption"><strong>Mobile client view</strong><span>420 × 800 px</span></p>
