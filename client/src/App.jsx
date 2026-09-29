@@ -2,7 +2,7 @@ import React, { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'r
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigationType } from 'react-router-dom';
 import { MotionConfig } from 'framer-motion';
 import { ToastContainer } from 'react-toastify';
-import { ClientDeliveryRoute, PhonePresentationRoute } from './components/delivery/PhonePresentation.jsx';
+import { PhonePresentationRoute } from './components/delivery/PhonePresentation.jsx';
 import Navbar from './components/Navbar.jsx';
 import ProductHeader from './components/ProductHeader.jsx';
 import CookiePreferences from './components/CookiePreferences.jsx';
@@ -224,13 +224,13 @@ export default function App() {
   const handlePlanChanged = plan => setUser(current => current ? { ...current, plan } : current);
   return <MotionConfig reducedMotion="user"><BrowserRouter><RoutePosition /><DeliveryChrome user={user} /><ToastContainer position="top-right" theme="dark" autoClose={3000} /><Suspense fallback={<div className="v-page-loading" role="status">Opening Veylo…</div>}><Routes>
     <Route path="/story/:storyId" element={<PhonePresentationRoute title="Photo Story demo"><StoryViewer /></PhonePresentationRoute>} />
-    <Route path="/d/:publicId" element={<ClientDeliveryRoute><DeliveryViewer /></ClientDeliveryRoute>} />
+    <Route path="/d/:publicId" element={<PhonePresentationRoute title="Client delivery"><DeliveryViewer /></PhonePresentationRoute>} />
     <Route path="/__phone-preview" element={<PhonePreviewPage />} />
     <Route path="/volume-deliveries" element={<Navigate to="/dashboard" replace />} />
     <Route path="/volume/:publicId" element={<Navigate to="/" replace />} />
     <Route path="/demo" element={<PhonePresentationRoute title="Photo Story demo"><StoryViewer demoMode /></PhonePresentationRoute>} />
-    <Route path="/demo/gridboard" element={<PinboardDemo />} />
-    <Route path="/demo/pinboard" element={<PinboardDemo />} />
+    <Route path="/demo/gridboard" element={<PhonePresentationRoute title="GridBoard delivery demo"><PinboardDemo /></PhonePresentationRoute>} />
+    <Route path="/demo/pinboard" element={<PhonePresentationRoute title="GridBoard delivery demo"><PinboardDemo /></PhonePresentationRoute>} />
     <Route path="/demo/:formatId" element={<PhonePresentationRoute title="Delivery format demo"><FormatDemo /></PhonePresentationRoute>} />
     <Route path="*" element={<WebsiteShell user={user} authLoading={authLoading} onAuthenticated={handleAuthenticated} onLogout={handleLogout} onAccountDeleted={handleAccountDeleted} onPlanChanged={handlePlanChanged} />} />
   </Routes></Suspense></BrowserRouter></MotionConfig>;

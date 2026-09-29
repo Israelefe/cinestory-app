@@ -1,8 +1,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { BatteryFull, Signal, Wifi } from 'lucide-react';
-import { useLocation, useParams } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import ClientDeliveryPreview from './ClientDeliveryPreview.jsx';
-import api from '../../services/api.js';
 import './PhonePresentation.css';
 
 const DESKTOP_QUERY = '(min-width: 1025px)';
@@ -33,32 +32,11 @@ export function PhonePresentationRoute({ children, title = 'Mobile client delive
   return <DesktopPhoneFrame src={src} title={title} />;
 }
 
-export function ClientDeliveryRoute({ children }) {
-  const { publicId } = useParams();
-  const location = useLocation();
-  const desktop = useDesktopPhoneMode();
-  const embedded = new URLSearchParams(location.search).get('phoneView') === '1';
-  const [resolved, setResolved] = useState({ publicId: '', kind: '' });
-
-  useEffect(() => {
-    if (!desktop || embedded || !publicId) return undefined;
-    let active = true;
-    api.get(`/v1/deliveries/public/${encodeURIComponent(publicId)}/share-meta`)
-      .then(({ data }) => { if (active) setResolved({ publicId, kind: data?.data?.kind || 'showcase' }); })
-      .catch(() => { if (active) setResolved({ publicId, kind: 'direct' }); });
-    return () => { active = false; };
-  }, [desktop, embedded, publicId]);
-
-  if (!desktop || embedded || resolved.kind === 'pinboard' || resolved.kind === 'direct') return children;
-  if (resolved.publicId !== publicId) return <main className="v-phone-presentation-resolving" role="status">Opening delivery...</main>;
-  return <PhonePresentationRoute title="Client delivery">{children}</PhonePresentationRoute>;
-}
-
 export function DesktopPhoneFrame({ src, title, message, device = true }) {
   const frame = useRef(null);
   const phoneDevice = useRef(null);
   const ready = useRef(false);
-  const [phoneScale, setPhoneScale] = useState(.78125);
+  const [phoneScale, setPhoneScale] = useState(.94);
   const messageRef = useRef(message);
   messageRef.current = message;
 
@@ -69,7 +47,7 @@ export function DesktopPhoneFrame({ src, title, message, device = true }) {
       const top = Math.max(0, element.getBoundingClientRect().top);
       const bottomSpace = element.closest('.v3-create') ? 24 : 64;
       const availableHeight = Math.max(1, window.innerHeight - top - bottomSpace);
-      const nextScale = Math.min(.78125, availableHeight / 851);
+      const nextScale = Math.min(.94, availableHeight / 851);
       setPhoneScale(current => Math.abs(current - nextScale) < .002 ? current : nextScale);
     };
     updateScale();

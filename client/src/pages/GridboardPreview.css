@@ -12,7 +12,7 @@
   cursor: pointer;
 }
 .pb-preview-label button:hover { color: #fff; }
-.pb-full-preview { position: fixed; inset: 0; z-index: 2500; display: flex; flex-direction: column; background: #f8f5f0; }
+.pb-full-preview { position: fixed; inset: 0; z-index: 2500; display: flex; flex-direction: column; background: radial-gradient(ellipse at 50% 42%, #51302c45, transparent 42%), #09090c; }
 .pb-full-preview-bar {
   min-height: 58px;
   padding: 10px clamp(15px, 3vw, 48px);
@@ -40,8 +40,9 @@
   cursor: pointer;
 }
 .pb-full-preview-bar button:hover { background: #ffffff16; }
-.pb-full-preview-scroll { flex: 1; min-height: 0; overflow: auto; }
-.pb-full-preview-scroll .pb-viewer { min-height: 100%; }
+.pb-full-preview-scroll { flex: 1; min-height: 0; overflow: auto; display: grid; place-items: center; }
+.pb-full-preview-scroll .v-phone-presentation { min-height: 0; padding: 20px 12px; }
+@media (max-width: 1024px) { .pb-full-preview-scroll { display: block; } .pb-full-preview-scroll .v-client-preview-runtime { min-height: 100%; } }
 .pb-layout-art {
   height: 105px;
   display: grid;

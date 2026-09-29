@@ -5,13 +5,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
 import { uploadDeliveryPhotosV3 } from '../utils/deliveryUploadV3.js';
-import PinboardViewer from '../components/delivery/PinboardViewer.jsx';
 import { ClientPreviewPhoneFrame } from '../components/delivery/PhonePresentation.jsx';
 import './CreatePinboardV3.css';
 import './GridboardPreview.css';
 
 const FONTS = ['Playfair Display', 'Outfit', 'Plus Jakarta Sans', 'Cormorant Garamond', 'DM Sans', 'Libre Baskerville', 'Manrope'];
-const DEFAULT_PALETTE = { background: '#f8f5f0', surface: '#fffdf9', text: '#201b18', accent: '#a14f3c' };
+const DEFAULT_PALETTE = { background: '#13110f', surface: '#211b18', text: '#fff6ec', accent: '#efa57c' };
 const DEFAULT_ACCESS = { allowIndividualDownloads: true, allowDownloadAll: true, allowLikes: false, downloadsLocked: false, downloadLockNote: '', watermarkEnabled: false, watermarkText: '', expiresAt: '' };
 const STEPS = [{ id: 'details', label: 'Details' }, { id: 'photos', label: 'Photos' }, { id: 'design', label: 'Board' }, { id: 'access', label: 'Access' }, { id: 'publish', label: 'Publish' }];
 
@@ -68,7 +67,7 @@ export default function CreatePinboardV3({ user, initialDelivery }) {
   const [selectedLayoutId, setSelectedLayoutId] = useState(initialDelivery?.pinboard?.selectedLayoutId || 'balanced');
   const [moments, setMoments] = useState(initialDelivery?.pinboard?.moments || []);
   const [palette, setPalette] = useState(initialDelivery?.pinboard?.palette || DEFAULT_PALETTE);
-  const [typography, setTypography] = useState(initialDelivery?.pinboard?.typography || { display: 'Playfair Display', body: 'Outfit' });
+  const [typography, setTypography] = useState(initialDelivery?.pinboard?.typography || { display: 'Cormorant Garamond', body: 'Outfit' });
   const [grid, setGrid] = useState(initialDelivery?.pinboard?.grid || { mobileColumns: 2, tabletColumns: 3, desktopColumns: 4, gap: 'regular' });
   const [animation, setAnimation] = useState(initialDelivery?.pinboard?.animation || 'soft-fade');
   const [access, setAccess] = useState({ ...DEFAULT_ACCESS, ...initialDelivery?.access, expiresAt: initialDelivery?.access?.expiresAt ? new Date(initialDelivery.access.expiresAt).toISOString().slice(0, 16) : '' });
@@ -121,7 +120,7 @@ export default function CreatePinboardV3({ user, initialDelivery }) {
         const next = data.data; setDraft(next); setJob(next.generationJob || null);
         if (next.generationJob?.status === 'failed') { setError(next.generationJob.errorMessage || 'The photo analysis did not finish. Retry it or use a standard board.'); return; }
         if (next.v3?.step === 'pinboard' && next.pinboard?.layouts?.length) {
-          setLayouts(next.pinboard.layouts); setSelectedLayoutId(next.pinboard.selectedLayoutId || 'balanced'); setMoments(next.pinboard.moments || []); setPalette(next.pinboard.palette || DEFAULT_PALETTE); setTypography(next.pinboard.typography || { display: 'Playfair Display', body: 'Outfit' }); setGrid(next.pinboard.grid || { mobileColumns: 2, tabletColumns: 3, desktopColumns: 4, gap: 'regular' }); setAnimation(next.pinboard.animation || 'soft-fade'); setTitle(next.pinboard.title || next.title || ''); setBoardReady(true); setUseStandardBoard(next.pinboard.analysisStatus === 'standard'); setStage('design');
+          setLayouts(next.pinboard.layouts); setSelectedLayoutId(next.pinboard.selectedLayoutId || 'balanced'); setMoments(next.pinboard.moments || []); setPalette(next.pinboard.palette || DEFAULT_PALETTE); setTypography(next.pinboard.typography || { display: 'Cormorant Garamond', body: 'Outfit' }); setGrid(next.pinboard.grid || { mobileColumns: 2, tabletColumns: 3, desktopColumns: 4, gap: 'regular' }); setAnimation(next.pinboard.animation || 'soft-fade'); setTitle(next.pinboard.title || next.title || ''); setBoardReady(true); setUseStandardBoard(next.pinboard.analysisStatus === 'standard'); setStage('design');
         }
       } catch (failure) { if (active) setError(errorText(failure)); }
     };
@@ -239,11 +238,11 @@ export default function CreatePinboardV3({ user, initialDelivery }) {
 
           {stage === 'published' && <div className="pb-published-card"><div className="pb-published-mark"><BadgeCheck size={27} /></div><span className="pb-create-eyebrow">DELIVERY PUBLISHED</span><h1>Your GridBoard is ready.</h1><p>Send this private link to {clientName || 'your client'} when you are ready.</p><label>Private gallery link<input readOnly value={published?.url || `${window.location.origin}/d/${published?.publicId || draft?.publicId}`} /></label><div className="pb-published-actions"><button type="button" onClick={() => void copyLink()}><Copy size={16} />Copy private link</button><a href={published?.url || `/d/${published?.publicId || draft?.publicId}`} target="_blank" rel="noreferrer"><Eye size={16} />Open client view</a><Link to="/dashboard">Back to dashboard<ArrowRight size={16} /></Link></div><div className="pb-create-note"><MessageCircle size={17} /><span>For WhatsApp, paste the private link into your chat with the client. They will see this board after opening it.</span></div></div>}
         </div>
-        {['design', 'access', 'publish'].includes(stage) && <aside className="pb-create-preview"><div className="pb-preview-label"><span>CLIENT VIEW</span><button type="button" onClick={() => setShowDesktopPreview(true)}><Eye size={14} /> View full board</button></div><ClientPreviewPhoneFrame delivery={previewBoard} access={access} accessPin={pin} /></aside>}
+        {['design', 'access', 'publish'].includes(stage) && <aside className="pb-create-preview"><div className="pb-preview-label"><span>CLIENT VIEW</span><button type="button" onClick={() => setShowDesktopPreview(true)}><Eye size={14} /> Open larger preview</button></div><ClientPreviewPhoneFrame delivery={previewBoard} access={access} accessPin={pin} /></aside>}
         </div>}
       </motion.section>
     </AnimatePresence>
   </>;
 
-  return <main className="pb-create-shell"><div className="pb-create-container">{content}</div>{showDesktopPreview && <div className="pb-full-preview" role="dialog" aria-modal="true" aria-label="GridBoard client preview"><div className="pb-full-preview-bar"><span>GRIDBOARD CLIENT VIEW</span><button type="button" autoFocus onClick={() => setShowDesktopPreview(false)}><X size={18} />Close preview</button></div><div className="pb-full-preview-scroll"><PinboardViewer delivery={previewBoard} preview /></div></div>}</main>;
+  return <main className="pb-create-shell"><div className="pb-create-container">{content}</div>{showDesktopPreview && <div className="pb-full-preview" role="dialog" aria-modal="true" aria-label="GridBoard client preview"><div className="pb-full-preview-bar"><span>GRIDBOARD CLIENT VIEW</span><button type="button" autoFocus onClick={() => setShowDesktopPreview(false)}><X size={18} />Close preview</button></div><div className="pb-full-preview-scroll"><ClientPreviewPhoneFrame delivery={previewBoard} access={access} accessPin={pin} /></div></div>}</main>;
 }

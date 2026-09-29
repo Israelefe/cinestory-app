@@ -80,8 +80,8 @@ function pinboardFallback(delivery) {
       { id: 'colour-flow', title: 'Colour flow', description: 'Keeps the original upload order as a simple visual path.', assetOrder: ids }
     ],
     moments: [],
-    palette: delivery.pinboard?.palette || { background: '#f8f5f0', surface: '#fffdf9', text: '#201b18', accent: '#a14f3c' },
-    typography: delivery.pinboard?.typography || { display: 'Playfair Display', body: 'Outfit' },
+    palette: delivery.pinboard?.palette || { background: '#13110f', surface: '#211b18', text: '#fff6ec', accent: '#efa57c' },
+    typography: delivery.pinboard?.typography || { display: 'Cormorant Garamond', body: 'Outfit' },
     grid: delivery.pinboard?.grid || { mobileColumns: 2, tabletColumns: 3, desktopColumns: 4, gap: 'regular' },
     animation: delivery.pinboard?.animation || 'soft-fade',
     analysisStatus: 'standard'

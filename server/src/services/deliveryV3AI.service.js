@@ -113,7 +113,7 @@ export async function recommendV3Format(shootType, purpose = '') {
 
 async function analyzeBatch(batch, context) {
   const descriptors = batch.map((asset, index) => ({ index, assetId: asset.assetId }));
-  const result = await request('Return JSON {"images":[{"index":0,"summary":"visible facts only","score":1,"colors":["#hex"],"momentTags":["portraits"]}]}. Describe each supplied image by its numeric index. Include every index exactly once. Score visual showcase suitability 1-10 based on image quality, variety and clear subject. Return up to three short, reusable visual tags for practical client navigation, such as portraits, people together, ceremony, dancing, clothing, or details. Describe visible scenes only. Do not identify people or infer names, ages, relationships, emotions, or event facts from pixels. Never use face recognition. If an image cannot be seen, say so and score 1.', `Shoot type: ${context.shootType}. Purpose: ${context.brief}. Images in order: ${JSON.stringify(descriptors)}`, { images: batch, maxTokens: Math.min(25000, 280 * batch.length) });
+  const result = await request('Return JSON {"images":[{"index":0,"summary":"visible facts only","score":1,"colors":["#hex"],"momentTags":["portraits"]}]}. Describe each supplied image by its numeric index. Include every index exactly once. List up to four visible photo colours as #RRGGBB in order of how much of the photograph they occupy, starting with the most dominant. Score visual showcase suitability 1-10 based on image quality, variety and clear subject. Return up to three short, reusable visual tags for practical client navigation, such as portraits, people together, ceremony, dancing, clothing, or details. Describe visible scenes only. Do not identify people or infer names, ages, relationships, emotions, or event facts from pixels. Never use face recognition. If an image cannot be seen, say so and score 1.', `Shoot type: ${context.shootType}. Purpose: ${context.brief}. Images in order: ${JSON.stringify(descriptors)}`, { images: batch, maxTokens: Math.min(25000, 280 * batch.length) });
   const rows = Array.isArray(result.images) ? result.images : [];
   if (rows.length !== batch.length) throw Object.assign(new Error('Some photographs were not analysed. Retry this step.'), { code: 'V3_INCOMPLETE_ANALYSIS' });
   const byIndex = new Map(rows.map(row => [Number(row.index), row]));
@@ -162,6 +162,62 @@ function dominantHue(colors = []) {
   return (hue * 60 + 360) % 360;
 }
 
+function photoColor(hex) {
+  if (!/^#[0-9a-f]{6}$/i.test(String(hex || ''))) return null;
+  const [r, g, b] = [1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16) / 255);
+  const max = Math.max(r, g, b); const min = Math.min(r, g, b); const delta = max - min;
+  const lightness = (max + min) / 2;
+  const saturation = delta ? delta / (1 - Math.abs(2 * lightness - 1)) : 0;
+  return { hue: dominantHue([hex]), saturation, lightness };
+}
+
+function hexFromHsl(hue, saturation, lightness) {
+  const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation;
+  const secondary = chroma * (1 - Math.abs((hue / 60) % 2 - 1));
+  const [red, green, blue] = hue < 60 ? [chroma, secondary, 0] : hue < 120 ? [secondary, chroma, 0] : hue < 180 ? [0, chroma, secondary] : hue < 240 ? [0, secondary, chroma] : hue < 300 ? [secondary, 0, chroma] : [chroma, 0, secondary];
+  const offset = lightness - chroma / 2;
+  return '#' + [red, green, blue].map(value => Math.round((value + offset) * 255).toString(16).padStart(2, '0')).join('');
+}
+
+function photoColourProfile(imageColors = []) {
+  const groups = Array.from({ length: 18 }, () => ({ weight: 0, hueTotal: 0 }));
+  let brightnessTotal = 0; let brightnessWeight = 0;
+  for (const image of imageColors) {
+    for (const [index, color] of (image.colors || []).slice(0, 3).entries()) {
+      const value = photoColor(color);
+      if (!value) continue;
+      const weight = index === 0 ? 3 : index === 1 ? 1.5 : 1;
+      brightnessTotal += value.lightness * weight;
+      brightnessWeight += weight;
+      if (value.saturation < .11 || value.lightness < .08 || value.lightness > .92) continue;
+      const group = groups[Math.floor(value.hue / 20) % groups.length];
+      const influence = weight * Math.max(.2, value.saturation);
+      group.weight += influence;
+      group.hueTotal += value.hue * influence;
+    }
+  }
+  const leading = groups.reduce((best, group) => group.weight > best.weight ? group : best, groups[0]);
+  return { hue: leading.weight ? leading.hueTotal / leading.weight : 210, light: brightnessWeight ? brightnessTotal / brightnessWeight > .64 : false, hasHue: leading.weight > 0 };
+}
+
+export function calmGridboardPalette(imageColors = [], mode = 'auto') {
+  const { hue, light } = photoColourProfile(imageColors);
+  return (mode === 'light' || mode === 'auto' && light)
+    ? { background: hexFromHsl(hue, .15, .965), surface: hexFromHsl(hue, .12, .995), text: hexFromHsl(hue, .16, .13), accent: hexFromHsl(hue, .42, .34) }
+    : { background: hexFromHsl(hue, .16, .08), surface: hexFromHsl(hue, .17, .13), text: hexFromHsl(hue, .18, .94), accent: hexFromHsl(hue, .42, .68) };
+}
+
+function acceptableGridboardPalette(palette, imageColors) {
+  if (['background', 'surface', 'text', 'accent'].some(key => !photoColor(palette?.[key]))) return false;
+  if (contrastRatio(palette.background, palette.text) < 4.5 || contrastRatio(palette.surface, palette.text) < 4.5) return false;
+  const background = photoColor(palette.background);
+  const surface = photoColor(palette.surface);
+  const accent = photoColor(palette.accent);
+  const profile = photoColourProfile(imageColors);
+  const hueDistance = Math.abs(accent.hue - profile.hue);
+  return background.saturation <= .4 && surface.saturation <= .4 && accent.saturation <= .75 && (!profile.hasHue || Math.min(hueDistance, 360 - hueDistance) <= 50);
+}
+
 function buildPinboardLayouts(assets, moments, suggestions) {
   const ordered = [...assets].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
   const portrait = ordered.filter(asset => Number(asset.height || 0) >= Number(asset.width || 0));
@@ -194,7 +250,7 @@ function buildPinboardLayouts(assets, moments, suggestions) {
 }
 
 export async function directV3Pinboard(delivery, insights) {
-  const gridboardPalette = { background: '#f8f5f0', surface: '#fffdf9', text: '#201b18', accent: '#a14f3c' };
+  const gridboardPalette = { background: '#13110f', surface: '#211b18', text: '#fff6ec', accent: '#efa57c' };
   const assets = [...delivery.assets].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
   const insightById = new Map(insights.map(row => [row.assetId, row]));
   const rows = assets.map(asset => {
@@ -202,6 +258,8 @@ export async function directV3Pinboard(delivery, insights) {
     asset.analysis = insight;
     return { assetId: asset.assetId, shape: Number(asset.width || 0) && Number(asset.height || 0) ? Number(asset.width) >= Number(asset.height) ? 'landscape' : 'portrait' : 'unknown', summary: insight.summary || '', colors: (insight.colors || []).slice(0, 3), momentTags: (insight.momentTags || []).slice(0, 3) };
   });
+  const photoPalette = rows.some(row => row.colors.length) ? calmGridboardPalette(rows) : gridboardPalette;
+  const photoProfile = photoColourProfile(rows);
   const fallbackGroups = new Map();
   for (const row of rows) for (const tag of row.momentTags) {
     if (!fallbackGroups.has(tag)) fallbackGroups.set(tag, []);
@@ -211,8 +269,8 @@ export async function directV3Pinboard(delivery, insights) {
   let generated = {};
   try {
     generated = await request(
-      'Return JSON {"moments":[{"title":"...","assetIds":["known-id"]}],"layouts":[{"id":"balanced","title":"...","description":"..."}],"palette":{"background":"#hex","surface":"#hex","text":"#hex","accent":"#hex"},"typography":{"display":"Playfair Display","body":"Outfit"}}. Create up to six useful groups of photographs based on visible subjects, activity, setting, or details. Use only supplied asset IDs and include at least two IDs in each group. A photograph may appear in more than one group. Do not identify people, infer family or other relationships, names, ages, or private traits. Do not use face recognition. Create exactly three board suggestions, one each for balanced, moments, and colour-flow. The names and short descriptions should reflect this collection without inventing facts. Choose a readable palette based on the supplied colours. Typography must use Playfair Display, Outfit, Plus Jakarta Sans, Cormorant Garamond, DM Sans, Libre Baskerville, or Manrope. Keep every supplied photograph in the board; these suggestions only affect presentation.',
-      ['Photographer context: ' + String(delivery.brief || '').slice(0, 600), 'Shoot type: ' + String(delivery.shootType || '').slice(0, 100), 'Photographs: ' + JSON.stringify(compact)].join('\n'),
+      'Return JSON {"moments":[{"title":"...","assetIds":["known-id"]}],"layouts":[{"id":"balanced","title":"...","description":"..."}],"palette":{"background":"#hex","surface":"#hex","text":"#hex","accent":"#hex"},"typography":{"display":"Cormorant Garamond","body":"Outfit"}}. Create up to six useful groups of photographs based on visible subjects, activity, setting, or details. Use only supplied asset IDs and include at least two IDs in each group. A photograph may appear in more than one group. Do not identify people, infer family or other relationships, names, ages, or private traits. Do not use face recognition. Create exactly three board suggestions, one each for balanced, moments, and colour-flow. The names and short descriptions should reflect this collection without inventing facts. Base the palette on the dominant colours across the whole photo set, not a single bright detail. Keep backgrounds and panels subdued and close in tone, with one muted accent from the dominant hue family. Avoid neon or highly saturated surfaces. Text must be readable at 4.5:1 contrast on both background and panels. Typography must use Playfair Display, Outfit, Plus Jakarta Sans, Cormorant Garamond, DM Sans, Libre Baskerville, or Manrope. Keep every supplied photograph in the board; these suggestions only affect presentation.',
+      ['Photographer context: ' + String(delivery.brief || '').slice(0, 600), 'Shoot type: ' + String(delivery.shootType || '').slice(0, 100), 'Dominant photo hue in degrees: ' + Math.round(photoProfile.hue), 'Calm palette derived from dominant photo colours: ' + JSON.stringify(photoPalette), 'Photographs: ' + JSON.stringify(compact)].join('\n'),
       { maxTokens: Math.min(22000, 2200 + rows.length * 24) }
     );
   } catch (error) {
@@ -246,16 +304,10 @@ export async function directV3Pinboard(delivery, insights) {
     if (title && description) layoutSuggestions[row.id] = { title, description };
   }
   const layouts = buildPinboardLayouts(assets, moments, layoutSuggestions);
-  const rawPalette = generated.palette || {};
-  const palette = Object.fromEntries(Object.keys(gridboardPalette).map(key => [key, /^#[0-9a-f]{6}$/i.test(rawPalette[key] || '') ? rawPalette[key] : gridboardPalette[key]]));
-  if (contrastRatio(palette.background, palette.text) < 4.5 || contrastRatio(palette.surface, palette.text) < 4.5) {
-    const readable = ['#fffaf6', '#ffffff', '#101010', '#000000'].find(color => contrastRatio(palette.background, color) >= 4.5 && contrastRatio(palette.surface, color) >= 4.5);
-    if (readable) palette.text = readable;
-    else { palette.background = gridboardPalette.background; palette.surface = gridboardPalette.surface; palette.text = gridboardPalette.text; }
-  }
+  const palette = acceptableGridboardPalette(generated.palette, rows) ? generated.palette : photoPalette;
   const current = delivery.pinboard || {};
   const typography = {
-    display: V3_FONT_CHOICES.has(generated.typography?.display) ? generated.typography.display : current.typography?.display || 'Playfair Display',
+    display: V3_FONT_CHOICES.has(generated.typography?.display) ? generated.typography.display : current.typography?.display || 'Cormorant Garamond',
     body: V3_FONT_CHOICES.has(generated.typography?.body) ? generated.typography.body : current.typography?.body || 'Outfit'
   };
   return {
@@ -264,7 +316,7 @@ export async function directV3Pinboard(delivery, insights) {
     layouts,
     selectedLayoutId: layouts.some(layout => layout.id === current.selectedLayoutId) ? current.selectedLayoutId : 'balanced',
     moments,
-    palette: current.palette || palette,
+    palette: current.palette && current.analysisStatus !== 'standard' ? current.palette : palette,
     typography: current.typography || typography,
     grid: current.grid || { mobileColumns: 2, tabletColumns: 3, desktopColumns: 4, gap: 'regular' },
     animation: current.animation || 'soft-fade',
@@ -466,19 +518,28 @@ export async function directV3(delivery, insights) {
 
 export async function repickV3Palette({ format, brief, shootType, imageColors, currentPalette }) {
   const current = Object.fromEntries(Object.keys(V3_DEFAULT_PALETTE).map(key => [key, String(currentPalette?.[key] || V3_DEFAULT_PALETTE[key]).toLowerCase()]));
+  const gridboard = format === 'pinboard';
+  const gridboardSystem = 'Return JSON {"palette":{"background":"#hex","surface":"#hex","text":"#hex","accent":"#hex"}}. Choose another calm GridBoard palette from the colours that dominate the complete photograph set. Keep background and panels subdued and close in tone, with one muted accent from the dominant hue family. Do not use neon, highly saturated surfaces, or a colour unrelated to the photographs. Make it visibly different from the current palette while keeping text contrast at least 4.5:1 on background and panels. Do not alter the photographs or delivery content.';
   const system = 'Return JSON {"palette":{"background":"#hex","surface":"#hex","text":"#hex","accent":"#hex"}}. Choose a readable visual palette for the opening and showcase surfaces from the supplied image colour analysis. Keep the photographer’s original photographs unchanged. Make the new background, panels, or accent visibly different from the current palette. Text must have at least 4.5:1 contrast against both background and panels. Do not write captions or change delivery content.';
   const prompt = [
     'Format: ' + format,
     'Shoot type: ' + shootType,
     'Photographer purpose: ' + brief,
+    ...(gridboard ? ['Dominant photo hue in degrees: ' + Math.round(photoColourProfile(imageColors).hue), 'Calm palette based on the dominant photo colours: ' + JSON.stringify(calmGridboardPalette(imageColors))] : []),
     'Image colour analysis: ' + JSON.stringify(imageColors),
     'Current palette to move away from: ' + JSON.stringify(current)
   ].join('\n');
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const result = await request(system + (attempt ? ' The previous answer repeated the current palette. Return a clearly different palette this time.' : ''), prompt, { maxTokens: 250 });
+    const result = await request((gridboard ? gridboardSystem : system) + (attempt ? ' The previous answer repeated the current palette. Return a clearly different palette this time.' : ''), prompt, { maxTokens: 250 });
     const palette = Object.fromEntries(Object.keys(V3_DEFAULT_PALETTE).map(key => [key, String(result.palette?.[key] || '').trim()]));
     if (Object.values(palette).some(color => !/^#[0-9a-f]{6}$/i.test(color))) continue;
+
+    if (gridboard) {
+      if (!acceptableGridboardPalette(palette, imageColors)) continue;
+      if (['background', 'surface', 'accent'].some(key => palette[key].toLowerCase() !== current[key])) return palette;
+      continue;
+    }
 
     if (contrastRatio(palette.background, palette.text) < 4.5 || contrastRatio(palette.surface, palette.text) < 4.5) {
       const readable = ['#fffaf6', '#ffffff', '#101010', '#000000'].find(color => contrastRatio(palette.background, color) >= 4.5 && contrastRatio(palette.surface, color) >= 4.5);
@@ -494,6 +555,11 @@ export async function repickV3Palette({ format, brief, shootType, imageColors, c
     if (changed) return palette;
   }
 
+  if (gridboard) {
+    const nextMode = photoColor(current.background)?.lightness > .5 ? 'dark' : 'light';
+    const alternative = calmGridboardPalette(imageColors, nextMode);
+    if (['background', 'surface', 'accent'].some(key => alternative[key].toLowerCase() !== current[key])) return alternative;
+  }
   throw Object.assign(new Error('The colour picker returned the same palette. Choose another palette and try again.'), { code: 'V3_PALETTE_UNCHANGED', status: 422 });
 }
 

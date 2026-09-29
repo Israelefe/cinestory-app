@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { V3_FORMATS, contrastRatio, validShowcase } from '../src/constants/deliveryV3.js';
-import { analyzeAllV3, directV3, directV3Pinboard, improvePurpose, recommendV3Format, regenerateV3Caption, repickV3Palette } from '../src/services/deliveryV3AI.service.js';
+import { analyzeAllV3, calmGridboardPalette, directV3, directV3Pinboard, improvePurpose, recommendV3Format, regenerateV3Caption, repickV3Palette } from '../src/services/deliveryV3AI.service.js';
 import { captionSegments, generateNarration, narrationLine, NARRATION_RENDER_VERSION } from '../src/services/narration.service.js';
 
 const ids = Array.from({ length: 25 }, (_, index) => 'asset-' + index);
@@ -35,6 +35,18 @@ test('theme contrast check distinguishes readable and unreadable colour pairs', 
   assert.ok(contrastRatio('#ffffff', '#eeeeee') < 4.5);
 });
 
+test('GridBoard palette follows dominant photograph colours and stays readable', () => {
+  const orange = calmGridboardPalette([{ colors: ['#b95732', '#b95732'] }, { colors: ['#b95732', '#204c78'] }, { colors: ['#c45d35'] }]);
+  const blue = calmGridboardPalette([{ colors: ['#285e93'] }, { colors: ['#285e93'] }, { colors: ['#bb6038'] }]);
+  for (const palette of [orange, blue]) {
+    assert.ok(contrastRatio(palette.background, palette.text) >= 4.5);
+    assert.ok(contrastRatio(palette.surface, palette.text) >= 4.5);
+  }
+  const channel = (hex, index) => parseInt(hex.slice(index, index + 2), 16);
+  assert.ok(channel(orange.accent, 1) > channel(orange.accent, 5));
+  assert.ok(channel(blue.accent, 5) > channel(blue.accent, 1));
+});
+
 test('Pinboard suggestions keep every supplied photo and produce three complete arrangements', async () => {
   const assets = Array.from({ length: 6 }, (_, index) => ({ assetId: `pinboard-photo-${index}`, sortOrder: index, width: index % 2 ? 1600 : 1000, height: index % 2 ? 1000 : 1600, analysis: undefined }));
   const current = { selectedLayoutId: 'balanced', palette: { background: '#0c0c10', surface: '#17171c', text: '#fffaf6', accent: '#ff5a47' }, typography: { display: 'Playfair Display', body: 'Outfit' } };
@@ -58,6 +70,18 @@ test('Pinboard suggestions keep every supplied photo and produce three complete 
   } finally { restore(); }
 });
 
+test('fresh GridBoard uses dominant photo colours when the model suggests an unrelated palette', async () => {
+  const assets = ['one', 'two'].map((assetId, sortOrder) => ({ assetId, sortOrder, width: 480, height: 640 }));
+  const restore = mockModel([{ moments: [], layouts: [], palette: { background: '#10182e', surface: '#1a2740', text: '#ffffff', accent: '#437dbd' }, typography: { display: 'Cormorant Garamond', body: 'Outfit' } }], []);
+  try {
+    const board = await directV3Pinboard({ title: 'Birthday portraits', clientName: 'Lora', assets }, assets.map(asset => ({ assetId: asset.assetId, colors: ['#b95732', '#b95732'], momentTags: [] })));
+    const red = parseInt(board.palette.accent.slice(1, 3), 16);
+    const blue = parseInt(board.palette.accent.slice(5, 7), 16);
+    assert.ok(red > blue);
+    assert.ok(contrastRatio(board.palette.background, board.palette.text) >= 4.5);
+  } finally { restore(); }
+});
+
 test('palette repicking retries the current palette and keeps both text contrasts readable', async () => {
   const calls = [];
   const restore = mockModel([
@@ -75,6 +99,17 @@ test('palette repicking retries the current palette and keeps both text contrast
     assert.deepEqual(palette, { background: '#101820', surface: '#26333a', text: '#fffaf6', accent: '#e7a96c' });
     assert.equal(calls.length, 2);
     assert.equal(calls[0].model, 'deepseek-v4.1-flash');
+    assert.ok(contrastRatio(palette.background, palette.text) >= 4.5);
+    assert.ok(contrastRatio(palette.surface, palette.text) >= 4.5);
+  } finally { restore(); }
+});
+
+test('GridBoard repick stays with dominant colours when model suggestions drift away', async () => {
+  const unrelated = { palette: { background: '#101a32', surface: '#202c46', text: '#ffffff', accent: '#4387cc' } };
+  const restore = mockModel([unrelated, unrelated], []);
+  try {
+    const palette = await repickV3Palette({ format: 'pinboard', brief: '', shootType: '', imageColors: [{ colors: ['#b95732', '#b95732'] }, { colors: ['#bb5b35'] }], currentPalette: calmGridboardPalette([{ colors: ['#b95732'] }]) });
+    assert.ok(parseInt(palette.accent.slice(1, 3), 16) > parseInt(palette.accent.slice(5, 7), 16));
     assert.ok(contrastRatio(palette.background, palette.text) >= 4.5);
     assert.ok(contrastRatio(palette.surface, palette.text) >= 4.5);
   } finally { restore(); }

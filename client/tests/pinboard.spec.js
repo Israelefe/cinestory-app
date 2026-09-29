@@ -68,11 +68,12 @@ test('published GridBoard shows every photo, moment navigation, and fits phone, 
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: {} }) });
     });
     await page.goto('/d/pinboard-public');
-    await expect(page.getByRole('heading', { name: 'The complete gallery' })).toBeVisible();
-    await expect(page.locator('.pb-tile')).toHaveCount(16);
-    await expect(page.locator('.v-phone-device')).toHaveCount(0);
-    await expect(page.locator('.pb-board-column')).toHaveCount(width === 320 ? 2 : width === 834 ? 3 : 4);
-    await expect(page.getByRole('navigation', { name: 'Find a moment' })).toBeVisible();
+    const client = width > 1024 ? page.frameLocator('.v-phone-screen iframe') : page;
+    await expect(client.getByRole('heading', { name: 'The complete gallery' })).toBeVisible();
+    await expect(client.locator('.pb-tile')).toHaveCount(16);
+    await expect(page.locator('.v-phone-device')).toHaveCount(width > 1024 ? 1 : 0);
+    await expect(client.locator('.pb-board-column')).toHaveCount(width === 834 ? 3 : 2);
+    await expect(client.getByRole('navigation', { name: 'Find a moment' })).toBeVisible();
     if (width === 320) {
       await page.evaluate(() => {
         const opened = [];
@@ -80,22 +81,25 @@ test('published GridBoard shows every photo, moment navigation, and fits phone, 
         window.open = url => { opened.push(url); return null; };
         sessionStorage.setItem('veylo_delivery_grant_pinboard-public', 'grant_token_012345678901234567890123456789');
       });
-      await page.getByRole('button', { name: 'Share this photo on WhatsApp' }).first().click();
+      await page.getByRole('button', { name: 'Open photograph 1', exact: true }).click();
+      await page.getByRole('button', { name: 'Share on WhatsApp' }).click();
       const target = new URL(await page.evaluate(() => new URL(window.__pinboardOpenedLinks[0]).searchParams.get('text').split('\n').at(-1)));
       expect(target.searchParams.get('share')).toBe('grant_token_012345678901234567890123456789');
       expect(target.searchParams.get('photo')).toBe('photo-1');
     }
-    await page.locator('.pb-moment-chip-wrap > button:first-of-type').click();
-    await expect(page.locator('.pb-tile')).toHaveCount(8);
+    if (width === 320) await page.getByRole('button', { name: 'Close photograph' }).click();
+    await client.locator('.pb-moment-chip-wrap > button:first-of-type').click();
+    await expect(client.locator('.pb-tile')).toHaveCount(8);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   }
 });
 
-test('GridBoard demo opens as a full desktop board', async ({ page }) => {
+test('GridBoard demo opens in the shared desktop phone mockup', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/demo/gridboard');
-  await expect(page.getByRole('heading', { name: 'The day, from every angle' })).toBeVisible();
-  await expect(page.locator('.pb-tile')).toHaveCount(16);
-  await expect(page.locator('.v-phone-device')).toHaveCount(0);
-  expect(await page.locator('.pb-board').evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThan(900);
+  const client = page.frameLocator('.v-phone-screen iframe');
+  await expect(client.getByRole('heading', { name: "Lora's 25th birthday" })).toBeVisible();
+  await expect(client.locator('.pb-tile')).toHaveCount(6);
+  await expect(page.locator('.v-phone-device')).toHaveCount(1);
+  expect(await client.locator('.pb-board').evaluate(element => element.getBoundingClientRect().width)).toBeLessThan(380);
 });

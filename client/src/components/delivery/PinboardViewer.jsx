@@ -56,7 +56,7 @@ export default function PinboardViewer({ delivery, preview = false, galleryProps
   const visible = activeMoment ? ordered.filter(asset => moments.find(moment => moment.id === activeMoment)?.assetIds?.includes(asset.assetId)) : ordered;
   const palette = board.palette || {};
   const typography = board.typography || {};
-  const fonts = { display: typography.display || 'Playfair Display', body: typography.body || 'Outfit' };
+  const fonts = { display: typography.display || 'Cormorant Garamond', body: typography.body || 'Outfit' };
   const grid = board.grid || {};
   const columnCount = Math.max(1, Math.min(5, Number(viewportWidth <= 640 ? grid.mobileColumns || 2 : viewportWidth <= 1024 ? grid.tabletColumns || 3 : grid.desktopColumns || 4)));
   const masonryColumns = Array.from({ length: columnCount }, () => []);
@@ -69,16 +69,16 @@ export default function PinboardViewer({ delivery, preview = false, galleryProps
     columnHeights[shortest] += height / width + 0.07;
   });
   const style = {
-    '--pb-background': palette.background || '#f8f5f0',
-    '--pb-surface': palette.surface || '#fffdf9',
-    '--pb-text': palette.text || '#201b18',
-    '--pb-accent': palette.accent || '#a14f3c',
-    '--pb-on-accent': accentInk(palette.accent || '#a14f3c'),
+    '--pb-background': palette.background || '#13110f',
+    '--pb-surface': palette.surface || '#211b18',
+    '--pb-text': palette.text || '#fff6ec',
+    '--pb-accent': palette.accent || '#efa57c',
+    '--pb-on-accent': accentInk(palette.accent || '#efa57c'),
     '--pb-display': `'${fonts.display}', Georgia, serif`,
     '--pb-body': `'${fonts.body}', Arial, sans-serif`,
     '--pb-gap': grid.gap === 'compact' ? '8px' : grid.gap === 'spacious' ? '22px' : '14px',
     '--pb-active-columns': columnCount,
-    '--pb-animation': board.animation === 'none' ? 'none' : board.animation === 'staggered' ? 'pb-arrive .48s both' : 'pb-arrive .34s both'
+    '--pb-animation': board.animation === 'none' ? 'none' : board.animation === 'staggered' ? 'pb-arrive .62s cubic-bezier(.16, 1, .3, 1) both' : 'pb-arrive .48s ease-out both'
   };
 
   useEffect(() => {
@@ -155,20 +155,20 @@ export default function PinboardViewer({ delivery, preview = false, galleryProps
   return <main className={'pb-viewer' + (preview ? ' is-preview' : '')} style={style}>
     <div className="pb-wrap">
       <header className="pb-header">
-        <div className="pb-brand"><span className="pb-brand-mark">{delivery?.branding?.logoUrl ? <img src={delivery.branding.logoUrl} alt="" /> : <Image size={18} />}</span><span>{delivery?.branding?.name || 'Veylo'}<small>PHOTO GALLERY</small></span></div>
-        {!preview && <div className="pb-header-actions">{delivery.access?.allowDownloadAll && !delivery.access?.downloadsLocked && <button type="button" onClick={() => galleryProps.onDownloadAll?.()}><ArrowDownToLine size={17} /> Download all</button>}{canDownload && <button type="button" className="pb-status-open" onClick={() => { setStatusSelection([]); setStatusPage(0); setStatusOpen(true); }}><MessageCircle size={17} /> Make a Status card</button>}</div>}
+        <div className="pb-brand"><span className="pb-brand-mark">{delivery?.branding?.logoUrl ? <img src={delivery.branding.logoUrl} alt="" /> : <Image size={18} />}</span><span>{delivery?.branding?.name || 'Veylo'}<small>GRIDBOARD</small></span></div>
+        {!preview && <div className="pb-header-actions">{delivery.access?.allowDownloadAll && !delivery.access?.downloadsLocked && <button type="button" aria-label="Download all photos" onClick={() => galleryProps.onDownloadAll?.()}><ArrowDownToLine size={17} /> Download all</button>}{canDownload && <button type="button" aria-label="Make a WhatsApp Status card" className="pb-status-open" onClick={() => { setStatusSelection([]); setStatusPage(0); setStatusOpen(true); }}><MessageCircle size={17} /> Make a Status card</button>}</div>}
       </header>
       <section className="pb-intro">
         <span className="pb-kicker">GRIDBOARD DELIVERY</span>
         <h1>{board.title || delivery?.title || `${delivery?.clientName || 'Your'}'s photographs`}</h1>
-        <p>{preview ? 'All the photographs from this shoot, ready to explore.' : `Made for ${delivery?.clientName || 'you'}. Explore the whole set or find a moment below.`}</p>
+        <p>{board.description || (preview ? 'Every finished photograph from this shoot.' : `Made for ${delivery?.clientName || 'you'}. Explore the whole set or find a moment below.`)}</p>
         <div className="pb-intro-meta"><span>{assets.length} photographs</span><i aria-hidden="true" />{!preview && <span>{delivery?.viewer?.label || 'Private gallery'}</span>}</div>
       </section>
       {!!moments.length && <nav className="pb-moments" aria-label="Find a moment">
         <div className="pb-moments-head"><span>FIND A MOMENT</span>{activeMoment && <button type="button" onClick={() => setActiveMoment('')}>Show all photos</button>}</div>
-        <div className="pb-moment-list">{moments.map(moment => {
+        <div className="pb-moment-list">{moments.map((moment, momentIndex) => {
           const cover = moment.assetIds.map(id => assetById.get(String(id))).find(Boolean);
-          return <div className={'pb-moment-chip-wrap' + (activeMoment === moment.id ? ' is-active' : '')} id={`pb-moment-${moment.id}`} key={moment.id}>
+          return <div className={'pb-moment-chip-wrap' + (activeMoment === moment.id ? ' is-active' : '')} id={`pb-moment-${moment.id}`} key={moment.id} style={{ animationDelay: `${Math.min(momentIndex * 65, 390)}ms` }}>
             {cover && <img src={photoUrl(cover)} alt="" loading="lazy" />}
             <button type="button" aria-pressed={activeMoment === moment.id} onClick={() => setActiveMoment(current => current === moment.id ? '' : moment.id)}><strong>{moment.title}</strong><span>{moment.assetIds.filter(id => assetById.has(String(id))).length} photos</span></button>
             {!preview && <button type="button" className="pb-chip-share" aria-label={`Share ${moment.title} on WhatsApp`} onClick={() => openWhatsApp('moment', moment.id, `${moment.title} · ${delivery?.title || 'Photo gallery'}`)}><MessageCircle size={15} /></button>}
@@ -176,8 +176,8 @@ export default function PinboardViewer({ delivery, preview = false, galleryProps
         })}</div>
       </nav>}
       <div className="pb-board-top"><span>{activeMoment ? moments.find(moment => moment.id === activeMoment)?.title : 'All photos'}</span><span>{visible.length} PHOTOS</span></div>
-      <section className="pb-board" aria-label="Photographs">
-        {masonryColumns.map((column, columnIndex) => <div className="pb-board-column" key={columnIndex}>{column.map(({ asset, index, ratio }) => <article className="pb-tile" id={`pb-photo-${asset.assetId}`} key={asset.assetId} style={{ '--pb-tile-ratio': ratio, animationDelay: board.animation === 'staggered' ? `${Math.min(index * 35, 520)}ms` : '0ms' }}>
+      <section className="pb-board" key={activeMoment || 'all'} aria-label="Photographs" aria-live="polite">
+        {masonryColumns.map((column, columnIndex) => <div className="pb-board-column" key={columnIndex}>{column.map(({ asset, index, ratio }) => <article className="pb-tile" id={`pb-photo-${asset.assetId}`} key={asset.assetId} style={{ '--pb-tile-ratio': ratio, '--pb-animation': index < 12 ? undefined : 'none', animationDelay: board.animation === 'staggered' ? `${Math.min(index * 65, 650)}ms` : '0ms' }}>
           <button type="button" className="pb-tile-open" onClick={() => setActivePhoto(asset.assetId)} aria-label={`Open photograph ${index + 1}`}><img loading={index < 6 ? 'eager' : 'lazy'} src={photoUrl(asset)} alt={asset.alt || `Finished photograph ${index + 1}`} /><span className="pb-tile-view">View photo</span></button>
           {!preview && <div className="pb-tile-tools"><button type="button" onClick={() => openWhatsApp('photo', asset.assetId, `${delivery?.title || 'Photo gallery'} · Photograph ${index + 1}`)} aria-label="Share this photo on WhatsApp"><MessageCircle size={16} /></button>{canDownload && <button type="button" onClick={() => galleryProps.onDownload?.(asset.assetId, index)} aria-label="Download this photo"><Download size={16} /></button>}</div>}
         </article>)}</div>)}
