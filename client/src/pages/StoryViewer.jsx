@@ -323,6 +323,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
         url: asset.url, // Original photographer upload quality preserved
         thumbnailUrl: asset.thumbnailUrl || asset.url,
         srcSet: asset.srcSet,
+        dominantColor: asset.dominantColor,
         originalFilename: asset.originalFilename,
         caption: frame.caption || frame.headline || '',
         chapterTitle: frame.headline || '',

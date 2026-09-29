@@ -1080,6 +1080,8 @@ async function publicPayload(delivery, grant = null) {
     : null;
   object.assets = visibleDeliveryAssets.map(asset => {
     const safe = ownerAsset(asset, watermarkText);
+    const dominantColor = asset.analysis?.colors?.[0];
+    if (typeof dominantColor === 'string' && /^#[0-9a-f]{6}$/i.test(dominantColor)) safe.dominantColor = dominantColor;
     delete safe.analysis;
     return safe;
   });

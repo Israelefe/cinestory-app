@@ -63,7 +63,7 @@ test('new delivery offers Showcase and GridBoard, then opens GridBoard details a
 });
 
 test('published GridBoard shows every photo, moment navigation, and fits phone, tablet, and desktop widths', async ({ page }) => {
-  const assets = Array.from({ length: 16 }, (_, index) => ({ assetId: `photo-${index + 1}`, sortOrder: index, url: '/veylo/demo/event/event-01-arrivals.webp', thumbnailUrl: '/veylo/demo/event/event-01-arrivals.webp', width: index % 2 ? 1600 : 1000, height: index % 2 ? 1000 : 1600 }));
+  const assets = Array.from({ length: 16 }, (_, index) => ({ assetId: `photo-${index + 1}`, sortOrder: index, url: '/veylo/demo/event/event-01-arrivals.webp', thumbnailUrl: '/veylo/demo/event/event-01-arrivals.webp', width: index % 2 ? 1600 : 1000, height: index % 2 ? 1000 : 1600, ...(index === 0 ? { dominantColor: '#6b4a32' } : {}) }));
   const delivery = { _id: draftId, publicId: 'pinboard-public', schemaVersion: 3, kind: 'pinboard', status: 'published', clientName: 'Lora Ade', title: 'The complete gallery', assets, access: { allowIndividualDownloads: true, allowDownloadAll: true, downloadsLocked: false }, branding: { type: 'veylo', name: 'Veylo', logoUrl: '' }, pinboard: { ...pinboardDraft().pinboard, title: 'The complete gallery' } };
   for (const width of [320, 834, 1440]) {
     await page.unroute('**/api/v1/**');
@@ -89,6 +89,8 @@ test('published GridBoard shows every photo, moment navigation, and fits phone, 
         sessionStorage.setItem('veylo_delivery_grant_pinboard-public', 'grant_token_012345678901234567890123456789');
       });
       await page.getByRole('button', { name: 'Open photograph 1', exact: true }).click();
+      await expect(page.locator('.pb-lightbox-photo')).toHaveCSS('background-color', 'rgb(107, 74, 50)');
+      expect(await page.locator('.pb-lightbox-photo-ambient').getAttribute('src')).toBe(await page.locator('.pb-lightbox-photo-main').getAttribute('src'));
       await page.getByRole('button', { name: 'Share on WhatsApp' }).click();
       const target = new URL(await page.evaluate(() => new URL(window.__pinboardOpenedLinks[0]).searchParams.get('text').split('\n').at(-1)));
       expect(target.searchParams.get('share')).toBe('grant_token_012345678901234567890123456789');

@@ -153,13 +153,13 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
     const dx = touch.clientX - touchStart.current.x;
     const dy = touch.clientY - touchStart.current.y;
     if (Math.abs(dx) <= Math.abs(dy) || Math.abs(dx) < 8) return;
-    const image = event.currentTarget.querySelector('img');
+    const image = event.currentTarget.querySelector('.pb-lightbox-photo-main');
     if (image) image.style.transform = `translate3d(${Math.max(-120, Math.min(120, dx * .7))}px, 0, 0) scale(.98)`;
   }
 
   function onPhotoTouchEnd(event) {
     if (!touchStart.current) return;
-    const image = event.currentTarget.querySelector('img');
+    const image = event.currentTarget.querySelector('.pb-lightbox-photo-main');
     if (image) image.style.transform = '';
     const touch = event.changedTouches[0];
     const dx = touch.clientX - touchStart.current.x;
@@ -202,6 +202,8 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
 
   const modalAsset = assetById.get(activePhoto);
   const modalIndex = visible.findIndex(asset => asset.assetId === activePhoto);
+  const suggestedTone = modalAsset?.dominantColor || modalAsset?.analysis?.colors?.[0];
+  const modalTone = typeof suggestedTone === 'string' && /^#[0-9a-f]{6}$/i.test(suggestedTone) ? suggestedTone : palette.surface || '#211b18';
   const canDownload = !preview && !delivery?.access?.downloadsLocked && (delivery?.access?.allowIndividualDownloads || delivery?.access?.allowDownloadAll);
   function downloadPhoto(asset, index) {
     if (demo) {
@@ -254,7 +256,10 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
       <button type="button" className="pb-lightbox-close" onClick={() => setActivePhoto('')} aria-label="Close photograph"><X size={23} /></button>
       <button type="button" className="pb-lightbox-nav is-left" onClick={() => navigatePhoto(-1)} disabled={modalIndex <= 0} aria-label="Previous photograph"><ChevronLeft size={26} /></button>
       <figure onTouchStart={onPhotoTouchStart} onTouchMove={onPhotoTouchMove} onTouchEnd={onPhotoTouchEnd}>
-        <img key={modalAsset.assetId} className={photoDirection > 0 ? 'is-next' : 'is-previous'} src={photoUrl(modalAsset, true)} alt={modalAsset.alt || 'Finished photograph'} draggable="false" />
+        <div className="pb-lightbox-photo" style={{ backgroundColor: modalTone }}>
+          <img className="pb-lightbox-photo-ambient" src={photoUrl(modalAsset, true)} alt="" aria-hidden="true" draggable="false" />
+          <img key={modalAsset.assetId} className={'pb-lightbox-photo-main ' + (photoDirection > 0 ? 'is-next' : 'is-previous')} src={photoUrl(modalAsset, true)} alt={modalAsset.alt || 'Finished photograph'} draggable="false" />
+        </div>
         <figcaption>Photograph {modalIndex + 1} of {visible.length}{visible.length > 1 && <span className="pb-swipe-hint"> · Swipe to browse</span>}</figcaption>
       </figure>
       <button type="button" className="pb-lightbox-nav is-right" onClick={() => navigatePhoto(1)} disabled={modalIndex >= visible.length - 1} aria-label="Next photograph"><ChevronRight size={26} /></button>

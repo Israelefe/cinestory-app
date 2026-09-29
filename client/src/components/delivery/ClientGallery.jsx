@@ -14,6 +14,7 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
   const reduced = useReducedMotion();
   const panel = useRef(null);
   const [selected, setSelected] = useState(initialIndex);
+  const [swipeDirection, setSwipeDirection] = useState(1);
   useDialogFocus(true, panel, onClose);
 
   const isLocked = Boolean(delivery?.access?.downloadsLocked);
@@ -38,7 +39,21 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
   };
   const activePhoto = selected === null ? null : resolvedPhotos[selected];
   const activeKey = selected === null ? null : photoKey(activePhoto, selected);
+  const activeImageUrl = activePhoto ? imageUrl(activePhoto) : '';
+  const suggestedTone = activePhoto?.dominantColor || activePhoto?.analysis?.colors?.[0];
+  const photoTone = typeof suggestedTone === 'string' && /^#[0-9a-f]{6}$/i.test(suggestedTone) ? suggestedTone : direction.palette?.background || '#08080b';
   const resolvedBusy = busy ?? (allDownloading ? 'all' : downloading === null ? null : photoKey(resolvedPhotos[downloading], downloading));
+
+  function navigatePhoto(step) {
+    if (selected === null) return;
+    const next = Math.max(0, Math.min(resolvedPhotos.length - 1, selected + step));
+    if (next !== selected) { setSwipeDirection(step); setSelected(next); }
+  }
+
+  function finishPhotoSwipe(_, info) {
+    const movement = Math.abs(info.offset.x) > 12 ? info.offset.x : info.velocity.x;
+    if (Math.abs(info.offset.x) > 55 || Math.abs(info.velocity.x) > 450) navigatePhoto(movement < 0 ? 1 : -1);
+  }
 
   useEffect(() => {
     trackEvent('client.gallery.opened', { demo: Boolean(demoId), count: resolvedPhotos.length }, { format: delivery?.format || 'photo-story', status: 'opened', count: resolvedPhotos.length });
@@ -54,12 +69,11 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
     const onKey = event => {
       if (event.key === 'Escape' && selected !== null) { event.preventDefault(); setSelected(null); return; }
       if (selected === null) return;
-      if (event.key === 'ArrowLeft') setSelected(value => Math.max(0, value - 1));
-      if (event.key === 'ArrowRight') setSelected(value => Math.min(photos.length - 1, value + 1));
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); navigatePhoto(event.key === 'ArrowRight' ? 1 : -1); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [photos.length, selected]);
+  }, [resolvedPhotos.length, selected]);
 
   const runDownload = (photo, index) => onDownload?.(photoKey(photo, index), index);
   const runLike = (photo, index) => onLike?.(photoKey(photo, index), index);
@@ -91,14 +105,17 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
           </div></figcaption>
         </motion.figure>;
       })}</div> : <div className="client-gallery-lightbox">
-        <AnimatePresence mode="wait"><motion.img key={activeKey} src={imageUrl(activePhoto)} alt={activePhoto?.alt || activePhoto?.caption || `Photograph ${selected + 1}`} data-frame-motion={activePhoto?.motion || undefined} data-frame-transition={activePhoto?.transition || undefined} initial={reduced ? false : { opacity: 0, scale: .99 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .24 }} /></AnimatePresence>
+        <div className="client-gallery-lightbox-photo" style={{ backgroundColor: photoTone }}>
+          <img className="client-gallery-lightbox-ambient" src={activeImageUrl} alt="" aria-hidden="true" draggable="false" />
+          <AnimatePresence mode="wait"><motion.div className="client-gallery-lightbox-frame" key={activeKey} drag="x" dragConstraints={{ left: 0, right: 0 }} dragElastic={.28} dragMomentum={false} onDragEnd={finishPhotoSwipe} initial={reduced ? false : { opacity: 0, x: swipeDirection * 56, scale: .98 }} animate={{ opacity: 1, x: 0, scale: 1 }} exit={reduced ? { opacity: 0 } : { opacity: 0, x: -swipeDirection * 56, scale: .98 }} transition={{ duration: reduced ? 0 : .27, ease: [.16, 1, .3, 1] }}><img className="client-gallery-lightbox-main" src={activeImageUrl} alt={activePhoto?.alt || activePhoto?.caption || `Photograph ${selected + 1}`} data-frame-motion={activePhoto?.motion || undefined} data-frame-transition={activePhoto?.transition || undefined} draggable="false" /></motion.div></AnimatePresence>
+        </div>
         <p className="client-gallery-lightbox-caption" data-caption-position={activePhoto?.captionPosition || undefined} data-text-background={activePhoto?.textBackground || undefined} data-type-style={activePhoto?.typographyStyle || undefined} style={activePhoto?.colorAccent ? { '--frame-accent': activePhoto.colorAccent } : undefined}>{activePhoto?.caption || ''}</p>
         <div className="client-gallery-lightbox-actions">
-          <button className="client-gallery-icon" type="button" onClick={() => setSelected(value => Math.max(0, value - 1))} disabled={selected === 0} aria-label="Previous photograph"><ChevronLeft size={21} /></button>
+          <button className="client-gallery-icon" type="button" onClick={() => navigatePhoto(-1)} disabled={selected === 0} aria-label="Previous photograph"><ChevronLeft size={21} /></button>
           <button className="client-gallery-back" type="button" onClick={() => setSelected(null)}><ArrowLeft size={16} /><span>All photographs</span></button>
           {allowLikes && <button className={`client-gallery-icon ${liked?.has(activeKey) ? 'is-liked' : ''}`} type="button" onClick={() => runLike(activePhoto, selected)} aria-label={liked?.has(activeKey) ? 'Remove from favourites' : 'Add to favourites'}><Heart size={17} fill={liked?.has(activeKey) ? 'currentColor' : 'none'} /></button>}
           {allowIndividualDownloads && <button className="client-gallery-download-one" type="button" onClick={() => runDownload(activePhoto, selected)} disabled={resolvedBusy === activeKey || resolvedBusy === 'all'}>{resolvedBusy === activeKey ? <LoaderCircle className="client-gallery-spin" size={16} /> : <Download size={16} />}<span>{resolvedBusy === activeKey ? 'Preparing…' : 'Download'}</span></button>}
-          <button className="client-gallery-icon" type="button" onClick={() => setSelected(value => Math.min(photos.length - 1, value + 1))} disabled={selected === photos.length - 1} aria-label="Next photograph"><ChevronRight size={21} /></button>
+          <button className="client-gallery-icon" type="button" onClick={() => navigatePhoto(1)} disabled={selected === photos.length - 1} aria-label="Next photograph"><ChevronRight size={21} /></button>
         </div>
       </div>}
     </motion.section>
