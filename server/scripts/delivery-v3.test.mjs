@@ -394,6 +394,7 @@ test('vision batches grow, shrink at the provider limit, and analyse every photo
     assert.deepEqual(result[0].colorGroups, [{ area: 'outfit', color: 'green' }, { area: 'backdrop', color: 'cream' }]);
     assert.deepEqual(result[0].similarityTags, ['seated pose']);
     assert.equal(result[0].similarAssetIds[0], 'photo-2');
+    assert.ok(!result[0].similarAssetIds.includes('photo-1'), 'a shared outfit colour alone is not a similar shot');
     assert.ok(sizes.some(size => size > 30));
     assert.ok(sizes.some(size => size < 30));
     assert.deepEqual(progress.at(-1), [90, 90]);

@@ -156,8 +156,8 @@ function linkSimilarShots(assets, analyses) {
     source.analysis.similarAssetIds = rows.filter(candidate => candidate.asset.assetId !== source.asset.assetId).map(candidate => {
       const sharedTags = [...tags].filter(tag => tagsFor(candidate.analysis).has(tag)).length;
       const sharedGroups = [...groups].filter(group => groupsFor(candidate.analysis).has(group)).length;
-      return { assetId: candidate.asset.assetId, score: sharedTags * 6 + sharedGroups * 2, sortOrder: Number(candidate.asset.sortOrder || 0) };
-    }).filter(candidate => candidate.score > 0).sort((a, b) => b.score - a.score || a.sortOrder - b.sortOrder).slice(0, 5).map(candidate => candidate.assetId);
+      return { assetId: candidate.asset.assetId, score: sharedTags * 6 + sharedGroups * 2, sharedTags, sortOrder: Number(candidate.asset.sortOrder || 0) };
+    }).filter(candidate => candidate.sharedTags > 0).sort((a, b) => b.score - a.score || a.sortOrder - b.sortOrder).slice(0, 5).map(candidate => candidate.assetId);
   }
   return analyses;
 }

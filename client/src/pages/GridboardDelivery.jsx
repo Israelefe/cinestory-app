@@ -3,7 +3,7 @@ import { ArrowRight, Check, Grid2X2, Image, LayoutTemplate, MessageCircle, Music
 import { Action, Eyebrow, Page, Reveal } from '../components/PublicDesign.jsx';
 import './GridboardDelivery.css';
 
-const photos = ['/photos/romantic_wedding.jpg', '/photos/luxury_editorial.jpg', '/photos/intimate_portrait.jpg', '/photos/graduation_milestone.jpg', '/photos/celebration_energy.jpg'];
+const photos = ['/veylo/web/demo-lora-1-480.webp', '/veylo/web/demo-wedding-1-480.webp', '/veylo/web/demo-sharon-1-480.webp', '/veylo/web/demo-ada-1-480.webp', '/veylo/web/audience-portrait-480.webp'];
 const features = [
   { icon: LayoutTemplate, label: 'AI-proposed arrangements', title: 'Choose the reading order.', copy: 'Veylo studies image shape, colour, and visual groupings to suggest three masonry layouts. You choose the starting arrangement for the client.' },
   { icon: Search, label: 'Find a moment', title: 'Go straight to a group.', copy: 'Clients can open useful groups such as portraits, details, or people together, then jump to those photographs in the board.' },

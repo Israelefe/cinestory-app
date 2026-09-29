@@ -42,11 +42,7 @@ const TILE_RATIOS = {
   'colour-flow': ['1 / 1', '4 / 5', '3 / 4', '1 / 1', '5 / 4', '4 / 5', '3 / 4', '1 / 1']
 };
 const BROAD_VISUAL_TAGS = new Set(['portrait', 'portraits', 'clothing', 'details', 'birthday details', 'couple', 'traditional wedding']);
-const LAYOUT_HELP = {
-  balanced: 'Alternates portrait and landscape photos where possible. Every photo stays in the gallery.',
-  moments: 'Places photos with the same visible subject or setting near each other. Every photo stays in the gallery.',
-  'colour-flow': 'Orders photos by their dominant colours. Every photo stays in the gallery.'
-};
+const LAYOUT_LABELS = { balanced: 'Even spread', moments: 'Scenes', 'colour-flow': 'Colour order' };
 
 function tileRatio(asset, index, layoutId) {
   const requested = (TILE_RATIOS[layoutId] || TILE_RATIOS.balanced)[index % 8];
@@ -262,8 +258,8 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
       const sharedTags = assetSimilarityTags(asset).filter(tag => targetTags.has(String(tag).toLowerCase().trim())).length;
       const sharedColorGroups = assetColorGroups(asset).filter(group => targetColorGroups.has(colorGroupKey(group))).length;
       const score = sharedTags * 6 + sharedColorGroups * 2;
-      return { asset, score };
-    }).filter(item => item.score > 0).sort((a, b) => b.score - a.score).slice(0, 5).map(item => item.asset);
+      return { asset, score, sharedTags };
+    }).filter(item => item.sharedTags > 0).sort((a, b) => b.score - a.score).slice(0, 5).map(item => item.asset);
   }
 
   function showRelatedPhoto(asset) {
@@ -384,11 +380,6 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   const statusPageSize = 18;
   const statusPageCount = Math.ceil(assets.length / statusPageSize);
   const statusPageAssets = assets.slice(statusPage * statusPageSize, (statusPage + 1) * statusPageSize);
-  const layoutHelp = demo
-    ? selectedLayout?.description
-    : board.analysisStatus === 'standard'
-      ? selectedLayout?.description || LAYOUT_HELP[activeLayoutId]
-      : LAYOUT_HELP[activeLayoutId] || selectedLayout?.description;
   const currentSelectionDescription = activeMoment
     ? ` · ${moments.find(moment => moment.id === activeMoment)?.title || 'selected moment'}`
     : selectedColourGroup ? ` · ${colorGroupLabel(selectedColourGroup)}` : '';
@@ -419,12 +410,11 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
         </section>}
         {!!colourGroups.length && <section className="pb-colour-tools" aria-label="Find photos by outfit or background colour">
           <div className="pb-moments-head"><span>OUTFITS AND BACKGROUNDS</span>{(activeMoment || activeColour) && !moments.length && <button type="button" onClick={() => { setActiveMoment(''); setActiveColour(''); }}>Show all photos</button>}</div>
-          <p className="pb-colour-helper">Choose a visible outfit or backdrop colour to find photos with the same look.</p>
-          <div className="pb-colour-list">{colourGroups.map(group => <button key={group.key} type="button" className={activeColour === group.key ? 'is-active' : ''} onClick={() => { setActiveColour(current => current === group.key ? '' : group.key); setActiveMoment(''); }} aria-pressed={activeColour === group.key} aria-label={`Show ${group.assetIds.length} photos with ${colorGroupLabel(group).toLowerCase()}`}><span className="pb-colour-kind">{group.area === 'outfit' ? <Shirt size={15} /> : <Image size={15} />}</span><strong>{colorGroupLabel(group)}</strong><span className="pb-colour-count">{group.assetIds.length}</span></button>)}</div>
+          <div className="pb-colour-list">{colourGroups.map(group => <button key={group.key} type="button" className={activeColour === group.key ? 'is-active' : ''} onClick={() => { setActiveColour(current => current === group.key ? '' : group.key); setActiveMoment(''); }} aria-pressed={activeColour === group.key} aria-label={`Show ${group.assetIds.length} photos with ${colorGroupLabel(group).toLowerCase()}`}><span className="pb-colour-kind">{group.area === 'outfit' ? <Shirt size={13} /> : <Image size={13} />}</span><strong>{colorGroupLabel(group)}</strong><span className="pb-colour-count">{group.assetIds.length}</span></button>)}</div>
         </section>}
       </nav>}
       <div className="pb-board-top"><div><span>{activeMoment ? moments.find(moment => moment.id === activeMoment)?.title : selectedColourGroup ? colorGroupLabel(selectedColourGroup) : 'All photos'}</span><span>{visible.length} PHOTOS</span></div><div className="pb-board-controls">
-        {layoutSwitchEnabled && (board.layouts || []).length > 1 && <label className="pb-layout-select"><span className="pb-layout-select-title"><LayoutGrid size={15} />Change layout</span><select value={activeLayoutId} onChange={event => setActiveLayoutId(event.target.value)} aria-label="Choose how the same photographs are arranged">{board.layouts.map(layout => <option key={layout.id} value={layout.id}>{layout.title}</option>)}</select><small>{layoutHelp || 'The same photographs, arranged another way.'}</small></label>}
+        {layoutSwitchEnabled && (board.layouts || []).length > 1 && <label className="pb-layout-select" title="Rearrange the same photographs"><LayoutGrid size={15} /><span className="pb-sr-only">Layout</span><select value={activeLayoutId} onChange={event => setActiveLayoutId(event.target.value)} aria-label="Rearrange the same photographs">{board.layouts.map(layout => <option key={layout.id} value={layout.id}>{LAYOUT_LABELS[layout.id] || layout.title}</option>)}</select></label>}
         <button type="button" onClick={() => setShowSlideshowSetup(true)} aria-haspopup="dialog"><Play size={15} /> Slideshow</button>
         {soundtrackUrl && <button type="button" onClick={() => void toggleMusic()} aria-pressed={musicPlaying}>{musicPlaying ? <Pause size={15} /> : <Music2 size={15} />}{musicPlaying ? 'Pause music' : 'Play music'}</button>}
       </div></div>
@@ -446,7 +436,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
           <img key={modalAsset.assetId} className={'pb-lightbox-photo-main ' + (photoDirection > 0 ? 'is-next' : 'is-previous')} src={photoUrl(modalAsset, true)} alt={modalAsset.alt || 'Finished photograph'} draggable="false" />
         </div>
         <figcaption>Photograph {modalIndex + 1} of {visible.length}{visible.length > 1 && <span className="pb-swipe-hint"> · Swipe to browse</span>}</figcaption>
-        {!!similarShots.length && <aside className="pb-similar-shot"><strong>Similar Shot</strong><small>Photos with a similar pose, framing, outfit, or backdrop.</small><div>{similarShots.map(asset => <button type="button" key={asset.assetId} onClick={() => showRelatedPhoto(asset)} aria-label={`Open a similar shot: ${asset.alt || 'photo'}`}><img src={photoUrl(asset)} alt="" loading="lazy" /></button>)}</div></aside>}
+        {!!similarShots.length && <aside className="pb-similar-shot"><strong>Similar Shot</strong><div>{similarShots.map(asset => <button type="button" key={asset.assetId} onClick={() => showRelatedPhoto(asset)} aria-label={`Open a similar shot: ${asset.alt || 'photo'}`}><img src={photoUrl(asset)} alt="" loading="lazy" /></button>)}</div></aside>}
       </figure>
       <button type="button" className="pb-lightbox-nav is-right" onClick={() => navigatePhoto(1)} disabled={modalIndex >= visible.length - 1} aria-label="Next photograph"><ChevronRight size={26} /></button>
       <div className="pb-lightbox-actions">{!preview && <button type="button" onClick={() => openWhatsApp('photo', modalAsset.assetId, delivery?.title || 'Photo gallery')}><MessageCircle size={17} /> Share on WhatsApp</button>}{canDownload && <button type="button" onClick={() => downloadPhoto(modalAsset, modalIndex)}><Download size={17} /> Download photo</button>}</div>

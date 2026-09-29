@@ -7,7 +7,7 @@ import './PhonePresentation.css';
 const DESKTOP_QUERY = '(min-width: 1025px)';
 const PREVIEW_READY = 'veylo:phone-preview-ready';
 const PREVIEW_DATA = 'veylo:phone-preview-data';
-const PHONE_FRAME_WIDTH = 404;
+const PHONE_FRAME_WIDTH = 444;
 const PHONE_FRAME_HEIGHT = 851;
 
 export function useDesktopPhoneMode() {
@@ -49,7 +49,8 @@ export function DesktopPhoneFrame({ src, title, message, device = true }) {
       const top = Math.max(0, element.getBoundingClientRect().top);
       const bottomSpace = element.closest('.v3-create') ? 24 : 64;
       const availableHeight = Math.max(1, window.innerHeight - top - bottomSpace);
-      const nextScale = Math.min(.94, availableHeight / PHONE_FRAME_HEIGHT);
+      const availableWidth = Math.max(1, (element.parentElement?.getBoundingClientRect().width || window.innerWidth) - 32);
+      const nextScale = Math.min(.94, availableHeight / PHONE_FRAME_HEIGHT, availableWidth / PHONE_FRAME_WIDTH);
       setPhoneScale(current => Math.abs(current - nextScale) < .002 ? current : nextScale);
     };
     updateScale();
@@ -89,7 +90,7 @@ export function DesktopPhoneFrame({ src, title, message, device = true }) {
         <div className="v-phone-screen"><iframe ref={frame} src={src} title={title} allow="autoplay; clipboard-read; clipboard-write; fullscreen; web-share" /></div>
       </div>
     </section>
-    <p className="v-phone-caption"><strong>Mobile client view</strong><span>380 × 800 px</span></p>
+    <p className="v-phone-caption"><strong>Mobile client view</strong><span>420 × 800 px</span></p>
   </main>;
 }
 

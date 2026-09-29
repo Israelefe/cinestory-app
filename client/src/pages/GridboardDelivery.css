@@ -21,10 +21,10 @@
 .v-gb-mosaic-caption i { color: #9c8b7e; font-style: normal; }
 .v-gb-colour-note { position: absolute; right: -1px; bottom: 0; min-height: 67px; padding: 10px 14px; display: flex; align-items: center; gap: 12px; border: 1px solid #ffffff24; border-radius: 10px; background: #111114ed; box-shadow: 0 15px 45px #0006; }
 .v-gb-colour-note>span { display: flex; gap: 5px; }
-.v-gb-colour-note i { width: 20px; height: 20px; border: 1px solid #ffffff48; border-radius: 50%; background: #eadcc4; }
-.v-gb-colour-note i:nth-child(2) { background: #2e2c2a; }
-.v-gb-colour-note i:nth-child(3) { background: #85bdd7; }
-.v-gb-colour-note i:nth-child(4) { background: #1d5544; }
+.v-gb-colour-note i { width: 20px; height: 20px; border: 1px solid #ffffff48; border-radius: 50%; background: #bf562a; }
+.v-gb-colour-note i:nth-child(2) { background: #b78d5c; }
+.v-gb-colour-note i:nth-child(3) { background: #173b70; }
+.v-gb-colour-note i:nth-child(4) { background: #0d4936; }
 .v-gb-colour-note small { color: #e5dcd5; font-size: 8px; font-weight: 700; letter-spacing: .14em; }
 .v-gb-overview { padding: clamp(74px, 10vw, 130px) 0; border-top: 1px solid #ffffff12; background: radial-gradient(ellipse at 80% 10%, #a34f3e10, transparent 35%), #0d0d10; }
 .v-gb-section-heading { max-width: 790px; margin: 0 0 46px; }

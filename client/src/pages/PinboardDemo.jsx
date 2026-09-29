@@ -2,14 +2,14 @@ import React from 'react';
 import PinboardViewer from '../components/delivery/PinboardViewer.jsx';
 
 const photos = [
-  { alt: 'A couple in wedding attire beside tall windows', path: '/photos/romantic_wedding.jpg', colors: ['#d7c8b4', '#263e58', '#4c654b'], tags: ['couple portrait', 'wedding'], similarityTags: ['formal couple portrait', 'window-lit setting', 'white bridal outfit'], colorGroups: [{ area: 'outfit', color: 'cream' }] },
-  { alt: 'A portrait in a green editorial outfit', path: '/photos/luxury_editorial.jpg', colors: ['#1d5544', '#2e2c2a', '#a18a53'], tags: ['studio portrait', 'green outfit', 'editorial'], similarityTags: ['seated half-length portrait', 'dark studio backdrop', 'green tailored outfit'], colorGroups: [{ area: 'outfit', color: 'green' }, { area: 'backdrop', color: 'charcoal' }] },
-  { alt: 'A close portrait in a cream knit top', path: '/photos/intimate_portrait.jpg', colors: ['#e8d9c0', '#a8a097', '#594235'], tags: ['studio portrait', 'cream outfit'], similarityTags: ['seated half-length portrait', 'neutral studio backdrop', 'cream knit outfit'], colorGroups: [{ area: 'outfit', color: 'cream' }] },
-  { alt: 'A milestone portrait in a gold-toned dress', path: '/photos/hero_milestone.jpg', colors: ['#d8c7a0', '#221d1b', '#a8875c'], tags: ['studio portrait', 'milestone', 'cream outfit'], similarityTags: ['half-length portrait', 'dark studio backdrop', 'cream satin outfit'], colorGroups: [{ area: 'outfit', color: 'cream' }, { area: 'backdrop', color: 'charcoal' }] },
-  { alt: 'A graduate in a black gown against a blue backdrop', path: '/photos/graduation_milestone.jpg', colors: ['#151515', '#a8b6c8', '#ddc8a5'], tags: ['graduation', 'black gown'], similarityTags: ['seated full-length portrait', 'blue studio backdrop', 'black graduation gown'], colorGroups: [{ area: 'outfit', color: 'black' }, { area: 'backdrop', color: 'blue' }] },
-  { alt: 'A fashion portrait in a white top and blue denim', path: '/photos/fashion_studio.jpg', colors: ['#c4e3f0', '#4f90bf', '#f4f1e9'], tags: ['studio portrait', 'fashion', 'white outfit'], similarityTags: ['full-length fashion pose', 'blue studio backdrop', 'cream top'], colorGroups: [{ area: 'outfit', color: 'cream' }, { area: 'backdrop', color: 'blue' }] },
-  { alt: 'A black-and-white editorial portrait with a camera', path: '/photos/editorial_bnw.jpg', colors: ['#111111', '#ececec', '#757575'], tags: ['editorial portrait', 'black outfit', 'monochrome'], similarityTags: ['close-up portrait', 'black-and-white styling', 'holding a camera'], colorGroups: [{ area: 'outfit', color: 'black' }] },
-  { alt: 'An outdoor celebration portrait in an orange jacket', path: '/photos/celebration_energy.jpg', colors: ['#e58a37', '#a7d6e9', '#9a7a51'], tags: ['outdoor portrait', 'celebration', 'orange outfit'], similarityTags: ['outdoor full-length pose', 'blue sky backdrop', 'orange jacket'], colorGroups: [{ area: 'outfit', color: 'orange' }, { area: 'backdrop', color: 'blue' }] }
+  { alt: 'A birthday portrait with a green dress and cake', name: 'demo-lora-1', colors: ['#bf562a', '#114639', '#eee0c8'], tags: ['birthday portrait', 'cake'], similarityTags: ['orange studio backdrop', 'green off-shoulder dress', 'birthday studio portrait'], colorGroups: [{ area: 'outfit', color: 'green' }, { area: 'backdrop', color: 'orange' }] },
+  { alt: 'A birthday portrait in the same green dress', name: 'demo-lora-4', colors: ['#b64f2a', '#104537', '#a16c53'], tags: ['birthday portrait', 'studio portrait'], similarityTags: ['orange studio backdrop', 'green off-shoulder dress', 'birthday studio portrait'], colorGroups: [{ area: 'outfit', color: 'green' }, { area: 'backdrop', color: 'orange' }] },
+  { alt: 'An editorial portrait in a green jacket', name: 'demo-ada-1', colors: ['#4a2030', '#0d4936', '#aa8068'], tags: ['fashion portrait', 'studio portrait'], similarityTags: ['plum studio backdrop', 'green tailored jacket', 'three-quarter fashion portrait'], colorGroups: [{ area: 'outfit', color: 'green' }, { area: 'backdrop', color: 'plum' }] },
+  { alt: 'A fashion portrait in white against a blue backdrop', name: 'demo-sharon-1', colors: ['#173b70', '#f0eae0', '#1f2131'], tags: ['fashion portrait', 'studio portrait'], similarityTags: ['blue studio backdrop', 'half-length fashion portrait', 'tailored suit'], colorGroups: [{ area: 'outfit', color: 'cream' }, { area: 'backdrop', color: 'blue' }] },
+  { alt: 'A portrait in a yellow suit against a blue backdrop', name: 'audience-portrait', colors: ['#142d58', '#d49b2e', '#c18b75'], tags: ['fashion portrait', 'studio portrait'], similarityTags: ['blue studio backdrop', 'half-length fashion portrait', 'tailored suit'], colorGroups: [{ area: 'outfit', color: 'yellow' }, { area: 'backdrop', color: 'blue' }] },
+  { alt: 'A couple in gold traditional wedding attire indoors', name: 'demo-wedding-1', colors: ['#b78d5c', '#e8dfcf', '#756048'], tags: ['traditional wedding', 'couple portrait'], similarityTags: ['traditional wedding couple', 'gold traditional outfits', 'seated couple portrait'], colorGroups: [{ area: 'outfit', color: 'gold' }, { area: 'backdrop', color: 'cream' }] },
+  { alt: 'The couple in gold traditional wedding attire outdoors', name: 'demo-wedding-3', colors: ['#a7814e', '#719064', '#e7dbc4'], tags: ['traditional wedding', 'couple portrait'], similarityTags: ['traditional wedding couple', 'gold traditional outfits', 'seated couple portrait'], colorGroups: [{ area: 'outfit', color: 'gold' }, { area: 'backdrop', color: 'green' }] },
+  { alt: 'A black-and-white portrait with an instant camera', name: 'commercial', colors: ['#161616', '#e6e6e6', '#888888'], tags: ['fashion portrait', 'commercial'], similarityTags: ['black-and-white close-up', 'holding a camera', 'tailored jacket'], colorGroups: [{ area: 'outfit', color: 'black' }, { area: 'backdrop', color: 'grey' }] }
 ];
 const assets = photos.map((photo, index) => ({
   assetId: `gridboard-demo-${index + 1}`,
@@ -20,8 +20,8 @@ const assets = photos.map((photo, index) => ({
   visualTags: photo.tags,
   similarityTags: photo.similarityTags,
   colorGroups: photo.colorGroups,
-  thumbnailUrl: photo.path,
-  url: photo.path,
+  thumbnailUrl: `/veylo/web/${photo.name}-480.webp`,
+  url: `/veylo/web/${photo.name}-1440.webp`,
   width: 480,
   height: 640
 }));
@@ -40,12 +40,14 @@ const demoDelivery = {
     selectedLayoutId: 'balanced',
     allowClientLayouts: true,
     layouts: [
-      { id: 'balanced', title: 'Even spread', description: 'Moves between portraits, celebrations, and close details.', assetOrder: [ids[0], ids[2], ids[4], ids[1], ids[5], ids[7], ids[3], ids[6]] },
-      { id: 'colour-flow', title: 'Colour-led order', description: 'Keeps similar outfit and background colours near each other.', assetOrder: [ids[1], ids[3], ids[2], ids[0], ids[4], ids[5], ids[7], ids[6]] }
+      { id: 'balanced', title: 'Even spread', description: 'Mixes portraits and celebrations throughout the board.', assetOrder: [ids[0], ids[5], ids[3], ids[1], ids[6], ids[4], ids[2], ids[7]] },
+      { id: 'moments', title: 'Scenes together', description: 'Keeps photographs from the same shoot together.', assetOrder: ids },
+      { id: 'colour-flow', title: 'Colour-led order', description: 'Places similar photo colours near each other.', assetOrder: [ids[5], ids[6], ids[0], ids[1], ids[2], ids[3], ids[4], ids[7]] }
     ],
     moments: [
-      { id: 'portraits', title: 'Studio portraits', assetIds: [ids[1], ids[2], ids[3], ids[5], ids[6]] },
-      { id: 'celebrations', title: 'Life events', assetIds: [ids[0], ids[4], ids[7]] }
+      { id: 'birthday', title: 'Birthday portraits', assetIds: [ids[0], ids[1]] },
+      { id: 'studio', title: 'Studio portraits', assetIds: [ids[2], ids[3], ids[4], ids[7]] },
+      { id: 'wedding', title: 'Traditional wedding', assetIds: [ids[5], ids[6]] }
     ],
     palette: { background: '#13110f', surface: '#211b18', text: '#fff6ec', accent: '#efa57c' },
     typography: { display: 'Cormorant Garamond', body: 'Outfit' },
