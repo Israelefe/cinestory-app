@@ -38,7 +38,6 @@ const demoDelivery = {
     title: 'A Veylo sample board',
     description: 'A selection of photographs already featured across Veylo.',
     selectedLayoutId: 'balanced',
-    allowClientLayouts: true,
     layouts: [
       { id: 'balanced', title: 'Even spread', description: 'Mixes portraits and celebrations throughout the board.', assetOrder: [ids[0], ids[5], ids[3], ids[1], ids[6], ids[4], ids[2], ids[7]] },
       { id: 'moments', title: 'Scenes together', description: 'Keeps photographs from the same shoot together.', assetOrder: ids },
@@ -49,7 +48,6 @@ const demoDelivery = {
       { id: 'studio', title: 'Studio portraits', assetIds: [ids[2], ids[3], ids[4], ids[7]] },
       { id: 'wedding', title: 'Traditional wedding', assetIds: [ids[5], ids[6]] }
     ],
-    palette: { background: '#13110f', surface: '#211b18', text: '#fff6ec', accent: '#efa57c' },
     typography: { display: 'Cormorant Garamond', body: 'Outfit' },
     grid: { mobileColumns: 2, tabletColumns: 3, desktopColumns: 4, gap: 'regular' },
     animation: 'staggered'

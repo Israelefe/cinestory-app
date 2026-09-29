@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ArrowDownToLine, Check, ChevronLeft, ChevronRight, Download, ExternalLink, Image, LayoutGrid, MessageCircle, Music2, Pause, Play, Shirt, SkipBack, SkipForward, Volume2, X } from 'lucide-react';
+import { ArrowDownToLine, Check, ChevronLeft, ChevronRight, Download, ExternalLink, Image, MessageCircle, Pause, Play, Shirt, SkipBack, SkipForward, Volume2, VolumeX, X } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { API_BASE_URL } from '../../config/env.js';
 import api from '../../services/api.js';
+import { resolvedGridboardPalette } from '../../utils/gridboardPalette.js';
 import './PinboardViewer.css';
 
 function accessHeaders(publicId) {
@@ -42,7 +43,6 @@ const TILE_RATIOS = {
   'colour-flow': ['1 / 1', '4 / 5', '3 / 4', '1 / 1', '5 / 4', '4 / 5', '3 / 4', '1 / 1']
 };
 const BROAD_VISUAL_TAGS = new Set(['portrait', 'portraits', 'clothing', 'details', 'birthday details', 'couple', 'traditional wedding']);
-const LAYOUT_LABELS = { balanced: 'Even spread', moments: 'Scenes', 'colour-flow': 'Colour order' };
 
 function tileRatio(asset, index, layoutId) {
   const requested = (TILE_RATIOS[layoutId] || TILE_RATIOS.balanced)[index % 8];
@@ -67,8 +67,10 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   const [activePhoto, setActivePhoto] = useState('');
   const [showSlideshowSetup, setShowSlideshowSetup] = useState(false);
   const [slideshow, setSlideshow] = useState(null);
+  const [displayedSlide, setDisplayedSlide] = useState(null);
+  const [slideLoading, setSlideLoading] = useState(false);
   const [slideSeconds, setSlideSeconds] = useState(5);
-  const [musicPlaying, setMusicPlaying] = useState(false);
+  const [musicMuted, setMusicMuted] = useState(false);
   const [slideshowMessage, setSlideshowMessage] = useState('');
   const [statusOpen, setStatusOpen] = useState(false);
   const [statusSelection, setStatusSelection] = useState([]);
@@ -79,6 +81,8 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   const touchStart = useRef(null);
   const boardRef = useRef(null);
   const musicRef = useRef(null);
+  const preloadedPhotos = useRef(new Map());
+  const slideStartedAt = useRef(0);
   const reducedMotion = useReducedMotion();
   const [viewportWidth, setViewportWidth] = useState(() => typeof window === 'undefined' ? 390 : window.innerWidth);
   const board = delivery?.pinboard || {};
@@ -110,9 +114,8 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
     return inMoment && inColour;
   });
   const soundtrackUrl = delivery?.soundtrack?.url ? audioUrl(delivery.soundtrack.url) : '';
-  const layoutSwitchEnabled = demo || board.allowClientLayouts === true;
   const slideshowAsset = slideshow ? assetById.get(String(slideshow.assetIds[slideshow.index])) : null;
-  const palette = board.palette || {};
+  const palette = useMemo(() => resolvedGridboardPalette(board.palette, assets), [board.palette, assets]);
   const typography = board.typography || {};
   const fonts = { display: typography.display || 'Cormorant Garamond', body: typography.body || 'Outfit' };
   const grid = board.grid || {};
@@ -169,22 +172,65 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   }, [board.selectedLayoutId]);
 
   useEffect(() => {
-    if (!slideshow?.active || slideshow.paused) return undefined;
+    if (!slideshow?.active || slideshow.paused || !displayedSlide || displayedSlide.assetId !== String(slideshow.assetIds[slideshow.index])) return undefined;
+    slideStartedAt.current = Date.now();
     const timer = window.setTimeout(() => {
       setSlideshow(current => {
         if (!current) return null;
         if (current.index >= current.assetIds.length - 1) return null;
-        return { ...current, index: current.index + 1 };
+        return { ...current, index: current.index + 1, remainingMs: current.interval * 1000 };
       });
-    }, slideshow.interval * 1000);
+    }, slideshow.remainingMs);
     return () => window.clearTimeout(timer);
-  }, [slideshow]);
+  }, [slideshow, displayedSlide]);
+
+  useEffect(() => {
+    if (!slideshowAsset) { setDisplayedSlide(null); setSlideLoading(false); return undefined; }
+    const assetId = String(slideshowAsset.assetId);
+    const fullUrl = photoUrl(slideshowAsset, true);
+    const thumbnailUrl = photoUrl(slideshowAsset);
+    let cancelled = false;
+    const useLoaded = src => {
+      if (cancelled) return;
+      preloadedPhotos.current.set(assetId, src);
+      setDisplayedSlide({ assetId, index: slideshow.index, src, alt: slideshowAsset.alt || 'Finished photograph' });
+      setSlideLoading(false);
+    };
+    const cached = preloadedPhotos.current.get(assetId);
+    if (cached) { useLoaded(cached); return undefined; }
+    setSlideLoading(true);
+    const image = new window.Image();
+    image.onload = () => useLoaded(fullUrl);
+    image.onerror = () => {
+      if (!thumbnailUrl || thumbnailUrl === fullUrl) {
+        if (!cancelled) { setSlideLoading(false); setSlideshowMessage('This photograph could not load. Check your connection and try again.'); setSlideshow(current => current ? { ...current, paused: true } : null); }
+        return;
+      }
+      const fallback = new window.Image();
+      fallback.onload = () => useLoaded(thumbnailUrl);
+      fallback.onerror = () => {
+        if (!cancelled) { setSlideLoading(false); setSlideshowMessage('This photograph could not load. Check your connection and try again.'); setSlideshow(current => current ? { ...current, paused: true } : null); }
+      };
+      fallback.src = thumbnailUrl;
+    };
+    image.src = fullUrl;
+    return () => { cancelled = true; };
+  }, [slideshowAsset, slideshow?.index]);
+
+  useEffect(() => {
+    if (!slideshow || slideshow.index >= slideshow.assetIds.length - 1) return undefined;
+    const next = assetById.get(String(slideshow.assetIds[slideshow.index + 1]));
+    if (!next || preloadedPhotos.current.has(String(next.assetId))) return undefined;
+    const image = new window.Image();
+    image.onload = () => preloadedPhotos.current.set(String(next.assetId), photoUrl(next, true));
+    image.src = photoUrl(next, true);
+    return () => { image.onload = null; };
+  }, [slideshow?.index, slideshow?.assetIds, assetById]);
 
   useEffect(() => {
     if (slideshow || !musicRef.current) return;
     musicRef.current.pause();
     musicRef.current.currentTime = 0;
-    setMusicPlaying(false);
   }, [slideshow]);
 
   useEffect(() => () => musicRef.current?.pause(), []);
@@ -222,15 +268,16 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   }
 
   async function toggleMusic() {
+    if (!slideshow) return;
     const audio = musicRef.current;
     if (!audio) return;
-    if (!audio.paused) {
-      audio.pause(); setMusicPlaying(false); return;
-    }
-    try { await audio.play(); setMusicPlaying(true); }
+    if (!musicMuted) { setMusicMuted(true); audio.pause(); return; }
+    setMusicMuted(false);
+    if (slideshow.paused) return;
+    try { await audio.play(); }
     catch {
-      const text = 'Music could not start. Check your connection and try again.';
-      if (slideshow) setSlideshowMessage(text); else setMessage(text);
+      setMusicMuted(true);
+      setSlideshowMessage('Music could not start. Check your connection and try again.');
     }
   }
 
@@ -241,12 +288,26 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
     setShowSlideshowSetup(false);
     setActivePhoto('');
     setSlideshowMessage('');
-    setSlideshow({ active: true, paused: false, assetIds, index: 0, interval: slideSeconds });
+    setMusicMuted(false);
+    setDisplayedSlide(null);
+    setSlideshow({ active: true, paused: false, assetIds, index: 0, interval: slideSeconds, remainingMs: slideSeconds * 1000 });
     if (soundtrackUrl && musicRef.current) {
       musicRef.current.volume = 0.72;
-      try { await musicRef.current.play(); setMusicPlaying(true); }
-      catch { setSlideshowMessage('The slideshow started. Tap Play music to try the soundtrack again.'); }
+      try { await musicRef.current.play(); }
+      catch { setMusicMuted(true); setSlideshowMessage('The slideshow is playing without music. Tap Sound off to try again.'); }
     }
+  }
+
+  function toggleSlideshowPause() {
+    if (slideshow?.paused && !musicMuted && musicRef.current) musicRef.current.play().catch(() => { setMusicMuted(true); setSlideshowMessage('The slideshow is playing without music. Tap Sound off to try again.'); });
+    else musicRef.current?.pause();
+    setSlideshow(current => {
+      if (!current) return null;
+      if (current.paused) return { ...current, paused: false };
+      const showingCurrent = displayedSlide?.assetId === String(current.assetIds[current.index]);
+      const elapsed = showingCurrent ? Date.now() - slideStartedAt.current : 0;
+      return { ...current, paused: true, remainingMs: Math.max(100, current.remainingMs - elapsed) };
+    });
   }
 
   function similarShotsFor(target) {
@@ -414,12 +475,10 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
         </section>}
       </nav>}
       <div className="pb-board-top"><div><span>{activeMoment ? moments.find(moment => moment.id === activeMoment)?.title : selectedColourGroup ? colorGroupLabel(selectedColourGroup) : 'All photos'}</span><span>{visible.length} PHOTOS</span></div><div className="pb-board-controls">
-        {layoutSwitchEnabled && (board.layouts || []).length > 1 && <label className="pb-layout-select" title="Rearrange the same photographs"><LayoutGrid size={15} /><span className="pb-sr-only">Layout</span><select value={activeLayoutId} onChange={event => setActiveLayoutId(event.target.value)} aria-label="Rearrange the same photographs">{board.layouts.map(layout => <option key={layout.id} value={layout.id}>{LAYOUT_LABELS[layout.id] || layout.title}</option>)}</select></label>}
         <button type="button" onClick={() => setShowSlideshowSetup(true)} aria-haspopup="dialog"><Play size={15} /> Slideshow</button>
-        {soundtrackUrl && <button type="button" onClick={() => void toggleMusic()} aria-pressed={musicPlaying}>{musicPlaying ? <Pause size={15} /> : <Music2 size={15} />}{musicPlaying ? 'Pause music' : 'Play music'}</button>}
       </div></div>
       <section className="pb-board" ref={boardRef} key={`${activeMoment || 'all'}-${activeColour || 'all'}-${activeLayoutId}`} aria-label="Photographs" aria-live="polite">
-        {masonryColumns.map((column, columnIndex) => <div className="pb-board-column" key={columnIndex}>{column.map(({ asset, index, ratio }) => <article className={'pb-tile' + (board.animation === 'none' ? '' : ' is-revealing')} id={`pb-photo-${asset.assetId}`} key={asset.assetId} style={{ '--pb-tile-ratio': ratio, '--pb-reveal-delay': board.animation === 'staggered' ? `${(index % 5) * 65}ms` : '0ms' }}>
+        {masonryColumns.map((column, columnIndex) => <div className="pb-board-column" key={columnIndex}>{column.map(({ asset, index, ratio }) => <article className={'pb-tile' + (board.animation === 'none' ? '' : ' is-revealing')} id={`pb-photo-${asset.assetId}`} key={asset.assetId} style={{ '--pb-tile-ratio': ratio, '--pb-tile-color': assetColors(asset)[0] || palette.surface, '--pb-reveal-delay': board.animation === 'staggered' ? `${(index % 5) * 65}ms` : '0ms' }}>
           <button type="button" className="pb-tile-open" onClick={() => setActivePhoto(asset.assetId)} aria-label={`Open photograph ${index + 1}`}><img loading={index < 6 ? 'eager' : 'lazy'} src={photoUrl(asset)} alt={asset.alt || `Finished photograph ${index + 1}`} /><span className="pb-tile-view">View photo</span></button>
           {!preview && <div className="pb-tile-tools"><button type="button" onClick={() => openWhatsApp('photo', asset.assetId, `${delivery?.title || 'Photo gallery'} · Photograph ${index + 1}`)} aria-label="Share this photo on WhatsApp"><MessageCircle size={16} /></button>{canDownload && <button type="button" onClick={() => downloadPhoto(asset, index)} aria-label="Download this photo"><Download size={16} /></button>}</div>}
         </article>)}</div>)}
@@ -442,15 +501,20 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
       <div className="pb-lightbox-actions">{!preview && <button type="button" onClick={() => openWhatsApp('photo', modalAsset.assetId, delivery?.title || 'Photo gallery')}><MessageCircle size={17} /> Share on WhatsApp</button>}{canDownload && <button type="button" onClick={() => downloadPhoto(modalAsset, modalIndex)}><Download size={17} /> Download photo</button>}</div>
     </div>}
 
-    {soundtrackUrl && <audio ref={musicRef} src={soundtrackUrl} preload="none" onEnded={() => setMusicPlaying(false)} onPause={() => setMusicPlaying(false)} onPlay={() => setMusicPlaying(true)} onError={() => { setMusicPlaying(false); if (slideshow) setSlideshowMessage('Music could not load. Check your connection and try again.'); else setMessage('Music could not load. Check your connection and try again.'); }} />}
+    {soundtrackUrl && <audio ref={musicRef} src={soundtrackUrl} preload="none" loop onError={() => { setMusicMuted(true); if (slideshow) setSlideshowMessage('Music could not load. The slideshow will keep playing without it.'); }} />}
 
     {showSlideshowSetup && <div className="pb-status-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setShowSlideshowSetup(false); }}><section className="pb-slideshow-setup" role="dialog" aria-modal="true" aria-labelledby="pb-slideshow-setup-title"><button type="button" className="pb-dialog-close" onClick={() => setShowSlideshowSetup(false)} aria-label="Close slideshow settings"><X size={20} /></button><span className="pb-kicker">A QUIETER WAY TO BROWSE</span><h2 id="pb-slideshow-setup-title">Let the photographs play.</h2><p>Start when you are ready. Music will play with the slideshow if the photographer added a soundtrack.</p><div className="pb-slideshow-options">{(activeMoment || activeColour) && <button type="button" onClick={() => void startSlideshow('current')}><span><strong>Current selection</strong><small>{visible.length} photographs{currentSelectionDescription}</small></span><Play size={17} /></button>}<button type="button" onClick={() => void startSlideshow('all')}><span><strong>Every photograph</strong><small>{ordered.length} photographs · the full gallery</small></span><Play size={17} /></button></div><label className="pb-slideshow-speed">Time per photo<select value={slideSeconds} onChange={event => setSlideSeconds(Number(event.target.value))}><option value="4">4 seconds</option><option value="5">5 seconds</option><option value="7">7 seconds</option><option value="9">9 seconds</option></select></label></section></div>}
 
     {slideshowAsset && <section className="pb-slideshow" role="dialog" aria-modal="true" aria-label="GridBoard slideshow">
-      <header><div><span>GRIDBOARD SLIDESHOW</span><small>{slideshow.index + 1} OF {slideshow.assetIds.length} · {slideshow.interval} SECONDS PER PHOTO</small></div><button type="button" onClick={() => setSlideshow(null)} aria-label="Close slideshow"><X size={20} />Close</button></header>
-      <div className="pb-slideshow-image" style={{ backgroundColor: (assetColors(slideshowAsset)[0] || palette.background || '#13110f') }}><AnimatePresence mode="wait"><motion.img key={slideshowAsset.assetId} src={photoUrl(slideshowAsset, true)} alt={slideshowAsset.alt || 'Finished photograph'} initial={reducedMotion ? false : { opacity: 0, scale: 1.015 }} animate={{ opacity: 1, scale: 1 }} exit={reducedMotion ? undefined : { opacity: 0 }} transition={{ duration: reducedMotion ? 0 : .52, ease: 'easeOut' }} /></AnimatePresence></div>
-      <div className="pb-slideshow-progress" aria-hidden="true"><i style={{ width: `${((slideshow.index + 1) / slideshow.assetIds.length) * 100}%` }} /></div>
-      <footer><span aria-live="polite">Photograph {slideshow.index + 1} of {slideshow.assetIds.length}</span><div><button type="button" onClick={() => setSlideshow(current => ({ ...current, index: Math.max(0, current.index - 1) }))} disabled={slideshow.index === 0} aria-label="Previous photo"><SkipBack size={18} /></button><button type="button" onClick={() => setSlideshow(current => ({ ...current, paused: !current.paused }))} aria-label={slideshow.paused ? 'Resume slideshow' : 'Pause slideshow'}>{slideshow.paused ? <Play size={19} /> : <Pause size={19} />}</button><button type="button" onClick={() => setSlideshow(current => current.index >= current.assetIds.length - 1 ? null : ({ ...current, index: current.index + 1 }))} aria-label="Next photo"><SkipForward size={18} /></button></div>{soundtrackUrl ? <button type="button" className="pb-slide-music" onClick={() => void toggleMusic()} aria-pressed={musicPlaying}>{musicPlaying ? <Volume2 size={16} /> : <Music2 size={16} />}{musicPlaying ? 'Music on' : 'Play music'}</button> : <span className="pb-slide-no-music">No soundtrack added</span>}</footer>{slideshowMessage && <p className="pb-slideshow-message" role="status">{slideshowMessage}</p>}
+      <header><div><span>GRIDBOARD SLIDESHOW</span><small>{(displayedSlide?.index ?? slideshow.index) + 1} / {slideshow.assetIds.length} PHOTOGRAPHS</small></div><button type="button" onClick={() => setSlideshow(null)} aria-label="Close slideshow"><X size={20} />Close</button></header>
+      <div className="pb-slideshow-image">
+        <AnimatePresence initial={false} mode="sync">{displayedSlide && <motion.figure className="pb-slideshow-frame" key={displayedSlide.assetId} initial={reducedMotion ? false : { opacity: 0, scale: 1.025 }} animate={{ opacity: 1, scale: 1 }} exit={reducedMotion ? undefined : { opacity: 0, scale: .985 }} transition={{ duration: reducedMotion ? 0 : .72, ease: [0.22, 1, 0.36, 1] }}><img className="pb-slideshow-ambient" src={displayedSlide.src} alt="" aria-hidden="true" /><img className="pb-slideshow-main-photo" src={displayedSlide.src} alt={displayedSlide.alt} style={{ animationDuration: `${slideshow.interval + 1}s`, animationPlayState: slideshow.paused ? 'paused' : 'running' }} /></motion.figure>}</AnimatePresence>
+        {!displayedSlide && <span className="pb-slide-loading" role="status">Opening photographs…</span>}
+        {slideLoading && displayedSlide && <span className="pb-slide-loading-indicator" role="status">Loading next photograph</span>}
+        <div className="pb-slide-index" aria-hidden="true"><strong>{String((displayedSlide?.index ?? slideshow.index) + 1).padStart(2, '0')}</strong><i />{String(slideshow.assetIds.length).padStart(2, '0')}</div>
+      </div>
+      <div className="pb-slideshow-progress" aria-hidden="true"><span style={{ width: `${((displayedSlide?.index ?? slideshow.index) / slideshow.assetIds.length) * 100}%` }} />{displayedSlide && !slideLoading && <i key={displayedSlide.assetId} className={slideshow.paused ? 'is-paused' : ''} style={{ left: `${(displayedSlide.index / slideshow.assetIds.length) * 100}%`, width: `${100 / slideshow.assetIds.length}%`, animationDuration: `${slideshow.interval}s` }} />}</div>
+      <footer><span aria-live="polite">Photograph {(displayedSlide?.index ?? slideshow.index) + 1} of {slideshow.assetIds.length}</span><div><button type="button" onClick={() => setSlideshow(current => ({ ...current, index: Math.max(0, current.index - 1), remainingMs: current.interval * 1000 }))} disabled={slideshow.index === 0} aria-label="Previous photo"><SkipBack size={18} /></button><button type="button" onClick={toggleSlideshowPause} aria-label={slideshow.paused ? 'Resume slideshow' : 'Pause slideshow'}>{slideshow.paused ? <Play size={19} /> : <Pause size={19} />}</button><button type="button" onClick={() => setSlideshow(current => current.index >= current.assetIds.length - 1 ? null : ({ ...current, index: current.index + 1, remainingMs: current.interval * 1000 }))} aria-label="Next photo"><SkipForward size={18} /></button></div>{soundtrackUrl ? <button type="button" className="pb-slide-music" onClick={() => void toggleMusic()} aria-pressed={!musicMuted}>{musicMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}{musicMuted ? 'Sound off' : 'Sound on'}</button> : <span className="pb-slide-no-music">No soundtrack added</span>}</footer>{slideshowMessage && <p className="pb-slideshow-message" role="status">{slideshowMessage}</p>}
     </section>}
 
     {statusOpen && <div className="pb-status-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setStatusOpen(false); }}><section className="pb-status-dialog" role="dialog" aria-modal="true" aria-labelledby="pb-status-title"><button type="button" className="pb-dialog-close" onClick={() => setStatusOpen(false)} aria-label="Close"><X size={20} /></button><span className="pb-kicker">WHATSAPP SHARING</span><h2 id="pb-status-title">Make a Status card</h2><p>Choose up to four finished photos. Veylo makes a 9:16 card with a private link back to the gallery.</p><div className="pb-status-photos">{statusPageAssets.map((asset, index) => { const photoIndex = statusPage * statusPageSize + index; return <label key={asset.assetId} className={statusSelection.includes(asset.assetId) ? 'is-selected' : ''}><input type="checkbox" checked={statusSelection.includes(asset.assetId)} onChange={() => toggleStatusPhoto(asset.assetId)} disabled={!statusSelection.includes(asset.assetId) && statusSelection.length >= 4} /><img src={photoUrl(asset)} alt={`Select photo ${photoIndex + 1}`} loading="lazy" /><span>{statusSelection.includes(asset.assetId) && <Check size={15} />}{photoIndex + 1}</span></label>; })}</div>{statusPageCount > 1 && <div className="pb-status-pagination"><button type="button" onClick={() => setStatusPage(page => Math.max(0, page - 1))} disabled={statusPage === 0}>Previous photos</button><span>{statusPage + 1} / {statusPageCount}</span><button type="button" onClick={() => setStatusPage(page => Math.min(statusPageCount - 1, page + 1))} disabled={statusPage >= statusPageCount - 1}>More photos</button></div>}<div className="pb-status-bottom"><span>{statusSelection.length} of 4 selected</span><button type="button" disabled={!statusSelection.length || busy} onClick={createStatusCard}>{busy ? 'Preparing card…' : 'Prepare Status card'}<ExternalLink size={16} /></button></div>{message && <p className="pb-status-message" role="status">{message}</p>}</section></div>}

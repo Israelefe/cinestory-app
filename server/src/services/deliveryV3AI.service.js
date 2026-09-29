@@ -222,7 +222,7 @@ function hexFromHsl(hue, saturation, lightness) {
 }
 
 function photoColourProfile(imageColors = []) {
-  const groups = Array.from({ length: 18 }, () => ({ weight: 0, hueTotal: 0 }));
+  const groups = Array.from({ length: 18 }, () => ({ weight: 0, hueTotal: 0, saturationTotal: 0 }));
   let brightnessTotal = 0; let brightnessWeight = 0;
   for (const image of imageColors) {
     for (const [index, color] of (image.colors || []).slice(0, 3).entries()) {
@@ -236,17 +236,20 @@ function photoColourProfile(imageColors = []) {
       const influence = weight * Math.max(.2, value.saturation);
       group.weight += influence;
       group.hueTotal += value.hue * influence;
+      group.saturationTotal += value.saturation * influence;
     }
   }
   const leading = groups.reduce((best, group) => group.weight > best.weight ? group : best, groups[0]);
-  return { hue: leading.weight ? leading.hueTotal / leading.weight : 210, light: brightnessWeight ? brightnessTotal / brightnessWeight > .64 : false, hasHue: leading.weight > 0 };
+  return { hue: leading.weight ? leading.hueTotal / leading.weight : 210, saturation: leading.weight ? leading.saturationTotal / leading.weight : .3, light: brightnessWeight ? brightnessTotal / brightnessWeight > .64 : false, hasHue: leading.weight > 0 };
 }
 
 export function calmGridboardPalette(imageColors = [], mode = 'auto') {
-  const { hue, light } = photoColourProfile(imageColors);
+  const { hue, saturation, light } = photoColourProfile(imageColors);
+  const baseSaturation = Math.max(.24, Math.min(.46, .2 + saturation * .34));
+  const accentSaturation = Math.max(.38, Math.min(.58, .34 + saturation * .3));
   return (mode === 'light' || mode === 'auto' && light)
-    ? { background: hexFromHsl(hue, .15, .965), surface: hexFromHsl(hue, .12, .995), text: hexFromHsl(hue, .16, .13), accent: hexFromHsl(hue, .42, .34) }
-    : { background: hexFromHsl(hue, .16, .08), surface: hexFromHsl(hue, .17, .13), text: hexFromHsl(hue, .18, .94), accent: hexFromHsl(hue, .42, .68) };
+    ? { background: hexFromHsl(hue, baseSaturation * .78, .945), surface: hexFromHsl(hue, baseSaturation * .52, .985), text: hexFromHsl(hue, .2, .12), accent: hexFromHsl(hue, accentSaturation, .32) }
+    : { background: hexFromHsl(hue, baseSaturation, .095), surface: hexFromHsl(hue, baseSaturation * .85, .155), text: hexFromHsl(hue, .18, .94), accent: hexFromHsl(hue, accentSaturation, .7) };
 }
 
 function acceptableGridboardPalette(palette, imageColors) {
@@ -311,7 +314,7 @@ export async function directV3Pinboard(delivery, insights) {
   let generated = {};
   try {
     generated = await request(
-      'Return JSON {"moments":[{"title":"...","assetIds":["known-id"]}],"palette":{"background":"#hex","surface":"#hex","text":"#hex","accent":"#hex"},"typography":{"display":"Cormorant Garamond","body":"Outfit"}}. Create up to six useful Find a Moment groups based on the visible activity, event scene, setting, or people together. Examples include portraits, ceremony, or dancing. Do not create a moment group solely because photos share an outfit or backdrop colour; those have separate filters. Similar Shot uses the separate similarityTags to match a selected photo with visually similar photos. Use only supplied asset IDs and include at least two IDs in each moment group. A photograph may appear in more than one group. Do not identify people, infer family or other relationships, names, ages, or private traits. Do not use face recognition. The board arrangements are described with clear fixed labels in the app. Base the palette on the dominant colours across the whole photo set, not a single bright detail. Keep backgrounds and panels subdued and close in tone, with one muted accent from the dominant hue family. Avoid neon or highly saturated surfaces. Text must be readable at 4.5:1 contrast on both background and panels. Typography must use Playfair Display, Outfit, Plus Jakarta Sans, Cormorant Garamond, DM Sans, Libre Baskerville, or Manrope. Keep every supplied photograph in the board; these suggestions only affect presentation.',
+      'Return JSON {"moments":[{"title":"...","assetIds":["known-id"]}],"typography":{"display":"Cormorant Garamond","body":"Outfit"}}. Create up to six useful Find a Moment groups based on the visible activity, event scene, setting, or people together. Examples include portraits, ceremony, or dancing. Do not create a moment group solely because photos share an outfit or backdrop colour; those have separate filters. Similar Shot uses the separate similarityTags to match a selected photo with visually similar photos. Use only supplied asset IDs and include at least two IDs in each moment group. A photograph may appear in more than one group. Do not identify people, infer family or other relationships, names, ages, or private traits. Do not use face recognition. The board arrangements and readable photo-led palette are calculated from the image analysis. Typography must use Playfair Display, Outfit, Plus Jakarta Sans, Cormorant Garamond, DM Sans, Libre Baskerville, or Manrope. Keep every supplied photograph in the board; these suggestions only affect presentation.',
       ['Photographer context: ' + String(delivery.brief || '').slice(0, 600), 'Shoot type: ' + String(delivery.shootType || '').slice(0, 100), 'Dominant photo hue in degrees: ' + Math.round(photoProfile.hue), 'Calm palette derived from dominant photo colours: ' + JSON.stringify(photoPalette), 'Photographs: ' + JSON.stringify(compact)].join('\n'),
       { maxTokens: Math.min(22000, 2200 + rows.length * 24) }
     );
@@ -339,8 +342,8 @@ export async function directV3Pinboard(delivery, insights) {
     }
   }
   const layouts = buildPinboardLayouts(assets, moments);
-  const palette = acceptableGridboardPalette(generated.palette, rows) ? generated.palette : photoPalette;
   const current = delivery.pinboard || {};
+  const currentPaletteIsDefault = current.palette && Object.keys(gridboardPalette).every(key => String(current.palette[key] || '').toLowerCase() === gridboardPalette[key]);
   const typography = {
     display: V3_FONT_CHOICES.has(generated.typography?.display) ? generated.typography.display : current.typography?.display || 'Cormorant Garamond',
     body: V3_FONT_CHOICES.has(generated.typography?.body) ? generated.typography.body : current.typography?.body || 'Outfit'
@@ -351,7 +354,7 @@ export async function directV3Pinboard(delivery, insights) {
     layouts,
     selectedLayoutId: layouts.some(layout => layout.id === current.selectedLayoutId) ? current.selectedLayoutId : 'balanced',
     moments,
-    palette: current.palette && current.analysisStatus !== 'standard' ? current.palette : palette,
+    palette: current.palette && current.analysisStatus === 'ready' && !currentPaletteIsDefault ? current.palette : photoPalette,
     typography: current.typography || typography,
     grid: current.grid || { mobileColumns: 2, tabletColumns: 3, desktopColumns: 4, gap: 'regular' },
     animation: current.animation || 'soft-fade',

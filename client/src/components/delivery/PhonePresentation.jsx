@@ -38,7 +38,7 @@ export function DesktopPhoneFrame({ src, title, message, device = true }) {
   const frame = useRef(null);
   const phoneDevice = useRef(null);
   const ready = useRef(false);
-  const [phoneScale, setPhoneScale] = useState(.94);
+  const [phoneScale, setPhoneScale] = useState(1);
   const messageRef = useRef(message);
   messageRef.current = message;
 
@@ -47,10 +47,10 @@ export function DesktopPhoneFrame({ src, title, message, device = true }) {
     const element = phoneDevice.current;
     const updateScale = () => {
       const top = Math.max(0, element.getBoundingClientRect().top);
-      const bottomSpace = element.closest('.v3-create') ? 24 : 64;
+      const bottomSpace = element.closest('.v3-create, .pb-create-shell') ? 18 : 30;
       const availableHeight = Math.max(1, window.innerHeight - top - bottomSpace);
       const availableWidth = Math.max(1, (element.parentElement?.getBoundingClientRect().width || window.innerWidth) - 32);
-      const nextScale = Math.min(.94, availableHeight / PHONE_FRAME_HEIGHT, availableWidth / PHONE_FRAME_WIDTH);
+      const nextScale = Math.min(1.05, availableHeight / PHONE_FRAME_HEIGHT, availableWidth / PHONE_FRAME_WIDTH);
       setPhoneScale(current => Math.abs(current - nextScale) < .002 ? current : nextScale);
     };
     updateScale();

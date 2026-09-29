@@ -72,14 +72,16 @@ test('Pinboard suggestions keep every supplied photo and produce three complete 
   } finally { restore(); }
 });
 
-test('fresh GridBoard uses dominant photo colours when the model suggests an unrelated palette', async () => {
+test('GridBoard replaces the old default palette with colours from the photographs', async () => {
   const assets = ['one', 'two'].map((assetId, sortOrder) => ({ assetId, sortOrder, width: 480, height: 640 }));
   const restore = mockModel([{ moments: [], layouts: [], palette: { background: '#10182e', surface: '#1a2740', text: '#ffffff', accent: '#437dbd' }, typography: { display: 'Cormorant Garamond', body: 'Outfit' } }], []);
   try {
-    const board = await directV3Pinboard({ title: 'Birthday portraits', clientName: 'Lora', assets }, assets.map(asset => ({ assetId: asset.assetId, colors: ['#b95732', '#b95732'], momentTags: [] })));
+    const board = await directV3Pinboard({ title: 'Birthday portraits', clientName: 'Lora', assets, pinboard: { palette: { background: '#13110f', surface: '#211b18', text: '#fff6ec', accent: '#efa57c' }, analysisStatus: 'ready' } }, assets.map(asset => ({ assetId: asset.assetId, colors: ['#b95732', '#b95732'], momentTags: [] })));
     const red = parseInt(board.palette.accent.slice(1, 3), 16);
     const blue = parseInt(board.palette.accent.slice(5, 7), 16);
     assert.ok(red > blue);
+    assert.notEqual(board.palette.background, '#13110f');
+    assert.notEqual(board.palette.surface, '#211b18');
     assert.ok(contrastRatio(board.palette.background, board.palette.text) >= 4.5);
   } finally { restore(); }
 });
