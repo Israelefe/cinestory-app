@@ -6,6 +6,16 @@ import './CreateDeliveryChoice.css';
 import './GridboardChoice.css';
 
 const gridboardPreviewPhotos = [4, 1, 5, 6, 2, 3].map(number => `/veylo/web/demo-lora-${number}-480.webp`);
+const showcaseFormats = [
+  ['Photo Story', '/veylo/web/demo-lora-4-480.webp'],
+  ['Editorial Page', '/veylo/web/demo-ada-1-480.webp'],
+  ['Photo Reveal', '/veylo/web/demo-sharon-1-480.webp'],
+  ['Canvas', '/veylo/web/audience-portrait-480.webp'],
+  ['Chapters', '/veylo/web/demo-wedding-1-480.webp'],
+  ['Album', '/veylo/web/demo-lora-1-480.webp'],
+  ['Event Coverage', '/veylo/web/demo-wedding-3-480.webp'],
+  ['Campaign Delivery', '/veylo/web/commercial-480.webp']
+];
 
 const types = [
   { id: 'showcase', title: 'Showcase Delivery', line: 'Lead with a designed experience, then open the full gallery.', detail: 'Choose from Photo Story, Editorial Page, Photo Reveal, Canvas, Chapters, Album, Event Coverage, and Campaign Delivery.', icon: Clapperboard, action: 'Create a Showcase' },
@@ -26,8 +36,8 @@ export default function CreateDeliveryChoice() {
         const Icon = type.icon;
         return <motion.article key={type.id} className={'v-create-choice-card is-' + type.id} initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .38, delay: index * .08 }}>
           <div className="v-create-choice-visual" aria-hidden="true">
-            <span className="v-create-choice-visual-tag">{type.id === 'showcase' ? 'A PRESENTATION FIRST' : 'THE FULL BOARD FIRST'}</span>
-            {type.id === 'showcase' ? <div className="v-choice-story"><div className="v-choice-story-photo" /><div><small>PHOTO STORY</small><b>Made to be remembered.</b><i /></div></div> : <div className="v-choice-masonry">{gridboardPreviewPhotos.map(photo => <span key={photo}><img src={photo} alt="" loading="lazy" decoding="async" /></span>)}</div>}
+            <span className="v-create-choice-visual-tag">{type.id === 'showcase' ? 'EIGHT WAYS TO OPEN' : 'THE FULL BOARD FIRST'}</span>
+            {type.id === 'showcase' ? <div className="v-choice-showcase">{showcaseFormats.map(([name, photo]) => <span className="v-choice-format" key={name}><img src={photo} alt="" loading="lazy" decoding="async" /><b>{name}</b></span>)}</div> : <div className="v-choice-masonry">{gridboardPreviewPhotos.map(photo => <span key={photo}><img src={photo} alt="" loading="lazy" decoding="async" /></span>)}</div>}
           </div>
           <div className="v-create-choice-copy"><Icon size={20} aria-hidden="true" /><h2>{type.title}</h2><p className="v-create-choice-line">{type.line}</p><p>{type.detail}</p>
             <Link className="v-create-choice-cta" to={'/create?type=' + type.id}>{type.action}<ArrowRight size={17} /></Link>

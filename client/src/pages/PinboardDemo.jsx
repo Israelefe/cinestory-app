@@ -9,6 +9,7 @@ const assets = descriptions.map((alt, index) => ({ assetId: `gridboard-demo-${in
 const ids = assets.map(asset => asset.assetId);
 const demoDelivery = {
   kind: 'pinboard', title: "Lora's 25th birthday", clientName: 'Lora Ade', branding: { name: 'Veylo Studio', logoUrl: '/veylo/veylo-logo.png' }, assets,
+  access: { allowIndividualDownloads: true, allowDownloadAll: true, downloadsLocked: false },
   pinboard: {
     title: "Lora's 25th birthday", description: 'Every finished photograph from her birthday shoot.', selectedLayoutId: 'balanced',
     layouts: [
@@ -27,5 +28,5 @@ const demoDelivery = {
 };
 
 export default function PinboardDemo() {
-  return <PinboardViewer delivery={demoDelivery} preview />;
+  return <PinboardViewer delivery={demoDelivery} demo />;
 }

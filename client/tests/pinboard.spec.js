@@ -43,6 +43,13 @@ test('new delivery offers Showcase and GridBoard, then opens GridBoard details a
     await expect(page.getByRole('heading', { name: 'How should this gallery open?' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Showcase Delivery' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'GridBoard Delivery' })).toBeVisible();
+    await expect(page.locator('.v-choice-format')).toHaveCount(8);
+    const artDoesNotOverlapLabel = await page.locator('.is-pinboard .v-create-choice-visual').evaluate(visual => {
+      const label = visual.querySelector('.v-create-choice-visual-tag').getBoundingClientRect();
+      const board = visual.querySelector('.v-choice-masonry').getBoundingClientRect();
+      return label.bottom < board.top;
+    });
+    expect(artDoesNotOverlapLabel).toBe(true);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
     await page.getByRole('link', { name: 'Create a GridBoard' }).click();
     await expect(page.getByRole('heading', { name: 'Start with the gallery.' })).toBeVisible();
@@ -86,6 +93,26 @@ test('published GridBoard shows every photo, moment navigation, and fits phone, 
       const target = new URL(await page.evaluate(() => new URL(window.__pinboardOpenedLinks[0]).searchParams.get('text').split('\n').at(-1)));
       expect(target.searchParams.get('share')).toBe('grant_token_012345678901234567890123456789');
       expect(target.searchParams.get('photo')).toBe('photo-1');
+      await page.locator('.pb-lightbox figure').evaluate(figure => {
+        const fire = (type, x) => {
+          const event = new Event(type, { bubbles: true });
+          Object.defineProperty(event, type === 'touchstart' ? 'touches' : 'changedTouches', { value: [{ clientX: x, clientY: 230 }] });
+          figure.dispatchEvent(event);
+        };
+        fire('touchstart', 260);
+        fire('touchend', 70);
+      });
+      await expect(page.locator('.pb-lightbox figcaption')).toContainText('Photograph 2 of 16');
+      await page.locator('.pb-lightbox figure').evaluate(figure => {
+        const fire = (type, x) => {
+          const event = new Event(type, { bubbles: true });
+          Object.defineProperty(event, type === 'touchstart' ? 'touches' : 'changedTouches', { value: [{ clientX: x, clientY: 230 }] });
+          figure.dispatchEvent(event);
+        };
+        fire('touchstart', 70);
+        fire('touchend', 260);
+      });
+      await expect(page.locator('.pb-lightbox figcaption')).toContainText('Photograph 1 of 16');
     }
     if (width === 320) await page.getByRole('button', { name: 'Close photograph' }).click();
     await client.locator('.pb-moment-chip-wrap > button:first-of-type').click();
@@ -100,6 +127,9 @@ test('GridBoard demo opens in the shared desktop phone mockup', async ({ page })
   const client = page.frameLocator('.v-phone-screen iframe');
   await expect(client.getByRole('heading', { name: "Lora's 25th birthday" })).toBeVisible();
   await expect(client.locator('.pb-tile')).toHaveCount(6);
+  await expect(client.getByRole('button', { name: 'Download all photos' })).toBeVisible();
+  await expect(client.getByRole('button', { name: 'Make a WhatsApp Status card' })).toBeVisible();
+  await expect(client.getByText('Private gallery')).toBeVisible();
   await expect(page.locator('.v-phone-device')).toHaveCount(1);
   expect(await client.locator('.pb-board').evaluate(element => element.getBoundingClientRect().width)).toBeLessThan(380);
 });

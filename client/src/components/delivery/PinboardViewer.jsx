@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownToLine, Check, ChevronLeft, ChevronRight, Download, ExternalLink, Image, MessageCircle, X } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import api from '../../services/api.js';
@@ -36,7 +36,7 @@ function accentInk(hex) {
   return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722 > 0.36 ? '#201b18' : '#fff';
 }
 
-export default function PinboardViewer({ delivery, preview = false, galleryProps = {} }) {
+export default function PinboardViewer({ delivery, preview = false, demo = false, galleryProps = {} }) {
   const location = useLocation();
   const [activeMoment, setActiveMoment] = useState('');
   const [activePhoto, setActivePhoto] = useState('');
@@ -45,6 +45,9 @@ export default function PinboardViewer({ delivery, preview = false, galleryProps
   const [statusPage, setStatusPage] = useState(0);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [photoDirection, setPhotoDirection] = useState(1);
+  const touchStart = useRef(null);
+  const boardRef = useRef(null);
   const [viewportWidth, setViewportWidth] = useState(() => typeof window === 'undefined' ? 390 : window.innerWidth);
   const board = delivery?.pinboard || {};
   const assets = useMemo(() => [...(delivery?.assets || [])].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)), [delivery?.assets]);
@@ -78,7 +81,7 @@ export default function PinboardViewer({ delivery, preview = false, galleryProps
     '--pb-body': `'${fonts.body}', Arial, sans-serif`,
     '--pb-gap': grid.gap === 'compact' ? '8px' : grid.gap === 'spacious' ? '22px' : '14px',
     '--pb-active-columns': columnCount,
-    '--pb-animation': board.animation === 'none' ? 'none' : board.animation === 'staggered' ? 'pb-arrive .62s cubic-bezier(.16, 1, .3, 1) both' : 'pb-arrive .48s ease-out both'
+    '--pb-animation-duration': board.animation === 'staggered' ? '.76s' : '.58s'
   };
 
   useEffect(() => {
@@ -86,6 +89,25 @@ export default function PinboardViewer({ delivery, preview = false, galleryProps
     window.addEventListener('resize', update);
     return () => window.removeEventListener('resize', update);
   }, []);
+
+  useEffect(() => {
+    const tiles = boardRef.current?.querySelectorAll('.pb-tile.is-revealing');
+    if (!tiles?.length) return undefined;
+    if (!('IntersectionObserver' in window)) {
+      tiles.forEach(tile => tile.classList.add('is-visible'));
+      return undefined;
+    }
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { rootMargin: '0px 0px 90px 0px', threshold: 0.04 });
+    tiles.forEach(tile => observer.observe(tile));
+    return () => observer.disconnect();
+  }, [activeMoment, columnCount, assets.length, board.animation]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -105,14 +127,46 @@ export default function PinboardViewer({ delivery, preview = false, galleryProps
     const onKey = event => {
       if (event.key === 'Escape') setActivePhoto('');
       if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
-        const current = visible.findIndex(asset => asset.assetId === activePhoto);
-        const next = visible[Math.max(0, Math.min(visible.length - 1, current + (event.key === 'ArrowRight' ? 1 : -1)))];
-        if (next) setActivePhoto(next.assetId);
+        event.preventDefault();
+        navigatePhoto(event.key === 'ArrowRight' ? 1 : -1);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [activePhoto, visible]);
+
+  function navigatePhoto(direction) {
+    const current = visible.findIndex(asset => asset.assetId === activePhoto);
+    const next = visible[current + direction];
+    if (next) { setPhotoDirection(direction); setActivePhoto(next.assetId); }
+  }
+
+  function onPhotoTouchStart(event) {
+    const touch = event.touches[0];
+    touchStart.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+  }
+
+  function onPhotoTouchMove(event) {
+    if (!touchStart.current || board.animation === 'none' || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const touch = event.touches[0];
+    if (!touch) return;
+    const dx = touch.clientX - touchStart.current.x;
+    const dy = touch.clientY - touchStart.current.y;
+    if (Math.abs(dx) <= Math.abs(dy) || Math.abs(dx) < 8) return;
+    const image = event.currentTarget.querySelector('img');
+    if (image) image.style.transform = `translate3d(${Math.max(-120, Math.min(120, dx * .7))}px, 0, 0) scale(.98)`;
+  }
+
+  function onPhotoTouchEnd(event) {
+    if (!touchStart.current) return;
+    const image = event.currentTarget.querySelector('img');
+    if (image) image.style.transform = '';
+    const touch = event.changedTouches[0];
+    const dx = touch.clientX - touchStart.current.x;
+    const dy = touch.clientY - touchStart.current.y;
+    touchStart.current = null;
+    if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.25) navigatePhoto(dx < 0 ? 1 : -1);
+  }
 
   function privateLink(kind, id) {
     const url = new URL(`/d/${encodeURIComponent(delivery.publicId)}`, window.location.origin);
@@ -122,8 +176,8 @@ export default function PinboardViewer({ delivery, preview = false, galleryProps
     return url.toString();
   }
   function openWhatsApp(kind, id, label) {
-    if (preview || !delivery?.publicId) return;
-    const link = privateLink(kind, id);
+    if (preview || (!demo && !delivery?.publicId)) return;
+    const link = demo ? new URL(`/demo/gridboard?${kind}=${encodeURIComponent(id)}`, window.location.origin).toString() : privateLink(kind, id);
     const text = `${label}\n${link}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
   }
@@ -132,6 +186,7 @@ export default function PinboardViewer({ delivery, preview = false, galleryProps
   }
   async function createStatusCard() {
     if (statusSelection.length < 1 || statusSelection.length > 4) return;
+    if (demo) { setStatusOpen(false); setMessage('Status cards are available on published galleries.'); return; }
     setBusy(true); setMessage('');
     try {
       const response = await api.post(`/v1/deliveries/public/${delivery.publicId}/pinboard/status-card`, { assetIds: statusSelection }, { headers: accessHeaders(delivery.publicId), responseType: 'blob' });
@@ -148,15 +203,25 @@ export default function PinboardViewer({ delivery, preview = false, galleryProps
   const modalAsset = assetById.get(activePhoto);
   const modalIndex = visible.findIndex(asset => asset.assetId === activePhoto);
   const canDownload = !preview && !delivery?.access?.downloadsLocked && (delivery?.access?.allowIndividualDownloads || delivery?.access?.allowDownloadAll);
+  function downloadPhoto(asset, index) {
+    if (demo) {
+      const anchor = document.createElement('a');
+      anchor.href = photoUrl(asset, true);
+      anchor.download = `veylo-gridboard-demo-${index + 1}.webp`;
+      anchor.click();
+      return;
+    }
+    galleryProps.onDownload?.(asset.assetId, index);
+  }
   const statusPageSize = 18;
   const statusPageCount = Math.ceil(assets.length / statusPageSize);
   const statusPageAssets = assets.slice(statusPage * statusPageSize, (statusPage + 1) * statusPageSize);
 
-  return <main className={'pb-viewer' + (preview ? ' is-preview' : '')} style={style}>
+  return <main className={'pb-viewer' + (preview ? ' is-preview' : '') + (board.animation === 'none' ? '' : ' is-animated')} style={style}>
     <div className="pb-wrap">
       <header className="pb-header">
         <div className="pb-brand"><span className="pb-brand-mark">{delivery?.branding?.logoUrl ? <img src={delivery.branding.logoUrl} alt="" /> : <Image size={18} />}</span><span>{delivery?.branding?.name || 'Veylo'}<small>GRIDBOARD</small></span></div>
-        {!preview && <div className="pb-header-actions">{delivery.access?.allowDownloadAll && !delivery.access?.downloadsLocked && <button type="button" aria-label="Download all photos" onClick={() => galleryProps.onDownloadAll?.()}><ArrowDownToLine size={17} /> Download all</button>}{canDownload && <button type="button" aria-label="Make a WhatsApp Status card" className="pb-status-open" onClick={() => { setStatusSelection([]); setStatusPage(0); setStatusOpen(true); }}><MessageCircle size={17} /> Make a Status card</button>}</div>}
+        {!preview && <div className="pb-header-actions">{delivery.access?.allowDownloadAll && !delivery.access?.downloadsLocked && <button type="button" aria-label="Download all photos" onClick={() => demo ? setMessage('Download all is available on published galleries.') : galleryProps.onDownloadAll?.()}><ArrowDownToLine size={17} /> Download all</button>}{canDownload && <button type="button" aria-label="Make a WhatsApp Status card" className="pb-status-open" onClick={() => { setStatusSelection([]); setStatusPage(0); setStatusOpen(true); }}><MessageCircle size={17} /> Make a Status card</button>}</div>}
       </header>
       <section className="pb-intro">
         <span className="pb-kicker">GRIDBOARD DELIVERY</span>
@@ -176,16 +241,25 @@ export default function PinboardViewer({ delivery, preview = false, galleryProps
         })}</div>
       </nav>}
       <div className="pb-board-top"><span>{activeMoment ? moments.find(moment => moment.id === activeMoment)?.title : 'All photos'}</span><span>{visible.length} PHOTOS</span></div>
-      <section className="pb-board" key={activeMoment || 'all'} aria-label="Photographs" aria-live="polite">
-        {masonryColumns.map((column, columnIndex) => <div className="pb-board-column" key={columnIndex}>{column.map(({ asset, index, ratio }) => <article className="pb-tile" id={`pb-photo-${asset.assetId}`} key={asset.assetId} style={{ '--pb-tile-ratio': ratio, '--pb-animation': index < 12 ? undefined : 'none', animationDelay: board.animation === 'staggered' ? `${Math.min(index * 65, 650)}ms` : '0ms' }}>
+      <section className="pb-board" ref={boardRef} key={activeMoment || 'all'} aria-label="Photographs" aria-live="polite">
+        {masonryColumns.map((column, columnIndex) => <div className="pb-board-column" key={columnIndex}>{column.map(({ asset, index, ratio }) => <article className={'pb-tile' + (board.animation === 'none' ? '' : ' is-revealing')} id={`pb-photo-${asset.assetId}`} key={asset.assetId} style={{ '--pb-tile-ratio': ratio, '--pb-reveal-delay': board.animation === 'staggered' ? `${(index % 5) * 65}ms` : '0ms' }}>
           <button type="button" className="pb-tile-open" onClick={() => setActivePhoto(asset.assetId)} aria-label={`Open photograph ${index + 1}`}><img loading={index < 6 ? 'eager' : 'lazy'} src={photoUrl(asset)} alt={asset.alt || `Finished photograph ${index + 1}`} /><span className="pb-tile-view">View photo</span></button>
-          {!preview && <div className="pb-tile-tools"><button type="button" onClick={() => openWhatsApp('photo', asset.assetId, `${delivery?.title || 'Photo gallery'} · Photograph ${index + 1}`)} aria-label="Share this photo on WhatsApp"><MessageCircle size={16} /></button>{canDownload && <button type="button" onClick={() => galleryProps.onDownload?.(asset.assetId, index)} aria-label="Download this photo"><Download size={16} /></button>}</div>}
+          {!preview && <div className="pb-tile-tools"><button type="button" onClick={() => openWhatsApp('photo', asset.assetId, `${delivery?.title || 'Photo gallery'} · Photograph ${index + 1}`)} aria-label="Share this photo on WhatsApp"><MessageCircle size={16} /></button>{canDownload && <button type="button" onClick={() => downloadPhoto(asset, index)} aria-label="Download this photo"><Download size={16} /></button>}</div>}
         </article>)}</div>)}
       </section>
       <footer className="pb-footer"><span>That’s the whole gallery.</span><span>{assets.length} photographs</span></footer>
     </div>
 
-    {modalAsset && <div className="pb-lightbox" role="dialog" aria-modal="true" aria-label="Photograph" onMouseDown={event => { if (event.target === event.currentTarget) setActivePhoto(''); }}><button type="button" className="pb-lightbox-close" onClick={() => setActivePhoto('')} aria-label="Close photograph"><X size={23} /></button><button type="button" className="pb-lightbox-nav is-left" onClick={() => setActivePhoto(visible[Math.max(0, modalIndex - 1)]?.assetId)} disabled={modalIndex <= 0} aria-label="Previous photograph"><ChevronLeft size={26} /></button><figure><img src={photoUrl(modalAsset, true)} alt={modalAsset.alt || 'Finished photograph'} /><figcaption>Photograph {modalIndex + 1} of {visible.length}</figcaption></figure><button type="button" className="pb-lightbox-nav is-right" onClick={() => setActivePhoto(visible[Math.min(visible.length - 1, modalIndex + 1)]?.assetId)} disabled={modalIndex >= visible.length - 1} aria-label="Next photograph"><ChevronRight size={26} /></button><div className="pb-lightbox-actions">{!preview && <button type="button" onClick={() => openWhatsApp('photo', modalAsset.assetId, delivery?.title || 'Photo gallery')}><MessageCircle size={17} /> Share on WhatsApp</button>}{canDownload && <button type="button" onClick={() => galleryProps.onDownload?.(modalAsset.assetId, modalIndex)}><Download size={17} /> Download photo</button>}</div></div>}
+    {modalAsset && <div className="pb-lightbox" role="dialog" aria-modal="true" aria-label="Photograph" onMouseDown={event => { if (event.target === event.currentTarget) setActivePhoto(''); }}>
+      <button type="button" className="pb-lightbox-close" onClick={() => setActivePhoto('')} aria-label="Close photograph"><X size={23} /></button>
+      <button type="button" className="pb-lightbox-nav is-left" onClick={() => navigatePhoto(-1)} disabled={modalIndex <= 0} aria-label="Previous photograph"><ChevronLeft size={26} /></button>
+      <figure onTouchStart={onPhotoTouchStart} onTouchMove={onPhotoTouchMove} onTouchEnd={onPhotoTouchEnd}>
+        <img key={modalAsset.assetId} className={photoDirection > 0 ? 'is-next' : 'is-previous'} src={photoUrl(modalAsset, true)} alt={modalAsset.alt || 'Finished photograph'} draggable="false" />
+        <figcaption>Photograph {modalIndex + 1} of {visible.length}{visible.length > 1 && <span className="pb-swipe-hint"> · Swipe to browse</span>}</figcaption>
+      </figure>
+      <button type="button" className="pb-lightbox-nav is-right" onClick={() => navigatePhoto(1)} disabled={modalIndex >= visible.length - 1} aria-label="Next photograph"><ChevronRight size={26} /></button>
+      <div className="pb-lightbox-actions">{!preview && <button type="button" onClick={() => openWhatsApp('photo', modalAsset.assetId, delivery?.title || 'Photo gallery')}><MessageCircle size={17} /> Share on WhatsApp</button>}{canDownload && <button type="button" onClick={() => downloadPhoto(modalAsset, modalIndex)}><Download size={17} /> Download photo</button>}</div>
+    </div>}
 
     {statusOpen && <div className="pb-status-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setStatusOpen(false); }}><section className="pb-status-dialog" role="dialog" aria-modal="true" aria-labelledby="pb-status-title"><button type="button" className="pb-dialog-close" onClick={() => setStatusOpen(false)} aria-label="Close"><X size={20} /></button><span className="pb-kicker">WHATSAPP SHARING</span><h2 id="pb-status-title">Make a Status card</h2><p>Choose up to four finished photos. Veylo makes a 9:16 card with a private link back to the gallery.</p><div className="pb-status-photos">{statusPageAssets.map((asset, index) => { const photoIndex = statusPage * statusPageSize + index; return <label key={asset.assetId} className={statusSelection.includes(asset.assetId) ? 'is-selected' : ''}><input type="checkbox" checked={statusSelection.includes(asset.assetId)} onChange={() => toggleStatusPhoto(asset.assetId)} disabled={!statusSelection.includes(asset.assetId) && statusSelection.length >= 4} /><img src={photoUrl(asset)} alt={`Select photo ${photoIndex + 1}`} loading="lazy" /><span>{statusSelection.includes(asset.assetId) && <Check size={15} />}{photoIndex + 1}</span></label>; })}</div>{statusPageCount > 1 && <div className="pb-status-pagination"><button type="button" onClick={() => setStatusPage(page => Math.max(0, page - 1))} disabled={statusPage === 0}>Previous photos</button><span>{statusPage + 1} / {statusPageCount}</span><button type="button" onClick={() => setStatusPage(page => Math.min(statusPageCount - 1, page + 1))} disabled={statusPage >= statusPageCount - 1}>More photos</button></div>}<div className="pb-status-bottom"><span>{statusSelection.length} of 4 selected</span><button type="button" disabled={!statusSelection.length || busy} onClick={createStatusCard}>{busy ? 'Preparing card…' : 'Prepare Status card'}<ExternalLink size={16} /></button></div>{message && <p className="pb-status-message" role="status">{message}</p>}</section></div>}
     {!statusOpen && message && <div className="pb-toast" role="status">{message}<button type="button" onClick={() => setMessage('')} aria-label="Dismiss"><X size={15} /></button></div>}
