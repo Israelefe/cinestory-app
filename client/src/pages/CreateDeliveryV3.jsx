@@ -6,6 +6,7 @@ import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
 import { API_BASE_URL } from '../config/env.js';
 import { uploadDeliverySoundtrack } from '../utils/deliveryUpload.js';
+import { mergeDeliveryDraft } from '../utils/deliveryDraft.js';
 import { uploadDeliveryPhotosV3 } from '../utils/deliveryUploadV3.js';
 import { SHOOT_TYPES } from '../constants/shootTypes.js';
 import { DELIVERY_FORMATS } from '../constants/deliveryFormats.js';
@@ -393,7 +394,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     await action('palette', async () => {
       const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/theme/repick');
       const next = data.data;
-      setDraft(next);
+      setDraft(current => mergeDeliveryDraft(current, next));
       setPalette(next.creativeDirection?.palette || defaultPalette);
     });
   }

@@ -11,6 +11,7 @@ import { DEMO_PRESETS } from '../constants/demoStories.js';
 import { useDialogFocus } from '../components/useDialogFocus.js';
 import ClientGallery from '../components/delivery/ClientGallery.jsx';
 import DeliveryBrandMark from '../components/delivery/DeliveryBrandMark.jsx';
+import { useSmoothSoundtrackLoop } from '../utils/smoothSoundtrackLoop.js';
 import './StoryV3.css';
 export { DEMO_PRESETS } from '../constants/demoStories.js';
 
@@ -240,6 +241,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
  const captionNarrationUrl = captionNarration?.url || (deliveryProp?.schemaVersion !== 3 ? deliveryProp?.narration?.url : '');
  const narrationSegments = captionNarration?.segments || (deliveryProp?.schemaVersion !== 3 ? deliveryProp?.narration?.segments : null) || EMPTY_NARRATION_SEGMENTS;
  const hasNarration = Boolean(captionNarrationUrl);
+ useSmoothSoundtrackLoop(audio, story?.soundtrack?.audioUrl);
  const clearV3FinalFade = () => {
   if (v3FinalFadeTimer.current) window.clearTimeout(v3FinalFadeTimer.current);
   v3FinalFadeTimer.current = null;
@@ -761,7 +763,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
    </>}
    {(story.soundtrack?.audioUrl || hasNarration) && <div className={`v-story-sound ${audioLoading || narrationLoading ? 'is-loading' : ''}`} role="status" aria-live="polite"><span className={audioLoading || narrationLoading ? 'is-loading' : audioPlaying || narrationPlaying ? 'is-playing' : ''} /><p>{audioLoading && narrationLoading ? 'Loading music and narration…' : narrationLoading ? 'Loading narration…' : audioLoading ? 'Loading soundtrack…' : audioPlaying ? `Now playing · ${story.soundtrack?.title || 'Selected track'}` : narrationPlaying ? 'Narration playing' : muted ? 'Sound off' : `Soundtrack · ${story.soundtrack?.title || 'Selected track'}`}</p></div>}
   </main>
-  {story.soundtrack?.audioUrl && <audio ref={audio} src={mediaUrl(story.soundtrack.audioUrl)} loop preload="metadata" onWaiting={() => { if (started && !muted) setAudioLoading(true); }} onStalled={() => { if (started && !muted) setAudioLoading(true); }} onPlaying={() => { audioPlayPending.current = false; setAudioLoading(false); setAudioPlaying(true); }} onPause={() => { audioPlayPending.current = false; setAudioLoading(false); }} onError={() => { audioPlayPending.current = false; setAudioPlaying(false); setAudioLoading(false); toast.info('The soundtrack could not load. The story will continue without it.'); }} />}
+  {story.soundtrack?.audioUrl && <audio ref={audio} crossOrigin="anonymous" src={mediaUrl(story.soundtrack.audioUrl)} loop preload="metadata" onWaiting={() => { if (started && !muted) setAudioLoading(true); }} onStalled={() => { if (started && !muted) setAudioLoading(true); }} onPlaying={() => { audioPlayPending.current = false; setAudioLoading(false); setAudioPlaying(true); }} onPause={() => { audioPlayPending.current = false; setAudioLoading(false); }} onError={() => { audioPlayPending.current = false; setAudioPlaying(false); setAudioLoading(false); toast.info('The soundtrack could not load. The story will continue without it.'); }} />}
   {captionNarrationUrl && <audio ref={narrationRef} src={mediaUrl(captionNarrationUrl)} preload="metadata" onWaiting={() => { if (started && !muted) setNarrationLoading(true); }} onStalled={() => { if (started && !muted) setNarrationLoading(true); }} onPlaying={() => { setNarrationLoading(false); setNarrationPlaying(true); if (deliveryProp?.schemaVersion === 3) fadeAudioVolume(audio.current, .16, 450); }} onPause={() => { if (deliveryProp?.schemaVersion === 3) { setNarrationPlaying(false); setNarrationLoading(false); fadeAudioVolume(audio.current, 1, 600); } }} onEnded={handleNarrationEnded} onError={() => { setNarrationPlaying(false); setNarrationLoading(false); fadeAudioVolume(audio.current, 1); toast.info('The narration could not load. The story will continue without it.'); }} />}
   {deliveryProp?.schemaVersion === 3 && deliveryProp?.narration?.opening?.url && <audio ref={v3OpeningRef} src={mediaUrl(deliveryProp.narration.opening.url)} preload="metadata" onEnded={() => beginFrames(true)} onError={() => { if (v3OpeningPlayed.current) beginFrames(true); }} />}
   {deliveryProp?.schemaVersion === 3 && deliveryProp?.narration?.closing?.url && <audio ref={v3ClosingRef} src={mediaUrl(deliveryProp.narration.closing.url)} preload="metadata" onEnded={finishV3ClosingNarration} onError={finishV3ClosingNarration} />}

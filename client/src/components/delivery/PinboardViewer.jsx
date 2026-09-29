@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ArrowDownToLine, Check, ChevronLeft, ChevronRight, Download, ExternalLink, Image, MessageCircle, Pause, Play, Shirt, SkipBack, SkipForward, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowDownToLine, Check, ChevronLeft, ChevronRight, Download, ExternalLink, Image, MessageCircle, Pause, Play, RotateCcw, Shirt, SkipBack, SkipForward, Volume2, VolumeX, X } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { API_BASE_URL } from '../../config/env.js';
 import api from '../../services/api.js';
 import { resolvedGridboardPalette } from '../../utils/gridboardPalette.js';
+import { useSmoothSoundtrackLoop } from '../../utils/smoothSoundtrackLoop.js';
 import DeliveryBrandMark from './DeliveryBrandMark.jsx';
 import './PinboardViewer.css';
 
@@ -18,6 +19,20 @@ function accessHeaders(publicId) {
 }
 
 function photoUrl(asset, full = false) { return full ? asset?.url || asset?.thumbnailUrl || '' : asset?.thumbnailUrl || asset?.url || ''; }
+async function loadSlideshowPhoto(asset) {
+  for (const src of [...new Set([photoUrl(asset, true), photoUrl(asset)])].filter(Boolean)) {
+    const loaded = await new Promise(resolve => {
+      const image = new window.Image();
+      const finish = success => { window.clearTimeout(timer); image.onload = null; image.onerror = null; resolve(success); };
+      const timer = window.setTimeout(() => finish(false), 10000);
+      image.onload = () => finish(true);
+      image.onerror = () => finish(false);
+      image.src = src;
+    });
+    if (loaded) return src;
+  }
+  throw new Error('This photograph could not load. Check your connection and try again.');
+}
 function assetColors(asset) {
   const colors = asset?.photoColors?.length ? asset.photoColors : asset?.dominantColor ? [asset.dominantColor] : asset?.analysis?.colors || [];
   return [...new Set(colors.filter(color => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color)))];
@@ -68,6 +83,38 @@ function SlideshowChoice({ title, detail, cover, onClick }) {
   </button>;
 }
 
+function SlideshowFrame({ slide, seconds, paused, direction, reducedMotion }) {
+  const arrival = slide.index % 3;
+  const duration = reducedMotion ? 0 : .9;
+  const photoVariants = {
+    entering: travel => reducedMotion ? { opacity: 1 } : {
+      opacity: 0,
+      x: arrival === 0 ? travel * 48 : 0,
+      y: arrival === 1 ? 38 : 0,
+      scale: arrival === 2 ? .93 : 1.025
+    },
+    showing: { opacity: 1, x: 0, y: 0, scale: 1 },
+    leaving: travel => reducedMotion ? { opacity: 0 } : {
+      opacity: 0,
+      x: arrival === 0 ? travel * -36 : 0,
+      y: arrival === 1 ? -24 : 0,
+      scale: arrival === 2 ? 1.045 : .985
+    }
+  };
+  return <motion.figure className="pb-slideshow-frame" custom={direction}
+    variants={{ entering: { opacity: reducedMotion ? 1 : 0 }, showing: { opacity: 1 }, leaving: { opacity: 0 } }}
+    initial="entering" animate="showing" exit="leaving"
+    transition={{ duration, ease: [0.22, 1, 0.36, 1] }}>
+    <img className={`pb-slideshow-ambient pb-slide-ambient-${slide.index % 2}`} src={slide.src} alt="" aria-hidden="true"
+      style={{ animationDuration: `${seconds}s`, animationPlayState: paused ? 'paused' : 'running' }} />
+    <motion.div className="pb-slideshow-photo-window" custom={direction} variants={photoVariants}
+      transition={{ duration, ease: [0.22, 1, 0.36, 1] }}>
+      <img className={`pb-slideshow-main-photo pb-slide-movement-${slide.index % 6}`} src={slide.src} alt={slide.alt}
+        style={{ animationDuration: `${seconds}s`, animationPlayState: paused ? 'paused' : 'running' }} />
+    </motion.div>
+  </motion.figure>;
+}
+
 export default function PinboardViewer({ delivery, preview = false, demo = false, galleryProps = {} }) {
   const location = useLocation();
   const [activeMoment, setActiveMoment] = useState('');
@@ -75,6 +122,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   const [activeLayoutId, setActiveLayoutId] = useState(delivery?.pinboard?.selectedLayoutId || 'balanced');
   const [activePhoto, setActivePhoto] = useState('');
   const [showSlideshowSetup, setShowSlideshowSetup] = useState(false);
+  const [slideshowOpening, setSlideshowOpening] = useState('');
   const [slideshow, setSlideshow] = useState(null);
   const [displayedSlide, setDisplayedSlide] = useState(null);
   const [slideLoading, setSlideLoading] = useState(false);
@@ -93,6 +141,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   const musicRef = useRef(null);
   const preloadedPhotos = useRef(new Map());
   const slideStartedAt = useRef(0);
+  const slideshowStartToken = useRef(0);
   const reducedMotion = useReducedMotion();
   const [viewportWidth, setViewportWidth] = useState(() => typeof window === 'undefined' ? 390 : window.innerWidth);
   const board = delivery?.pinboard || {};
@@ -124,6 +173,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
     return inMoment && inColour;
   });
   const soundtrackUrl = delivery?.soundtrack?.url ? audioUrl(delivery.soundtrack.url) : '';
+  useSmoothSoundtrackLoop(musicRef, soundtrackUrl);
   const slideshowAsset = slideshow ? assetById.get(String(slideshow.assetIds[slideshow.index])) : null;
   const palette = useMemo(() => resolvedGridboardPalette(board.palette, assets), [board.palette, assets]);
   const typography = board.typography || {};
@@ -132,19 +182,13 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   const columnCount = Math.max(1, Math.min(5, Number(viewportWidth <= 640 ? grid.mobileColumns || 2 : viewportWidth <= 1024 ? grid.tabletColumns || 3 : grid.desktopColumns || 4)));
   const masonryColumns = Array.from({ length: columnCount }, () => []);
   const columnHeights = Array.from({ length: columnCount }, () => 0);
-  visible.slice(0, -1).forEach((asset, index) => {
+  visible.forEach((asset, index) => {
     const ratio = tileRatio(asset, index, activeLayoutId);
     const [width, height] = ratio.split('/').map(Number);
     const shortest = columnHeights.indexOf(Math.min(...columnHeights));
     masonryColumns[shortest].push({ asset, index, ratio });
     columnHeights[shortest] += height / width + 0.07;
   });
-  if (visible.length) {
-    const asset = visible.at(-1);
-    const index = visible.length - 1;
-    const ratio = tileRatio(asset, index, activeLayoutId);
-    masonryColumns[0].push({ asset, index, ratio });
-  }
   const style = {
     '--pb-background': palette.background || '#13110f',
     '--pb-surface': palette.surface || '#211b18',
@@ -188,13 +232,13 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   }, [board.selectedLayoutId]);
 
   useEffect(() => {
-    if (!slideshow?.active || slideshow.paused || !displayedSlide || displayedSlide.assetId !== String(slideshow.assetIds[slideshow.index])) return undefined;
+    if (!slideshow?.active || slideshow.completed || slideshow.paused || !displayedSlide || displayedSlide.visit !== slideshow.visit || displayedSlide.assetId !== String(slideshow.assetIds[slideshow.index])) return undefined;
     slideStartedAt.current = Date.now();
     const timer = window.setTimeout(() => {
       setSlideshow(current => {
         if (!current) return null;
-        if (current.index >= current.assetIds.length - 1) return null;
-        return { ...current, index: current.index + 1, remainingMs: current.interval * 1000 };
+        if (current.index >= current.assetIds.length - 1) return { ...current, completed: true };
+        return { ...current, index: current.index + 1, direction: 1, visit: current.visit + 1, remainingMs: current.interval * 1000 };
       });
     }, slideshow.remainingMs);
     return () => window.clearTimeout(timer);
@@ -209,7 +253,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
     const useLoaded = src => {
       if (cancelled) return;
       preloadedPhotos.current.set(assetId, src);
-      setDisplayedSlide({ assetId, index: slideshow.index, src, alt: slideshowAsset.alt || 'Finished photograph' });
+      setDisplayedSlide({ assetId, index: slideshow.index, visit: slideshow.visit, src, alt: slideshowAsset.alt || 'Finished photograph' });
       setSlideLoading(false);
     };
     const cached = preloadedPhotos.current.get(assetId);
@@ -231,7 +275,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
     };
     image.src = fullUrl;
     return () => { cancelled = true; };
-  }, [slideshowAsset, slideshow?.index]);
+  }, [slideshowAsset, slideshow?.index, slideshow?.visit]);
 
   useEffect(() => {
     if (!slideshow || slideshow.index >= slideshow.assetIds.length - 1) return undefined;
@@ -244,12 +288,49 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   }, [slideshow?.index, slideshow?.assetIds, assetById]);
 
   useEffect(() => {
-    if (slideshow || !musicRef.current) return;
-    musicRef.current.pause();
-    musicRef.current.currentTime = 0;
+    const audio = musicRef.current;
+    if (!audio) return undefined;
+    let frame;
+    let timer;
+    const fadeOut = duration => {
+      const started = performance.now();
+      const volume = audio.volume;
+      const tick = now => {
+        const progress = Math.min(1, (now - started) / duration);
+        audio.volume = volume * (1 - progress);
+        if (progress < 1) frame = window.requestAnimationFrame(tick);
+        else { audio.pause(); if (!slideshow) audio.currentTime = 0; }
+      };
+      frame = window.requestAnimationFrame(tick);
+    };
+    if (!slideshow) {
+      if (!slideshowOpening && !audio.paused) fadeOut(450);
+      else if (!slideshowOpening) audio.currentTime = 0;
+    } else if (slideshow.completed) fadeOut(450);
+    else if (!slideshow.paused && !musicMuted) {
+      const lastPhoto = slideshow.index === slideshow.assetIds.length - 1;
+      const loaded = displayedSlide?.visit === slideshow.visit && displayedSlide?.assetId === String(slideshow.assetIds[slideshow.index]);
+      const fadeMs = 1600;
+      audio.volume = lastPhoto && loaded ? .72 * Math.min(1, slideshow.remainingMs / fadeMs) : .72;
+      if (lastPhoto && loaded) timer = window.setTimeout(() => fadeOut(Math.min(fadeMs, slideshow.remainingMs)), Math.max(0, slideshow.remainingMs - fadeMs));
+    }
+    return () => { window.clearTimeout(timer); window.cancelAnimationFrame(frame); };
+  }, [slideshow, displayedSlide, musicMuted, slideshowOpening]);
+
+  useEffect(() => {
+    if (!slideshow) return undefined;
+    const onKey = event => {
+      if (event.key === 'Escape') setSlideshow(null);
+      if (!slideshow.completed && ['ArrowRight', 'ArrowLeft'].includes(event.key)) {
+        event.preventDefault();
+        navigateSlideshow(event.key === 'ArrowRight' ? 1 : -1);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, [slideshow]);
 
-  useEffect(() => () => musicRef.current?.pause(), []);
+  useEffect(() => () => { slideshowStartToken.current += 1; musicRef.current?.pause(); }, []);
 
   useEffect(() => () => { if (statusCard?.url) URL.revokeObjectURL(statusCard.url); }, [statusCard?.url]);
 
@@ -300,31 +381,75 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   }
 
   async function startSlideshow(selectedAssets, title) {
+    if (slideshowOpening) return;
     const assetIds = [...new Set(selectedAssets.map(asset => String(asset.assetId)).filter(id => assetById.has(id)))];
     if (!assetIds.length) return;
-    setShowSlideshowSetup(false);
-    setActivePhoto('');
+    const token = ++slideshowStartToken.current;
+    setSlideshowOpening(title);
     setSlideshowMessage('');
     setMusicMuted(false);
-    setDisplayedSlide(null);
-    setSlideshow({ active: true, paused: false, assetIds, title, index: 0, interval: slideSeconds, remainingMs: slideSeconds * 1000 });
+    // Request playback during the tap, but keep it silent until the first photo is ready.
     if (soundtrackUrl && musicRef.current) {
-      musicRef.current.volume = 0.72;
-      try { await musicRef.current.play(); }
-      catch { setMusicMuted(true); setSlideshowMessage('The slideshow is playing without music. Tap Sound off to try again.'); }
+      musicRef.current.volume = 0;
+      musicRef.current.play().catch(() => {
+        if (token === slideshowStartToken.current) { setMusicMuted(true); setSlideshowMessage('The slideshow is playing without music. Tap Sound off to try again.'); }
+      });
+    }
+    try {
+      const first = assetById.get(assetIds[0]);
+      const src = preloadedPhotos.current.get(assetIds[0]) || await loadSlideshowPhoto(first);
+      if (token !== slideshowStartToken.current) return;
+      preloadedPhotos.current.set(assetIds[0], src);
+      setDisplayedSlide({ assetId: assetIds[0], index: 0, visit: 0, src, alt: first.alt || 'Finished photograph' });
+      setSlideLoading(false);
+      setSlideshowOpening('');
+      setShowSlideshowSetup(false);
+      setActivePhoto('');
+      setSlideshow({ active: true, paused: false, completed: false, assetIds, title, index: 0, visit: 0, direction: 1, interval: slideSeconds, remainingMs: slideSeconds * 1000 });
+      if (musicRef.current) { musicRef.current.currentTime = 0; musicRef.current.volume = .72; }
+    } catch (failure) {
+      if (token !== slideshowStartToken.current) return;
+      musicRef.current?.pause();
+      setSlideshowOpening('');
+      setSlideshowMessage(failure.message);
     }
   }
 
+  function closeSlideshowSetup() {
+    slideshowStartToken.current += 1;
+    setSlideshowOpening('');
+    setShowSlideshowSetup(false);
+    if (!slideshow) musicRef.current?.pause();
+  }
+
   function toggleSlideshowPause() {
+    if (slideshow?.completed) return;
     if (slideshow?.paused && !musicMuted && musicRef.current) musicRef.current.play().catch(() => { setMusicMuted(true); setSlideshowMessage('The slideshow is playing without music. Tap Sound off to try again.'); });
     else musicRef.current?.pause();
     setSlideshow(current => {
       if (!current) return null;
       if (current.paused) return { ...current, paused: false };
-      const showingCurrent = displayedSlide?.assetId === String(current.assetIds[current.index]);
+      const showingCurrent = displayedSlide?.visit === current.visit && displayedSlide?.assetId === String(current.assetIds[current.index]);
       const elapsed = showingCurrent ? Date.now() - slideStartedAt.current : 0;
       return { ...current, paused: true, remainingMs: Math.max(100, current.remainingMs - elapsed) };
     });
+  }
+
+  function navigateSlideshow(direction) {
+    setSlideshow(current => {
+      if (!current || current.completed || (direction < 0 && current.index === 0)) return current;
+      if (direction > 0 && current.index === current.assetIds.length - 1) return { ...current, completed: true };
+      return { ...current, index: current.index + direction, direction, visit: current.visit + 1, remainingMs: current.interval * 1000 };
+    });
+  }
+
+  function replaySlideshow() {
+    setSlideshow(current => current ? { ...current, completed: false, paused: false, index: 0, direction: 1, visit: current.visit + 1, remainingMs: current.interval * 1000 } : null);
+    if (!musicMuted && musicRef.current) {
+      musicRef.current.currentTime = 0;
+      musicRef.current.volume = .72;
+      musicRef.current.play().catch(() => { setMusicMuted(true); setSlideshowMessage('Tap Sound off to try the music again.'); });
+    }
   }
 
   function similarShotsFor(target) {
@@ -564,40 +689,58 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
       <div className="pb-lightbox-actions">{!preview && <button type="button" onClick={() => openWhatsApp('photo', modalAsset.assetId, delivery?.title || 'Photo gallery')}><MessageCircle size={17} /> Share on WhatsApp</button>}{canDownload && <button type="button" onClick={() => downloadPhoto(modalAsset, modalIndex)}><Download size={17} /> Download photo</button>}</div>
     </div>}
 
-    {soundtrackUrl && <audio ref={musicRef} src={soundtrackUrl} preload="none" loop onError={() => { setMusicMuted(true); if (slideshow) setSlideshowMessage('Music could not load. The slideshow will keep playing without it.'); }} />}
+    {soundtrackUrl && <audio ref={musicRef} crossOrigin="anonymous" src={soundtrackUrl} preload="none" loop onError={() => { setMusicMuted(true); if (slideshow) setSlideshowMessage('Music could not load. The slideshow will keep playing without it.'); }} />}
 
     <AnimatePresence>
-      {showSlideshowSetup && <motion.div className="pb-status-backdrop pb-slideshow-backdrop" role="presentation" initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : .24 }} onMouseDown={event => { if (event.target === event.currentTarget) setShowSlideshowSetup(false); }}>
+      {showSlideshowSetup && <motion.div className="pb-status-backdrop pb-slideshow-backdrop" role="presentation" initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : .24 }} onMouseDown={event => { if (event.target === event.currentTarget) closeSlideshowSetup(); }}>
         <motion.section className="pb-slideshow-setup" role="dialog" aria-modal="true" aria-labelledby="pb-slideshow-setup-title" initial={reducedMotion ? false : { opacity: 0, y: 22, scale: .975 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: .985 }} transition={{ duration: reducedMotion ? 0 : .38, ease: [0.22, 1, 0.36, 1] }}>
-          <button type="button" className="pb-dialog-close" onClick={() => setShowSlideshowSetup(false)} aria-label="Close slideshow settings"><X size={20} /></button>
+          <button type="button" className="pb-dialog-close" onClick={closeSlideshowSetup} aria-label="Close slideshow settings"><X size={20} /></button>
           <span className="pb-kicker">GRIDBOARD SLIDESHOW</span>
           <h2 id="pb-slideshow-setup-title">Choose the photos to play.</h2>
           <p>Play the whole board or follow one part of the shoot. Music starts with the slideshow if your photographer added it.</p>
-          <div className="pb-slideshow-options">
+          <fieldset className="pb-slideshow-options" disabled={!!slideshowOpening} aria-busy={!!slideshowOpening}>
             {similarSlideAssets.length > 1 && <section className="pb-slide-choice-section"><h3>FROM THIS PHOTO</h3><SlideshowChoice title="Similar Shot" detail={`${similarSlideAssets.length} photographs with a similar look`} cover={modalAsset} onClick={() => void startSlideshow(similarSlideAssets, 'Similar Shot')} /></section>}
             {currentSelectionName && <section className="pb-slide-choice-section"><h3>YOUR CURRENT VIEW</h3><SlideshowChoice title={currentSelectionName} detail={`${visible.length} photographs`} cover={visible[0]} onClick={() => void startSlideshow(visible, currentSelectionName)} /></section>}
             <section className="pb-slide-choice-section"><h3>THE COMPLETE BOARD</h3><SlideshowChoice title="Every photograph" detail={`${ordered.length} photographs`} cover={ordered[0]} onClick={() => void startSlideshow(ordered, 'Every photograph')} /></section>
             {!!momentSlides.length && <section className="pb-slide-choice-section"><h3>FIND A MOMENT</h3><div className="pb-slide-choice-grid">{momentSlides.map(moment => <SlideshowChoice key={moment.id} title={moment.title} detail={`${moment.photos.length} photographs`} cover={moment.photos[0]} onClick={() => void startSlideshow(moment.photos, moment.title)} />)}</div></section>}
             {!!colourSlides.filter(group => group.area === 'outfit').length && <section className="pb-slide-choice-section"><h3>OUTFITS</h3><div className="pb-slide-choice-grid">{colourSlides.filter(group => group.area === 'outfit').map(group => <SlideshowChoice key={group.key} title={colorGroupLabel(group)} detail={`${group.photos.length} photographs`} cover={group.photos[0]} onClick={() => void startSlideshow(group.photos, colorGroupLabel(group))} />)}</div></section>}
             {!!colourSlides.filter(group => group.area === 'backdrop').length && <section className="pb-slide-choice-section"><h3>BACKGROUNDS</h3><div className="pb-slide-choice-grid">{colourSlides.filter(group => group.area === 'backdrop').map(group => <SlideshowChoice key={group.key} title={colorGroupLabel(group)} detail={`${group.photos.length} photographs`} cover={group.photos[0]} onClick={() => void startSlideshow(group.photos, colorGroupLabel(group))} />)}</div></section>}
-          </div>
-          <label className="pb-slideshow-speed">Time per photo<select value={slideSeconds} onChange={event => setSlideSeconds(Number(event.target.value))}><option value="4">4 seconds</option><option value="5">5 seconds</option><option value="7">7 seconds</option><option value="9">9 seconds</option></select></label>
+          </fieldset>
+          {slideshowOpening && <p className="pb-slideshow-opening" role="status">Opening {slideshowOpening.toLowerCase()}…</p>}
+          {!slideshowOpening && slideshowMessage && <p className="pb-slideshow-opening" role="alert">{slideshowMessage}</p>}
+          <label className="pb-slideshow-speed">Time per photo<select value={slideSeconds} disabled={!!slideshowOpening} onChange={event => setSlideSeconds(Number(event.target.value))}><option value="4">4 seconds</option><option value="5">5 seconds</option><option value="7">7 seconds</option><option value="9">9 seconds</option></select></label>
         </motion.section>
       </motion.div>}
     </AnimatePresence>
 
     <AnimatePresence>
-      {slideshowAsset && <motion.section className="pb-slideshow" role="dialog" aria-modal="true" aria-label="GridBoard slideshow" initial={reducedMotion ? false : { opacity: 0, y: 26 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 18 }} transition={{ duration: reducedMotion ? 0 : .42, ease: [0.22, 1, 0.36, 1] }}>
+      {slideshowAsset && <motion.section className={'pb-slideshow' + (slideshow.completed ? ' is-complete' : '')} role="dialog" aria-modal="true" aria-label="GridBoard slideshow" initial={reducedMotion ? false : { opacity: 0, y: 30, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 24, scale: .965 }} transition={{ duration: reducedMotion ? 0 : .55, ease: [0.22, 1, 0.36, 1] }}>
       <header><div><span>GRIDBOARD SLIDESHOW</span><small>{slideshow.title} · {(displayedSlide?.index ?? slideshow.index) + 1} / {slideshow.assetIds.length}</small></div><button type="button" onClick={() => setSlideshow(null)} aria-label="Close slideshow"><X size={20} />Close</button></header>
       <div className="pb-slideshow-image">
-        <AnimatePresence initial={false} mode="sync">{displayedSlide && <motion.figure className="pb-slideshow-frame" key={displayedSlide.assetId} initial={reducedMotion ? false : { opacity: 0, x: displayedSlide.index % 2 ? 32 : -32, scale: 1.055 }} animate={{ opacity: 1, x: 0, scale: 1 }} exit={reducedMotion ? undefined : { opacity: 0, x: displayedSlide.index % 2 ? 32 : -32, scale: 1.025 }} transition={{ duration: reducedMotion ? 0 : .82, ease: [0.22, 1, 0.36, 1] }}><img className="pb-slideshow-ambient" src={displayedSlide.src} alt="" aria-hidden="true" /><img className={'pb-slideshow-main-photo ' + (displayedSlide.index % 2 ? 'is-reverse' : '')} src={displayedSlide.src} alt={displayedSlide.alt} style={{ animationDuration: `${slideshow.interval + 1}s`, animationPlayState: slideshow.paused ? 'paused' : 'running' }} /></motion.figure>}</AnimatePresence>
+        <AnimatePresence mode="sync" custom={slideshow.direction}>
+          {displayedSlide && <SlideshowFrame key={`${displayedSlide.assetId}:${displayedSlide.visit}`} slide={displayedSlide}
+            seconds={slideshow.interval} paused={slideshow.paused || slideshow.completed || slideLoading}
+            direction={slideshow.direction} reducedMotion={reducedMotion} />}
+        </AnimatePresence>
         {!displayedSlide && <span className="pb-slide-loading" role="status">Opening photographs…</span>}
         {slideLoading && displayedSlide && <span className="pb-slide-loading-indicator" role="status">Loading next photograph</span>}
-        <div className="pb-slide-context">{slideshow.title}</div>
-        <div className="pb-slide-index" aria-hidden="true"><strong>{String((displayedSlide?.index ?? slideshow.index) + 1).padStart(2, '0')}</strong><i />{String(slideshow.assetIds.length).padStart(2, '0')}</div>
+        {!slideshow.completed && <motion.div className="pb-slide-context" initial={reducedMotion ? false : { opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .3, duration: .5 }}>{slideshow.title}</motion.div>}
+        {!slideshow.completed && <div className="pb-slide-index" aria-hidden="true"><AnimatePresence mode="popLayout"><motion.strong key={displayedSlide?.visit ?? 0} initial={reducedMotion ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: reducedMotion ? 0 : .4 }}>{String((displayedSlide?.index ?? slideshow.index) + 1).padStart(2, '0')}</motion.strong></AnimatePresence><i />{String(slideshow.assetIds.length).padStart(2, '0')}</div>}
+        <AnimatePresence>
+          {slideshow.completed && <motion.div className="pb-slideshow-ending" initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : .6 }}>
+            <motion.div initial={reducedMotion ? false : { opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reducedMotion ? 0 : .7, delay: reducedMotion ? 0 : .15 }}>
+              <span>{slideshow.title}</span><h2>There’s more to explore.</h2>
+              <p>Watch {slideshow.assetIds.length === 1 ? 'this photo' : `these ${slideshow.assetIds.length} photos`} again, or return to your board.</p>
+              <div><button type="button" onClick={replaySlideshow}><RotateCcw size={17} />Replay slideshow</button><button type="button" onClick={() => setSlideshow(null)}><Image size={17} />Back to board</button></div>
+            </motion.div>
+          </motion.div>}
+        </AnimatePresence>
       </div>
-      <div className="pb-slideshow-progress" aria-hidden="true"><span style={{ width: `${((displayedSlide?.index ?? slideshow.index) / slideshow.assetIds.length) * 100}%` }} />{displayedSlide && !slideLoading && <i key={displayedSlide.assetId} className={slideshow.paused ? 'is-paused' : ''} style={{ left: `${(displayedSlide.index / slideshow.assetIds.length) * 100}%`, width: `${100 / slideshow.assetIds.length}%`, animationDuration: `${slideshow.interval}s` }} />}</div>
-      <footer><span aria-live="polite">Photograph {(displayedSlide?.index ?? slideshow.index) + 1} of {slideshow.assetIds.length}</span><div><button type="button" onClick={() => setSlideshow(current => ({ ...current, index: Math.max(0, current.index - 1), remainingMs: current.interval * 1000 }))} disabled={slideshow.index === 0} aria-label="Previous photo"><SkipBack size={18} /></button><button type="button" onClick={toggleSlideshowPause} aria-label={slideshow.paused ? 'Resume slideshow' : 'Pause slideshow'}>{slideshow.paused ? <Play size={19} /> : <Pause size={19} />}</button><button type="button" onClick={() => setSlideshow(current => current.index >= current.assetIds.length - 1 ? null : ({ ...current, index: current.index + 1, remainingMs: current.interval * 1000 }))} aria-label="Next photo"><SkipForward size={18} /></button></div>{soundtrackUrl ? <button type="button" className="pb-slide-music" onClick={() => void toggleMusic()} aria-pressed={!musicMuted}>{musicMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}{musicMuted ? 'Sound off' : 'Sound on'}</button> : <span className="pb-slide-no-music">No soundtrack added</span>}</footer>{slideshowMessage && <p className="pb-slideshow-message" role="status">{slideshowMessage}</p>}
+      <div className="pb-slideshow-progress" aria-hidden="true"><span style={{ width: `${slideshow.completed ? 100 : ((displayedSlide?.index ?? slideshow.index) / slideshow.assetIds.length) * 100}%` }} />{displayedSlide && !slideshow.completed && <i key={`${displayedSlide.assetId}:${displayedSlide.visit}`} className={slideshow.paused || slideLoading ? 'is-paused' : ''} style={{ left: `${(displayedSlide.index / slideshow.assetIds.length) * 100}%`, width: `${100 / slideshow.assetIds.length}%`, animationDuration: `${slideshow.interval}s` }} />}</div>
+      <footer><span aria-live="polite">{slideshow.completed ? 'Slideshow finished' : `Photograph ${(displayedSlide?.index ?? slideshow.index) + 1} of ${slideshow.assetIds.length}`}</span>
+        {!slideshow.completed && <div><button type="button" onClick={() => navigateSlideshow(-1)} disabled={slideshow.index === 0} aria-label="Previous photo"><SkipBack size={18} /></button><button type="button" onClick={toggleSlideshowPause} aria-label={slideshow.paused ? 'Resume slideshow' : 'Pause slideshow'}>{slideshow.paused ? <Play size={19} /> : <Pause size={19} />}</button><button type="button" onClick={() => navigateSlideshow(1)} aria-label="Next photo"><SkipForward size={18} /></button></div>}
+        {!slideshow.completed && (soundtrackUrl ? <button type="button" className="pb-slide-music" onClick={() => void toggleMusic()} aria-pressed={!musicMuted}>{musicMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}{musicMuted ? 'Sound off' : 'Sound on'}</button> : <span className="pb-slide-no-music">No soundtrack added</span>)}
+      </footer>{slideshowMessage && <p className="pb-slideshow-message" role="status">{slideshowMessage}</p>}
       </motion.section>}
     </AnimatePresence>
 

@@ -7,6 +7,7 @@ import { API_BASE_URL } from '../config/env.js';
 import api, { apiMessage } from '../services/api.js';
 import { uploadDeliveryPhotosV3 } from '../utils/deliveryUploadV3.js';
 import { uploadDeliverySoundtrack } from '../utils/deliveryUpload.js';
+import { mergeDeliveryDraft } from '../utils/deliveryDraft.js';
 import { ClientPreviewPhoneFrame } from '../components/delivery/PhonePresentation.jsx';
 import { resolvedGridboardPalette, readableGridboardPalette, gridboardPaletteContrast, gridboardAccentInk } from '../utils/gridboardPalette.js';
 import './CreatePinboardV3.css';
@@ -257,7 +258,7 @@ export default function CreatePinboardV3({ user, initialDelivery }) {
     const body = { title: title.trim() || `${clientName || 'Client'}'s photographs`, useStandardBoard: true, selectedLayoutId: 'balanced', layouts: basicLayouts, moments: [], palette, typography, grid, animation };
     await action('standard', async () => {
       const { data } = await api.patch(`/v1/deliveries/${draft._id}/v3/pinboard`, body);
-      setDraft(data.data); setLayouts(basicLayouts); setSelectedLayoutId('balanced'); setMoments([]); setUseStandardBoard(true); setBoardReady(true); setStage('design');
+      setDraft(current => mergeDeliveryDraft(current, data.data)); setLayouts(basicLayouts); setSelectedLayoutId('balanced'); setMoments([]); setUseStandardBoard(true); setBoardReady(true); setStage('design');
     });
   }
   function updateMoment(index, changes) { setMoments(current => current.map((moment, at) => at === index ? { ...moment, ...changes } : moment)); }
@@ -275,7 +276,7 @@ export default function CreatePinboardV3({ user, initialDelivery }) {
       setPalette(safe);
       setPaletteVersion(value => value + 1);
       setPaletteNotice('New colours are showing in the client preview.');
-      setDraft(data.data);
+      setDraft(current => mergeDeliveryDraft(current, data.data));
       return safe;
     });
     if (!chosen) setPaletteNotice('No new colours were applied. See the error above and try again.');
@@ -289,7 +290,7 @@ export default function CreatePinboardV3({ user, initialDelivery }) {
     if (!boardReady || layouts.length !== 3) { setError('Choose a generated or standard board before continuing.'); return; }
     await action('board', async () => {
       const body = { title: title.trim(), useStandardBoard, selectedLayoutId, layouts, moments, palette, typography, grid, animation };
-      const { data } = await api.patch(`/v1/deliveries/${draft._id}/v3/pinboard`, body); setDraft(data.data); setStage('access');
+      const { data } = await api.patch(`/v1/deliveries/${draft._id}/v3/pinboard`, body); setDraft(current => mergeDeliveryDraft(current, data.data)); setStage('access');
     });
   }
   async function approve() {

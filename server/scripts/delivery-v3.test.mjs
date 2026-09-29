@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { V3_FORMATS, contrastRatio, validShowcase } from '../src/constants/deliveryV3.js';
-import { analyzeAllV3, calmGridboardPalette, directV3, directV3Pinboard, improvePurpose, recommendV3Format, regenerateV3Caption, repickV3Palette } from '../src/services/deliveryV3AI.service.js';
+import { analyzeAllV3, calmGridboardPalette, directV3, directV3Pinboard, improvePurpose, nextGridboardPalette, recommendV3Format, regenerateV3Caption, repickV3Palette } from '../src/services/deliveryV3AI.service.js';
 import { captionSegments, generateNarration, narrationLine, NARRATION_RENDER_VERSION } from '../src/services/narration.service.js';
 
 const ids = Array.from({ length: 25 }, (_, index) => 'asset-' + index);
@@ -45,6 +45,24 @@ test('GridBoard palette follows dominant photograph colours and stays readable',
   const channel = (hex, index) => parseInt(hex.slice(index, index + 2), 16);
   assert.ok(channel(orange.accent, 1) > channel(orange.accent, 5));
   assert.ok(channel(blue.accent, 5) > channel(blue.accent, 1));
+});
+
+test('GridBoard offers many mixed and related photo palettes without losing contrast', () => {
+  for (const colors of [[{ colors: ['#b95732', '#204c78', '#236b47'] }], [{ colors: ['#b95732'] }], [{ colors: ['#eeeeee', '#222222'] }]]) {
+    let palette = calmGridboardPalette(colors);
+    const seen = new Set();
+    for (let index = 0; index < 36; index += 1) {
+      const next = nextGridboardPalette(colors, palette);
+      assert.notDeepEqual(next, palette);
+      assert.ok(contrastRatio(next.background, next.text) >= 4.5);
+      assert.ok(contrastRatio(next.surface, next.text) >= 4.5);
+      assert.ok(contrastRatio(next.background, next.accent) >= 3);
+      assert.ok(contrastRatio(next.surface, next.accent) >= 3);
+      seen.add(JSON.stringify(next));
+      palette = next;
+    }
+    assert.ok(seen.size >= (colors[0].colors.length === 3 ? 30 : 10), `Only ${seen.size} distinct palettes`);
+  }
 });
 
 test('Pinboard suggestions keep every supplied photo and produce three complete arrangements', async () => {
@@ -116,6 +134,23 @@ test('GridBoard repick stays with dominant colours when model suggestions drift 
     assert.ok(parseInt(palette.accent.slice(1, 3), 16) > parseInt(palette.accent.slice(5, 7), 16));
     assert.ok(contrastRatio(palette.background, palette.text) >= 4.5);
     assert.ok(contrastRatio(palette.surface, palette.text) >= 4.5);
+  } finally { restore(); }
+});
+
+test('Showcase avoids recent palettes and still supplies readable colours when the model repeats them', async () => {
+  const calls = [];
+  const current = { background: '#0c0c10', surface: '#17171c', text: '#fffaf6', accent: '#ff5a47' };
+  const recent = { background: '#101820', surface: '#26333a', text: '#fffaf6', accent: '#e7a96c' };
+  const restore = mockModel([{ palette: recent }, { palette: current }], calls);
+  try {
+    const next = await repickV3Palette({ format: 'canvas', brief: "Lora's birthday", shootType: 'Birthday', imageColors: [{ colors: ['#bf562a', '#114639'] }], currentPalette: current, recentPalettes: [recent] });
+    assert.notDeepEqual(next, current);
+    assert.notDeepEqual(next, recent);
+    assert.ok(contrastRatio(next.background, next.text) >= 4.5);
+    assert.ok(contrastRatio(next.surface, next.text) >= 4.5);
+    assert.equal(calls.length, 2);
+    assert.match(calls[0].messages[0].content, /mixtures, related hues, tints and shades/);
+    assert.match(JSON.stringify(calls[0].messages[1].content), /Recent palettes not to repeat/);
   } finally { restore(); }
 });
 

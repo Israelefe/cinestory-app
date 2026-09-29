@@ -311,12 +311,14 @@ export async function v3Theme(req, res) {
 export async function v3RepickTheme(req, res) {
   try {
     const delivery = await owned(req);
+    const recentPalettes = Array.isArray(delivery?.v3?.paletteHistory) ? delivery.v3.paletteHistory.slice(-12) : [];
     if (delivery?.kind === 'pinboard') {
       if (!editable(delivery) || !delivery.pinboard) return res.status(409).json({ success: false, message: 'Analyse this GridBoard before choosing a colour palette.' });
       const images = delivery.assets.map(asset => ({ assetId: asset.assetId, colors: asset.analysis?.colors || [] })).filter(image => image.colors.length);
       if (!images.length) return res.status(409).json({ success: false, code: 'V3_IMAGE_COLOURS_UNAVAILABLE', message: 'Photograph colour analysis is missing. Retry the analysis or keep the current colours.' });
-      const palette = await repickV3Palette({ format: 'pinboard', brief: delivery.brief, shootType: delivery.shootType, imageColors: images, currentPalette: delivery.pinboard.palette });
-      delivery.pinboard = { ...delivery.pinboard, palette }; invalidateApproval(delivery); saveV3(delivery, { step: 'pinboard' }); delivery.markModified('pinboard'); await delivery.save();
+      const currentPalette = delivery.pinboard.palette;
+      const palette = await repickV3Palette({ format: 'pinboard', brief: delivery.brief, shootType: delivery.shootType, imageColors: images, currentPalette, recentPalettes });
+      delivery.pinboard = { ...delivery.pinboard, palette }; invalidateApproval(delivery); saveV3(delivery, { step: 'pinboard', paletteHistory: [...recentPalettes, currentPalette].filter(Boolean).slice(-12) }); delivery.markModified('pinboard'); await delivery.save();
       return res.json({ success: true, data: delivery });
     }
     if (!editable(delivery) || !delivery.creativeDirection) return res.status(409).json({ success: false, message: 'Finish the showcase before choosing a colour palette.' });
@@ -328,11 +330,13 @@ export async function v3RepickTheme(req, res) {
       brief: delivery.brief,
       shootType: delivery.shootType,
       imageColors: images.map(({ assetId, colors }) => ({ assetId, colors })),
-      currentPalette: delivery.creativeDirection.palette
+      currentPalette: delivery.creativeDirection.palette,
+      recentPalettes
     });
+    const currentPalette = delivery.creativeDirection.palette;
     delivery.creativeDirection = { ...delivery.creativeDirection, palette };
     invalidateApproval(delivery);
-    saveV3(delivery, { step: 'design' });
+    saveV3(delivery, { step: 'design', paletteHistory: [...recentPalettes, currentPalette].filter(Boolean).slice(-12) });
     delivery.markModified('creativeDirection');
     await delivery.save();
     res.json({ success: true, data: delivery });

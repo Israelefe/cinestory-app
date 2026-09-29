@@ -8,6 +8,7 @@ import ClientGallery from '../components/delivery/ClientGallery.jsx';
 import DeliveryBrandMark from '../components/delivery/DeliveryBrandMark.jsx';
 import { EVENT_COVERAGE_DEMO_PHOTOS } from '../constants/eventCoverageDemo.js';
 import { getDeliveryCapabilities } from '../constants/deliveryCapabilities.js';
+import { useSmoothSoundtrackLoop } from '../utils/smoothSoundtrackLoop.js';
 import '../styles/format-demos.css';
 
 const soundtrackRamps = new WeakMap();
@@ -604,6 +605,7 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio, on
   const demoOnly = !delivery;
   // Pixabay catalogue track pixabay_465199: Afrobeat Music - Feelgood Groove by MusicInMedia.
   const audioTrack = delivery?.soundtrack?.url || (demoOnly ? '/audio/photo-reveal-feelgood-groove.mp3' : '');
+  useSmoothSoundtrackLoop(audio, audioTrack);
 
   const playSoundtrack = () => {
     if (!audio.current) return;
@@ -721,7 +723,7 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio, on
   });
 
   return <div className="fd-page fd-reveal" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} data-pace={themeStyles['--fd-pace']} style={themeStyles} onTouchStart={event => { touchStart.current = event.changedTouches[0].clientX; }} onTouchEnd={event => { if (touchStart.current === null || !started || finished || !uncovered) return; const distance = event.changedTouches[0].clientX - touchStart.current; touchStart.current = null; if (Math.abs(distance) > 45) distance < 0 ? next() : previous(); }}>
-    {audioTrack && <audio ref={audio} src={audioTrack} loop preload="auto" muted={muted} onWaiting={() => setAudioLoading(true)} onStalled={() => setAudioLoading(true)} onPlaying={() => { setAudioLoading(false); setAudioFailed(false); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioLoading(false); setAudioFailed(true); }} />}
+    {audioTrack && <audio ref={audio} crossOrigin="anonymous" src={audioTrack} loop preload="auto" muted={muted} onWaiting={() => setAudioLoading(true)} onStalled={() => setAudioLoading(true)} onPlaying={() => { setAudioLoading(false); setAudioFailed(false); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioLoading(false); setAudioFailed(true); }} />}
     <DemoHeader format="Photo Reveal" client={client} sectionId="photo-reveal" onGallery={() => setGallery(true)} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} hideSoundtrack />
     {!started ? <main className="fd-reveal-opening">
       <motion.div className="fd-reveal-opening-photo" initial={reduced ? false : { scale: 1.14 }} animate={{ scale: 1.08 }} transition={{ duration: reduced ? 0 : 7, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={v3OpeningPhoto.name} url={v3OpeningPhoto.url} alt="Opening photograph" eager /></motion.div>
@@ -1109,6 +1111,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
   const albumTitle = delivery?.creativeDirection?.title || 'Family Album';
   const demoOnly = !delivery;
   const audioTrack = delivery?.soundtrack?.url || (demoOnly ? '/audio/soundtrack-1.mp3' : '');
+  useSmoothSoundtrackLoop(audio, audioTrack);
 
   const playSoundtrack = () => {
     if (!audio.current) return;
@@ -1273,7 +1276,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
   });
 
   return <div className="fd-page fd-album" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} data-pace={themeStyles['--fd-pace']} style={themeStyles}>
-    {audioTrack && <audio ref={audio} src={audioTrack} loop preload="auto" muted={muted} onWaiting={() => setAudioLoading(true)} onStalled={() => setAudioLoading(true)} onPlaying={() => { setAudioLoading(false); setAudioFailed(false); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioLoading(false); setAudioFailed(true); }} />}
+    {audioTrack && <audio ref={audio} crossOrigin="anonymous" src={audioTrack} loop preload="auto" muted={muted} onWaiting={() => setAudioLoading(true)} onStalled={() => setAudioLoading(true)} onPlaying={() => { setAudioLoading(false); setAudioFailed(false); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioLoading(false); setAudioFailed(true); }} />}
     <DemoHeader format="Album" client={client} sectionId="album" onGallery={() => setGallery(true)} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} hideSoundtrack />
     {!started ? <main className="fd-album-cover">
       <motion.figure initial={reduced ? false : { scale: 1.01 }} animate={{ scale: reduced ? 1 : 1.035 }} transition={{ duration: reduced ? 0 : 10, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={v3OpeningPhoto.name} url={v3OpeningPhoto.url} alt={`${clientName} cover photograph`} eager sizes="100vw" /></motion.figure>

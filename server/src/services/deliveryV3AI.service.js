@@ -240,7 +240,9 @@ function photoColourProfile(imageColors = []) {
     }
   }
   const leading = groups.reduce((best, group) => group.weight > best.weight ? group : best, groups[0]);
-  return { hue: leading.weight ? leading.hueTotal / leading.weight : 210, saturation: leading.weight ? leading.saturationTotal / leading.weight : .3, light: brightnessWeight ? brightnessTotal / brightnessWeight > .64 : false, hasHue: leading.weight > 0 };
+  const tones = groups.filter(group => group.weight > 0 && group.weight >= leading.weight * .08).sort((a, b) => b.weight - a.weight).slice(0, 4)
+    .map(group => ({ hue: group.hueTotal / group.weight, saturation: group.saturationTotal / group.weight }));
+  return { hue: leading.weight ? leading.hueTotal / leading.weight : 210, saturation: leading.weight ? leading.saturationTotal / leading.weight : .3, light: brightnessWeight ? brightnessTotal / brightnessWeight > .64 : false, hasHue: leading.weight > 0, tones };
 }
 
 export function calmGridboardPalette(imageColors = [], mode = 'auto') {
@@ -252,44 +254,70 @@ export function calmGridboardPalette(imageColors = [], mode = 'auto') {
     : { background: hexFromHsl(hue, baseSaturation, .095), surface: hexFromHsl(hue, baseSaturation * .85, .155), text: hexFromHsl(hue, .18, .94), accent: hexFromHsl(hue, accentSaturation, .7) };
 }
 
-function acceptableGridboardPalette(palette, imageColors) {
+function photoPaletteFamilies(imageColors) {
+  const profile = photoColourProfile(imageColors);
+  const tones = profile.tones.length ? profile.tones : [{ hue: profile.hue, saturation: .04 }];
+  const families = [...tones];
+  const main = hexFromHsl(tones[0].hue, tones[0].saturation, .5);
+  for (const tone of tones.slice(1)) {
+    const secondary = hexFromHsl(tone.hue, tone.saturation, .5);
+    for (const share of [.35, .65]) {
+      const mix = '#' + [1, 3, 5].map(index => Math.round(parseInt(main.slice(index, index + 2), 16) * (1 - share) + parseInt(secondary.slice(index, index + 2), 16) * share).toString(16).padStart(2, '0')).join('');
+      families.push(photoColor(mix));
+    }
+  }
+  return families;
+}
+
+function acceptableGridboardPalette(palette, imageColors, families = photoPaletteFamilies(imageColors)) {
   if (['background', 'surface', 'text', 'accent'].some(key => !photoColor(palette?.[key]))) return false;
   if (contrastRatio(palette.background, palette.text) < 4.5 || contrastRatio(palette.surface, palette.text) < 4.5) return false;
   const background = photoColor(palette.background);
   const surface = photoColor(palette.surface);
   const accent = photoColor(palette.accent);
-  const profile = photoColourProfile(imageColors);
-  const hueDistance = Math.abs(accent.hue - profile.hue);
-  return background.saturation <= .4 && surface.saturation <= .4 && accent.saturation <= .75 && (!profile.hasHue || Math.min(hueDistance, 360 - hueDistance) <= 50);
+  const related = families.some(tone => {
+    const distance = Math.abs(accent.hue - tone.hue);
+    return Math.min(distance, 360 - distance) <= 35;
+  });
+  return background.saturation <= .4 && surface.saturation <= .4 && accent.saturation <= .75 && (accent.saturation < .12 || related);
 }
 
-export function nextGridboardPalette(imageColors, currentPalette) {
-  const profile = photoColourProfile(imageColors);
-  const hue = profile.hue;
-  const baseSaturation = Math.max(.21, Math.min(.44, .2 + profile.saturation * .3));
+function paletteSignature(palette) {
+  return ['background', 'surface', 'accent'].map(key => String(palette?.[key] || '').toLowerCase()).join('|');
+}
+
+export function nextGridboardPalette(imageColors, currentPalette, recentPalettes = []) {
+  const families = photoPaletteFamilies(imageColors);
   const variants = [
     { light: false, offset: 0, depth: .085, accent: .71 },
     { light: true, offset: 0, depth: .95, accent: .28 },
-    { light: false, offset: -18, depth: .125, accent: .66 },
-    { light: true, offset: 18, depth: .91, accent: .32 },
-    { light: false, offset: 18, depth: .07, accent: .75 },
-    { light: true, offset: -18, depth: .97, accent: .25 },
-    { light: false, offset: -28, depth: .16, accent: .69 },
-    { light: true, offset: 28, depth: .88, accent: .34 },
+    { light: false, offset: -14, depth: .125, accent: .66 },
+    { light: true, offset: 14, depth: .91, accent: .32 },
+    { light: false, offset: 14, depth: .07, accent: .75 },
+    { light: true, offset: -14, depth: .97, accent: .25 },
+    { light: false, offset: -28, depth: .16, accent: .72 },
+    { light: true, offset: 28, depth: .88, accent: .29 },
     { light: false, offset: 28, depth: .11, accent: .78 },
     { light: true, offset: -28, depth: .94, accent: .29 },
     { light: false, offset: 0, depth: .15, accent: .77 },
-    { light: true, offset: 0, depth: .87, accent: .36 }
+    { light: true, offset: 0, depth: .87, accent: .27 }
   ];
-  const palettes = variants.map(item => {
-    const tone = (hue + item.offset + 360) % 360;
+  const palettes = variants.flatMap(item => families.map(family => {
+    const tone = (family.hue + item.offset + 360) % 360;
+    const baseSaturation = Math.min(.36, .06 + family.saturation * .3);
     const background = hexFromHsl(tone, baseSaturation * (item.light ? .6 : 1), item.depth);
     const surface = hexFromHsl(tone, baseSaturation * .7, item.light ? Math.min(.99, item.depth + .035) : Math.min(.25, item.depth + .058));
-    return { background, surface, text: item.light ? '#17191b' : '#fffaf5', accent: hexFromHsl(tone, Math.min(.64, baseSaturation + .14), item.accent) };
-  }).filter(palette => acceptableGridboardPalette(palette, imageColors) && contrastRatio(palette.accent, palette.background) >= 3 && contrastRatio(palette.accent, palette.surface) >= 3);
+    return { background, surface, text: item.light ? '#17191b' : '#fffaf5', accent: hexFromHsl(tone, Math.min(.6, baseSaturation + family.saturation * .16), item.accent) };
+  })).filter(palette => acceptableGridboardPalette(palette, imageColors, families) && contrastRatio(palette.accent, palette.background) >= 3 && contrastRatio(palette.accent, palette.surface) >= 3);
   if (!palettes.length) return calmGridboardPalette(imageColors, photoColor(currentPalette?.background)?.lightness > .5 ? 'dark' : 'light');
   const difference = (first, second) => ['background', 'surface', 'accent'].reduce((sum, key) => sum + [1, 3, 5].reduce((channelSum, index) => channelSum + Math.abs(parseInt(first[key].slice(index, index + 2), 16) - parseInt(String(second?.[key] || '#000000').slice(index, index + 2), 16)), 0), 0);
   const closest = palettes.reduce((best, palette, index) => difference(palette, currentPalette) < difference(palettes[best], currentPalette) ? index : best, 0);
+  const recent = new Set(recentPalettes.map(paletteSignature));
+  recent.add(paletteSignature(currentPalette));
+  for (let offset = 1; offset <= palettes.length; offset += 1) {
+    const palette = palettes[(closest + offset) % palettes.length];
+    if (!recent.has(paletteSignature(palette))) return palette;
+  }
   return palettes[(closest + 1) % palettes.length];
 }
 
@@ -584,52 +612,38 @@ export async function directV3(delivery, insights) {
   return { selected, openingAssetId, closingAssetId, direction: { title: String(result.title || (delivery.clientName || 'Your') + "'s photographs").slice(0, 80), openingLine: openingLine.slice(0, 140), closingLine: closingLine.slice(0, 160), palette, typography: { display: V3_FONT_CHOICES.has(result.typography?.display) ? result.typography.display : 'Playfair Display', body: V3_FONT_CHOICES.has(result.typography?.body) ? result.typography.body : 'Outfit' }, frames: captions, assetOrder: selected, sections } };
 }
 
-export async function repickV3Palette({ format, brief, shootType, imageColors, currentPalette }) {
+export async function repickV3Palette({ format, brief, shootType, imageColors, currentPalette, recentPalettes = [] }) {
   const current = Object.fromEntries(Object.keys(V3_DEFAULT_PALETTE).map(key => [key, String(currentPalette?.[key] || V3_DEFAULT_PALETTE[key]).toLowerCase()]));
-  const gridboard = format === 'pinboard';
-  if (gridboard) return nextGridboardPalette(imageColors, current);
-  const gridboardSystem = 'Return JSON {"palette":{"background":"#hex","surface":"#hex","text":"#hex","accent":"#hex"}}. Choose another calm GridBoard palette from the colours that dominate the complete photograph set. Keep background and panels subdued and close in tone, with one muted accent from the dominant hue family. Do not use neon, highly saturated surfaces, or a colour unrelated to the photographs. Make it visibly different from the current palette while keeping text contrast at least 4.5:1 on background and panels. Do not alter the photographs or delivery content.';
-  const system = 'Return JSON {"palette":{"background":"#hex","surface":"#hex","text":"#hex","accent":"#hex"}}. Choose a readable visual palette for the opening and showcase surfaces from the supplied image colour analysis. Keep the photographer’s original photographs unchanged. Make the new background, panels, or accent visibly different from the current palette. Text must have at least 4.5:1 contrast against both background and panels. Do not write captions or change delivery content.';
+  if (format === 'pinboard') return nextGridboardPalette(imageColors, current, recentPalettes);
+  const system = 'Return JSON {"palette":{"background":"#hex","surface":"#hex","text":"#hex","accent":"#hex"}}. Choose a readable visual palette for the opening and showcase surfaces from the supplied image colour analysis. Explore the main and secondary photograph colours, their mixtures, related hues, tints and shades; do not repeatedly return the same few combinations. Pair calm backgrounds and panels with a suitable accent. Keep the photographer’s original photographs unchanged. Make the new background, panels, or accent visibly different from the current palette. Text must have at least 4.5:1 contrast against both background and panels. Do not write captions or change delivery content.';
   const prompt = [
     'Format: ' + format,
     'Shoot type: ' + shootType,
     'Photographer purpose: ' + brief,
-    ...(gridboard ? ['Dominant photo hue in degrees: ' + Math.round(photoColourProfile(imageColors).hue), 'Calm palette based on the dominant photo colours: ' + JSON.stringify(calmGridboardPalette(imageColors))] : []),
+    'Photo colours and mixtures to explore (hue and saturation): ' + JSON.stringify(photoPaletteFamilies(imageColors)),
     'Image colour analysis: ' + JSON.stringify(imageColors),
-    'Current palette to move away from: ' + JSON.stringify(current)
+    'Current palette to move away from: ' + JSON.stringify(current),
+    'Recent palettes not to repeat: ' + JSON.stringify(recentPalettes.slice(-12))
   ].join('\n');
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const result = await request((gridboard ? gridboardSystem : system) + (attempt ? ' The previous answer repeated the current palette. Return a clearly different palette this time.' : ''), prompt, { maxTokens: 250 });
+    const result = await request(system + (attempt ? ' The previous answer was invalid or repeated a palette. Return a clearly different, readable combination this time.' : ''), prompt, { maxTokens: 250 });
     const palette = Object.fromEntries(Object.keys(V3_DEFAULT_PALETTE).map(key => [key, String(result.palette?.[key] || '').trim()]));
     if (Object.values(palette).some(color => !/^#[0-9a-f]{6}$/i.test(color))) continue;
-
-    if (gridboard) {
-      if (!acceptableGridboardPalette(palette, imageColors)) continue;
-      if (['background', 'surface', 'accent'].some(key => palette[key].toLowerCase() !== current[key])) return palette;
-      continue;
-    }
 
     if (contrastRatio(palette.background, palette.text) < 4.5 || contrastRatio(palette.surface, palette.text) < 4.5) {
       const readable = ['#fffaf6', '#ffffff', '#101010', '#000000'].find(color => contrastRatio(palette.background, color) >= 4.5 && contrastRatio(palette.surface, color) >= 4.5);
       if (readable) palette.text = readable;
-      else {
-        palette.background = V3_DEFAULT_PALETTE.background;
-        palette.surface = V3_DEFAULT_PALETTE.surface;
-        palette.text = V3_DEFAULT_PALETTE.text;
-      }
+      else continue;
     }
+    if (contrastRatio(palette.accent, palette.background) < 3 || contrastRatio(palette.accent, palette.surface) < 3) continue;
 
     const changed = ['background', 'surface', 'accent'].some(key => palette[key].toLowerCase() !== current[key]);
-    if (changed) return palette;
+    if (changed && !recentPalettes.some(previous => paletteSignature(previous) === paletteSignature(palette))) return palette;
   }
 
-  if (gridboard) {
-    const nextMode = photoColor(current.background)?.lightness > .5 ? 'dark' : 'light';
-    const alternative = calmGridboardPalette(imageColors, nextMode);
-    if (['background', 'surface', 'accent'].some(key => alternative[key].toLowerCase() !== current[key])) return alternative;
-  }
-  throw Object.assign(new Error('The colour picker returned the same palette. Choose another palette and try again.'), { code: 'V3_PALETTE_UNCHANGED', status: 422 });
+  // Keep a repeated model suggestion from trapping the photographer on this step.
+  return nextGridboardPalette(imageColors, current, recentPalettes);
 }
 
 export async function regenerateV3Caption(delivery, insight, instruction = '') {
