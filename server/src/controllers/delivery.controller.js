@@ -1086,6 +1086,16 @@ async function publicPayload(delivery, grant = null) {
     if (photoColors.length) safe.photoColors = photoColors;
     const visualTags = (asset.analysis?.momentTags || []).map(tag => String(tag).toLowerCase().replace(/[^a-z0-9 -]/g, '').trim().slice(0, 32)).filter(Boolean).slice(0, 3);
     if (visualTags.length) safe.visualTags = visualTags;
+    const similarityTags = (asset.analysis?.similarityTags || []).map(tag => String(tag).toLowerCase().replace(/[^a-z0-9 -]/g, '').trim().slice(0, 48)).filter(Boolean).slice(0, 6);
+    if (similarityTags.length) safe.similarityTags = similarityTags;
+    if (Array.isArray(asset.analysis?.similarAssetIds)) safe.similarAssetIds = asset.analysis.similarAssetIds.map(String).filter(assetId => visibleAssets.has(assetId)).slice(0, 5);
+    const colorGroups = (asset.analysis?.colorGroups || []).map(item => {
+      const rawArea = String(item?.area || '').toLowerCase();
+      const area = rawArea === 'outfit' || rawArea === 'clothing' ? 'outfit' : ['backdrop', 'background'].includes(rawArea) ? 'backdrop' : '';
+      const color = String(item?.color || '').toLowerCase().replace(/[^a-z -]/g, '').trim().slice(0, 20);
+      return area && color ? { area, color } : null;
+    }).filter(Boolean).slice(0, 2);
+    if (colorGroups.length) safe.colorGroups = colorGroups;
     delete safe.analysis;
     return safe;
   });

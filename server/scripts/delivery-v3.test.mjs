@@ -67,6 +67,8 @@ test('Pinboard suggestions keep every supplied photo and produce three complete 
     assert.equal(assets.length, 6);
     assert.equal(calls[0].model, 'deepseek-v4.1-flash');
     assert.match(calls[0].messages[0].content, /Do not use face recognition/);
+    assert.match(calls[0].messages[0].content, /Find a Moment groups/);
+    assert.match(calls[0].messages[0].content, /Similar Shot uses the separate similarityTags/);
   } finally { restore(); }
 });
 
@@ -381,14 +383,17 @@ test('vision batches grow, shrink at the provider limit, and analyse every photo
     const imageCount = body.messages[1].content.filter(part => part.type === 'image_url').length;
     sizes.push(imageCount);
     if (imageCount > 30) return { ok: false, status: 413 };
-    return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ images: Array.from({ length: imageCount }, (_, index) => ({ index, summary: `Visible photo ${index}`, score: 7, colors: ['#ff5a47'] })) }) } }] }) };
+    return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ images: Array.from({ length: imageCount }, (_, index) => ({ index, summary: `Visible photo ${index}`, score: 7, colors: ['#ff5a47'], momentTags: ['portraits'], similarityTags: [index % 2 ? 'standing pose' : 'seated pose'], colorGroups: [{ area: 'outfit', color: 'green' }, { area: 'background', color: 'cream' }] })) }) } }] }) };
   };
   try {
     const assets = Array.from({ length: 90 }, (_, index) => ({ assetId: `photo-${index}`, publicId: `test/photo-${index}`, sortOrder: index }));
     const progress = [];
-    const result = await analyzeAllV3({ assets, shootType: 'Birthday', brief: 'Ada turned 25', collectionAnalysis: {} }, (done, total) => progress.push([done, total]));
+    const result = await analyzeAllV3({ kind: 'pinboard', assets, shootType: 'Birthday', brief: 'Ada turned 25', collectionAnalysis: { images: [{ assetId: 'photo-0', summary: 'Old analysis without colour groups', colors: ['#ff5a47'] }] } }, (done, total) => progress.push([done, total]));
     assert.equal(result.length, 90);
     assert.equal(new Set(result.map(item => item.assetId)).size, 90);
+    assert.deepEqual(result[0].colorGroups, [{ area: 'outfit', color: 'green' }, { area: 'backdrop', color: 'cream' }]);
+    assert.deepEqual(result[0].similarityTags, ['seated pose']);
+    assert.equal(result[0].similarAssetIds[0], 'photo-2');
     assert.ok(sizes.some(size => size > 30));
     assert.ok(sizes.some(size => size < 30));
     assert.deepEqual(progress.at(-1), [90, 90]);

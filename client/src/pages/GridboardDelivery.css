@@ -13,8 +13,7 @@
 .v-gb-mosaic figure:nth-child(2) { grid-column: 2; grid-row: 1 / 4; }
 .v-gb-mosaic figure:nth-child(3) { grid-column: 3; grid-row: 1 / 5; }
 .v-gb-mosaic figure:nth-child(4) { grid-column: 1; grid-row: 5 / 7; }
-.v-gb-mosaic figure:nth-child(5) { grid-column: 2; grid-row: 4 / 7; }
-.v-gb-mosaic figure:nth-child(6) { grid-column: 3; grid-row: 5 / 7; }
+.v-gb-mosaic figure:nth-child(5) { grid-column: 2 / 4; grid-row: 4 / 7; }
 .v-gb-mosaic img { width: 100%; height: 100%; display: block; object-fit: cover; object-position: center 35%; transition: transform .5s cubic-bezier(.2,.75,.2,1); }
 .v-gb-hero-art:hover .v-gb-mosaic img { transform: scale(1.025); }
 .v-gb-mosaic-caption { position: absolute; left: 24px; bottom: 23px; min-height: 42px; padding: 0 13px; display: flex; align-items: center; gap: 8px; border: 1px solid #ffffff2e; border-radius: 999px; background: #0b0a0be8; color: #f5eee8; font-size: 10px; font-weight: 650; backdrop-filter: blur(12px); }
@@ -22,10 +21,10 @@
 .v-gb-mosaic-caption i { color: #9c8b7e; font-style: normal; }
 .v-gb-colour-note { position: absolute; right: -1px; bottom: 0; min-height: 67px; padding: 10px 14px; display: flex; align-items: center; gap: 12px; border: 1px solid #ffffff24; border-radius: 10px; background: #111114ed; box-shadow: 0 15px 45px #0006; }
 .v-gb-colour-note>span { display: flex; gap: 5px; }
-.v-gb-colour-note i { width: 20px; height: 20px; border: 1px solid #ffffff48; border-radius: 50%; background: #bd8e72; }
-.v-gb-colour-note i:nth-child(2) { background: #47705b; }
-.v-gb-colour-note i:nth-child(3) { background: #d0aa82; }
-.v-gb-colour-note i:nth-child(4) { background: #574331; }
+.v-gb-colour-note i { width: 20px; height: 20px; border: 1px solid #ffffff48; border-radius: 50%; background: #eadcc4; }
+.v-gb-colour-note i:nth-child(2) { background: #2e2c2a; }
+.v-gb-colour-note i:nth-child(3) { background: #85bdd7; }
+.v-gb-colour-note i:nth-child(4) { background: #1d5544; }
 .v-gb-colour-note small { color: #e5dcd5; font-size: 8px; font-weight: 700; letter-spacing: .14em; }
 .v-gb-overview { padding: clamp(74px, 10vw, 130px) 0; border-top: 1px solid #ffffff12; background: radial-gradient(ellipse at 80% 10%, #a34f3e10, transparent 35%), #0d0d10; }
 .v-gb-section-heading { max-width: 790px; margin: 0 0 46px; }

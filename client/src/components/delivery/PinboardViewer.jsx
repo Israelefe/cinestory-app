@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ArrowDownToLine, Check, ChevronLeft, ChevronRight, Download, ExternalLink, Image, LayoutGrid, MessageCircle, Music2, Pause, Play, SkipBack, SkipForward, Volume2, X } from 'lucide-react';
+import { ArrowDownToLine, Check, ChevronLeft, ChevronRight, Download, ExternalLink, Image, LayoutGrid, MessageCircle, Music2, Pause, Play, Shirt, SkipBack, SkipForward, Volume2, X } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { API_BASE_URL } from '../../config/env.js';
 import api from '../../services/api.js';
@@ -20,12 +20,15 @@ function assetColors(asset) {
   const colors = asset?.photoColors?.length ? asset.photoColors : asset?.dominantColor ? [asset.dominantColor] : asset?.analysis?.colors || [];
   return [...new Set(colors.filter(color => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color)))];
 }
-function assetTags(asset) { return Array.isArray(asset?.visualTags) ? asset.visualTags : asset?.analysis?.momentTags || []; }
-function colorDistance(first, second) {
-  const a = String(first || '').match(/[0-9a-f]{2}/gi)?.map(value => parseInt(value, 16)) || [];
-  const b = String(second || '').match(/[0-9a-f]{2}/gi)?.map(value => parseInt(value, 16)) || [];
-  if (a.length !== 3 || b.length !== 3) return Infinity;
-  return Math.sqrt(a.reduce((sum, value, index) => sum + (value - b[index]) ** 2, 0));
+function assetSimilarityTags(asset) { return Array.isArray(asset?.similarityTags) ? asset.similarityTags : asset?.analysis?.similarityTags || []; }
+function assetColorGroups(asset) {
+  const groups = Array.isArray(asset?.colorGroups) ? asset.colorGroups : asset?.analysis?.colorGroups || [];
+  return groups.filter(group => ['outfit', 'backdrop'].includes(group?.area) && typeof group?.color === 'string' && group.color.trim());
+}
+function colorGroupKey(group) { return `${group.area}:${group.color.toLowerCase().trim()}`; }
+function colorGroupLabel(group) {
+  const color = group.color.charAt(0).toUpperCase() + group.color.slice(1);
+  return `${color} ${group.area === 'outfit' ? 'outfits' : 'backgrounds'}`;
 }
 function audioUrl(value) {
   return typeof value === 'string' && value.startsWith('/api/')
@@ -37,6 +40,12 @@ const TILE_RATIOS = {
   balanced: ['4 / 5', '1 / 1', '3 / 4', '5 / 4', '4 / 5', '1 / 1', '3 / 4', '4 / 3'],
   moments: ['3 / 4', '1 / 1', '4 / 5', '4 / 3', '1 / 1', '3 / 4', '5 / 4', '4 / 5'],
   'colour-flow': ['1 / 1', '4 / 5', '3 / 4', '1 / 1', '5 / 4', '4 / 5', '3 / 4', '1 / 1']
+};
+const BROAD_VISUAL_TAGS = new Set(['portrait', 'portraits', 'clothing', 'details', 'birthday details', 'couple', 'traditional wedding']);
+const LAYOUT_HELP = {
+  balanced: 'Alternates portrait and landscape photos where possible. Every photo stays in the gallery.',
+  moments: 'Places photos with the same visible subject or setting near each other. Every photo stays in the gallery.',
+  'colour-flow': 'Orders photos by their dominant colours. Every photo stays in the gallery.'
 };
 
 function tileRatio(asset, index, layoutId) {
@@ -80,28 +89,28 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   const assets = useMemo(() => [...(delivery?.assets || [])].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)), [delivery?.assets]);
   const assetById = useMemo(() => new Map(assets.map(asset => [String(asset.assetId), asset])), [assets]);
   const moments = useMemo(() => (board.moments || []).filter(moment => !moment.hidden && moment.assetIds?.some(id => assetById.has(String(id)))), [board.moments, assetById]);
-  const colorSwatches = useMemo(() => {
-    const clusters = [];
+  const colourGroups = useMemo(() => {
+    const groups = new Map();
     assets.forEach(asset => {
-      const counted = new Set();
-      assetColors(asset).forEach(color => {
-        const match = clusters.find(cluster => colorDistance(cluster.color, color) < 52);
-        if (match) {
-          if (!counted.has(match)) { match.count += 1; counted.add(match); }
-        } else {
-          const cluster = { color, count: 1 };
-          clusters.push(cluster); counted.add(cluster);
-        }
+      const seen = new Set();
+      assetColorGroups(asset).forEach(group => {
+        const key = colorGroupKey(group);
+        if (seen.has(key)) return;
+        seen.add(key);
+        const existing = groups.get(key) || { ...group, key, assetIds: [] };
+        existing.assetIds.push(asset.assetId);
+        groups.set(key, existing);
       });
     });
-    return clusters.sort((a, b) => b.count - a.count).slice(0, 7);
+    return [...groups.values()].filter(group => group.assetIds.length > 1 && group.assetIds.length < assets.length).sort((a, b) => b.assetIds.length - a.assetIds.length);
   }, [assets]);
+  const selectedColourGroup = colourGroups.find(group => group.key === activeColour);
   const selectedLayout = (board.layouts || []).find(layout => layout.id === activeLayoutId) || (board.layouts || []).find(layout => layout.id === board.selectedLayoutId);
   const orderedIds = [...new Set([...(selectedLayout?.assetOrder || delivery?.galleryOrder || []), ...assets.map(asset => asset.assetId)].map(String))];
   const ordered = orderedIds.map(id => assetById.get(id)).filter(Boolean);
   const visible = ordered.filter(asset => {
     const inMoment = !activeMoment || moments.find(moment => moment.id === activeMoment)?.assetIds?.includes(asset.assetId);
-    const inColour = !activeColour || assetColors(asset).some(color => colorDistance(color, activeColour) <= 94);
+    const inColour = !activeColour || selectedColourGroup?.assetIds.includes(asset.assetId);
     return inMoment && inColour;
   });
   const soundtrackUrl = delivery?.soundtrack?.url ? audioUrl(delivery.soundtrack.url) : '';
@@ -244,14 +253,15 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
     }
   }
 
-  function relatedPhotos(target) {
+  function similarShotsFor(target) {
     if (!target) return [];
-    const targetTags = new Set(assetTags(target).map(tag => String(tag).toLowerCase()));
-    const targetColors = assetColors(target);
+    if (Array.isArray(target.similarAssetIds)) return target.similarAssetIds.map(id => assetById.get(String(id))).filter(Boolean).slice(0, 5);
+    const targetTags = new Set(assetSimilarityTags(target).map(tag => String(tag).toLowerCase().trim()).filter(tag => tag && !BROAD_VISUAL_TAGS.has(tag)));
+    const targetColorGroups = new Set(assetColorGroups(target).map(colorGroupKey).filter(key => colourGroups.some(group => group.key === key)));
     return assets.filter(asset => asset.assetId !== target.assetId).map(asset => {
-      const sharedTags = assetTags(asset).filter(tag => targetTags.has(String(tag).toLowerCase())).length;
-      const nearestColor = Math.min(Infinity, ...assetColors(asset).flatMap(color => targetColors.map(other => colorDistance(color, other))));
-      const score = sharedTags * 3 + (nearestColor < 42 ? 2 : nearestColor < 90 ? 1 : 0);
+      const sharedTags = assetSimilarityTags(asset).filter(tag => targetTags.has(String(tag).toLowerCase().trim())).length;
+      const sharedColorGroups = assetColorGroups(asset).filter(group => targetColorGroups.has(colorGroupKey(group))).length;
+      const score = sharedTags * 6 + sharedColorGroups * 2;
       return { asset, score };
     }).filter(item => item.score > 0).sort((a, b) => b.score - a.score).slice(0, 5).map(item => item.asset);
   }
@@ -359,7 +369,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   const modalIndex = visible.findIndex(asset => asset.assetId === activePhoto);
   const suggestedTone = modalAsset?.dominantColor || modalAsset?.analysis?.colors?.[0];
   const modalTone = typeof suggestedTone === 'string' && /^#[0-9a-f]{6}$/i.test(suggestedTone) ? suggestedTone : palette.surface || '#211b18';
-  const related = relatedPhotos(modalAsset);
+  const similarShots = similarShotsFor(modalAsset);
   const canDownload = !preview && !delivery?.access?.downloadsLocked && (delivery?.access?.allowIndividualDownloads || delivery?.access?.allowDownloadAll);
   function downloadPhoto(asset, index) {
     if (demo) {
@@ -374,6 +384,14 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   const statusPageSize = 18;
   const statusPageCount = Math.ceil(assets.length / statusPageSize);
   const statusPageAssets = assets.slice(statusPage * statusPageSize, (statusPage + 1) * statusPageSize);
+  const layoutHelp = demo
+    ? selectedLayout?.description
+    : board.analysisStatus === 'standard'
+      ? selectedLayout?.description || LAYOUT_HELP[activeLayoutId]
+      : LAYOUT_HELP[activeLayoutId] || selectedLayout?.description;
+  const currentSelectionDescription = activeMoment
+    ? ` · ${moments.find(moment => moment.id === activeMoment)?.title || 'selected moment'}`
+    : selectedColourGroup ? ` · ${colorGroupLabel(selectedColourGroup)}` : '';
 
   return <main className={'pb-viewer' + (preview ? ' is-preview' : '') + (board.animation === 'none' ? '' : ' is-animated')} style={style}>
     <div className="pb-wrap">
@@ -387,7 +405,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
         <p>{board.description || (preview ? 'Every finished photograph from this shoot.' : `Made for ${delivery?.clientName || 'you'}. Explore the whole set or find a moment below.`)}</p>
         <div className="pb-intro-meta"><span>{assets.length} photographs</span><i aria-hidden="true" />{!preview && <span>{delivery?.viewer?.label || 'Private gallery'}</span>}</div>
       </section>
-      {(moments.length > 0 || colorSwatches.length > 0) && <nav className="pb-find-tools" aria-label="Explore the photographs">
+      {(moments.length > 0 || colourGroups.length > 0) && <nav className="pb-find-tools" aria-label="Explore the photographs">
         {!!moments.length && <section className="pb-moments" aria-label="Find a moment">
           <div className="pb-moments-head"><span>FIND A MOMENT</span>{(activeMoment || activeColour) && <button type="button" onClick={() => { setActiveMoment(''); setActiveColour(''); }}>Show all photos</button>}</div>
           <div className="pb-moment-list">{moments.map((moment, momentIndex) => {
@@ -399,13 +417,14 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
             </div>;
           })}</div>
         </section>}
-        {!!colorSwatches.length && <section className="pb-colour-tools" aria-label="Follow a colour">
-          <div className="pb-moments-head"><span>FOLLOW A COLOUR</span>{(activeMoment || activeColour) && !moments.length && <button type="button" onClick={() => { setActiveMoment(''); setActiveColour(''); }}>Show all photos</button>}</div>
-          <div className="pb-colour-list">{colorSwatches.map(({ color, count }) => <button key={color} type="button" className={activeColour === color ? 'is-active' : ''} onClick={() => { setActiveColour(current => current === color ? '' : color); setActiveMoment(''); }} aria-pressed={activeColour === color} aria-label={`${count} photographs with colours like ${color}`} title={`${count} photographs`}><i style={{ backgroundColor: color }} /><span>{count}</span></button>)}</div>
+        {!!colourGroups.length && <section className="pb-colour-tools" aria-label="Find photos by outfit or background colour">
+          <div className="pb-moments-head"><span>OUTFITS AND BACKGROUNDS</span>{(activeMoment || activeColour) && !moments.length && <button type="button" onClick={() => { setActiveMoment(''); setActiveColour(''); }}>Show all photos</button>}</div>
+          <p className="pb-colour-helper">Choose a visible outfit or backdrop colour to find photos with the same look.</p>
+          <div className="pb-colour-list">{colourGroups.map(group => <button key={group.key} type="button" className={activeColour === group.key ? 'is-active' : ''} onClick={() => { setActiveColour(current => current === group.key ? '' : group.key); setActiveMoment(''); }} aria-pressed={activeColour === group.key} aria-label={`Show ${group.assetIds.length} photos with ${colorGroupLabel(group).toLowerCase()}`}><span className="pb-colour-kind">{group.area === 'outfit' ? <Shirt size={15} /> : <Image size={15} />}</span><strong>{colorGroupLabel(group)}</strong><span className="pb-colour-count">{group.assetIds.length}</span></button>)}</div>
         </section>}
       </nav>}
-      <div className="pb-board-top"><div><span>{activeMoment ? moments.find(moment => moment.id === activeMoment)?.title : activeColour ? 'Photos with similar colours' : 'All photos'}</span><span>{visible.length} PHOTOS</span></div><div className="pb-board-controls">
-        {layoutSwitchEnabled && (board.layouts || []).length > 1 && <label><LayoutGrid size={15} /><span className="pb-sr-only">Choose a board layout</span><select value={activeLayoutId} onChange={event => setActiveLayoutId(event.target.value)} aria-label="Choose a board layout">{board.layouts.map(layout => <option key={layout.id} value={layout.id}>{layout.title}</option>)}</select></label>}
+      <div className="pb-board-top"><div><span>{activeMoment ? moments.find(moment => moment.id === activeMoment)?.title : selectedColourGroup ? colorGroupLabel(selectedColourGroup) : 'All photos'}</span><span>{visible.length} PHOTOS</span></div><div className="pb-board-controls">
+        {layoutSwitchEnabled && (board.layouts || []).length > 1 && <label className="pb-layout-select"><span className="pb-layout-select-title"><LayoutGrid size={15} />Change layout</span><select value={activeLayoutId} onChange={event => setActiveLayoutId(event.target.value)} aria-label="Choose how the same photographs are arranged">{board.layouts.map(layout => <option key={layout.id} value={layout.id}>{layout.title}</option>)}</select><small>{layoutHelp || 'The same photographs, arranged another way.'}</small></label>}
         <button type="button" onClick={() => setShowSlideshowSetup(true)} aria-haspopup="dialog"><Play size={15} /> Slideshow</button>
         {soundtrackUrl && <button type="button" onClick={() => void toggleMusic()} aria-pressed={musicPlaying}>{musicPlaying ? <Pause size={15} /> : <Music2 size={15} />}{musicPlaying ? 'Pause music' : 'Play music'}</button>}
       </div></div>
@@ -427,7 +446,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
           <img key={modalAsset.assetId} className={'pb-lightbox-photo-main ' + (photoDirection > 0 ? 'is-next' : 'is-previous')} src={photoUrl(modalAsset, true)} alt={modalAsset.alt || 'Finished photograph'} draggable="false" />
         </div>
         <figcaption>Photograph {modalIndex + 1} of {visible.length}{visible.length > 1 && <span className="pb-swipe-hint"> · Swipe to browse</span>}</figcaption>
-        {!!related.length && <aside className="pb-more-like"><strong>More like this</strong><div>{related.map(asset => <button type="button" key={asset.assetId} onClick={() => showRelatedPhoto(asset)} aria-label={`Open a related photograph: ${asset.alt || 'photo'}`}><img src={photoUrl(asset)} alt="" loading="lazy" /></button>)}</div></aside>}
+        {!!similarShots.length && <aside className="pb-similar-shot"><strong>Similar Shot</strong><small>Photos with a similar pose, framing, outfit, or backdrop.</small><div>{similarShots.map(asset => <button type="button" key={asset.assetId} onClick={() => showRelatedPhoto(asset)} aria-label={`Open a similar shot: ${asset.alt || 'photo'}`}><img src={photoUrl(asset)} alt="" loading="lazy" /></button>)}</div></aside>}
       </figure>
       <button type="button" className="pb-lightbox-nav is-right" onClick={() => navigatePhoto(1)} disabled={modalIndex >= visible.length - 1} aria-label="Next photograph"><ChevronRight size={26} /></button>
       <div className="pb-lightbox-actions">{!preview && <button type="button" onClick={() => openWhatsApp('photo', modalAsset.assetId, delivery?.title || 'Photo gallery')}><MessageCircle size={17} /> Share on WhatsApp</button>}{canDownload && <button type="button" onClick={() => downloadPhoto(modalAsset, modalIndex)}><Download size={17} /> Download photo</button>}</div>
@@ -435,7 +454,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
 
     {soundtrackUrl && <audio ref={musicRef} src={soundtrackUrl} preload="none" onEnded={() => setMusicPlaying(false)} onPause={() => setMusicPlaying(false)} onPlay={() => setMusicPlaying(true)} onError={() => { setMusicPlaying(false); if (slideshow) setSlideshowMessage('Music could not load. Check your connection and try again.'); else setMessage('Music could not load. Check your connection and try again.'); }} />}
 
-    {showSlideshowSetup && <div className="pb-status-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setShowSlideshowSetup(false); }}><section className="pb-slideshow-setup" role="dialog" aria-modal="true" aria-labelledby="pb-slideshow-setup-title"><button type="button" className="pb-dialog-close" onClick={() => setShowSlideshowSetup(false)} aria-label="Close slideshow settings"><X size={20} /></button><span className="pb-kicker">A QUIETER WAY TO BROWSE</span><h2 id="pb-slideshow-setup-title">Let the photographs play.</h2><p>Start when you are ready. Music will play with the slideshow if the photographer added a soundtrack.</p><div className="pb-slideshow-options">{(activeMoment || activeColour) && <button type="button" onClick={() => void startSlideshow('current')}><span><strong>Current selection</strong><small>{visible.length} photographs{activeMoment ? ` · ${moments.find(moment => moment.id === activeMoment)?.title}` : ' · similar colours'}</small></span><Play size={17} /></button>}<button type="button" onClick={() => void startSlideshow('all')}><span><strong>Every photograph</strong><small>{ordered.length} photographs · the full gallery</small></span><Play size={17} /></button></div><label className="pb-slideshow-speed">Time per photo<select value={slideSeconds} onChange={event => setSlideSeconds(Number(event.target.value))}><option value="4">4 seconds</option><option value="5">5 seconds</option><option value="7">7 seconds</option><option value="9">9 seconds</option></select></label></section></div>}
+    {showSlideshowSetup && <div className="pb-status-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setShowSlideshowSetup(false); }}><section className="pb-slideshow-setup" role="dialog" aria-modal="true" aria-labelledby="pb-slideshow-setup-title"><button type="button" className="pb-dialog-close" onClick={() => setShowSlideshowSetup(false)} aria-label="Close slideshow settings"><X size={20} /></button><span className="pb-kicker">A QUIETER WAY TO BROWSE</span><h2 id="pb-slideshow-setup-title">Let the photographs play.</h2><p>Start when you are ready. Music will play with the slideshow if the photographer added a soundtrack.</p><div className="pb-slideshow-options">{(activeMoment || activeColour) && <button type="button" onClick={() => void startSlideshow('current')}><span><strong>Current selection</strong><small>{visible.length} photographs{currentSelectionDescription}</small></span><Play size={17} /></button>}<button type="button" onClick={() => void startSlideshow('all')}><span><strong>Every photograph</strong><small>{ordered.length} photographs · the full gallery</small></span><Play size={17} /></button></div><label className="pb-slideshow-speed">Time per photo<select value={slideSeconds} onChange={event => setSlideSeconds(Number(event.target.value))}><option value="4">4 seconds</option><option value="5">5 seconds</option><option value="7">7 seconds</option><option value="9">9 seconds</option></select></label></section></div>}
 
     {slideshowAsset && <section className="pb-slideshow" role="dialog" aria-modal="true" aria-label="GridBoard slideshow">
       <header><div><span>GRIDBOARD SLIDESHOW</span><small>{slideshow.index + 1} OF {slideshow.assetIds.length} · {slideshow.interval} SECONDS PER PHOTO</small></div><button type="button" onClick={() => setSlideshow(null)} aria-label="Close slideshow"><X size={20} />Close</button></header>

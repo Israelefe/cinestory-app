@@ -71,14 +71,38 @@ function pinboardFallback(delivery) {
     if (landscapes.length) balanced.push(landscapes.shift());
   }
   const order = values => values.map(asset => asset.assetId);
-  const ids = order(assets);
+  const hue = asset => {
+    const hex = String(asset.analysis?.colors?.[0] || '').match(/^#([0-9a-f]{6})$/i)?.[1];
+    if (!hex) return null;
+    const [r, g, b] = [0, 2, 4].map(index => parseInt(hex.slice(index, index + 2), 16) / 255);
+    const max = Math.max(r, g, b); const min = Math.min(r, g, b); const delta = max - min;
+    if (!delta) return null;
+    const value = max === r ? ((g - b) / delta) % 6 : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4;
+    return (value * 60 + 360) % 360;
+  };
+  const colorOrder = [...assets].sort((a, b) => {
+    const first = hue(a); const second = hue(b);
+    if (first == null) return second == null ? 0 : 1;
+    if (second == null) return -1;
+    return first - second;
+  });
+  const tagGroups = new Map();
+  assets.forEach(asset => {
+    const tag = asset.analysis?.momentTags?.[0];
+    if (!tag) return;
+    const key = String(tag).toLowerCase();
+    if (!tagGroups.has(key)) tagGroups.set(key, []);
+    tagGroups.get(key).push(asset);
+  });
+  const groupedAssets = [...tagGroups.values()].filter(group => group.length > 1).flat();
+  const scenesOrder = [...new Set([...groupedAssets, ...assets.filter(asset => !groupedAssets.includes(asset))])];
   return {
     title: delivery.pinboard?.title || delivery.title || `${delivery.clientName || 'Client'}'s photographs`,
     selectedLayoutId: 'balanced',
     layouts: [
-      { id: 'balanced', title: 'Balanced', description: 'A steady mix of portrait and landscape frames.', assetOrder: order(balanced) },
-      { id: 'moments', title: 'Moments first', description: 'Groups related photographs before the rest of the board.', assetOrder: ids },
-      { id: 'colour-flow', title: 'Colour flow', description: 'Keeps the original upload order as a simple visual path.', assetOrder: ids }
+      { id: 'balanced', title: 'Balanced arrangement', description: 'Alternates portrait and landscape photos where the set allows it.', assetOrder: order(balanced) },
+      { id: 'moments', title: 'Scenes together', description: 'Groups matching visual tags when available; otherwise keeps upload order.', assetOrder: order(scenesOrder) },
+      { id: 'colour-flow', title: 'Colour-led order', description: 'Orders by dominant photo colour when available; otherwise keeps upload order.', assetOrder: order(colorOrder.length ? colorOrder : assets) }
     ],
     moments: [],
     palette: delivery.pinboard?.palette || { background: '#13110f', surface: '#211b18', text: '#fff6ec', accent: '#efa57c' },

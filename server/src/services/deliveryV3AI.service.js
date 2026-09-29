@@ -113,18 +113,59 @@ export async function recommendV3Format(shootType, purpose = '') {
 
 async function analyzeBatch(batch, context) {
   const descriptors = batch.map((asset, index) => ({ index, assetId: asset.assetId }));
-  const result = await request('Return JSON {"images":[{"index":0,"summary":"visible facts only","score":1,"colors":["#hex"],"momentTags":["portraits"]}]}. Describe each supplied image by its numeric index. Include every index exactly once. List up to four visible photo colours as #RRGGBB in order of how much of the photograph they occupy, starting with the most dominant. Score visual showcase suitability 1-10 based on image quality, variety and clear subject. Return up to three short, reusable visual tags for practical client navigation, such as portraits, people together, ceremony, dancing, clothing, or details. Describe visible scenes only. Do not identify people or infer names, ages, relationships, emotions, or event facts from pixels. Never use face recognition. If an image cannot be seen, say so and score 1.', `Shoot type: ${context.shootType}. Purpose: ${context.brief}. Images in order: ${JSON.stringify(descriptors)}`, { images: batch, maxTokens: Math.min(25000, 280 * batch.length) });
+  const similarityFields = context.kind === 'pinboard' ? ',"similarityTags":["seated half-length pose","dark studio backdrop"]' : '';
+  const similarityInstructions = context.kind === 'pinboard'
+    ? ' Return up to six specific similarityTags used only to find photographs that look alike, such as a close profile, seated half-length pose, full-length framing, floral arch, or dark studio backdrop. Reuse the same concise phrase across images whenever that visible detail matches. Do not use broad moment labels such as portrait, wedding, birthday, or dancing as similarity tags; those belong in momentTags. Similarity tags describe visible composition and details, not who a person is.'
+    : '';
+  const result = await request(`Return JSON {"images":[{"index":0,"summary":"visible facts only","score":1,"colors":["#hex"],"momentTags":["ceremony"],"colorGroups":[{"area":"outfit","color":"green"}]${similarityFields}}]}. Describe each supplied image by its numeric index. Include every index exactly once. List up to four visible photo colours as #RRGGBB in order of how much of the photograph they occupy. Score visual showcase suitability 1-10 based on image quality, variety and clear subject. Return up to three momentTags for useful groups based on the scene or activity, such as portraits, ceremony, dancing, or details; do not use colour alone as a moment. When clearly visible, describe specific outfit or backdrop colours rather than generic tags like clothing. Also return up to two colorGroups for each image, using only area outfit or backdrop and a plain common color name. Add an outfit group only when clothing and its colour are clearly visible. Add a backdrop group only when the background or studio setting and its colour are clearly visible. Never infer a colour from the overall photo palette; never guess hidden or unclear details. These groups let clients find photos with the same outfit or backdrop.${similarityInstructions} Describe visible scenes only. Do not identify people or infer names, ages, relationships, emotions, or event facts from pixels. Never use face recognition. If an image cannot be seen, say so and score 1.`, `Shoot type: ${context.shootType}. Purpose: ${context.brief}. Images in order: ${JSON.stringify(descriptors)}`, { images: batch, maxTokens: Math.min(25000, (context.kind === 'pinboard' ? 430 : 330) * batch.length) });
   const rows = Array.isArray(result.images) ? result.images : [];
   if (rows.length !== batch.length) throw Object.assign(new Error('Some photographs were not analysed. Retry this step.'), { code: 'V3_INCOMPLETE_ANALYSIS' });
   const byIndex = new Map(rows.map(row => [Number(row.index), row]));
   if (byIndex.size !== batch.length || batch.some((_, index) => !byIndex.has(index))) throw Object.assign(new Error('Some photographs were not analysed. Retry this step.'), { code: 'V3_INCOMPLETE_ANALYSIS' });
-  return batch.map((asset, index) => ({ assetId: asset.assetId, summary: String(byIndex.get(index).summary || '').slice(0, 220), score: Math.max(1, Math.min(10, Number(byIndex.get(index).score) || 1)), colors: (Array.isArray(byIndex.get(index).colors) ? byIndex.get(index).colors : []).filter(color => /^#[0-9a-f]{6}$/i.test(color)).slice(0, 4), momentTags: (Array.isArray(byIndex.get(index).momentTags) ? byIndex.get(index).momentTags : []).map(value => String(value).toLowerCase().replace(/[^a-z0-9 -]/g, '').trim().slice(0, 32)).filter(Boolean).slice(0, 3) }));
+  return batch.map((asset, index) => {
+    const row = byIndex.get(index);
+    const colorGroups = (Array.isArray(row.colorGroups) ? row.colorGroups : []).map(item => {
+      const rawArea = String(item?.area || '').toLowerCase();
+      const area = rawArea === 'outfit' || rawArea === 'clothing' ? 'outfit' : ['backdrop', 'background'].includes(rawArea) ? 'backdrop' : '';
+      const color = String(item?.color || '').toLowerCase().replace(/[^a-z -]/g, '').trim().slice(0, 20);
+      return area && color ? { area, color } : null;
+    }).filter(Boolean).slice(0, 2);
+    return {
+      assetId: asset.assetId,
+      summary: String(row.summary || '').slice(0, 220),
+      score: Math.max(1, Math.min(10, Number(row.score) || 1)),
+      colors: (Array.isArray(row.colors) ? row.colors : []).filter(color => /^#[0-9a-f]{6}$/i.test(color)).slice(0, 4),
+      momentTags: (Array.isArray(row.momentTags) ? row.momentTags : []).map(value => String(value).toLowerCase().replace(/[^a-z0-9 -]/g, '').trim().slice(0, 32)).filter(Boolean).slice(0, 3),
+      colorGroups,
+      similarityTags: (Array.isArray(row.similarityTags) ? row.similarityTags : []).map(value => String(value).toLowerCase().replace(/[^a-z0-9 -]/g, '').trim().slice(0, 48)).filter(Boolean).slice(0, 6)
+    };
+  });
+}
+
+const BROAD_SIMILARITY_TAGS = new Set(['portrait', 'portraits', 'studio', 'wedding', 'birthday', 'event', 'family', 'fashion', 'editorial', 'details', 'clothing', 'people']);
+function linkSimilarShots(assets, analyses) {
+  const byId = new Map(analyses.map(row => [String(row.assetId), row]));
+  const tagsFor = row => new Set((row?.similarityTags || []).map(tag => String(tag).toLowerCase().trim()).filter(tag => tag && !BROAD_SIMILARITY_TAGS.has(tag)));
+  const groupsFor = row => new Set((Array.isArray(row?.colorGroups) ? row.colorGroups : [])
+    .filter(group => group && ['outfit', 'backdrop'].includes(group.area) && String(group.color || '').trim())
+    .map(group => `${group.area}:${String(group.color).toLowerCase().trim()}`));
+  const rows = assets.map(asset => ({ asset, analysis: byId.get(String(asset.assetId)) })).filter(row => row.analysis);
+  for (const source of rows) {
+    const tags = tagsFor(source.analysis);
+    const groups = groupsFor(source.analysis);
+    source.analysis.similarAssetIds = rows.filter(candidate => candidate.asset.assetId !== source.asset.assetId).map(candidate => {
+      const sharedTags = [...tags].filter(tag => tagsFor(candidate.analysis).has(tag)).length;
+      const sharedGroups = [...groups].filter(group => groupsFor(candidate.analysis).has(group)).length;
+      return { assetId: candidate.asset.assetId, score: sharedTags * 6 + sharedGroups * 2, sortOrder: Number(candidate.asset.sortOrder || 0) };
+    }).filter(candidate => candidate.score > 0).sort((a, b) => b.score - a.score || a.sortOrder - b.sortOrder).slice(0, 5).map(candidate => candidate.assetId);
+  }
+  return analyses;
 }
 
 export async function analyzeAllV3(delivery, onProgress = async () => {}) {
   const assets = [...delivery.assets].sort((a, b) => a.sortOrder - b.sortOrder);
   const known = new Set(assets.map(asset => asset.assetId));
-  const byId = new Map((delivery.collectionAnalysis?.images || []).filter(item => known.has(item.assetId)).map(item => [item.assetId, item]));
+  const byId = new Map((delivery.collectionAnalysis?.images || []).filter(item => known.has(item.assetId) && (delivery.kind !== 'pinboard' || (Array.isArray(item.colorGroups) && Array.isArray(item.similarityTags)))).map(item => [item.assetId, item]));
   const pending = assets.filter(asset => !byId.has(asset.assetId));
   // Model Studio documents an input-token limit for this model, but no fixed image count.
   // Grow successful batches, then lower the ceiling if a batch exceeds the live limit.
@@ -144,7 +185,8 @@ export async function analyzeAllV3(delivery, onProgress = async () => {}) {
       throw error;
     }
   }
-  return assets.map(asset => byId.get(asset.assetId));
+  const analyses = assets.map(asset => byId.get(asset.assetId));
+  return delivery.kind === 'pinboard' ? linkSimilarShots(assets, analyses) : analyses;
 }
 
 function pinboardSlug(value, fallback) {
@@ -218,7 +260,7 @@ function acceptableGridboardPalette(palette, imageColors) {
   return background.saturation <= .4 && surface.saturation <= .4 && accent.saturation <= .75 && (!profile.hasHue || Math.min(hueDistance, 360 - hueDistance) <= 50);
 }
 
-function buildPinboardLayouts(assets, moments, suggestions) {
+function buildPinboardLayouts(assets, moments) {
   const ordered = [...assets].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
   const portrait = ordered.filter(asset => Number(asset.height || 0) >= Number(asset.width || 0));
   const landscape = ordered.filter(asset => Number(asset.width || 0) > Number(asset.height || 0));
@@ -238,14 +280,14 @@ function buildPinboardLayouts(assets, moments, suggestions) {
   for (const asset of ordered) if (!seen.has(asset.assetId)) momentOrder.push(asset);
   const colorOrder = [...ordered].sort((a, b) => dominantHue(a.analysis?.colors) - dominantHue(b.analysis?.colors) || Number(b.analysis?.score || 0) - Number(a.analysis?.score || 0) || Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
   const names = {
-    balanced: ['A balanced flow', 'Portrait and landscape frames take turns where the set allows it.'],
-    moments: ['Moments together', 'Photos from the same scenes sit near one another.'],
-    'colour-flow': ['Follow the colour', 'A gentle colour sequence gives the board its own rhythm.']
+    balanced: ['Balanced arrangement', 'Alternates portrait and landscape photos where the set allows it.'],
+    moments: ['Scenes together', 'Places photos with the same visible subject or setting near each other.'],
+    'colour-flow': ['Colour-led order', 'Arranges photos by their dominant colours. Every photo stays in the gallery.']
   };
   return [
-    { id: 'balanced', title: suggestions.balanced?.title || names.balanced[0], description: suggestions.balanced?.description || names.balanced[1], assetOrder: balanced.map(asset => asset.assetId) },
-    { id: 'moments', title: suggestions.moments?.title || names.moments[0], description: suggestions.moments?.description || names.moments[1], assetOrder: momentOrder.map(asset => asset.assetId) },
-    { id: 'colour-flow', title: suggestions['colour-flow']?.title || names['colour-flow'][0], description: suggestions['colour-flow']?.description || names['colour-flow'][1], assetOrder: colorOrder.map(asset => asset.assetId) }
+    { id: 'balanced', title: names.balanced[0], description: names.balanced[1], assetOrder: balanced.map(asset => asset.assetId) },
+    { id: 'moments', title: names.moments[0], description: names.moments[1], assetOrder: momentOrder.map(asset => asset.assetId) },
+    { id: 'colour-flow', title: names['colour-flow'][0], description: names['colour-flow'][1], assetOrder: colorOrder.map(asset => asset.assetId) }
   ];
 }
 
@@ -256,7 +298,7 @@ export async function directV3Pinboard(delivery, insights) {
   const rows = assets.map(asset => {
     const insight = insightById.get(asset.assetId) || {};
     asset.analysis = insight;
-    return { assetId: asset.assetId, shape: Number(asset.width || 0) && Number(asset.height || 0) ? Number(asset.width) >= Number(asset.height) ? 'landscape' : 'portrait' : 'unknown', summary: insight.summary || '', colors: (insight.colors || []).slice(0, 3), momentTags: (insight.momentTags || []).slice(0, 3) };
+    return { assetId: asset.assetId, shape: Number(asset.width || 0) && Number(asset.height || 0) ? Number(asset.width) >= Number(asset.height) ? 'landscape' : 'portrait' : 'unknown', summary: insight.summary || '', colors: (insight.colors || []).slice(0, 3), momentTags: (insight.momentTags || []).slice(0, 3), colorGroups: Array.isArray(insight.colorGroups) ? insight.colorGroups.slice(0, 2) : [] };
   });
   const photoPalette = rows.some(row => row.colors.length) ? calmGridboardPalette(rows) : gridboardPalette;
   const photoProfile = photoColourProfile(rows);
@@ -265,11 +307,11 @@ export async function directV3Pinboard(delivery, insights) {
     if (!fallbackGroups.has(tag)) fallbackGroups.set(tag, []);
     fallbackGroups.get(tag).push(row.assetId);
   }
-  const compact = rows.map(({ assetId, shape, summary, colors, momentTags }) => ({ assetId, shape, summary, colors, momentTags }));
+  const compact = rows.map(({ assetId, shape, summary, colors, momentTags, colorGroups }) => ({ assetId, shape, summary, colors, momentTags, colorGroups }));
   let generated = {};
   try {
     generated = await request(
-      'Return JSON {"moments":[{"title":"...","assetIds":["known-id"]}],"layouts":[{"id":"balanced","title":"...","description":"..."}],"palette":{"background":"#hex","surface":"#hex","text":"#hex","accent":"#hex"},"typography":{"display":"Cormorant Garamond","body":"Outfit"}}. Create up to six useful groups of photographs based on visible subjects, activity, setting, or details. Use only supplied asset IDs and include at least two IDs in each group. A photograph may appear in more than one group. Do not identify people, infer family or other relationships, names, ages, or private traits. Do not use face recognition. Create exactly three board suggestions, one each for balanced, moments, and colour-flow. The names and short descriptions should reflect this collection without inventing facts. Base the palette on the dominant colours across the whole photo set, not a single bright detail. Keep backgrounds and panels subdued and close in tone, with one muted accent from the dominant hue family. Avoid neon or highly saturated surfaces. Text must be readable at 4.5:1 contrast on both background and panels. Typography must use Playfair Display, Outfit, Plus Jakarta Sans, Cormorant Garamond, DM Sans, Libre Baskerville, or Manrope. Keep every supplied photograph in the board; these suggestions only affect presentation.',
+      'Return JSON {"moments":[{"title":"...","assetIds":["known-id"]}],"palette":{"background":"#hex","surface":"#hex","text":"#hex","accent":"#hex"},"typography":{"display":"Cormorant Garamond","body":"Outfit"}}. Create up to six useful Find a Moment groups based on the visible activity, event scene, setting, or people together. Examples include portraits, ceremony, or dancing. Do not create a moment group solely because photos share an outfit or backdrop colour; those have separate filters. Similar Shot uses the separate similarityTags to match a selected photo with visually similar photos. Use only supplied asset IDs and include at least two IDs in each moment group. A photograph may appear in more than one group. Do not identify people, infer family or other relationships, names, ages, or private traits. Do not use face recognition. The board arrangements are described with clear fixed labels in the app. Base the palette on the dominant colours across the whole photo set, not a single bright detail. Keep backgrounds and panels subdued and close in tone, with one muted accent from the dominant hue family. Avoid neon or highly saturated surfaces. Text must be readable at 4.5:1 contrast on both background and panels. Typography must use Playfair Display, Outfit, Plus Jakarta Sans, Cormorant Garamond, DM Sans, Libre Baskerville, or Manrope. Keep every supplied photograph in the board; these suggestions only affect presentation.',
       ['Photographer context: ' + String(delivery.brief || '').slice(0, 600), 'Shoot type: ' + String(delivery.shootType || '').slice(0, 100), 'Dominant photo hue in degrees: ' + Math.round(photoProfile.hue), 'Calm palette derived from dominant photo colours: ' + JSON.stringify(photoPalette), 'Photographs: ' + JSON.stringify(compact)].join('\n'),
       { maxTokens: Math.min(22000, 2200 + rows.length * 24) }
     );
@@ -296,14 +338,7 @@ export async function directV3Pinboard(delivery, insights) {
       moments.push({ id, title: tag.split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '), assetIds: [...new Set(assetIds)], hidden: false });
     }
   }
-  const layoutSuggestions = {};
-  for (const row of Array.isArray(generated.layouts) ? generated.layouts : []) {
-    if (!['balanced', 'moments', 'colour-flow'].includes(row.id)) continue;
-    const title = String(row.title || '').replace(/[<>]/g, '').trim().slice(0, 36);
-    const description = String(row.description || '').replace(/[<>]/g, '').trim().slice(0, 120);
-    if (title && description) layoutSuggestions[row.id] = { title, description };
-  }
-  const layouts = buildPinboardLayouts(assets, moments, layoutSuggestions);
+  const layouts = buildPinboardLayouts(assets, moments);
   const palette = acceptableGridboardPalette(generated.palette, rows) ? generated.palette : photoPalette;
   const current = delivery.pinboard || {};
   const typography = {
