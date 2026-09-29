@@ -715,7 +715,7 @@ export async function selectCuratedSoundtrack(req, res) {
     if (!track) return res.status(404).json({ success: false, message: 'That soundtrack is not in Veylo’s approved library.' });
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This delivery is not available for audio selection.' });
-    if (!supportsDeliveryMusic(delivery.format)) return res.status(409).json({ success: false, code: 'MUSIC_FORMAT_UNSUPPORTED', message: 'This delivery format does not use music.' });
+    if (delivery.kind !== 'pinboard' && !supportsDeliveryMusic(delivery.format)) return res.status(409).json({ success: false, code: 'MUSIC_FORMAT_UNSUPPORTED', message: 'This delivery format does not use music.' });
     const previousTrackId = delivery.soundtrack?.catalogId || null;
     if (delivery.soundtrack?.publicId) await removeDeliveryAudio(delivery.soundtrack.publicId).catch(() => {});
     delivery.soundtrack = {
@@ -1080,8 +1080,12 @@ async function publicPayload(delivery, grant = null) {
     : null;
   object.assets = visibleDeliveryAssets.map(asset => {
     const safe = ownerAsset(asset, watermarkText);
-    const dominantColor = asset.analysis?.colors?.[0];
+    const photoColors = (asset.analysis?.colors || []).filter(color => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color)).slice(0, 4);
+    const dominantColor = photoColors[0];
     if (typeof dominantColor === 'string' && /^#[0-9a-f]{6}$/i.test(dominantColor)) safe.dominantColor = dominantColor;
+    if (photoColors.length) safe.photoColors = photoColors;
+    const visualTags = (asset.analysis?.momentTags || []).map(tag => String(tag).toLowerCase().replace(/[^a-z0-9 -]/g, '').trim().slice(0, 32)).filter(Boolean).slice(0, 3);
+    if (visualTags.length) safe.visualTags = visualTags;
     delete safe.analysis;
     return safe;
   });

@@ -275,7 +275,7 @@ export default function DeliveryViewer() {
         const url = preloadedMedia.assets?.[asset.assetId] || asset.url;
         return { ...asset, url, thumbnailUrl: asset.thumbnailUrl || url };
       }),
-      soundtrack: capabilities.music && delivery.soundtrack?.url ? { ...delivery.soundtrack, url: preloadedMedia.soundtrack || delivery.soundtrack.url } : undefined,
+      soundtrack: (capabilities.music || delivery.kind === 'pinboard') && delivery.soundtrack?.url ? { ...delivery.soundtrack, url: preloadedMedia.soundtrack || delivery.soundtrack.url } : undefined,
       narration: capabilities.narration && v3Narration
         ? {
             ...delivery.narration,

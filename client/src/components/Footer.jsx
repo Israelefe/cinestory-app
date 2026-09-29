@@ -6,7 +6,7 @@ import { openCookieSettings } from './CookiePreferences.jsx';
 const emailAddress = 'info@veylo.com.ng';
 
 const groups = [
-  ['Explore', [['Delivery formats', '/formats'], ['Veylo Portfolio', '/portfolio'], ['Client experience', '/client-experience'], ['Plans and pricing', '/pricing']]],
+  ['Explore', [['Delivery types', '/formats'], ['GridBoard delivery', '/gridboard'], ['Veylo Portfolio', '/portfolio'], ['Client experience', '/client-experience'], ['Plans and pricing', '/pricing']]],
   ['Your kind of work', [['Portraits', '/for/portrait-photographers'], ['Weddings', '/for/wedding-studios'], ['Birthdays', '/for/birthday-shoots'], ['Commercial', '/for/media-companies']]],
   ['Veylo', [['About us', '/about'], ['Privacy', '/privacy'], ['Terms of use', '/terms'], ['Fair use', '/fair-use']]]
 ];
@@ -52,7 +52,7 @@ export default function Footer() {
               <img src="/veylo/veylo-mark.svg" alt="" width="27" height="27" />
               veylo<span className="text-[#ff9b8e]">.</span>
             </Link>
-            <p className="v-copy">One finished shoot.<br />Eight ways to show it.</p>
+            <p className="v-copy">One finished shoot.<br />Two ways to deliver.</p>
             <div className="v-footer-email-row">
               <button type="button" className="v-footer-email" onClick={copyEmail} aria-label={`Copy ${emailAddress}`}>
                 <span>{emailAddress}</span>

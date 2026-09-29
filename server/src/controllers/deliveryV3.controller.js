@@ -18,6 +18,7 @@ const themeInput = z.object({ palette: z.object({ background: z.string().regex(/
 const pinboardInput = z.object({
   title: z.string().trim().min(2).max(120),
   useStandardBoard: z.boolean().default(false),
+  allowClientLayouts: z.boolean().default(false),
   selectedLayoutId: z.enum(['balanced', 'moments', 'colour-flow']),
   layouts: z.array(z.object({ id: z.enum(['balanced', 'moments', 'colour-flow']), title: z.string().trim().min(2).max(36), description: z.string().trim().min(2).max(120), assetOrder: z.array(z.string().uuid()).max(500) }).strict()).length(3),
   moments: z.array(z.object({ id: z.string().regex(/^[a-z0-9-]{1,40}$/), title: z.string().trim().min(2).max(40), assetIds: z.array(z.string().uuid()).max(500), hidden: z.boolean().default(false) }).strict()).max(12),
@@ -84,6 +85,7 @@ function pinboardFallback(delivery) {
     typography: delivery.pinboard?.typography || { display: 'Cormorant Garamond', body: 'Outfit' },
     grid: delivery.pinboard?.grid || { mobileColumns: 2, tabletColumns: 3, desktopColumns: 4, gap: 'regular' },
     animation: delivery.pinboard?.animation || 'soft-fade',
+    allowClientLayouts: Boolean(delivery.pinboard?.allowClientLayouts),
     analysisStatus: 'standard'
   };
 }

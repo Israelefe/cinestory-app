@@ -4,7 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Menu, X, ArrowUpRight, ArrowRight, LayoutDashboard, LogOut } from 'lucide-react';
 import { useDialogFocus } from './useDialogFocus.js';
 import './Header.css';
-const links = [['Home', '/'], ['Formats', '/formats'], ['Portfolio', '/portfolio'], ['Client experience', '/client-experience'], ['Pricing', '/pricing'], ['About', '/about']];
+const links = [['Home', '/'], ['Formats', '/formats'], ['GridBoard', '/gridboard'], ['Portfolio', '/portfolio'], ['Client experience', '/client-experience'], ['Pricing', '/pricing'], ['About', '/about']];
 export default function Navbar({ user, onLogout }) {
  const [open, setOpen] = useState(false);
  const { pathname } = useLocation();

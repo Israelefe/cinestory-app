@@ -13,6 +13,7 @@ import TypedHeading from '../components/TypedHeading.jsx';
 import StudioReviewStage from '../components/StudioReviewStage.jsx';
 import { DELIVERY_FORMATS, DELIVERY_PROCESS } from '../constants/deliveryFormats.js';
 import './GridboardHome.css';
+import './GridboardMarketing.css';
 
 const gridboardArtPhotos = [1, 6, 5, 3, 4, 2].map(number => `/veylo/web/demo-lora-${number}-480.webp`);
 
@@ -185,7 +186,7 @@ export default function LandingPage() {
         <Reveal className="v-format-copy"><div className="v-format-tag"><span className="v-index">{format.roman || format.number}</span><span className="v-format-sep" aria-hidden="true">·</span><span className="v-format-verb">{format.verb}</span></div><h3>{format.name}</h3><p>{format.line}</p><TextLink to={demoLinks[format.id][0]} onClick={event => keepFormatAsBackDestination(event, format.id)}>{demoLinks[format.id][1]}</TextLink></Reveal>
         <Reveal className="v-format-art" delay={Math.min(i * .03, .12)}><DeliveryFormatVisual format={format} /></Reveal>
       </article>)}</div>
-      <Reveal className="v-home-pinboard-card"><div className="v-home-pinboard-art" aria-hidden="true">{gridboardArtPhotos.map(photo => <span key={photo}><img src={photo} alt="" loading="lazy" decoding="async" /></span>)}</div><div><Eyebrow>ANOTHER WAY TO DELIVER</Eyebrow><h3>Every photo, on one beautiful GridBoard.</h3><p>Clients browse the complete shoot in a staggered photo grid, jump to a moment, and share a private photo link on WhatsApp.</p><div className="v-home-pinboard-actions"><TextLink to="/demo/gridboard">See the GridBoard example</TextLink><TextLink to="/create?type=pinboard">Create a GridBoard</TextLink></div></div></Reveal>
+      <Reveal className="v-home-pinboard-card"><div className="v-home-pinboard-art" aria-hidden="true">{gridboardArtPhotos.map(photo => <span key={photo}><img src={photo} alt="" loading="lazy" decoding="async" /></span>)}</div><div><Eyebrow>GRIDBOARD DELIVERY</Eyebrow><h3>Put the full gallery first.</h3><p>Clients can find a moment, follow colours from the photographs, open related photos, or start a slideshow with optional music. You choose the layouts they can use.</p><div className="v-home-pinboard-actions"><TextLink to="/gridboard">See what GridBoard can do</TextLink><TextLink to="/demo/gridboard">Browse the live demo</TextLink><TextLink to="/create?type=pinboard">Create a GridBoard</TextLink></div></div></Reveal>
       <Reveal className="v-formats-explore">
         <div><span>All eight Showcase formats</span><p>See what each one does and which shoots it suits.</p></div>
         <Action to="/formats" onClick={event => keepFormatAsBackDestination(event, 'album')}>Explore all formats</Action>

@@ -1,0 +1,4 @@
+.v-fguide-type-card.is-pinboard>div { display: grid; grid-template-columns: 1fr; align-items: start; justify-content: start; gap: 5px; }
+.v-fguide-type-card.is-pinboard>div>a { width: max-content; max-width: 100%; min-height: 31px; }
+.v-ce-delivery-types a .v-ce-gridboard-demo { display: inline-flex; align-items: center; gap: 6px; color: #efaa9f; text-decoration: underline; text-underline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { .v-ce-delivery-types a { transition: none; } }

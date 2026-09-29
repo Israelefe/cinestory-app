@@ -5,13 +5,19 @@ const descriptions = [
   'Lora smiling with her birthday cake', 'Lora in her green birthday dress', 'Lora holding her cake',
   'Lora smiling for a birthday portrait', 'A close portrait of Lora', 'Lora holding a wrapped gift'
 ];
-const assets = descriptions.map((alt, index) => ({ assetId: `gridboard-demo-${index + 1}`, sortOrder: index, alt, thumbnailUrl: `/veylo/web/demo-lora-${index + 1}-480.webp`, url: `/veylo/web/demo-lora-${index + 1}-1440.webp`, width: 480, height: 640 }));
+const imageColours = [
+  ['#bd8e72', '#f0d7bd', '#574331'], ['#47705b', '#d0aa82', '#222b25'], ['#a56f54', '#efe1ca', '#75502f'],
+  ['#526d56', '#e3c3a3', '#2d332c'], ['#c08f70', '#eee0cd', '#5d493a'], ['#97735b', '#d8b782', '#343331']
+];
+const visualTags = [['cake', 'birthday details'], ['portraits', 'green dress'], ['cake', 'birthday details'], ['portraits', 'green dress'], ['portraits'], ['birthday details']];
+const assets = descriptions.map((alt, index) => ({ assetId: `gridboard-demo-${index + 1}`, sortOrder: index, alt, photoColors: imageColours[index], dominantColor: imageColours[index][0], visualTags: visualTags[index], thumbnailUrl: `/veylo/web/demo-lora-${index + 1}-480.webp`, url: `/veylo/web/demo-lora-${index + 1}-1440.webp`, width: 480, height: 640 }));
 const ids = assets.map(asset => asset.assetId);
 const demoDelivery = {
   kind: 'pinboard', title: "Lora's 25th birthday", clientName: 'Lora Ade', branding: { name: 'Veylo Studio', logoUrl: '/veylo/veylo-logo.png' }, assets,
+  soundtrack: { title: 'A birthday afternoon', url: '/audio/ada-birthday.mp3' },
   access: { allowIndividualDownloads: true, allowDownloadAll: true, downloadsLocked: false },
   pinboard: {
-    title: "Lora's 25th birthday", description: 'Every finished photograph from her birthday shoot.', selectedLayoutId: 'balanced',
+    title: "Lora's 25th birthday", description: 'Every finished photograph from her birthday shoot.', selectedLayoutId: 'balanced', allowClientLayouts: true,
     layouts: [
       { id: 'balanced', title: 'Portraits and little details', description: 'The complete birthday shoot.', assetOrder: [ids[3], ids[0], ids[4], ids[5], ids[1], ids[2]] },
       { id: 'moments', title: 'From portrait to cake', description: 'The complete birthday shoot.', assetOrder: ids },
