@@ -2,7 +2,7 @@ import { buildAssistantKnowledge, assistantSuggestedQuestions, assistantTopicLab
 
 export const VEYLO_ASSISTANT_PROVIDER = 'Alibaba Model Studio';
 export const VEYLO_ASSISTANT_MODEL = 'qwen3.8-flash';
-export const VEYLO_ASSISTANT_PROMPT_VERSION = 'veylo-help-v1';
+export const VEYLO_ASSISTANT_PROMPT_VERSION = 'veylo-help-v2';
 
 const MAX_REPLY_CHARACTERS = 6000;
 const REFUSAL = 'I can help with Veylo deliveries, accounts, sharing, billing, and support. I cannot provide private system, database, security, or unrelated information. What Veylo task would you like help with?';
@@ -82,9 +82,11 @@ function userMessages(messages) {
   const userTurns = messages.filter(message => message.role === 'user');
   if (!userTurns.length) return '';
   const latest = userTurns[userTurns.length - 1].content;
-  if (latest.split(/\s+/).filter(Boolean).length < 5 && userTurns.length > 1) {
+  const isFollowUp = latest.split(/\s+/).filter(Boolean).length < 5 || /\b(it|that|those|this|these|they|them)\b/i.test(latest);
+  if (isFollowUp && userTurns.length > 1) {
     const previous = userTurns[userTurns.length - 2].content;
-    return `${previous} ${latest}`.slice(-1000);
+    const previousAnswer = [...messages].reverse().find(message => message.role === 'assistant')?.content || '';
+    return `${previous.slice(-300)} ${previousAnswer.slice(0, 400)} ${latest.slice(-300)}`;
   }
   return latest.slice(-1000);
 }
@@ -92,7 +94,7 @@ function userMessages(messages) {
 function safeHistory(messages) {
   return messages.slice(-12).map(message => ({
     role: message.role,
-    content: message.content.slice(0, 3000)
+    content: message.content.slice(0, message.role === 'assistant' ? 6000 : 3000)
   }));
 }
 
@@ -118,11 +120,13 @@ NON-NEGOTIABLE BOUNDARIES:
 RESPONSE STYLE:
 - Answer in plain, calm English. Use short headings, bullets, numbered steps, and simple tables when they make the answer easier to follow.
 - Keep the answer focused strictly on the user's latest question. Address only the immediate question at hand with clarity and brevity. Do not recite unrelated features or past topics unless the user directly asks for them. Ask one short clarifying question if needed.
+- For a simple question, use a few sentences. For a task, give a short numbered list. Skip introductory filler, repeated greetings and headings that add no useful information.
+- If a problem could have several causes, ask for the relevant visible error or what happened. Do not guess an account's upload, payment or delivery status.
 - Give practical next steps and link to the appropriate Veylo page only when the link is in the approved navigation list.
 - Never use emojis, sparkle symbols, marketing slogans, or dramatic language.
 
 APPROVED NAVIGATION:
-/dashboard (Dashboard), /create (New delivery), /formats (Delivery formats), /library (Image library), /portfolio/manage (Portfolio), /billing (Billing), /settings (Settings), /contact (Support), /privacy (Privacy), /terms (Terms).
+/dashboard (Dashboard), /create (New delivery), /formats (Delivery formats), /library (Image library), /portfolio/manage (Portfolio), /billing (Billing), /settings (Settings), /contact (Support), /privacy (Privacy), /terms (Terms), /pricing (Plans and pricing), /signup (Create an account), /signin (Sign in).
 
 APPROVED HELP MATERIAL:
 ${knowledge}
@@ -137,7 +141,7 @@ function assistantError(message, code = 'ASSISTANT_FAILED') {
   return error;
 }
 
-export async function answerVeyloQuestion({ messages, surface = 'public', authenticated = false, safeContext = '' }) {
+export async function answerVeyloQuestion({ messages, surface = 'public', authenticated = false, safeContext = '', signal }) {
   const audience = audienceForSurface(surface, authenticated);
   const query = userMessages(messages);
   const knowledge = buildAssistantKnowledge({ query, audience });
@@ -155,7 +159,7 @@ export async function answerVeyloQuestion({ messages, surface = 'public', authen
       max_tokens: 1200,
       stream: false
     }),
-    signal: AbortSignal.timeout(45_000)
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(45_000)]) : AbortSignal.timeout(45_000)
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -169,7 +173,7 @@ export async function answerVeyloQuestion({ messages, surface = 'public', authen
   return {
     answer: reply,
     topics: assistantTopicLabels({ query, audience }),
-    suggestions: assistantSuggestedQuestions(surface)
+    suggestions: assistantSuggestedQuestions(surface, { query, audience })
   };
 }
 

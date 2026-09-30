@@ -1,147 +1,151 @@
 .veylo-assistant-launch {
-  position: fixed;
-  z-index: 80;
-  right: max(1rem, env(safe-area-inset-right));
-  bottom: max(1rem, env(safe-area-inset-bottom));
-  display: inline-flex;
-  align-items: center;
-  gap: .55rem;
-  min-height: 48px;
-  padding: .72rem 1rem;
-  border: 1px solid rgba(255, 155, 142, .42);
-  border-radius: 999px;
-  color: #fff;
-  background: #171318;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, .35), 0 0 24px rgba(255, 90, 71, .12);
-  font-size: .78rem;
-  font-weight: 700;
-  letter-spacing: .01em;
+  position: fixed; z-index: 80; right: max(1rem, env(safe-area-inset-right)); bottom: max(1rem, env(safe-area-inset-bottom));
+  display: inline-flex; align-items: center; gap: .6rem; min-height: 48px; padding: .75rem 1.05rem;
+  border: 1px solid rgba(255,155,142,.35); border-radius: 999px; color: #fff; background: #171216;
+  box-shadow: 0 12px 36px #0006; font-size: .82rem; font-weight: 600;
   transition: transform .2s ease, background .2s ease, opacity .2s ease;
 }
-
-.veylo-assistant-launch:hover { transform: translateY(-2px); background: #21181b; }
+.veylo-assistant-launch:hover { transform: translateY(-2px); background: #25191c; }
 .veylo-assistant-launch:active { transform: scale(.97); }
 .veylo-assistant-launch.is-open { opacity: 0; pointer-events: none; }
-
-.veylo-assistant-backdrop {
-  position: fixed;
-  z-index: 79;
-  inset: 0;
-  border: 0;
-  background: rgba(3, 3, 5, .58);
-  animation: veylo-assistant-fade .18s ease both;
-}
-
+.veylo-assistant-backdrop { position: fixed; z-index: 79; inset: 0; border: 0; background: rgba(3,3,5,.64); animation: veylo-assistant-fade .18s ease both; }
 .veylo-assistant-panel {
-  position: fixed;
-  z-index: 81;
-  right: max(1rem, env(safe-area-inset-right));
-  bottom: max(1rem, env(safe-area-inset-bottom));
-  display: flex;
-  flex-direction: column;
-  width: min(430px, calc(100vw - 2rem));
-  height: min(720px, calc(100dvh - 2rem));
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, .13);
-  border-radius: 1.35rem;
-  color: #fff;
-  background: #0d0d12;
-  box-shadow: 0 28px 80px rgba(0, 0, 0, .62), 0 0 55px rgba(255, 90, 71, .08);
-  animation: veylo-assistant-rise .22s ease-out both;
+  position: fixed; z-index: 81; right: max(1rem, env(safe-area-inset-right));
+  bottom: calc(max(1rem, env(safe-area-inset-bottom)) + var(--assistant-keyboard-inset, 0px));
+  display: flex; flex-direction: column; width: min(460px, calc(100vw - 2rem)); height: min(760px, calc(100dvh - 2rem));
+  max-height: calc(var(--assistant-viewport-height, 100dvh) - 2rem); overflow: hidden; isolation: isolate;
+  border: 1px solid rgba(255,255,255,.15); border-radius: 1.4rem; color: #fff;
+  background: radial-gradient(ellipse at 0 0, rgba(255,90,71,.06), transparent 58%), #0c0c10;
+  box-shadow: 0 28px 80px #0009, 0 0 0 5px #ffffff03; animation: veylo-assistant-rise .24s ease-out both;
 }
-
+.veylo-assistant-panel *, .veylo-assistant-panel *::before, .veylo-assistant-panel *::after { box-sizing: border-box; }
 .veylo-assistant-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: .8rem;
-  padding: 1rem 1rem .85rem;
-  border-bottom: 1px solid rgba(255, 255, 255, .09);
-  background: linear-gradient(135deg, rgba(255, 90, 71, .14), rgba(13, 13, 18, 0) 65%);
+  display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: .75rem;
+  padding: 1.15rem 1.25rem; border-bottom: 1px solid #ffffff12;
+  background: linear-gradient(110deg, #ff5a470b, transparent 70%);
 }
-
-.veylo-assistant-heading { display: flex; align-items: center; gap: .65rem; min-width: 0; }
-.veylo-assistant-heading h2 { margin: 0; font-size: .98rem; font-weight: 700; letter-spacing: -.01em; }
-.veylo-assistant-heading p { margin: .18rem 0 0; color: rgba(255, 255, 255, .46); font-size: .68rem; }
-.veylo-assistant-mark { display: grid; width: 2.15rem; height: 2.15rem; flex: 0 0 auto; place-items: center; border: 1px solid rgba(255, 155, 142, .42); border-radius: .7rem; color: #ff9b8e; background: rgba(255, 90, 71, .1); }
-.veylo-assistant-header-actions { display: flex; align-items: center; gap: .4rem; }
-.veylo-assistant-icon-button { display: grid; width: 2.45rem; height: 2.45rem; flex: 0 0 auto; place-items: center; border: 1px solid rgba(255, 255, 255, .1); border-radius: .7rem; color: rgba(255, 255, 255, .72); background: rgba(255, 255, 255, .04); transition: background .2s ease, color .2s ease, transform .2s ease; }
-.veylo-assistant-icon-button:hover { color: #fff; background: rgba(255, 255, 255, .1); transform: rotate(4deg); }
-
-.veylo-assistant-disclosure { display: flex; align-items: flex-start; gap: .5rem; padding: .7rem 1rem; color: rgba(255, 255, 255, .55); background: rgba(255, 255, 255, .025); font-size: .68rem; line-height: 1.45; }
-.veylo-assistant-disclosure svg { flex: 0 0 auto; margin-top: .08rem; color: #ff9b8e; }
-
-.veylo-assistant-messages { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 1rem; scrollbar-width: thin; scrollbar-color: #303039 transparent; }
-.veylo-assistant-message { max-width: 92%; margin-bottom: .9rem; padding: .75rem .8rem; border: 1px solid rgba(255, 255, 255, .09); border-radius: .95rem; line-height: 1.55; animation: veylo-assistant-message-in .18s ease both; }
-.veylo-assistant-message.is-assistant { margin-right: auto; background: rgba(255, 255, 255, .045); }
-.veylo-assistant-message.is-user { margin-left: auto; border-color: rgba(255, 155, 142, .18); background: rgba(255, 90, 71, .12); }
-.veylo-assistant-message-label { margin-bottom: .34rem; color: rgba(255, 255, 255, .4); font-size: .62rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-.veylo-assistant-message.is-user .veylo-assistant-message-label { color: rgba(255, 211, 205, .7); }
-.veylo-assistant-message-actions { display: flex; justify-content: flex-end; margin-top: .55rem; }
-.veylo-assistant-message-actions button { display: inline-flex; align-items: center; gap: .3rem; min-height: 30px; padding: .25rem .45rem; border: 0; border-radius: .45rem; color: rgba(255, 255, 255, .48); background: transparent; font-size: .68rem; }
-.veylo-assistant-message-actions button:hover { color: #fff; background: rgba(255, 255, 255, .08); }
-
-.veylo-markdown { color: rgba(255, 255, 255, .84); font-size: .8rem; overflow-wrap: anywhere; }
-.veylo-markdown > :first-child { margin-top: 0; }
-.veylo-markdown > :last-child { margin-bottom: 0; }
-.veylo-markdown p { margin: .5rem 0; }
-.veylo-markdown h1, .veylo-markdown h2, .veylo-markdown h3 { color: #fff; font-weight: 700; line-height: 1.3; }
-.veylo-markdown h1 { margin: .75rem 0 .4rem; font-size: 1.05rem; }
-.veylo-markdown h2 { margin: .7rem 0 .35rem; font-size: .94rem; }
-.veylo-markdown h3 { margin: .6rem 0 .3rem; font-size: .84rem; }
-.veylo-markdown ul, .veylo-markdown ol { margin: .5rem 0; padding-left: 1.25rem; }
-.veylo-markdown li { margin: .25rem 0; padding-left: .1rem; }
-.veylo-markdown a { display: inline-flex; align-items: center; gap: .22rem; color: #ffb3a9; text-decoration: underline; text-underline-offset: 3px; }
-.veylo-markdown a:hover { color: #fff; }
-.veylo-markdown strong { color: #fff; font-weight: 700; }
-.veylo-markdown code { padding: .1rem .28rem; border: 1px solid rgba(255, 255, 255, .11); border-radius: .3rem; color: #ffd0c9; background: rgba(0, 0, 0, .25); font-size: .75rem; }
-.veylo-markdown pre { max-width: 100%; overflow-x: auto; margin: .6rem 0; padding: .7rem; border: 1px solid rgba(255, 255, 255, .1); border-radius: .65rem; background: #08080b; }
-.veylo-markdown pre code { padding: 0; border: 0; background: transparent; color: rgba(255, 255, 255, .76); white-space: pre; }
-.veylo-markdown blockquote { margin: .55rem 0; padding: .35rem .7rem; border-left: 2px solid #ff7d6d; color: rgba(255, 255, 255, .6); }
-.veylo-markdown hr { margin: .8rem 0; border: 0; border-top: 1px solid rgba(255, 255, 255, .1); }
-.veylo-markdown-table { max-width: 100%; overflow-x: auto; margin: .65rem 0; border: 1px solid rgba(255, 255, 255, .1); border-radius: .55rem; }
-.veylo-markdown table { min-width: 100%; border-collapse: collapse; font-size: .72rem; }
-.veylo-markdown th, .veylo-markdown td { min-width: 7rem; padding: .45rem .55rem; border-bottom: 1px solid rgba(255, 255, 255, .08); text-align: left; vertical-align: top; }
-.veylo-markdown th { color: #fff; background: rgba(255, 255, 255, .06); font-weight: 700; }
-.veylo-markdown tr:last-child td { border-bottom: 0; }
-
-.veylo-assistant-thinking { display: flex; align-items: center; gap: .45rem; width: fit-content; margin: .25rem 0 .7rem; color: rgba(255, 255, 255, .5); font-size: .72rem; }
-.veylo-assistant-spin { animation: veylo-assistant-spin .9s linear infinite; }
-.veylo-assistant-error { margin: .5rem 0 .75rem; padding: .7rem; border: 1px solid rgba(255, 155, 142, .24); border-radius: .7rem; color: #ffd0c9; background: rgba(255, 90, 71, .08); font-size: .74rem; }
-.veylo-assistant-error p { margin: 0 0 .55rem; line-height: 1.45; }
-.veylo-assistant-error button, .veylo-assistant-error a { display: inline-flex; align-items: center; gap: .3rem; min-height: 32px; margin-right: .6rem; border: 0; color: #fff; background: transparent; font-size: .7rem; text-decoration: none; }
-.veylo-assistant-error button:hover, .veylo-assistant-error a:hover { color: #ffb3a9; }
-
-.veylo-assistant-suggestions { display: flex; gap: .45rem; overflow-x: auto; padding: .7rem 1rem .55rem; border-top: 1px solid rgba(255, 255, 255, .08); scrollbar-width: none; }
-.veylo-assistant-suggestions::-webkit-scrollbar { display: none; }
-.veylo-assistant-suggestions button { flex: 0 0 auto; min-height: 34px; padding: .35rem .65rem; border: 1px solid rgba(255, 255, 255, .13); border-radius: 999px; color: rgba(255, 255, 255, .68); background: rgba(255, 255, 255, .035); font-size: .68rem; text-align: left; transition: background .18s ease, border-color .18s ease, transform .18s ease; }
-.veylo-assistant-suggestions button:hover:not(:disabled) { transform: translateY(-1px); border-color: rgba(255, 155, 142, .45); color: #fff; background: rgba(255, 90, 71, .12); }
-.veylo-assistant-suggestions button:disabled { opacity: .45; }
-
-.veylo-assistant-form { display: flex; align-items: flex-end; gap: .55rem; padding: .7rem 1rem .45rem; border-top: 1px solid rgba(255, 255, 255, .08); }
-.veylo-assistant-form textarea { width: 100%; min-height: 42px; max-height: 126px; resize: vertical; padding: .7rem .75rem; border: 1px solid rgba(255, 255, 255, .14); border-radius: .7rem; outline: none; color: #fff; background: rgba(255, 255, 255, .045); font: inherit; font-size: .8rem; line-height: 1.35; }
-.veylo-assistant-form textarea:focus { border-color: rgba(255, 155, 142, .72); box-shadow: 0 0 0 3px rgba(255, 90, 71, .1); }
-.veylo-assistant-form textarea::placeholder { color: rgba(255, 255, 255, .38); }
-.veylo-assistant-send { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(255, 155, 142, .42); border-radius: .7rem; color: #fff; background: #d65043; transition: transform .18s ease, background .18s ease, opacity .18s ease; }
-.veylo-assistant-send:hover:not(:disabled) { transform: translateY(-1px); background: #ed6555; }
-.veylo-assistant-send:active:not(:disabled) { transform: scale(.95); }
-.veylo-assistant-send:disabled { cursor: not-allowed; opacity: .38; }
-.veylo-assistant-footnote { margin: 0; padding: 0 1rem max(.8rem, env(safe-area-inset-bottom)); color: rgba(255, 255, 255, .32); font-size: .62rem; line-height: 1.4; }
-
-@keyframes veylo-assistant-rise { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.veylo-assistant-heading { display: flex; align-items: center; gap: .8rem; min-width: 0; }
+.veylo-assistant-heading h2 { margin: 0; font-size: 1rem; font-weight: 650; letter-spacing: -.02em; }
+.veylo-assistant-heading p { margin: .25rem 0 0; color: #b5adb3; font-size: .75rem; }
+.veylo-assistant-mark { display: grid; width: 44px; height: 44px; flex: 0 0 auto; place-items: center; border: 1px solid #ff9b8e40; border-radius: 14px; color: #ff9b8e; background: #ff5a4712; }
+.veylo-assistant-header-actions { display: flex; align-items: center; gap: .3rem; }
+.veylo-assistant-icon-button { display: grid; width: 44px; height: 44px; flex: 0 0 auto; place-items: center; border: 1px solid transparent; border-radius: .75rem; color: #c8c2c7; background: transparent; }
+.veylo-assistant-icon-button:hover:not(:disabled) { color: #fff; background: #ffffff0c; border-color: #ffffff12; transform: translateY(-1px); }
+.veylo-assistant-icon-button:disabled { opacity: .3; cursor: not-allowed; }
+.veylo-assistant-conversation { position: relative; display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; }
+.veylo-assistant-messages { flex: 1 1 auto; min-width: 0; overflow: auto; overscroll-behavior: contain; padding: 1.5rem; scrollbar-width: thin; scrollbar-color: #393039 transparent; }
+.veylo-assistant-welcome { padding: .75rem 0 1rem; animation: veylo-assistant-message-in .25s ease both; }
+.veylo-assistant-eyebrow { color: #ff9b8e; font-size: .7rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.veylo-assistant-welcome h3 { max-width: 330px; margin: .8rem 0 .75rem; font-size: clamp(1.65rem, 3vw, 2rem); font-weight: 550; letter-spacing: -.045em; line-height: 1.15; }
+.veylo-assistant-welcome > p { margin: 0; max-width: 340px; color: #b8b2ba; font-size: .88rem; line-height: 1.65; }
+.veylo-assistant-starters { display: grid; gap: .65rem; margin-top: 1.65rem; }
+.veylo-assistant-starters button {
+  display: flex; align-items: center; gap: .8rem; width: 100%; min-width: 0; padding: 1rem .85rem;
+  border: 1px solid #ffffff15; border-radius: .9rem; color: #f5f2f4; background: linear-gradient(120deg,#ffffff05,#ffffff02); text-align: left;
+}
+.veylo-assistant-starters button > span:nth-child(2) { flex: 1; min-width: 0; }
+.veylo-assistant-starters strong { display: block; font-size: .86rem; font-weight: 600; }
+.veylo-assistant-starters button > span:nth-child(2) > span { display: block; margin-top: .3rem; color: #b8b0b8; font-size: .75rem; line-height: 1.5; }
+.veylo-assistant-starter-icon { display: grid; flex: 0 0 auto; width: 36px; height: 36px; place-items: center; border-radius: .65rem; color: #ffab9f; background: #ff5a4710; }
+.veylo-assistant-starters button > svg { flex: 0 0 auto; color: #9e919b; }
+.veylo-assistant-starters button:hover { transform: translateY(-2px); border-color: #ff9b8e45; background: #ff5a470b; }
+.veylo-assistant-message { min-width: 0; margin-bottom: 1.65rem; line-height: 1.7; animation: veylo-assistant-message-in .2s ease both; }
+.veylo-assistant-message.is-assistant { margin-right: .4rem; }
+.veylo-assistant-message.is-user { max-width: 88%; width: fit-content; margin-left: auto; padding: .85rem 1rem; border: 1px solid #ff9b8e26; border-radius: 1rem 1rem .3rem 1rem; background: #ff5a4710; }
+.veylo-assistant-message-label { display: flex; align-items: center; gap: .45rem; margin-bottom: .65rem; color: #bcb2bb; font-size: .7rem; font-weight: 600; }
+.veylo-assistant-answer-mark { display: grid; width: 24px; height: 24px; place-items: center; border: 1px solid #ff9b8e2b; border-radius: 8px; color: #ff9b8e; }
+.veylo-assistant-message.is-user .veylo-assistant-message-label { margin-bottom: .3rem; color: #e0bdb8; }
+.veylo-assistant-user-content { margin: 0; font-size: .9rem; color: #f5edef; white-space: pre-wrap; overflow-wrap: anywhere; }
+.veylo-assistant-message-actions { display: flex; margin-top: .55rem; }
+.veylo-assistant-message-actions button { display: inline-flex; align-items: center; gap: .4rem; min-height: 44px; padding: .35rem .55rem; margin-left: -.55rem; border: 0; border-radius: .5rem; color: #b3aab3; background: transparent; font-size: .72rem; }
+.veylo-assistant-message-actions button:hover { color: #fff; background: #ffffff09; }
+.veylo-assistant-thinking { display: flex; align-items: center; gap: .65rem; min-height: 44px; margin: .2rem 0 1rem; color: #c3b8c1; font-size: .82rem; }
+.veylo-assistant-spin { color: #ff9b8e; animation: veylo-assistant-spin 1s linear infinite; }
+.veylo-assistant-error, .veylo-assistant-stopped { margin: .6rem 0 1rem; padding: 1rem; border: 1px solid #ff9b8e30; border-radius: .85rem; color: #f3c9c3; background: #ff5a470a; font-size: .83rem; }
+.veylo-assistant-error p, .veylo-assistant-stopped p { margin: 0 0 .65rem; line-height: 1.6; overflow-wrap: anywhere; }
+.veylo-assistant-error > div { display: flex; flex-wrap: wrap; gap: .5rem 1rem; }
+.veylo-assistant-error button, .veylo-assistant-error a, .veylo-assistant-stopped button { display: inline-flex; align-items: center; gap: .4rem; min-height: 44px; padding: .3rem 0; border: 0; color: #fff; background: transparent; font-size: .78rem; text-decoration: none; }
+.veylo-assistant-error button:hover, .veylo-assistant-error a:hover, .veylo-assistant-stopped button:hover { color: #ffb3a9; }
+.veylo-assistant-latest { position: absolute; bottom: .7rem; left: 50%; display: inline-flex; align-items: center; gap: .4rem; min-height: 44px; padding: .5rem .9rem; transform: translateX(-50%); border: 1px solid #ffffff26; border-radius: 999px; color: #fff; background: #242028; box-shadow: 0 5px 24px #0006; font-size: .75rem; white-space: nowrap; }
+.veylo-assistant-latest:hover { background: #35272d; }
+.veylo-assistant-followups { flex: 0 0 auto; border-top: 1px solid #ffffff12; padding: 0 1.25rem; }
+.veylo-assistant-followups summary { display: flex; align-items: center; justify-content: space-between; gap: .8rem; min-height: 44px; color: #bcb2bb; font-size: .74rem; cursor: pointer; list-style: none; }
+.veylo-assistant-followups summary::-webkit-details-marker { display: none; }
+.veylo-assistant-followups summary:hover { color: #fff; }
+.veylo-assistant-followups[open] summary svg { transform: rotate(180deg); }
+.veylo-assistant-suggestions { display: grid; gap: .4rem; max-height: min(180px, 24dvh); overflow-y: auto; padding: .15rem 0 .75rem; }
+.veylo-assistant-suggestions button { display: flex; align-items: center; justify-content: space-between; gap: .8rem; min-height: 44px; padding: .7rem .8rem; border: 1px solid #ffffff12; border-radius: .65rem; color: #e1d8de; background: #ffffff04; font-size: .78rem; line-height: 1.5; text-align: left; }
+.veylo-assistant-suggestions button > svg { flex: 0 0 auto; color: #ff9b8e; }
+.veylo-assistant-suggestions button:hover { border-color: #ff9b8e40; background: #ff5a470b; transform: translateY(-1px); }
+.veylo-assistant-footer { flex: 0 0 auto; padding: 1rem 1.25rem max(1rem, env(safe-area-inset-bottom)); border-top: 1px solid #ffffff14; background: #0c0c10; }
+.veylo-assistant-form { display: flex; align-items: flex-end; gap: .5rem; padding: .5rem; border: 1px solid #ffffff25; border-radius: 1rem; background: #ffffff04; }
+.veylo-assistant-form:focus-within { border-color: #ff9b8e80; box-shadow: 0 0 0 3px #ff5a470c; }
+.veylo-assistant-form textarea { display: block; flex: 1 1 auto; width: 0; min-width: 0; min-height: 44px; max-height: 136px; resize: none; padding: .65rem .35rem; border: 0; outline: none; color: #fff; background: transparent; font: inherit; font-size: 16px; line-height: 1.5; }
+.veylo-assistant-form textarea::placeholder { color: #a49ba5; }
+.veylo-assistant-send { display: grid; width: 44px; height: 44px; flex: 0 0 auto; place-items: center; border: 1px solid #ff9b8e4a; border-radius: .75rem; color: #10090a; background: #ff9b8e; }
+.veylo-assistant-send:hover:not(:disabled) { transform: translateY(-1px); background: #ffb1a6; }
+.veylo-assistant-send.is-stop { color: #ffd5ce; background: #ff5a4720; }
+.veylo-assistant-send:disabled { cursor: not-allowed; opacity: .35; }
+.veylo-assistant-composer-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .25rem .5rem; margin: .6rem .2rem 0; color: #a59ba5; font-size: .65rem; line-height: 1.5; }
+.veylo-assistant-footnote { display: flex; align-items: flex-start; gap: .4rem; margin: .7rem .2rem 0; color: #a59ba5; font-size: .65rem; line-height: 1.6; }
+.veylo-assistant-footnote svg { flex: 0 0 auto; margin-top: .1rem; color: #ba9b98; }
+.veylo-assistant-panel button, .veylo-assistant-panel a, .veylo-assistant-panel summary { transition: transform .18s ease, background .18s ease, border-color .18s ease, color .18s ease; }
+.veylo-assistant-panel button:active:not(:disabled) { scale: .97; }
+.veylo-assistant-panel :is(button, a, summary):focus-visible, .veylo-assistant-launch:focus-visible { outline: 2px solid #ff9b8e; outline-offset: 3px; }
+@keyframes veylo-assistant-rise { from { opacity: 0; transform: translateY(12px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes veylo-assistant-fade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes veylo-assistant-message-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes veylo-assistant-message-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes veylo-assistant-spin { to { transform: rotate(360deg); } }
-
+@media (min-width: 768px) { .veylo-assistant-panel { width: min(480px, calc(100vw - 3rem)); } }
+@media (min-width: 1025px) { .veylo-assistant-panel { width: 500px; } .veylo-assistant-messages { padding: 1.75rem; } }
+@media (max-width: 640px) {
+  .veylo-assistant-panel { right: 0; bottom: var(--assistant-keyboard-inset, 0px); width: 100%; height: min(100dvh, 800px); max-height: var(--assistant-viewport-height, 100dvh); border-right: 0; border-bottom: 0; border-left: 0; border-radius: 1.25rem 1.25rem 0 0; }
+  .veylo-assistant-messages { padding: 1.25rem; }
+  .veylo-assistant-welcome h3 { font-size: 1.8rem; }
+}
 @media (max-width: 560px) {
-  .veylo-assistant-launch { right: max(.8rem, env(safe-area-inset-right)); bottom: max(.8rem, env(safe-area-inset-bottom)); }
+  .veylo-assistant-launch { right: max(.8rem, env(safe-area-inset-right)); bottom: max(.8rem, env(safe-area-inset-bottom)); width: 48px; padding: 0; justify-content: center; }
   .veylo-assistant-launch span { display: none; }
-  .veylo-assistant-launch { width: 48px; padding: 0; justify-content: center; }
-  .veylo-assistant-panel { right: 0; bottom: 0; width: 100%; height: min(100dvh, 760px); max-height: 100dvh; border-right: 0; border-bottom: 0; border-left: 0; border-radius: 1.15rem 1.15rem 0 0; }
-  .veylo-assistant-messages { padding: .9rem .8rem; }
-  .veylo-assistant-message { max-width: 96%; }
+}
+@media (max-width: 360px), (max-height: 600px) {
+  .veylo-assistant-header { padding: .75rem 1rem; }
+  .veylo-assistant-heading { gap: .6rem; }
+  .veylo-assistant-mark { width: 38px; height: 38px; }
+  .veylo-assistant-messages { padding: 1rem; }
+  .veylo-assistant-welcome { padding-top: .25rem; }
+  .veylo-assistant-welcome h3 { font-size: 1.6rem; }
+  .veylo-assistant-starters { margin-top: 1.2rem; }
+  .veylo-assistant-starters button { padding: .8rem .7rem; }
+  .veylo-assistant-footer { padding: .75rem 1rem max(.75rem, env(safe-area-inset-bottom)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .veylo-assistant-panel, .veylo-assistant-panel *, .veylo-assistant-launch, .veylo-assistant-backdrop { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  .veylo-assistant-panel button:hover, .veylo-assistant-launch:hover { transform: none; }
+  .veylo-assistant-panel button:active { scale: 1; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .veylo-assistant-launch, .veylo-assistant-panel, .veylo-assistant-backdrop, .veylo-assistant-message, .veylo-assistant-spin { animation: none !important; transition: none !important; }
-}
+.veylo-assistant-panel .veylo-markdown { color: rgba(255, 255, 255, .84); font-size: .9rem; overflow-wrap: anywhere; }
+.veylo-assistant-panel .veylo-markdown > :first-child { margin-top: 0; }
+.veylo-assistant-panel .veylo-markdown > :last-child { margin-bottom: 0; }
+.veylo-assistant-panel .veylo-markdown p { margin: .5rem 0; }
+.veylo-assistant-panel .veylo-markdown h1, .veylo-assistant-panel .veylo-markdown h2, .veylo-assistant-panel .veylo-markdown h3 { color: #fff; font-weight: 700; line-height: 1.3; }
+.veylo-assistant-panel .veylo-markdown h1 { margin: .75rem 0 .4rem; font-size: 1.05rem; }
+.veylo-assistant-panel .veylo-markdown h2 { margin: .7rem 0 .35rem; font-size: .94rem; }
+.veylo-assistant-panel .veylo-markdown h3 { margin: .6rem 0 .3rem; font-size: .84rem; }
+.veylo-assistant-panel .veylo-markdown ul, .veylo-assistant-panel .veylo-markdown ol { margin: .5rem 0; padding-left: 1.25rem; }
+.veylo-assistant-panel .veylo-markdown ul { list-style: disc; }
+.veylo-assistant-panel .veylo-markdown ol { list-style: decimal; }
+.veylo-assistant-panel .veylo-markdown li { margin: .25rem 0; padding-left: .1rem; }
+.veylo-assistant-panel .veylo-markdown a { display: inline-flex; align-items: center; gap: .22rem; color: #ffb3a9; text-decoration: underline; text-underline-offset: 3px; }
+.veylo-assistant-panel .veylo-markdown a:hover { color: #fff; }
+.veylo-assistant-panel .veylo-markdown strong { color: #fff; font-weight: 700; }
+.veylo-assistant-panel .veylo-markdown code { padding: .1rem .28rem; border: 1px solid rgba(255, 255, 255, .11); border-radius: .3rem; color: #ffd0c9; background: rgba(0, 0, 0, .25); font-size: .75rem; }
+.veylo-assistant-panel .veylo-markdown pre { max-width: 100%; overflow-x: auto; margin: .6rem 0; padding: .7rem; border: 1px solid rgba(255, 255, 255, .1); border-radius: .65rem; background: #08080b; }
+.veylo-assistant-panel .veylo-markdown pre code { padding: 0; border: 0; background: transparent; color: rgba(255, 255, 255, .76); white-space: pre; }
+.veylo-assistant-panel .veylo-markdown blockquote { margin: .55rem 0; padding: .35rem .7rem; border-left: 2px solid #ff7d6d; color: rgba(255, 255, 255, .6); }
+.veylo-assistant-panel .veylo-markdown hr { margin: .8rem 0; border: 0; border-top: 1px solid rgba(255, 255, 255, .1); }
+.veylo-assistant-panel .veylo-markdown-table { max-width: 100%; overflow-x: auto; margin: .65rem 0; border: 1px solid rgba(255, 255, 255, .1); border-radius: .55rem; }
+.veylo-assistant-panel .veylo-markdown table { min-width: 100%; border-collapse: collapse; font-size: .72rem; }
+.veylo-assistant-panel .veylo-markdown th, .veylo-assistant-panel .veylo-markdown td { min-width: 7rem; padding: .45rem .55rem; border-bottom: 1px solid rgba(255, 255, 255, .08); text-align: left; vertical-align: top; }
+.veylo-assistant-panel .veylo-markdown th { color: #fff; background: rgba(255, 255, 255, .06); font-weight: 700; }
+.veylo-assistant-panel .veylo-markdown tr:last-child td { border-bottom: 0; }

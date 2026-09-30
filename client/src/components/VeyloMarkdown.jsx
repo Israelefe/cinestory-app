@@ -1,15 +1,18 @@
 import React from 'react';
 import { ExternalLink } from 'lucide-react';
+import { Link } from 'react-router-dom';
+
+const HELP_PATHS = new Set(['/dashboard', '/create', '/formats', '/library', '/portfolio/manage', '/billing', '/settings', '/contact', '/privacy', '/terms', '/pricing', '/signup', '/signin']);
 
 function safeHref(rawHref) {
   const href = String(rawHref || '').trim();
-  if (!href || href.startsWith('//') || /^(?:javascript|data|vbscript):/i.test(href)) return '';
-  if (href.startsWith('/')) return href.includes('..') ? '' : href;
+  if (!href || href.startsWith('//') || /[\\\u0000-\u0020\u007f]/.test(href)) return '';
   try {
-    const url = new URL(href);
+    const url = new URL(href, 'https://veylo.com.ng');
     if (url.protocol !== 'https:') return '';
+    if (url.username || url.password || url.port || !HELP_PATHS.has(url.pathname)) return '';
     const host = url.hostname.toLowerCase();
-    if (host === 'veylo.com.ng' || host.endsWith('.veylo.com.ng')) return url.toString();
+    if (host === 'veylo.com.ng' || host.endsWith('.veylo.com.ng')) return href.startsWith('/') ? `${url.pathname}${url.search}${url.hash}` : url.toString();
   } catch {}
   return '';
 }
@@ -25,7 +28,9 @@ function inlineParts(value) {
     if (token.startsWith('[')) {
       const linkMatch = token.match(/^\[([^\]]+)\]\(([^\s)]+)\)$/);
       const href = safeHref(linkMatch?.[2]);
-      if (linkMatch && href) parts.push(<a key={`link-${match.index}`} href={href} target={href.startsWith('/') ? undefined : '_blank'} rel={href.startsWith('/') ? undefined : 'noopener noreferrer'}>{linkMatch[1]}{!href.startsWith('/') && <ExternalLink size={12} aria-hidden="true" />}</a>);
+      if (linkMatch && href) parts.push(href.startsWith('/')
+        ? <Link key={`link-${match.index}`} to={href}>{linkMatch[1]}</Link>
+        : <a key={`link-${match.index}`} href={href} target="_blank" rel="noopener noreferrer">{linkMatch[1]}<ExternalLink size={12} aria-hidden="true" /></a>);
       else parts.push(linkMatch?.[1] || token);
     } else if (token.startsWith('`')) parts.push(<code key={`code-${match.index}`}>{token.slice(1, -1)}</code>);
     else if (token.startsWith('**')) parts.push(<strong key={`strong-${match.index}`}>{token.slice(2, -2)}</strong>);

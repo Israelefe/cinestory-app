@@ -123,6 +123,7 @@ export function buildMarketingKnowledge() {
 export function buildAssistantKnowledge({ query = '', audience = 'visitor' } = {}) {
   const queryTerms = terms(query);
   const selected = DOCUMENTS
+    .filter(document => document.audiences.includes(audience))
     .map(document => ({ document, score: scoreDocument(document, queryTerms, audience) }))
     .sort((a, b) => b.score - a.score || a.document.id.localeCompare(b.document.id))
     .filter(item => item.score > 0)
@@ -137,6 +138,7 @@ export function buildAssistantKnowledge({ query = '', audience = 'visitor' } = {
 export function assistantTopicLabels({ query = '', audience = 'visitor' } = {}) {
   const queryTerms = terms(query);
   return DOCUMENTS
+    .filter(document => document.audiences.includes(audience))
     .map(document => ({ document, score: scoreDocument(document, queryTerms, audience) }))
     .sort((a, b) => b.score - a.score)
     .filter(item => item.score > 0)
@@ -144,7 +146,35 @@ export function assistantTopicLabels({ query = '', audience = 'visitor' } = {}) 
     .map(item => item.document.title);
 }
 
-export function assistantSuggestedQuestions(surface = 'public') {
+const RELATED_QUESTIONS = {
+  'what-veylo-is': ['How does a client delivery work?'],
+  'account-and-profile': ['How do I update my studio profile?', 'How do I reset my password?'],
+  'plans-and-storage': ['What is included with Pro?', 'What happens when I cancel Pro?', 'Where can I check my delivery allowance?'],
+  'create-delivery': ['How do I publish a delivery?', 'Why did one upload fail?'],
+  'delivery-formats': ['Which format fits a large event?', 'What is the difference between Showcase and GridBoard?'],
+  'review-captions-and-design': ['How do I review captions before publishing?'],
+  'music-and-narration': ['Why will the music not play?'],
+  'publish-and-access': ['Why can I not open a delivery link?', 'How do I download one photograph?'],
+  'volume-delivery': ['Why can I not open my recipient gallery?'],
+  'portfolio': ['What is included with Veylo Portfolio?'],
+  'emails-and-notifications': ['Why has my Veylo email not arrived?'],
+  'analytics': ['What do delivery views count?'],
+  'troubleshooting': ['How do I contact Veylo support?'],
+  'privacy-and-support': ['How do I contact Veylo support?']
+};
+
+export function assistantSuggestedQuestions(surface = 'public', { query = '', audience } = {}) {
+  const resolvedAudience = audience || (surface === 'delivery' ? 'recipient' : surface === 'studio' ? 'studio' : 'visitor');
+  const queryTerms = terms(query);
+  if (queryTerms.length) {
+    const questions = DOCUMENTS.filter(document => document.audiences.includes(resolvedAudience))
+      .map(document => ({ document, score: scoreDocument(document, queryTerms, resolvedAudience) }))
+      .filter(item => item.score > 2)
+      .sort((a, b) => b.score - a.score)
+      .flatMap(({ document }) => RELATED_QUESTIONS[document.id] || []);
+    const related = [...new Set(questions)].filter(question => question.toLowerCase() !== query.trim().toLowerCase()).slice(0, 3);
+    if (related.length) return related;
+  }
   if (surface === 'delivery') return [
     'How do I download one photograph?',
     'Why will the music not play?',

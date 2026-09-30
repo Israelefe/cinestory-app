@@ -5,14 +5,15 @@ import { assistantSuggestedQuestions } from '../knowledge/veyloAssistantKnowledg
 import { isRuntimeFeatureEnabled } from '../services/runtimeConfig.service.js';
 import { resolveEntitlements } from '../services/entitlement.service.js';
 
-const messageSchema = z.object({
-  role: z.enum(['user', 'assistant']),
-  content: z.string().trim().min(1).max(3000)
-}).strict();
+// Answers can be longer than questions; accept the same bound as the provider.
+const messageSchema = z.discriminatedUnion('role', [
+  z.object({ role: z.literal('user'), content: z.string().trim().min(1).max(3000) }).strict(),
+  z.object({ role: z.literal('assistant'), content: z.string().trim().min(1).max(6000) }).strict()
+]);
 
 const chatSchema = z.object({
   surface: z.enum(['public', 'studio', 'delivery']).default('public'),
-  messages: z.array(messageSchema).min(1).max(20)
+  messages: z.array(messageSchema).min(1).max(20).refine(messages => messages.at(-1)?.role === 'user')
 }).strict();
 
 export function safeMessages(messages) {
@@ -26,7 +27,7 @@ export function safeMessages(messages) {
     .filter(message => ['user', 'assistant'].includes(message?.role) && typeof message?.content === 'string')
     .map(message => ({
       role: message.role,
-      content: message.content.trim().slice(0, 3000)
+      content: message.content.trim().slice(0, message.role === 'assistant' ? 6000 : 3000)
     }))
     .filter(message => message.content.length > 0);
 
@@ -82,19 +83,24 @@ export async function chatWithVeyloAssistant(req, res) {
   if (!parsed.success) return res.status(400).json({ success: false, code: 'ASSISTANT_INPUT_INVALID', message: 'Please send a shorter Veylo question.' });
   const messages = safeMessages(parsed.data.messages);
   if (!messages.length) return res.status(400).json({ success: false, code: 'ASSISTANT_INPUT_INVALID', message: 'Please ask a Veylo question.' });
+  const controller = new AbortController();
+  const cancelDisconnected = () => { if (!res.writableEnded) controller.abort(); };
+  res.once('close', cancelDisconnected);
   try {
     let safeContext = '';
-    if (parsed.data.surface !== 'delivery') {
+    if (parsed.data.surface === 'studio') {
       try { safeContext = await safeAccountContext(req); } catch { safeContext = ''; }
     }
     const data = await answerVeyloQuestion({
       messages,
       surface: parsed.data.surface,
       authenticated: Boolean(req.user?.id),
-      safeContext
+      safeContext,
+      signal: controller.signal
     });
     return res.json({ success: true, data });
   } catch (error) {
+    if (controller.signal.aborted) return;
     // Never send provider messages, model names, request payloads, or stack
     // traces to the browser. The client only needs a useful next step.
     if (error.code === 'ASSISTANT_UNSAFE_OUTPUT') {
@@ -103,5 +109,7 @@ export async function chatWithVeyloAssistant(req, res) {
     if (process.env.NODE_ENV !== 'test') console.error('[assistant/chat]', error.code || 'ASSISTANT_FAILED', error.providerStatus || '');
     const status = error.code === 'ASSISTANT_PROVIDER_BUSY' ? 503 : error.code === 'ASSISTANT_NOT_CONFIGURED' ? 503 : 502;
     return res.status(status).json({ success: false, code: error.code || 'ASSISTANT_FAILED', message: 'Veylo Help is temporarily unavailable. You can try again or contact Veylo support.' });
+  } finally {
+    res.off('close', cancelDisconnected);
   }
 }
