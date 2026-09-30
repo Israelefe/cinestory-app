@@ -216,8 +216,8 @@ export function DemoHeader({ format, client, sectionId, onGallery, light = false
   return <header className={'fd-header ' + (light ? 'is-light' : '')}>
     {delivery ? (
       <div className="fd-header-brand">
-        {delivery.branding?.logoUrl && <DeliveryBrandMark branding={delivery.branding} className="fd-header-logo" />}
-        <span>{brandName}</span>
+        <DeliveryBrandMark branding={delivery.branding} className="fd-header-logo" />
+        <span className="fd-header-brand-copy">{delivery.branding?.type === 'studio' && <small>Photographed by</small>}<strong>{brandName}</strong></span>
       </div>
     ) : (
       <Link className="fd-back" to={backDestination} onClick={handleBack} aria-label={backAria}>

@@ -78,6 +78,16 @@ export function signedArchiveUrl(publicIds, filename = 'veylo-gallery', prefix =
   return cloudinary.utils.download_zip_url({ ...selection, resource_type: 'image', type: 'authenticated', target_format: 'zip', flatten_folders: true, use_original_filename: true, target_public_id: String(filename).replace(/[^a-z0-9_-]/gi, '-').slice(0, 80) });
 }
 
+export function signedPreparedDeliveryImageUrl(publicId) {
+  ready();
+  // Match the main eager transformation made by both upload paths exactly.
+  // Authenticated assets cannot generate arbitrary new transformations on demand.
+  return cloudinary.url(publicId, {
+    secure: true, resource_type: 'image', type: 'authenticated', sign_url: true,
+    transformation: [{ crop: 'limit', width: 1600 }, { fetch_format: 'auto', quality: 'auto:good' }]
+  });
+}
+
 export function signedOgImageUrl(publicId) {
   ready();
   return cloudinary.url(publicId, { secure: true, resource_type: 'image', type: 'authenticated', sign_url: true, transformation: [{ crop: 'fill', width: 1200, height: 630, gravity: 'auto', quality: 'auto:good', fetch_format: 'jpg' }] });

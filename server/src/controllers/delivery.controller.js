@@ -1510,7 +1510,8 @@ export async function getWatermarkedDeliveryPhoto(req, res) {
     if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
     const buffer = await deliveryWatermarkedPreview(asset, text, req.query.thumbnail === '1' ? { thumbnail: true } : { width });
     return res.set({ 'Content-Type': 'image/webp', 'Content-Length': String(buffer.length), 'X-Content-Type-Options': 'nosniff' }).send(buffer);
-  } catch {
+  } catch (error) {
+    console.warn('[deliveries/watermarked-photo]', { deliveryId: req.params.id, assetId: req.params.assetId, upstreamStatus: error.upstreamStatus, code: error.code || 'PHOTO_PREVIEW_FAILED' });
     return res.status(502).json({ success: false, message: 'The photo preview could not be loaded. Please try again.' });
   }
 }

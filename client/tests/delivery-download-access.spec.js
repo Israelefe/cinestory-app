@@ -33,6 +33,9 @@ async function mock(page, delivery, patchHandler) {
 }
 
 for (const format of ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign', 'gridboard']) {
+  test(`${format} makes the photographer name and mark visible at 320px`, async ({ page }) => {
+    await checkStudioBrand(page, format, 320);
+  });
   test(`${format} loads protected preview images in the gallery and open photo`, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const delivery = fixture(format);
@@ -87,6 +90,41 @@ for (const format of ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'cha
     }
     expect(requests).toEqual([]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+}
+
+async function checkStudioBrand(page, format, width) {
+  await page.setViewportSize({ width, height: 900 });
+  const delivery = fixture(format, false);
+  delivery.branding = { type: 'studio', name: 'Amara Photography', ...(format === 'editorial' ? {} : { logoUrl: '/veylo/web/demo-lora-1-480.webp' }) };
+  await mock(page, delivery);
+  await page.goto('/d/access-test?phoneView=1');
+  const header = page.locator(format === 'gridboard' ? '.pb-header' : format === 'photo-story' ? '.v-story-top' : '.fd-header');
+  const name = header.getByText('Amara Photography', { exact: true });
+  await expect(name).toBeVisible();
+  const brandMark = header.locator('.delivery-brand-mark');
+  await expect(brandMark).toBeVisible();
+  if (format === 'editorial') await expect(brandMark).toHaveText('AP');
+  expect(await brandMark.evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThanOrEqual(42);
+  expect(await name.evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(14);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const bounds = await name.boundingBox();
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+  if (['photo-story', 'editorial', 'gridboard'].includes(format)) await page.screenshot({ path: `../.visual-review/studio-brand-${format}-${width}.png` });
+  if (format !== 'gridboard') {
+    if (format === 'photo-story') {
+      await page.getByRole('button', { name: 'Begin the story', exact: true }).click();
+      await page.getByRole('button', { name: 'Open gallery', exact: true }).click();
+    } else await page.getByRole('button', { name: 'Open full gallery', exact: true }).click();
+    await expect(page.locator('.client-gallery-studio')).toContainText('Amara Photography');
+    await expect(page.locator('.client-gallery-studio .delivery-brand-mark')).toBeVisible();
+  }
+}
+
+for (const width of [768, 834, 1440]) for (const format of ['photo-story', 'editorial', 'gridboard']) {
+  test(`${format} keeps photographer branding clear at ${width}px`, async ({ page }) => {
+    await checkStudioBrand(page, format, width);
   });
 }
 

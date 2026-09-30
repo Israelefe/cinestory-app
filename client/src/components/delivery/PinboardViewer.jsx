@@ -638,7 +638,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   return <main className={'pb-viewer' + (preview ? ' is-preview' : '') + (board.animation === 'none' ? '' : ' is-animated')} style={style}>
     <div className="pb-wrap">
       <header className={'pb-header' + ((delivery?.branding?.name || 'Veylo').length > 32 ? ' has-long-brand' : '')}>
-        <div className="pb-brand"><span className="pb-brand-mark"><DeliveryBrandMark branding={delivery?.branding} /></span><span>{delivery?.branding?.name || 'Veylo'}<small>GRIDBOARD</small></span></div>
+        <div className="pb-brand"><span className="pb-brand-mark"><DeliveryBrandMark branding={delivery?.branding} /></span><span><small>{delivery?.branding?.type === 'studio' ? 'Photographed by' : 'GRIDBOARD'}</small><strong>{delivery?.branding?.name || 'Veylo'}</strong></span></div>
         {downloadsLocked && <DownloadLockButton access={delivery.access} />}
         {!preview && !downloadsLocked && <div className="pb-header-actions">{delivery.access?.allowDownloadAll && !delivery.access?.downloadsLocked && <button type="button" aria-label="Download all photos" onClick={() => demo ? setMessage('Download all is available on published galleries.') : galleryProps.onDownloadAll?.()}><ArrowDownToLine size={17} /> Download all</button>}{canDownload && <button type="button" aria-label="Make a WhatsApp Status card" className="pb-status-open" onClick={() => { setStatusSelection([]); setStatusPage(0); setStatusCard(null); setMessage(''); setStatusOpen(true); }}><MessageCircle size={17} /> Make a Status card</button>}</div>}
       </header>

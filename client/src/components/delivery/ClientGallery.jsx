@@ -7,6 +7,7 @@ import { useDialogFocus } from '../useDialogFocus.js';
 import { trackEvent } from '../../services/analytics.js';
 import './ClientGallery.css';
 import DownloadLockButton, { DownloadLockMessage } from './DownloadLockNotice.jsx';
+import DeliveryBrandMark from './DeliveryBrandMark.jsx';
 
 const photoKey = (photo, index) => photo?.assetId || photo?.id || photo?.name || index;
 const imageUrl = (photo, width = 1440) => photo?.url || (typeof photo === 'string' && (photo.startsWith('http') || photo.startsWith('/')) ? photo : `/veylo/web/${photo?.name || photo}-${width}.webp`);
@@ -89,6 +90,7 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
           <button className="client-gallery-icon" type="button" onClick={onClose} aria-label="Close gallery"><X size={21} /></button>
         </div>
       </header>
+      {selected === null && delivery?.branding?.type === 'studio' && <div className="client-gallery-studio"><DeliveryBrandMark branding={delivery.branding} /><div><span>Photographed by</span><strong>{delivery.branding.name}</strong></div></div>}
       {isLocked && <DownloadLockMessage access={delivery.access} />}
       {downloadNotice && <p className="client-gallery-download-tip" role="status">{downloadNotice}</p>}
 

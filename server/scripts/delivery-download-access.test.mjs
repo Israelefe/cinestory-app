@@ -5,7 +5,7 @@ import DeliveryShareGrant from '../src/models/DeliveryShareGrant.js';
 import sharp from 'sharp';
 import { getDeliveryPreviewMedia, getWatermarkedDeliveryPhoto, updateDownloadLock, getPhotoDownload, streamPhotoDownload, getGalleryDownload, getPinboardStatusCard } from '../src/controllers/delivery.controller.js';
 import { signedImageUrl } from '../src/services/deliveryMedia.service.js';
-import { renderDeliveryWatermark, watermarkMediaToken, verifyWatermarkMediaToken } from '../src/services/deliveryWatermark.service.js';
+import { deliveryWatermarkedPreview, renderDeliveryWatermark, watermarkMediaToken, verifyWatermarkMediaToken } from '../src/services/deliveryWatermark.service.js';
 import { tokenDigest } from '../src/utils/auth.js';
 
 // Dummy signing values: these tests do not contact Cloudinary or a database.
@@ -76,6 +76,62 @@ test('code renders a visible watermark on light and dark previews without modify
     assert.ok(changed > 200, 'central watermark must visibly differ from either background');
     assert.deepEqual(input, untouched);
   }
+});
+
+test('one central watermark replaces the repeated copies and stays inside portrait and landscape photos', async () => {
+  for (const [width, height] of [[320, 480], [834, 560], [1600, 2000]]) {
+    const input = await sharp({ create: { width, height, channels: 3, background: '#000000' } }).png().toBuffer();
+    const output = await renderDeliveryWatermark(input, 'Amara Photography');
+    const { data, info } = await sharp(output).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    const row = y => data.subarray(y * info.width * 3, (y + 1) * info.width * 3);
+    const changed = y => Array.from(row(y)).filter(value => value > 50).length;
+    assert.equal(changed(2), 0, 'watermark should not clip the top edge');
+    assert.equal(changed(height - 3), 0, 'watermark should not clip the bottom edge');
+    assert.equal(changed(Math.floor(height * .15)), 0, 'no upper repeated copy');
+    assert.equal(changed(Math.floor(height * .85)), 0, 'no lower repeated copy');
+    assert.ok(changed(Math.floor(height / 2)) > 10, 'watermark stays centred');
+  }
+});
+
+test('every responsive size and thumbnail uses one prepared source, even when new provider transformations are blocked', async t => {
+  const asset = { publicId: 'offline/prepared-size-regression' };
+  const input = await sharp({ create: { width: 1400, height: 1000, channels: 3, background: '#223344' } }).jpeg().toBuffer();
+  t.mock.method(globalThis, 'fetch', async url => {
+    if (!url.includes('/c_limit,w_1600/f_auto,q_auto:good/')) return new Response('Transformation unavailable', { status: 403 });
+    return new Response(input, { headers: { 'content-type': 'image/jpeg' } });
+  });
+  const outputs = await Promise.all([480, 960, 1600].map(width => deliveryWatermarkedPreview(asset, 'Regression', { width })));
+  for (let index = 0; index < outputs.length; index += 1) assert.equal((await sharp(outputs[index]).metadata()).width, [480, 960, 1400][index]);
+  const thumbnail = await deliveryWatermarkedPreview(asset, 'Regression', { thumbnail: true });
+  const meta = await sharp(thumbnail).metadata();
+  assert.equal(meta.width, 800);
+  assert.equal(meta.height, 1000);
+  assert.equal(globalThis.fetch.mock.callCount(), 1, 'sizes must share a source fetch');
+});
+
+test('missing prepared photos fall back privately to originals and are resized locally', async t => {
+  const asset = { publicId: 'offline/missing-prepared-photo' };
+  const input = await sharp({ create: { width: 1200, height: 900, channels: 3, background: '#223344' } }).png().toBuffer();
+  t.mock.method(globalThis, 'fetch', async url => {
+    if (url.includes('/c_limit,')) return new Response('Missing transformation', { status: 404 });
+    assert.equal(url, signedImageUrl(asset.publicId, { original: true }));
+    return new Response(input, { headers: { 'content-type': 'image/png' } });
+  });
+  const output = await deliveryWatermarkedPreview(asset, 'Fallback', { width: 480 });
+  assert.equal((await sharp(output).metadata()).width, 480);
+  assert.equal(globalThis.fetch.mock.callCount(), 2);
+});
+
+test('a temporary image-source failure retries without caching the failed response', async t => {
+  const asset = { publicId: 'offline/transient-photo-failure' };
+  const input = await sharp({ create: { width: 800, height: 1000, channels: 3, background: '#223344' } }).png().toBuffer();
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => ++calls === 1
+    ? new Response('Temporarily unavailable', { status: 503 })
+    : new Response(input, { headers: { 'content-type': 'image/png' } }));
+  const output = await deliveryWatermarkedPreview(asset, 'Retry', { width: 480 });
+  assert.equal((await sharp(output).metadata()).width, 480);
+  assert.equal(calls, 2);
 });
 
 function photoRequest(claims, changes = {}) {
