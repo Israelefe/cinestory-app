@@ -101,6 +101,7 @@ async function uploadAudio(buffer, delivery) {
 
 async function synthesize({ apiKey, text, voiceId = DEFAULT_NARRATION_VOICE_ID, speed = VOICE_SETTINGS.speed }) {
   const voice = requiredVoice(voiceId);
+  if (text.length > MAX_NARRATION_CHUNK_CHARACTERS) throw Object.assign(new Error('Narration exceeded the per-request character limit.'), { code: 'NARRATION_CHUNK_TOO_LONG' });
   const query = new URLSearchParams({
     model: voice.id,
     speed: String(speed),
@@ -413,14 +414,16 @@ export async function synthesizeV3Narration(delivery, { bookends = true, caption
     if (captions) {
       const approved = captionSegments(delivery);
       const spokenTexts = new Map();
-      const budgets = new Map(approved.map(segment => [String(segment.assetIds[0]), 11]));
-      let needsFitting = approved.filter(segment => narrationLine(segment.text).split(/\s+/).length > 11 || narrationLine(segment.text).length > 100);
+      const budgets = new Map(approved.map(segment => [String(segment.assetIds[0]), narrationLine(segment.text).split(/\s+/).length]));
+      // Measure the original speech first. Character counts and word counts
+      // alone cannot say whether a particular voice fits the six-second slot.
+      let needsFitting = [];
       for (let attempt = 0; attempt < 4; attempt += 1) {
         if (needsFitting.length) {
           await onProgress?.('fitting-captions', (bookends ? 50 : 20) + attempt * 10);
           const fitted = await fitV3SpokenCaptions(delivery, needsFitting.map(segment => {
             const assetId = String(segment.assetIds[0]);
-            return { assetId, caption: segment.text, previousSpokenText: spokenTexts.get(assetId) || null, maxWords: budgets.get(assetId), maxCharacters: Math.min(100, Math.max(60, budgets.get(assetId) * 9)) };
+            return { assetId, caption: segment.text, previousSpokenText: spokenTexts.get(assetId) || null, maxWords: budgets.get(assetId), maxCharacters: 220 };
           }));
           for (const [assetId, text] of fitted) spokenTexts.set(assetId, text);
         }

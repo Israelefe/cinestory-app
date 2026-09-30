@@ -542,7 +542,11 @@ function hasUnsupportedAddress(value, delivery) {
   const ordinaryWords = new Set(['it', 'that', 'what', 'here', 'there', 'let', 'life', 'today', 'tomorrow', 'yesterday', 'everyone', 'someone', 'anyone', 'nobody', 'nothing', 'everything', 'something', 'now', 'together', 'still', 'finally', 'first', 'next', 'sometimes', 'often']);
   const text = String(value || '');
   const addresses = [...text.matchAll(/(?:^|[.!?]\s+)([\p{Lu}][\p{L}\p{M}-]+),\s+(?:you|your|this|turning|may|take|here|today|on)\b/gu), ...text.matchAll(/\b([\p{Lu}][\p{L}\p{M}-]+)['’]s\b/gu)];
-  return addresses.some(match => !known.has(match[1].toLocaleLowerCase()) && !ordinaryWords.has(match[1].toLocaleLowerCase()));
+  return addresses.some(match => {
+    const address = match[1].toLocaleLowerCase();
+    const parts = address.match(/[\p{L}\p{M}]+/gu) || [];
+    return !ordinaryWords.has(address) && !parts.every(part => known.has(part));
+  });
 }
 
 const NARRATIVE_POLICY = " The photographer's purpose provides almost all the meaning. Write a thoughtful message from the photographer to this client, not an image description. The client name and photographer's purpose below are the only sources of names and occasion facts. Copy supplied names exactly. Never get a name, age, relationship or event fact from a filename, image observation, draft text or an example. Do not assume an age when the purpose only says birthday. Do not invent relationships, feelings, personal achievements or life history. If the purpose names a subject different from the client, honour that purpose. Shoot type is light context only; an image observation may contribute one small, accurate visual cue. Write distinct, complete thoughts in plain, warm language. Headlines must use 2-7 words, be meaningful and point to a detail from the purpose. The Year Ahead alone is too broad. Never use generic labels such as The photograph, The moment or Photo 01. Photo Story captions use 18-24 words and at most 150 characters; other formats use 18-30 words and at most 180 characters. Avoid fragments, dashes, semicolons, stock praise, decorative metaphors and empty praise.";
@@ -694,14 +698,25 @@ export async function regenerateV3Caption(delivery, insight, instruction = '') {
 export async function fitV3SpokenCaptions(delivery, captions) {
   if (!captions.length) return new Map();
   const system = 'Return JSON {"captions":[{"assetId":"supplied-id","spokenText":"..."}]}. Produce a shorter spoken version of each approved caption, using only the thought already in that caption and the authoritative delivery context. Preserve its central meaning and any supplied name, occasion or age. Copy names exactly. The photographer purpose supplies the meaning; never add an image description, new person, relationship, feeling, achievement or event fact. Do not invent an age. Do not write a new purpose or a different message. Write one complete, natural sentence per photo, ending with punctuation. Each supplied word and character budget is a hard maximum: choose shorter wording, never cut a sentence off. Include every supplied asset ID exactly once. Avoid dashes, semicolons, decorative metaphors and stock praise. These lines will be spoken at a normal pace inside six-second photo slots. The full approved written captions remain unchanged.';
-  const prompt = JSON.stringify({ delivery: JSON.parse(narrativeContext(delivery)), captions });
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const result = await request(system + (attempt ? ' The last answer did not meet the supplied budgets or identity rules. Correct those issues.' : ''), prompt, { maxTokens: Math.min(2400, 200 + captions.length * 110) });
+  const accepted = new Map();
+  let pending = captions;
+  let feedback = [];
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const prompt = JSON.stringify({ delivery: JSON.parse(narrativeContext(delivery)), captions: pending, ...(feedback.length ? { corrections: feedback } : {}) });
+    let result;
+    try {
+      result = await request(system + (attempt ? ' Only the supplied rejected lines need another answer. Use the corrections to fix each one; do not return or rewrite other photos.' : ''), prompt, { maxTokens: Math.min(3000, 300 + pending.length * 180) });
+    } catch (error) {
+      if (error.code !== 'V3_INVALID_AI_RESPONSE') throw error;
+      feedback = pending.map(caption => ({ assetId: caption.assetId, issues: ['Return the requested JSON object with one spokenText for this assetId.'] }));
+      continue;
+    }
     const rows = Array.isArray(result.captions) ? result.captions : [];
-    const texts = new Map(rows.map(row => [row?.assetId, typeof row?.spokenText === 'string' ? row.spokenText.replace(/\s+/g, ' ').trim() : '']));
-    if (rows.length !== captions.length || texts.size !== captions.length) continue;
-    const valid = captions.every(caption => {
-      const text = texts.get(caption.assetId) || '';
+    feedback = [];
+    pending = pending.filter(caption => {
+      const matches = rows.filter(row => row?.assetId === caption.assetId);
+      let text = matches.length === 1 && typeof matches[0]?.spokenText === 'string' ? matches[0].spokenText.replace(/\s+/g, ' ').trim().replace(/^["“]|["”]$/g, '') : '';
+      if (text && !/[.!?]$/.test(text)) text += '.';
       const source = String(caption.caption || '');
       const numbers = text.match(/\b\d+(?:st|nd|rd|th)?\b/g) || [];
       const sourceNumbers = new Set(([source, delivery.brief].join(' ').match(/\b\d+(?:st|nd|rd|th)?\b/g) || []).map(value => value.replace(/(?:st|nd|rd|th)$/, '')));
@@ -709,12 +724,21 @@ export async function fitV3SpokenCaptions(delivery, captions) {
       const clientWords = String(delivery.clientName || '').match(/[\p{L}\p{M}]+/gu) || [];
       const tokens = value => new Set(String(value).toLocaleLowerCase().match(/[\p{L}\p{M}]+/gu) || []);
       const sourceTokens = tokens(source); const spokenTokens = tokens(text);
-      return wordCount(text) >= 3 && wordCount(text) <= caption.maxWords && text.length <= caption.maxCharacters
-        && /[.!?]$/.test(text) && !/[<>\n]/.test(text) && !hasUnsupportedAddress(text, delivery)
-        && numbers.every(value => sourceNumbers.has(value.replace(/(?:st|nd|rd|th)$/, '')))
-        && clientWords.every(word => !sourceTokens.has(word.toLocaleLowerCase()) || spokenTokens.has(word.toLocaleLowerCase()));
+      const issues = [];
+      if (matches.length !== 1 || !text) issues.push('Return exactly one spokenText for this assetId.');
+      if (wordCount(text) < 3) issues.push('Write a complete sentence of at least three words.');
+      if (wordCount(text) > caption.maxWords) issues.push(`Use at most ${caption.maxWords} words; the previous answer had ${wordCount(text)}.`);
+      if (text.length > caption.maxCharacters) issues.push(`Use at most ${caption.maxCharacters} characters; the previous answer had ${text.length}.`);
+      if (/[<>]/.test(text)) issues.push('Return plain speech without markup.');
+      if (hasUnsupportedAddress(text, delivery)) issues.push('Use only names supplied in the client name or purpose. Do not introduce another person.');
+      if (!numbers.every(value => sourceNumbers.has(value.replace(/(?:st|nd|rd|th)$/, '')))) issues.push('Do not introduce an age or number absent from the approved caption and purpose.');
+      const missingNames = clientWords.filter(word => sourceTokens.has(word.toLocaleLowerCase()) && !spokenTokens.has(word.toLocaleLowerCase()));
+      if (missingNames.length) issues.push(`Keep the supplied name words: ${missingNames.join(', ')}.`);
+      if (issues.length) { feedback.push({ assetId: caption.assetId, previousSpokenText: text, issues }); return true; }
+      accepted.set(caption.assetId, text);
+      return false;
     });
-    if (valid) return texts;
+    if (!pending.length) return accepted;
   }
   throw Object.assign(new Error('Veylo could not finish preparing the spoken captions. Retry the voice, or continue with the written captions.'), { code: 'NARRATION_FITTING_FAILED' });
 }

@@ -3,6 +3,7 @@ import test from 'node:test';
 import { PassThrough } from 'node:stream';
 import { cloudinary } from '../src/services/cloudinary.service.js';
 import { synthesizeV3Narration } from '../src/services/narration.service.js';
+import { fitV3SpokenCaptions } from '../src/services/deliveryV3AI.service.js';
 
 Object.assign(process.env, { DEEPGRAM_API_KEY: 'offline-key', ALIBABA_MODEL_STUDIO_API_KEY: 'offline-key', ALIBABA_BASE_URL: 'https://test.aliyuncs.com/compatible-mode/v1', CLOUDINARY_CLOUD_NAME: 'offline-cloud', CLOUDINARY_API_KEY: 'offline-key', CLOUDINARY_API_SECRET: 'offline-secret' });
 
@@ -60,11 +61,12 @@ test('a long written caption receives a complete spoken version at normal speed 
   assert.equal(result.captions.transcript, spokenText);
   assert.equal(result.captions.captionsAdapted, true);
   assert.equal(result.captions.renderVersion, 'flux-captions-v8');
-  assert.equal(mocks.recordings[0].speed, 1);
-  assert.equal(mocks.recordings[0].voiceId, 'flux-kit-en');
+  assert.equal(mocks.recordings.at(-1).speed, 1);
+  assert.equal(mocks.recordings.at(-1).voiceId, 'flux-kit-en');
   assert.equal(mocks.fits[0].delivery.clientName, 'Convennant');
   assert.equal(mocks.fits[0].delivery.purpose, 'birthday');
   assert.equal(mocks.uploads.length, 1);
+  assert.equal(mocks.recordings.length, 2);
   assert.ok(progress.some(item => item.stage === 'fitting-captions'));
   assert.ok(result.captions.segments[0].endSec - result.captions.segments[0].startSec <= 5.45);
 });
@@ -91,8 +93,8 @@ test('fitting retries an invented name before sending anything to TTS', async t 
   const mocks = providers(t, { fit: (input, attempt) => input.captions.map(caption => ({ assetId: caption.assetId, spokenText: attempt === 1 ? 'Lora, keep what matters close as this birthday begins.' : 'Convennant, keep what matters close as this birthday begins.' })) });
   const result = await synthesizeV3Narration(shoot(), { bookends: false, captions: true });
   assert.equal(mocks.fits.length, 2);
-  assert.equal(mocks.recordings.length, 1);
-  assert.doesNotMatch(mocks.recordings[0].text, /Lora/);
+  assert.equal(mocks.recordings.length, 2);
+  assert.ok(mocks.recordings.every(recording => !/Lora/.test(recording.text)));
   assert.match(result.captions.transcript, /Convennant/);
 });
 
@@ -101,8 +103,8 @@ test('unusable fitting leaves the written story intact and removes already gener
   const delivery = shoot(); const before = structuredClone(delivery);
   await assert.rejects(synthesizeV3Narration(delivery, { bookends: true, captions: true }), { code: 'NARRATION_FITTING_FAILED' });
   assert.deepEqual(delivery, before);
-  assert.equal(mocks.fits.length, 2);
-  assert.equal(mocks.recordings.length, 2);
+  assert.equal(mocks.fits.length, 3);
+  assert.equal(mocks.recordings.length, 3);
   assert.deepEqual(mocks.destroyed, mocks.uploads);
 });
 
@@ -112,7 +114,77 @@ test('provider timing that never fits stops bounded retries without rushing spee
   await assert.rejects(synthesizeV3Narration(delivery, { bookends: false, captions: true }), error => error.code === 'NARRATION_CAPTION_TOO_LONG' && !/Shorten that caption|needs to be shorter/.test(error.message));
   assert.deepEqual(delivery, before);
   assert.equal(mocks.recordings.length, 4);
-  assert.equal(mocks.fits.length, 4);
+  assert.equal(mocks.fits.length, 3);
   assert.equal(mocks.uploads.length, 0);
   assert.ok(mocks.recordings.every(recording => recording.speed === 1));
+});
+
+test('an original caption that fits measured speech stays unchanged without an AI fitting request', async t => {
+  const mocks = providers(t, { fit: () => { throw new Error('Already fits'); }, secondsPerWord: () => .2 });
+  const result = await synthesizeV3Narration(shoot(), { bookends: false, captions: true });
+  assert.equal(mocks.fits.length, 0); assert.equal(mocks.recordings.length, 1);
+  assert.equal(result.captions.segments[0].spokenText, longCaption);
+  assert.equal(result.captions.captionsAdapted, false);
+  assert.equal(mocks.uploads.length, 1);
+});
+
+test('fitting retains valid photos and gives targeted word-budget feedback for only the rejected photo', async t => {
+  const good = 'Convennant, keep what matters close as this birthday begins.';
+  const corrected = 'Convennant, this birthday belongs to you.';
+  const mocks = providers(t, { fit: (input, attempt) => {
+    if (attempt === 1) return [{ assetId: 'photo-0', spokenText: good }, { assetId: 'photo-1', spokenText: longCaption }];
+    assert.deepEqual(input.captions.map(caption => caption.assetId), ['photo-1']);
+    assert.match(input.corrections[0].issues.join(' '), /at most 8 words/);
+    assert.equal(input.corrections[0].previousSpokenText, longCaption);
+    return [{ assetId: 'photo-1', spokenText: corrected }];
+  } });
+  const result = await fitV3SpokenCaptions(shoot(), [{ assetId: 'photo-0', caption: longCaption, maxWords: 11, maxCharacters: 220 }, { assetId: 'photo-1', caption: longCaption, maxWords: 8, maxCharacters: 220 }]);
+  assert.equal(result.get('photo-0'), good); assert.equal(result.get('photo-1'), corrected);
+  assert.equal(mocks.fits.length, 2); assert.equal(mocks.recordings.length, 0);
+});
+
+test('harmless wrapping quotes and missing final punctuation do not reject otherwise valid fitted speech', async t => {
+  const mocks = providers(t, { fit: input => input.captions.map(caption => ({ assetId: caption.assetId, spokenText: '“Convennant, keep this birthday close to you”' })) });
+  const result = await fitV3SpokenCaptions(shoot(), [{ assetId: 'photo-0', caption: longCaption, maxWords: 11, maxCharacters: 220 }]);
+  assert.equal(result.get('photo-0'), 'Convennant, keep this birthday close to you.');
+  assert.equal(mocks.fits.length, 1);
+});
+
+test('a supplied hyphenated name is accepted while an unrelated name in that address is rejected', async t => {
+  const delivery = shoot(['Ada-Jane, this birthday is a chance to choose what matters most to you.']);
+  delivery.clientName = 'Ada-Jane';
+  const mocks = providers(t, { fit: (input, attempt) => input.captions.map(caption => ({ assetId: caption.assetId, spokenText: attempt === 1 ? 'Ada-Lora, may this birthday honour your choices.' : 'Ada-Jane, may this birthday honour your choices.' })) });
+  const result = await fitV3SpokenCaptions(delivery, [{ assetId: 'photo-0', caption: delivery.creativeDirection.frames[0].caption, maxWords: 10, maxCharacters: 220 }]);
+  assert.equal(result.get('photo-0'), 'Ada-Jane, may this birthday honour your choices.');
+  assert.equal(mocks.fits.length, 2);
+  assert.match(mocks.fits[1].corrections[0].issues.join(' '), /only names supplied/);
+});
+
+test('a supplied long name can fit speech without being rejected by an arbitrary hundred-character caption cap', async t => {
+  const clientName = 'Chukwuebuka-Alexander Oluwaseun-Aderonke Chinyere-Alexandria';
+  const written = `${clientName}, may this birthday give you room to choose the things you want to carry into your next year.`;
+  const spoken = `${clientName}, choose what matters most to you on this birthday.`;
+  assert.ok(spoken.length > 100 && spoken.length < 220);
+  const mocks = providers(t, { fit: input => {
+    assert.equal(input.captions[0].maxCharacters, 220);
+    return [{ assetId: 'photo-0', spokenText: spoken }];
+  }, secondsPerWord: recording => recording === 1 ? .4 : .35 });
+  const delivery = shoot([written]); delivery.clientName = clientName;
+  const result = await synthesizeV3Narration(delivery, { bookends: false, captions: true });
+  assert.equal(result.captions.segments[0].spokenText, spoken);
+  assert.equal(delivery.creativeDirection.frames[0].caption, written);
+  assert.equal(mocks.uploads.length, 1);
+});
+
+test('narration over two thousand characters is split without dropping photo cues or exceeding a request limit', async t => {
+  const caption = 'Convennant, this birthday is a chance to mark what matters to you and make room for what you want next. Keep this celebration close in the year ahead.';
+  const delivery = shoot(Array.from({ length: 24 }, () => caption));
+  const mocks = providers(t, { fit: () => { throw new Error('Already fits'); }, secondsPerWord: () => .08 });
+  const result = await synthesizeV3Narration(delivery, { bookends: false, captions: true });
+  assert.ok(result.captions.transcript.length > 2000);
+  assert.ok(mocks.recordings.length > 1);
+  assert.ok(mocks.recordings.every(recording => recording.text.length <= 2000));
+  assert.equal(result.captions.segments.length, 24);
+  assert.deepEqual(result.captions.segments.map(segment => segment.assetIds[0]), delivery.curatedAssetIds);
+  assert.equal(mocks.uploads.length, 1);
 });

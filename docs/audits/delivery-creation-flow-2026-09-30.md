@@ -79,8 +79,16 @@ These findings are still open. They need targeted changes and separate failure/c
 
 ## Verification
 
-- Server regression suite: 46 passing tests across `delivery-v3.test.mjs`, `narration-voices.test.mjs`, `narration-fitting.test.mjs` and `delivery-creation-recovery.test.mjs`.
+- Server regression suite: 52 passing tests across `delivery-v3.test.mjs`, `narration-voices.test.mjs`, `narration-fitting.test.mjs` and `delivery-creation-recovery.test.mjs`, including the follow-up correction below.
 - Browser regression checks: 31 creation cases passed across the focused runs after correcting stale test navigation, the styled-toggle test interaction and preview focus restoration. Coverage includes both delivery entry options, local expiry and PIN changes, lost publication responses, photo confirmation recovery, music selection, voice selection/retry/text continuation, photo-count controls, readable palettes and preserved preview images. Screen widths include 320, 768, 834 and 1440 px. Initial failures and their targeted reruns were inspected; the full unrelated browser suite was not run.
 - Client production build passes. Existing viewer-import/chunk warnings remain and are listed above.
 - Server syntax verification passes for 144 files.
 - No live Alibaba/Deepgram generation, maximum-size production uploads, production database race tests or deployment smoke test were performed. Those are remaining validation steps, not implied by the local regression results.
+
+## Follow-up: spoken-caption preparation failure
+
+The original automatic fitter still rejected the whole batch when one line was invalid. Its retry did not include the rejected wording or the specific validation failures, and a separate 100-character cap could reject a natural short sentence containing a long name.
+
+The corrected flow measures the original speech first. Only captions exceeding the measured photo slot need shortening. Fitting retains valid lines and retries only rejected lines, with their actual word/character counts, name checks and previous wording supplied as feedback. Harmless wrapping quotes and missing final punctuation are normalised. Supplied hyphenated names are recognised correctly. Written captions and six-second photo timing remain unchanged.
+
+Deepgram requests remain capped at 2,000 characters, including normalised punctuation and separators. Longer narration is split between photo captions. This cap is also checked immediately before synthesis. A regression case verifies every request stays within it and all photo cues remain present after combining audio. The code's per-request cap and each photo's measured speech duration are separate checks.
