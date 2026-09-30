@@ -10,7 +10,7 @@ import {
   listShareGrants, publishDelivery, queueAnalysis, queueDirection, queueNarration, queueRevision,
   restoreDelivery, retryDeliveryJob, recoverDeliveryUpload, revokeShareGrant, selectCuratedSoundtrack, signDeliveryUpload,
   signSoundtrackUpload, streamDeliverySoundtrack, streamPhotoDownload, togglePhotoLike, trackPhotoDownload,
-  unlockDelivery, updateDeliveryDetails, updateDeliveryReview, updateDownloadLock, getDeliveryPreviewMedia
+  unlockDelivery, updateDeliveryDetails, updateDeliveryReview, updateDownloadLock, getDeliveryPreviewMedia, getWatermarkedDeliveryPhoto
 } from '../controllers/delivery.controller.js';
 
 const router = express.Router();
@@ -26,6 +26,7 @@ router.get('/public/:publicId/photos/:assetId/file', publicMediaLimit, streamPho
 router.post('/public/:publicId/photos/:assetId/downloaded', publicMediaLimit, trackPhotoDownload);
 router.get('/public/:publicId/download-all', publicMediaLimit, getGalleryDownload);
 router.get('/soundtracks/:trackId/audio', publicMediaLimit, streamDeliverySoundtrack);
+router.get('/media/:id/photos/:assetId', publicMediaLimit, getWatermarkedDeliveryPhoto);
 
 router.use(authMiddleware);
 router.post('/v3/assist', aiGenerationLimit, v3Assist);

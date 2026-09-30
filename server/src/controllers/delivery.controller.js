@@ -21,6 +21,7 @@ import { tokenDigest } from '../utils/auth.js';
 import { sendDeliveryDownloadedEmail, sendDeliveryViewedEmail, sendShareGrantEmail, sendStoryReadyEmail } from '../services/email.service.js';
 import QRCode from 'qrcode';
 import { renderGridboardStatusCard } from '../services/gridboardStatusCard.service.js';
+import { deliveryWatermarkedPreview, watermarkMediaToken, verifyWatermarkMediaToken, watermarkedAssetMedia } from '../services/deliveryWatermark.service.js';
 import { DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
 import { DELIVERY_SOUNDTRACKS, deliverySoundtrack, deliverySoundtrackFile } from '../constants/deliverySoundtracks.js';
 import { supportsDeliveryMusic, supportsDeliveryNarration } from '../constants/deliveryCapabilities.js';
@@ -116,15 +117,15 @@ function failValidation(res, parsed) {
   return res.status(400).json({ success: false, code: 'VALIDATION_ERROR', message: parsed.error.issues[0]?.message || 'Check the information you entered.' });
 }
 
-function ownerAsset(asset, watermark = null) {
+function ownerAsset(asset) {
   const data = typeof asset.toObject === 'function' ? asset.toObject() : { ...asset };
   delete data.libraryTags;
   delete data.libraryCaption;
   return {
     ...data,
-    url: signedImageUrl(asset.publicId, { watermark }),
-    thumbnailUrl: signedImageUrl(asset.publicId, { thumbnail: true, watermark }),
-    srcSet: [480, 960, 1600].map(width => `${signedImageUrl(asset.publicId, { width, watermark })} ${width}w`).join(', ')
+    url: signedImageUrl(asset.publicId),
+    thumbnailUrl: signedImageUrl(asset.publicId, { thumbnail: true }),
+    srcSet: [480, 960, 1600].map(width => `${signedImageUrl(asset.publicId, { width })} ${width}w`).join(', ')
   };
 }
 
@@ -1078,8 +1079,10 @@ async function publicPayload(delivery, grant = null) {
   const watermarkText = (delivery.access?.watermarkEnabled && delivery.access?.downloadsLocked)
     ? (delivery.access?.watermarkText || owner.studio?.name || owner.name || 'PREVIEW')
     : null;
+  const watermarkToken = watermarkText ? watermarkMediaToken({ deliveryId: String(delivery._id), publicId: delivery.publicId, grantId: grant ? String(grant._id) : null, pinVersion: tokenDigest(delivery.access?.pinDigest || '') }) : null;
   object.assets = visibleDeliveryAssets.map(asset => {
-    const safe = ownerAsset(asset, watermarkText);
+    const safe = ownerAsset(asset);
+    if (watermarkToken) Object.assign(safe, watermarkedAssetMedia(asset, watermarkToken, String(delivery._id)));
     const photoColors = (asset.analysis?.colors || []).filter(color => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color)).slice(0, 4);
     const dominantColor = photoColors[0];
     if (typeof dominantColor === 'string' && /^#[0-9a-f]{6}$/i.test(dominantColor)) safe.dominantColor = dominantColor;
@@ -1163,7 +1166,8 @@ export async function getPinboardStatusCard(req, res) {
     const studioName = entitlement.features.branding === 'studio' ? owner.studio?.name || owner.name : 'Veylo';
     const watermark = delivery.access?.watermarkEnabled ? (delivery.access.watermarkText || owner.studio?.name || owner.name || 'PREVIEW') : null;
     const sources = await Promise.all(assets.map(async asset => {
-      const url = signedImageUrl(asset.publicId, { width: 1600, watermark });
+      if (watermark) return deliveryWatermarkedPreview(asset, watermark, { width: 1600 });
+      const url = signedImageUrl(asset.publicId, { width: 1600 });
       const upstream = await fetch(url, { signal: AbortSignal.timeout(30_000) });
       if (!upstream.ok) throw Object.assign(new Error('A photograph could not be prepared.'), { status: 502 });
       if (Number(upstream.headers.get('content-length') || 0) > 18 * 1024 * 1024) throw Object.assign(new Error('A photograph is too large to prepare for sharing.'), { status: 413 });
@@ -1459,13 +1463,55 @@ export async function getDeliveryPreviewMedia(req, res) {
     const watermark = parsed.data.downloadsLocked && parsed.data.watermarkEnabled
       ? parsed.data.watermarkText || owner.studio?.name || owner.name || 'PREVIEW'
       : null;
+    const token = watermark ? watermarkMediaToken({ deliveryId: String(delivery._id), ownerId: String(req.user.id), text: String(watermark).slice(0, 40) }) : null;
     const assets = delivery.assets.map(asset => {
-      const media = ownerAsset(asset, watermark);
+      const media = token ? { assetId: asset.assetId, ...watermarkedAssetMedia(asset, token, String(delivery._id)) } : ownerAsset(asset);
       return { assetId: media.assetId, url: media.url, thumbnailUrl: media.thumbnailUrl, srcSet: media.srcSet };
     });
     res.json({ success: true, data: { assets } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'We could not prepare the watermarked preview. Try again.' });
+  }
+}
+
+export async function getWatermarkedDeliveryPhoto(req, res) {
+  res.set('Cache-Control', 'private, no-store');
+  let claims;
+  try {
+    claims = verifyWatermarkMediaToken(req.query.token);
+    if (claims.deliveryId !== req.params.id) throw new Error('Wrong delivery.');
+  } catch {
+    return res.status(403).json({ success: false, message: 'This photo preview link has expired. Reload the delivery.' });
+  }
+  const width = Number(req.query.width || 1600);
+  if (![480, 960, 1600].includes(width) || (req.query.thumbnail !== undefined && req.query.thumbnail !== '1')) {
+    return res.status(400).json({ success: false, message: 'That photo preview size is not available.' });
+  }
+  try {
+    let delivery;
+    let text;
+    if (claims.ownerId) {
+      if (!/^[a-f0-9]{24}$/i.test(claims.ownerId) || typeof claims.text !== 'string' || !claims.text || claims.text.length > 40) return res.status(403).json({ success: false, message: 'This photo preview link is not valid.' });
+      delivery = await ownedDelivery(claims.deliveryId, claims.ownerId);
+      text = claims.text;
+    } else {
+      delivery = await publicDelivery(claims.publicId);
+      if (!delivery || String(delivery._id) !== claims.deliveryId || expired(delivery) || !delivery.access?.downloadsLocked || !delivery.access?.watermarkEnabled || claims.pinVersion !== tokenDigest(delivery.access?.pinDigest || '')) {
+        return res.status(404).json({ success: false, message: 'This photo preview is no longer available. Reload the delivery.' });
+      }
+      if (claims.grantId) {
+        if (!/^[a-f0-9]{24}$/i.test(claims.grantId)) return res.status(403).json({ success: false, message: 'This photo preview link is not valid.' });
+        const grant = await DeliveryShareGrant.findOne({ _id: claims.grantId, deliveryId: delivery._id, revokedAt: null, $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }] });
+        if (!grant || !grantAssets(delivery, grant).some(asset => asset.assetId === req.params.assetId)) return res.status(404).json({ success: false, message: 'This photograph is not available in this link.' });
+      }
+      text = delivery.access.watermarkText || delivery.userId.studio?.name || delivery.userId.name || 'PREVIEW';
+    }
+    const asset = delivery?.assets.find(item => item.assetId === req.params.assetId);
+    if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
+    const buffer = await deliveryWatermarkedPreview(asset, text, req.query.thumbnail === '1' ? { thumbnail: true } : { width });
+    return res.set({ 'Content-Type': 'image/webp', 'Content-Length': String(buffer.length), 'X-Content-Type-Options': 'nosniff' }).send(buffer);
+  } catch {
+    return res.status(502).json({ success: false, message: 'The photo preview could not be loaded. Please try again.' });
   }
 }
 

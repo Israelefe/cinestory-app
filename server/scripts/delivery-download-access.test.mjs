@@ -1,15 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import Delivery from '../src/models/Delivery.js';
-import { getDeliveryPreviewMedia, updateDownloadLock, getPhotoDownload, streamPhotoDownload, getGalleryDownload, getPinboardStatusCard } from '../src/controllers/delivery.controller.js';
+import DeliveryShareGrant from '../src/models/DeliveryShareGrant.js';
+import sharp from 'sharp';
+import { getDeliveryPreviewMedia, getWatermarkedDeliveryPhoto, updateDownloadLock, getPhotoDownload, streamPhotoDownload, getGalleryDownload, getPinboardStatusCard } from '../src/controllers/delivery.controller.js';
 import { signedImageUrl } from '../src/services/deliveryMedia.service.js';
+import { renderDeliveryWatermark, watermarkMediaToken, verifyWatermarkMediaToken } from '../src/services/deliveryWatermark.service.js';
+import { tokenDigest } from '../src/utils/auth.js';
 
 // Dummy signing values: these tests do not contact Cloudinary or a database.
 process.env.CLOUDINARY_CLOUD_NAME = 'veylo-test';
 process.env.CLOUDINARY_API_KEY = 'test-key';
 process.env.CLOUDINARY_API_SECRET = 'test-secret';
+process.env.JWT_SECRET = 'offline-watermark-test-secret';
 function response() {
-  return { statusCode: 200, status(value) { this.statusCode = value; return this; }, json(value) { this.body = value; return this; } };
+  return { statusCode: 200, headers: {}, set(key, value) { if (typeof key === 'object') Object.assign(this.headers, key); else this.headers[key] = value; return this; }, send(value) { this.body = value; return this; }, status(value) { this.statusCode = value; return this; }, json(value) { this.body = value; return this; } };
 }
 const ownerId = '507f1f77bcf86cd799439012';
 const deliveryId = '507f1f77bcf86cd799439011';
@@ -25,11 +30,10 @@ function stubFind(t, doc, check = () => {}) {
   });
 }
 
-test('watermarks appear on thumbnails, main images and responsive sizes, but never change originals', () => {
+test('storage URLs no longer ask Cloudinary to draw a watermark; original URLs stay unchanged', () => {
   for (const options of [{ thumbnail: true }, {}, { width: 480 }, { width: 960 }]) {
     const url = decodeURIComponent(signedImageUrl('private-shoot/one', { ...options, watermark: 'Amara Photography' }));
-    assert.match(url, /l_text:Arial_38_bold:Amara Photography/);
-    assert.match(url, /o_55/);
+    assert.doesNotMatch(url, /l_text|o_55/);
   }
   assert.equal(signedImageUrl('private-shoot/one', { original: true, watermark: 'Amara' }), signedImageUrl('private-shoot/one', { original: true }));
   assert.doesNotMatch(signedImageUrl('private-shoot/one', { thumbnail: true }), /l_text/);
@@ -44,14 +48,105 @@ test('only the owner can request watermarked preview media; studio fallback and 
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.data.assets.length, 2);
   for (const asset of res.body.data.assets) {
-    for (const key of ['url', 'thumbnailUrl', 'srcSet']) assert.match(decodeURIComponent(asset[key]), /Amara Photography/);
+    for (const key of ['url', 'thumbnailUrl', 'srcSet']) assert.match(asset[key], /\/api\/v1\/deliveries\/media\//);
+    const claims = verifyWatermarkMediaToken(new URL(asset.url, 'https://example.test').searchParams.get('token'));
+    assert.equal(claims.text, 'Amara Photography');
+    assert.equal(claims.ownerId, ownerId);
     assert.equal(asset.publicId, undefined);
   }
   req.body.downloadsLocked = false;
   const clean = response();
   await getDeliveryPreviewMedia(req, clean);
-  assert.doesNotMatch(clean.body.data.assets[0].url, /l_text/);
+  assert.match(clean.body.data.assets[0].url, /^https:\/\/res.cloudinary.com\//);
   assert.equal(doc.saved, undefined);
+});
+
+test('code renders a visible watermark on light and dark previews without modifying the input', async () => {
+  for (const background of ['#000000', '#ffffff']) {
+    const input = await sharp({ create: { width: 480, height: 600, channels: 3, background } }).png().toBuffer();
+    const untouched = Buffer.from(input);
+    const output = await renderDeliveryWatermark(input, 'Amara & <Photography>');
+    const metadata = await sharp(output).metadata();
+    assert.equal(metadata.format, 'webp');
+    assert.equal(metadata.width, 480);
+    assert.equal(metadata.height, 600);
+    const pixels = await sharp(output).removeAlpha().raw().toBuffer();
+    const base = background === '#000000' ? 0 : 255;
+    const changed = Array.from(pixels.subarray(480 * 3 * 280, 480 * 3 * 320)).filter(value => Math.abs(value - base) > 30).length;
+    assert.ok(changed > 200, 'central watermark must visibly differ from either background');
+    assert.deepEqual(input, untouched);
+  }
+});
+
+function photoRequest(claims, changes = {}) {
+  return { params: { id: deliveryId, assetId: 'one' }, query: { token: watermarkMediaToken({ deliveryId, ...claims }), width: '480', ...changes } };
+}
+
+test('owner preview token draws actual image pixels, never a Cloudinary overlay', async t => {
+  const doc = document();
+  stubFind(t, doc, query => assert.deepEqual(query, { _id: deliveryId, userId: ownerId }));
+  const input = await sharp({ create: { width: 480, height: 600, channels: 3, background: '#202030' } }).png().toBuffer();
+  t.mock.method(globalThis, 'fetch', async url => {
+    assert.match(url, /^https:\/\/res.cloudinary.com\/veylo-test\/image\/authenticated\//);
+    assert.doesNotMatch(url, /l_text/);
+    return new Response(input, { headers: { 'content-type': 'image/png' } });
+  });
+  const res = response();
+  await getWatermarkedDeliveryPhoto(photoRequest({ ownerId, text: 'Owner preview' }), res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'image/webp');
+  assert.equal(res.headers['Cache-Control'], 'private, no-store');
+  assert.equal((await sharp(res.body).metadata()).width, 480);
+});
+
+test('tampered preview tokens, wrong deliveries and arbitrary sizes cannot fetch photos', async t => {
+  t.mock.method(Delivery, 'findOne', () => { throw new Error('No database query expected'); });
+  for (const mutate of [req => { req.query.token += 'tampered'; }, req => { req.params.id = ownerId; }, req => { req.query.width = '9000'; }]) {
+    const req = photoRequest({ ownerId, text: 'Preview' });
+    mutate(req);
+    const res = response();
+    await getWatermarkedDeliveryPhoto(req, res);
+    assert.ok([400, 403].includes(res.statusCode));
+  }
+  assert.equal(Delivery.findOne.mock.callCount(), 0);
+});
+
+test('public previews recheck expiry, lock state, watermark state and PIN changes', async t => {
+  const doc = document();
+  doc.publicId = 'client-link';
+  stubFind(t, doc);
+  t.mock.method(globalThis, 'fetch', () => { throw new Error('Must not load a blocked image'); });
+  const req = photoRequest({ publicId: doc.publicId, pinVersion: tokenDigest('') });
+  for (const access of [{ expiresAt: new Date(0) }, { downloadsLocked: false }, { watermarkEnabled: false }, { pinDigest: 'new-pin-hash' }, { revokedAt: new Date() }]) {
+    const original = { ...doc.access };
+    Object.assign(doc.access, access);
+    const res = response();
+    await getWatermarkedDeliveryPhoto(req, res);
+    assert.equal(res.statusCode, 404);
+    doc.access = original;
+  }
+  assert.equal(globalThis.fetch.mock.callCount(), 0);
+});
+
+test('a restricted or revoked share grant cannot access other photographs', async t => {
+  const doc = document();
+  doc.publicId = 'client-link';
+  stubFind(t, doc);
+  const grantId = '507f1f77bcf86cd799439013';
+  t.mock.method(DeliveryShareGrant, 'findOne', query => {
+    assert.equal(query._id, grantId);
+    assert.equal(query.deliveryId, deliveryId);
+    assert.equal(query.revokedAt, null);
+    return { assetIds: ['two'], sectionIds: [] };
+  });
+  const req = photoRequest({ publicId: doc.publicId, pinVersion: tokenDigest(''), grantId });
+  const res = response();
+  await getWatermarkedDeliveryPhoto(req, res);
+  assert.equal(res.statusCode, 404);
+  DeliveryShareGrant.findOne.mock.mockImplementation(() => null);
+  const revoked = response();
+  await getWatermarkedDeliveryPhoto(req, revoked);
+  assert.equal(revoked.statusCode, 404);
 });
 
 test('foreign delivery settings and preview media stay unavailable', async t => {

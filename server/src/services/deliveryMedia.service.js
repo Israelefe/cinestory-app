@@ -55,7 +55,7 @@ export async function confirmUploadedAsset({ userId, deliveryId, publicId, versi
   return cloudinary.api.resource(publicId, { resource_type: resourceType, type: 'authenticated' });
 }
 
-export function signedImageUrl(publicId, { width = 1600, height, thumbnail = false, attachment = false, original = false, resourceType = 'image', format, watermark = null } = {}) {
+export function signedImageUrl(publicId, { width = 1600, height, thumbnail = false, attachment = false, original = false, resourceType = 'image', format } = {}) {
   ready();
   let transformation;
   if (resourceType === 'image') {
@@ -65,16 +65,6 @@ export function signedImageUrl(publicId, { width = 1600, height, thumbnail = fal
       const transforms = [thumbnail
         ? { crop: 'fill', width: 800, height: 1000, gravity: 'auto', quality: 'auto:good', fetch_format: 'auto' }
         : { crop: 'limit', width, ...(height ? { height } : {}), quality: 'auto:good', fetch_format: 'auto' }];
-      if (watermark) {
-        transforms.push({
-          overlay: { font_family: 'Arial', font_size: 38, font_weight: 'bold', text: String(watermark).slice(0, 40) },
-          color: '#ffffff',
-          opacity: 55,
-          gravity: 'south_east',
-          x: 24,
-          y: 24
-        });
-      }
       transformation = transforms;
     }
   }

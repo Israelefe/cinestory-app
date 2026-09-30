@@ -63,7 +63,7 @@ function displayAssetUrl(asset, targetWidth = 960) {
     })
     .filter(Boolean)
     .sort((a, b) => a.width - b.width);
-  return (candidates.find(candidate => candidate.width >= targetWidth) || candidates.at(-1))?.url || asset?.thumbnailUrl || asset?.url || '';
+  return apiMediaUrl((candidates.find(candidate => candidate.width >= targetWidth) || candidates.at(-1))?.url || asset?.thumbnailUrl || asset?.url || '');
 }
 
 function downloadFilename(asset, index, clientName = 'photographs') {
@@ -286,8 +286,12 @@ export default function DeliveryViewer() {
     return {
       ...delivery,
       assets: (delivery.assets || []).map(asset => {
-        const url = preloadedMedia.assets?.[asset.assetId] || asset.url;
-        return { ...asset, url, thumbnailUrl: asset.thumbnailUrl || url };
+        const url = preloadedMedia.assets?.[asset.assetId] || apiMediaUrl(asset.url);
+        const srcSet = asset.srcSet?.split(',').map(candidate => {
+          const [source, descriptor] = candidate.trim().split(/\s+/);
+          return `${apiMediaUrl(source)} ${descriptor}`;
+        }).join(', ');
+        return { ...asset, url, thumbnailUrl: apiMediaUrl(asset.thumbnailUrl) || url, srcSet };
       }),
       soundtrack: (capabilities.music || delivery.kind === 'pinboard') && delivery.soundtrack?.url ? { ...delivery.soundtrack, url: preloadedMedia.soundtrack || delivery.soundtrack.url } : undefined,
       narration: capabilities.narration && v3Narration

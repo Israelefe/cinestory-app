@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 
 const id = '507f1f77bcf86cd799439011';
 const user = { _id: '507f1f77bcf86cd799439012', name: 'Amara', emailVerified: true, onboardingComplete: true, plan: 'free' };
@@ -32,6 +33,34 @@ async function mock(page, delivery, patchHandler) {
 }
 
 for (const format of ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign', 'gridboard']) {
+  test(`${format} loads protected preview images in the gallery and open photo`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const delivery = fixture(format);
+    delivery.access.watermarkEnabled = true;
+    delivery.assets = delivery.assets.map(asset => {
+      const base = `/api/v1/deliveries/media/${id}/photos/${asset.assetId}?token=offline-preview`;
+      return { ...asset, url: `${base}&width=1600`, thumbnailUrl: `${base}&thumbnail=1`, srcSet: `${base}&width=480 480w, ${base}&width=960 960w` };
+    });
+    await mock(page, delivery);
+    const photo = readFileSync(new URL('../public/veylo/web/demo-lora-1-1440.webp', import.meta.url));
+    await page.route('**/api/v1/deliveries/media/**', route => route.fulfill({ contentType: 'image/webp', body: photo }));
+    await page.goto('/d/access-test?phoneView=1');
+    if (format === 'gridboard') {
+      await expect.poll(() => page.locator('.pb-tile-open img').first().evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
+      await page.locator('.pb-tile-open').first().click();
+      await expect.poll(() => page.locator('.pb-lightbox-photo-main').evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
+      await expect(page.locator('.pb-lightbox-photo-main')).toHaveAttribute('src', /\/api\/v1\/deliveries\/media\//);
+    } else {
+      if (format === 'photo-story') {
+        await page.getByRole('button', { name: 'Begin the story', exact: true }).click();
+        await page.getByRole('button', { name: 'Open gallery', exact: true }).click();
+      } else await page.getByRole('button', { name: 'Open full gallery', exact: true }).click();
+      const gallery = page.locator('.client-gallery');
+      await expect.poll(() => gallery.locator('img').first().evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
+      await gallery.getByRole('button', { name: 'Open photograph 1', exact: true }).click();
+      await expect.poll(async () => gallery.locator('img').evaluateAll(images => images.some(image => image.naturalWidth > 0 && image.currentSrc.includes('&width=1600')))).toBe(true);
+    }
+  });
   test(`${format} explains locked downloads in the gallery and open photo`, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const requests = await mock(page, fixture(format));
