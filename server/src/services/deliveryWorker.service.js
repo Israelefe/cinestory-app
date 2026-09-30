@@ -447,7 +447,7 @@ async function run(job) {
       if (delivery.schemaVersion !== 3 || delivery.format !== 'photo-story') throw Object.assign(new Error('Narration is only available for Photo Story.'), { code: 'V3_NARRATION_UNAVAILABLE' });
       const bookends = job.input?.bookends !== false;
       const captions = job.input?.captions === true;
-      const narration = await synthesizeV3Narration(delivery, { bookends, captions }, (stage, progress) => saveJob(job, { stage, progress }));
+      const narration = await synthesizeV3Narration(delivery, { bookends, captions, voiceId: job.input?.voiceId }, (stage, progress) => saveJob(job, { stage, progress }));
       const generatedAudioIds = [narration.opening?.publicId, narration.closing?.publicId, narration.captions?.publicId].filter(Boolean);
       const latest = await Delivery.findById(delivery._id);
       const latestJob = await DeliveryJob.findById(job._id);
@@ -458,7 +458,7 @@ async function run(job) {
       const previousAudioIds = [latest.narration?.opening?.publicId, latest.narration?.closing?.publicId, latest.narration?.captions?.publicId].filter(Boolean);
       await Promise.all(previousAudioIds.map(id => removeDeliveryAudio(id).catch(() => {})));
       latest.narration = narration;
-      latest.v3 = { ...latest.v3, narrationChoice: bookends ? 'voice' : 'skip', captionNarrationChoice: captions ? 'voice' : 'skip', step: 'music' };
+      latest.v3 = { ...latest.v3, narrationVoiceId: narration.voiceId, narrationChoice: bookends ? 'voice' : 'skip', captionNarrationChoice: captions ? 'voice' : 'skip', step: 'music' };
       latest.markModified('v3'); latest.markModified('narration');
       await latest.save();
       await saveJob(job, { status: 'review', stage: 'narration-ready', progress: 100, completedAt: new Date() });

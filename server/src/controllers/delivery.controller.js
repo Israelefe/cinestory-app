@@ -23,7 +23,7 @@ import QRCode from 'qrcode';
 import { renderGridboardStatusCard } from '../services/gridboardStatusCard.service.js';
 import { deliveryWatermarkedPreview, watermarkMediaToken, verifyWatermarkMediaToken, watermarkedAssetMedia } from '../services/deliveryWatermark.service.js';
 import { ensureStoredWatermark, storedDeliveryPreviews, warmDeliveryPreviews, warmLockedDeliveryPreviews, removeStoredPreviews } from '../services/deliveryPreviewCache.service.js';
-import { DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
+import { DEFAULT_NARRATION_VOICE_ID, NARRATION_VOICES } from '../constants/narrationVoices.js';
 import { DELIVERY_SOUNDTRACKS, deliverySoundtrack, deliverySoundtrackFile } from '../constants/deliverySoundtracks.js';
 import { supportsDeliveryMusic, supportsDeliveryNarration } from '../constants/deliveryCapabilities.js';
 import { getNarrationVoiceCatalogue, NARRATION_RENDER_VERSION } from '../services/narration.service.js';
@@ -36,7 +36,7 @@ const confirmSchema = z.object({ publicId: z.string().min(5).max(500), version: 
 const soundtrackSchema = z.object({ publicId: z.string().min(5).max(500), version: z.union([z.string(), z.number()]), signature: z.string().min(20).max(200), originalFilename: z.string().trim().max(180), title: z.string().trim().min(1).max(100), rightsConfirmed: z.literal(true) }).strict();
 const formatSchema = z.object({ format: z.enum(creativeDirectorAllowlist.formats) }).strict();
 const narrationSchema = z.object({
-  voiceId: z.literal(DEFAULT_NARRATION_VOICE_ID).optional().default(DEFAULT_NARRATION_VOICE_ID)
+  voiceId: z.enum(NARRATION_VOICES.map(voice => voice.id)).optional().default(DEFAULT_NARRATION_VOICE_ID)
 }).strict();
 const revisionSchema = z.object({ scope: z.enum(['selected', 'full']), instruction: z.string().trim().min(8).max(600), assetIds: z.array(z.string().min(1).max(100)).max(100).default([]), captionOnly: z.boolean().default(false) }).strict();
 const libraryAssetsSchema = z.object({ assetIds: z.array(z.string().min(8).max(100)).min(1).max(20) }).strict();

@@ -1,0 +1,24 @@
+.narration-voice-picker{min-width:0;margin:0 0 28px;padding:0;border:0}
+.narration-voice-picker>legend{margin-bottom:8px;color:#f5efeb;font-size:18px;font-weight:700}
+.narration-voice-picker>p{margin:0 0 20px;color:#bfb7b3;font-size:14px;line-height:1.6}
+.narration-voice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.narration-voice-card{min-width:0;overflow:hidden;border:1px solid #ffffff24;border-radius:10px;background:#101014;transition:border-color .2s,transform .2s,background .2s}
+.narration-voice-card.is-selected{border-color:#ff9b8e;background:linear-gradient(135deg,#ff5a4712,#101014 80%)}
+.narration-voice-card:focus-within{outline:2px solid #ff9b8e;outline-offset:3px}
+.narration-voice-card label{position:relative;display:grid;gap:8px;padding:18px 16px;cursor:pointer}
+.narration-voice-card input{position:absolute;width:1px;height:1px;opacity:0}
+.narration-voice-name{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#fffaf6;font-size:20px;font-weight:700}
+.narration-voice-name svg{flex:none;color:#ff9b8e}
+.narration-voice-meta,.narration-voice-tone{color:#c2b9b4;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.narration-voice-tone{min-height:36px;color:#ded6d0}
+.narration-voice-card button{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:44px;padding:10px 12px;border:0;border-top:1px solid #ffffff18;background:#ffffff06;color:#f5efeb;font-size:12px;cursor:pointer;transition:background .2s,transform .2s}
+.narration-voice-card button:hover{background:#ffffff10}
+.narration-voice-card button:active{transform:scale(.97)}
+.narration-voice-picker:disabled .narration-voice-card{opacity:.65}
+.narration-voice-picker:disabled label,.narration-voice-picker button:disabled{cursor:not-allowed}
+.narration-voice-picker>.narration-voice-error{margin:16px 0 0;color:#ffb7ac}
+.narration-voice-loading{animation:narration-voice-spin .8s linear infinite}
+@keyframes narration-voice-spin{to{transform:rotate(360deg)}}
+@media(min-width:768px){.narration-voice-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}.narration-voice-card label{padding:22px 20px}.narration-voice-tone{min-height:18px}}
+@media(hover:hover){.narration-voice-card:hover{transform:translateY(-2px)}}
+@media(prefers-reduced-motion:reduce){.narration-voice-card,.narration-voice-card button{transition:none}.narration-voice-card:hover,.narration-voice-card button:active{transform:none}.narration-voice-loading{animation:none}}

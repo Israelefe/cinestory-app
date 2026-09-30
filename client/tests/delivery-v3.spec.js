@@ -93,7 +93,7 @@ test('Photo Story review stops removals at five and advances with the full photo
   await expect(page.getByRole('progressbar', { name: 'Delivery creation progress' })).toBeVisible();
   await page.screenshot({ path: '../.visual-review/delivery-v3/showcase-320.png', fullPage: true });
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Choose what Hannah reads.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Choose a voice for your story.' })).toBeVisible();
   await page.getByRole('button', { name: 'Back to showcase' }).click();
   await expect(page.getByRole('heading', { name: 'Make the selection yours.' })).toBeVisible();
   expect(draft.assets).toHaveLength(12);
@@ -128,7 +128,7 @@ test('V3 lets a photographer enable spoken captions without enabling bookend voi
   await page.goto('/create?draft=' + draftId);
   const cookieButton = page.getByRole('button', { name: 'Got it' });
   if (await cookieButton.isVisible()) await cookieButton.click();
-  await expect(page.getByRole('heading', { name: 'Choose what Hannah reads.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Choose a voice for your story.' })).toBeVisible();
   const bookendVoice = page.getByRole('checkbox', { name: /Opening and closing/ });
   const captionVoice = page.getByRole('checkbox', { name: /Photo captions/ });
   await expect(bookendVoice).not.toBeChecked();
@@ -136,8 +136,61 @@ test('V3 lets a photographer enable spoken captions without enabling bookend voi
   await expect(page.getByText('Spoken captions must fit the existing six-second photo timing.')).toBeVisible();
   await captionVoice.check();
   await page.getByRole('button', { name: 'Generate selected voice' }).click();
-  await expect.poll(() => narrationRequest).toEqual({ bookends: false, captions: true });
+  await expect.poll(() => narrationRequest).toEqual({ voiceId: 'flux-hannah-en', bookends: false, captions: true });
   await expect(page.getByRole('heading', { name: 'Find the right soundtrack.' })).toBeVisible();
+});
+
+for (const width of [320, 768, 834, 1440]) test(`Photo Story voice selection, listening and retry work at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 900 });
+  await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 3, necessary: true, serviceAnalytics: true })));
+  const assets = Array.from({ length: 5 }, (_, index) => ({ assetId: `voice-photo-${index}`, url: '/veylo/web/demo-lora-1-960.webp', thumbnailUrl: '/veylo/web/demo-lora-1-480.webp' }));
+  let draft = { _id: draftId, schemaVersion: 3, status: 'review', clientName: 'Ada', format: 'photo-story', assets, curatedAssetIds: assets.map(asset => asset.assetId), creativeDirection: { title: "Ada's birthday", openingLine: 'Ada, welcome to your birthday story.', closingLine: 'Your full collection is here for you.', frames: assets.map(asset => ({ assetId: asset.assetId, caption: 'Ada, take this new year at your own pace.' })) }, v3: { step: 'narration', revision: 2, narrationChoice: 'skip', captionNarrationChoice: 'skip', narrationVoiceId: 'flux-colin-en' }, narration: { voiceId: 'flux-colin-en' }, access: {} };
+  let fail = true;
+  const requests = [];
+  await page.route('**/api/v1/**', route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    const reply = data => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data }) });
+    if (path.endsWith('/auth/me')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, user }) });
+    if (path.endsWith('/billing/status')) return reply({ plan: 'free', limits: { photosPerDelivery: 100, deliveriesPerMonth: 3 }, usage: { deliveriesRemaining: 3 } });
+    if (path.endsWith('/v3/narrate')) {
+      const body = request.postDataJSON(); requests.push(body);
+      if (fail) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ success: false, message: 'Narration is unavailable right now. Try again shortly.' }) });
+      draft = { ...draft, narration: { voiceId: body.voiceId }, v3: { ...draft.v3, step: 'music', captionNarrationChoice: 'voice', narrationVoiceId: body.voiceId } };
+      return reply({ _id: 'voice-job', type: 'v3-narrate', status: 'queued', input: body });
+    }
+    if (path.endsWith(`/deliveries/${draftId}`)) return reply(draft);
+    if (path.endsWith('/deliveries/soundtracks')) return reply([]);
+    return reply({});
+  });
+  await page.goto('/create?draft=' + draftId);
+  await expect(page.getByRole('radio', { name: 'Use Colin', exact: true })).toBeChecked();
+  await expect(page.getByRole('radio')).toHaveCount(8);
+  await page.getByRole('button', { name: 'Listen to Kit sample' }).click();
+  await expect(page.getByRole('button', { name: 'Stop Kit sample' })).toContainText('Stop sample');
+  expect(await page.locator('.narration-voice-picker audio').evaluate(audio => audio.paused)).toBe(false);
+  await page.getByRole('button', { name: 'Listen to Sienna sample' }).click();
+  await expect(page.getByRole('button', { name: 'Stop Sienna sample' })).toContainText('Stop sample');
+  await expect(page.getByRole('button', { name: 'Listen to Kit sample' })).toBeVisible();
+  await page.getByRole('button', { name: 'Stop Sienna sample' }).click();
+  const voice = width === 320 || width === 834 ? 'Kit' : 'Sienna';
+  const voiceId = `flux-${voice.toLowerCase()}-en`;
+  await page.getByRole('radio', { name: `Use ${voice}`, exact: true }).check();
+  await expect(page.locator('.v3-narration-choice h2')).toHaveText(voice);
+  await expect(page.getByRole('checkbox', { name: /Opening and closing/ })).not.toBeChecked();
+  await page.getByRole('checkbox', { name: /Photo captions/ }).check();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.locator('.narration-voice-picker').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: `../.visual-review/voice-picker-${width}.png`, fullPage: true });
+  await page.getByRole('button', { name: 'Generate selected voice' }).click();
+  await expect(page.getByRole('alert')).toContainText('Narration is unavailable right now');
+  await expect(page.getByRole('radio', { name: `Use ${voice}`, exact: true })).toBeChecked();
+  await expect(page.getByRole('button', { name: 'Generate selected voice' })).toBeEnabled();
+  fail = false;
+  await page.getByRole('button', { name: 'Generate selected voice' }).click();
+  await expect(page.getByRole('heading', { name: 'Find the right soundtrack.' })).toBeVisible();
+  expect(requests).toEqual([{ voiceId, bookends: false, captions: true }, { voiceId, bookends: false, captions: true }]);
+  expect(draft.v3.narrationVoiceId).toBe(voiceId);
 });
 
 test('V3 keeps validation and API errors visible at the current scroll position', async ({ page }) => {

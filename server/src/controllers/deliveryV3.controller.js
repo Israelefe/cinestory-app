@@ -8,7 +8,8 @@ import { contrastRatio, V3_FONT_CHOICES, V3_FORMATS, V3_MUSIC_FORMATS, validShow
 import { improvePurpose, recommendV3Format, regenerateV3Caption, repickV3Palette } from '../services/deliveryV3AI.service.js';
 import { reservePublishSlot, resolveEntitlements } from '../services/entitlement.service.js';
 import { removeDeliveryAudio } from '../services/deliveryMedia.service.js';
-import { NARRATION_RENDER_VERSION } from '../services/narration.service.js';
+import { NARRATION_RENDER_VERSION, NARRATION_BOOKEND_RENDER_VERSION } from '../services/narration.service.js';
+import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
 import { warmLockedDeliveryPreviews } from '../services/deliveryPreviewCache.service.js';
 
 const details = z.object({ kind: z.enum(['showcase', 'pinboard']).default('showcase'), clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().max(80).default(''), purpose: z.string().trim().max(3000).default(''), title: z.string().trim().max(120).default(''), originalPurpose: z.string().trim().max(3000).default(''), clarificationAnswers: z.array(z.object({ question: z.string().trim().max(180), answer: z.string().trim().min(1).max(300) }).strict()).max(3).default([]) }).strict();
@@ -33,7 +34,7 @@ const accessInput = z.object({ pin: z.string().regex(/^\d{6}$/).optional().or(z.
 function bad(res, parsed) {
   const issue = parsed.error.issues[0];
   const field = issue?.path?.join('.') || '';
-  const labels = { clientName: 'client name', shootType: 'shoot type', purpose: 'purpose of the shoot', title: 'delivery title', openingLine: 'opening message', closingLine: 'closing message', pin: 'PIN', expiresAt: 'expiry date', 'palette.background': 'background colour', 'palette.surface': 'panels colour', 'palette.text': 'text colour', 'palette.accent': 'accent colour' };
+  const labels = { clientName: 'client name', shootType: 'shoot type', purpose: 'purpose of the shoot', title: 'delivery title', openingLine: 'opening message', closingLine: 'closing message', pin: 'PIN', expiresAt: 'expiry date', voiceId: 'narration voice', 'palette.background': 'background colour', 'palette.surface': 'panels colour', 'palette.text': 'text colour', 'palette.accent': 'accent colour' };
   const label = /^frames\.\d+\.caption$/.test(field) ? `caption for photo ${Number(field.split('.')[1]) + 1}` : labels[field] || field.replaceAll('.', ' ') || 'this field';
   const isText = issue?.origin === 'string' || typeof issue?.input === 'string' || /^(clientName|shootType|purpose|title|openingLine|closingLine|pin|downloadLockNote|watermarkText|usageTerms)$/.test(field) || /^frames\.\d+\.caption$/.test(field);
   const message = issue?.code === 'too_small' && typeof issue.minimum === 'number' && isText
@@ -58,8 +59,10 @@ async function removeAudioIds(ids) { await Promise.all(ids.filter(Boolean).map(i
 function narrationSelectionsReady(delivery) {
   const wantsBookends = delivery.v3?.narrationChoice === 'voice';
   const wantsCaptions = delivery.v3?.captionNarrationChoice === 'voice';
-  return (!wantsBookends || delivery.narration?.renderVersion === 'flux-hannah-bookends-v3') &&
-    (!wantsCaptions || (delivery.narration?.captions?.renderVersion === NARRATION_RENDER_VERSION && delivery.narration?.captions?.publicId));
+  const voiceId = delivery.v3?.narrationVoiceId || DEFAULT_NARRATION_VOICE_ID;
+  const narration = delivery.narration;
+  return (!wantsBookends || ([NARRATION_BOOKEND_RENDER_VERSION, 'flux-hannah-bookends-v3'].includes(narration?.renderVersion) && narration?.opening?.publicId && narration?.closing?.publicId && (narration.voiceId || DEFAULT_NARRATION_VOICE_ID) === voiceId)) &&
+    (!wantsCaptions || ([NARRATION_RENDER_VERSION, 'flux-hannah-captions-v6'].includes(narration?.captions?.renderVersion) && narration?.captions?.publicId && (narration.captions.voiceId || DEFAULT_NARRATION_VOICE_ID) === voiceId));
 }
 
 function pinboardFallback(delivery) {
@@ -266,13 +269,16 @@ export async function v3Caption(req, res) {
 
 export async function v3Narration(req, res) {
   try {
-    const input = z.object({ bookends: z.boolean().default(true), captions: z.boolean().default(false) }).strict().safeParse(req.body || {});
+    const input = z.object({ voiceId: z.enum(NARRATION_VOICES.map(voice => voice.id)).default(DEFAULT_NARRATION_VOICE_ID), bookends: z.boolean().default(true), captions: z.boolean().default(false) }).strict().safeParse(req.body || {});
     if (!input.success) return bad(res, input);
     if (!input.data.bookends && !input.data.captions) return res.status(400).json({ success: false, code: 'V3_NARRATION_SELECTION_REQUIRED', message: 'Choose opening and closing voice, spoken captions, or both.' });
     const delivery = await owned(req); if (!editable(delivery) || delivery.format !== 'photo-story' || !delivery.creativeDirection) return res.status(409).json({ success: false, message: 'Narration is available after Photo Story captions are ready.' });
     const existing = await DeliveryJob.findOne({ deliveryId: delivery._id, type: 'v3-narrate', status: { $in: ['queued', 'running'] } });
-    if (existing) return res.status(202).json({ success: true, data: existing });
-    const job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'v3-narrate', provider: 'Deepgram Flux', promptVersion: 'delivery-v3', input: { revision: delivery.v3.revision, bookends: input.data.bookends, captions: input.data.captions } });
+    if (existing) {
+      if ((existing.input?.voiceId || DEFAULT_NARRATION_VOICE_ID) !== input.data.voiceId || (existing.input?.bookends !== false) !== input.data.bookends || (existing.input?.captions === true) !== input.data.captions) return res.status(409).json({ success: false, code: 'NARRATION_ALREADY_RUNNING', message: 'Narration is already being prepared. Wait for it to finish before changing the voice.' });
+      return res.status(202).json({ success: true, data: existing });
+    }
+    const job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'v3-narrate', provider: 'Deepgram Flux', promptVersion: 'delivery-v3', input: { revision: delivery.v3.revision, ...input.data } });
     res.status(202).json({ success: true, data: job });
   } catch (error) { fail(res, error); }
 }

@@ -1,18 +1,22 @@
 import { Readable } from 'stream';
 import { cloudinary, configureCloudinary } from './cloudinary.service.js';
 import { deliveryFolder } from './deliveryMedia.service.js';
-import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
+import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID, narrationVoice } from '../constants/narrationVoices.js';
 
-// Flux TTS is intentionally configured as one calm, consistent narrator for Veylo.
-// The audio is generated from the approved per-photograph captions; no second script
-// is invented at narration time.
-const MODEL_ID = 'flux-hannah-en';
-export const NARRATION_RENDER_VERSION = 'flux-hannah-captions-v6';
+// Read the approved messages and captions using the photographer's chosen voice.
+export const NARRATION_RENDER_VERSION = 'flux-captions-v7';
+export const NARRATION_BOOKEND_RENDER_VERSION = 'flux-bookends-v4';
 const MAX_NARRATION_CHUNK_CHARACTERS = 2000;
-// Keep Hannah measured without flattening her natural pitch movement. Deepgram's
+// Keep the narrator measured without flattening natural pitch movement. Deepgram's
 // tuned expressivity default (0) sounds more like a person telling a story than
 // the narrow, evenly stressed delivery produced by the previous -1 setting.
-const VOICE_SETTINGS = Object.freeze({ speed: 0.86, expressivity: 0, sampleRate: 24000 });
+const VOICE_SETTINGS = Object.freeze({ speed: 0.85, expressivity: 0, sampleRate: 24000 });
+
+function requiredVoice(voiceId) {
+  const voice = narrationVoice(voiceId);
+  if (!voice) throw Object.assign(new Error('Choose a voice from the list and try again.'), { code: 'NARRATION_VOICE_INVALID', status: 400 });
+  return voice;
+}
 
 function cleanLine(value, max = 360) {
   return String(value || '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -37,8 +41,7 @@ export async function getNarrationVoiceCatalogue() {
     ...voice,
     available: configured,
     provider: 'Deepgram Flux',
-    model: MODEL_ID,
-    previewUrl: ''
+    model: voice.id
   }));
 }
 
@@ -95,9 +98,10 @@ async function uploadAudio(buffer, delivery) {
   });
 }
 
-async function synthesize({ apiKey, text, speed = VOICE_SETTINGS.speed }) {
+async function synthesize({ apiKey, text, voiceId = DEFAULT_NARRATION_VOICE_ID, speed = VOICE_SETTINGS.speed }) {
+  const voice = requiredVoice(voiceId);
   const query = new URLSearchParams({
-    model: MODEL_ID,
+    model: voice.id,
     speed: String(speed),
     expressivity: String(VOICE_SETTINGS.expressivity)
   });
@@ -127,7 +131,16 @@ async function synthesize({ apiKey, text, speed = VOICE_SETTINGS.speed }) {
   }
 }
 
-export async function synthesizeV3Bookends(delivery) {
+// Fixed public samples are generated once and served as small static audio files.
+export async function narrationVoicePreview(voiceId) {
+  requiredVoice(voiceId);
+  const apiKey = String(process.env.DEEPGRAM_API_KEY || '').trim();
+  if (!apiKey) throw Object.assign(new Error('Deepgram narration is not configured.'), { code: 'NARRATION_NOT_CONFIGURED' });
+  return synthesize({ apiKey, voiceId, speed: 0.85, text: 'Your photographs are ready. Take your time with each one, and enjoy the full story.' });
+}
+
+export async function synthesizeV3Bookends(delivery, { voiceId = DEFAULT_NARRATION_VOICE_ID } = {}) {
+  const voice = requiredVoice(voiceId);
   const apiKey = String(process.env.DEEPGRAM_API_KEY || '').trim();
   if (!apiKey) throw Object.assign(new Error('Narration is unavailable right now. Retry this step or skip narration.'), { code: 'NARRATION_UNAVAILABLE' });
   const opening = narrationLine(delivery.creativeDirection?.openingLine);
@@ -136,11 +149,11 @@ export async function synthesizeV3Bookends(delivery) {
   const uploaded = [];
   try {
     for (const [key, text] of [['opening', opening], ['closing', closing]]) {
-      const audio = await synthesize({ apiKey, text, speed: 0.85 });
+      const audio = await synthesize({ apiKey, text, voiceId: voice.id, speed: 0.85 });
       const result = await uploadAudio(audio, delivery);
       uploaded.push({ key, publicId: result.public_id, text });
     }
-    return { voiceId: DEFAULT_NARRATION_VOICE_ID, renderVersion: 'flux-hannah-bookends-v3', opening: uploaded[0], closing: uploaded[1] };
+    return { voiceId: voice.id, voiceName: voice.name, renderVersion: NARRATION_BOOKEND_RENDER_VERSION, opening: uploaded[0], closing: uploaded[1] };
   } catch (error) {
     await Promise.all(uploaded.map(item => cloudinary.uploader.destroy(item.publicId, { resource_type: 'video', type: 'authenticated' }).catch(() => {})));
     throw error;
@@ -308,7 +321,8 @@ function stripLeadingId3(buffer) {
   return buffer.subarray(Math.min(buffer.length, 10 + size));
 }
 
-export async function generateNarration(delivery, { speed = VOICE_SETTINGS.speed, maxSegmentDuration = 0 } = {}) {
+export async function generateNarration(delivery, { voiceId = DEFAULT_NARRATION_VOICE_ID, speed = VOICE_SETTINGS.speed, maxSegmentDuration = 0 } = {}) {
+  const voice = requiredVoice(voiceId);
   const apiKey = String(process.env.DEEPGRAM_API_KEY || '').trim();
   if (!apiKey) throw Object.assign(new Error('Deepgram narration is not configured.'), { code: 'NARRATION_NOT_CONFIGURED' });
 
@@ -325,7 +339,7 @@ export async function generateNarration(delivery, { speed = VOICE_SETTINGS.speed
     if (spokenChunkText.length > MAX_NARRATION_CHUNK_CHARACTERS) {
       throw Object.assign(new Error('Narration exceeded the provider’s per-request character limit.'), { code: 'NARRATION_CHUNK_TOO_LONG' });
     }
-    const chunkAudio = await synthesize({ apiKey, text: spokenChunkText, speed });
+    const chunkAudio = await synthesize({ apiKey, text: spokenChunkText, voiceId: voice.id, speed });
     const timing = await transcribeWordTimings({ apiKey, audio: chunkAudio });
     const chunkSegments = timedSegments(chunk, timing.words, timing.duration).map(segment => ({
       ...segment,
@@ -364,10 +378,10 @@ export async function generateNarration(delivery, { speed = VOICE_SETTINGS.speed
     hashVerifiedAt: uploaded.etag ? new Date() : undefined,
     duration,
     transcript,
-    voiceId: DEFAULT_NARRATION_VOICE_ID,
-    voiceName: 'Hannah',
+    voiceId: voice.id,
+    voiceName: voice.name,
     provider: 'Deepgram Flux',
-    modelId: MODEL_ID,
+    modelId: voice.id,
     renderVersion: NARRATION_RENDER_VERSION,
     settings: { ...VOICE_SETTINGS, speed },
     captionsRead: true,
@@ -380,22 +394,23 @@ function v3NarrationAudioIds(narration) {
   return [narration?.opening?.publicId, narration?.closing?.publicId, narration?.captions?.publicId].filter(Boolean);
 }
 
-export async function synthesizeV3Narration(delivery, { bookends = true, captions = false } = {}, onProgress) {
+export async function synthesizeV3Narration(delivery, { bookends = true, captions = false, voiceId = DEFAULT_NARRATION_VOICE_ID } = {}, onProgress) {
+  const voice = requiredVoice(voiceId);
   if (!bookends && !captions) {
     throw Object.assign(new Error('Choose an opening or closing voice, spoken captions, or both.'), { code: 'V3_NARRATION_SELECTION_REQUIRED' });
   }
-  const narration = { voiceId: DEFAULT_NARRATION_VOICE_ID };
+  const narration = { voiceId: voice.id, voiceName: voice.name };
   try {
     if (bookends) {
       onProgress?.('recording-bookends', 18);
-      Object.assign(narration, await synthesizeV3Bookends(delivery));
+      Object.assign(narration, await synthesizeV3Bookends(delivery, { voiceId: voice.id }));
     }
     if (captions) {
       onProgress?.('recording-captions', bookends ? 58 : 24);
       let lastError;
       for (const speed of [1.2, 1.35, 1.5]) {
         try {
-          narration.captions = await generateNarration(delivery, { speed, maxSegmentDuration: 5.45 });
+          narration.captions = await generateNarration(delivery, { voiceId: voice.id, speed, maxSegmentDuration: 5.45 });
           break;
         } catch (error) {
           if (error.code !== 'NARRATION_CAPTION_TOO_LONG' || speed === 1.5) throw error;

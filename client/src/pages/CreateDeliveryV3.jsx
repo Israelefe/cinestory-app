@@ -9,8 +9,10 @@ import { uploadDeliverySoundtrack } from '../utils/deliveryUpload.js';
 import { mergeDeliveryDraft } from '../utils/deliveryDraft.js';
 import { uploadDeliveryPhotosV3 } from '../utils/deliveryUploadV3.js';
 import { SHOOT_TYPES } from '../constants/shootTypes.js';
+import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
 import { DELIVERY_FORMATS } from '../constants/deliveryFormats.js';
 import DeliveryFormatVisual from '../components/DeliveryFormatVisual.jsx';
+import NarrationVoicePicker from '../components/delivery/NarrationVoicePicker.jsx';
 import { ClientPreviewPhoneFrame } from '../components/delivery/PhonePresentation.jsx';
 import './CreateDeliveryV3.css';
 
@@ -122,6 +124,8 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const [closingAssetId, setClosingAssetId] = useState(initialDelivery?.v3?.closingAssetId || '');
   const [bookendVoiceSelected, setBookendVoiceSelected] = useState(initialDelivery?.v3?.narrationChoice === 'voice');
   const [captionVoiceSelected, setCaptionVoiceSelected] = useState(initialDelivery?.v3?.captionNarrationChoice === 'voice');
+  const [narrationVoiceId, setNarrationVoiceId] = useState(initialDelivery?.generationJob?.input?.voiceId || initialDelivery?.v3?.narrationVoiceId || initialDelivery?.narration?.voiceId || DEFAULT_NARRATION_VOICE_ID);
+  const selectedVoiceName = NARRATION_VOICES.find(voice => voice.id === narrationVoiceId)?.name || 'Hannah';
   const [instructions, setInstructions] = useState({});
   const [tracks, setTracks] = useState([]);
   const [musicLoading, setMusicLoading] = useState(false);
@@ -370,7 +374,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   async function generateNarration() {
     if (!bookendVoiceSelected && !captionVoiceSelected) { setError('Choose the opening and closing voice, spoken captions, or both.'); return; }
     await action('narrate', async () => {
-      const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/narrate', { bookends: bookendVoiceSelected, captions: captionVoiceSelected });
+      const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/narrate', { voiceId: narrationVoiceId, bookends: bookendVoiceSelected, captions: captionVoiceSelected });
       setJob(data.data); setStage('narration-job');
     });
   }
@@ -598,13 +602,14 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
           <div className="v3-actions"><StepButton secondary onClick={() => setStage('upload')}><ArrowLeft size={17} /> Back to photos</StepButton><StepButton onClick={saveShowcase} disabled={!!busy}><ArrowRight size={17} /> Continue</StepButton></div>
         </>}
         {(stage === 'narration' || stage === 'narration-job') && <>
-          <Head eyebrow="05 / OPTIONAL PHOTO STORY VOICE" title="Choose what Hannah reads.">Every message stays visible on screen. Spoken captions must fit the existing six-second photo timing.</Head>
+          <Head eyebrow="05 / OPTIONAL PHOTO STORY VOICE" title="Choose a voice for your story.">Every message stays visible on screen. Spoken captions must fit the existing six-second photo timing.</Head>
+          <NarrationVoicePicker value={narrationVoiceId} onChange={setNarrationVoiceId} disabled={!!busy || stage === 'narration-job' && job?.status !== 'failed'} />
           <div className="v3-narration-layout">
             <section className="v3-panel v3-narration-choice">
-              <div className="v3-narration-mark"><Mic2 size={26} /></div><span>OPTIONAL VOICE</span><h2>Hannah</h2><p>Choose voice for the story’s opening and closing, the photo captions, or both. The photos keep their six-second timing.</p>
+              <div className="v3-narration-mark"><Mic2 size={26} /></div><span>SELECTED VOICE</span><h2>{selectedVoiceName}</h2><p>Choose voice for the story’s opening and closing, the photo captions, or both. The photos keep their six-second timing.</p>
               <div className="v3-narration-options">
-                <label><input type="checkbox" checked={bookendVoiceSelected} disabled={stage === 'narration-job' && job?.status !== 'failed'} onChange={event => setBookendVoiceSelected(event.target.checked)} /><span><strong>Opening and closing</strong><small>Hannah reads the two messages around the story.</small></span></label>
-                <label><input type="checkbox" checked={captionVoiceSelected} disabled={stage === 'narration-job' && job?.status !== 'failed'} onChange={event => setCaptionVoiceSelected(event.target.checked)} /><span><strong>Photo captions</strong><small>Hannah reads each visible caption with its photo.</small></span></label>
+                <label><input type="checkbox" checked={bookendVoiceSelected} disabled={!!busy || stage === 'narration-job' && job?.status !== 'failed'} onChange={event => setBookendVoiceSelected(event.target.checked)} /><span><strong>Opening and closing</strong><small>{selectedVoiceName} reads the two messages around the story.</small></span></label>
+                <label><input type="checkbox" checked={captionVoiceSelected} disabled={!!busy || stage === 'narration-job' && job?.status !== 'failed'} onChange={event => setCaptionVoiceSelected(event.target.checked)} /><span><strong>Photo captions</strong><small>{selectedVoiceName} reads each visible caption with its photo.</small></span></label>
               </div>
               <div className="v3-narration-facts"><span>Text stays on screen</span><span>Six seconds per photo</span><span>Music lowers under speech</span></div>
             </section>

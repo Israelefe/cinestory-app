@@ -157,7 +157,7 @@ test('Showcase avoids recent palettes and still supplies readable colours when t
 test('narration turns dashes into natural sentence pauses and keeps ordinary hyphenated words', () => {
   assert.equal(narrationLine('Nothing staged about this laugh — it is the sound of a birthday feeling exactly right.'), 'Nothing staged about this laugh. It is the sound of a birthday feeling exactly right.');
   assert.equal(narrationLine('Twenty-five years, one good day.'), 'Twenty-five years, one good day.');
-  assert.equal(NARRATION_RENDER_VERSION, 'flux-hannah-captions-v6');
+  assert.equal(NARRATION_RENDER_VERSION, 'flux-captions-v7');
 });
 
 test('spoken captions that exceed one photo slot fail with a caption-specific instruction', async () => {
