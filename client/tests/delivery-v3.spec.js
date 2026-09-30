@@ -166,6 +166,17 @@ for (const width of [320, 768, 834, 1440]) test(`Photo Story voice selection, li
   await page.goto('/create?draft=' + draftId);
   await expect(page.getByRole('radio', { name: 'Use Colin', exact: true })).toBeChecked();
   await expect(page.getByRole('radio')).toHaveCount(8);
+  if (width === 320) {
+    await page.route('**/veylo/audio/voices/hannah.mp3', route => route.fulfill({ status: 404, body: '' }));
+    await page.getByRole('button', { name: 'Listen to Hannah sample' }).click();
+    const card = page.locator('.narration-voice-card').filter({ has: page.getByRole('radio', { name: 'Use Hannah', exact: true }) });
+    await expect(card.getByRole('alert')).toContainText('This sample could not play');
+    await page.unroute('**/veylo/audio/voices/hannah.mp3');
+    await page.getByRole('button', { name: 'Listen to Hannah sample' }).click();
+    await expect(page.getByRole('button', { name: 'Stop Hannah sample' })).toContainText('Stop sample');
+    await expect(card.getByRole('alert')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Stop Hannah sample' }).click();
+  }
   await page.getByRole('button', { name: 'Listen to Kit sample' }).click();
   await expect(page.getByRole('button', { name: 'Stop Kit sample' })).toContainText('Stop sample');
   expect(await page.locator('.narration-voice-picker audio').evaluate(audio => audio.paused)).toBe(false);

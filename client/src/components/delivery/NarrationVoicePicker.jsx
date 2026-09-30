@@ -29,7 +29,7 @@ export default function NarrationVoicePicker({ value, onChange, disabled = false
       await player.play();
       if (request.current === sequence) { setPlaying(voice.id); setLoading(''); }
     } catch {
-      if (request.current === sequence) { stop(); setError(`${voice.name}'s sample could not play. Try listening again.`); }
+      if (request.current === sequence) { stop(); setError({ voiceId: voice.id, message: 'This sample could not play. Try listening again.' }); }
     }
   }
   return <fieldset className="narration-voice-picker" disabled={disabled}>
@@ -47,9 +47,9 @@ export default function NarrationVoicePicker({ value, onChange, disabled = false
           {loading === voice.id ? <LoaderCircle size={15} className="narration-voice-loading" /> : playing === voice.id ? <Pause size={15} /> : <Play size={15} />}
           {loading === voice.id ? 'Loading sample' : playing === voice.id ? 'Stop sample' : 'Listen'}
         </button>
+        {error?.voiceId === voice.id && <p className="narration-voice-error" role="alert">{error.message}</p>}
       </article>)}
     </div>
     <audio ref={audio} preload="none" onEnded={() => { setPlaying(''); setLoading(''); }} />
-    {error && <p className="narration-voice-error" role="alert">{error}</p>}
   </fieldset>;
 }

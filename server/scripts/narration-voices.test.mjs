@@ -8,7 +8,7 @@ import { cloudinary } from '../src/services/cloudinary.service.js';
 import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID } from '../src/constants/narrationVoices.js';
 import { NARRATION_VOICES as clientVoices } from '../../client/src/constants/narrationVoices.js';
 import { getNarrationVoiceCatalogue, synthesizeV3Narration, generateNarration } from '../src/services/narration.service.js';
-import { v3Narration } from '../src/controllers/deliveryV3.controller.js';
+import { v3Narration, v3Approve } from '../src/controllers/deliveryV3.controller.js';
 
 process.env.DEEPGRAM_API_KEY = 'offline-test-key';
 process.env.CLOUDINARY_CLOUD_NAME = 'veylo-test';
@@ -106,4 +106,25 @@ test('a request for another voice cannot silently reuse a running Hannah job', a
   assert.equal(res.statusCode, 409);
   assert.equal(res.body.code, 'NARRATION_ALREADY_RUNNING');
   assert.equal(DeliveryJob.create.mock.callCount(), 0);
+});
+
+test('approval accepts existing Hannah audio and newly generated selected voices', async t => {
+  const photoIds = Array.from({ length: 5 }, (_, index) => `photo-${index}`);
+  const doc = { ...delivery, kind: 'showcase', assets: photoIds.map(assetId => ({ assetId })), curatedAssetIds: photoIds, soundtrack: { catalogId: 'track' }, markModified() {}, async save() {} };
+  t.mock.method(Delivery, 'findOne', async () => doc);
+  t.mock.method(DeliveryJob, 'exists', async () => null);
+  for (const legacy of [true, false]) {
+    const voiceId = legacy ? 'flux-hannah-en' : 'flux-kit-en';
+    doc.v3 = { revision: 2, narrationChoice: 'voice', captionNarrationChoice: 'voice', ...(legacy ? {} : { narrationVoiceId: voiceId }) };
+    doc.narration = { voiceId, renderVersion: legacy ? 'flux-hannah-bookends-v3' : 'flux-bookends-v4', opening: { publicId: 'private/opening' }, closing: { publicId: 'private/closing' }, captions: { voiceId, publicId: 'private/captions', renderVersion: legacy ? 'flux-hannah-captions-v6' : 'flux-captions-v7' } };
+    const res = response();
+    await v3Approve({ params: { id }, user: { id: ownerId } }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(doc.v3.approvedRevision, 2);
+  }
+  doc.v3 = { revision: 2, narrationChoice: 'voice', captionNarrationChoice: 'voice', narrationVoiceId: 'flux-cliff-en' };
+  const mismatch = response();
+  await v3Approve({ params: { id }, user: { id: ownerId } }, mismatch);
+  assert.equal(mismatch.statusCode, 409);
+  assert.match(mismatch.body.message, /Generate the selected Photo Story voice/);
 });

@@ -16,7 +16,7 @@
 .narration-voice-card button:active{transform:scale(.97)}
 .narration-voice-picker:disabled .narration-voice-card{opacity:.65}
 .narration-voice-picker:disabled label,.narration-voice-picker button:disabled{cursor:not-allowed}
-.narration-voice-picker>.narration-voice-error{margin:16px 0 0;color:#ffb7ac}
+.narration-voice-card>.narration-voice-error{margin:0;padding:12px 16px;color:#ffb7ac;font-size:12px;line-height:1.5}
 .narration-voice-loading{animation:narration-voice-spin .8s linear infinite}
 @keyframes narration-voice-spin{to{transform:rotate(360deg)}}
 @media(min-width:768px){.narration-voice-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}.narration-voice-card label{padding:22px 20px}.narration-voice-tone{min-height:18px}}
