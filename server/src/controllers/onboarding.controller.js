@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { isStudioNameDuplicate, studioNameSchema, studioNameTaken } from '../utils/studioName.js';
+import { studioNameAvailable, studioNameUnavailable } from '../services/studioName.service.js';
 import User from '../models/User.js';
 import { publicUser } from '../utils/auth.js';
 import { cloudinary, configureCloudinary } from '../services/cloudinary.service.js';
@@ -8,7 +10,7 @@ const specialties = ['Portraits', 'Weddings', 'Birthdays', 'Fashion and editoria
 const sources = ['Instagram', 'TikTok', 'YouTube', 'Google Search', 'WhatsApp', 'Another photographer', 'Friend or colleague', 'Event or workshop', 'Other', 'Prefer not to say'];
 
 const stepOne = z.object({
-  studioName: z.string().trim().min(2, 'Enter the name clients know your studio by.').max(100),
+  studioName: studioNameSchema,
   businessType: z.enum(['individual', 'studio']),
   city: z.string().trim().min(2).max(80),
   state: z.string().trim().min(2).max(80)
@@ -56,9 +58,12 @@ export async function updateOnboarding(req, res) {
     if (step === 1) {
       const previousStudioName = String(user.studio?.name || '').trim();
       const nextStudioName = parsed.data.studioName.trim();
+      try {
+        if (!(await studioNameAvailable(nextStudioName, user._id))) return res.status(409).json(studioNameTaken);
+      } catch { return studioNameUnavailable(res); }
       const studioNameChanged = Boolean(previousStudioName) && previousStudioName !== nextStudioName;
       const nextChange = nextChangeAt(user.studioNameChangedAt, STUDIO_NAME_CHANGE_COOLDOWN_MS);
-      if (studioNameChanged && nextChange) return res.status(429).json({ success: false, code: 'STUDIO_NAME_COOLDOWN', nextChangeAt: isoDate(nextChange), message: `Your studio name can be changed again on ${nextChange.toLocaleDateString('en-NG', { dateStyle: 'medium' })}.` });
+      if (studioNameChanged && nextChange) return res.status(429).json({ success: false, code: 'STUDIO_NAME_COOLDOWN', field: 'studioName', nextChangeAt: isoDate(nextChange), message: `Your Studio or Brand name can be changed again on ${nextChange.toLocaleDateString('en-NG', { dateStyle: 'medium' })}.` });
       user.studio.name = nextStudioName;
       user.studio.businessType = parsed.data.businessType;
       user.studio.city = parsed.data.city;
@@ -76,6 +81,7 @@ export async function updateOnboarding(req, res) {
     await user.save();
     res.json({ success: true, user: publicUser(user) });
   } catch (error) {
+    if (isStudioNameDuplicate(error)) return res.status(409).json(studioNameTaken);
     console.error('[onboarding/update]', error.message);
     res.status(500).json({ success: false, message: 'We could not save this step. Please try again.' });
   }

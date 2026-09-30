@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+import { studioNameKey, studioNameSchema } from '../utils/studioName.js';
 
 const studioSchema = new mongoose.Schema({
   name: { type: String, trim: true, maxlength: 100 },
@@ -40,6 +41,9 @@ const userSchema = new mongoose.Schema({
   // Public studio names are intentionally not changed often. This timestamp
   // is private bookkeeping used to enforce the rename cooldown.
   studioNameChangedAt: { type: Date },
+  // The unique index is installed after the legacy-name audit, before any
+  // account can claim a name. This key is never included in publicUser().
+  studioNameKey: { type: String, select: false },
   storiesCount: { type: Number, default: 0, min: 0 },
   storageUsedBytes: { type: Number, default: 0, min: 0 },
   proRetentionUntil: Date,
@@ -53,6 +57,34 @@ const userSchema = new mongoose.Schema({
   loginLockedUntil: { type: Date, select: false },
   lastLoginAt: { type: Date }
 }, { timestamps: true });
+
+userSchema.pre('validate', function () {
+  if (!this.isModified('studio.name') && !this.isModified('studio') && !this.isNew) return;
+  if (this.studio?.name) this.studio.name = studioNameSchema.parse(this.studio.name);
+  this.studioNameKey = studioNameKey(this.studio?.name) || undefined;
+});
+
+// Query updates must maintain the same key as document saves. In particular,
+// a future admin or account rename must not bypass the unique database index.
+userSchema.pre(['updateOne', 'updateMany', 'findOneAndUpdate'], function () {
+  const update = this.getUpdate();
+  if (Array.isArray(update)) throw new Error('User updates must use explicit fields.');
+  if (!update) return;
+  const fields = update.$set || update;
+  const hasName = Object.hasOwn(fields, 'studio.name') || Object.hasOwn(fields, 'studio');
+  if (hasName) {
+    const name = Object.hasOwn(fields, 'studio.name') ? fields['studio.name'] : fields.studio?.name;
+    const clean = name ? studioNameSchema.parse(name) : '';
+    if (Object.hasOwn(fields, 'studio.name')) fields['studio.name'] = clean;
+    else if (fields.studio) fields.studio.name = clean;
+    if (clean) fields.studioNameKey = studioNameKey(clean);
+    else (update.$unset ||= {}).studioNameKey = '';
+  } else if (update.$unset && (Object.hasOwn(update.$unset, 'studio.name') || Object.hasOwn(update.$unset, 'studio'))) {
+    update.$unset.studioNameKey = '';
+  } else if (fields.studioNameKey !== undefined || update.$unset?.studioNameKey !== undefined) {
+    throw new Error('Change the Studio or Brand name rather than its private key.');
+  }
+});
 
 userSchema.pre('save', async function () {
   if (!this.isModified('password') || !this.password) return;

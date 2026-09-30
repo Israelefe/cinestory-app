@@ -161,6 +161,13 @@ export const profileUpdateLimit = limiter({
   identifier: 'profile-updates'
 });
 
+export const studioNameCheckLimit = limiter({
+  windowMs: 60 * 1000,
+  limit: 60,
+  message: 'Please wait a moment before checking another name.',
+  identifier: 'studio-name-checks'
+});
+
 export const supportTicketLimit = limiter({
   windowMs: 60 * 60 * 1000,
   limit: 20,

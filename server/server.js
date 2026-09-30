@@ -25,6 +25,7 @@ import { startRetentionWorker } from './src/services/retention.service.js';
 import { startPortfolioWorker } from './src/services/portfolioWorker.service.js';
 import { seedAdminFromEnv } from './src/utils/seedAdmin.js';
 import { maintenanceMiddleware } from './src/middleware/maintenance.middleware.js';
+import { prepareStudioNames } from './src/services/studioName.service.js';
 
 dotenv.config();
 
@@ -119,6 +120,10 @@ app.use((error, req, res, next) => {
 
 connectDB().then(async connection => {
   if (!connection && process.env.NODE_ENV === 'production') process.exit(1);
+  if (connection) {
+    try { await prepareStudioNames(); }
+    catch (error) { console.error('[studio-names]', error.message); }
+  }
   await seedAdminFromEnv();
   const server = app.listen(PORT, () => {
     console.log(`[Veylo] Server running at http://localhost:${server.address().port}`);

@@ -1,13 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Camera, Check, Image, MapPin, Upload, Users } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Camera, Check, Image, MapPin, Upload, Users, ShieldCheck } from 'lucide-react';
 import { Page, Reveal } from '../components/PublicDesign.jsx';
 import api, { apiMessage } from '../services/api.js';
+import StudioBrandField from '../components/StudioBrandField.jsx';
+import useStudioNameAvailability from '../hooks/useStudioNameAvailability.js';
+import './StudioWorkspace.css';
 
 const workTypes = ['Portraits', 'Weddings', 'Birthdays', 'Fashion and editorial', 'Commercial and branding', 'Maternity', 'Graduation', 'Events', 'Other'];
 const sources = ['Instagram', 'TikTok', 'YouTube', 'Google Search', 'WhatsApp', 'Another photographer', 'Friend or colleague', 'Event or workshop', 'Other', 'Prefer not to say'];
 const stepCopy = [
-  { label: 'Studio details', title: 'What do clients call your studio?', text: 'Add the name and location your clients already know.' },
+  { label: 'Your brand', title: 'What name do your clients know?', text: 'Use your Studio or Brand name. This is the name clients will see.' },
   { label: 'Your work', title: 'What do you usually photograph?', text: 'Choose the shoots you deliver most often. You can change these later.' },
   { label: 'How you found us', title: 'One optional question.', text: 'Tell us where you found Veylo, or go straight to your dashboard.' }
 ];
@@ -25,6 +28,9 @@ export default function OnboardingPage({ user, onAuthenticated }) {
   const [logo, setLogo] = useState(user?.studio?.logoUrl || '');
   const [status, setStatus] = useState({ loading: false, error: '', upload: false });
   const current = stepCopy[step - 1];
+  const nameAvailability = useStudioNameAvailability(studio.studioName, user?.studio?.name);
+  const nameLockedUntil = user?.profileChangePolicy?.studioNameNextChangeAt
+    ? new Date(user.profileChangePolicy.studioNameNextChangeAt).toLocaleDateString('en-NG', { dateStyle: 'medium' }) : '';
 
   useEffect(() => () => { if (previewUrl.current) URL.revokeObjectURL(previewUrl.current); }, []);
 
@@ -57,6 +63,7 @@ export default function OnboardingPage({ user, onAuthenticated }) {
 
   async function next(event) {
     event.preventDefault();
+    if (status.loading || status.upload || (step === 1 && !nameAvailability.canSubmit)) return;
     const data = step === 1 ? studio : step === 2 ? work : { ...discovery, source: discovery.source || 'Prefer not to say' };
     setStatus(currentStatus => ({ ...currentStatus, loading: true, error: '' }));
     try {
@@ -65,30 +72,32 @@ export default function OnboardingPage({ user, onAuthenticated }) {
       if (step < 3) {
         setStep(value => value + 1);
         setStatus({ loading: false, upload: false, error: '' });
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
         return;
       }
       const completed = await api.post('/v1/onboarding/complete');
       onAuthenticated(completed.data.user);
       navigate('/dashboard', { replace: true });
     } catch (error) {
+      if (error.response?.data?.code === 'STUDIO_NAME_TAKEN') nameAvailability.reject(error.response.data.message);
       setStatus(currentStatus => ({ ...currentStatus, loading: false, error: apiMessage(error, 'We could not save this step. Please try again.') }));
     }
   }
 
-  return <Page className="v-onboarding-page" footer={false}>
+  return <Page className="v-onboarding-page v-studio-ui" footer={false}>
     <section className="v-onboarding-stage">
       <Reveal className="v-onboarding-guide">
-        <p className="v-eyebrow">A short studio setup</p>
-        <h1>Make Veylo<br /><em>feel like yours.</em></h1>
-        <p>Three short steps, then you can prepare your first client delivery.</p>
-        <ol>{stepCopy.map((item, index) => <li key={item.label} className={step === index + 1 ? 'is-current' : step > index + 1 ? 'is-complete' : ''}><span>{step > index + 1 ? <Check size={14} /> : `0${index + 1}`}</span><div><strong>{item.label}</strong><small>{index === 0 ? 'Name, image, and location' : index === 1 ? 'Shoot types and contact details' : 'One quick answer'}</small></div></li>)}</ol>
+        <p className="v-eyebrow"><Camera size={16} />WELCOME TO VEYLO</p>
+        <h1>Your work.<br /><em>Your name.</em></h1>
+        <p>Set up your account, then get your finished photographs ready to share with clients.</p>
+        <ol aria-label="Setup progress">{stepCopy.map((item, index) => <li key={item.label} aria-current={step === index + 1 ? 'step' : undefined} className={step === index + 1 ? 'is-current' : step > index + 1 ? 'is-complete' : ''}><span>{step > index + 1 ? <Check size={14} /> : `0${index + 1}`}</span><div><strong>{item.label}</strong><small>{index === 0 ? 'Name, image, and location' : index === 1 ? 'Shoot types and contact details' : 'Optional, before you start'}</small></div></li>)}</ol>
+        <div className="v-setup-note"><ShieldCheck size={19} /><p>Your Studio or Brand name belongs to one account. Choose the name you use with clients.</p></div>
         <p className="v-onboarding-account">Signed in as <strong>{user?.email}</strong></p>
       </Reveal>
 
       <Reveal className="v-onboarding-workspace" delay={.06}>
-        <header><div><p>STEP {step} OF 3 · {current.label.toUpperCase()}</p><h2>{current.title}</h2><span>{current.text}</span></div><strong>{Math.round((step / 3) * 100)}%</strong></header>
-        <div className="v-onboarding-progress" aria-label={`Step ${step} of 3`}><i style={{ transform: `scaleX(${step / 3})` }} /></div>
+        <header><div><p>STEP {step} OF 3 · {current.label.toUpperCase()}</p><h2>{current.title}</h2><span>{current.text}</span></div></header>
+        <div className="v-onboarding-progress" role="progressbar" aria-label="Setup progress" aria-valuemin={0} aria-valuemax={3} aria-valuenow={step}>{[1, 2, 3].map(value => <i key={value} className={value <= step ? 'is-done' : ''} />)}</div>
         <form className="v-form" onSubmit={next}>
           {step === 1 && <>
             <button type="button" className="v-studio-image-picker" onClick={() => !status.upload && fileInput.current?.click()} disabled={status.upload}>
@@ -97,7 +106,7 @@ export default function OnboardingPage({ user, onAuthenticated }) {
               <Upload size={18} />
             </button>
             <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadLogo} hidden />
-            <div className="v-field"><label htmlFor="studio-name">Studio or photographer name</label><input id="studio-name" required minLength={2} maxLength={100} value={studio.studioName} onChange={event => setStudio(value => ({ ...value, studioName: event.target.value }))} placeholder="For example, Veylo Media" /></div>
+            <StudioBrandField id="studio-name" value={studio.studioName} onChange={studioName => setStudio(value => ({ ...value, studioName }))} availability={nameAvailability} lockedUntil={nameLockedUntil} disabled={status.loading} />
             <fieldset className="v-choice-field"><legend>How do you work?</legend><div className="v-choice-pair">
               <label className={studio.businessType === 'individual' ? 'is-selected' : ''}><input type="radio" name="businessType" value="individual" required checked={studio.businessType === 'individual'} onChange={event => setStudio(value => ({ ...value, businessType: event.target.value }))} /><Camera size={19} /><span><strong>Independent photographer</strong><small>I work under my own name or brand.</small></span></label>
               <label className={studio.businessType === 'studio' ? 'is-selected' : ''}><input type="radio" name="businessType" value="studio" required checked={studio.businessType === 'studio'} onChange={event => setStudio(value => ({ ...value, businessType: event.target.value }))} /><Users size={19} /><span><strong>Studio team</strong><small>More than one person works from this account.</small></span></label>
@@ -113,7 +122,7 @@ export default function OnboardingPage({ user, onAuthenticated }) {
             {discovery.source === 'Other' && <div className="v-field"><label htmlFor="other-source">Where did you hear about Veylo?</label><input id="other-source" required maxLength={120} value={discovery.otherSource} onChange={event => setDiscovery(value => ({ ...value, otherSource: event.target.value }))} /></div>}
           </>}
           {status.error && <p className="v-form-status" role="alert">{status.error}</p>}
-          <div className="v-onboarding-actions">{step > 1 && <button type="button" className="v-auth-text-button" onClick={() => setStep(value => value - 1)}><ArrowLeft size={16} />Back</button>}<button className="v-button" disabled={status.loading || status.upload}>{status.loading ? 'Saving…' : step === 3 ? 'Open my dashboard' : 'Save and continue'}<ArrowRight size={18} /></button></div>
+          <div className="v-onboarding-actions">{step > 1 && <button type="button" className="v-auth-text-button" disabled={status.loading || status.upload} onClick={() => setStep(value => value - 1)}><ArrowLeft size={16} />Back</button>}<button className="v-button" disabled={status.loading || status.upload || (step === 1 && !nameAvailability.canSubmit)}>{status.loading ? 'Saving…' : step === 3 ? 'Open my dashboard' : 'Save and continue'}<ArrowRight size={18} /></button></div>
         </form>
       </Reveal>
     </section>

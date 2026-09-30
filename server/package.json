@@ -4,6 +4,9 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
+    "studio-names:audit": "node scripts/studio-names.mjs",
+    "studio-names:migrate": "node scripts/studio-names.mjs --apply",
+    "verify:studio-names": "node --test scripts/studio-names.test.mjs",
     "start": "node server.js",
     "verify:syntax": "node scripts/verify-syntax.mjs",
     "dev": "nodemon server.js",

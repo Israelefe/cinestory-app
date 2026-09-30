@@ -1,6 +1,8 @@
 import crypto from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
 import { z } from 'zod';
+import { isStudioNameDuplicate, studioNameSchema, studioNameTaken } from '../utils/studioName.js';
+import { studioNameAvailable, studioNameUnavailable } from '../services/studioName.service.js';
 import User from '../models/User.js';
 import AuthCode from '../models/AuthCode.js';
 import Session from '../models/Session.js';
@@ -23,7 +25,7 @@ const resetSchema = z.object({ resetToken: z.string().min(20), password, confirm
 const profileSpecialties = ['Portraits', 'Weddings', 'Birthdays', 'Fashion and editorial', 'Commercial and branding', 'Maternity', 'Graduation', 'Events', 'Other'];
 const profileSchema = z.object({
   name: z.string().trim().min(2, 'Enter your name.').max(100),
-  studioName: z.string().trim().min(2, 'Enter your studio name.').max(100),
+  studioName: studioNameSchema,
   businessType: z.enum(['individual', 'studio']),
   city: z.string().trim().min(2, 'Enter your city.').max(80),
   state: z.string().trim().min(2, 'Enter your state.').max(80),
@@ -265,6 +267,19 @@ export async function getMe(req, res) {
   }
 }
 
+export async function checkStudioName(req, res) {
+  const parsed = studioNameSchema.safeParse(req.query.name);
+  if (!parsed.success) return res.status(400).json({ success: false, code: 'VALIDATION_ERROR', field: 'studioName', message: parsed.error.issues[0].message });
+  try {
+    const available = await studioNameAvailable(parsed.data, req.user.id);
+    res.set('Cache-Control', 'no-store');
+    return res.json({ success: true, available, name: parsed.data, message: available ? 'This name is available.' : studioNameTaken.message });
+  } catch (error) {
+    console.error('[studio-name/check]', error.message);
+    return studioNameUnavailable(res);
+  }
+}
+
 export async function updateProfile(req, res) {
   try {
     const parsed = profileSchema.safeParse(req.body);
@@ -276,9 +291,12 @@ export async function updateProfile(req, res) {
     if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
     const previousStudioName = String(user.studio?.name || '').trim();
     const studioName = parsed.data.studioName.trim();
+    try {
+      if (!(await studioNameAvailable(studioName, user._id))) return res.status(409).json(studioNameTaken);
+    } catch { return studioNameUnavailable(res); }
     const studioNameChanged = Boolean(previousStudioName) && previousStudioName !== studioName;
     const studioNameNextChangeAt = nextChangeAt(user.studioNameChangedAt, STUDIO_NAME_CHANGE_COOLDOWN_MS);
-    if (studioNameChanged && studioNameNextChangeAt) return res.status(429).json({ success: false, code: 'STUDIO_NAME_COOLDOWN', nextChangeAt: isoDate(studioNameNextChangeAt), message: `Your studio name can be changed again on ${studioNameNextChangeAt.toLocaleDateString('en-NG', { dateStyle: 'medium' })}.` });
+    if (studioNameChanged && studioNameNextChangeAt) return res.status(429).json({ success: false, code: 'STUDIO_NAME_COOLDOWN', field: 'studioName', nextChangeAt: isoDate(studioNameNextChangeAt), message: `Your Studio or Brand name can be changed again on ${studioNameNextChangeAt.toLocaleDateString('en-NG', { dateStyle: 'medium' })}.` });
     user.name = parsed.data.name;
     user.studio = user.studio || {};
     user.studio.name = studioName;
@@ -292,9 +310,13 @@ export async function updateProfile(req, res) {
     if (studioNameChanged) user.studioNameChangedAt = new Date();
     const portfolio = studioNameChanged ? await Portfolio.findOne({ userId: user._id }) : null;
     if (portfolio && (!portfolio.studioName || portfolio.studioName.trim() === previousStudioName)) portfolio.studioName = studioName;
-    await Promise.all([user.save(), portfolio ? portfolio.save() : Promise.resolve()]);
+    // Claim the name first. A losing concurrent claim must never change the
+    // portfolio, which used to save in parallel with the account.
+    await user.save();
+    if (portfolio) await portfolio.save();
     res.json({ success: true, user: publicUser(user), message: 'Your account details were saved.' });
   } catch (error) {
+    if (isStudioNameDuplicate(error)) return res.status(409).json(studioNameTaken);
     console.error('[auth/profile]', error.message);
     res.status(500).json({ success: false, message: 'We could not save your account details. Please try again.' });
   }

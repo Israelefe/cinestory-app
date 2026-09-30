@@ -198,7 +198,7 @@ export default function ManagePortfolio() {
   const previewScale = Math.min(1, (viewportWidth - 24) / previewFrameWidth);
   const unsaved = JSON.stringify(form) !== JSON.stringify(savedFormRef.current);
   const publishChecks = [
-    { label: 'Studio name', ready: form.studioName.trim().length >= 2, step: 0 },
+    { label: 'Studio or Brand name', ready: form.studioName.trim().length >= 2, step: 0 },
     { label: 'Portfolio address', ready: /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(form.handle) && form.handle.length >= 3 && handleAvailability !== false, step: 0 },
     { label: 'Short studio bio', ready: Boolean(form.bio.trim()), step: 0 },
     { label: 'At least four photographs', ready: form.items.length >= 4, step: 1 }
@@ -303,7 +303,7 @@ export default function ManagePortfolio() {
 
   async function save(showMessage = true) {
     if (form.studioName.trim().length < 2) {
-      toast.error('Enter your photographer or studio name.');
+      toast.error('Add your Studio or Brand name in Account settings.');
       return false;
     }
     if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(form.handle) || form.handle.length < 3) {
@@ -450,10 +450,10 @@ export default function ManagePortfolio() {
           <section id="pedit-studio" className="v-pedit-section" hidden={activeStep !== 0}>
             <SectionHeading eyebrow="01 / Your name and story" title="Studio details" description="Give clients a clear introduction before they get to the photographs." />
             <div className="v-pedit-fields v-pedit-fields-two">
-              <div className="v-pedit-field"><span>Photographer or studio name</span><strong className="v-pedit-shared-name">{form.studioName || 'Add your studio name in Settings'}</strong><small>This is your Account Settings studio name. <a href="/settings">Change it there</a>.</small></div>
+              <div className="v-pedit-field"><span>Studio or Brand name</span><strong className="v-pedit-shared-name">{form.studioName || 'Add your Studio or Brand name in Settings'}</strong><small>This name belongs to your account. <a href="/settings">Change it in Account settings</a>.</small></div>
               <div className="v-pedit-field"><span>Portfolio link</span><div className={`v-pedit-handle${handleLocked ? ' is-locked' : ''}`}><b>@</b><input value={form.handle} onChange={event => updateHandle(event.target.value)} maxLength={40} disabled={handleLocked} autoCapitalize="none" autoComplete="off" aria-invalid={form.handle.length < 3 || handleAvailability === false} /><button type="button" onClick={useBrandName} disabled={handleLocked || generatedHandle.length < 3} title={handleLocked ? `This address can change again on ${changeDate(changePolicy.handleNextChangeAt)}` : 'Set the address from your studio name'}>Use brand name</button></div><small className="v-pedit-address-hint" aria-live="polite">{form.handle.length < 3 ? 'Use at least three letters or numbers.' : handleAvailability === false ? 'That address is already in use or reserved.' : handleAvailability === true ? 'Available now. We will check again when you publish.' : 'Checking this address…'} {handleLocked && `You can change it again on ${changeDate(changePolicy.handleNextChangeAt)}.`}</small></div>
             </div>
-            {(studioNameLocked || handleLocked) && <p className="v-pedit-policy">{studioNameLocked && `Studio name changes open again ${changeDate(changePolicy.studioNameNextChangeAt)}.`} {handleLocked && `Portfolio address changes open again ${changeDate(changePolicy.handleNextChangeAt)}.`}</p>}
+            {(studioNameLocked || handleLocked) && <p className="v-pedit-policy">{studioNameLocked && `You can change your Studio or Brand name again on ${changeDate(changePolicy.studioNameNextChangeAt)}.`} {handleLocked && `Portfolio address changes open again ${changeDate(changePolicy.handleNextChangeAt)}.`}</p>}
             <label className="v-pedit-field"><span>Short studio bio</span><textarea value={form.bio} onChange={event => setField('bio', event.target.value)} maxLength={600} rows={4} placeholder="What do you photograph, and what should a client know before enquiring?" /><small>{form.bio.length}/600 characters</small></label>
             <div className="v-pedit-fields v-pedit-fields-two v-pedit-copy-fields">
               <label className="v-pedit-field"><span>Opening headline</span><input value={form.headline} onChange={event => setField('headline', event.target.value)} maxLength={100} placeholder={form.studioName || 'A line that sounds like your studio'} /><small>Leave it empty to use your studio name.</small></label>

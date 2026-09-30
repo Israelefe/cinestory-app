@@ -9,6 +9,7 @@ import { trackEvent } from '../services/analytics.js';
 import './Dashboard.css';
 import './DashboardV2.css';
 import DeliveryDownloadSettings from '../components/delivery/DeliveryDownloadSettings.jsx';
+import './StudioWorkspace.css';
 
 export default function Dashboard({ user }) {
   const reduced = useReducedMotion();
@@ -23,6 +24,15 @@ export default function Dashboard({ user }) {
   const [filter, setFilter] = useState('all');
   const [viewMode, setViewMode] = useState('grid');
   const [planStatus, setPlanStatus] = useState({ loading: true, data: null, error: '' });
+
+  useEffect(() => {
+    if (!openMenu) return;
+    const dismiss = event => { if (!event.target.closest('.v-delivery-title')) setOpenMenu(''); };
+    const escape = event => { if (event.key === 'Escape') setOpenMenu(''); };
+    document.addEventListener('pointerdown', dismiss);
+    document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('pointerdown', dismiss); document.removeEventListener('keydown', escape); };
+  }, [openMenu]);
 
   async function fetchPlanStatus() {
     setPlanStatus(current => ({ ...current, loading: true, error: '' }));
@@ -161,7 +171,6 @@ export default function Dashboard({ user }) {
   const needsAction = stories.filter(story => ['draft', 'review'].includes(story.status)).length;
   const actionStories = stories.filter(story => ['draft', 'review'].includes(story.status)).slice(0, 3);
   const publishedCount = activeStories.filter(story => story.status === 'published').length;
-  const averageViews = publishedCount ? Math.round(totalViews / publishedCount) : 0;
   const dataUnavailable = Boolean(loadError || partialError);
   const filteredStories = stories.filter(story => {
     const searchText = `${story.clientName || ''} ${story.title || ''} ${story.shootType || story.occasion || ''}`.toLowerCase();
@@ -174,31 +183,35 @@ export default function Dashboard({ user }) {
   const newDeliveryDisabled = planStatus.loading || Boolean(planStatus.error) || quotaReached;
   const freeMonthlyLimit = planStatus.data?.limits?.deliveriesPerMonth || 3;
   const studioName = user?.studio?.name || user?.name || 'Your studio';
-  const firstName = String(user?.name || 'Photographer').trim().split(/\s+/)[0];
 
-  return <div className="v-dashboard-page">
+  return <div className="v-dashboard-page v-studio-ui">
     <div className="v-dashboard-glow" aria-hidden="true" />
     <div className="v-dashboard-wrap">
       <motion.header className="v-dashboard-hero" initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .5 }}>
         <div className="v-dashboard-welcome">
           <div className="v-dashboard-studio"><span className="v-dashboard-avatar">{user?.avatar ? <img src={user.avatar} alt="" /> : <Camera size={24} />}</span><div><p>{studioName}</p><span>{user?.studio?.city ? `${user.studio.city}, ${user.studio.state}` : 'Your Veylo studio'}</span></div></div>
-          <h1>Good to see you,<br /><em>{firstName}.</em></h1>
-          <span>Open a client delivery or start with your next finished shoot.</span>
+          <p className="v-workspace-eyebrow">YOUR WORKSPACE</p>
+          <h1>Ready for your<br /><em>next delivery.</em></h1>
+          <span>Keep your client links and finished shoots in one place.</span>
+          <div className="v-dashboard-hero-actions">
+            {newDeliveryDisabled ? <button type="button" className="v-dashboard-new" disabled aria-describedby={quotaReached || planStatus.error ? 'v-dashboard-quota-note' : undefined}><Plus size={18} />New delivery</button> : <Link to="/create" className="v-dashboard-new"><Plus size={18} />New delivery<ArrowRight size={17} /></Link>}
+            <Link to="/settings" className="v-workspace-secondary">Account settings<ArrowRight size={16} /></Link>
+          </div>
         </div>
         <div className="v-dashboard-plan-summary"><BadgeCheck size={19} /><div><span>{isPro ? 'Veylo Pro' : 'Veylo Free'}</span><small>{isPro ? 'Unlimited deliveries under fair use' : `${freeMonthlyLimit} deliveries each month`}</small></div><Link to="/billing">{isPro ? 'Manage plan' : 'View Pro'}</Link></div>
       </motion.header>
 
       <motion.section className="v-dashboard-overview" aria-label="Studio overview" initial={reduced ? false : { opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .5, delay: .08 }}>
         <article><div><span>DELIVERIES</span><strong>{dataUnavailable ? '—' : activeStories.length}</strong></div><Film size={20} /></article>
-        <article><div><span>CLIENT VIEWS</span><strong>{dataUnavailable ? '—' : totalViews}</strong></div><Eye size={20} /></article>
+        <article><div><span>PUBLISHED</span><strong>{dataUnavailable ? '—' : publishedCount}</strong></div><BadgeCheck size={20} /></article>
         <article><div><span>NEEDS ACTION</span><strong>{dataUnavailable ? '—' : needsAction}</strong></div><Clock3 size={20} /></article>
-        <article><div><span>AVG. VIEWS</span><strong>{dataUnavailable ? '—' : averageViews}</strong></div><Users size={20} /></article>
+        <article><div><span>CLIENT VIEWS</span><strong>{dataUnavailable ? '—' : totalViews}</strong></div><Eye size={20} /></article>
       </motion.section>
 
       <motion.section className="v-studio-command" initial={reduced ? false : { opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .5, delay: .14 }}>
         <div className="v-studio-command-main">
-          <p>WHAT NEEDS YOUR ATTENTION</p>
-          {dataUnavailable ? <><h2>Some studio information is unavailable.</h2><span className="v-studio-command-copy">We will not call your studio clear until every delivery list responds.</span><button type="button" className="v-dashboard-command-primary" onClick={fetchStories}><RefreshCw size={17} />Try loading the lists again</button></> : actionStories.length ? <><h2>{needsAction} delivery {needsAction === 1 ? 'is' : 'are'} waiting for you.</h2><div className="v-studio-action-list">{actionStories.map(story => <Link key={story._id} to={`/create?draft=${story._id}`} onClick={() => trackEvent('dashboard.draft.resumed', { deliveryType: story._deliveryType || 'legacy' }, { status: 'started' })}><span>{story.status === 'review' ? 'Ready to review' : 'Draft'}{story.kind === 'pinboard' ? ' · GridBoard' : story.kind === 'showcase' ? ' · Showcase' : ''}</span><strong>{story.clientName || story.title || 'Untitled delivery'}</strong><small>{story.status === 'review' ? 'Check the design and prepare the client link.' : 'Continue from where you stopped.'}</small><ArrowRight size={17} /></Link>)}</div></> : <><h2>Your studio is clear.</h2><span className="v-studio-command-copy">Start a delivery when the next finished shoot is ready.</span></>}
+          <p>CONTINUE WHERE YOU LEFT OFF</p>
+          {dataUnavailable ? <><h2>We couldn’t load every delivery.</h2><span className="v-studio-command-copy">Try again to see which deliveries need your attention.</span><button type="button" className="v-dashboard-command-primary" onClick={fetchStories}><RefreshCw size={17} />Reload deliveries</button></> : actionStories.length ? <><h2>{needsAction} {needsAction === 1 ? 'delivery needs' : 'deliveries need'} your attention.</h2><div className="v-studio-action-list">{actionStories.map(story => <Link key={story._id} to={`/create?draft=${story._id}`} onClick={() => trackEvent('dashboard.draft.resumed', { deliveryType: story._deliveryType || 'legacy' }, { status: 'started' })}><span>{story.status === 'review' ? 'Ready to review' : 'Draft'}{story.kind === 'pinboard' ? ' · GridBoard' : story.kind === 'showcase' ? ' · Showcase' : ''}</span><strong>{story.clientName || story.title || 'Untitled delivery'}</strong><small>{story.status === 'review' ? 'Review and prepare the client link.' : 'Pick up where you stopped.'}</small><ArrowRight size={17} /></Link>)}</div></> : <><h2>No unfinished deliveries.</h2><span className="v-studio-command-copy">Start a new delivery when your next finished shoot is ready.</span></>}
         </div>
         <aside className="v-studio-quick">
           <div className="v-studio-quick-heading"><p>STUDIO SHORTCUTS</p><span>Keep your library and public work close by.</span></div>
@@ -210,7 +223,7 @@ export default function Dashboard({ user }) {
       </motion.section>
 
       <section className="v-dashboard-deliveries">
-        <header><div><h2>Client deliveries</h2><span>{dataUnavailable ? 'Some delivery data is unavailable. Check the status below before making decisions.' : stories.length > 0 ? `${totalDownloads} downloads across your active deliveries.` : 'Your finished shoots will appear here.'}</span></div><div className="v-dashboard-head-actions">{newDeliveryDisabled ? <button type="button" className="v-dashboard-new" disabled aria-describedby={quotaReached || planStatus.error ? 'v-dashboard-quota-note' : undefined}><Plus size={16} />New delivery</button> : <Link to="/create" className="v-dashboard-new"><Plus size={16} />New delivery</Link>}{!isPro && planStatus.data?.usage?.deliveriesRemaining != null && <small>{freeMonthlyLimit - planStatus.data.usage.deliveriesRemaining} of {freeMonthlyLimit} Free deliveries published this month</small>}</div></header>
+        <header><div><p className="v-workspace-eyebrow">CLIENT WORK</p><h2>Your deliveries</h2><span>{dataUnavailable ? 'Some deliveries could not be loaded. Try again below.' : stories.length > 0 ? `${totalDownloads} downloads across your active deliveries.` : 'Your finished shoots will appear here.'}</span></div><div className="v-dashboard-head-actions">{!isPro && planStatus.data?.usage?.deliveriesRemaining != null && <small>{freeMonthlyLimit - planStatus.data.usage.deliveriesRemaining} of {freeMonthlyLimit} Free deliveries published this month</small>}</div></header>
 
         {(quotaReached || planStatus.error) && <div id="v-dashboard-quota-note" className="v-dashboard-quota-note" role="status"><Clock3 size={18} /><span>{quotaReached ? `You've published all ${freeMonthlyLimit} Free deliveries this month. You can create another next month, or move to Pro.` : 'We could not check your plan right now. Try again before starting a delivery.'}</span>{quotaReached ? <Link to="/billing">View Pro</Link> : <button type="button" onClick={fetchPlanStatus}>Try again</button>}</div>}
 
@@ -218,7 +231,7 @@ export default function Dashboard({ user }) {
         {!loading && partialError && <div className="v-dashboard-data-banner" role="alert"><Folder size={17} /><span>{partialError}</span><button type="button" onClick={fetchStories}>Try again</button></div>}
         {!loading && loadError && stories.length > 0 && <div className="v-dashboard-data-banner is-error" role="alert"><Folder size={17} /><span>{loadError} Existing deliveries are still shown, but this list may be out of date.</span><button type="button" onClick={fetchStories}>Try again</button></div>}
 
-        {stories.length > 0 && <div className="v-dashboard-tools"><label><Search size={17} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search client, title, or shoot" aria-label="Search deliveries" /></label><div role="group" aria-label="Filter deliveries">{[['all', 'All'], ['published', 'Published'], ['action', `Needs action${needsAction ? ` (${needsAction})` : ''}`], ['archived', 'Archived']].map(([value, label]) => <button type="button" key={value} className={filter === value ? 'is-active' : ''} onClick={() => { setFilter(value); trackEvent('dashboard.filter.used', { filter: value }, { status: 'completed' }); }}>{label}</button>)}</div><div className="v-dashboard-view" role="group" aria-label="Delivery layout"><button type="button" className={viewMode === 'grid' ? 'is-active' : ''} onClick={() => { setViewMode('grid'); trackEvent('dashboard.view.changed', { view: 'grid' }, { status: 'completed' }); }} aria-label="Grid view"><Grid2X2 size={16} /></button><button type="button" className={viewMode === 'list' ? 'is-active' : ''} onClick={() => { setViewMode('list'); trackEvent('dashboard.view.changed', { view: 'list' }, { status: 'completed' }); }} aria-label="List view"><List size={17} /></button></div></div>}
+        {stories.length > 0 && <div className="v-dashboard-tools"><label><Search size={17} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search client, title, or shoot" aria-label="Search deliveries" /></label><div role="group" aria-label="Filter deliveries">{[['all', 'All'], ['published', 'Published'], ['action', `Needs action${needsAction ? ` (${needsAction})` : ''}`], ['archived', 'Archived']].map(([value, label]) => <button type="button" key={value} aria-pressed={filter === value} className={filter === value ? 'is-active' : ''} onClick={() => { setFilter(value); trackEvent('dashboard.filter.used', { filter: value }, { status: 'completed' }); }}>{label}</button>)}</div><div className="v-dashboard-view" role="group" aria-label="Delivery layout"><button type="button" aria-pressed={viewMode === 'grid'} className={viewMode === 'grid' ? 'is-active' : ''} onClick={() => { setViewMode('grid'); trackEvent('dashboard.view.changed', { view: 'grid' }, { status: 'completed' }); }} aria-label="Grid view"><Grid2X2 size={16} /></button><button type="button" aria-pressed={viewMode === 'list'} className={viewMode === 'list' ? 'is-active' : ''} onClick={() => { setViewMode('list'); trackEvent('dashboard.view.changed', { view: 'list' }, { status: 'completed' }); }} aria-label="List view"><List size={17} /></button></div></div>}
 
         {loading && !hasLoaded ? <div className="v-dashboard-state"><RefreshCw className="v-spin" size={27} /><strong>Opening your studio…</strong><span>Loading your latest deliveries.</span></div> : !loading && loadError && stories.length === 0 ? <div className="v-dashboard-state v-dashboard-error"><Folder size={27} /><strong>Your deliveries are unavailable.</strong><span>{loadError}</span><button type="button" onClick={fetchStories}>Try again</button></div> : !loading && partialError && stories.length === 0 ? <div className="v-dashboard-state v-dashboard-error"><Folder size={27} /><strong>Some deliveries are unavailable.</strong><span>{partialError}</span><button type="button" onClick={fetchStories}>Try again</button></div> : !loading && !dataUnavailable && stories.length === 0 ? <motion.div className="v-dashboard-empty" initial={reduced ? false : { opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
           <div className="v-dashboard-empty-copy"><p>YOUR FIRST DELIVERY</p><h3>No deliveries<br />here yet.</h3><span>When your next finished shoot is ready, start here. Veylo will guide you through the rest.</span>{newDeliveryDisabled ? <button type="button" className="v-button" disabled aria-describedby={quotaReached || planStatus.error ? 'v-dashboard-quota-note' : undefined}><Plus size={17} />Create your first delivery<ArrowRight size={17} /></button> : <Link to="/create" className="v-button"><Plus size={17} />Create your first delivery<ArrowRight size={17} /></Link>}</div>
@@ -226,9 +239,10 @@ export default function Dashboard({ user }) {
         </motion.div> : filteredStories.length === 0 ? <div className="v-dashboard-state"><Search size={27} /><strong>No matching deliveries.</strong><span>Try another search or choose a different status.</span></div> : <div className={`v-delivery-grid is-${viewMode}`}><AnimatePresence>{filteredStories.map((story, index) => <motion.article key={story._id} className="v-delivery-card" initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: .97 }} transition={{ duration: .42, delay: Math.min(index * .05, .25) }}>
           <Link to={story.status === 'archived' ? '/dashboard' : story.status === 'published' ? (story._deliveryType === 'current' ? `/d/${story.publicId}` : `/story/${story.storyId}`) : `/create?draft=${story._id}`} onClick={() => trackEvent(story.status === 'published' ? 'dashboard.delivery.opened' : 'dashboard.draft.resumed', { deliveryType: story._deliveryType || 'legacy', format: story.format || 'photo-story' }, { status: 'opened', format: story.format || 'photo-story' })} target={story.status === 'published' ? '_blank' : undefined} rel="noreferrer" className="v-delivery-cover" aria-label={`Open ${story.title || story.clientName || 'delivery'}`}>{story.photos?.[0]?.url || story.photos?.[0]?.thumbnailUrl ? <img src={story.photos[0].thumbnailUrl || story.photos[0].url} alt="" loading="lazy" decoding="async" /> : <span>{story.kind === 'pinboard' ? <Grid2X2 size={28} /> : <Film size={28} />}</span>}<i /><small>{story.kind === 'pinboard' ? 'GridBoard Delivery' : story.status === 'published' ? (story.format || 'Photo Story').replaceAll('-', ' ') : story.status === 'archived' ? 'archived delivery' : `${story.status} draft`}</small></Link>
           <div className="v-delivery-body"><div className="v-delivery-title"><div><span>{story.clientName || 'Client delivery'}</span><h3>{story.title || story.occasion || 'Finished shoot'}</h3></div><button type="button" onClick={() => setOpenMenu(value => value === story._id ? '' : story._id)} aria-label="Delivery options" aria-expanded={openMenu === story._id}><MoreHorizontal size={19} /></button>{openMenu === story._id && <div className="v-delivery-menu">{story.status !== 'archived' && <><button type="button" onClick={() => copyLink(story)}><Copy size={15} />Copy client link</button><a href={story._deliveryType === 'current' ? (story.status === 'published' ? `/d/${story.publicId}` : `/create?draft=${story._id}`) : `/story/${story.storyId}`} target={story.status === 'published' ? '_blank' : undefined} rel="noreferrer"><ExternalLink size={15} />{story.status === 'published' ? 'Open delivery' : 'Continue draft'}</a></>}{story._deliveryType === 'current' && story.status === 'published' && ['event-coverage', 'campaign'].includes(story.format) && <Link to={`/sharing?delivery=${story._id}`}><Users size={15} />Organizer, vendor, and guest links</Link>}{story._deliveryType === 'current' ? story.status === 'archived' ? <button type="button" onClick={() => handleRestore(story._id)}><RefreshCw size={15} />Restore delivery</button> : <button type="button" onClick={() => handleArchive(story._id)}><Archive size={15} />Archive delivery</button> : null}<button type="button" onClick={() => handleDelete(story)}><Trash2 size={15} />Delete delivery</button></div>}</div>
+          <div className={`v-delivery-stage is-${story.status}`}><i aria-hidden="true" />{story.status === 'review' ? 'Ready to review' : story.status === 'published' ? 'Published' : story.status === 'archived' ? 'Archived' : 'Draft'}</div>
           <div className="v-delivery-numbers"><span><Eye size={14} />{story.viewsCount || 0} views</span><span><Download size={14} />{story.downloadsCount || 0} downloads</span></div>
           {story._deliveryType === 'current' && story.status === 'published' && <button type="button" className="v-delivery-download-settings" onClick={() => { toast.dismiss(); setOpenMenu(''); setDownloadSettingsId(story._id); }}><Download size={15} />Download settings</button>}
-          {story.status !== 'archived' && <button type="button" className="v-delivery-whatsapp" onClick={() => shareWhatsApp(story)}><MessageCircle size={16} />Send on WhatsApp</button>}</div>
+          {story.status === 'published' ? <button type="button" className="v-delivery-whatsapp" onClick={() => shareWhatsApp(story)}><MessageCircle size={16} />Send on WhatsApp</button> : story.status !== 'archived' ? <Link className="v-delivery-resume" to={`/create?draft=${story._id}`}><ArrowRight size={16} />{story.status === 'review' ? 'Review delivery' : 'Continue draft'}</Link> : null}</div>
         </motion.article>)}</AnimatePresence></div>}
       </section>
     </div>
