@@ -2,9 +2,10 @@ import { Readable } from 'stream';
 import { cloudinary, configureCloudinary } from './cloudinary.service.js';
 import { deliveryFolder } from './deliveryMedia.service.js';
 import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID, narrationVoice } from '../constants/narrationVoices.js';
+import { fitV3SpokenCaptions } from './deliveryV3AI.service.js';
 
-// Read the approved messages and captions using the photographer's chosen voice.
-export const NARRATION_RENDER_VERSION = 'flux-captions-v7';
+// Read the approved messages and fit spoken captions to the fixed photo slots.
+export const NARRATION_RENDER_VERSION = 'flux-captions-v8';
 export const NARRATION_BOOKEND_RENDER_VERSION = 'flux-bookends-v4';
 const MAX_NARRATION_CHUNK_CHARACTERS = 2000;
 // Keep the narrator measured without flattening natural pitch movement. Deepgram's
@@ -321,14 +322,15 @@ function stripLeadingId3(buffer) {
   return buffer.subarray(Math.min(buffer.length, 10 + size));
 }
 
-export async function generateNarration(delivery, { voiceId = DEFAULT_NARRATION_VOICE_ID, speed = VOICE_SETTINGS.speed, maxSegmentDuration = 0 } = {}) {
+export async function generateNarration(delivery, { voiceId = DEFAULT_NARRATION_VOICE_ID, speed = VOICE_SETTINGS.speed, maxSegmentDuration = 0, spokenTexts = new Map() } = {}) {
   const voice = requiredVoice(voiceId);
   const apiKey = String(process.env.DEEPGRAM_API_KEY || '').trim();
   if (!apiKey) throw Object.assign(new Error('Deepgram narration is not configured.'), { code: 'NARRATION_NOT_CONFIGURED' });
 
-  const segments = captionSegments(delivery);
-  // A short paragraph break gives the narrator room to breathe between frames
-  // while keeping every spoken word equal to an approved caption.
+  const approved = captionSegments(delivery);
+  const segments = approved.map(segment => ({ ...segment, text: spokenTexts.get(String(segment.assetIds[0])) || segment.text }));
+  // A paragraph break gives the narrator room between photo cues. Approved
+  // written captions are retained separately from any fitted spoken version.
   const transcript = narrationChunkText(segments);
   const chunks = splitNarration(segments);
   const audioBuffers = [];
@@ -356,10 +358,12 @@ export async function generateNarration(delivery, { voiceId = DEFAULT_NARRATION_
     audioBuffers.push(chunkAudio);
   }
   if (maxSegmentDuration > 0) {
-    const tooLong = measuredSegments.find(segment => segment.endSec - segment.startSec > maxSegmentDuration);
-    if (tooLong) {
-      const photoNumber = Number(String(tooLong.id).replace(/^caption-/, '')) || 1;
-      throw Object.assign(new Error(`Caption ${photoNumber} needs to be shorter to fit the fixed six-second Photo Story timing. Shorten that caption and try again.`), { code: 'NARRATION_CAPTION_TOO_LONG' });
+    const tooLong = measuredSegments.filter(segment => segment.endSec - segment.startSec > maxSegmentDuration);
+    if (tooLong.length) {
+      throw Object.assign(new Error('Veylo could not finish fitting the spoken captions. Retry the voice, or continue with the written captions.'), {
+        code: 'NARRATION_CAPTION_TOO_LONG',
+        overlongSegments: tooLong.map(segment => ({ assetId: String(segment.assetIds[0]), text: segment.text, duration: segment.endSec - segment.startSec }))
+      });
     }
   }
   const buffer = Buffer.concat(audioBuffers.map((chunkAudio, index) => index === 0 ? chunkAudio : stripLeadingId3(chunkAudio)));
@@ -385,8 +389,9 @@ export async function generateNarration(delivery, { voiceId = DEFAULT_NARRATION_
     renderVersion: NARRATION_RENDER_VERSION,
     settings: { ...VOICE_SETTINGS, speed },
     captionsRead: true,
+    captionsAdapted: segments.some((segment, index) => segment.text !== approved[index].text),
     approvedAt: new Date(),
-    segments: measuredSegments
+    segments: measuredSegments.map((segment, index) => ({ ...segment, text: approved[index].text, spokenText: segment.text }))
   };
 }
 
@@ -402,22 +407,36 @@ export async function synthesizeV3Narration(delivery, { bookends = true, caption
   const narration = { voiceId: voice.id, voiceName: voice.name };
   try {
     if (bookends) {
-      onProgress?.('recording-bookends', 18);
+      await onProgress?.('recording-bookends', 18);
       Object.assign(narration, await synthesizeV3Bookends(delivery, { voiceId: voice.id }));
     }
     if (captions) {
-      onProgress?.('recording-captions', bookends ? 58 : 24);
-      let lastError;
-      for (const speed of [1.2, 1.35, 1.5]) {
+      const approved = captionSegments(delivery);
+      const spokenTexts = new Map();
+      const budgets = new Map(approved.map(segment => [String(segment.assetIds[0]), 11]));
+      let needsFitting = approved.filter(segment => narrationLine(segment.text).split(/\s+/).length > 11 || narrationLine(segment.text).length > 100);
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        if (needsFitting.length) {
+          await onProgress?.('fitting-captions', (bookends ? 50 : 20) + attempt * 10);
+          const fitted = await fitV3SpokenCaptions(delivery, needsFitting.map(segment => {
+            const assetId = String(segment.assetIds[0]);
+            return { assetId, caption: segment.text, previousSpokenText: spokenTexts.get(assetId) || null, maxWords: budgets.get(assetId), maxCharacters: Math.min(100, Math.max(60, budgets.get(assetId) * 9)) };
+          }));
+          for (const [assetId, text] of fitted) spokenTexts.set(assetId, text);
+        }
+        await onProgress?.('recording-captions', (bookends ? 56 : 26) + attempt * 10);
         try {
-          narration.captions = await generateNarration(delivery, { voiceId: voice.id, speed, maxSegmentDuration: 5.45 });
+          narration.captions = await generateNarration(delivery, { voiceId: voice.id, speed: 1, maxSegmentDuration: 5.45, spokenTexts });
           break;
         } catch (error) {
-          if (error.code !== 'NARRATION_CAPTION_TOO_LONG' || speed === 1.5) throw error;
-          lastError = error;
+          if (error.code !== 'NARRATION_CAPTION_TOO_LONG' || attempt === 3) throw error;
+          needsFitting = approved.filter(segment => error.overlongSegments.some(overlong => overlong.assetId === String(segment.assetIds[0])));
+          for (const overlong of error.overlongSegments) {
+            const words = narrationLine(overlong.text).split(/\s+/).length;
+            budgets.set(overlong.assetId, Math.max(3, Math.min(budgets.get(overlong.assetId) - 1, Math.floor(words * 4.9 / overlong.duration))));
+          }
         }
       }
-      if (!narration.captions) throw lastError || Object.assign(new Error('Caption narration could not fit the fixed photo timing.'), { code: 'NARRATION_CAPTION_TOO_LONG' });
     }
     return narration;
   } catch (error) {

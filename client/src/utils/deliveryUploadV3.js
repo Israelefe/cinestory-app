@@ -51,6 +51,11 @@ export async function uploadDeliveryPhotosV3(deliveryId, files, onProgress = () 
             signature = signed.data.data;
           } else {
             const recovered = await api.post('/v1/deliveries/' + deliveryId + '/uploads/recover', { uploadId });
+            if (recovered.data.data.asset) {
+              outcomes[index] = { file, asset: recovered.data.data.asset };
+              report(index, file.size, 'complete');
+              break;
+            }
             payload = recovered.data.data.uploaded;
             signature = recovered.data.data.signature;
           }

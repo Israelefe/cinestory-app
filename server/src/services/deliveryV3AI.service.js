@@ -18,17 +18,20 @@ function provider() {
 
 function parseJson(text) {
   const raw = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
-  try { return JSON.parse(raw); } catch {
+  let result;
+  try { result = JSON.parse(raw); } catch {
     const start = raw.indexOf('{'); const end = raw.lastIndexOf('}');
-    if (start >= 0 && end > start) return JSON.parse(raw.slice(start, end + 1));
-    throw Object.assign(new Error('The model returned an unreadable response. Please retry.'), { code: 'V3_INVALID_AI_RESPONSE' });
+    try { if (start >= 0 && end > start) result = JSON.parse(raw.slice(start, end + 1)); } catch { /* Retry malformed provider output below. */ }
   }
+  if (!result || typeof result !== 'object' || Array.isArray(result)) throw Object.assign(new Error('Veylo could not read the response. Please retry this step.'), { code: 'V3_INVALID_AI_RESPONSE' });
+  return result;
 }
 
 async function request(system, user, { images = [], maxTokens = 4000 } = {}) {
   const { apiKey, endpoint } = provider();
   const content = [{ type: 'text', text: user }, ...images.map(image => ({ type: 'image_url', image_url: { url: signedImageUrl(image.publicId, { width: 960 }) } }))];
   const body = { model: MODEL, enable_thinking: false, temperature: 0.45, max_tokens: maxTokens, messages: [{ role: 'system', content: system }, { role: 'user', content }] };
+  let malformedResponses = 0;
   for (let attempt = 0; attempt < 6; attempt += 1) {
     const response = await fetch(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(120000) });
     if (!response.ok) {
@@ -46,9 +49,16 @@ async function request(system, user, { images = [], maxTokens = 4000 } = {}) {
       const code = [400, 413].includes(response.status) && images.length > 1 ? 'V3_IMAGE_BATCH_TOO_LARGE' : 'V3_AI_REQUEST_FAILED';
       throw Object.assign(new Error(`Model Studio could not complete this request (${response.status}). Retry from this step.`), { code });
     }
-    const payload = await response.json();
-    const answer = payload?.choices?.[0]?.message?.content;
-    return parseJson(typeof answer === 'string' ? answer : Array.isArray(answer) ? answer.filter(part => part.type === 'text').map(part => part.text).join('') : '');
+    try {
+      const payload = await response.json();
+      const answer = payload?.choices?.[0]?.message?.content;
+      return parseJson(typeof answer === 'string' ? answer : Array.isArray(answer) ? answer.filter(part => part.type === 'text').map(part => part.text).join('') : '');
+    } catch (error) {
+      if (error.code !== 'V3_INVALID_AI_RESPONSE' && !(error instanceof SyntaxError)) throw error;
+      malformedResponses += 1;
+      if (malformedResponses < 3 && attempt < 5) continue;
+      throw Object.assign(new Error('Veylo could not prepare a usable response. Please retry this step.'), { code: 'V3_INVALID_AI_RESPONSE' });
+    }
   }
 }
 
@@ -465,9 +475,9 @@ function wordCount(value) {
 function fitText(value, limit) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   if (text.length <= limit) return text;
-  const clipped = text.slice(0, limit + 1);
+  const clipped = text.slice(0, limit - 1);
   const boundary = clipped.lastIndexOf(' ');
-  return (boundary > 0 ? clipped.slice(0, boundary) : clipped.slice(0, limit)).replace(/[\s,;:]+$/, '').replace(/[.!?]+$/, '') + '.';
+  return (boundary > 0 ? clipped.slice(0, boundary) : clipped).replace(/[\s,;:]+$/, '').replace(/[.!?]+$/, '') + '.';
 }
 
 function purposeHeadline(delivery) {
@@ -521,7 +531,8 @@ function textHasPurposeAnchor(value, delivery) {
 
 function substantialCaption(value, delivery, limit) {
   const caption = String(value || '').trim();
-  return fitText(wordCount(caption) < 18 || !textHasPurposeAnchor(caption, delivery) || hasUnsupportedAddress(caption, delivery) ? purposeCaption(delivery, limit) : caption, limit);
+  const words = wordCount(caption);
+  return fitText(words < 18 || words > (limit === 150 ? 24 : 30) || caption.length > limit || !textHasPurposeAnchor(caption, delivery) || hasUnsupportedAddress(caption, delivery) ? purposeCaption(delivery, limit) : caption, limit);
 }
 
 // Detect explicit personal addresses, without requiring every caption to repeat a name.
@@ -627,7 +638,8 @@ export async function directV3(delivery, insights) {
   const openingLine = String(result.openingLine || '').trim().length >= 5 ? String(result.openingLine).trim() : 'These photographs were made for ' + String(delivery.brief || delivery.shootType || 'this occasion').trim() + '.';
   const closingLine = String(result.closingLine || '').trim().length >= 5 ? String(result.closingLine).trim() : 'Your full gallery is ready.';
   const sections = await groupV3Sections(delivery, rows, selected);
-  return { selected, openingAssetId, closingAssetId, direction: { title: String(result.title || (delivery.clientName || 'Your') + "'s photographs").slice(0, 80), openingLine: openingLine.slice(0, 140), closingLine: closingLine.slice(0, 160), palette, typography: { display: V3_FONT_CHOICES.has(result.typography?.display) ? result.typography.display : 'Playfair Display', body: V3_FONT_CHOICES.has(result.typography?.body) ? result.typography.body : 'Outfit' }, frames: captions, assetOrder: selected, sections } };
+  const title = String(result.title || '').trim();
+  return { selected, openingAssetId, closingAssetId, direction: { title: fitText(title.length >= 2 ? title : purposeHeadline(delivery), 80), openingLine: fitText(openingLine, 140), closingLine: fitText(closingLine, 160), palette, typography: { display: V3_FONT_CHOICES.has(result.typography?.display) ? result.typography.display : 'Playfair Display', body: V3_FONT_CHOICES.has(result.typography?.body) ? result.typography.body : 'Outfit' }, frames: captions, assetOrder: selected, sections } };
 }
 
 export async function repickV3Palette({ format, brief, shootType, imageColors, currentPalette, recentPalettes = [] }) {
@@ -677,4 +689,32 @@ export async function regenerateV3Caption(delivery, insight, instruction = '') {
   const rawCaption = String(result.caption || '').replace(/^\s*caption\s*:\s*/i, '').trim();
   const headline = fitText(headlineNeedsRepair(rawHeadline) || !headlineHasPurposeAnchor(rawHeadline, delivery) || hasUnsupportedAddress(rawHeadline + '. ' + rawCaption, delivery) ? purposeHeadline(delivery) : rawHeadline, 70);
   return { headline, caption: substantialCaption(rawCaption, delivery, limit) };
+}
+
+export async function fitV3SpokenCaptions(delivery, captions) {
+  if (!captions.length) return new Map();
+  const system = 'Return JSON {"captions":[{"assetId":"supplied-id","spokenText":"..."}]}. Produce a shorter spoken version of each approved caption, using only the thought already in that caption and the authoritative delivery context. Preserve its central meaning and any supplied name, occasion or age. Copy names exactly. The photographer purpose supplies the meaning; never add an image description, new person, relationship, feeling, achievement or event fact. Do not invent an age. Do not write a new purpose or a different message. Write one complete, natural sentence per photo, ending with punctuation. Each supplied word and character budget is a hard maximum: choose shorter wording, never cut a sentence off. Include every supplied asset ID exactly once. Avoid dashes, semicolons, decorative metaphors and stock praise. These lines will be spoken at a normal pace inside six-second photo slots. The full approved written captions remain unchanged.';
+  const prompt = JSON.stringify({ delivery: JSON.parse(narrativeContext(delivery)), captions });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const result = await request(system + (attempt ? ' The last answer did not meet the supplied budgets or identity rules. Correct those issues.' : ''), prompt, { maxTokens: Math.min(2400, 200 + captions.length * 110) });
+    const rows = Array.isArray(result.captions) ? result.captions : [];
+    const texts = new Map(rows.map(row => [row?.assetId, typeof row?.spokenText === 'string' ? row.spokenText.replace(/\s+/g, ' ').trim() : '']));
+    if (rows.length !== captions.length || texts.size !== captions.length) continue;
+    const valid = captions.every(caption => {
+      const text = texts.get(caption.assetId) || '';
+      const source = String(caption.caption || '');
+      const numbers = text.match(/\b\d+(?:st|nd|rd|th)?\b/g) || [];
+      const sourceNumbers = new Set(([source, delivery.brief].join(' ').match(/\b\d+(?:st|nd|rd|th)?\b/g) || []).map(value => value.replace(/(?:st|nd|rd|th)$/, '')));
+      // A name already used in the approved caption must not disappear in fitting.
+      const clientWords = String(delivery.clientName || '').match(/[\p{L}\p{M}]+/gu) || [];
+      const tokens = value => new Set(String(value).toLocaleLowerCase().match(/[\p{L}\p{M}]+/gu) || []);
+      const sourceTokens = tokens(source); const spokenTokens = tokens(text);
+      return wordCount(text) >= 3 && wordCount(text) <= caption.maxWords && text.length <= caption.maxCharacters
+        && /[.!?]$/.test(text) && !/[<>\n]/.test(text) && !hasUnsupportedAddress(text, delivery)
+        && numbers.every(value => sourceNumbers.has(value.replace(/(?:st|nd|rd|th)$/, '')))
+        && clientWords.every(word => !sourceTokens.has(word.toLocaleLowerCase()) || spokenTokens.has(word.toLocaleLowerCase()));
+    });
+    if (valid) return texts;
+  }
+  throw Object.assign(new Error('Veylo could not finish preparing the spoken captions. Retry the voice, or continue with the written captions.'), { code: 'NARRATION_FITTING_FAILED' });
 }

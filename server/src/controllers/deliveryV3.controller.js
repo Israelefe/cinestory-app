@@ -62,7 +62,7 @@ function narrationSelectionsReady(delivery) {
   const voiceId = delivery.v3?.narrationVoiceId || DEFAULT_NARRATION_VOICE_ID;
   const narration = delivery.narration;
   return (!wantsBookends || ([NARRATION_BOOKEND_RENDER_VERSION, 'flux-hannah-bookends-v3'].includes(narration?.renderVersion) && narration?.opening?.publicId && narration?.closing?.publicId && (narration.voiceId || DEFAULT_NARRATION_VOICE_ID) === voiceId)) &&
-    (!wantsCaptions || ([NARRATION_RENDER_VERSION, 'flux-hannah-captions-v6'].includes(narration?.captions?.renderVersion) && narration?.captions?.publicId && (narration.captions.voiceId || DEFAULT_NARRATION_VOICE_ID) === voiceId));
+    (!wantsCaptions || ([NARRATION_RENDER_VERSION, 'flux-captions-v7', 'flux-hannah-captions-v6'].includes(narration?.captions?.renderVersion) && narration?.captions?.publicId && (narration.captions.voiceId || DEFAULT_NARRATION_VOICE_ID) === voiceId));
 }
 
 function pinboardFallback(delivery) {
@@ -150,9 +150,11 @@ export async function v3Details(req, res) {
     if (delivery.kind !== input.data.kind) return res.status(409).json({ success: false, code: 'V3_DELIVERY_KIND_LOCKED', message: 'The delivery type cannot be changed after its draft is created.' });
     if (delivery.kind === 'showcase' && (input.data.shootType.length < 2 || !input.data.purpose)) return res.status(400).json({ success: false, code: 'V3_SHOWCASE_DETAILS_REQUIRED', message: 'Add the shoot type and purpose before continuing.' });
     const purpose = input.data.purpose || (delivery.kind === 'pinboard' ? 'GridBoard delivery' : '');
+    const titleChanged = delivery.kind === 'pinboard' && Boolean(input.data.title) && delivery.title !== input.data.title;
     const changed = delivery.clientName !== input.data.clientName || delivery.shootType !== input.data.shootType || delivery.brief !== purpose || JSON.stringify(delivery.v3?.clarificationAnswers || []) !== JSON.stringify(input.data.clarificationAnswers);
     const discardedAudio = changed ? narrationAudioIds(delivery) : [];
     delivery.clientName = input.data.clientName; delivery.shootType = input.data.shootType; delivery.brief = purpose; if (input.data.title) delivery.title = input.data.title;
+    if (titleChanged) { delivery.pinboard = { ...delivery.pinboard, title: input.data.title }; delivery.markModified('pinboard'); if (!changed) invalidateApproval(delivery); }
     if (changed) { delivery.collectionAnalysis = undefined; delivery.creativeDirection = undefined; delivery.curatedAssetIds = []; delivery.narration = undefined; if (delivery.kind === 'pinboard') delivery.pinboard = { ...delivery.pinboard, layouts: [], moments: [], analysisStatus: 'pending' }; delivery.status = 'draft'; invalidateApproval(delivery); saveV3(delivery, { narrationChoice: 'skip', captionNarrationChoice: 'skip' }); }
     saveV3(delivery, { originalPurpose: input.data.originalPurpose, clarificationAnswers: input.data.clarificationAnswers, step: delivery.kind === 'pinboard' ? 'photos' : 'format' });
     await delivery.save(); await removeAudioIds(discardedAudio); res.json({ success: true, data: delivery });
@@ -173,7 +175,7 @@ export async function v3Format(req, res) {
 
 export async function v3Prepare(req, res) {
   try {
-    const delivery = await owned(req); if (!editable(delivery) || (delivery.kind !== 'pinboard' && !delivery.format)) return res.status(409).json({ success: false, message: 'Choose a format first.' });
+    const delivery = await owned(req); if (!delivery || !['draft', 'review', 'analyzing'].includes(delivery.status) || (delivery.kind !== 'pinboard' && !delivery.format)) return res.status(409).json({ success: false, message: 'Choose a format first.' });
     if (delivery.kind === 'pinboard' && delivery.assets.length < 1) return res.status(409).json({ success: false, code: 'V3_PINBOARD_PHOTO_REQUIRED', message: 'Add at least one finished photograph to this GridBoard.' });
     if (delivery.kind !== 'pinboard' && delivery.assets.length < V3_FORMATS[delivery.format][0]) return res.status(409).json({ success: false, message: `Add at least ${V3_FORMATS[delivery.format][0]} photographs for this format.` });
     const existing = await DeliveryJob.findOne({ deliveryId: delivery._id, type: 'v3-prepare', status: { $in: ['queued', 'running'] } });
@@ -273,7 +275,7 @@ export async function v3Narration(req, res) {
     if (!input.success) return bad(res, input);
     if (!input.data.bookends && !input.data.captions) return res.status(400).json({ success: false, code: 'V3_NARRATION_SELECTION_REQUIRED', message: 'Choose opening and closing voice, spoken captions, or both.' });
     const delivery = await owned(req); if (!editable(delivery) || delivery.format !== 'photo-story' || !delivery.creativeDirection) return res.status(409).json({ success: false, message: 'Narration is available after Photo Story captions are ready.' });
-    const existing = await DeliveryJob.findOne({ deliveryId: delivery._id, type: 'v3-narrate', status: { $in: ['queued', 'running'] } });
+    const existing = await DeliveryJob.findOne({ deliveryId: delivery._id, type: 'v3-narrate', status: { $in: ['queued', 'running'] }, cancelRequestedAt: { $exists: false } }).select('+input');
     if (existing) {
       if ((existing.input?.voiceId || DEFAULT_NARRATION_VOICE_ID) !== input.data.voiceId || (existing.input?.bookends !== false) !== input.data.bookends || (existing.input?.captions === true) !== input.data.captions) return res.status(409).json({ success: false, code: 'NARRATION_ALREADY_RUNNING', message: 'Narration is already being prepared. Wait for it to finish before changing the voice.' });
       return res.status(202).json({ success: true, data: existing });
@@ -371,7 +373,7 @@ export async function v3Approve(req, res) {
   try {
     const delivery = await owned(req);
     if (!editable(delivery) || (delivery.kind === 'pinboard' ? !delivery.pinboard?.layouts?.length : !delivery.creativeDirection)) return res.status(409).json({ success: false, message: 'Review the delivery design first.' });
-    if (await DeliveryJob.exists({ deliveryId: delivery._id, status: { $in: ['queued', 'running'] } })) return res.status(409).json({ success: false, message: 'Wait for the current step to finish.' });
+    if (await DeliveryJob.exists({ deliveryId: delivery._id, status: { $in: ['queued', 'running'] }, cancelRequestedAt: { $exists: false } })) return res.status(409).json({ success: false, message: 'Wait for the current step to finish.' });
     const ids = new Set(delivery.assets.map(asset => asset.assetId));
     if (delivery.kind === 'pinboard') {
       const order = delivery.pinboard.layouts.find(layout => layout.id === delivery.pinboard.selectedLayoutId)?.assetOrder || [];
@@ -390,8 +392,12 @@ export async function v3Publish(req, res) {
   let reservation;
   try {
     const delivery = await owned(req, { pin: true });
+    // A successful publish may have lost its response on a mobile connection.
+    // Returning the existing private link must not reserve another monthly slot.
+    if (delivery?.status === 'published') return res.json({ success: true, data: { publicId: delivery.publicId, url: `${String(process.env.CLIENT_URL || 'https://veylo.com.ng').replace(/\/$/, '')}/d/${delivery.publicId}` } });
     if (!editable(delivery) || !delivery.reviewApprovedAt || delivery.v3?.approvedRevision !== delivery.v3?.revision) return res.status(409).json({ success: false, message: 'Preview and approve this delivery before publishing.' });
-    if (await DeliveryJob.exists({ deliveryId: delivery._id, status: { $in: ['queued', 'running'] } })) return res.status(409).json({ success: false, message: 'Wait for the current step to finish.' });
+    if (delivery.access?.expiresAt && new Date(delivery.access.expiresAt) <= new Date()) return res.status(400).json({ success: false, code: 'V3_EXPIRY_IN_PAST', field: 'expiresAt', message: 'This link expiry has already passed. Choose a future date in access settings, or clear it before publishing.' });
+    if (await DeliveryJob.exists({ deliveryId: delivery._id, status: { $in: ['queued', 'running'] }, cancelRequestedAt: { $exists: false } })) return res.status(409).json({ success: false, message: 'Wait for the current step to finish.' });
     const ids = new Set(delivery.assets.map(asset => asset.assetId));
     if (delivery.kind === 'pinboard') {
       const order = delivery.pinboard?.layouts?.find(layout => layout.id === delivery.pinboard.selectedLayoutId)?.assetOrder || [];

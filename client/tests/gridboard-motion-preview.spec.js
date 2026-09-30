@@ -74,6 +74,7 @@ for (const width of [320, 768, 834, 1440]) {
     const larger = width > 1024 ? page.frameLocator('.pb-full-preview-scroll iframe') : page.locator('.pb-full-preview-scroll');
     await assertPhotos(larger);
     await page.getByRole('button', { name: 'Close preview' }).click();
+    await expect(page.getByRole('button', { name: 'View client preview', exact: true })).toBeFocused();
     await page.getByRole('button', { name: 'Save design and set access' }).click();
     await expect(page.getByRole('heading', { name: 'Set up the private link.' })).toBeVisible();
     await page.getByRole('button', { name: 'View client preview', exact: true }).click();

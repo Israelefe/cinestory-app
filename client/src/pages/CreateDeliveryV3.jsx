@@ -6,7 +6,9 @@ import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
 import { API_BASE_URL } from '../config/env.js';
 import { uploadDeliverySoundtrack } from '../utils/deliveryUpload.js';
-import { mergeDeliveryDraft } from '../utils/deliveryDraft.js';
+import { creationPreviewBranding, mergeDeliveryDraft } from '../utils/deliveryDraft.js';
+import { localDeliveryExpiry } from '../utils/deliveryAccess.js';
+import { recoverPublishedDelivery } from '../utils/deliveryPublishV3.js';
 import { uploadDeliveryPhotosV3 } from '../utils/deliveryUploadV3.js';
 import { SHOOT_TYPES } from '../constants/shootTypes.js';
 import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
@@ -145,7 +147,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const [palette, setPalette] = useState(initialDelivery?.creativeDirection?.palette || defaultPalette);
   const themeStatus = themeReadability(palette);
   const [typography, setTypography] = useState(initialDelivery?.creativeDirection?.typography || { display: 'Playfair Display', body: 'Outfit' });
-  const [access, setAccess] = useState({ ...DEFAULT_ACCESS, ...initialDelivery?.access, usageTerms: initialDelivery?.formatConfig?.usageTerms || '', expiresAt: initialDelivery?.access?.expiresAt ? new Date(initialDelivery.access.expiresAt).toISOString().slice(0, 16) : '' });
+  const [access, setAccess] = useState({ ...DEFAULT_ACCESS, ...initialDelivery?.access, usageTerms: initialDelivery?.formatConfig?.usageTerms || '', expiresAt: localDeliveryExpiry(initialDelivery?.access?.expiresAt) });
   const [pin, setPin] = useState('');
   const [removePin, setRemovePin] = useState(false);
   const [published, setPublished] = useState(initialDelivery?.status === 'published' ? { publicId: initialDelivery.publicId, url: window.location.origin + '/d/' + initialDelivery.publicId } : null);
@@ -155,9 +157,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const limits = entitlements?.limits?.photosPerDelivery || (proFallback ? 500 : 100);
   const planName = entitlements?.plan === 'pro' || (!entitlements && proFallback) ? 'Pro' : 'Free';
   const quotaReached = freeMonthlyLimitReached(entitlements);
-  const previewBranding = entitlements?.features?.branding === 'studio' || (!entitlements && proFallback)
-    ? { type: 'studio', name: user?.studio?.name || user?.name || 'Studio', logoUrl: user?.studio?.logoUrl || user?.avatar || '' }
-    : { type: 'veylo', name: 'Veylo', logoUrl: '/veylo/veylo-mark.svg' };
+  const previewBranding = creationPreviewBranding(user, entitlements);
   const designPreviewDelivery = useMemo(() => {
     if (!draft) return null;
     const savedFrames = new Map((draft.creativeDirection?.frames || []).map(frame => [frame.assetId, frame]));
@@ -220,7 +220,13 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   }
   async function action(label, task) {
     setBusy(label); setError('');
-    try { return await task(); } catch (failure) { setError(message(failure)); return null; } finally { setBusy(''); }
+    try { return await task(); } catch (failure) {
+      if (label === 'publish') {
+        const result = await recoverPublishedDelivery(draft?._id);
+        if (result) { setPublished(result); setStage('published'); return result; }
+      }
+      setError(message(failure)); return null;
+    } finally { setBusy(''); }
   }
   useEffect(() => {
     let active = true;
@@ -236,7 +242,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
         if (!active) return;
         const next = data.data;
         setDraft(next); setJob(next.generationJob || null);
-        if (next.generationJob?.status === 'failed') { setError(next.generationJob.errorMessage || 'This step failed. Retry it.'); return; }
+        if (next.generationJob?.status === 'failed') { setError(next.generationJob.errorCode === 'NARRATION_CAPTION_TOO_LONG' ? 'Veylo could not finish fitting the spoken captions. Retry the voice; Veylo will adjust the spoken wording for you.' : next.generationJob.errorMessage || 'This step failed. Retry it.'); return; }
         if (stage === 'preparing' && next.v3?.step === 'showcase') { syncShowcase(next); setStage('showcase'); }
         if (stage === 'narration-job' && next.v3?.step === 'music' && (next.v3?.narrationChoice === 'voice' || next.v3?.captionNarrationChoice === 'voice')) setStage('music');
       } catch (failure) { if (active) setError(message(failure)); }
@@ -260,6 +266,11 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   }, [stage, recommendation, actualShootType, purpose]);
   useEffect(() => () => { audioRef.current?.pause(); }, []);
   useEffect(() => { window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' }); }, [stage, reduced]);
+  useEffect(() => {
+    if (!error || !['narration', 'narration-job'].includes(stage)) return;
+    const frame = window.requestAnimationFrame(() => document.querySelector('.v3-narration-error')?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [error, stage, reduced]);
   useEffect(() => { setActivePhotoIndex(current => Math.min(current, Math.max(0, selected.length - 1))); }, [selected.length]);
 
   async function improve() {
@@ -444,6 +455,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
       if (pin) body.pin = pin; else if (removePin) body.pin = '';
       const { data } = await api.patch('/v1/deliveries/' + draft._id + '/v3/access', body);
       setDraft(current => ({ ...current, ...data.data }));
+      setPin(''); setRemovePin(false);
       toast.success('Access settings saved.');
     });
   }
@@ -530,7 +542,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
           </li>)}
         </ol>
       </section>}
-      {error && <div className="v3-error" role="alert"><AlertCircle size={20} aria-hidden="true" /><div><strong>{typeof error === 'string' ? error : error.text}</strong>{typeof error === 'object' && error.fix === 'contrast' && <button type="button" className="v3-error-fix" onClick={() => { setPalette(current => readablePalette(current)); setError(''); }}>Fix text contrast</button>}{typeof error === 'object' && error.code && <small>Support reference: {error.code}</small>}</div><button type="button" onClick={() => setError('')} aria-label="Dismiss error">×</button></div>}
+      {error && !['narration', 'narration-job'].includes(stage) && <div className="v3-error" role="alert"><AlertCircle size={20} aria-hidden="true" /><div><strong>{typeof error === 'string' ? error : error.text}</strong>{typeof error === 'object' && error.fix === 'contrast' && <button type="button" className="v3-error-fix" onClick={() => { setPalette(current => readablePalette(current)); setError(''); }}>Fix text contrast</button>}{typeof error === 'object' && error.code && <small>Support reference: {error.code}</small>}</div><button type="button" onClick={() => setError('')} aria-label="Dismiss error">×</button></div>}
       {quotaReached && (stage === 'access' || stage === 'details' && !draft) && <div className="v3-quota-note" role="status"><Clock3 size={18} /><span>{freeMonthlyLimitMessage(entitlements)}</span><Link to="/billing">View Pro</Link></div>}
       <div className="v3-workspace">
       <AnimatePresence mode="wait"><motion.main key={stage} className={'v3-main' + (stage === 'design' ? ' is-designing' : '')} initial={reduced ? false : { opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} exit={reduced ? {} : { opacity: 0, x: -12 }} transition={{ duration: reduced ? 0 : .3 }}>
@@ -629,14 +641,14 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
           <div className="v3-actions"><StepButton secondary onClick={() => { captionRequest.current?.abort(); setStage('upload'); }}><ArrowLeft size={17} /> Back to photos</StepButton><StepButton onClick={saveShowcase} disabled={!!busy}><ArrowRight size={17} /> Continue</StepButton></div>
         </>}
         {(stage === 'narration' || stage === 'narration-job') && <>
-          <Head eyebrow="05 / OPTIONAL PHOTO STORY VOICE" title="Choose a voice for your story.">Every message stays visible on screen. Spoken captions must fit the existing six-second photo timing.</Head>
+          <Head eyebrow="05 / OPTIONAL PHOTO STORY VOICE" title="Choose a voice for your story.">Veylo fits the spoken wording to each six-second photo. Your full written captions stay unchanged.</Head>
           <NarrationVoicePicker value={narrationVoiceId} onChange={setNarrationVoiceId} disabled={!!busy || stage === 'narration-job' && job?.status !== 'failed'} />
           <div className="v3-narration-layout">
             <section className="v3-panel v3-narration-choice">
               <div className="v3-narration-mark"><Mic2 size={26} /></div><span>SELECTED VOICE</span><h2>{selectedVoiceName}</h2><p>Choose voice for the story’s opening and closing, the photo captions, or both. The photos keep their six-second timing.</p>
               <div className="v3-narration-options">
                 <label><input type="checkbox" checked={bookendVoiceSelected} disabled={!!busy || stage === 'narration-job' && job?.status !== 'failed'} onChange={event => setBookendVoiceSelected(event.target.checked)} /><span><strong>Opening and closing</strong><small>{selectedVoiceName} reads the two messages around the story.</small></span></label>
-                <label><input type="checkbox" checked={captionVoiceSelected} disabled={!!busy || stage === 'narration-job' && job?.status !== 'failed'} onChange={event => setCaptionVoiceSelected(event.target.checked)} /><span><strong>Photo captions</strong><small>{selectedVoiceName} reads each visible caption with its photo.</small></span></label>
+                <label><input type="checkbox" checked={captionVoiceSelected} disabled={!!busy || stage === 'narration-job' && job?.status !== 'failed'} onChange={event => setCaptionVoiceSelected(event.target.checked)} /><span><strong>Photo captions</strong><small>{selectedVoiceName} reads each caption, shortened for speech when needed.</small></span></label>
               </div>
               <div className="v3-narration-facts"><span>Text stays on screen</span><span>Six seconds per photo</span><span>Music lowers under speech</span></div>
             </section>
@@ -645,8 +657,9 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
               <article><span>CLOSING MESSAGE</span><p>{closingLine}</p></article>
             </div>
           </div>
-          {stage === 'narration-job' && <div className="v3-upload-progress" role="status"><span>{job?.stage === 'recording-captions' ? 'Preparing spoken captions' : job?.stage === 'recording-bookends' ? 'Preparing opening and closing voice' : 'Preparing selected voice'} · {job?.progress || 0}%</span><div><i style={{ transform: 'scaleX(' + (job?.progress || 0) / 100 + ')' }} /></div></div>}
-          <div className="v3-actions"><StepButton secondary onClick={() => setStage('showcase')}><ArrowLeft size={17} /> Back to showcase</StepButton><StepButton secondary onClick={skipNarration} disabled={!!busy || stage === 'narration-job' && job?.status !== 'failed'}>Keep all words on screen</StepButton><StepButton onClick={generateNarration} disabled={!!busy || (!bookendVoiceSelected && !captionVoiceSelected) || stage === 'narration-job' && job?.status !== 'failed'}>{job?.status === 'failed' ? <><RefreshCw size={16} /> Retry selected voice</> : <><Mic2 size={17} /> Generate selected voice</>}</StepButton></div>
+          {stage === 'narration-job' && job?.status !== 'failed' && <div className="v3-upload-progress" role="status"><span>{job?.stage === 'fitting-captions' ? 'Fitting spoken captions to the photos' : job?.stage === 'recording-captions' ? 'Preparing spoken captions' : job?.stage === 'recording-bookends' ? 'Preparing opening and closing voice' : 'Preparing selected voice'} · {job?.progress || 0}%</span><div><i style={{ transform: 'scaleX(' + (job?.progress || 0) / 100 + ')' }} /></div></div>}
+          {error && <div className="v3-narration-error" role="alert"><AlertCircle size={22} aria-hidden="true" /><div><strong>The voice isn’t ready yet.</strong><p>{typeof error === 'string' ? error : error.text}</p><small>Your written captions are saved. Retry the voice below, or choose Keep all words on screen to continue.</small></div></div>}
+          <div className="v3-actions v3-narration-actions"><StepButton secondary onClick={() => setStage('showcase')}><ArrowLeft size={17} /> Back to showcase</StepButton><StepButton secondary onClick={skipNarration} disabled={!!busy}>Keep all words on screen</StepButton><StepButton onClick={generateNarration} disabled={!!busy || (!bookendVoiceSelected && !captionVoiceSelected) || stage === 'narration-job' && job?.status !== 'failed'}>{job?.status === 'failed' ? <><RefreshCw size={16} /> Retry selected voice</> : <><Mic2 size={17} /> Generate selected voice</>}</StepButton></div>
         </>}
         {stage === 'music' && <>
           <Head eyebrow="06 / MUSIC" title="Find the right soundtrack.">Preview the music, check how it fits the delivery, then choose a track. Afrobeat and Amapiano are listed first.</Head>
@@ -725,8 +738,8 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
           <div className="v3-access-layout">
             <section className="v3-panel v3-access-security">
               <div className="v3-panel-heading"><span>01</span><div><h2>Link security</h2><p>Set an optional PIN or expiry date.</p></div></div>
-              <label>Six-digit PIN (optional)<input inputMode="numeric" autoComplete="off" maxLength={6} value={pin} onChange={event => setPin(event.target.value.replace(/\D/g, ''))} placeholder={draft?.hasPin ? 'PIN already set — leave blank to keep it' : 'Leave blank for no PIN'} /></label>
-              {draft?.hasPin && <label className="v3-check"><input type="checkbox" checked={removePin} onChange={event => setRemovePin(event.target.checked)} /> Remove the current PIN</label>}
+              <label>Six-digit PIN (optional)<input inputMode="numeric" autoComplete="off" maxLength={6} value={pin} onChange={event => { const value = event.target.value.replace(/\D/g, '').slice(0, 6); setPin(value); if (value) setRemovePin(false); }} placeholder={draft?.hasPin ? 'PIN already set — leave blank to keep it' : 'Leave blank for no PIN'} /></label>
+              {draft?.hasPin && <label className="v3-check"><input type="checkbox" checked={removePin} onChange={event => { setRemovePin(event.target.checked); if (event.target.checked) setPin(''); }} /> Remove the current PIN</label>}
               <label>Expiry date (optional)<input type="datetime-local" value={access.expiresAt} onChange={event => setAccess(current => ({ ...current, expiresAt: event.target.value }))} /></label>
             </section>
             <section className="v3-panel v3-access-permissions">

@@ -73,7 +73,7 @@ test('the queue records the requested voice and verifies delivery ownership', as
     assert.deepEqual(query, { _id: id, userId: ownerId, schemaVersion: 3 });
     return Promise.resolve(delivery);
   });
-  t.mock.method(DeliveryJob, 'findOne', async () => null);
+  t.mock.method(DeliveryJob, 'findOne', () => ({ select: async fields => { assert.equal(fields, '+input'); return null; } }));
   t.mock.method(DeliveryJob, 'create', async job => job);
   for (const voice of NARRATION_VOICES) {
     const res = response();
@@ -99,12 +99,22 @@ test('unknown voices are rejected before database or provider work', async t => 
 
 test('a request for another voice cannot silently reuse a running Hannah job', async t => {
   t.mock.method(Delivery, 'findOne', async () => delivery);
-  t.mock.method(DeliveryJob, 'findOne', async () => ({ input: { bookends: true, captions: false } }));
+  t.mock.method(DeliveryJob, 'findOne', () => ({ select: async fields => { assert.equal(fields, '+input'); return { input: { bookends: true, captions: false } }; } }));
   t.mock.method(DeliveryJob, 'create', () => { throw new Error('Must not replace a running job'); });
   const res = response();
   await v3Narration({ params: { id }, user: { id: ownerId }, body: { voiceId: 'flux-kit-en' } }, res);
   assert.equal(res.statusCode, 409);
   assert.equal(res.body.code, 'NARRATION_ALREADY_RUNNING');
+  assert.equal(DeliveryJob.create.mock.callCount(), 0);
+});
+
+test('a repeated narration request resumes the matching selected voice without queuing a duplicate', async t => {
+  const job = { _id: 'kit-job', input: { voiceId: 'flux-kit-en', bookends: true, captions: false } };
+  t.mock.method(Delivery, 'findOne', async () => delivery);
+  t.mock.method(DeliveryJob, 'findOne', query => { assert.deepEqual(query.cancelRequestedAt, { $exists: false }); return { select: async fields => { assert.equal(fields, '+input'); return job; } }; });
+  t.mock.method(DeliveryJob, 'create', () => { throw new Error('Must not duplicate narration'); });
+  const res = response(); await v3Narration({ params: { id }, user: { id: ownerId }, body: { voiceId: 'flux-kit-en' } }, res);
+  assert.equal(res.statusCode, 202); assert.equal(res.body.data, job);
   assert.equal(DeliveryJob.create.mock.callCount(), 0);
 });
 

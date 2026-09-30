@@ -1,3 +1,9 @@
+export function creationPreviewBranding(user, entitlements) {
+  const studio = entitlements?.features?.branding === 'studio' || (!entitlements && ['pro', 'studio'].includes(user?.plan));
+  return studio ? { type: 'studio', name: user?.studio?.name || user?.name || 'Studio', logoUrl: user?.studio?.logoUrl || user?.avatar || '' }
+    : { type: 'veylo', name: 'Veylo', logoUrl: '/veylo/veylo-mark.svg' };
+}
+
 function keepMediaUrls(previous, next) {
   if (!next) return next;
   if (!previous) return { ...next };

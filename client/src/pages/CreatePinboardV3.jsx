@@ -7,7 +7,10 @@ import { API_BASE_URL } from '../config/env.js';
 import api, { apiMessage } from '../services/api.js';
 import { uploadDeliveryPhotosV3 } from '../utils/deliveryUploadV3.js';
 import { uploadDeliverySoundtrack } from '../utils/deliveryUpload.js';
-import { mergeDeliveryDraft } from '../utils/deliveryDraft.js';
+import { creationPreviewBranding, mergeDeliveryDraft } from '../utils/deliveryDraft.js';
+import { useDialogFocus } from '../components/useDialogFocus.js';
+import { localDeliveryExpiry } from '../utils/deliveryAccess.js';
+import { recoverPublishedDelivery } from '../utils/deliveryPublishV3.js';
 import { ClientPreviewPhoneFrame } from '../components/delivery/PhonePresentation.jsx';
 import { resolvedGridboardPalette, readableGridboardPalette, gridboardPaletteContrast, gridboardAccentInk } from '../utils/gridboardPalette.js';
 import './CreatePinboardV3.css';
@@ -106,20 +109,19 @@ export default function CreatePinboardV3({ user, initialDelivery }) {
   const [paletteNotice, setPaletteNotice] = useState('');
   const [paletteVersion, setPaletteVersion] = useState(0);
   const soundtrackPreviewRef = useRef(null);
-  const [access, setAccess] = useState({ ...DEFAULT_ACCESS, ...initialDelivery?.access, expiresAt: initialDelivery?.access?.expiresAt ? new Date(initialDelivery.access.expiresAt).toISOString().slice(0, 16) : '' });
+  const [access, setAccess] = useState({ ...DEFAULT_ACCESS, ...initialDelivery?.access, expiresAt: localDeliveryExpiry(initialDelivery?.access?.expiresAt) });
   const [pin, setPin] = useState('');
   const [removePin, setRemovePin] = useState(false);
   const [showDesktopPreview, setShowDesktopPreview] = useState(false);
-  useEffect(() => {
-    if (!showDesktopPreview) return undefined;
-    const onKeyDown = event => { if (event.key === 'Escape') setShowDesktopPreview(false); };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [showDesktopPreview]);
+  const previewDialog = useRef(null);
+  const previewTrigger = useRef(null);
+  useDialogFocus(showDesktopPreview, previewDialog, () => setShowDesktopPreview(false), previewTrigger);
+  function openPreview(event) { previewTrigger.current = event.currentTarget; setShowDesktopPreview(true); }
   const [published, setPublished] = useState(initialDelivery?.status === 'published' ? { publicId: initialDelivery.publicId, url: `${window.location.origin}/d/${initialDelivery.publicId}` } : null);
   const assets = draft?.assets || [];
   const maxPhotos = entitlements?.limits?.photosPerDelivery || (user?.plan === 'pro' || user?.plan === 'studio' ? 500 : 100);
   const quotaReached = reachedQuota(entitlements);
+  const previewBranding = creationPreviewBranding(user, entitlements);
   const musicCategories = ['all', 'afrobeat', 'amapiano', ...new Set((soundtracks || []).flatMap(track => [track.category, track.genre]).filter(Boolean).map(value => String(value).toLowerCase().trim()))].filter((value, index, all) => all.indexOf(value) === index);
   const filteredSoundtracks = (soundtracks || []).filter(track => {
     const metadata = [track.title, track.creator, track.genre, track.category, track.mood, ...(track.tags || [])].join(' ').toLowerCase();
@@ -133,10 +135,10 @@ export default function CreatePinboardV3({ user, initialDelivery }) {
   const currentIndex = STEPS.findIndex(item => item.id === activeStep);
   const previewBoard = useMemo(() => ({
     ...(draft || {}), kind: 'pinboard', title: title || `${clientName || 'Client'}'s photographs`, clientName, assets,
-    branding: draft?.branding || { type: 'veylo', name: 'Veylo', logoUrl: '/veylo/veylo-mark.svg' },
+    branding: previewBranding,
     galleryOrder: layouts.find(item => item.id === selectedLayoutId)?.assetOrder || assets.map(asset => asset.assetId),
     pinboard: { title: title || `${clientName || 'Client'}'s photographs`, layouts: layouts.length ? layouts : fallbackLayouts(assets), selectedLayoutId, moments, palette, typography, grid, animation, analysisStatus: useStandardBoard ? 'standard' : 'ready' }
-  }), [draft, title, clientName, assets, layouts, selectedLayoutId, moments, palette, typography, grid, animation, useStandardBoard]);
+  }), [draft, title, clientName, assets, layouts, selectedLayoutId, moments, palette, typography, grid, animation, useStandardBoard, previewBranding.type, previewBranding.name, previewBranding.logoUrl]);
 
   async function refresh() {
     if (!draft?._id) return null;
@@ -146,7 +148,13 @@ export default function CreatePinboardV3({ user, initialDelivery }) {
   }
   async function action(label, task) {
     setBusy(label); setError('');
-    try { return await task(); } catch (failure) { setError(errorText(failure)); return null; } finally { setBusy(''); }
+    try { return await task(); } catch (failure) {
+      if (label === 'publish') {
+        const result = await recoverPublishedDelivery(draft?._id);
+        if (result) { setPublished(result); setStage('published'); return result; }
+      }
+      setError(errorText(failure)); return null;
+    } finally { setBusy(''); }
   }
 
   useEffect(() => {
@@ -300,12 +308,13 @@ export default function CreatePinboardV3({ user, initialDelivery }) {
       const body = { ...access, expiresAt: access.expiresAt ? new Date(access.expiresAt).toISOString() : '' };
       if (pin) body.pin = pin; else if (removePin) body.pin = '';
       await api.patch(`/v1/deliveries/${draft._id}/v3/access`, body);
-      await api.post(`/v1/deliveries/${draft._id}/v3/approve`); await refresh(); setStage('publish');
+      await api.post(`/v1/deliveries/${draft._id}/v3/approve`); await refresh(); setPin(''); setRemovePin(false); setStage('publish');
     });
   }
   async function publish() {
     await action('publish', async () => {
       const { data: status } = await api.get('/v1/billing/status'); setEntitlements(status.data);
+      if (!status.data) throw new Error('We could not check your plan. Try publishing again.');
       if (reachedQuota(status.data)) { setError(quotaMessage(status.data)); return; }
       const { data } = await api.post(`/v1/deliveries/${draft._id}/v3/publish`);
       setPublished(data.data); setStage('published');
@@ -318,7 +327,7 @@ export default function CreatePinboardV3({ user, initialDelivery }) {
 
   const steps = STEPS.map((item, index) => ({ ...item, number: String(index + 1).padStart(2, '0'), done: index < currentIndex }));
   const content = <>
-    <div className="pb-create-top"><Link to="/dashboard" aria-label="Back to dashboard">Veylo <span>·</span> Create delivery</Link><div className="pb-create-top-actions"><span>GRIDBOARD DELIVERY</span>{['design', 'access', 'publish'].includes(stage) && <button type="button" onClick={() => setShowDesktopPreview(true)}><Eye size={14} /> View client preview</button>}</div></div>
+    <div className="pb-create-top"><Link to="/dashboard" aria-label="Back to dashboard">Veylo <span>·</span> Create delivery</Link><div className="pb-create-top-actions"><span>GRIDBOARD DELIVERY</span>{['design', 'access', 'publish'].includes(stage) && <button type="button" onClick={openPreview}><Eye size={14} /> View client preview</button>}</div></div>
     <nav className="pb-create-steps" aria-label="Creation progress">{steps.map((item, index) => <div key={item.id} className={(activeStep === item.id ? 'is-active ' : '') + (item.done ? 'is-done' : '')}><span>{item.done ? <Check size={14} /> : item.number}</span><strong>{item.label}</strong>{index < steps.length - 1 && <i />}</div>)}</nav>
     {quotaReached && !draft && <div className="pb-create-quota"><Clock3 size={17} />{quotaMessage(entitlements)} <Link to="/billing">View Pro</Link></div>}
     <AnimatePresence initial={false} mode="wait">
@@ -344,18 +353,18 @@ export default function CreatePinboardV3({ user, initialDelivery }) {
               <audio ref={soundtrackPreviewRef} className="pb-sr-only" preload="none" onEnded={() => setPreviewingTrackId('')} onError={() => { if (previewingTrackId) { setError('This music preview could not load. Check your connection and try again.'); setPreviewingTrackId(''); } }} />
             </section><div className="pb-create-actions"><button type="button" className="pb-create-back" onClick={() => setStage('photos')}><ArrowLeft size={17} />Back to photos</button><button type="button" onClick={() => void saveBoard()} disabled={!!busy || !boardReady}>{busy === 'board' ? <LoaderCircle className="pb-spin" size={17} /> : null}Save design and set access<ArrowRight size={17} /></button></div></>}
 
-          {stage === 'access' && <><div className="pb-create-title"><span className="pb-create-eyebrow">04 / CLIENT ACCESS</span><h1>Set up the private link.</h1><p>Choose how your client opens and downloads the finished photos.</p></div><section className="pb-access-card"><label className="pb-create-field">Six-digit PIN <span className="pb-field-help">Optional</span><input inputMode="numeric" autoComplete="new-password" maxLength={6} value={pin} onChange={event => setPin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={initialDelivery?.hasPin ? 'PIN already set · enter a new one to change' : 'Leave blank for no PIN'} /></label>{initialDelivery?.hasPin && <Toggle checked={removePin} onChange={setRemovePin}>Remove the current PIN</Toggle>}<label className="pb-create-field">Link expiry <span className="pb-field-help">Optional</span><input type="datetime-local" value={access.expiresAt} onChange={event => setAccess(current => ({ ...current, expiresAt: event.target.value }))} /></label><div className="pb-access-toggles"><Toggle checked={access.allowIndividualDownloads} onChange={value => setAccess(current => ({ ...current, allowIndividualDownloads: value }))}>Allow individual photo downloads</Toggle><Toggle checked={access.allowDownloadAll} onChange={value => setAccess(current => ({ ...current, allowDownloadAll: value }))}>Allow the complete gallery download</Toggle><Toggle checked={access.downloadsLocked} onChange={value => setAccess(current => ({ ...current, downloadsLocked: value }))}>Lock downloads</Toggle><Toggle checked={access.watermarkEnabled} onChange={value => setAccess(current => ({ ...current, watermarkEnabled: value }))}>Watermark photos while downloads are locked</Toggle></div>{access.downloadsLocked && <label className="pb-create-field">Message clients see<input value={access.downloadLockNote} maxLength={200} onChange={event => setAccess(current => ({ ...current, downloadLockNote: event.target.value }))} placeholder="Contact your photographer to request downloads." /></label>}{access.watermarkEnabled && <label className="pb-create-field">Watermark text<input value={access.watermarkText} maxLength={40} onChange={event => setAccess(current => ({ ...current, watermarkText: event.target.value }))} placeholder="Your studio name" /><span className="pb-field-help">Appears on client previews while downloads are locked. Original files stay unchanged.</span></label>}<div className="pb-create-note"><LockKeyhole size={17} /><span>PIN and expiry rules also apply to shared photo and moment links. Original files are never changed by the board or Status card.</span></div></section><div className="pb-create-actions"><button type="button" className="pb-create-back" onClick={() => setStage('design')}><ArrowLeft size={17} />Back to the board</button><button type="button" onClick={() => void approve()} disabled={!!busy}>{busy === 'approve' ? <LoaderCircle className="pb-spin" size={17} /> : <Check size={17} />}Approve preview<ArrowRight size={17} /></button></div></>}
+          {stage === 'access' && <><div className="pb-create-title"><span className="pb-create-eyebrow">04 / CLIENT ACCESS</span><h1>Set up the private link.</h1><p>Choose how your client opens and downloads the finished photos.</p></div><section className="pb-access-card"><label className="pb-create-field">Six-digit PIN <span className="pb-field-help">Optional</span><input inputMode="numeric" autoComplete="new-password" maxLength={6} value={pin} onChange={event => { const value = event.target.value.replace(/\D/g, '').slice(0, 6); setPin(value); if (value) setRemovePin(false); }} placeholder={draft?.hasPin ? 'PIN already set · enter a new one to change' : 'Leave blank for no PIN'} /></label>{draft?.hasPin && <Toggle checked={removePin} onChange={value => { setRemovePin(value); if (value) setPin(''); }}>Remove the current PIN</Toggle>}<label className="pb-create-field">Link expiry <span className="pb-field-help">Optional</span><input type="datetime-local" value={access.expiresAt} onChange={event => setAccess(current => ({ ...current, expiresAt: event.target.value }))} /></label><div className="pb-access-toggles"><Toggle checked={access.allowIndividualDownloads} onChange={value => setAccess(current => ({ ...current, allowIndividualDownloads: value }))}>Allow individual photo downloads</Toggle><Toggle checked={access.allowDownloadAll} onChange={value => setAccess(current => ({ ...current, allowDownloadAll: value }))}>Allow the complete gallery download</Toggle><Toggle checked={access.downloadsLocked} onChange={value => setAccess(current => ({ ...current, downloadsLocked: value }))}>Lock downloads</Toggle><Toggle checked={access.watermarkEnabled} onChange={value => setAccess(current => ({ ...current, watermarkEnabled: value }))}>Watermark photos while downloads are locked</Toggle></div>{access.downloadsLocked && <label className="pb-create-field">Message clients see<input value={access.downloadLockNote} maxLength={200} onChange={event => setAccess(current => ({ ...current, downloadLockNote: event.target.value }))} placeholder="Contact your photographer to request downloads." /></label>}{access.watermarkEnabled && <label className="pb-create-field">Watermark text<input value={access.watermarkText} maxLength={40} onChange={event => setAccess(current => ({ ...current, watermarkText: event.target.value }))} placeholder="Your studio name" /><span className="pb-field-help">Appears on client previews while downloads are locked. Original files stay unchanged.</span></label>}<div className="pb-create-note"><LockKeyhole size={17} /><span>PIN and expiry rules also apply to shared photo and moment links. Original files are never changed by the board or Status card.</span></div></section><div className="pb-create-actions"><button type="button" className="pb-create-back" onClick={() => setStage('design')}><ArrowLeft size={17} />Back to the board</button><button type="button" onClick={() => void approve()} disabled={!!busy}>{busy === 'approve' ? <LoaderCircle className="pb-spin" size={17} /> : <Check size={17} />}Approve preview<ArrowRight size={17} /></button></div></>}
 
           {stage === 'publish' && <><div className="pb-create-title"><span className="pb-create-eyebrow">05 / READY TO PUBLISH</span><h1>Send the gallery when you are ready.</h1><p>Review the client view on the right. Publishing makes the private link available to your client.</p></div><div className="pb-publish-summary"><div><span>DELIVERY</span><strong>{title || `${clientName}'s photographs`}</strong></div><div><span>PHOTOS</span><strong>{assets.length} finished photos</strong></div><div><span>BOARD</span><strong>{layouts.find(item => item.id === selectedLayoutId)?.title || 'Standard board'}</strong></div><div><span>LINK</span><strong>{access.expiresAt ? `Expires ${new Date(access.expiresAt).toLocaleString()}` : 'Does not expire'}</strong></div></div><div className="pb-create-actions"><button type="button" className="pb-create-back" onClick={() => setStage('access')}><ArrowLeft size={17} />Back to access</button><button type="button" onClick={() => void publish()} disabled={!!busy || billingLoading || quotaReached}>{busy === 'publish' ? <LoaderCircle className="pb-spin" size={17} /> : <Check size={17} />}Publish GridBoard</button></div></>}
 
 
         </div>
-        {['design', 'access', 'publish'].includes(stage) && <aside className="pb-create-preview"><div className="pb-preview-label"><span>CLIENT VIEW</span><button type="button" onClick={() => setShowDesktopPreview(true)}><Eye size={14} /> Open larger preview</button></div><ClientPreviewPhoneFrame delivery={previewBoard} access={access} accessPin="" /></aside>}
+        {['design', 'access', 'publish'].includes(stage) && <aside className="pb-create-preview"><div className="pb-preview-label"><span>CLIENT VIEW</span><button type="button" onClick={openPreview}><Eye size={14} /> Open larger preview</button></div><ClientPreviewPhoneFrame delivery={previewBoard} access={access} accessPin="" /></aside>}
         </div>}
          {stage === 'published' && <div className="pb-published-card"><div className="pb-published-mark"><BadgeCheck size={27} /></div><span className="pb-create-eyebrow">DELIVERY PUBLISHED</span><h1>Your GridBoard is ready.</h1><p>Send this private link to {clientName || 'your client'} when you are ready.</p><label>Private gallery link<input readOnly value={published?.url || `${window.location.origin}/d/${published?.publicId || draft?.publicId}`} /></label><div className="pb-published-actions"><button type="button" onClick={() => void copyLink()}><Copy size={16} />Copy private link</button><a href={published?.url || `/d/${published?.publicId || draft?.publicId}`} target="_blank" rel="noreferrer"><Eye size={16} />Open client view</a><Link to="/dashboard">Back to dashboard<ArrowRight size={16} /></Link></div><div className="pb-create-note"><MessageCircle size={17} /><span>For WhatsApp, paste the private link into your chat with the client. They will see this board after opening it.</span></div></div>}
       </motion.section>
     </AnimatePresence>
   </>;
 
-  return <main className="pb-create-shell"><div className="pb-create-container">{content}</div>{showDesktopPreview && <div className="pb-full-preview" role="dialog" aria-modal="true" aria-label="GridBoard client preview"><div className="pb-full-preview-bar"><span>GRIDBOARD CLIENT VIEW</span><button type="button" autoFocus onClick={() => setShowDesktopPreview(false)}><X size={18} />Close preview</button></div><div className="pb-full-preview-scroll"><ClientPreviewPhoneFrame delivery={previewBoard} access={access} accessPin="" /></div></div>}</main>;
+  return <main className="pb-create-shell"><div className="pb-create-container">{content}</div>{showDesktopPreview && <div ref={previewDialog} className="pb-full-preview" tabIndex={-1} role="dialog" aria-modal="true" aria-label="GridBoard client preview"><div className="pb-full-preview-bar"><span>GRIDBOARD CLIENT VIEW</span><button type="button" autoFocus onClick={() => setShowDesktopPreview(false)}><X size={18} />Close preview</button></div><div className="pb-full-preview-scroll"><ClientPreviewPhoneFrame delivery={previewBoard} access={access} accessPin="" /></div></div>}</main>;
 }

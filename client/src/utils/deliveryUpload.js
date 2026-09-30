@@ -100,6 +100,8 @@ function uploadToCloudinary(url, form, onProgress) {
 }
 
 export async function uploadDeliverySoundtrack(deliveryId, file, title) {
+  if (!/\.(mp3|wav|m4a|ogg|aac)$/i.test(file?.name || '')) throw new Error('Choose an MP3, WAV, M4A, OGG, or AAC music file.');
+  if (!file.size || file.size > 20 * 1024 * 1024) throw new Error('Choose a music file no larger than 20 MB.');
   const signResponse = await api.post(`/v1/deliveries/${deliveryId}/soundtrack/sign`);
   const signature = signResponse.data.data;
   const form = new FormData();

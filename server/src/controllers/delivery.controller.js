@@ -513,6 +513,8 @@ export async function recoverDeliveryUpload(req, res) {
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This draft is not available for uploads.' });
+    const confirmed = delivery.assets.find(asset => asset.uploadId === parsed.data.uploadId);
+    if (confirmed) return res.json({ success: true, data: { asset: ownerAsset(confirmed) } });
     const entitlements = await resolveEntitlements(await User.findById(req.user.id), { includeUsage: false });
     if (delivery.assets.length >= entitlements.limits.photosPerDelivery) return res.status(403).json({ success: false, code: 'PHOTO_LIMIT_REACHED', message: `${entitlements.planName} allows up to ${entitlements.limits.photosPerDelivery} photographs in one delivery.` });
     const resource = await recoverImageUpload({ userId: req.user.id, deliveryId: delivery._id, uploadId: parsed.data.uploadId });

@@ -100,7 +100,7 @@ for (const width of [320, 834, 1440]) {
       if (path.endsWith('/deliveries/' + draftId + '/v3/format')) { draft = { ...draft, format: body.format, v3: { ...draft.v3, step: 'upload' } }; return reply(draft); }
       return reply({});
     });
-    await page.goto('/create');
+    await page.goto('/create?type=showcase');
     await expect(page.locator('.v-product-header')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Tell us what this delivery is for.' })).toBeVisible();
     const cookieButton = page.getByRole('button', { name: 'Got it' });
@@ -208,11 +208,60 @@ test('V3 lets a photographer enable spoken captions without enabling bookend voi
   const captionVoice = page.getByRole('checkbox', { name: /Photo captions/ });
   await expect(bookendVoice).not.toBeChecked();
   await expect(captionVoice).not.toBeChecked();
-  await expect(page.getByText('Spoken captions must fit the existing six-second photo timing.')).toBeVisible();
+  await expect(page.getByText('Veylo fits the spoken wording to each six-second photo. Your full written captions stay unchanged.')).toBeVisible();
   await captionVoice.check();
   await page.getByRole('button', { name: 'Generate selected voice' }).click();
   await expect.poll(() => narrationRequest).toEqual({ voiceId: 'flux-hannah-en', bookends: false, captions: true });
   await expect(page.getByRole('heading', { name: 'Find the right soundtrack.' })).toBeVisible();
+});
+
+for (const width of [320, 834, 1440]) test(`a failed narration fit offers retry or text beside the controls at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: width === 320 ? 740 : 900 });
+  await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 3, necessary: true, serviceAnalytics: true })));
+  const caption = 'Convennant, this birthday is a chance to mark what matters to you and make room for what you want next.';
+  let draft = { _id: draftId, schemaVersion: 3, status: 'review', clientName: 'Convennant', format: 'photo-story', assets: [{ assetId: 'photo-one' }], curatedAssetIds: ['photo-one'], creativeDirection: { title: "Convennant's birthday", openingLine: 'Your birthday story is here.', closingLine: 'Your full gallery is ready.', frames: [{ assetId: 'photo-one', caption }] }, v3: { step: 'narration', revision: 2, narrationChoice: 'skip', captionNarrationChoice: 'skip' } };
+  let requests = 0;
+  let releaseFailure;
+  const failGate = new Promise(resolve => { releaseFailure = resolve; });
+  await page.route('**/api/v1/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    const reply = data => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data }) });
+    if (path.endsWith('/auth/me')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, user }) });
+    if (path.endsWith('/billing/status')) return reply({ plan: 'free', limits: { photosPerDelivery: 100 }, usage: { deliveriesRemaining: 3 } });
+    if (path.endsWith('/v3/narrate')) {
+      requests += 1;
+      draft = { ...draft, generationJob: { _id: 'fit-job', status: 'running', stage: 'fitting-captions', progress: 40 } };
+      if (requests > 1) draft = { ...draft, generationJob: null, v3: { ...draft.v3, step: 'music', captionNarrationChoice: 'voice' } };
+      return reply({ _id: 'fit-job', status: 'queued', progress: 0 });
+    }
+    if (path.endsWith('/deliveries/' + draftId)) {
+      const snapshot = structuredClone(draft);
+      if (requests === 1 && snapshot.generationJob?.status === 'running') {
+        await failGate;
+        snapshot.generationJob = { status: 'failed', errorCode: 'NARRATION_CAPTION_TOO_LONG', errorMessage: 'Caption 1 needs to be shorter to fit the fixed six-second Photo Story timing. Shorten that caption and try again.' };
+      }
+      return reply(snapshot);
+    }
+    if (path.endsWith('/v3/narration/skip')) { draft = { ...draft, generationJob: null, v3: { ...draft.v3, step: 'music' } }; return reply(draft); }
+    if (path.endsWith('/deliveries/soundtracks')) return reply([]);
+    return reply({});
+  });
+  await page.goto('/create?draft=' + draftId);
+  await page.getByRole('checkbox', { name: /Photo captions/ }).check();
+  await page.getByRole('button', { name: 'Generate selected voice' }).click();
+  await expect(page.locator('.v3-upload-progress')).toBeVisible();
+  releaseFailure();
+  await expect(page.locator('.v3-narration-error')).toContainText('Veylo will adjust the spoken wording for you');
+  await expect(page.locator('.v3-narration-error')).not.toContainText('Shorten that caption');
+  await expect(page.getByRole('button', { name: 'Retry selected voice' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Keep all words on screen' })).toBeEnabled();
+  await expect(page.locator('.v3-error')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+  await page.locator('.v3-narration-error').scrollIntoViewIfNeeded();
+  if (width === 320) await page.screenshot({ path: '../.visual-review/narration-fit-error-320.png' });
+  await page.getByRole('button', { name: width === 1440 ? 'Keep all words on screen' : 'Retry selected voice' }).click();
+  await expect(page.getByRole('heading', { name: 'Find the right soundtrack.' })).toBeVisible();
+  expect(draft.creativeDirection.frames[0].caption).toBe(caption);
 });
 
 for (const width of [320, 768, 834, 1440]) test(`Photo Story voice selection, listening and retry work at ${width}px`, async ({ page }) => {

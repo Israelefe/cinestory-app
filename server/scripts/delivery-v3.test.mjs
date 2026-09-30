@@ -157,10 +157,10 @@ test('Showcase avoids recent palettes and still supplies readable colours when t
 test('narration turns dashes into natural sentence pauses and keeps ordinary hyphenated words', () => {
   assert.equal(narrationLine('Nothing staged about this laugh — it is the sound of a birthday feeling exactly right.'), 'Nothing staged about this laugh. It is the sound of a birthday feeling exactly right.');
   assert.equal(narrationLine('Twenty-five years, one good day.'), 'Twenty-five years, one good day.');
-  assert.equal(NARRATION_RENDER_VERSION, 'flux-captions-v7');
+  assert.equal(NARRATION_RENDER_VERSION, 'flux-captions-v8');
 });
 
-test('spoken captions that exceed one photo slot fail with a caption-specific instruction', async () => {
+test('speech that exceeds a photo slot supplies measured fitting data without asking the photographer to edit', async () => {
   const previousFetch = globalThis.fetch;
   const previousKey = process.env.DEEPGRAM_API_KEY;
   let spokenText = '';
@@ -193,7 +193,7 @@ test('spoken captions that exceed one photo slot fail with a caption-specific in
     };
     await assert.rejects(
       generateNarration(delivery, { speed: 1.2, maxSegmentDuration: 5.45 }),
-      error => error.code === 'NARRATION_CAPTION_TOO_LONG' && /Caption 1 needs to be shorter/.test(error.message) && /fixed six-second/.test(error.message)
+      error => error.code === 'NARRATION_CAPTION_TOO_LONG' && error.overlongSegments[0].assetId === assetId && error.overlongSegments[0].duration > 5.45 && !/Shorten that caption|needs to be shorter/.test(error.message)
     );
   } finally {
     globalThis.fetch = previousFetch;
@@ -391,6 +391,39 @@ test('regenerated headline and caption use the purpose with only a light image c
     assert.deepEqual(text, { headline: 'Ada at Twenty-Five', caption: 'Ada, turning twenty-five is a chance to celebrate how far you have come and choose what matters most in the year ahead.' });
     assert.match(calls[0].messages[1].content[0].text, /A woman smiles at the camera/);
     assert.match(calls[0].messages[0].content, /18-24 words/);
+  } finally { restore(); }
+});
+
+test('headline and caption regeneration retries malformed and empty AI responses automatically', async t => {
+  const previous = { key: process.env.ALIBABA_MODEL_STUDIO_API_KEY, base: process.env.ALIBABA_BASE_URL };
+  process.env.ALIBABA_MODEL_STUDIO_API_KEY = 'test-key';
+  process.env.ALIBABA_BASE_URL = 'https://test.aliyuncs.com/compatible-mode/v1';
+  t.after(() => {
+    if (previous.key === undefined) delete process.env.ALIBABA_MODEL_STUDIO_API_KEY; else process.env.ALIBABA_MODEL_STUDIO_API_KEY = previous.key;
+    if (previous.base === undefined) delete process.env.ALIBABA_BASE_URL; else process.env.ALIBABA_BASE_URL = previous.base;
+  });
+  const outputs = ['{"headline": broken}', 'null', JSON.stringify({ headline: "Convennant's Birthday Year", caption: 'Convennant, this birthday is a chance to mark what matters to you and make room for what you want next.' })];
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: outputs[calls++] } }] }) }));
+  const result = await regenerateV3Caption({ clientName: 'Convennant', brief: 'birthday', shootType: 'Birthday', format: 'photo-story' }, { summary: 'A person smiles.' });
+  assert.equal(calls, 3);
+  assert.equal(result.headline, "Convennant's Birthday Year");
+  assert.ok(result.caption.length <= 150);
+});
+
+test('normal generation supplies usable text when both writing passes return empty or oversized words', async () => {
+  const selected = ids.slice(0, 10);
+  const badFrames = selected.map(assetId => ({ assetId, headline: '', caption: 'birthday '.repeat(60) }));
+  const restore = mockModel([{ assetIds: selected }, { frames: badFrames }, { frames: badFrames }, { palette: {} }], []);
+  try {
+    const result = await directV3({ clientName: 'Convennant', brief: 'birthday', shootType: 'Birthday', format: 'photo-story' }, ids.slice(0, 12).map(assetId => ({ assetId, score: 8, summary: 'Portrait' })));
+    assert.equal(result.direction.frames.length, 10);
+    for (const frame of result.direction.frames) {
+      assert.ok(frame.headline.length >= 2 && frame.headline.length <= 70);
+      assert.ok(frame.caption.length >= 5 && frame.caption.length <= 150);
+      assert.match(frame.headline, /Convennant/);
+      assert.match(frame.caption, /birthday/);
+    }
   } finally { restore(); }
 });
 
