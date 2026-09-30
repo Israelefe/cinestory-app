@@ -46,8 +46,12 @@ export function DesktopPhoneFrame({ src, title, message, device = true }) {
     if (!device || !phoneDevice.current) return undefined;
     const element = phoneDevice.current;
     const updateScale = () => {
-      const top = Math.max(0, element.getBoundingClientRect().top);
-      const bottomSpace = element.closest('.v3-create, .pb-create-shell') ? 18 : 30;
+      const inCreation = Boolean(element.closest('.v3-create, .pb-create-shell'));
+      // Creation previews can start below the fold, then become sticky or
+      // scroll into view. Their initial page position must not shrink them.
+      const pageTop = Math.max(0, element.getBoundingClientRect().top);
+      const top = inCreation ? Math.min(pageTop, 96) : pageTop;
+      const bottomSpace = inCreation ? 18 : 30;
       const availableHeight = Math.max(1, window.innerHeight - top - bottomSpace);
       const availableWidth = Math.max(1, (element.parentElement?.getBoundingClientRect().width || window.innerWidth) - 32);
       const nextScale = Math.min(1.05, availableHeight / PHONE_FRAME_HEIGHT, availableWidth / PHONE_FRAME_WIDTH);

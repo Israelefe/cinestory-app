@@ -26,6 +26,11 @@ export async function storedDeliveryPreviews(delivery, text) {
   return new Map(files.filter(file => keys.get(file.assetId) === file.renderKey && file.variants?.length).map(file => [file.assetId, storedPreviewMedia(file)]));
 }
 
+export async function findStoredWatermark(delivery, asset, text) {
+  const file = await DeliveryPreviewFile.findOne({ deliveryId: delivery._id, assetId: asset.assetId, renderKey: previewRenderKey(asset, text) }).lean();
+  return file?.variants?.length ? file : null;
+}
+
 function uploadPreview(buffer, folder, publicId) {
   if (!configureCloudinary()) throw new Error('Photo storage is temporarily unavailable.');
   return new Promise((resolve, reject) => {
@@ -37,8 +42,8 @@ function uploadPreview(buffer, folder, publicId) {
 export async function ensureStoredWatermark(delivery, asset, text) {
   const renderKey = previewRenderKey(asset, text);
   const query = { deliveryId: delivery._id, assetId: asset.assetId, renderKey };
-  const existing = await DeliveryPreviewFile.findOne(query).lean();
-  if (existing?.variants?.length) return existing;
+  const existing = await findStoredWatermark(delivery, asset, text);
+  if (existing) return existing;
   const key = `${delivery._id}:${asset.assetId}:${renderKey}`;
   if (running.has(key)) return running.get(key);
   const work = (async () => {

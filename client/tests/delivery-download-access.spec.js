@@ -90,6 +90,7 @@ for (const format of ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'cha
     const photo = readFileSync(new URL('../public/veylo/web/demo-lora-1-1440.webp', import.meta.url));
     await page.route('**/api/v1/deliveries/media/**', route => route.fulfill({ contentType: 'image/webp', body: photo }));
     await page.goto('/d/access-test?phoneView=1');
+    await expect.poll(() => page.locator('img[src*="/deliveries/media/"]').first().evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
     if (format === 'gridboard') {
       await expect.poll(() => page.locator('.pb-tile-open img').first().evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
       await page.locator('.pb-tile-open').first().click();

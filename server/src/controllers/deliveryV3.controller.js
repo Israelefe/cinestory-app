@@ -8,7 +8,7 @@ import { contrastRatio, V3_FONT_CHOICES, V3_FORMATS, V3_MUSIC_FORMATS, validShow
 import { improvePurpose, recommendV3Format, regenerateV3Caption, repickV3Palette } from '../services/deliveryV3AI.service.js';
 import { reservePublishSlot, resolveEntitlements } from '../services/entitlement.service.js';
 import { removeDeliveryAudio } from '../services/deliveryMedia.service.js';
-import { NARRATION_RENDER_VERSION, NARRATION_BOOKEND_RENDER_VERSION } from '../services/narration.service.js';
+import { NARRATION_BOOKEND_RENDER_VERSION } from '../services/narration.service.js';
 import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
 import { warmLockedDeliveryPreviews } from '../services/deliveryPreviewCache.service.js';
 
@@ -58,11 +58,9 @@ function narrationAudioIds(delivery) { return [delivery.narration?.opening?.publ
 async function removeAudioIds(ids) { await Promise.all(ids.filter(Boolean).map(id => removeDeliveryAudio(id).catch(() => {}))); }
 function narrationSelectionsReady(delivery) {
   const wantsBookends = delivery.v3?.narrationChoice === 'voice';
-  const wantsCaptions = delivery.v3?.captionNarrationChoice === 'voice';
   const voiceId = delivery.v3?.narrationVoiceId || DEFAULT_NARRATION_VOICE_ID;
   const narration = delivery.narration;
-  return (!wantsBookends || ([NARRATION_BOOKEND_RENDER_VERSION, 'flux-hannah-bookends-v3'].includes(narration?.renderVersion) && narration?.opening?.publicId && narration?.closing?.publicId && (narration.voiceId || DEFAULT_NARRATION_VOICE_ID) === voiceId)) &&
-    (!wantsCaptions || ([NARRATION_RENDER_VERSION, 'flux-captions-v7', 'flux-hannah-captions-v6'].includes(narration?.captions?.renderVersion) && narration?.captions?.publicId && (narration.captions.voiceId || DEFAULT_NARRATION_VOICE_ID) === voiceId));
+  return !wantsBookends || ([NARRATION_BOOKEND_RENDER_VERSION, 'flux-hannah-bookends-v3'].includes(narration?.renderVersion) && narration?.opening?.publicId && narration?.closing?.publicId && (narration.voiceId || DEFAULT_NARRATION_VOICE_ID) === voiceId);
 }
 
 function pinboardFallback(delivery) {
@@ -273,11 +271,14 @@ export async function v3Narration(req, res) {
   try {
     const input = z.object({ voiceId: z.enum(NARRATION_VOICES.map(voice => voice.id)).default(DEFAULT_NARRATION_VOICE_ID), bookends: z.boolean().default(true), captions: z.boolean().default(false) }).strict().safeParse(req.body || {});
     if (!input.success) return bad(res, input);
-    if (!input.data.bookends && !input.data.captions) return res.status(400).json({ success: false, code: 'V3_NARRATION_SELECTION_REQUIRED', message: 'Choose opening and closing voice, spoken captions, or both.' });
+    // Accept the previous request shape from cached clients, but only ever
+    // generate the opening and closing messages.
+    input.data.bookends = true;
+    input.data.captions = false;
     const delivery = await owned(req); if (!editable(delivery) || delivery.format !== 'photo-story' || !delivery.creativeDirection) return res.status(409).json({ success: false, message: 'Narration is available after Photo Story captions are ready.' });
     const existing = await DeliveryJob.findOne({ deliveryId: delivery._id, type: 'v3-narrate', status: { $in: ['queued', 'running'] }, cancelRequestedAt: { $exists: false } }).select('+input');
     if (existing) {
-      if ((existing.input?.voiceId || DEFAULT_NARRATION_VOICE_ID) !== input.data.voiceId || (existing.input?.bookends !== false) !== input.data.bookends || (existing.input?.captions === true) !== input.data.captions) return res.status(409).json({ success: false, code: 'NARRATION_ALREADY_RUNNING', message: 'Narration is already being prepared. Wait for it to finish before changing the voice.' });
+      if ((existing.input?.voiceId || DEFAULT_NARRATION_VOICE_ID) !== input.data.voiceId) return res.status(409).json({ success: false, code: 'NARRATION_ALREADY_RUNNING', message: 'Narration is already being prepared. Wait for it to finish before changing the voice.' });
       return res.status(202).json({ success: true, data: existing });
     }
     const job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'v3-narrate', provider: 'Deepgram Flux', promptVersion: 'delivery-v3', input: { revision: delivery.v3.revision, ...input.data } });

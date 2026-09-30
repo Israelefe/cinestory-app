@@ -146,7 +146,7 @@ function preloadAudio(url, cleanup) {
 
 export function DeliveryReadiness({ delivery, onReady }) {
   const capabilities = getDeliveryCapabilities(delivery?.format);
-  const narrationUrl = delivery?.schemaVersion === 3 ? delivery?.narration?.captions?.url : delivery?.narration?.url;
+  const narrationUrl = delivery?.schemaVersion === 3 ? '' : delivery?.narration?.url;
   const mediaKey = [
     delivery.publicId || delivery._id || 'draft',
     delivery.format || '',
@@ -278,7 +278,7 @@ export default function DeliveryViewer() {
   const playbackDelivery = useMemo(() => {
     if (!delivery) return null;
     const capabilities = getDeliveryCapabilities(delivery.format);
-    const v3Narration = delivery.schemaVersion === 3 && delivery.narration && (delivery.narration.opening?.url || delivery.narration.closing?.url || delivery.narration.captions?.url);
+    const v3Narration = delivery.schemaVersion === 3 && delivery.narration && (delivery.narration.opening?.url || delivery.narration.closing?.url);
     return {
       ...delivery,
       assets: (delivery.assets || []).map(asset => {
@@ -290,9 +290,9 @@ export default function DeliveryViewer() {
       narration: capabilities.narration && v3Narration
         ? {
             ...delivery.narration,
+            captions: undefined,
             ...(delivery.narration.opening?.url ? { opening: { ...delivery.narration.opening, url: apiMediaUrl(delivery.narration.opening.url) } } : {}),
             ...(delivery.narration.closing?.url ? { closing: { ...delivery.narration.closing, url: apiMediaUrl(delivery.narration.closing.url) } } : {}),
-            ...(delivery.narration.captions?.url ? { captions: { ...delivery.narration.captions, url: preloadedMedia.narration || apiMediaUrl(delivery.narration.captions.url) } } : {})
           }
         : capabilities.narration && delivery.narration?.url
           ? { ...delivery.narration, url: preloadedMedia.narration || apiMediaUrl(delivery.narration.url) }

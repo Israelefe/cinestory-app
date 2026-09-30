@@ -88,12 +88,12 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
     soundtrack: (capabilities.music || delivery?.kind === 'pinboard') && delivery?.soundtrack?.url
       ? { ...delivery.soundtrack, url: preloadedMedia.soundtrack || mediaUrl(delivery.soundtrack.url) }
       : undefined,
-    narration: capabilities.narration && delivery?.schemaVersion === 3 && delivery?.narration && (delivery.narration.opening?.url || delivery.narration.closing?.url || delivery.narration.captions?.url)
+    narration: capabilities.narration && delivery?.schemaVersion === 3 && delivery?.narration && (delivery.narration.opening?.url || delivery.narration.closing?.url)
       ? {
           ...delivery.narration,
+          captions: undefined,
           ...(delivery.narration.opening?.url ? { opening: { ...delivery.narration.opening, url: mediaUrl(delivery.narration.opening.url) } } : {}),
           ...(delivery.narration.closing?.url ? { closing: { ...delivery.narration.closing, url: mediaUrl(delivery.narration.closing.url) } } : {}),
-          ...(delivery.narration.captions?.url ? { captions: { ...delivery.narration.captions, url: preloadedMedia.narration || mediaUrl(delivery.narration.captions.url) } } : {})
         }
       : capabilities.narration && delivery?.narration?.url
         ? { ...delivery.narration, url: preloadedMedia.narration || mediaUrl(delivery.narration.url) }

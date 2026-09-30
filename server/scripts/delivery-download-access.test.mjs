@@ -4,6 +4,7 @@ import Delivery from '../src/models/Delivery.js';
 import DeliveryShareGrant from '../src/models/DeliveryShareGrant.js';
 import DeliveryPreviewFile from '../src/models/DeliveryPreviewFile.js';
 import sharp from 'sharp';
+import { cloudinary } from '../src/services/cloudinary.service.js';
 import { getDeliveryPreviewMedia, getWatermarkedDeliveryPhoto, updateDownloadLock, getPhotoDownload, streamPhotoDownload, getGalleryDownload, getPinboardStatusCard } from '../src/controllers/delivery.controller.js';
 import { signedImageUrl } from '../src/services/deliveryMedia.service.js';
 import { deliveryWatermarkedPreview, renderDeliveryWatermark, watermarkMediaToken, verifyWatermarkMediaToken } from '../src/services/deliveryWatermark.service.js';
@@ -152,6 +153,32 @@ test('owner preview token serves the private prepared file without fetching or d
   assert.doesNotMatch(res.headers.Location, /l_text/);
   assert.equal(res.headers['Cache-Control'], 'private, max-age=300');
   assert.equal(globalThis.fetch.mock.callCount(), 0);
+});
+
+test('uncached protected photos render directly in every format without waiting for a preview upload', async t => {
+  const doc = document();
+  doc.assets[0].publicId = 'offline/direct-watermark-regression';
+  stubFind(t, doc);
+  t.mock.method(DeliveryPreviewFile, 'findOne', () => ({ lean: async () => null }));
+  const input = await sharp({ create: { width: 960, height: 1200, channels: 3, background: '#ffffff' } }).jpeg().toBuffer();
+  t.mock.method(globalThis, 'fetch', async () => new Response(input, { headers: { 'content-type': 'image/jpeg' } }));
+  t.mock.method(cloudinary.uploader, 'upload_stream', () => { throw new Error('Client display must not wait for upload storage'); });
+  for (const format of ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign', 'gridboard']) {
+    doc.format = format;
+    const res = response();
+    await getWatermarkedDeliveryPhoto(photoRequest({ ownerId, text: 'Amara Photography' }), res);
+    assert.equal(res.statusCode, 200, format);
+    assert.equal(res.headers['Content-Type'], 'image/webp');
+    assert.equal(res.headers['X-Content-Type-Options'], 'nosniff');
+    assert.equal(res.headers.Location, undefined);
+    const metadata = await sharp(res.body).metadata();
+    assert.equal(metadata.width, 480);
+    assert.equal(metadata.height, 600);
+    const pixels = await sharp(res.body).removeAlpha().raw().toBuffer();
+    assert.ok(Array.from(pixels.subarray(480 * 3 * 280, 480 * 3 * 320)).some(value => value < 180), 'served preview contains the watermark');
+  }
+  assert.equal(cloudinary.uploader.upload_stream.mock.callCount(), 0);
+  assert.equal(globalThis.fetch.mock.callCount(), 1, 'formats share the protected source cache');
 });
 
 test('tampered preview tokens, wrong deliveries and arbitrary sizes cannot fetch photos', async t => {

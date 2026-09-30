@@ -130,8 +130,6 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const [closingLine, setClosingLine] = useState(initialDelivery?.creativeDirection?.closingLine || '');
   const [openingAssetId, setOpeningAssetId] = useState(initialDelivery?.v3?.openingAssetId || '');
   const [closingAssetId, setClosingAssetId] = useState(initialDelivery?.v3?.closingAssetId || '');
-  const [bookendVoiceSelected, setBookendVoiceSelected] = useState(initialDelivery?.v3?.narrationChoice === 'voice');
-  const [captionVoiceSelected, setCaptionVoiceSelected] = useState(initialDelivery?.v3?.captionNarrationChoice === 'voice');
   const [narrationVoiceId, setNarrationVoiceId] = useState(initialDelivery?.generationJob?.input?.voiceId || initialDelivery?.v3?.narrationVoiceId || initialDelivery?.narration?.voiceId || DEFAULT_NARRATION_VOICE_ID);
   const selectedVoiceName = NARRATION_VOICES.find(voice => voice.id === narrationVoiceId)?.name || 'Hannah';
   const [instructions, setInstructions] = useState({});
@@ -242,9 +240,9 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
         if (!active) return;
         const next = data.data;
         setDraft(next); setJob(next.generationJob || null);
-        if (next.generationJob?.status === 'failed') { setError(next.generationJob.errorCode === 'NARRATION_CAPTION_TOO_LONG' ? 'Veylo could not finish fitting the spoken captions. Retry the voice; Veylo will adjust the spoken wording for you.' : next.generationJob.errorMessage || 'This step failed. Retry it.'); return; }
+        if (next.generationJob?.status === 'failed') { setError(['NARRATION_CAPTION_TOO_LONG', 'NARRATION_FITTING_FAILED'].includes(next.generationJob.errorCode) ? 'Retry to prepare the opening and closing voice, or choose Skip voice to continue with text.' : next.generationJob.errorMessage || 'This step failed. Retry it.'); return; }
         if (stage === 'preparing' && next.v3?.step === 'showcase') { syncShowcase(next); setStage('showcase'); }
-        if (stage === 'narration-job' && next.v3?.step === 'music' && (next.v3?.narrationChoice === 'voice' || next.v3?.captionNarrationChoice === 'voice')) setStage('music');
+        if (stage === 'narration-job' && next.v3?.step === 'music' && next.v3?.narrationChoice === 'voice') setStage('music');
       } catch (failure) { if (active) setError(message(failure)); }
     };
     poll();
@@ -403,20 +401,17 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
       const body = { assetIds: selected, frames: selected.map(assetId => ({ assetId, headline: headlines[assetId].trim(), caption: captions[assetId].trim() })), title: title.trim(), openingLine: openingLine.trim(), closingLine: closingLine.trim(), openingAssetId, closingAssetId };
       await api.patch('/v1/deliveries/' + draft._id + '/v3/showcase', body);
       const next = await refresh();
-      setBookendVoiceSelected(next?.v3?.narrationChoice === 'voice');
-      setCaptionVoiceSelected(next?.v3?.captionNarrationChoice === 'voice');
       setStage(nextAfterShowcase(next.format));
     });
   }
   async function generateNarration() {
-    if (!bookendVoiceSelected && !captionVoiceSelected) { setError('Choose the opening and closing voice, spoken captions, or both.'); return; }
     await action('narrate', async () => {
-      const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/narrate', { voiceId: narrationVoiceId, bookends: bookendVoiceSelected, captions: captionVoiceSelected });
+      const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/narrate', { voiceId: narrationVoiceId });
       setJob(data.data); setStage('narration-job');
     });
   }
   async function skipNarration() {
-    await action('skip', async () => { await api.post('/v1/deliveries/' + draft._id + '/v3/narration/skip'); await refresh(); setBookendVoiceSelected(false); setCaptionVoiceSelected(false); setStage('music'); });
+    await action('skip', async () => { await api.post('/v1/deliveries/' + draft._id + '/v3/narration/skip'); await refresh(); setStage('music'); });
   }
   async function selectTrack(track) {
     await action('music', async () => {
@@ -641,15 +636,11 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
           <div className="v3-actions"><StepButton secondary onClick={() => { captionRequest.current?.abort(); setStage('upload'); }}><ArrowLeft size={17} /> Back to photos</StepButton><StepButton onClick={saveShowcase} disabled={!!busy}><ArrowRight size={17} /> Continue</StepButton></div>
         </>}
         {(stage === 'narration' || stage === 'narration-job') && <>
-          <Head eyebrow="05 / OPTIONAL PHOTO STORY VOICE" title="Choose a voice for your story.">Veylo fits the spoken wording to each six-second photo. Your full written captions stay unchanged.</Head>
+          <Head eyebrow="05 / OPTIONAL PHOTO STORY VOICE" title="Choose a voice for your story.">Add a voice to the opening and closing messages. Photo captions stay on screen.</Head>
           <NarrationVoicePicker value={narrationVoiceId} onChange={setNarrationVoiceId} disabled={!!busy || stage === 'narration-job' && job?.status !== 'failed'} />
           <div className="v3-narration-layout">
             <section className="v3-panel v3-narration-choice">
-              <div className="v3-narration-mark"><Mic2 size={26} /></div><span>SELECTED VOICE</span><h2>{selectedVoiceName}</h2><p>Choose voice for the story’s opening and closing, the photo captions, or both. The photos keep their six-second timing.</p>
-              <div className="v3-narration-options">
-                <label><input type="checkbox" checked={bookendVoiceSelected} disabled={!!busy || stage === 'narration-job' && job?.status !== 'failed'} onChange={event => setBookendVoiceSelected(event.target.checked)} /><span><strong>Opening and closing</strong><small>{selectedVoiceName} reads the two messages around the story.</small></span></label>
-                <label><input type="checkbox" checked={captionVoiceSelected} disabled={!!busy || stage === 'narration-job' && job?.status !== 'failed'} onChange={event => setCaptionVoiceSelected(event.target.checked)} /><span><strong>Photo captions</strong><small>{selectedVoiceName} reads each caption, shortened for speech when needed.</small></span></label>
-              </div>
+              <div className="v3-narration-mark"><Mic2 size={26} /></div><span>SELECTED VOICE</span><h2>{selectedVoiceName}</h2><p>{selectedVoiceName} reads the opening and closing messages. The photo captions remain written, and each photo still shows for six seconds.</p>
               <div className="v3-narration-facts"><span>Text stays on screen</span><span>Six seconds per photo</span><span>Music lowers under speech</span></div>
             </section>
             <div className="v3-narration-messages">
@@ -657,9 +648,9 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
               <article><span>CLOSING MESSAGE</span><p>{closingLine}</p></article>
             </div>
           </div>
-          {stage === 'narration-job' && job?.status !== 'failed' && <div className="v3-upload-progress" role="status"><span>{job?.stage === 'fitting-captions' ? 'Fitting spoken captions to the photos' : job?.stage === 'recording-captions' ? 'Preparing spoken captions' : job?.stage === 'recording-bookends' ? 'Preparing opening and closing voice' : 'Preparing selected voice'} · {job?.progress || 0}%</span><div><i style={{ transform: 'scaleX(' + (job?.progress || 0) / 100 + ')' }} /></div></div>}
-          {error && <div className="v3-narration-error" role="alert"><AlertCircle size={22} aria-hidden="true" /><div><strong>The voice isn’t ready yet.</strong><p>{typeof error === 'string' ? error : error.text}</p><small>Your written captions are saved. Retry the voice below, or choose Keep all words on screen to continue.</small></div></div>}
-          <div className="v3-actions v3-narration-actions"><StepButton secondary onClick={() => setStage('showcase')}><ArrowLeft size={17} /> Back to showcase</StepButton><StepButton secondary onClick={skipNarration} disabled={!!busy}>Keep all words on screen</StepButton><StepButton onClick={generateNarration} disabled={!!busy || (!bookendVoiceSelected && !captionVoiceSelected) || stage === 'narration-job' && job?.status !== 'failed'}>{job?.status === 'failed' ? <><RefreshCw size={16} /> Retry selected voice</> : <><Mic2 size={17} /> Generate selected voice</>}</StepButton></div>
+          {stage === 'narration-job' && job?.status !== 'failed' && <div className="v3-upload-progress" role="status"><span>Preparing opening and closing voice · {job?.progress || 0}%</span><div><i style={{ transform: 'scaleX(' + (job?.progress || 0) / 100 + ')' }} /></div></div>}
+          {error && <div className="v3-narration-error" role="alert"><AlertCircle size={22} aria-hidden="true" /><div><strong>The voice isn’t ready yet.</strong><p>{typeof error === 'string' ? error : error.text}</p><small>Your messages and captions are saved. Retry below, or choose Skip voice to continue with text.</small></div></div>}
+          <div className="v3-actions v3-narration-actions"><StepButton secondary onClick={() => setStage('showcase')}><ArrowLeft size={17} /> Back to showcase</StepButton><StepButton secondary onClick={skipNarration} disabled={!!busy}>Skip voice</StepButton><StepButton onClick={generateNarration} disabled={!!busy || stage === 'narration-job' && job?.status !== 'failed'}>{job?.status === 'failed' ? <><RefreshCw size={16} /> Retry selected voice</> : <><Mic2 size={17} /> Generate selected voice</>}</StepButton></div>
         </>}
         {stage === 'music' && <>
           <Head eyebrow="06 / MUSIC" title="Find the right soundtrack.">Preview the music, check how it fits the delivery, then choose a track. Afrobeat and Amapiano are listed first.</Head>

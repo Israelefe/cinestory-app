@@ -32,6 +32,34 @@ test('draft updates preserve media, accept new URLs, and never reuse removed or 
   expect(mergeDeliveryDraft(previous, { ...raw, soundtrack: null }).soundtrack).toBeNull();
 });
 
+for (const kind of ['showcase', 'pinboard']) for (const [width, height] of [[1080, 720], [1366, 768], [1440, 900]]) {
+  test(`${kind} creation preview stays readable before and after scrolling at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    const base = fixture();
+    const draft = kind === 'pinboard' ? base : { ...base, kind, format: 'canvas', v3: { step: 'design' }, curatedAssetIds: base.assets.map(asset => asset.assetId), creativeDirection: { title: 'Birthday portraits', openingLine: 'Your birthday portraits are here.', closingLine: 'Enjoy your full collection.', palette, typography: base.pinboard.typography, frames: base.assets.map(asset => ({ assetId: asset.assetId, headline: 'A year of your own', caption: 'Lora, take this birthday at your own pace.' })) } };
+    await page.route('**/api/v1/**', route => {
+      const path = new URL(route.request().url()).pathname;
+      const reply = data => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data }) });
+      if (path.endsWith('/auth/me')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, user: { _id: '507f1f77bcf86cd799439012', name: 'Amara', emailVerified: true, onboardingComplete: true, plan: 'free' } }) });
+      if (path.endsWith('/billing/status')) return reply({ plan: 'free', limits: { photosPerDelivery: 100 }, usage: { deliveriesRemaining: 3 } });
+      if (path.endsWith(`/deliveries/${draftId}`)) return reply(draft);
+      return reply([]);
+    });
+    await page.goto(`/create?draft=${draftId}`);
+    const phone = page.locator(kind === 'pinboard' ? '.pb-create-preview .v-phone-device' : '.v3-design-preview .v-phone-device');
+    await expect.poll(() => phone.evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThan(280);
+    await phone.scrollIntoViewIfNeeded();
+    await expect.poll(() => phone.evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThan(280);
+    const bounds = await phone.boundingBox();
+    expect(bounds.height).toBeLessThan(height - 30);
+    expect(bounds.y).toBeGreaterThanOrEqual(0);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(height + 1);
+    expect(await phone.locator('iframe').evaluate(element => element.contentWindow.innerWidth)).toBe(420);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    if (width === 1440) await page.screenshot({ path: `../.visual-review/${kind}-readable-preview.png` });
+  });
+}
+
 for (const width of [320, 768, 834, 1440]) {
   test(`GridBoard colour changes keep layout thumbnails and all creation previews at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });

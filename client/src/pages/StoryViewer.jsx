@@ -237,7 +237,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
  const galleryPhotos = story?.galleryPhotos || photos;
  const photo = photos[index];
  const running = started && !paused && !finished && !gallery && !holding && !hidden;
- const captionNarration = deliveryProp?.schemaVersion === 3 ? deliveryProp?.narration?.captions : deliveryProp?.narration;
+ const captionNarration = deliveryProp?.schemaVersion === 3 ? null : deliveryProp?.narration;
  const captionNarrationUrl = captionNarration?.url || (deliveryProp?.schemaVersion !== 3 ? deliveryProp?.narration?.url : '');
  const narrationSegments = captionNarration?.segments || (deliveryProp?.schemaVersion !== 3 ? deliveryProp?.narration?.segments : null) || EMPTY_NARRATION_SEGMENTS;
  const hasNarration = Boolean(captionNarrationUrl);

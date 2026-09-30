@@ -2,9 +2,8 @@ import { Readable } from 'stream';
 import { cloudinary, configureCloudinary } from './cloudinary.service.js';
 import { deliveryFolder } from './deliveryMedia.service.js';
 import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID, narrationVoice } from '../constants/narrationVoices.js';
-import { fitV3SpokenCaptions } from './deliveryV3AI.service.js';
 
-// Read the approved messages and fit spoken captions to the fixed photo slots.
+// V3 reads only the opening and closing. Legacy narration helpers remain below.
 export const NARRATION_RENDER_VERSION = 'flux-captions-v8';
 export const NARRATION_BOOKEND_RENDER_VERSION = 'flux-bookends-v4';
 const MAX_NARRATION_CHUNK_CHARACTERS = 2000;
@@ -396,56 +395,8 @@ export async function generateNarration(delivery, { voiceId = DEFAULT_NARRATION_
   };
 }
 
-function v3NarrationAudioIds(narration) {
-  return [narration?.opening?.publicId, narration?.closing?.publicId, narration?.captions?.publicId].filter(Boolean);
-}
-
-export async function synthesizeV3Narration(delivery, { bookends = true, captions = false, voiceId = DEFAULT_NARRATION_VOICE_ID } = {}, onProgress) {
+export async function synthesizeV3Narration(delivery, { voiceId = DEFAULT_NARRATION_VOICE_ID } = {}, onProgress) {
   const voice = requiredVoice(voiceId);
-  if (!bookends && !captions) {
-    throw Object.assign(new Error('Choose an opening or closing voice, spoken captions, or both.'), { code: 'V3_NARRATION_SELECTION_REQUIRED' });
-  }
-  const narration = { voiceId: voice.id, voiceName: voice.name };
-  try {
-    if (bookends) {
-      await onProgress?.('recording-bookends', 18);
-      Object.assign(narration, await synthesizeV3Bookends(delivery, { voiceId: voice.id }));
-    }
-    if (captions) {
-      const approved = captionSegments(delivery);
-      const spokenTexts = new Map();
-      const budgets = new Map(approved.map(segment => [String(segment.assetIds[0]), narrationLine(segment.text).split(/\s+/).length]));
-      // Measure the original speech first. Character counts and word counts
-      // alone cannot say whether a particular voice fits the six-second slot.
-      let needsFitting = [];
-      for (let attempt = 0; attempt < 4; attempt += 1) {
-        if (needsFitting.length) {
-          await onProgress?.('fitting-captions', (bookends ? 50 : 20) + attempt * 10);
-          const fitted = await fitV3SpokenCaptions(delivery, needsFitting.map(segment => {
-            const assetId = String(segment.assetIds[0]);
-            return { assetId, caption: segment.text, previousSpokenText: spokenTexts.get(assetId) || null, maxWords: budgets.get(assetId), maxCharacters: 220 };
-          }));
-          for (const [assetId, text] of fitted) spokenTexts.set(assetId, text);
-        }
-        await onProgress?.('recording-captions', (bookends ? 56 : 26) + attempt * 10);
-        try {
-          narration.captions = await generateNarration(delivery, { voiceId: voice.id, speed: 1, maxSegmentDuration: 5.45, spokenTexts });
-          break;
-        } catch (error) {
-          if (error.code !== 'NARRATION_CAPTION_TOO_LONG' || attempt === 3) throw error;
-          needsFitting = approved.filter(segment => error.overlongSegments.some(overlong => overlong.assetId === String(segment.assetIds[0])));
-          for (const overlong of error.overlongSegments) {
-            const words = narrationLine(overlong.text).split(/\s+/).length;
-            budgets.set(overlong.assetId, Math.max(3, Math.min(budgets.get(overlong.assetId) - 1, Math.floor(words * 4.9 / overlong.duration))));
-          }
-        }
-      }
-    }
-    return narration;
-  } catch (error) {
-    await Promise.all(v3NarrationAudioIds(narration).map(publicId =>
-      cloudinary.uploader.destroy(publicId, { resource_type: 'video', type: 'authenticated' }).catch(() => {})
-    ));
-    throw error;
-  }
+  await onProgress?.('recording-bookends', 18);
+  return synthesizeV3Bookends(delivery, { voiceId: voice.id });
 }

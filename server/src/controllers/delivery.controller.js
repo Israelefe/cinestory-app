@@ -22,7 +22,7 @@ import { sendDeliveryDownloadedEmail, sendDeliveryViewedEmail, sendShareGrantEma
 import QRCode from 'qrcode';
 import { renderGridboardStatusCard } from '../services/gridboardStatusCard.service.js';
 import { deliveryWatermarkedPreview, watermarkMediaToken, verifyWatermarkMediaToken, watermarkedAssetMedia } from '../services/deliveryWatermark.service.js';
-import { ensureStoredWatermark, storedDeliveryPreviews, warmDeliveryPreviews, warmLockedDeliveryPreviews, removeStoredPreviews } from '../services/deliveryPreviewCache.service.js';
+import { findStoredWatermark, storedDeliveryPreviews, warmDeliveryPreviews, warmLockedDeliveryPreviews, removeStoredPreviews } from '../services/deliveryPreviewCache.service.js';
 import { DEFAULT_NARRATION_VOICE_ID, NARRATION_VOICES } from '../constants/narrationVoices.js';
 import { DELIVERY_SOUNDTRACKS, deliverySoundtrack, deliverySoundtrackFile } from '../constants/deliverySoundtracks.js';
 import { supportsDeliveryMusic, supportsDeliveryNarration } from '../constants/deliveryCapabilities.js';
@@ -1076,7 +1076,7 @@ async function publicPayload(delivery, grant = null) {
   const object = delivery.toObject();
   delete object.userId;
   for (const key of ['brief', 'collectionAnalysis', 'formatRecommendations']) delete object[key];
-  if (object.schemaVersion === 3 && object.v3) object.v3 = { openingAssetId: object.v3.openingAssetId, closingAssetId: object.v3.closingAssetId, narrationChoice: object.v3.narrationChoice, captionNarrationChoice: object.v3.captionNarrationChoice };
+  if (object.schemaVersion === 3 && object.v3) object.v3 = { openingAssetId: object.v3.openingAssetId, closingAssetId: object.v3.closingAssetId, narrationChoice: object.v3.narrationChoice, captionNarrationChoice: 'skip' };
   delete object.access?.pinDigest;
   const visibleDeliveryAssets = grantAssets(delivery, grant);
   const visibleAssets = new Set(visibleDeliveryAssets.map(asset => asset.assetId));
@@ -1140,7 +1140,7 @@ async function publicPayload(delivery, grant = null) {
   if (object.schemaVersion === 3 && object.narration) {
     if (object.narration.opening?.publicId) object.narration.opening.url = signedImageUrl(object.narration.opening.publicId, { resourceType: 'video' });
     if (object.narration.closing?.publicId) object.narration.closing.url = signedImageUrl(object.narration.closing.publicId, { resourceType: 'video' });
-    if (object.narration.captions?.publicId) object.narration.captions.url = signedImageUrl(object.narration.captions.publicId, { resourceType: 'video' });
+    delete object.narration.captions;
   }
   if (object.soundtrack?.publicId) object.soundtrack.url = signedImageUrl(object.soundtrack.publicId, { resourceType: 'video' });
   if (object.soundtrack?.catalogId && object.soundtrack?.source === 'curated') {
@@ -1517,11 +1517,19 @@ export async function getWatermarkedDeliveryPhoto(req, res) {
     }
     const asset = delivery?.assets.find(item => item.assetId === req.params.assetId);
     if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
-    const file = await ensureStoredWatermark(delivery, asset, text);
-    const variants = [...file.variants].sort((a, b) => a.width - b.width);
-    const variant = req.query.thumbnail === '1' ? variants[0] : variants.find(item => item.width >= width) || variants.at(-1);
+    const file = await findStoredWatermark(delivery, asset, text);
     const remaining = Math.max(0, Number(claims.exp) - Math.floor(Date.now() / 1000));
-    return res.set({ 'Cache-Control': `private, max-age=${Math.min(300, remaining)}`, 'X-Content-Type-Options': 'nosniff' }).redirect(302, signedImageUrl(variant.publicId, { original: true, format: 'webp' }));
+    res.set({ 'Cache-Control': `private, max-age=${Math.min(300, remaining)}`, 'X-Content-Type-Options': 'nosniff' });
+    if (file) {
+      const variants = [...file.variants].sort((a, b) => a.width - b.width);
+      const variant = req.query.thumbnail === '1' ? variants[0] : variants.find(item => item.width >= width) || variants.at(-1);
+      return res.redirect(302, signedImageUrl(variant.publicId, { original: true, format: 'webp' }));
+    }
+    // A client must not wait for preview uploads to finish. Serve only the
+    // rendered watermark, then prepare CDN variants for subsequent visits.
+    const buffer = await deliveryWatermarkedPreview(asset, text, { width, thumbnail: req.query.thumbnail === '1' });
+    warmDeliveryPreviews({ _id: delivery._id, userId: delivery.userId, assets: [asset] }, text);
+    return res.set('Content-Type', 'image/webp').send(buffer);
   } catch (error) {
     console.warn('[deliveries/watermarked-photo]', { deliveryId: req.params.id, assetId: req.params.assetId, upstreamStatus: error.upstreamStatus, code: error.code || 'PHOTO_PREVIEW_FAILED' });
     return res.status(502).json({ success: false, message: 'The photo preview could not be loaded. Please try again.' });

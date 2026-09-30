@@ -35,7 +35,7 @@ test('client and server offer the same four male and four female English Flux vo
   }
 });
 
-test('every chosen voice reaches Deepgram for opening, closing and captions and is saved in narration metadata', async t => {
+test('every chosen voice reaches Deepgram for opening and closing only, even for legacy caption requests and is saved in narration metadata', async t => {
   const requests = [];
   let text = '', counter = 0;
   t.mock.method(globalThis, 'fetch', async (url, options) => {
@@ -56,14 +56,12 @@ test('every chosen voice reaches Deepgram for opening, closing and captions and 
   for (const voice of NARRATION_VOICES) {
     requests.length = 0;
     const result = await synthesizeV3Narration(delivery, { bookends: true, captions: true, voiceId: voice.id });
-    assert.deepEqual(requests, [voice.id, voice.id, voice.id]);
+    assert.deepEqual(requests, [voice.id, voice.id]);
     assert.equal(result.voiceId, voice.id);
     assert.equal(result.voiceName, voice.name);
-    assert.equal(result.captions.voiceId, voice.id);
-    assert.equal(result.captions.modelId, voice.id);
-    assert.equal(result.captions.voiceName, voice.name);
-    assert.equal(result.captions.segments[0].assetIds[0], 'photo-one');
-    assert.ok(result.captions.segments[0].endSec - result.captions.segments[0].startSec <= 5.45);
+    assert.equal(result.captions, undefined);
+    assert.ok(result.opening.publicId);
+    assert.ok(result.closing.publicId);
     assert.equal(delivery.creativeDirection.frames[0].caption, 'Ada, take this new year at your own pace.');
   }
 });
@@ -81,6 +79,8 @@ test('the queue records the requested voice and verifies delivery ownership', as
     assert.equal(res.statusCode, 202);
     assert.equal(res.body.data.input.voiceId, voice.id);
     assert.equal(res.body.data.input.revision, 2);
+    assert.equal(res.body.data.input.bookends, true);
+    assert.equal(res.body.data.input.captions, false);
   }
 });
 
@@ -126,7 +126,7 @@ test('approval accepts existing Hannah audio and newly generated selected voices
   for (const legacy of [true, false]) {
     const voiceId = legacy ? 'flux-hannah-en' : 'flux-kit-en';
     doc.v3 = { revision: 2, narrationChoice: 'voice', captionNarrationChoice: 'voice', ...(legacy ? {} : { narrationVoiceId: voiceId }) };
-    doc.narration = { voiceId, renderVersion: legacy ? 'flux-hannah-bookends-v3' : 'flux-bookends-v4', opening: { publicId: 'private/opening' }, closing: { publicId: 'private/closing' }, captions: { voiceId, publicId: 'private/captions', renderVersion: legacy ? 'flux-hannah-captions-v6' : 'flux-captions-v7' } };
+    doc.narration = { voiceId, renderVersion: legacy ? 'flux-hannah-bookends-v3' : 'flux-bookends-v4', opening: { publicId: 'private/opening' }, closing: { publicId: 'private/closing' }, captions: undefined };
     const res = response();
     await v3Approve({ params: { id }, user: { id: ownerId } }, res);
     assert.equal(res.statusCode, 200);
