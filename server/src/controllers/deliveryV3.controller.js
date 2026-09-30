@@ -122,7 +122,7 @@ export async function v3Assist(req, res) {
     if (!input.success) return bad(res, input);
     const { mode, purpose, shootType } = input.data;
     if (mode === 'improve' && !purpose) return res.status(400).json({ success: false, code: 'V3_PURPOSE_REQUIRED', field: 'purpose', message: 'Write the purpose of the shoot before improving it.' });
-    const data = mode === 'improve' ? { improved: await improvePurpose({ purpose, shootType }) } : mode === 'clarify' ? { clear: true, questions: [] } : await recommendV3Format(shootType, purpose);
+    const data = mode === 'improve' ? { improved: await improvePurpose({ purpose }), sourcePurpose: purpose, meaningPreserved: true } : mode === 'clarify' ? { clear: true, questions: [] } : await recommendV3Format(shootType, purpose);
     res.json({ success: true, data });
   } catch (error) { fail(res, error); }
 }

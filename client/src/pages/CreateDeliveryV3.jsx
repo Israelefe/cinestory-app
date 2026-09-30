@@ -108,6 +108,10 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const [purpose, setPurpose] = useState(initialDelivery?.brief || '');
   const [originalPurpose, setOriginalPurpose] = useState(initialDelivery?.v3?.originalPurpose || '');
   const [purposeFeedback, setPurposeFeedback] = useState('');
+  const purposeRevision = useRef(0);
+  const purposeRequest = useRef(null);
+  const purposePending = useRef(false);
+  useEffect(() => () => purposeRequest.current?.abort(), []);
   const [recommendation, setRecommendation] = useState(null);
   const [format, setFormat] = useState(initialDelivery?.format || '');
   const [uploads, setUploads] = useState({});
@@ -272,13 +276,30 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   useEffect(() => { setActivePhotoIndex(current => Math.min(current, Math.max(0, selected.length - 1))); }, [selected.length]);
 
   async function improve() {
+    if (busy || purposePending.current) return;
     if (!purpose.trim() || !actualShootType) { setError('Enter the shoot type and purpose first.'); return; }
+    const source = purpose.trim();
+    const revision = purposeRevision.current;
+    const request = new AbortController();
+    purposePending.current = true;
+    purposeRequest.current = request;
+    setPurposeFeedback('');
     await action('improve', async () => {
-      const { data } = await api.post('/v1/deliveries/v3/assist', { mode: 'improve', purpose, shootType: actualShootType });
-      const improved = String(data.data?.improved || '').trim();
-      if (!improved) throw new Error('Veylo could not improve that wording. Your original text is unchanged; try again.');
-      if (improved === purpose.trim()) { setPurposeFeedback('Your wording already reads clearly, so it was left unchanged.'); return; }
-      setOriginalPurpose(current => current || purpose); setPurpose(improved); setPurposeFeedback('Wording improved. Your original is saved so you can restore it.');
+      try {
+        const { data } = await api.post('/v1/deliveries/v3/assist', { mode: 'improve', purpose: source, shootType: actualShootType }, { signal: request.signal });
+        if (request.signal.aborted) return;
+        if (revision !== purposeRevision.current) { setPurposeFeedback('You edited the text while Veylo was working. Your latest words have been kept.'); return; }
+        const suggestion = data.data;
+        const improved = typeof suggestion?.improved === 'string' ? suggestion.improved.trim() : '';
+        if (!improved || suggestion.sourcePurpose !== source || suggestion.meaningPreserved !== true) throw new Error('Veylo could not check that suggestion against your words. Your text has been kept. Please try again.');
+        if (improved === source) { setPurposeFeedback('No wording changes were suggested. Your text is unchanged.'); return; }
+        setOriginalPurpose(current => current || purpose); setPurpose(improved); setPurposeFeedback('Wording improved. Your original is saved so you can restore it.');
+      } catch (failure) {
+        if (!request.signal.aborted) throw failure;
+      } finally {
+        purposePending.current = false;
+        if (purposeRequest.current === request) purposeRequest.current = null;
+      }
     });
   }
   async function detailsNext() {
@@ -547,13 +568,13 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
             <section className="v3-panel v3-shoot-fields">
               <div className="v3-panel-heading"><span>01</span><div><h2>Who is this delivery for?</h2><p>Set the client and shoot type.</p></div></div>
               <label>Client name<input maxLength={100} value={clientName} onChange={event => setClientName(event.target.value)} placeholder="Ada" /></label>
-              <label>Type of shoot<select value={shootType} onChange={event => { setShootType(event.target.value); setRecommendation(null); setFormat(''); }}><option value="">Choose a shoot type</option>{SHOOT_TYPES.map(value => <option key={value}>{value}</option>)}</select></label>
-              {shootType === 'Other' && <label>What type of shoot?<input maxLength={80} value={customShoot} onChange={event => setCustomShoot(event.target.value)} placeholder="e.g. bridal shower" /></label>}
+              <label>Type of shoot<select value={shootType} onChange={event => { purposeRevision.current += 1; setShootType(event.target.value); setRecommendation(null); setFormat(''); }}><option value="">Choose a shoot type</option>{SHOOT_TYPES.map(value => <option key={value}>{value}</option>)}</select></label>
+              {shootType === 'Other' && <label>What type of shoot?<input maxLength={80} value={customShoot} onChange={event => { purposeRevision.current += 1; setCustomShoot(event.target.value); }} placeholder="e.g. bridal shower" /></label>}
             </section>
             <section className="v3-panel v3-purpose-panel">
               <div className="v3-panel-heading"><span>02</span><div><h2>What was the shoot for?</h2><p>Use your own words. A short, plain description is enough.</p></div></div>
-              <label className="v3-purpose-label"><span>Purpose of the shoot</span><textarea rows={8} maxLength={3000} value={purpose} onChange={event => { setPurpose(event.target.value); setPurposeFeedback(''); }} placeholder="These photos were taken for Ada's 25th birthday celebration…" /><small>Include names and the occasion if they matter to the story.</small></label>
-              <div className="v3-assist"><button type="button" onClick={improve} disabled={!!busy}>{busy === 'improve' ? <LoaderCircle className="v3-spin" size={16} /> : <RefreshCw size={16} />} Improve my wording</button>{originalPurpose && <button type="button" className="is-quiet" onClick={() => { setPurpose(originalPurpose); setOriginalPurpose(''); setPurposeFeedback('Your original wording is back.'); }}><RotateCcw size={16} /> Revert to my words</button>}<p aria-live="polite">{purposeFeedback || 'Keeps your meaning and details. Your original wording is saved so you can restore it.'}</p></div>
+              <label className="v3-purpose-label"><span>Purpose of the shoot</span><textarea rows={8} maxLength={3000} value={purpose} onChange={event => { purposeRevision.current += 1; setPurpose(event.target.value); setOriginalPurpose(''); setPurposeFeedback(''); }} placeholder="These photos were taken for Ada's 25th birthday celebration…" /><small>Include names and the occasion if they matter to the story.</small></label>
+              <div className="v3-assist"><button type="button" onClick={improve} disabled={!!busy}>{busy === 'improve' ? <LoaderCircle className="v3-spin" size={16} /> : <RefreshCw size={16} />} Improve my wording</button>{originalPurpose && <button type="button" className="is-quiet" disabled={!!busy} onClick={() => { purposeRevision.current += 1; setPurpose(originalPurpose); setOriginalPurpose(''); setPurposeFeedback('Your original wording is back.'); }}><RotateCcw size={16} /> Revert to my words</button>}<p aria-live="polite">{purposeFeedback || 'Keeps your meaning and details. Your original wording is saved so you can restore it.'}</p></div>
             </section>
           </div>
           <div className="v3-actions"><StepButton onClick={detailsNext} disabled={!!busy || billingLoading || !draft && quotaReached}>{busy ? <LoaderCircle className="v3-spin" size={17} /> : <ArrowRight size={17} />} Continue to formats</StepButton></div>

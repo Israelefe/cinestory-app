@@ -91,7 +91,7 @@ for (const width of [320, 834, 1440]) {
       const reply = data => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': 'http://127.0.0.1:5178', 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ success: true, data }) });
       if (path.endsWith('/auth/me')) return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': 'http://127.0.0.1:5178', 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ success: true, user }) });
       if (path.endsWith('/deliveries/v3/assist')) {
-        if (body.mode === 'improve') return reply({ improved: body.purpose === 'Lora' ? "Lora's birthday portraits." : "Celebrating Ada's 25th birthday." });
+        if (body.mode === 'improve') return reply({ improved: body.purpose.startsWith('Convennant') ? "Celebrating Convennant's 25th birthday." : "Celebrating Ada's 25th birthday.", sourcePurpose: body.purpose, meaningPreserved: true });
         if (body.mode === 'clarify') return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ success: false, message: 'The purpose must not be assessed.' }) });
         recommendationInputs.push(body);
         return reply({ format: 'photo-story', reason: 'A birthday shoot works well as a short personal sequence.' });
@@ -108,10 +108,10 @@ for (const width of [320, 834, 1440]) {
     if (await cookieButton.isVisible()) await cookieButton.click();
     await page.getByLabel('Client name').fill('Ada');
     await page.getByLabel('Type of shoot').selectOption('Birthday');
-    const suppliedPurpose = width === 320 ? 'Lora' : "Ada's 25th birthday celebration";
+    const suppliedPurpose = width === 320 ? 'Convennant 25th Birthday Celebration' : 'Ada 25th Birthday Celebration';
     await page.getByLabel('Purpose of the shoot').fill(suppliedPurpose);
     await page.getByRole('button', { name: 'Improve my wording' }).click();
-    await expect(page.getByLabel('Purpose of the shoot')).toHaveValue(width === 320 ? "Lora's birthday portraits." : "Celebrating Ada's 25th birthday.");
+    await expect(page.getByLabel('Purpose of the shoot')).toHaveValue(width === 320 ? "Celebrating Convennant's 25th birthday." : "Celebrating Ada's 25th birthday.");
     await expect(page.getByText('Wording improved. Your original is saved so you can restore it.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Revert to my words' })).toBeVisible();
     await page.getByRole('button', { name: 'Revert to my words' }).click();

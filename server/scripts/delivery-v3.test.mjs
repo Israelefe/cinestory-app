@@ -3,6 +3,7 @@ import test from 'node:test';
 import { V3_FORMATS, contrastRatio, validShowcase } from '../src/constants/deliveryV3.js';
 import { analyzeAllV3, calmGridboardPalette, directV3, directV3Pinboard, improvePurpose, nextGridboardPalette, recommendV3Format, regenerateV3Caption, repickV3Palette } from '../src/services/deliveryV3AI.service.js';
 import { captionSegments, generateNarration, narrationLine, NARRATION_RENDER_VERSION } from '../src/services/narration.service.js';
+import { v3Assist } from '../src/controllers/deliveryV3.controller.js';
 
 const ids = Array.from({ length: 25 }, (_, index) => 'asset-' + index);
 const narrativeHeadlines = ['Twenty-five begins', "Ada's Birthday Year", 'Ada at Twenty-Five', "Ada's Next Birthday", "Ada's Birthday, Her Terms", 'Twenty-Five, Ada’s Way', 'Ada Turns Twenty-Five', 'A Birthday for Ada', "Ada's Celebration Ahead", 'Birthday Year for Ada'];
@@ -258,12 +259,12 @@ test('purpose improvement returns only the edited purpose when the model echoes 
   try {
     assert.equal(await improvePurpose({ purpose: 'Lora 25th Birthday Celebration', shootType: 'Birthday' }), "Celebrating Lora's 25th birthday.");
     const userText = calls[0].messages[1].content[0].text;
-    assert.deepEqual(JSON.parse(userText), { shootType: 'Birthday', purpose: 'Lora 25th Birthday Celebration' });
+    assert.deepEqual(JSON.parse(userText), { purpose: 'Lora 25th Birthday Celebration' });
   } finally { restore(); }
 });
 
 test('purpose improvement rejects unrelated model text', async () => {
-  const restore = mockModel([{ improved: 'Shoot type: Birthday\nA lovely day full of joy.' }], []);
+  const restore = mockModel([{ improved: 'Shoot type: Birthday\nA lovely day full of joy.' }, { improved: 'A lovely day full of joy.' }], []);
   try {
     await assert.rejects(improvePurpose({ purpose: 'Lora 25th Birthday Celebration', shootType: 'Birthday' }), { code: 'V3_INVALID_AI_RESPONSE' });
   } finally { restore(); }
@@ -453,6 +454,90 @@ test('initial generation rewrites the reported photo descriptions despite their 
       assert.match(call.messages[1].content[0].text, /visible smile/);
       assert.doesNotMatch(call.messages[1].content[0].text, /velvet|earrings|sunglasses|telephone|freckles/);
     }
+  } finally { restore(); }
+});
+
+test('purpose improvement rejects an invented name and retries only from the source', async () => {
+  const calls = [];
+  const restore = mockModel([
+    { improved: "Celebrating Lora's 25th birthday." },
+    { improved: "Celebrating Convennant's 25th birthday." }
+  ], calls);
+  try {
+    assert.equal(await improvePurpose({ purpose: 'Convennant 25th Birthday Celebration', shootType: 'Birthday' }), "Celebrating Convennant's 25th birthday.");
+    assert.equal(calls.length, 2);
+    for (const call of calls) {
+      assert.doesNotMatch(JSON.stringify(call), /Lora|Ada|previousSuggestion/);
+      assert.equal(JSON.parse(call.messages[1].content[0].text).purpose, 'Convennant 25th Birthday Celebration');
+    }
+  } finally { restore(); }
+});
+
+test('purpose improvement does not add a name or borrow facts from the shoot type', async () => {
+  const calls = [];
+  const restore = mockModel([
+    { improved: "Celebrating Lora's 25th birthday." },
+    { improved: 'Celebrating a 25th birthday.' }
+  ], calls);
+  try {
+    assert.equal(await improvePurpose({ purpose: '25th birthday celebration', shootType: 'Portrait' }), 'Celebrating a 25th birthday.');
+    assert.doesNotMatch(JSON.stringify(calls), /Portrait|Lora/);
+  } finally { restore(); }
+});
+
+test('purpose improvement keeps the original when both suggestions change the facts', async () => {
+  const restore = mockModel([
+    { improved: "Celebrating Lora's 25th birthday." },
+    { improved: "Celebrating Convennant's 30th birthday." }
+  ], []);
+  try {
+    await assert.rejects(improvePurpose({ purpose: 'Convennant 25th Birthday Celebration', shootType: 'Birthday' }), error => error.code === 'V3_INVALID_AI_RESPONSE' && error.status === 502 && /original text has been kept/.test(error.message));
+  } finally { restore(); }
+});
+
+test('purpose improvement can honestly retain an already clear sentence', async () => {
+  const purpose = "These photos were taken for Ada's 25th birthday celebration.";
+  const restore = mockModel([{ improved: purpose }, { improved: purpose }], []);
+  try { assert.equal(await improvePurpose({ purpose, shootType: 'Birthday' }), purpose); }
+  finally { restore(); }
+});
+
+test('purpose improvement has its own total timeout and preserves caption timeout handling', async t => {
+  const previousFetch = globalThis.fetch;
+  const restore = mockModel([], []);
+  let now = Date.now();
+  t.mock.method(Date, 'now', () => now);
+  globalThis.fetch = async () => {
+    now += 46000;
+    throw Object.assign(new Error('timed out'), { name: 'TimeoutError' });
+  };
+  try { await assert.rejects(improvePurpose({ purpose: 'Ada 25th birthday celebration' }), { code: 'V3_PURPOSE_TIMEOUT', status: 504 }); }
+  finally { restore(); globalThis.fetch = previousFetch; }
+});
+
+test('wording API echoes the checked source while supporting the existing input shape', async () => {
+  const source = 'Convennant 25th Birthday Celebration';
+  const improved = "Celebrating Convennant's 25th birthday.";
+  const restore = mockModel([{ improved }], []);
+  const response = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+  try {
+    await v3Assist({ body: { mode: 'improve', purpose: ` ${source} `, shootType: 'Birthday' } }, response);
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.body, { success: true, data: { improved, sourcePurpose: source, meaningPreserved: true } });
+  } finally { restore(); }
+});
+
+test('wording API never returns an unchecked suggestion after failed fact preservation', async t => {
+  const restore = mockModel([{ improved: "Lora's birthday celebration" }, { improved: "Lora's birthday celebration" }], []);
+  t.mock.method(console, 'error', () => {});
+  const response = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+  try {
+    await v3Assist({ body: { mode: 'improve', purpose: 'Convennant 25th Birthday Celebration', shootType: 'Birthday' } }, response);
+    assert.equal(response.statusCode, 502);
+    assert.equal(response.body.success, false);
+    assert.equal(response.body.code, 'V3_INVALID_AI_RESPONSE');
+    assert.equal(response.body.data, undefined);
+    assert.match(response.body.message, /original text has been kept/);
   } finally { restore(); }
 });
 

@@ -1,5 +1,6 @@
 import { signedImageUrl } from './deliveryMedia.service.js';
 import { contrastRatio, V3_DEFAULT_PALETTE, V3_FONT_CHOICES, V3_FORMATS } from '../constants/deliveryV3.js';
+import { purposeWordingIssues } from '../utils/purposeWording.js';
 
 const MODEL = 'deepseek-v4.1-flash';
 const TRANSIENT = new Set([429, 500, 502, 503, 504]);
@@ -31,23 +32,23 @@ function captionTimeout() {
   return Object.assign(new Error('The caption service is taking too long. Your current words are unchanged. Please try again.'), { code: 'V3_CAPTION_TIMEOUT', status: 504 });
 }
 
-async function request(system, user, { images = [], maxTokens = 4000, deadline = Infinity } = {}) {
+async function request(system, user, { images = [], maxTokens = 4000, deadline = Infinity, timeoutError = captionTimeout } = {}) {
   const { apiKey, endpoint } = provider();
   const content = [{ type: 'text', text: user }, ...images.map(image => ({ type: 'image_url', image_url: { url: signedImageUrl(image.publicId, { width: 960 }) } }))];
   const body = { model: MODEL, enable_thinking: false, temperature: 0.45, max_tokens: maxTokens, messages: [{ role: 'system', content: system }, { role: 'user', content }] };
   let malformedResponses = 0;
   const retryWait = async delay => {
-    if (Date.now() + delay >= deadline) throw captionTimeout();
+    if (Date.now() + delay >= deadline) throw timeoutError();
     await new Promise(resolve => setTimeout(resolve, delay));
   };
   for (let attempt = 0; attempt < 6; attempt += 1) {
     const remaining = Math.min(120000, deadline - Date.now());
-    if (remaining <= 0) throw captionTimeout();
+    if (remaining <= 0) throw timeoutError();
     let response;
     try {
       response = await fetch(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(Math.ceil(remaining)) });
     } catch (error) {
-      if (Number.isFinite(deadline) && (Date.now() >= deadline || error.name === 'TimeoutError')) throw captionTimeout();
+      if (Number.isFinite(deadline) && (Date.now() >= deadline || error.name === 'TimeoutError')) throw timeoutError();
       throw error;
     }
     if (!response.ok) {
@@ -70,7 +71,7 @@ async function request(system, user, { images = [], maxTokens = 4000, deadline =
       const answer = payload?.choices?.[0]?.message?.content;
       return parseJson(typeof answer === 'string' ? answer : Array.isArray(answer) ? answer.filter(part => part.type === 'text').map(part => part.text).join('') : '');
     } catch (error) {
-      if (Number.isFinite(deadline) && Date.now() >= deadline) throw captionTimeout();
+      if (Number.isFinite(deadline) && Date.now() >= deadline) throw timeoutError();
       if (error.code !== 'V3_INVALID_AI_RESPONSE' && !(error instanceof SyntaxError)) throw error;
       malformedResponses += 1;
       if (malformedResponses < 3 && attempt < 5) continue;
@@ -79,24 +80,29 @@ async function request(system, user, { images = [], maxTokens = 4000, deadline =
   }
 }
 
-export async function improvePurpose({ purpose, shootType }) {
+export async function improvePurpose({ purpose }) {
+  const original = String(purpose || '').trim();
+  const deadline = Date.now() + 45000;
+  const timeoutError = () => Object.assign(new Error('The wording service is taking too long. Your original text is unchanged. Please try again.'), { code: 'V3_PURPOSE_TIMEOUT', status: 504 });
   const readSuggestion = result => {
-    const raw = String(result?.improved || '').trim();
+    if (typeof result?.improved !== 'string') return '';
+    const raw = result.improved.trim();
     const purposeLine = raw.match(/(?:^|\n)\s*(?:photographer['\u2019]s\s+)?purpose\s*:\s*(.+)/i)?.[1];
-    return String(purposeLine || raw).replace(/^\s*(?:improved\s+)?(?:photographer['\u2019]s\s+)?purpose\s*:\s*/i, '').trim().slice(0, 3000);
+    return String(purposeLine || raw).replace(/^\s*(?:improved\s+)?(?:photographer['\u2019]s\s+)?purpose\s*:\s*/i, '').trim();
   };
-  const system = 'You are improving the photographer’s short description of why a finished shoot was taken. Return JSON {"improved":"..."} with only the improved purpose. Make a clear, natural improvement to grammar and wording, not just capitalization. Keep close to the original meaning and length, and preserve every name, age, event, date, and supplied fact. A fragment can become one natural sentence. Do not add a location, relationship, emotion, scene detail, or caption. Example: "Lora 25th Birthday Celebration" becomes "Celebrating Lora’s 25th birthday." If the original is already a clear natural sentence, return it unchanged.';
-  const result = await request(system, JSON.stringify({ shootType, purpose }), { maxTokens: 250 });
+  const system = 'Edit only the photographer’s purpose below. Return JSON {"improved":"..."}. Improve grammar, punctuation, word order and awkward phrasing so it reads naturally; do not merely change capitalization. Turn an occasion title or awkward fragment into a clear purpose phrase or sentence. For a birthday or anniversary title, express the purpose using celebrating or marking the stated occasion. If a name is followed by an age or occasion without the necessary possessive, add that possessive; adding an apostrophe does not change the name. Preserve all supplied names exactly as written, including unusual spellings, and keep every age, number, date, occasion, relationship and other detail. Do not guess a name or a purpose when it is not supplied. Do not expand a name, add descriptions, invent attendees, feelings, locations, achievements, or turn the text into a caption. Do not infer any missing details. Use the source words where possible; add only the grammar needed to express the same purpose clearly. Keep the meaning and approximate length. Only return unchanged text if it is already a natural purpose phrase or complete sentence, or there is too little content to improve without guessing.';
+  const result = await request(system, JSON.stringify({ purpose: original }), { maxTokens: 1000, deadline, timeoutError });
   let improved = readSuggestion(result);
-  if (improved.toLocaleLowerCase() === String(purpose || '').trim().toLocaleLowerCase()) {
+  const issues = purposeWordingIssues(original, improved);
+  if (issues.length || improved.toLocaleLowerCase() === original.toLocaleLowerCase()) {
     const retry = await request(
-      'Return JSON {"improved":"..."}. The previous wording was identical to the source. If the source is a phrase or title rather than a complete sentence, turn it into one natural sentence without adding any fact. Preserve the same purpose, names, ages, occasion, and meaning. Do not merely change capitalization.',
-      JSON.stringify({ shootType, purpose, previousSuggestion: improved }),
-      { maxTokens: 250 }
+      system + ' The previous attempt was not a usable improvement. Correct missing possessives and express an occasion title as a purpose rather than copying it. Do not borrow any word or name from that attempt. A complete, already clear purpose sentence may stay unchanged.',
+      JSON.stringify({ purpose: original, corrections: issues.length ? issues : ['Improve phrasing when needed rather than just repeating a fragment.'] }),
+      { maxTokens: 1000, deadline, timeoutError }
     );
     improved = readSuggestion(retry);
   }
-  if (!improved || /\n|(?:^|\b)shoot\s+type\s*:/i.test(improved)) throw Object.assign(new Error('The wording suggestion was not usable. Your original purpose is unchanged. Please try again.'), { code: 'V3_INVALID_AI_RESPONSE' });
+  if (purposeWordingIssues(original, improved).length) throw Object.assign(new Error('Veylo could not improve the wording without changing your details. Your original text has been kept. Please try again.'), { code: 'V3_INVALID_AI_RESPONSE', status: 502 });
   return improved;
 }
 

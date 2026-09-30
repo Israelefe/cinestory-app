@@ -24,6 +24,14 @@ Regeneration has a 45-second total provider budget, including retries and review
 
 Existing published deliveries are not rewritten. The new policy applies when generating or regenerating words after deployment.
 
+## Improving the purpose
+
+Improve my wording edits only the photographer's supplied purpose. Shoot type, client name, photographs and example names are not inputs to this edit. Occasion titles become natural purpose phrases; complete sentences receive grammar and punctuation corrections where needed.
+
+Before applying a suggestion, the server checks for added or removed content, changed numbers and altered exclusions. Unfamiliar words are retained because they may be names. A rejected suggestion is retried using only the original and correction rules, without feeding the invented wording back to the model. If the retry fails, the editor retains the original and offers a clear retry message. These conservative checks cover the reported name and fact changes; they are not a proof of semantic equivalence for every possible sentence.
+
+The response identifies the checked source. The editor applies it only if it still matches the requested source and no edits were made while the request was pending. Revert restores the photographer's own words. An unchanged response is reported as unchanged, without claiming an improvement. The wording request has a 45-second total provider budget, including its retry.
+
 ## Verification
 
 - Regression cases include all nine descriptive birthday captions reported by the photographer.
@@ -31,3 +39,4 @@ Existing published deliveries are not rewritten. The new policy applies when gen
 - Checks cover replacing a photo without changing the client's name, birthday ages written as digits or words, duplicate drafts, unsaved text, timeout recovery and complete bookends.
 - Browser checks cover the photo picker and failed regeneration retaining the existing photo and words at 320, 768, 834 and 1440 pixels.
 - Actual Model Studio responses were inspected using sample purposes and photo summaries, without changing deliveries or uploading photographs.
+- Wording checks cover invented names, unusual name spellings, missing ages, new locations, exclusions, API source verification, pending manual edits and reverting at 320, 768, 834 and 1440 pixels. Actual wording responses were checked for named and unnamed birthdays, anniversaries and product shoots.
