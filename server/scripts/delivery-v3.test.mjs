@@ -8,15 +8,15 @@ const ids = Array.from({ length: 25 }, (_, index) => 'asset-' + index);
 const narrativeHeadlines = ['Twenty-five begins', "Ada's Birthday Year", 'Ada at Twenty-Five', "Ada's Next Birthday", "Ada's Birthday, Her Terms", 'Twenty-Five, Ada’s Way', 'Ada Turns Twenty-Five', 'A Birthday for Ada', "Ada's Celebration Ahead", 'Birthday Year for Ada'];
 const narrativeCaptions = [
   'Ada, turning twenty-five is a chance to celebrate how far you have come and choose what matters most in the year ahead.',
-  'May the year ahead give Ada room for new choices, fresh plans, and more time for the things she wants to enjoy.',
-  'Turning twenty-five gives Ada another reason to pause, mark the day, and look forward to what she wants from this next year.',
-  "This celebration puts Ada's twenty-fifth birthday at the centre, with a new year ahead to shape in her own way.",
-  'Ada can take this birthday as a moment to look ahead, keep what matters close, and choose what comes next.',
-  'Twenty-five brings a fresh point to celebrate Ada and make space for the choices she wants to carry into the next year.',
-  "Ada's next year starts here, with a chance to hold onto the things she values and make room for new possibilities.",
-  'The birthday marks twenty-five years for Ada and leaves the next chapter open for her to shape at her own pace.',
+  'Ada, may the year ahead give you room for new choices, fresh plans, and more time for the things you want to enjoy.',
+  'Turning twenty-five gives you another reason to pause, mark the day, and look forward to what you want from this next year.',
+  "This celebration puts your twenty-fifth birthday at the centre, with a new year ahead to shape in your own way.",
+  'Ada, take this birthday as a moment to look ahead, keep what matters close, and choose what comes next for you.',
+  'Twenty-five brings a fresh point to celebrate you and make space for the choices you want to carry into the next year.',
+  'Ada, your next year starts here, with a chance to hold onto the things you value and make room for new possibilities.',
+  'This birthday marks twenty-five years for you and leaves the next chapter open for you to shape at your own pace.',
   'Ada, this celebration honours your twenty-fifth birthday while leaving room for the plans and possibilities still ahead together.',
-  "Ada's twenty-fifth birthday belongs to her, and the year ahead can be shaped around what she wants to do next."
+  'Ada, this twenty-fifth birthday belongs to you, and the year ahead can be shaped around what you want to do next.'
 ];
 test('each format enforces its own inclusive showcase bounds and known unique assets', () => {
   for (const [format, [minimum, maximum]] of Object.entries(V3_FORMATS)) {
@@ -208,10 +208,16 @@ function mockModel(responses, calls) {
   const previousBase = process.env.ALIBABA_BASE_URL;
   process.env.ALIBABA_MODEL_STUDIO_API_KEY = 'test-key';
   process.env.ALIBABA_BASE_URL = 'https://test.aliyuncs.com/compatible-mode/v1';
+  let previousNarrative;
   globalThis.fetch = async (_url, options) => {
     const body = JSON.parse(options.body);
     calls.push(body);
-    return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(responses.shift()) } }] }) };
+    let response;
+    if (body.messages[0].content.startsWith('Review the delivery wording.') && !Array.isArray(responses[0]?.frames)) {
+      response = { frames: previousNarrative?.frames || [{ assetId: 'selected-photo', ...previousNarrative }] };
+    } else response = responses.shift();
+    if (response?.frames || response?.caption) previousNarrative = response;
+    return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(response) } }] }) };
   };
   return () => {
     globalThis.fetch = previousFetch;
@@ -331,7 +337,7 @@ test('Photo Story chooses a bounded selection and writes distinct purpose-led he
     assert.ok(result.direction.frames.every(frame => frame.caption.split(/\s+/).length >= 18));
     const narrativePrompt = calls[1].messages[1].content[0].text;
     const narrativeGuidance = calls[1].messages[0].content;
-    assert.equal(narrativePrompt.includes('Visible birthday portrait'), true);
+    assert.equal(narrativePrompt.includes('Visible birthday portrait'), false);
     assert.match(narrativePrompt, /Ada's 25th birthday/);
     assert.match(narrativeGuidance, /The Year Ahead.*too broad/);
     assert.match(narrativeGuidance, /thoughtful message from the photographer/);
@@ -378,7 +384,8 @@ test('persistently weak copy falls back to text tied to the photographer’s pur
   try {
     const result = await directV3({ format: 'photo-story', clientName: 'Ada', shootType: 'Birthday', brief: "Ada's 25th birthday celebration", v3: {} }, ids.slice(0, 12).map((assetId, index) => ({ assetId, score: 10 - index / 10, summary: 'A person smiling.' })));
     assert.equal(result.direction.frames[0].headline, "Ada's 25th birthday celebration");
-    assert.match(result.direction.frames[0].caption, /Ada's 25th birthday celebration/);
+    assert.match(result.direction.frames[0].caption, /your 25th birthday/);
+    assert.equal(new Set(result.direction.frames.map(frame => frame.caption)).size, selected.length);
     assert.ok(result.direction.frames[0].caption.split(/\s+/).length >= 18);
   } finally { restore(); }
 });
@@ -389,7 +396,8 @@ test('regenerated headline and caption use the purpose with only a light image c
   try {
     const text = await regenerateV3Caption({ format: 'photo-story', brief: "Ada's 25th birthday", shootType: 'Birthday', v3: {} }, { summary: 'A woman smiles at the camera.' });
     assert.deepEqual(text, { headline: 'Ada at Twenty-Five', caption: 'Ada, turning twenty-five is a chance to celebrate how far you have come and choose what matters most in the year ahead.' });
-    assert.match(calls[0].messages[1].content[0].text, /A woman smiles at the camera/);
+    assert.match(calls[0].messages[1].content[0].text, /visible smile/);
+    assert.doesNotMatch(calls[0].messages[1].content[0].text, /woman|camera/);
     assert.match(calls[0].messages[0].content, /18-24 words/);
   } finally { restore(); }
 });
@@ -402,13 +410,316 @@ test('headline and caption regeneration retries malformed and empty AI responses
     if (previous.key === undefined) delete process.env.ALIBABA_MODEL_STUDIO_API_KEY; else process.env.ALIBABA_MODEL_STUDIO_API_KEY = previous.key;
     if (previous.base === undefined) delete process.env.ALIBABA_BASE_URL; else process.env.ALIBABA_BASE_URL = previous.base;
   });
-  const outputs = ['{"headline": broken}', 'null', JSON.stringify({ headline: "Convennant's Birthday Year", caption: 'Convennant, this birthday is a chance to mark what matters to you and make room for what you want next.' })];
+  const valid = { headline: "Convennant's Birthday Year", caption: 'Convennant, this birthday is a chance to mark what matters to you and make room for what you want next.' };
+  const outputs = ['{"headline": broken}', 'null', JSON.stringify(valid), JSON.stringify({ frames: [{ assetId: 'selected-photo', ...valid }] })];
   let calls = 0;
   t.mock.method(globalThis, 'fetch', async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: outputs[calls++] } }] }) }));
   const result = await regenerateV3Caption({ clientName: 'Convennant', brief: 'birthday', shootType: 'Birthday', format: 'photo-story' }, { summary: 'A person smiles.' });
-  assert.equal(calls, 3);
+  assert.equal(calls, 4);
   assert.equal(result.headline, "Convennant's Birthday Year");
   assert.ok(result.caption.length <= 150);
+});
+
+const reportedBirthdayDescriptions = [
+  'Ada chose green velvet and pearls for her birthday portrait, and the dark backdrop lets that quiet confidence take center stage.',
+  "This close-up keeps Ada's freckles and pearl earrings in soft focus, a gentle reminder that her birthday glow needs no embellishment.",
+  'With a red telephone in hand and sunglasses on, Ada turned her birthday shoot into a playful scene full of personality.',
+  'Reading the newspaper in her green suit, Ada made her birthday feel like front-page news with a wink and a smile.',
+  "Ada's yellow blazer and green statement earrings pop against the burgundy backdrop, capturing the bold spirit she brought to this birthday.",
+  'Holding a miniature figure of herself, Ada added a clever touch to her birthday portrait that made us all smile.',
+  'Lying back on the green backdrop in her blue sleeveless top, Ada let her birthday shoot feel relaxed and completely her own.',
+  'In her beige linen jumpsuit with bag and sunglasses, Ada brought an easy, elegant energy to this full-length birthday portrait.',
+  'Holding a Polaroid camera in black and white, Ada turned the lens around for a birthday moment that feels both personal and timeless.'
+];
+
+test('initial generation rewrites the reported photo descriptions despite their valid birthday and name anchors', async () => {
+  const calls = [];
+  const selected = ids.slice(0, 10);
+  const repaired = selected.map((assetId, index) => ({ assetId, headline: narrativeHeadlines[index], caption: narrativeCaptions[index] }));
+  const restore = mockModel([
+    { assetIds: selected },
+    { frames: selected.map((assetId, index) => ({ assetId, headline: narrativeHeadlines[index], caption: reportedBirthdayDescriptions[index % 9] })) },
+    { frames: repaired },
+    { palette: {} }
+  ], calls);
+  try {
+    const result = await directV3({ clientName: 'Ada', brief: "Ada's 25th birthday", shootType: 'Birthday', format: 'photo-story' }, ids.slice(0, 12).map(assetId => ({ assetId, score: 8, summary: 'Ada wears green velvet with pearl earrings and sunglasses. She smiles at the camera.' })));
+    assert.equal(calls.length, 4);
+    assert.deepEqual(result.direction.frames.map(frame => frame.caption), narrativeCaptions);
+    // Selection still gets full observations. Neither writing pass gets them or
+    // the rejected copy, so the descriptions cannot steer the replacement.
+    assert.match(calls[0].messages[1].content[0].text, /green velvet/);
+    for (const call of calls.slice(1, 3)) {
+      assert.match(call.messages[1].content[0].text, /visible smile/);
+      assert.doesNotMatch(call.messages[1].content[0].text, /velvet|earrings|sunglasses|telephone|freckles/);
+    }
+  } finally { restore(); }
+});
+
+test('regeneration repairs each reported description using the same purpose-led policy', async t => {
+  for (const [index, caption] of reportedBirthdayDescriptions.entries()) {
+    await t.test('reported caption ' + (index + 1), async () => {
+      const calls = [];
+      const corrected = { headline: "Ada's Birthday, Her Terms", caption: 'Ada, may this birthday give you more time for what you love and more reasons to look forward to the year ahead.' };
+      const restore = mockModel([
+        { headline: "Ada's Birthday Year", caption },
+        { frames: [{ assetId: 'selected-photo', ...corrected }] }
+      ], calls);
+      try {
+        // Editorial's wider limits isolate the meaning check from Photo Story's
+        // length check: all nine bad sentences have valid names and word counts.
+        const result = await regenerateV3Caption({ clientName: 'Ada', brief: "Ada's birthday celebration", shootType: 'Birthday', format: 'editorial' }, { summary: caption });
+        assert.deepEqual(result, corrected);
+        assert.equal(calls.length, 2);
+        assert.doesNotMatch(calls[1].messages[1].content[0].text, /velvet|pearls|telephone|polaroid|newspaper/i);
+      } finally { restore(); }
+    });
+  }
+});
+
+test('failed description repair cannot return the same outfit report to the client', async () => {
+  const description = { headline: "Ada's Green Birthday Outfit", caption: reportedBirthdayDescriptions[0] };
+  const restore = mockModel([description, { frames: [{ assetId: 'selected-photo', ...description }] }], []);
+  try {
+    const result = await regenerateV3Caption({ clientName: 'Ada', brief: "Ada's birthday celebration", shootType: 'Birthday', format: 'editorial' }, { summary: description.caption });
+    assert.match(result.caption, /your birthday/);
+    assert.doesNotMatch(JSON.stringify(result), /outfit|velvet|pearls|backdrop/i);
+  } finally { restore(); }
+});
+
+test('an optional smile supports a direct birthday message without becoming a description', async () => {
+  const calls = [];
+  const message = { headline: "Ada's Birthday, Her Terms", caption: 'Ada, may this birthday give you more reasons to smile, more time for what you love, and a year to enjoy.' };
+  const restore = mockModel([message], calls);
+  try {
+    assert.deepEqual(await regenerateV3Caption({ clientName: 'Ada', brief: "Ada's birthday", shootType: 'Birthday', format: 'photo-story' }, { summary: 'A smiling person in green velvet, photographed against a burgundy backdrop.' }), message);
+    assert.equal(calls.length, 2);
+    assert.match(calls[0].messages[1].content[0].text, /visible smile/);
+    assert.doesNotMatch(calls[0].messages[1].content[0].text, /green|velvet|burgundy|backdrop/);
+  } finally { restore(); }
+});
+
+test('commercial captions may discuss a product explicitly supplied in the purpose', async () => {
+  const calls = [];
+  const message = { headline: 'Pearls for Everyday Wear', caption: 'Our new pearl earrings are made for everyday wear, bringing a simple finishing touch to the pieces you already love.' };
+  const restore = mockModel([message], calls);
+  try {
+    assert.deepEqual(await regenerateV3Caption({ clientName: 'Studio', brief: 'Launch our new pearl earrings for everyday wear.', shootType: 'Commercial', format: 'campaign' }, { summary: 'Pearl earrings displayed against a dark studio backdrop.' }), message);
+    assert.equal(calls.length, 2);
+  } finally { restore(); }
+});
+
+test('a meaningful headline and direct message do not each need to repeat the client name or birthday', async () => {
+  const text = { headline: 'More Time for What You Love', caption: 'Ada, may this birthday give you more reasons to smile, more time for what you love, and a year to enjoy.' };
+  const restore = mockModel([text], []);
+  try {
+    assert.deepEqual(await regenerateV3Caption({ clientName: 'Ada', brief: "Ada's birthday", format: 'photo-story' }, { summary: 'Portrait' }), text);
+  } finally { restore(); }
+});
+
+test('personal messages cannot describe the recipient in third person or invent people at a portrait shoot', async t => {
+  const badMessages = [
+    { headline: "Ada's Birthday Year", caption: 'Ada has reached another birthday, and this celebration marks the life she is building and the person she has become.' },
+    { headline: 'Surrounded By Your People', caption: 'Ada, twenty-five years have brought you to this day, and everyone here is glad to celebrate the person you have become.' },
+    { headline: 'A Birthday with Friends', caption: 'Ada, this birthday brings all your friends together to celebrate you and the warmth you bring into their lives each day.' }
+  ];
+  for (const bad of badMessages) await t.test(bad.headline, async () => {
+    const good = { headline: "Ada's Birthday, Her Terms", caption: 'Ada, may this birthday give you more time for what you love and more reasons to look forward to the year ahead.' };
+    const calls = [];
+    const restore = mockModel([bad, { frames: [{ assetId: 'selected-photo', ...good }] }], calls);
+    try {
+      assert.deepEqual(await regenerateV3Caption({ clientName: 'Ada', brief: "Ada's 25th birthday portraits", shootType: 'Birthday', format: 'photo-story' }, {}), good);
+      const drafts = calls[1].messages[1].content[0].text;
+      assert.match(drafts, /"rewrite":true/);
+      assert.doesNotMatch(drafts, /everyone here|all your friends|life she is building/);
+    } finally { restore(); }
+  });
+});
+
+test('caption and headline generation preserve supplied ages and reject guessed ones in digits or words', async t => {
+  for (const age of ['30th', 'thirtieth', 'twenty-first']) await t.test('wrong age ' + age, async () => {
+    const bad = { headline: 'Your ' + age + ' Birthday', caption: 'Ada, your ' + age + ' birthday is a chance to choose what matters to you and enjoy the year at your own pace.' };
+    const good = { headline: "Ada's 25th Birthday", caption: 'Ada, may this birthday give you more time for what you love and more reasons to look forward to the year ahead.' };
+    const calls = [];
+    const restore = mockModel([bad, { frames: [{ assetId: 'selected-photo', ...good }] }], calls);
+    try {
+      assert.deepEqual(await regenerateV3Caption({ clientName: 'Ada', brief: "Ada's 25th birthday", format: 'photo-story' }, {}), good);
+      assert.match(calls[1].messages[1].content[0].text, /"rewrite":true/);
+    } finally { restore(); }
+  });
+  const good = { headline: 'Your Thirtieth Birthday', caption: 'Ada, turning thirty is a chance to make time for what you love and choose what matters to you this year.' };
+  const restore = mockModel([good], []);
+  try {
+    assert.deepEqual(await regenerateV3Caption({ clientName: 'Ada', brief: "Ada's 30th birthday", format: 'photo-story' }, {}), good);
+  } finally { restore(); }
+});
+
+test('regeneration can avoid existing valid wording without inheriting a wrong name from an old draft', async () => {
+  const first = { assetId: 'first', headline: narrativeHeadlines[0], caption: narrativeCaptions[0] };
+  const next = { headline: narrativeHeadlines[1], caption: narrativeCaptions[1] };
+  const calls = [];
+  const restore = mockModel([next], calls);
+  try {
+    const delivery = { clientName: 'Ada', brief: "Ada's 25th birthday", format: 'photo-story', creativeDirection: { frames: [first, { assetId: 'second', headline: "Lora's Birthday", caption: 'Lora, this birthday is a chance to mark what matters to you and make room for what you want next.' }] } };
+    assert.deepEqual(await regenerateV3Caption(delivery, { summary: 'A person smiles.' }), next);
+    assert.match(calls[0].messages[1].content[0].text, /Twenty-five begins/);
+    assert.doesNotMatch(calls[0].messages[1].content[0].text, /Lora/);
+  } finally { restore(); }
+});
+
+test('regeneration rewrites a repeated unsaved caption rather than returning it unchanged', async () => {
+  const previous = { headline: narrativeHeadlines[0], caption: narrativeCaptions[0] };
+  const fresh = { headline: narrativeHeadlines[1], caption: narrativeCaptions[1] };
+  const calls = [];
+  const restore = mockModel([previous, { frames: [{ assetId: 'selected-photo', ...fresh }] }], calls);
+  try {
+    assert.deepEqual(await regenerateV3Caption({ clientName: 'Ada', brief: "Ada's 25th birthday", format: 'photo-story' }, {}, '', previous), fresh);
+    assert.match(calls[0].messages[1].content[0].text, /Twenty-five begins/);
+    assert.match(calls[1].messages[1].content[0].text, /"rewrite":true/);
+  } finally { restore(); }
+});
+
+test('review retries repeated headings and captions while preserving the photo sequence', async () => {
+  const selected = ids.slice(0, 10);
+  const duplicated = selected.map(assetId => ({ assetId, headline: narrativeHeadlines[0], caption: narrativeCaptions[0] }));
+  const distinct = selected.map((assetId, index) => ({ assetId, headline: narrativeHeadlines[index], caption: narrativeCaptions[index] }));
+  const calls = [];
+  const restore = mockModel([{ frames: duplicated }, { frames: duplicated }, { frames: distinct }, { palette: {} }], calls);
+  try {
+    const result = await directV3({ clientName: 'Ada', brief: "Ada's 25th birthday", format: 'photo-story' }, selected.map(assetId => ({ assetId, score: 8 })));
+    assert.deepEqual(result.direction.frames.map(frame => frame.assetId), selected);
+    assert.deepEqual(result.direction.frames.map(frame => frame.caption), narrativeCaptions);
+    assert.equal(calls.length, 4);
+  } finally { restore(); }
+});
+
+test('a persistently repeated birthday draft still supplies distinct complete copy for the largest showcase', async () => {
+  const selected = ids.slice(0, 24);
+  const repeated = selected.map(assetId => ({ assetId, headline: narrativeHeadlines[0], caption: narrativeCaptions[0] }));
+  const restore = mockModel([{ frames: repeated }, { frames: repeated }, { frames: repeated }, { palette: {} }, { sections: [{ title: 'First set', assetIds: selected.slice(0, 12) }, { title: 'Second set', assetIds: selected.slice(12) }] }], []);
+  try {
+    const result = await directV3({ clientName: 'Ada', brief: "Ada's 25th birthday", format: 'event-coverage' }, selected.map(assetId => ({ assetId, score: 8 })));
+    assert.equal(new Set(result.direction.frames.map(frame => frame.headline)).size, 24);
+    assert.equal(new Set(result.direction.frames.map(frame => frame.caption)).size, 24);
+    for (const frame of result.direction.frames) {
+      assert.ok(frame.headline.split(/\s+/).length <= 7);
+      assert.ok(frame.caption.split(/\s+/).length >= 18 && frame.caption.split(/\s+/).length <= 30);
+      assert.ok(frame.caption.length <= 180);
+      assert.match(frame.caption, /[.!?]$/);
+    }
+  } finally { restore(); }
+});
+
+test('ordinary future wishes and figurative holding do not get mistaken for props or invented attendees', async () => {
+  const text = { headline: "Ada's Birthday, Her Terms", caption: 'Ada, may this birthday bring you friends who are kind, a pace that suits you, and room for holding onto what matters.' };
+  const restore = mockModel([text], []);
+  try {
+    assert.deepEqual(await regenerateV3Caption({ clientName: 'Ada', brief: "Ada's birthday", format: 'photo-story' }, {}), text);
+  } finally { restore(); }
+});
+
+test('regeneration can still supply a different fitting message after a full Photo Story used the emergency drafts', async () => {
+  const selected = ids.slice(0, 10);
+  const bad = selected.map(assetId => ({ assetId, headline: '', caption: '' }));
+  const delivery = { clientName: 'Ada', brief: "Ada's 25th birthday", format: 'photo-story' };
+  const restoreInitial = mockModel([{ frames: bad }, { frames: bad }, { frames: bad }, { palette: {} }], []);
+  let frames;
+  try { frames = (await directV3(delivery, selected.map(assetId => ({ assetId, score: 8 })))).direction.frames; }
+  finally { restoreInitial(); }
+  const restoreRegeneration = mockModel([frames[0]], []);
+  try {
+    const result = await regenerateV3Caption({ ...delivery, creativeDirection: { frames } }, {}, '', frames[0]);
+    assert.equal(frames.some(frame => frame.caption === result.caption || frame.headline === result.headline), false);
+    assert.ok(result.caption.length <= 150);
+    assert.ok(result.caption.split(/\s+/).length <= 24);
+    assert.match(result.caption, /your 25th birthday/);
+  } finally { restoreRegeneration(); }
+});
+
+test('regeneration has a total deadline below the browser timeout, including provider retries', async t => {
+  const previous = { key: process.env.ALIBABA_MODEL_STUDIO_API_KEY, base: process.env.ALIBABA_BASE_URL };
+  process.env.ALIBABA_MODEL_STUDIO_API_KEY = 'test-key';
+  process.env.ALIBABA_BASE_URL = 'https://test.aliyuncs.com/compatible-mode/v1';
+  t.after(() => {
+    if (previous.key === undefined) delete process.env.ALIBABA_MODEL_STUDIO_API_KEY; else process.env.ALIBABA_MODEL_STUDIO_API_KEY = previous.key;
+    if (previous.base === undefined) delete process.env.ALIBABA_BASE_URL; else process.env.ALIBABA_BASE_URL = previous.base;
+  });
+  const started = Date.now();
+  let now = started;
+  let calls = 0;
+  t.mock.method(Date, 'now', () => now);
+  t.mock.method(globalThis, 'fetch', async (_url, options) => {
+    calls += 1;
+    assert.equal(options.signal.aborted, false);
+    now += 46000;
+    return { ok: false, status: 429, body: { cancel: async () => {} }, headers: { get: () => '60' } };
+  });
+  await assert.rejects(regenerateV3Caption({ clientName: 'Ada', brief: "Ada's birthday", format: 'photo-story' }, {}), error => error.code === 'V3_CAPTION_TIMEOUT' && error.status === 504 && /current words are unchanged/.test(error.message));
+  assert.equal(calls, 1);
+});
+
+test('a slow review keeps an already checked caption without waiting past the total deadline', async t => {
+  const previous = { key: process.env.ALIBABA_MODEL_STUDIO_API_KEY, base: process.env.ALIBABA_BASE_URL };
+  process.env.ALIBABA_MODEL_STUDIO_API_KEY = 'test-key';
+  process.env.ALIBABA_BASE_URL = 'https://test.aliyuncs.com/compatible-mode/v1';
+  t.after(() => {
+    if (previous.key === undefined) delete process.env.ALIBABA_MODEL_STUDIO_API_KEY; else process.env.ALIBABA_MODEL_STUDIO_API_KEY = previous.key;
+    if (previous.base === undefined) delete process.env.ALIBABA_BASE_URL; else process.env.ALIBABA_BASE_URL = previous.base;
+  });
+  let now = Date.now();
+  let calls = 0;
+  const valid = { headline: narrativeHeadlines[0], caption: narrativeCaptions[0] };
+  t.mock.method(Date, 'now', () => now);
+  t.mock.method(globalThis, 'fetch', async () => {
+    calls += 1;
+    if (calls === 1) return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(valid) } }] }) };
+    now += 46000;
+    const error = new Error('Timed out'); error.name = 'TimeoutError'; throw error;
+  });
+  assert.deepEqual(await regenerateV3Caption({ clientName: 'Ada', brief: "Ada's 25th birthday", format: 'photo-story' }, {}), valid);
+  assert.equal(calls, 2);
+});
+
+test('opening and closing messages remain complete instead of clipping an oversized or invented thought', async () => {
+  const selected = ids.slice(0, 10);
+  const frames = selected.map((assetId, index) => ({ assetId, headline: narrativeHeadlines[index], caption: narrativeCaptions[index] }));
+  const restore = mockModel([{ title: "Lora's 30th birthday", openingLine: 'Ada, your birthday photographs are ready, ' + 'with every part of your special occasion '.repeat(10), closingLine: 'Everyone here today was so happy to celebrate with you.', frames }, { palette: {} }], []);
+  try {
+    const result = await directV3({ clientName: 'Ada', brief: "Ada's 25th birthday portraits", format: 'photo-story' }, selected.map(assetId => ({ assetId, score: 8 })));
+    assert.match(result.direction.title, /Ada/);
+    assert.doesNotMatch(result.direction.title, /Lora|30th/);
+    assert.ok(result.direction.openingLine.length <= 140);
+    assert.ok(result.direction.closingLine.length <= 160);
+    assert.match(result.direction.openingLine, /time\.$/);
+    assert.doesNotMatch(result.direction.closingLine, /Everyone here/);
+  } finally { restore(); }
+});
+
+test('all eight Showcase formats use the purpose-led writing and review policy for initial and regenerated copy', async t => {
+  for (const [format, [minimum]] of Object.entries(V3_FORMATS)) await t.test(format, async () => {
+    const selected = ids.slice(0, minimum);
+    const frames = selected.map((assetId, index) => ({ assetId, headline: narrativeHeadlines[index], caption: narrativeCaptions[index] }));
+    const calls = [];
+    const midpoint = Math.floor(selected.length / 2);
+    const restore = mockModel([{ frames }, { palette: {} }, { sections: [{ title: 'The birthday', assetIds: selected.slice(0, midpoint) }, { title: 'The celebration', assetIds: selected.slice(midpoint) }] }], calls);
+    try {
+      const delivery = { clientName: 'Ada', brief: "Ada's 25th birthday", shootType: 'Birthday', format };
+      const insights = selected.map(assetId => ({ assetId, score: 8, summary: 'A portrait in green velvet and pearl earrings.' }));
+      const result = await directV3(delivery, insights);
+      assert.deepEqual(result.direction.frames.map(frame => frame.caption), frames.map(frame => frame.caption));
+      // Isolate regeneration from the format-specific section fixtures.
+      restore();
+      const restoreRegeneration = mockModel([frames[0]], calls);
+      try { assert.equal((await regenerateV3Caption(delivery, insights[0])).caption, frames[0].caption); }
+      finally { restoreRegeneration(); }
+      const writing = calls.filter(call => /thoughtful message from the photographer/.test(call.messages[0].content));
+      assert.equal(writing.length, 4);
+      for (const call of writing) {
+        assert.doesNotMatch(call.messages[1].content[0].text, /green velvet|pearl earrings/);
+        assert.match(call.messages[0].content, /address the recipient directly/);
+      }
+    } finally { restore(); }
+  });
 });
 
 test('normal generation supplies usable text when both writing passes return empty or oversized words', async () => {
@@ -421,9 +732,13 @@ test('normal generation supplies usable text when both writing passes return emp
     for (const frame of result.direction.frames) {
       assert.ok(frame.headline.length >= 2 && frame.headline.length <= 70);
       assert.ok(frame.caption.length >= 5 && frame.caption.length <= 150);
-      assert.match(frame.headline, /Convennant/);
       assert.match(frame.caption, /birthday/);
+      assert.ok(frame.headline.split(/\s+/).length <= 7);
+      assert.ok(frame.caption.split(/\s+/).length >= 18 && frame.caption.split(/\s+/).length <= 24);
     }
+    assert.match(result.direction.frames[0].headline, /Convennant/);
+    assert.equal(new Set(result.direction.frames.map(frame => frame.caption)).size, selected.length);
+    assert.equal(new Set(result.direction.frames.map(frame => frame.headline)).size, selected.length);
   } finally { restore(); }
 });
 
@@ -462,7 +777,7 @@ test('natural contractions and ordinary sentence openings are not mistaken for p
   const restore = mockModel([text], calls);
   try {
     assert.deepEqual(await regenerateV3Caption({ clientName: 'Convennant', brief: 'birthday', shootType: 'Birthday', format: 'photo-story' }, { summary: 'A person smiles.' }), text);
-    assert.equal(calls.length, 1);
+    assert.equal(calls.length, 2);
   } finally { restore(); }
 });
 
@@ -472,7 +787,7 @@ test('a subject explicitly named in the purpose remains valid even when the payi
   const restore = mockModel([text], calls);
   try {
     assert.deepEqual(await regenerateV3Caption({ clientName: 'Convennant', brief: "Lora's birthday", shootType: 'Birthday', format: 'photo-story' }, { summary: 'A person smiles.' }), text);
-    assert.equal(calls.length, 1);
+    assert.equal(calls.length, 2);
   } finally { restore(); }
 });
 

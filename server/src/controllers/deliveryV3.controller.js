@@ -258,11 +258,11 @@ export async function v3Pinboard(req, res) {
 
 export async function v3Caption(req, res) {
   try {
-    const input = z.object({ instruction: z.string().trim().max(400).default('') }).strict().safeParse(req.body); if (!input.success) return bad(res, input);
+    const input = z.object({ instruction: z.string().trim().max(400).default(''), previous: z.object({ headline: z.string().trim().max(70), caption: z.string().trim().max(180) }).strict().optional() }).strict().safeParse(req.body); if (!input.success) return bad(res, input);
     const delivery = await owned(req); if (!editable(delivery) || !delivery.collectionAnalysis) return res.status(409).json({ success: false, message: 'Analyse the photographs first.' });
     const insight = delivery.collectionAnalysis.images?.find(row => row.assetId === req.params.assetId);
     if (!insight) return res.status(404).json({ success: false, message: 'Photograph not found.' });
-    const caption = await regenerateV3Caption(delivery, insight, input.data.instruction);
+    const caption = await regenerateV3Caption(delivery, insight, input.data.instruction, input.data.previous);
     res.json({ success: true, data: caption });
   } catch (error) { fail(res, error); }
 }

@@ -75,6 +75,7 @@ for (const width of [320, 768, 834, 1440]) test(`Showcase visual photo picker ke
   await expect(page.locator('.v3-caption-error')).toContainText('Your current headline and caption have been kept');
   await expect(page.getByLabel('Headline')).toHaveValue("Convennant's Birthday Year");
   expect(requests.at(-1).body.instruction).toBe('Keep the birthday message personal.');
+  expect(requests.at(-1).body.previous).toEqual({ headline: "Convennant's Birthday Year", caption: 'Convennant, this birthday is a chance to mark what matters to you and make room for what you want next.' });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
 });
 

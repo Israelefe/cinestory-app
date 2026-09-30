@@ -344,7 +344,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     captionPending.current = true;
     setBusy('caption-' + id); setCaptionError(null);
     try {
-      const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/captions/' + id + '/regenerate', { instruction: instructions[id] || '' }, { signal });
+      const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/captions/' + id + '/regenerate', { instruction: instructions[id] || '', previous: { headline: (headlines[id] || '').slice(0, 70), caption: (captions[id] || '').slice(0, 180) } }, { signal });
       if (signal.aborted) return;
       setHeadlines(current => ({ ...current, [id]: data.data.headline }));
       setCaptions(current => ({ ...current, [id]: data.data.caption }));
@@ -370,7 +370,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     const controller = new AbortController();
     captionRequest.current = controller;
     try {
-      const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/captions/' + id + '/regenerate', { instruction: instructions[id] || '' }, { signal: controller.signal });
+      const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/captions/' + id + '/regenerate', { instruction: instructions[id] || '', previous: { headline: (headlines[id] || '').slice(0, 70), caption: (captions[id] || '').slice(0, 180) } }, { signal: controller.signal });
       if (controller.signal.aborted) return;
       setHeadlines(current => ({ ...current, [id]: data.data.headline }));
       setCaptions(current => ({ ...current, [id]: data.data.caption }));
