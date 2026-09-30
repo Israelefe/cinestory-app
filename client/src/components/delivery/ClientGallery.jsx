@@ -6,7 +6,6 @@ import { Photo } from '../PublicDesign.jsx';
 import { useDialogFocus } from '../useDialogFocus.js';
 import { trackEvent } from '../../services/analytics.js';
 import './ClientGallery.css';
-import DownloadLockButton, { DownloadLockMessage } from './DownloadLockNotice.jsx';
 import DeliveryBrandMark from './DeliveryBrandMark.jsx';
 
 const photoKey = (photo, index) => photo?.assetId || photo?.id || photo?.name || index;
@@ -19,9 +18,8 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
   const [swipeDirection, setSwipeDirection] = useState(1);
   useDialogFocus(true, panel, onClose);
 
-  const isLocked = Boolean(delivery?.access?.downloadsLocked);
-  const allowDownloadAll = delivery ? (delivery.access?.allowDownloadAll !== false && !isLocked) : Boolean(onDownloadAll);
-  const allowIndividualDownloads = Boolean(onDownload) && (!delivery || (delivery.access?.allowIndividualDownloads !== false && !isLocked));
+  const allowDownloadAll = delivery ? (delivery.access?.allowDownloadAll !== false) : Boolean(onDownloadAll);
+  const allowIndividualDownloads = Boolean(onDownload) && (!delivery || (delivery.access?.allowIndividualDownloads !== false));
   const allowLikes = delivery ? Boolean(delivery.access?.allowLikes && onLike) : Boolean(onLike);
   const resolvedPhotos = useMemo(() => photos.map((photo, index) => demoId ? { ...photo, name: `demo-${demoId}-${index + 1}`, url: `/veylo/web/demo-${demoId}-${index + 1}-1440.webp`, thumbnailUrl: `/veylo/web/demo-${demoId}-${index + 1}-480.webp` } : photo), [photos, demoId]);
   const direction = delivery?.creativeDirection || {};
@@ -85,13 +83,11 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
       <header className="client-gallery-header">
         <div><p>{eyebrow} · {photos.length} {photos.length === 1 ? 'photograph' : 'photographs'}</p><h2 id="client-gallery-title">{selected === null ? title : `Photograph ${selected + 1}`}</h2></div>
         <div className="client-gallery-header-actions">
-          {isLocked && <DownloadLockButton access={delivery.access} />}
           {selected === null && allowDownloadAll && onDownloadAll && <button className="client-gallery-download-all" type="button" onClick={onDownloadAll} disabled={Boolean(resolvedBusy)}>{resolvedBusy === 'all' ? <LoaderCircle className="client-gallery-spin" size={16} /> : <Download size={16} />}<span>{resolvedBusy === 'all' && downloadProgress ? `Starting ${downloadProgress.current}/${downloadProgress.total}` : resolvedBusy === 'all' ? 'Starting...' : 'Download all photos'}</span></button>}
           <button className="client-gallery-icon" type="button" onClick={onClose} aria-label="Close gallery"><X size={21} /></button>
         </div>
       </header>
       {selected === null && delivery?.branding?.type === 'studio' && <div className="client-gallery-studio"><DeliveryBrandMark branding={delivery.branding} /><div><span>Photographed by</span><strong>{delivery.branding.name}</strong></div></div>}
-      {isLocked && <DownloadLockMessage access={delivery.access} />}
       {downloadNotice && <p className="client-gallery-download-tip" role="status">{downloadNotice}</p>}
 
       {selected === null ? <div className="client-gallery-grid">{resolvedPhotos.map((photo, index) => {
@@ -114,7 +110,7 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
           <button className="client-gallery-icon" type="button" onClick={() => navigatePhoto(-1)} disabled={selected === 0} aria-label="Previous photograph"><ChevronLeft size={21} /></button>
           <button className="client-gallery-back" type="button" onClick={() => setSelected(null)}><ArrowLeft size={16} /><span>All photographs</span></button>
           {allowLikes && <button className={`client-gallery-icon ${liked?.has(activeKey) ? 'is-liked' : ''}`} type="button" onClick={() => runLike(activePhoto, selected)} aria-label={liked?.has(activeKey) ? 'Remove from favourites' : 'Add to favourites'}><Heart size={17} fill={liked?.has(activeKey) ? 'currentColor' : 'none'} /></button>}
-          {allowIndividualDownloads && <button className="client-gallery-download-one" type="button" onClick={() => runDownload(activePhoto, selected)} disabled={resolvedBusy === activeKey || resolvedBusy === 'all'}>{resolvedBusy === activeKey ? <LoaderCircle className="client-gallery-spin" size={16} /> : <Download size={16} />}<span>{resolvedBusy === activeKey ? 'Preparing…' : 'Download'}</span></button>}
+          {allowIndividualDownloads && <button className="client-gallery-download-one" type="button" aria-label="Download photograph" onClick={() => runDownload(activePhoto, selected)} disabled={resolvedBusy === activeKey || resolvedBusy === 'all'}>{resolvedBusy === activeKey ? <LoaderCircle className="client-gallery-spin" size={16} /> : <Download size={16} />}<span>{resolvedBusy === activeKey ? 'Preparing…' : 'Download'}</span></button>}
           <button className="client-gallery-icon" type="button" onClick={() => navigatePhoto(1)} disabled={selected === photos.length - 1} aria-label="Next photograph"><ChevronRight size={21} /></button>
         </div>
       </div>}

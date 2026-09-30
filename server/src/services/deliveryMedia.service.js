@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { cloudinary, configureCloudinary } from './cloudinary.service.js';
+import { cloudinary, configureCloudinary, cloudinaryErrorStatus } from './cloudinary.service.js';
 
 function ready() {
   if (!configureCloudinary()) {
@@ -97,11 +97,10 @@ export async function removeDeliveryMedia(userId, deliveryId) {
   ready();
   const prefix = deliveryFolder(userId, deliveryId);
   await Promise.all([
-    cloudinary.api.delete_resources_by_prefix(prefix, { resource_type: 'image', type: 'authenticated', invalidate: true }),
-    cloudinary.api.delete_resources_by_prefix(prefix, { resource_type: 'video', type: 'authenticated', invalidate: true })
+    ...['image', 'video'].map(resource_type => cloudinary.api.delete_resources_by_prefix(prefix, { resource_type, type: 'authenticated', invalidate: true }).catch(error => { if (cloudinaryErrorStatus(error) !== 404) throw error; }))
   ]);
   const folders = [`${prefix}/previews`, `${prefix}/narration`, `${prefix}/audio`, prefix];
-  for (const folder of folders) await cloudinary.api.delete_folder(folder).catch(error => { if (error?.http_code !== 404) throw error; });
+  for (const folder of folders) await cloudinary.api.delete_folder(folder).catch(error => { if (cloudinaryErrorStatus(error) !== 404) throw error; });
 }
 
 export async function removeDeliveryAudio(publicId) {

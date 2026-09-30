@@ -8,7 +8,6 @@ import { getDeliveryCapabilities } from '../../constants/deliveryCapabilities.js
 import PinboardViewer from './PinboardViewer.jsx';
 import '../../pages/DeliveryViewer.css';
 import './ClientDeliveryPreview.css';
-import api, { apiMessage } from '../../services/api.js';
 
 function revokeMedia(media) {
   Object.values(media?.assets || {}).forEach(url => {
@@ -37,26 +36,6 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
   const narrationRef = useRef(null);
   const narrationInteractionRef = useRef(false);
   const effectiveAccess = useMemo(() => ({ ...delivery?.access, ...access }), [delivery?.access, access]);
-  const needsWatermark = Boolean(effectiveAccess.downloadsLocked && effectiveAccess.watermarkEnabled);
-  const previewMediaKey = `${delivery?._id || ''}:${needsWatermark}:${effectiveAccess.watermarkText || ''}:${(delivery?.assets || []).map(asset => asset.assetId).join('|')}`;
-  const [previewMedia, setPreviewMedia] = useState({ key: '', assets: [], error: '' });
-  const [previewMediaAttempt, setPreviewMediaAttempt] = useState(0);
-  useEffect(() => {
-    if (!needsWatermark || !delivery?._id) return;
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => {
-      setPreviewMedia({ key: previewMediaKey, assets: [], error: '' });
-      api.post(`/v1/deliveries/${delivery._id}/preview-media`, { downloadsLocked: true, watermarkEnabled: true, watermarkText: effectiveAccess.watermarkText || '' }, { signal: controller.signal })
-        .then(({ data }) => { if (!controller.signal.aborted) setPreviewMedia({ key: previewMediaKey, assets: data.data.assets, error: '' }); })
-        .catch(error => { if (!controller.signal.aborted) setPreviewMedia({ key: previewMediaKey, assets: [], error: apiMessage(error, 'We could not load the watermarked preview. Try again.') }); });
-    }, 250);
-    return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [needsWatermark, delivery?._id, previewMediaKey, previewMediaAttempt]);
-  const previewSourceDelivery = useMemo(() => {
-    if (!needsWatermark || previewMedia.key !== previewMediaKey) return delivery;
-    const media = new Map(previewMedia.assets.map(asset => [String(asset.assetId), asset]));
-    return { ...delivery, assets: (delivery?.assets || []).map(asset => ({ ...asset, ...media.get(String(asset.assetId)) })) };
-  }, [delivery, needsWatermark, previewMedia, previewMediaKey]);
 
   useEffect(() => {
     setExperienceReady(false);
@@ -67,7 +46,7 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
     setNarrationCue(null);
     setPreviewLiked(new Set());
     narrationInteractionRef.current = false;
-  }, [accessPin, effectiveAccess.allowIndividualDownloads, effectiveAccess.allowDownloadAll, effectiveAccess.allowLikes, previewMediaKey, delivery?.publicId, delivery?._id, delivery?.format, delivery?.soundtrack?.url, delivery?.narration?.url, delivery?.narration?.captions?.url, (delivery?.assets || []).map(asset => `${asset.assetId}:${asset.url || ''}`).join('|')]);
+  }, [accessPin, effectiveAccess.allowIndividualDownloads, effectiveAccess.allowDownloadAll, effectiveAccess.allowLikes, delivery?.publicId, delivery?._id, delivery?.format, delivery?.soundtrack?.url, delivery?.narration?.url, delivery?.narration?.captions?.url, (delivery?.assets || []).map(asset => `${asset.assetId}:${asset.url || ''}`).join('|')]);
 
   useEffect(() => () => revokeMedia(preloadedMedia), [preloadedMedia]);
 
@@ -81,7 +60,7 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
       allowDownloadAll: effectiveAccess.allowDownloadAll !== false,
       allowLikes: effectiveAccess.allowLikes !== false
     },
-    assets: (previewSourceDelivery?.assets || []).map(asset => {
+    assets: (delivery?.assets || []).map(asset => {
       const url = preloadedMedia.assets?.[asset.assetId] || mediaUrl(asset.url);
       return { ...asset, url, thumbnailUrl: url, srcSet: undefined };
     }),
@@ -98,7 +77,7 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
       : capabilities.narration && delivery?.narration?.url
         ? { ...delivery.narration, url: preloadedMedia.narration || mediaUrl(delivery.narration.url) }
         : undefined
-  }), [effectiveAccess, previewSourceDelivery, delivery, preloadedMedia]);
+  }), [effectiveAccess, delivery, preloadedMedia]);
 
   const toggleAudio = async kind => {
     const selected = kind === 'narration' ? narrationRef.current : soundtrackRef.current;
@@ -170,12 +149,8 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
     return <section className="v-client-preview-empty"><strong>No photographs have been added yet.</strong><span>Add the finished files before reviewing the client experience.</span></section>;
   }
 
-  if (needsWatermark && (previewMedia.key !== previewMediaKey || !previewMedia.assets.length)) {
-    return <section className="v-client-preview-empty" role={previewMedia.error ? 'alert' : 'status'}><strong>{previewMedia.error || 'Preparing the watermarked preview…'}</strong>{previewMedia.error && <button type="button" onClick={() => setPreviewMediaAttempt(current => current + 1)}>Try again</button>}</section>;
-  }
-
   if (!experienceReady) {
-    return <DeliveryReadiness key={previewMediaKey} delivery={previewSourceDelivery} onReady={media => { setPreloadedMedia(media); setExperienceReady(true); }} />;
+    return <DeliveryReadiness key={`${delivery?._id || delivery?.publicId || ''}:${delivery?.format || ''}`} delivery={delivery} onReady={media => { setPreloadedMedia(media); setExperienceReady(true); }} />;
   }
 
   if (delivery?.kind === 'pinboard') return <div className="v-client-preview-runtime"><PinboardViewer delivery={playbackDelivery} preview galleryProps={{ onDownload: () => toast.info('Photo downloads will be available on the published client link.'), onDownloadAll: () => toast.info('The published link will download each photograph separately.') }} /></div>;

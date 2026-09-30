@@ -9,8 +9,17 @@ export function configureCloudinary() {
   const apiKey = value('CLOUDINARY_API_KEY');
   const apiSecret = value('CLOUDINARY_API_SECRET');
   if (!cloudName || !apiKey || !apiSecret) return false;
-  cloudinary.config({ cloud_name: cloudName, api_key: apiKey, api_secret: apiSecret, secure: true });
+  cloudinary.config({ cloud_name: cloudName, api_key: apiKey, api_secret: apiSecret, secure: true, hide_sensitive: true });
   return true;
+}
+
+export function cloudinaryErrorStatus(error) {
+  return Number(error?.http_code || error?.error?.http_code) || undefined;
+}
+
+export function safeProviderError(error) {
+  // SDK rejection objects can contain request authentication and signed URLs.
+  return { status: cloudinaryErrorStatus(error), code: /^[A-Z0-9_]{1,80}$/.test(error?.code || '') ? error.code : 'PROVIDER_REQUEST_FAILED' };
 }
 
 export async function checkCloudinaryConnection() {

@@ -23,7 +23,7 @@ const BOUNDS = { 'photo-story': [5, 10], editorial: [6, 14], 'photo-reveal': [5,
 const MUSIC = new Set(['photo-story', 'photo-reveal', 'album']);
 const FONTS = ['Playfair Display', 'Outfit', 'Plus Jakarta Sans', 'Cormorant Garamond', 'DM Sans', 'Libre Baskerville', 'Manrope'];
 const STEPS = [{ id: 'details', label: 'Shoot' }, { id: 'format', label: 'Format' }, { id: 'upload', label: 'Photos' }, { id: 'preparing', label: 'Preparing' }, { id: 'showcase', label: 'Showcase' }, { id: 'narration', label: 'Narration' }, { id: 'music', label: 'Music' }, { id: 'design', label: 'Design' }, { id: 'access', label: 'Publish' }];
-const DEFAULT_ACCESS = { allowIndividualDownloads: true, allowDownloadAll: true, allowLikes: true, downloadsLocked: false, downloadLockNote: '', watermarkEnabled: false, watermarkText: '', expiresAt: '', usageTerms: '' };
+const DEFAULT_ACCESS = { allowIndividualDownloads: true, allowDownloadAll: true, allowLikes: true, expiresAt: '', usageTerms: '' };
 const defaultPalette = { background: '#0c0c10', surface: '#17171c', text: '#fffaf6', accent: '#ff5a47' };
 function contrastRatio(first, second) {
   const luminance = value => {
@@ -739,11 +739,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
                 ['allowIndividualDownloads', 'Allow individual downloads', 'Clients can save one photo at a time.'],
                 ['allowDownloadAll', 'Allow full gallery download', 'Clients can download the complete set.'],
                 ['allowLikes', 'Allow photo likes', 'Clients can mark the photos they love.'],
-                ['downloadsLocked', 'Lock downloads until ready', 'Keep downloads closed until you release them.'],
-                ['watermarkEnabled', 'Show a watermark when downloads are locked', 'Use this while the final files are not ready.']
               ].map(([key, label, description]) => <label className="v3-permission" key={key}><span><strong>{label}</strong><small>{description}</small></span><input type="checkbox" checked={Boolean(access[key])} onChange={event => setAccess(current => ({ ...current, [key]: event.target.checked }))} /></label>)}
-              {access.downloadsLocked && <label className="v3-access-extra">Download lock note<input maxLength={200} value={access.downloadLockNote} onChange={event => setAccess(current => ({ ...current, downloadLockNote: event.target.value }))} placeholder="e.g. Downloads open after final balance is paid" /></label>}
-              {access.watermarkEnabled && <label className="v3-access-extra">Watermark text<input maxLength={40} value={access.watermarkText} onChange={event => setAccess(current => ({ ...current, watermarkText: event.target.value }))} placeholder="Studio name" /></label>}
             </section>
             {format === 'campaign' && <section className="v3-panel v3-campaign-terms"><div className="v3-panel-heading"><span>03</span><div><h2>Campaign usage terms</h2><p>Tell the client how these final files may be used.</p></div></div><textarea rows={4} maxLength={1000} value={access.usageTerms} onChange={event => setAccess(current => ({ ...current, usageTerms: event.target.value }))} placeholder="Add usage terms (optional)" /></section>}
           </div>

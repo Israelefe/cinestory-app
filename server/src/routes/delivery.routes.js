@@ -10,7 +10,7 @@ import {
   listShareGrants, publishDelivery, queueAnalysis, queueDirection, queueNarration, queueRevision,
   restoreDelivery, retryDeliveryJob, recoverDeliveryUpload, revokeShareGrant, selectCuratedSoundtrack, signDeliveryUpload,
   signSoundtrackUpload, streamDeliverySoundtrack, streamPhotoDownload, togglePhotoLike, trackPhotoDownload,
-  unlockDelivery, updateDeliveryDetails, updateDeliveryReview, updateDownloadLock, getDeliveryPreviewMedia, getWatermarkedDeliveryPhoto
+  unlockDelivery, updateDeliveryDetails, updateDeliveryReview, updateDownloadSettings
 } from '../controllers/delivery.controller.js';
 
 const router = express.Router();
@@ -26,7 +26,6 @@ router.get('/public/:publicId/photos/:assetId/file', publicMediaLimit, streamPho
 router.post('/public/:publicId/photos/:assetId/downloaded', publicMediaLimit, trackPhotoDownload);
 router.get('/public/:publicId/download-all', publicMediaLimit, getGalleryDownload);
 router.get('/soundtracks/:trackId/audio', publicMediaLimit, streamDeliverySoundtrack);
-router.get('/media/:id/photos/:assetId', publicMediaLimit, getWatermarkedDeliveryPhoto);
 
 router.use(authMiddleware);
 router.post('/v3/assist', aiGenerationLimit, v3Assist);
@@ -37,7 +36,6 @@ router.post('/brief/assist', aiGenerationLimit, assistDeliveryBrief);
 router.get('/soundtracks', listDeliverySoundtracks);
 router.get('/narration/voices', listNarrationVoices);
 router.get('/:id', getDelivery);
-router.post('/:id/preview-media', getDeliveryPreviewMedia);
 router.patch('/:id/v3/details', v3Details);
 router.patch('/:id/v3/format', v3Format);
 router.post('/:id/v3/prepare', aiGenerationLimit, v3Prepare);
@@ -52,7 +50,7 @@ router.patch('/:id/v3/access', v3Access);
 router.post('/:id/v3/approve', v3Approve);
 router.post('/:id/v3/publish', v3Publish);
 router.patch('/:id/details', updateDeliveryDetails);
-router.patch('/:id/download-lock', updateDownloadLock);
+router.patch('/:id/download-settings', updateDownloadSettings);
 router.post('/:id/archive', archiveDelivery);
 router.post('/:id/restore', restoreDelivery);
 router.get('/:id/share-grants', listShareGrants);

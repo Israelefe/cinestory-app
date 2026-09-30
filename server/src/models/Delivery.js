@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import mongoose from 'mongoose';
+import { cleanDeliveryAccess } from '../utils/deliveryAccess.js';
 
 const assetSchema = new mongoose.Schema({
   assetId: { type: String, required: true },
@@ -28,12 +29,8 @@ const accessSchema = new mongoose.Schema({
   allowIndividualDownloads: { type: Boolean, default: true },
   allowDownloadAll: { type: Boolean, default: true },
   allowLikes: { type: Boolean, default: true },
-  downloadsLocked: { type: Boolean, default: false },
-  downloadLockNote: { type: String, trim: true, maxlength: 200, default: '' },
-  watermarkEnabled: { type: Boolean, default: false },
-  watermarkText: { type: String, trim: true, maxlength: 40, default: '' },
   revokedAt: Date
-}, { _id: false });
+}, { _id: false, toObject: { transform: (_doc, access) => cleanDeliveryAccess(access) }, toJSON: { transform: (_doc, access) => cleanDeliveryAccess(access) } });
 
 const deliverySchema = new mongoose.Schema({
   publicId: { type: String, unique: true, index: true, default: () => crypto.randomBytes(24).toString('base64url') },

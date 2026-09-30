@@ -7,7 +7,7 @@ const supportAccessGrantSchema = new mongoose.Schema({
   reason: { type: String, required: true, trim: true, maxlength: 240 },
   status: { type: String, enum: ['active', 'used', 'revoked', 'expired'], default: 'active', index: true },
   readOnly: { type: Boolean, default: true },
-  expiresAt: { type: Date, required: true, index: true },
+  expiresAt: { type: Date, required: true },
   usedAt: Date,
   revokedAt: Date
 }, { timestamps: true });

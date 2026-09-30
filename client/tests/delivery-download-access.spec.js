@@ -30,7 +30,7 @@ async function mock(page, delivery, patchHandler) {
     const reply = data => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data }) });
     if (/\/photos\/.*\/(download|file)|download-all/.test(path)) requests.push(path);
     if (path.endsWith('/auth/me')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, user }) });
-    if (path.endsWith('/download-lock')) return patchHandler(route, reply);
+    if (path.endsWith('/download-settings')) return patchHandler(route, reply);
     if (path.endsWith(`/deliveries/${id}`) || path.endsWith('/public/access-test')) return reply(delivery);
     if (path.endsWith('/stories/my-stories')) return reply([]);
     if (path.endsWith('/deliveries')) return reply(new URL(route.request().url()).searchParams.get('scope') === 'archived' ? [] : [delivery]);
@@ -78,60 +78,30 @@ for (const format of ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'cha
   test(`${format} makes the photographer name and mark visible at 320px`, async ({ page }) => {
     await checkStudioBrand(page, format, 320);
   });
-  test(`${format} loads protected preview images in the gallery and open photo`, async ({ page }) => {
+  test(`${format} ignores retired lock and watermark settings in existing deliveries`, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const delivery = fixture(format);
     delivery.access.watermarkEnabled = true;
-    delivery.assets = delivery.assets.map(asset => {
-      const base = `/api/v1/deliveries/media/${id}/photos/${asset.assetId}?token=offline-preview`;
-      return { ...asset, url: `${base}&width=1600`, thumbnailUrl: `${base}&thumbnail=1`, srcSet: `${base}&width=480 480w, ${base}&width=960 960w` };
-    });
     await mock(page, delivery);
-    const photo = readFileSync(new URL('../public/veylo/web/demo-lora-1-1440.webp', import.meta.url));
-    await page.route('**/api/v1/deliveries/media/**', route => route.fulfill({ contentType: 'image/webp', body: photo }));
     await page.goto('/d/access-test?phoneView=1');
-    await expect.poll(() => page.locator('img[src*="/deliveries/media/"]').first().evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
+    await expect(page.getByRole('button', { name: 'Downloads locked' })).toHaveCount(0);
     if (format === 'gridboard') {
-      await expect.poll(() => page.locator('.pb-tile-open img').first().evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
+      await expect(page.getByRole('button', { name: 'Download all photos', exact: true })).toBeVisible();
       await page.locator('.pb-tile-open').first().click();
+      await expect(page.getByRole('button', { name: 'Download photo', exact: true })).toBeVisible();
       await expect.poll(() => page.locator('.pb-lightbox-photo-main').evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
-      await expect(page.locator('.pb-lightbox-photo-main')).toHaveAttribute('src', /\/api\/v1\/deliveries\/media\//);
     } else {
       if (format === 'photo-story') {
         await page.getByRole('button', { name: 'Begin the story', exact: true }).click();
         await page.getByRole('button', { name: 'Open gallery', exact: true }).click();
       } else await page.getByRole('button', { name: 'Open full gallery', exact: true }).click();
       const gallery = page.locator('.client-gallery');
-      await expect.poll(() => gallery.locator('img').first().evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
+      await expect(gallery.getByRole('button', { name: 'Download all photos', exact: true })).toBeVisible();
       await gallery.getByRole('button', { name: 'Open photograph 1', exact: true }).click();
-      await expect.poll(async () => gallery.locator('img').evaluateAll(images => images.some(image => image.naturalWidth > 0 && image.currentSrc.includes('&width=1600')))).toBe(true);
+      await expect(gallery.getByRole('button', { name: 'Download photograph', exact: true })).toBeVisible();
+      await expect.poll(() => gallery.locator('.client-gallery-lightbox-main').evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
     }
-  });
-  test(`${format} explains locked downloads in the gallery and open photo`, async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    const requests = await mock(page, fixture(format));
-    await page.goto('/d/access-test?phoneView=1');
-    if (format === 'gridboard') {
-      await expect(page.locator('.pb-wrap > .delivery-download-note')).toContainText(note);
-      await page.locator('.pb-tile-open').first().click();
-      await page.locator('.pb-lightbox').getByRole('button', { name: 'Downloads locked' }).click();
-      await expect(page.locator('.pb-lightbox .delivery-download-lock-popover')).toContainText(note);
-    } else {
-      if (format === 'photo-story') {
-        await page.getByRole('button', { name: 'Begin the story', exact: true }).click();
-        await page.getByRole('button', { name: 'Open gallery', exact: true }).click();
-      } else await page.getByRole('button', { name: 'Open full gallery', exact: true }).click();
-      const gallery = page.locator('.client-gallery');
-      await expect(gallery.locator(':scope > .delivery-download-note')).toContainText(note);
-      await gallery.getByRole('button', { name: 'Downloads locked' }).click();
-      await expect(gallery.locator('.delivery-download-lock-popover')).toContainText(note);
-      await gallery.getByRole('button', { name: 'Downloads locked' }).press('Escape');
-      await expect(gallery).toBeVisible();
-      await gallery.getByRole('button', { name: 'Open photograph 1', exact: true }).click();
-      await expect(gallery.getByRole('button', { name: 'Downloads locked' })).toBeVisible();
-      await expect(gallery.getByRole('button', { name: /^Download( photograph| all|$)/ })).toHaveCount(0);
-    }
-    expect(requests).toEqual([]);
+    await expect(page.locator('.delivery-download-note, .delivery-download-lock')).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
 }
@@ -171,51 +141,37 @@ for (const width of [768, 834, 1440]) for (const format of ['photo-story', 'edit
   });
 }
 
-for (const width of [320, 768, 834, 1440]) {
-  test(`owner can unlock and relock the same published delivery at ${width}px`, async ({ page }) => {
-    await page.setViewportSize({ width, height: 900 });
-    const delivery = fixture('gridboard');
-    await mock(page, delivery, (route, reply) => {
-      const input = route.request().postDataJSON();
-      delivery.access = { ...delivery.access, ...input, downloadsLocked: input.locked, downloadLockNote: input.note };
-      return reply(delivery.access);
-    });
-    await page.goto('/dashboard');
-    await page.getByRole('button', { name: 'Downloads locked · Manage' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Download settings' });
-    await dialog.getByLabel('Lock downloads', { exact: false }).uncheck();
-    await dialog.getByRole('button', { name: 'Save settings' }).click();
-    await expect(dialog).toHaveCount(0);
-    expect(delivery.access.downloadsLocked).toBe(false);
-    expect(delivery.status).toBe('published');
-    await page.getByRole('button', { name: 'Download settings', exact: true }).click();
-    await dialog.getByLabel('Lock downloads', { exact: false }).check();
-    await dialog.getByLabel('Message clients see').fill('Your downloads will open tomorrow.');
-    await dialog.getByLabel('Watermark locked previews', { exact: false }).check();
-    await dialog.getByLabel('Watermark text', { exact: false }).fill('Amara Photography');
-    expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
-    if (width === 320 || width === 834) {
-      await dialog.evaluate(el => { el.scrollTop = 0; });
-      await page.screenshot({ path: `../.visual-review/download-settings-${width}.png` });
-    }
-    await dialog.getByRole('button', { name: 'Save settings' }).click();
-    await expect(page.getByRole('button', { name: 'Downloads locked · Manage' })).toBeVisible();
-    expect(delivery.access.watermarkEnabled).toBe(true);
-    expect(delivery.access.downloadLockNote).toBe('Your downloads will open tomorrow.');
-  });
-}
-
-test('failed save stays in the settings dialog with a clear error and can be retried', async ({ page }) => {
-  const delivery = fixture();
-  let fail = true;
+for (const width of [320, 768, 834, 1440]) test(`download settings keep regular permissions without retired controls at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 900 });
+  const delivery = fixture('gridboard');
   await mock(page, delivery, (route, reply) => {
-    if (fail) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ success: false, message: 'Download settings are temporarily unavailable. Try again.' }) });
-    return reply({ ...delivery.access, downloadsLocked: false });
+    const input = route.request().postDataJSON();
+    expect(Object.keys(input).sort()).toEqual(['allowDownloadAll', 'allowIndividualDownloads']);
+    delivery.access = { ...delivery.access, ...input };
+    return reply(input);
   });
   await page.goto('/dashboard');
-  await page.getByRole('button', { name: 'Downloads locked · Manage' }).click();
+  await page.getByRole('button', { name: 'Download settings', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Download settings' });
-  await dialog.getByLabel('Lock downloads', { exact: false }).uncheck();
+  await expect(dialog.getByText(/watermark|lock downloads/i)).toHaveCount(0);
+  await dialog.getByLabel('Allow full gallery downloads', { exact: false }).uncheck();
+  expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await dialog.getByRole('button', { name: 'Save settings' }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(delivery.access.allowDownloadAll).toBe(false);
+  expect(delivery.status).toBe('published');
+  expect(delivery.publicId).toBe('access-test');
+});
+
+test('failed regular download settings save gives an error and can be retried', async ({ page }) => {
+  const delivery = fixture();
+  let fail = true;
+  await mock(page, delivery, (route, reply) => fail
+    ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ success: false, message: 'Download settings are temporarily unavailable. Try again.' }) })
+    : reply(route.request().postDataJSON()));
+  await page.goto('/dashboard');
+  await page.getByRole('button', { name: 'Download settings', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Download settings' });
   await dialog.getByRole('button', { name: 'Save settings' }).click();
   await expect(dialog.getByRole('alert')).toContainText('temporarily unavailable');
   await expect(dialog.getByRole('button', { name: 'Save settings' })).toBeEnabled();
@@ -243,33 +199,21 @@ for (const width of [320, 768, 834, 1440]) test(`long GridBoard text wraps witho
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-for (const format of ['editorial', 'gridboard']) test(`${format} creation preview uses watermarked media and restores clean media after unlocking`, async ({ page }) => {
-  const delivery = fixture(format, false);
-  let requests = 0;
-  await page.route('**/api/v1/**', async route => {
-    if (new URL(route.request().url()).pathname.endsWith('/preview-media')) {
-      requests += 1;
-      expect(route.request().postDataJSON()).toEqual({ downloadsLocked: true, watermarkEnabled: true, watermarkText: 'Amara Photography' });
-      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data: { assets: delivery.assets.map(asset => ({ ...asset, url: asset.url + '?watermarked=studio', thumbnailUrl: asset.thumbnailUrl + '?watermarked=studio' })) } }) });
-    }
+for (const format of ['editorial', 'gridboard']) test(`${format} creation preview ignores retired watermark settings without requesting generated media`, async ({ page }) => {
+  const delivery = fixture(format);
+  delivery.access.watermarkEnabled = true;
+  let generatedMediaRequests = 0;
+  await page.route('**/api/v1/**', route => {
+    if (new URL(route.request().url()).pathname.endsWith('/preview-media')) generatedMediaRequests += 1;
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, user, data: {} }) });
   });
   await page.goto('/__phone-preview');
   await expect(page.getByText('Waiting for the preview.', { exact: true })).toBeVisible();
-  const show = async access => page.evaluate(payload => window.postMessage({ type: 'veylo:phone-preview-data', payload }, location.origin), { delivery, access });
-  const verifyPhoto = async watermarked => {
-    if (format !== 'gridboard') await page.getByRole('button', { name: 'Open full gallery', exact: true }).click();
-    const image = page.locator(format === 'gridboard' ? '.pb-tile img' : '.client-gallery-photo img').first();
-    await expect(image).toBeVisible();
-    if (watermarked) await expect(image).toHaveAttribute('src', /watermarked=studio/);
-    else expect(await image.getAttribute('src')).not.toContain('watermarked');
-  };
-  await show({ ...delivery.access, downloadsLocked: true, watermarkEnabled: true, watermarkText: 'Amara Photography' });
-  await verifyPhoto(true);
-  await expect(page.getByRole('button', { name: 'Downloads locked' }).first()).toBeVisible();
-  if (format !== 'gridboard') await page.getByRole('button', { name: 'Close gallery', exact: true }).click();
-  await show({ ...delivery.access, downloadsLocked: false, watermarkEnabled: true, watermarkText: 'Amara Photography' });
-  await verifyPhoto(false);
+  await page.evaluate(payload => window.postMessage({ type: 'veylo:phone-preview-data', payload }, location.origin), { delivery, access: delivery.access });
+  if (format !== 'gridboard') await page.getByRole('button', { name: 'Open full gallery', exact: true }).click();
+  const image = page.locator(format === 'gridboard' ? '.pb-tile img' : '.client-gallery-photo img').first();
+  await expect.poll(() => image.evaluate(element => element.naturalWidth)).toBeGreaterThan(0);
+  expect(await image.getAttribute('src')).not.toContain('watermark');
   await expect(page.getByRole('button', { name: 'Downloads locked' })).toHaveCount(0);
-  expect(requests).toBe(1);
+  expect(generatedMediaRequests).toBe(0);
 });

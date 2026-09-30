@@ -33,7 +33,7 @@ const demoDelivery = {
   branding: { name: 'Veylo Studio', logoUrl: '/veylo/veylo-logo.png' },
   assets,
   soundtrack: { title: 'Veylo soundtrack', url: '/audio/soundtrack-1.mp3' },
-  access: { allowIndividualDownloads: true, allowDownloadAll: true, downloadsLocked: false },
+  access: { allowIndividualDownloads: true, allowDownloadAll: true },
   pinboard: {
     title: 'A Veylo sample board',
     description: 'A selection of photographs already featured across Veylo.',

@@ -10,7 +10,7 @@ import { reservePublishSlot, resolveEntitlements } from '../services/entitlement
 import { removeDeliveryAudio } from '../services/deliveryMedia.service.js';
 import { NARRATION_BOOKEND_RENDER_VERSION } from '../services/narration.service.js';
 import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
-import { warmLockedDeliveryPreviews } from '../services/deliveryPreviewCache.service.js';
+import { cleanDeliveryAccess } from '../utils/deliveryAccess.js';
 
 const details = z.object({ kind: z.enum(['showcase', 'pinboard']).default('showcase'), clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().max(80).default(''), purpose: z.string().trim().max(3000).default(''), title: z.string().trim().max(120).default(''), originalPurpose: z.string().trim().max(3000).default(''), clarificationAnswers: z.array(z.object({ question: z.string().trim().max(180), answer: z.string().trim().min(1).max(300) }).strict()).max(3).default([]) }).strict();
 const formatInput = z.object({ format: z.enum(Object.keys(V3_FORMATS)) }).strict();
@@ -29,14 +29,14 @@ const pinboardInput = z.object({
   grid: z.object({ mobileColumns: z.number().int().min(1).max(2), tabletColumns: z.number().int().min(2).max(3), desktopColumns: z.number().int().min(3).max(5), gap: z.enum(['compact', 'regular', 'spacious']) }).strict(),
   animation: z.enum(['none', 'soft-fade', 'staggered'])
 }).strict();
-const accessInput = z.object({ pin: z.string().regex(/^\d{6}$/).optional().or(z.literal('')), expiresAt: z.string().datetime().optional().or(z.literal('')), allowIndividualDownloads: z.boolean(), allowDownloadAll: z.boolean(), allowLikes: z.boolean(), downloadsLocked: z.boolean(), downloadLockNote: z.string().trim().max(200), watermarkEnabled: z.boolean(), watermarkText: z.string().trim().max(40), usageTerms: z.string().trim().max(1000).default('') }).strict();
+const accessInput = z.preprocess(cleanDeliveryAccess, z.object({ pin: z.string().regex(/^\d{6}$/).optional().or(z.literal('')), expiresAt: z.string().datetime().optional().or(z.literal('')), allowIndividualDownloads: z.boolean(), allowDownloadAll: z.boolean(), allowLikes: z.boolean(), usageTerms: z.string().trim().max(1000).default('') }).strict());
 
 function bad(res, parsed) {
   const issue = parsed.error.issues[0];
   const field = issue?.path?.join('.') || '';
   const labels = { clientName: 'client name', shootType: 'shoot type', purpose: 'purpose of the shoot', title: 'delivery title', openingLine: 'opening message', closingLine: 'closing message', pin: 'PIN', expiresAt: 'expiry date', voiceId: 'narration voice', 'palette.background': 'background colour', 'palette.surface': 'panels colour', 'palette.text': 'text colour', 'palette.accent': 'accent colour' };
   const label = /^frames\.\d+\.caption$/.test(field) ? `caption for photo ${Number(field.split('.')[1]) + 1}` : labels[field] || field.replaceAll('.', ' ') || 'this field';
-  const isText = issue?.origin === 'string' || typeof issue?.input === 'string' || /^(clientName|shootType|purpose|title|openingLine|closingLine|pin|downloadLockNote|watermarkText|usageTerms)$/.test(field) || /^frames\.\d+\.caption$/.test(field);
+  const isText = issue?.origin === 'string' || typeof issue?.input === 'string' || /^(clientName|shootType|purpose|title|openingLine|closingLine|pin|usageTerms)$/.test(field) || /^frames\.\d+\.caption$/.test(field);
   const message = issue?.code === 'too_small' && typeof issue.minimum === 'number' && isText
     ? `The ${label} needs at least ${issue.minimum} characters.`
     : issue?.code === 'too_big' && typeof issue.maximum === 'number' && isText
@@ -359,11 +359,10 @@ export async function v3Access(req, res) {
     const delivery = await owned(req, { pin: true }); if (!editable(delivery)) return res.status(404).json({ success: false, message: 'Draft not found.' });
     const data = input.data;
     if (data.expiresAt && new Date(data.expiresAt) <= new Date()) return res.status(400).json({ success: false, code: 'V3_EXPIRY_IN_PAST', field: 'expiresAt', message: 'Choose a future expiry date, or clear the field for a link that does not expire.' });
-    Object.assign(delivery.access, { allowIndividualDownloads: data.allowIndividualDownloads, allowDownloadAll: data.allowDownloadAll, allowLikes: data.allowLikes, downloadsLocked: data.downloadsLocked, downloadLockNote: data.downloadLockNote, watermarkEnabled: data.watermarkEnabled, watermarkText: data.watermarkText, expiresAt: data.expiresAt ? new Date(data.expiresAt) : undefined });
+    Object.assign(delivery.access, { allowIndividualDownloads: data.allowIndividualDownloads, allowDownloadAll: data.allowDownloadAll, allowLikes: data.allowLikes, expiresAt: data.expiresAt ? new Date(data.expiresAt) : undefined });
     if (delivery.format === 'campaign') { delivery.formatConfig = { ...delivery.formatConfig, usageTerms: data.usageTerms }; delivery.markModified('formatConfig'); }
     if (data.pin !== undefined) delivery.access.pinDigest = data.pin ? await bcrypt.hash(data.pin, 12) : undefined;
     saveV3(delivery, { step: 'access' }); await delivery.save();
-    void warmLockedDeliveryPreviews(delivery).catch(() => {});
     const access = delivery.access.toObject();
     delete access.pinDigest;
     res.json({ success: true, data: { access, formatConfig: delivery.formatConfig, hasPin: Boolean(delivery.access.pinDigest) } });
@@ -415,7 +414,6 @@ export async function v3Publish(req, res) {
       { new: true }
     );
     if (!published) { const error = new Error('This delivery changed. Preview it again before publishing.'); error.status = 409; throw error; }
-    void warmLockedDeliveryPreviews(published).catch(() => {});
     res.json({ success: true, data: { publicId: delivery.publicId, url: `${String(process.env.CLIENT_URL || 'https://veylo.com.ng').replace(/\/$/, '')}/d/${delivery.publicId}`, entitlements: reservation.entitlements } });
   } catch (error) { await reservation?.release().catch(() => {}); fail(res, error); }
 }

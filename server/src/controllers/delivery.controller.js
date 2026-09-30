@@ -21,14 +21,15 @@ import { tokenDigest } from '../utils/auth.js';
 import { sendDeliveryDownloadedEmail, sendDeliveryViewedEmail, sendShareGrantEmail, sendStoryReadyEmail } from '../services/email.service.js';
 import QRCode from 'qrcode';
 import { renderGridboardStatusCard } from '../services/gridboardStatusCard.service.js';
-import { deliveryWatermarkedPreview, watermarkMediaToken, verifyWatermarkMediaToken, watermarkedAssetMedia } from '../services/deliveryWatermark.service.js';
-import { findStoredWatermark, storedDeliveryPreviews, warmDeliveryPreviews, warmLockedDeliveryPreviews, removeStoredPreviews } from '../services/deliveryPreviewCache.service.js';
+import { removeStoredPreviews } from '../services/deliveryPreviewCache.service.js';
 import { DEFAULT_NARRATION_VOICE_ID, NARRATION_VOICES } from '../constants/narrationVoices.js';
 import { DELIVERY_SOUNDTRACKS, deliverySoundtrack, deliverySoundtrackFile } from '../constants/deliverySoundtracks.js';
 import { supportsDeliveryMusic, supportsDeliveryNarration } from '../constants/deliveryCapabilities.js';
 import { getNarrationVoiceCatalogue, NARRATION_RENDER_VERSION } from '../services/narration.service.js';
 import { recordAnalyticsEventAsync } from '../services/analytics.service.js';
 import { isRuntimeFeatureEnabled } from '../services/runtimeConfig.service.js';
+import { safeProviderError } from '../services/cloudinary.service.js';
+import { cleanDeliveryAccess } from '../utils/deliveryAccess.js';
 
 const createSchema = z.object({ clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().min(2).max(80), brief: z.string().trim().min(1).max(3000) }).strict();
 const briefAssistSchema = createSchema.extend({ mode: z.enum(['assess', 'enhance']) }).strict();
@@ -40,18 +41,14 @@ const narrationSchema = z.object({
 }).strict();
 const revisionSchema = z.object({ scope: z.enum(['selected', 'full']), instruction: z.string().trim().min(8).max(600), assetIds: z.array(z.string().min(1).max(100)).max(100).default([]), captionOnly: z.boolean().default(false) }).strict();
 const libraryAssetsSchema = z.object({ assetIds: z.array(z.string().min(8).max(100)).min(1).max(20) }).strict();
-const accessSchema = z.object({
+const accessSchema = z.preprocess(cleanDeliveryAccess, z.object({
   pin: z.string().regex(/^\d{6}$/).optional().or(z.literal('')),
   expiresAt: z.string().datetime().optional().or(z.literal('')),
   allowIndividualDownloads: z.boolean().default(true),
   allowDownloadAll: z.boolean().default(true),
   allowLikes: z.boolean().default(true),
-  downloadsLocked: z.boolean().default(false),
-  downloadLockNote: z.string().trim().max(200).optional().default(''),
-  watermarkEnabled: z.boolean().default(false),
-  watermarkText: z.string().trim().max(40).optional().default(''),
   narration: z.boolean().default(true)
-}).strict();
+}).strict());
 const reviewSchema = z.object({
   title: z.string().trim().min(2).max(80),
   openingLine: z.string().trim().min(2).max(140),
@@ -473,7 +470,7 @@ export async function deleteDelivery(req, res) {
     // neither should make the photographer wait or report a failed delete.
     void Promise.allSettled(cleanupTasks.map(task => Promise.resolve().then(task))).then(results => {
       results.filter(result => result.status === 'rejected').forEach(result => {
-        console.error('[deliveries/delete-cleanup]', result.reason?.message || result.reason);
+        console.error('[deliveries/delete-cleanup]', safeProviderError(result.reason));
       });
     });
     deleteStep = 'respond';
@@ -988,10 +985,6 @@ export async function publishDelivery(req, res) {
     delivery.access.allowIndividualDownloads = parsed.data.allowIndividualDownloads;
     delivery.access.allowDownloadAll = parsed.data.allowDownloadAll;
     delivery.access.allowLikes = parsed.data.allowLikes;
-    delivery.access.downloadsLocked = parsed.data.downloadsLocked;
-    delivery.access.downloadLockNote = parsed.data.downloadLockNote;
-    delivery.access.watermarkEnabled = parsed.data.watermarkEnabled;
-    delivery.access.watermarkText = parsed.data.watermarkText;
     delivery.access.expiresAt = parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : undefined;
     delivery.access.revokedAt = undefined;
     delivery.access.pinDigest = parsed.data.pin ? await bcrypt.hash(parsed.data.pin, 12) : undefined;
@@ -999,7 +992,6 @@ export async function publishDelivery(req, res) {
     delivery.status = 'published';
     delivery.publishedAt = new Date();
     await delivery.save();
-    void warmLockedDeliveryPreviews(delivery).catch(() => {});
     res.json({ success: true, data: { publicId: delivery.publicId, url: `${String(process.env.CLIENT_URL).replace(/\/$/, '')}/d/${delivery.publicId}`, entitlements: reservation.entitlements } });
   } catch (error) {
     await reservation?.release().catch(() => {});
@@ -1082,15 +1074,8 @@ async function publicPayload(delivery, grant = null) {
   const visibleAssets = new Set(visibleDeliveryAssets.map(asset => asset.assetId));
   const fullAssetIds = new Set(delivery.assets.map(asset => asset.assetId));
   const scoped = visibleAssets.size !== fullAssetIds.size;
-  const watermarkText = (delivery.access?.watermarkEnabled && delivery.access?.downloadsLocked)
-    ? (delivery.access?.watermarkText || owner.studio?.name || owner.name || 'PREVIEW')
-    : null;
-  const watermarkToken = watermarkText ? watermarkMediaToken({ deliveryId: String(delivery._id), publicId: delivery.publicId, grantId: grant ? String(grant._id) : null, pinVersion: tokenDigest(delivery.access?.pinDigest || '') }) : null;
-  const storedMedia = watermarkText ? await storedDeliveryPreviews(delivery, watermarkText) : new Map();
-  if (watermarkText) warmDeliveryPreviews({ _id: delivery._id, userId: delivery.userId, assets: visibleDeliveryAssets }, watermarkText, storedMedia);
   object.assets = visibleDeliveryAssets.map(asset => {
     const safe = ownerAsset(asset);
-    if (watermarkToken) Object.assign(safe, storedMedia.get(asset.assetId) || watermarkedAssetMedia(asset, watermarkToken, String(delivery._id)));
     const photoColors = (asset.analysis?.colors || []).filter(color => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color)).slice(0, 4);
     const dominantColor = photoColors[0];
     if (typeof dominantColor === 'string' && /^#[0-9a-f]{6}$/i.test(dominantColor)) safe.dominantColor = dominantColor;
@@ -1162,7 +1147,6 @@ export async function getPinboardStatusCard(req, res) {
     const delivery = await publicDelivery(req.params.publicId);
     const grant = delivery ? await shareGrant(req, delivery) : null;
     if (!delivery || delivery.kind !== 'pinboard' || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This GridBoard is not available.' });
-    if (delivery.access?.downloadsLocked) return res.status(403).json({ success: false, code: 'DOWNLOADS_LOCKED', message: delivery.access?.downloadLockNote || 'Downloads are locked for this delivery.' });
     const individualAllowed = grant ? grant.allowIndividualDownloads : delivery.access?.allowIndividualDownloads;
     const galleryAllowed = grant ? grant.allowDownloadAll : delivery.access?.allowDownloadAll;
     if (!individualAllowed && !galleryAllowed) return res.status(403).json({ success: false, code: 'DOWNLOADS_DISABLED', message: 'Photo sharing is turned off for this link.' });
@@ -1172,9 +1156,7 @@ export async function getPinboardStatusCard(req, res) {
     const owner = delivery.userId;
     const entitlement = await resolveEntitlements(owner, { includeUsage: false });
     const studioName = entitlement.features.branding === 'studio' ? owner.studio?.name || owner.name : 'Veylo';
-    const watermark = delivery.access?.watermarkEnabled ? (delivery.access.watermarkText || owner.studio?.name || owner.name || 'PREVIEW') : null;
     const sources = await Promise.all(assets.map(async asset => {
-      if (watermark) return deliveryWatermarkedPreview(asset, watermark, { width: 1600 });
       const url = signedImageUrl(asset.publicId, { width: 1600 });
       const upstream = await fetch(url, { signal: AbortSignal.timeout(30_000) });
       if (!upstream.ok) throw Object.assign(new Error('A photograph could not be prepared.'), { status: 502 });
@@ -1330,9 +1312,6 @@ export async function getPhotoDownload(req, res) {
     const delivery = await publicDelivery(req.params.publicId);
     const grant = delivery ? await shareGrant(req, delivery) : null;
     if (!delivery || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
-    if (delivery.access?.downloadsLocked) {
-      return res.status(403).json({ success: false, code: 'DOWNLOADS_LOCKED', message: delivery.access?.downloadLockNote || 'Downloads are locked for this delivery. Contact your photographer to unlock.' });
-    }
     const individualAllowed = grant ? grant.allowIndividualDownloads : delivery.access?.allowIndividualDownloads;
     const galleryAllowed = grant ? grant.allowDownloadAll : delivery.access?.allowDownloadAll;
     if (!individualAllowed && !galleryAllowed) return res.status(403).json({ success: false, message: 'Downloads are turned off for this link.' });
@@ -1348,9 +1327,6 @@ export async function streamPhotoDownload(req, res) {
     const delivery = await publicDelivery(req.params.publicId);
     const grant = delivery ? await shareGrant(req, delivery) : null;
     if (!delivery || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
-    if (delivery.access?.downloadsLocked) {
-      return res.status(403).json({ success: false, code: 'DOWNLOADS_LOCKED', message: delivery.access?.downloadLockNote || 'Downloads are locked for this delivery. Contact your photographer to unlock.' });
-    }
     const individualAllowed = grant ? grant.allowIndividualDownloads : delivery.access?.allowIndividualDownloads;
     const galleryAllowed = grant ? grant.allowDownloadAll : delivery.access?.allowDownloadAll;
     if (!individualAllowed && !galleryAllowed) return res.status(403).json({ success: false, message: 'Downloads are turned off for this link.' });
@@ -1402,9 +1378,6 @@ export async function trackPhotoDownload(req, res) {
     const delivery = await publicDelivery(req.params.publicId);
     const grant = delivery ? await shareGrant(req, delivery) : null;
     if (!delivery || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
-    if (delivery.access?.downloadsLocked) {
-      return res.status(403).json({ success: false, code: 'DOWNLOADS_LOCKED', message: delivery.access?.downloadLockNote || 'Downloads are locked for this delivery. Contact your photographer to unlock.' });
-    }
     const individualAllowed = grant ? grant.allowIndividualDownloads : delivery.access?.allowIndividualDownloads;
     const galleryAllowed = grant ? grant.allowDownloadAll : delivery.access?.allowDownloadAll;
     if (!individualAllowed && !galleryAllowed) return res.status(403).json({ success: false, message: 'Downloads are turned off for this link.' });
@@ -1433,9 +1406,6 @@ export async function getGalleryDownload(req, res) {
     const delivery = await publicDelivery(req.params.publicId);
     const grant = delivery ? await shareGrant(req, delivery) : null;
     if (!delivery || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
-    if (delivery.access?.downloadsLocked) {
-      return res.status(403).json({ success: false, code: 'DOWNLOADS_LOCKED', message: delivery.access?.downloadLockNote || 'Downloads are locked for this delivery. Contact your photographer to unlock.' });
-    }
     if (grant ? !grant.allowDownloadAll : !delivery.access?.allowDownloadAll) return res.status(403).json({ success: false, message: 'Full gallery download is turned off for this link.' });
     const selectedAssets = grantAssets(delivery, grant);
     if (!selectedAssets.length) return res.status(404).json({ success: false, message: 'No photographs are available on this link.' });
@@ -1460,115 +1430,17 @@ export async function getGalleryDownload(req, res) {
   }
 }
 
-export async function getDeliveryPreviewMedia(req, res) {
+export async function updateDownloadSettings(req, res) {
   try {
-    const parsed = z.object({ downloadsLocked: z.boolean(), watermarkEnabled: z.boolean(), watermarkText: z.string().trim().max(40) }).strict().safeParse(req.body);
-    if (!parsed.success) return failValidation(res, parsed);
-    const delivery = await ownedDelivery(req.params.id, req.user.id, true);
-    if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
-    await delivery.populate('userId', 'name studio');
-    const owner = delivery.userId;
-    const watermark = parsed.data.downloadsLocked && parsed.data.watermarkEnabled
-      ? parsed.data.watermarkText || owner.studio?.name || owner.name || 'PREVIEW'
-      : null;
-    const token = watermark ? watermarkMediaToken({ deliveryId: String(delivery._id), ownerId: String(req.user.id), text: String(watermark).slice(0, 40) }) : null;
-    const storedMedia = watermark ? await storedDeliveryPreviews(delivery, watermark) : new Map();
-    const assets = delivery.assets.map(asset => {
-      const media = token ? { assetId: asset.assetId, ...(storedMedia.get(asset.assetId) || watermarkedAssetMedia(asset, token, String(delivery._id))) } : ownerAsset(asset);
-      return { assetId: media.assetId, url: media.url, thumbnailUrl: media.thumbnailUrl, srcSet: media.srcSet };
-    });
-    res.json({ success: true, data: { assets } });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'We could not prepare the watermarked preview. Try again.' });
-  }
-}
-
-export async function getWatermarkedDeliveryPhoto(req, res) {
-  res.set('Cache-Control', 'private, no-store');
-  let claims;
-  try {
-    claims = verifyWatermarkMediaToken(req.query.token);
-    if (claims.deliveryId !== req.params.id) throw new Error('Wrong delivery.');
-  } catch {
-    return res.status(403).json({ success: false, message: 'This photo preview link has expired. Reload the delivery.' });
-  }
-  const width = Number(req.query.width || 1600);
-  if (![480, 960, 1600].includes(width) || (req.query.thumbnail !== undefined && req.query.thumbnail !== '1')) {
-    return res.status(400).json({ success: false, message: 'That photo preview size is not available.' });
-  }
-  try {
-    let delivery;
-    let text;
-    if (claims.ownerId) {
-      if (!/^[a-f0-9]{24}$/i.test(claims.ownerId) || typeof claims.text !== 'string' || !claims.text || claims.text.length > 40) return res.status(403).json({ success: false, message: 'This photo preview link is not valid.' });
-      delivery = await ownedDelivery(claims.deliveryId, claims.ownerId);
-      text = claims.text;
-    } else {
-      delivery = await publicDelivery(claims.publicId);
-      if (!delivery || String(delivery._id) !== claims.deliveryId || expired(delivery) || !delivery.access?.downloadsLocked || !delivery.access?.watermarkEnabled || claims.pinVersion !== tokenDigest(delivery.access?.pinDigest || '')) {
-        return res.status(404).json({ success: false, message: 'This photo preview is no longer available. Reload the delivery.' });
-      }
-      if (claims.grantId) {
-        if (!/^[a-f0-9]{24}$/i.test(claims.grantId)) return res.status(403).json({ success: false, message: 'This photo preview link is not valid.' });
-        const grant = await DeliveryShareGrant.findOne({ _id: claims.grantId, deliveryId: delivery._id, revokedAt: null, $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }] });
-        if (!grant || !grantAssets(delivery, grant).some(asset => asset.assetId === req.params.assetId)) return res.status(404).json({ success: false, message: 'This photograph is not available in this link.' });
-      }
-      text = delivery.access.watermarkText || delivery.userId.studio?.name || delivery.userId.name || 'PREVIEW';
-    }
-    const asset = delivery?.assets.find(item => item.assetId === req.params.assetId);
-    if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
-    const file = await findStoredWatermark(delivery, asset, text);
-    const remaining = Math.max(0, Number(claims.exp) - Math.floor(Date.now() / 1000));
-    res.set({ 'Cache-Control': `private, max-age=${Math.min(300, remaining)}`, 'X-Content-Type-Options': 'nosniff' });
-    if (file) {
-      const variants = [...file.variants].sort((a, b) => a.width - b.width);
-      const variant = req.query.thumbnail === '1' ? variants[0] : variants.find(item => item.width >= width) || variants.at(-1);
-      return res.redirect(302, signedImageUrl(variant.publicId, { original: true, format: 'webp' }));
-    }
-    // A client must not wait for preview uploads to finish. Serve only the
-    // rendered watermark, then prepare CDN variants for subsequent visits.
-    const buffer = await deliveryWatermarkedPreview(asset, text, { width, thumbnail: req.query.thumbnail === '1' });
-    warmDeliveryPreviews({ _id: delivery._id, userId: delivery.userId, assets: [asset] }, text);
-    return res.set('Content-Type', 'image/webp').send(buffer);
-  } catch (error) {
-    console.warn('[deliveries/watermarked-photo]', { deliveryId: req.params.id, assetId: req.params.assetId, upstreamStatus: error.upstreamStatus, code: error.code || 'PHOTO_PREVIEW_FAILED' });
-    return res.status(502).json({ success: false, message: 'The photo preview could not be loaded. Please try again.' });
-  }
-}
-
-export async function updateDownloadLock(req, res) {
-  try {
-    const parsed = z.object({
-      locked: z.boolean(),
-      note: z.string().trim().max(200).optional(),
-      watermarkEnabled: z.boolean().optional(),
-      watermarkText: z.string().trim().max(40).optional(),
-      allowIndividualDownloads: z.boolean().optional(),
-      allowDownloadAll: z.boolean().optional()
-    }).strict().safeParse(req.body);
+    const parsed = z.object({ allowIndividualDownloads: z.boolean(), allowDownloadAll: z.boolean() }).strict().safeParse(req.body);
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
-    delivery.access.downloadsLocked = parsed.data.locked;
-    if (parsed.data.note !== undefined) delivery.access.downloadLockNote = parsed.data.note;
-    if (parsed.data.watermarkEnabled !== undefined) delivery.access.watermarkEnabled = parsed.data.watermarkEnabled;
-    if (parsed.data.watermarkText !== undefined) delivery.access.watermarkText = parsed.data.watermarkText;
-    if (parsed.data.allowIndividualDownloads !== undefined) delivery.access.allowIndividualDownloads = parsed.data.allowIndividualDownloads;
-    if (parsed.data.allowDownloadAll !== undefined) delivery.access.allowDownloadAll = parsed.data.allowDownloadAll;
+    delivery.access.allowIndividualDownloads = parsed.data.allowIndividualDownloads;
+    delivery.access.allowDownloadAll = parsed.data.allowDownloadAll;
     delivery.markModified('access');
     await delivery.save();
-    void warmLockedDeliveryPreviews(delivery).catch(() => {});
-    res.json({
-      success: true,
-      data: {
-        downloadsLocked: delivery.access.downloadsLocked,
-        downloadLockNote: delivery.access.downloadLockNote,
-        watermarkEnabled: delivery.access.watermarkEnabled,
-        watermarkText: delivery.access.watermarkText,
-        allowIndividualDownloads: delivery.access.allowIndividualDownloads,
-        allowDownloadAll: delivery.access.allowDownloadAll
-      }
-    });
+    res.json({ success: true, data: parsed.data });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Could not update download settings.' });
   }

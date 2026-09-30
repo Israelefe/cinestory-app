@@ -188,7 +188,7 @@ export default function CreateDelivery({ user }) {
   const [failedJob, setFailedJob] = useState(null);
   const [reviewPage, setReviewPage] = useState(0);
   const [reviewPanel, setReviewPanel] = useState('overview');
-  const [access, setAccess] = useState({ pinEnabled: false, pin: '', expiresAt: '', allowIndividualDownloads: true, allowDownloadAll: true, allowLikes: true, downloadsLocked: false, downloadLockNote: '', watermarkEnabled: false, watermarkText: '', narration: true, narrationVoiceId: DEFAULT_NARRATION_VOICE_ID });
+  const [access, setAccess] = useState({ pinEnabled: false, pin: '', expiresAt: '', allowIndividualDownloads: true, allowDownloadAll: true, allowLikes: true, narration: true, narrationVoiceId: DEFAULT_NARRATION_VOICE_ID });
   const [audioRights, setAudioRights] = useState(false);
   const [audioTitle, setAudioTitle] = useState('');
   const [soundtrackTab, setSoundtrackTab] = useState('curated');
@@ -543,10 +543,6 @@ export default function CreateDelivery({ user }) {
         allowIndividualDownloads: access.allowIndividualDownloads,
         allowDownloadAll: access.allowDownloadAll,
         allowLikes: access.allowLikes,
-        downloadsLocked: access.downloadsLocked,
-        downloadLockNote: access.downloadLockNote,
-        watermarkEnabled: access.watermarkEnabled,
-        watermarkText: access.watermarkText,
         narration: narrationEnabled
       });
       setDelivery(current => ({ ...current, status: 'published', publishedUrl: response.data.data.url }));
@@ -931,42 +927,6 @@ export default function CreateDelivery({ user }) {
                 <label className="v-publish-expiry"><span>Link expiry</span><small>Leave empty when the delivery should stay open.</small><input type="date" value={access.expiresAt} min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)} onChange={event => setAccess(current => ({ ...current, expiresAt: event.target.value }))} /></label>
                 <Toggle icon={Image} label="Individual photo downloads" copy="Let the client download one photograph at a time." checked={access.allowIndividualDownloads} onChange={value => setAccess(current => ({ ...current, allowIndividualDownloads: value }))} />
                 <Toggle icon={Clapperboard} label="Download all photographs" copy="Let the client start the photographs one by one from the gallery." checked={access.allowDownloadAll} onChange={value => setAccess(current => ({ ...current, allowDownloadAll: value }))} />
-                <Toggle
-                  icon={LockKeyhole}
-                  label="Lock downloads until balance is cleared"
-                  copy="Client can experience and view the story, but downloads stay locked until you unlock them."
-                  checked={access.downloadsLocked}
-                  onChange={value => setAccess(current => ({ ...current, downloadsLocked: value }))}
-                >
-                  {access.downloadsLocked && (
-                    <div style={{ marginTop: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                      <input
-                        value={access.downloadLockNote}
-                        onChange={event => setAccess(current => ({ ...current, downloadLockNote: event.target.value.slice(0, 200) }))}
-                        placeholder="e.g. Please clear remaining session balance to unlock downloads."
-                        aria-label="Note shown to client while downloads are locked"
-                        style={{ fontSize: '0.85rem' }}
-                      />
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', color: '#a8a19a', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={access.watermarkEnabled}
-                          onChange={event => setAccess(current => ({ ...current, watermarkEnabled: event.target.checked }))}
-                        />
-                        Watermark preview photographs while downloads are locked
-                      </label>
-                      {access.watermarkEnabled && (
-                        <input
-                          value={access.watermarkText}
-                          onChange={event => setAccess(current => ({ ...current, watermarkText: event.target.value.slice(0, 40) }))}
-                          placeholder="Studio name or PREVIEW watermark text"
-                          aria-label="Watermark text"
-                          style={{ fontSize: '0.85rem' }}
-                        />
-                      )}
-                    </div>
-                  )}
-                </Toggle>
                 <Toggle icon={Check} label="Photo likes" copy="Let the client mark the photographs they love." checked={access.allowLikes} onChange={value => setAccess(current => ({ ...current, allowLikes: value }))} />
                 {reviewCapabilities.narration && <Toggle icon={Play} label="Narration with Hannah" copy="On by default for Photo Story. Deepgram Flux reads the approved captions in a calm, measured voice." checked={access.narration} onChange={value => setAccess(current => ({ ...current, narration: value }))}>{access.narration && <small className="v-narration-voice-note">Deepgram Flux · Hannah · captions are read in photograph order.</small>}</Toggle>}
               </div>

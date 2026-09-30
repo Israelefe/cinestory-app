@@ -10,7 +10,7 @@ const features = [
   { icon: Palette, label: 'Outfit and backdrop colours', title: 'Find a look by colour.', copy: 'When a shoot has enough variety, clients can open groups such as cream outfits or blue backgrounds. A group appears only when the colour is clear and it narrows the gallery.' },
   { icon: Image, label: 'Similar Shot', title: 'Find photographs with a similar look.', copy: 'During setup, Veylo compares framing, pose, outfit, backdrop, and visible details. When a client opens a photo, Similar Shot shows the closest matches. It does not use face recognition.' },
   { icon: Music2, label: 'Optional slideshow', title: 'Let the photos play when they are ready.', copy: 'Clients start a paced slideshow of the full gallery or the group they are viewing. If you add music, it starts with the slideshow; browsing the board stays quiet.' },
-  { icon: Download, label: 'Download settings', title: 'Decide what clients can save.', copy: 'Allow individual photos or the full gallery to be downloaded. You can also lock downloads until you are ready.' },
+  { icon: Download, label: 'Download settings', title: 'Decide what clients can save.', copy: 'Allow individual photos or the full gallery to be downloaded.' },
   { icon: Palette, label: 'Colour, type, and motion', title: 'Make the board feel like the shoot.', copy: 'Veylo starts with a palette drawn from the dominant photo colours. Re-pick or adjust it, choose display and body fonts, set grid spacing and columns, and pick the entrance motion.' },
   { icon: MessageCircle, label: 'WhatsApp sharing', title: 'Send one photo at a time.', copy: 'Clients can share a private link to a photo in WhatsApp. They can also make a branded Status card from selected delivered photos.' }
 ];

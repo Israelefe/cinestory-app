@@ -3,6 +3,7 @@ import StorageAsset from '../models/StorageAsset.js';
 import User from '../models/User.js';
 import Subscription from '../models/Subscription.js';
 import Delivery from '../models/Delivery.js';
+import DeliveryPreviewFile from '../models/DeliveryPreviewFile.js';
 import AnalyticsEvent from '../models/AnalyticsEvent.js';
 import { removeStorageAsset } from './storageMedia.service.js';
 import { cloudinary, configureCloudinary } from './cloudinary.service.js';
@@ -15,20 +16,27 @@ let timer;
 let running = false;
 let lastRunAt = 0;
 
-async function referencedMedia(ids, resourceType) {
+export async function referencedMedia(ids, resourceType) {
   const referenced = new Set();
   if (resourceType === 'image') {
-    const [deliveries, stored] = await Promise.all([
+    const [deliveries, stored, previews] = await Promise.all([
       Delivery.find({ 'assets.publicId': { $in: ids } }).select('assets.publicId').lean(),
-      StorageAsset.find({ publicId: { $in: ids } }).select('publicId').lean()
+      StorageAsset.find({ publicId: { $in: ids } }).select('publicId').lean(),
+      DeliveryPreviewFile.find({ 'variants.publicId': { $in: ids } }).select('variants.publicId').lean()
     ]);
     for (const delivery of deliveries) for (const asset of delivery.assets) if (ids.includes(asset.publicId)) referenced.add(asset.publicId);
     for (const asset of stored) referenced.add(asset.publicId);
+    for (const preview of previews) for (const variant of preview.variants || []) if (ids.includes(variant.publicId)) referenced.add(variant.publicId);
   } else {
-    const deliveries = await Delivery.find({ $or: [{ 'soundtrack.publicId': { $in: ids } }, { 'narration.publicId': { $in: ids } }] }).select('soundtrack.publicId narration.publicId').lean();
+    const deliveries = await Delivery.find({ $or: [
+      { 'soundtrack.publicId': { $in: ids } }, { 'narration.publicId': { $in: ids } },
+      { 'narration.opening.publicId': { $in: ids } }, { 'narration.closing.publicId': { $in: ids } }
+    ] }).select('soundtrack.publicId narration.publicId narration.opening.publicId narration.closing.publicId').lean();
     for (const delivery of deliveries) {
       if (delivery.soundtrack?.publicId) referenced.add(delivery.soundtrack.publicId);
       if (delivery.narration?.publicId) referenced.add(delivery.narration.publicId);
+      if (delivery.narration?.opening?.publicId) referenced.add(delivery.narration.opening.publicId);
+      if (delivery.narration?.closing?.publicId) referenced.add(delivery.narration.closing.publicId);
     }
   }
   return referenced;
@@ -136,7 +144,10 @@ export function startRetentionWorker() {
     lastRunAt = Date.now();
     await purgeExpiredProData();
   };
-  setTimeout(run, 15_000).unref?.();
-  timer = setInterval(run, 15 * 60 * 1000);
+  // A failure before the scan's own try/catch must not become an unhandled
+  // rejection from a timer callback and terminate the API process.
+  const scheduledRun = () => { void run().catch(() => console.error('[retention]', 'RETENTION_SCAN_FAILED')); };
+  setTimeout(scheduledRun, 15_000).unref?.();
+  timer = setInterval(scheduledRun, 15 * 60 * 1000);
   timer.unref?.();
 }
