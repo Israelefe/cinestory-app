@@ -10,7 +10,7 @@ import {
   listShareGrants, publishDelivery, queueAnalysis, queueDirection, queueNarration, queueRevision,
   restoreDelivery, retryDeliveryJob, recoverDeliveryUpload, revokeShareGrant, selectCuratedSoundtrack, signDeliveryUpload,
   signSoundtrackUpload, streamDeliverySoundtrack, streamPhotoDownload, togglePhotoLike, trackPhotoDownload,
-  unlockDelivery, updateDeliveryDetails, updateDeliveryReview, updateDownloadLock
+  unlockDelivery, updateDeliveryDetails, updateDeliveryReview, updateDownloadLock, getDeliveryPreviewMedia
 } from '../controllers/delivery.controller.js';
 
 const router = express.Router();
@@ -36,6 +36,7 @@ router.post('/brief/assist', aiGenerationLimit, assistDeliveryBrief);
 router.get('/soundtracks', listDeliverySoundtracks);
 router.get('/narration/voices', listNarrationVoices);
 router.get('/:id', getDelivery);
+router.post('/:id/preview-media', getDeliveryPreviewMedia);
 router.patch('/:id/v3/details', v3Details);
 router.patch('/:id/v3/format', v3Format);
 router.post('/:id/v3/prepare', aiGenerationLimit, v3Prepare);

@@ -15,6 +15,7 @@ import {
   normalizeDeliveryPhotos
 } from '../../pages/FormatDemo.jsx';
 import './EventCampaignViewers.css';
+import DownloadLockButton from './DownloadLockNotice.jsx';
 
 function splitIntoGroups(photos, wantedGroups) {
   const count = Math.max(1, Math.min(wantedGroups, photos.length));
@@ -168,7 +169,7 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
           <div><span>FIND A MOMENT</span><strong>Go straight to a scene or open every photograph.</strong></div>
           <div className="vec-event-tools-actions">
             <button type="button" onClick={() => { setGalleryIndex(null); setGallery(true); }}><Images size={15} />Full gallery</button>
-            {galleryProps?.onDownloadAll && delivery?.access?.allowDownloadAll !== false && <button type="button" onClick={galleryProps.onDownloadAll} disabled={Boolean(galleryProps.busy)}><Download size={15} />{galleryProps.busy === 'all' ? 'Preparing…' : 'Download all'}</button>}
+            {delivery?.access?.downloadsLocked ? <DownloadLockButton access={delivery.access} /> : galleryProps?.onDownloadAll && delivery?.access?.allowDownloadAll !== false && <button type="button" onClick={galleryProps.onDownloadAll} disabled={Boolean(galleryProps.busy)}><Download size={15} />{galleryProps.busy === 'all' ? 'Preparing…' : 'Download all'}</button>}
           </div>
         </div>
         <nav className="vec-event-scene-nav" aria-label="Event scenes">
@@ -272,7 +273,7 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
           <div><span>FIND AN APPROVED ASSET</span><strong>Start with a set, inspect the supporting files, or open everything.</strong></div>
           <div className="vec-campaign-tools-actions">
             <button type="button" onClick={() => { setGalleryIndex(null); setGallery(true); }}><Images size={15} />Full gallery</button>
-            {galleryProps?.onDownloadAll && delivery?.access?.allowDownloadAll !== false && <button type="button" onClick={galleryProps.onDownloadAll} disabled={Boolean(galleryProps.busy)}><Download size={15} />{galleryProps.busy === 'all' ? 'Preparing…' : 'Download all'}</button>}
+            {delivery?.access?.downloadsLocked ? <DownloadLockButton access={delivery.access} /> : galleryProps?.onDownloadAll && delivery?.access?.allowDownloadAll !== false && <button type="button" onClick={galleryProps.onDownloadAll} disabled={Boolean(galleryProps.busy)}><Download size={15} />{galleryProps.busy === 'all' ? 'Preparing…' : 'Download all'}</button>}
           </div>
         </div>
         <nav className="vec-campaign-set-nav" aria-label="Campaign asset sets">
@@ -305,7 +306,7 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
       </section>
 
       <section className="vec-campaign-handoff">
-        <div><span>03 / HANDOFF</span><h2>Ready for the team.</h2><p>{galleryPhotos.length} final photographs are available in the complete gallery, with the campaign sets kept in the order they are meant to be used.</p>{galleryProps?.onDownloadAll && delivery?.access?.allowDownloadAll !== false && <button type="button" onClick={galleryProps.onDownloadAll} disabled={Boolean(galleryProps.busy)}>{galleryProps.busy === 'all' ? 'Starting downloads...' : 'Download all photos'}<Download size={17} /></button>}</div>
+        <div><span>03 / HANDOFF</span><h2>Ready for the team.</h2><p>{galleryPhotos.length} final photographs are available in the complete gallery, with the campaign sets kept in the order they are meant to be used.</p>{delivery?.access?.downloadsLocked ? <DownloadLockButton access={delivery.access} placement="above" /> : galleryProps?.onDownloadAll && delivery?.access?.allowDownloadAll !== false && <button type="button" onClick={galleryProps.onDownloadAll} disabled={Boolean(galleryProps.busy)}>{galleryProps.busy === 'all' ? 'Starting downloads...' : 'Download all photos'}<Download size={17} /></button>}</div>
         <aside><FileCheck2 size={23} /><span>USAGE TERMS</span><p>{usage}</p><div className="vec-handoff-notes"><span>MASTER</span><span>WEB CROP</span><span>SOCIAL CROP</span></div></aside>
       </section>
 

@@ -6,6 +6,7 @@ import { Photo } from '../PublicDesign.jsx';
 import { useDialogFocus } from '../useDialogFocus.js';
 import { trackEvent } from '../../services/analytics.js';
 import './ClientGallery.css';
+import DownloadLockButton, { DownloadLockMessage } from './DownloadLockNotice.jsx';
 
 const photoKey = (photo, index) => photo?.assetId || photo?.id || photo?.name || index;
 const imageUrl = (photo, width = 1440) => photo?.url || (typeof photo === 'string' && (photo.startsWith('http') || photo.startsWith('/')) ? photo : `/veylo/web/${photo?.name || photo}-${width}.webp`);
@@ -83,15 +84,12 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
       <header className="client-gallery-header">
         <div><p>{eyebrow} · {photos.length} {photos.length === 1 ? 'photograph' : 'photographs'}</p><h2 id="client-gallery-title">{selected === null ? title : `Photograph ${selected + 1}`}</h2></div>
         <div className="client-gallery-header-actions">
+          {isLocked && <DownloadLockButton access={delivery.access} />}
           {selected === null && allowDownloadAll && onDownloadAll && <button className="client-gallery-download-all" type="button" onClick={onDownloadAll} disabled={Boolean(resolvedBusy)}>{resolvedBusy === 'all' ? <LoaderCircle className="client-gallery-spin" size={16} /> : <Download size={16} />}<span>{resolvedBusy === 'all' && downloadProgress ? `Starting ${downloadProgress.current}/${downloadProgress.total}` : resolvedBusy === 'all' ? 'Starting...' : 'Download all photos'}</span></button>}
           <button className="client-gallery-icon" type="button" onClick={onClose} aria-label="Close gallery"><X size={21} /></button>
         </div>
       </header>
-      {isLocked && (
-        <div style={{ margin: '12px 24px 0', padding: '10px 16px', background: 'rgba(255, 90, 71, 0.08)', border: '1px solid rgba(255, 90, 71, 0.2)', borderRadius: '6px', fontSize: '13px', color: '#ff9b8e', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span>{delivery.access?.downloadLockNote || 'Downloads are locked for this delivery. Contact your photographer to unlock.'}</span>
-        </div>
-      )}
+      {isLocked && <DownloadLockMessage access={delivery.access} />}
       {downloadNotice && <p className="client-gallery-download-tip" role="status">{downloadNotice}</p>}
 
       {selected === null ? <div className="client-gallery-grid">{resolvedPhotos.map((photo, index) => {

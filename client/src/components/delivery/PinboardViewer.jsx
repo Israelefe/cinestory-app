@@ -7,6 +7,7 @@ import api from '../../services/api.js';
 import { resolvedGridboardPalette } from '../../utils/gridboardPalette.js';
 import { useSmoothSoundtrackLoop } from '../../utils/smoothSoundtrackLoop.js';
 import DeliveryBrandMark from './DeliveryBrandMark.jsx';
+import DownloadLockButton, { DownloadLockMessage } from './DownloadLockNotice.jsx';
 import './PinboardViewer.css';
 
 function accessHeaders(publicId) {
@@ -616,6 +617,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
     return { ...group, photos: ordered.filter(asset => ids.has(String(asset.assetId))) };
   }).filter(group => group.photos.length);
   const canDownload = !preview && !delivery?.access?.downloadsLocked && (delivery?.access?.allowIndividualDownloads || delivery?.access?.allowDownloadAll);
+  const downloadsLocked = Boolean(delivery?.access?.downloadsLocked);
   function downloadPhoto(asset, index) {
     if (demo) {
       const anchor = document.createElement('a');
@@ -635,9 +637,10 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
 
   return <main className={'pb-viewer' + (preview ? ' is-preview' : '') + (board.animation === 'none' ? '' : ' is-animated')} style={style}>
     <div className="pb-wrap">
-      <header className="pb-header">
+      <header className={'pb-header' + ((delivery?.branding?.name || 'Veylo').length > 32 ? ' has-long-brand' : '')}>
         <div className="pb-brand"><span className="pb-brand-mark"><DeliveryBrandMark branding={delivery?.branding} /></span><span>{delivery?.branding?.name || 'Veylo'}<small>GRIDBOARD</small></span></div>
-        {!preview && <div className="pb-header-actions">{delivery.access?.allowDownloadAll && !delivery.access?.downloadsLocked && <button type="button" aria-label="Download all photos" onClick={() => demo ? setMessage('Download all is available on published galleries.') : galleryProps.onDownloadAll?.()}><ArrowDownToLine size={17} /> Download all</button>}{canDownload && <button type="button" aria-label="Make a WhatsApp Status card" className="pb-status-open" onClick={() => { setStatusSelection([]); setStatusPage(0); setStatusCard(null); setMessage(''); setStatusOpen(true); }}><MessageCircle size={17} /> Make a Status card</button>}</div>}
+        {downloadsLocked && <DownloadLockButton access={delivery.access} />}
+        {!preview && !downloadsLocked && <div className="pb-header-actions">{delivery.access?.allowDownloadAll && !delivery.access?.downloadsLocked && <button type="button" aria-label="Download all photos" onClick={() => demo ? setMessage('Download all is available on published galleries.') : galleryProps.onDownloadAll?.()}><ArrowDownToLine size={17} /> Download all</button>}{canDownload && <button type="button" aria-label="Make a WhatsApp Status card" className="pb-status-open" onClick={() => { setStatusSelection([]); setStatusPage(0); setStatusCard(null); setMessage(''); setStatusOpen(true); }}><MessageCircle size={17} /> Make a Status card</button>}</div>}
       </header>
       <section className="pb-intro">
         <span className="pb-kicker">GRIDBOARD DELIVERY</span>
@@ -645,6 +648,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
         <p>{board.description || (preview ? 'Every finished photograph from this shoot.' : `Made for ${delivery?.clientName || 'you'}. Explore the whole set or find a moment below.`)}</p>
         <div className="pb-intro-meta"><span>{assets.length} photographs</span><i aria-hidden="true" />{!preview && <span>{delivery?.viewer?.label || 'Private gallery'}</span>}</div>
       </section>
+      {downloadsLocked && <DownloadLockMessage access={delivery.access} />}
       {(moments.length > 0 || colourGroups.length > 0) && <nav className="pb-find-tools" aria-label="Explore the photographs">
         {!!moments.length && <section className="pb-moments" aria-label="Find a moment">
           <div className="pb-moments-head"><span>FIND A MOMENT</span>{(activeMoment || activeColour) && <button type="button" onClick={() => { setActiveMoment(''); setActiveColour(''); }}>Show all photos</button>}</div>
@@ -686,7 +690,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
         {!!similarShots.length && <aside className="pb-similar-shot"><div className="pb-similar-head"><strong>Similar Shot</strong><button type="button" className="pb-similar-play" onClick={() => setShowSlideshowSetup(true)} aria-haspopup="dialog"><span className="pb-similar-play-icon" aria-hidden="true"><Play size={12} fill="currentColor" /></span><span>Play these photos</span></button></div><div className="pb-similar-list">{similarShots.map(asset => <button type="button" key={asset.assetId} onClick={() => showRelatedPhoto(asset)} aria-label={`Open a similar shot: ${asset.alt || 'photo'}`}><img src={photoUrl(asset)} alt="" loading="lazy" /></button>)}</div></aside>}
       </figure>
       <button type="button" className="pb-lightbox-nav is-right" onClick={() => navigatePhoto(1)} disabled={modalIndex >= visible.length - 1} aria-label="Next photograph"><ChevronRight size={26} /></button>
-      <div className="pb-lightbox-actions">{!preview && <button type="button" onClick={() => openWhatsApp('photo', modalAsset.assetId, delivery?.title || 'Photo gallery')}><MessageCircle size={17} /> Share on WhatsApp</button>}{canDownload && <button type="button" onClick={() => downloadPhoto(modalAsset, modalIndex)}><Download size={17} /> Download photo</button>}</div>
+      <div className="pb-lightbox-actions">{!preview && <button type="button" onClick={() => openWhatsApp('photo', modalAsset.assetId, delivery?.title || 'Photo gallery')}><MessageCircle size={17} /> Share on WhatsApp</button>}{downloadsLocked ? <DownloadLockButton access={delivery.access} placement="above" /> : canDownload && <button type="button" onClick={() => downloadPhoto(modalAsset, modalIndex)}><Download size={17} /> Download photo</button>}</div>
     </div>}
 
     {soundtrackUrl && <audio ref={musicRef} crossOrigin="anonymous" src={soundtrackUrl} preload="none" loop onError={() => { setMusicMuted(true); if (slideshow) setSlideshowMessage('Music could not load. The slideshow will keep playing without it.'); }} />}

@@ -357,6 +357,9 @@
 @media (max-width: 640px) {
   .pb-lightbox figure { width: 100%; }
   .pb-lightbox-photo { height: 68svh; }
+  .pb-header.has-long-brand { flex-wrap: wrap; gap: 12px; padding-block: 14px; }
+  .pb-header.has-long-brand .pb-brand { flex: 1 1 100%; }
+  .pb-header.has-long-brand > .delivery-download-lock, .pb-header.has-long-brand > .pb-header-actions { margin-left: auto; }
 }
 
 .pb-find-tools { margin: 0 0 16px; border-top: 1px solid color-mix(in srgb, var(--pb-text) 12%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--pb-text) 12%, transparent); }
@@ -396,6 +399,18 @@
 .pb-similar-list { display: flex; gap: 8px; overflow-x: auto; padding: 2px 1px 5px; scrollbar-width: thin; }
 .pb-similar-list > button { width: 67px; height: 67px; flex: none; overflow: hidden; padding: 0; border: 1px solid #ffffff35; border-radius: 8px; background: #17171b; cursor: pointer; transition: transform .18s ease, border-color .18s ease; }
 .pb-similar-list > button:hover { transform: translateY(-2px); border-color: var(--pb-accent); }
+.pb-intro h1 { max-width: 100%; overflow-wrap: anywhere; text-wrap: balance; line-height: 1.03; }
+.pb-intro > p, .pb-intro-meta > span { overflow-wrap: anywhere; }
+.pb-board-top > div:first-child > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.pb-board-top > div:first-child > span:last-child { flex: none; white-space: nowrap; }
+.pb-moment-chip-wrap { min-width: 0; max-width: min(360px, calc(100vw - 52px)); height: auto; min-height: 47px; }
+.pb-moment-chip-wrap > button:first-of-type { min-width: 0; }
+.pb-moment-chip-wrap strong { max-width: 220px; padding-block: 6px; white-space: normal; overflow-wrap: anywhere; }
+.pb-colour-list button { max-width: calc(100vw - 52px); }
+.pb-colour-list button strong { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.pb-slideshow > header > div { min-width: 0; }
+.pb-slideshow > header span, .pb-slideshow > header small, .pb-status-dialog h2, .pb-status-dialog > p { overflow-wrap: anywhere; }
+.pb-slideshow > header > button { flex: none; }
 .pb-similar-shot img { width: 100%; height: 100%; object-fit: cover; }
 .pb-lightbox figure:has(.pb-similar-shot) .pb-lightbox-photo { height: min(61svh, 640px); }
 .pb-lightbox { background: #070709; }

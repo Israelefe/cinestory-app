@@ -61,15 +61,15 @@ export function signedImageUrl(publicId, { width = 1600, height, thumbnail = fal
   if (resourceType === 'image') {
     if (original) {
       transformation = undefined;
-    } else if (thumbnail) {
-      transformation = [{ crop: 'fill', width: 800, height: 1000, gravity: 'auto', quality: 'auto:good', fetch_format: 'auto' }];
     } else {
-      const transforms = [{ crop: 'limit', width, ...(height ? { height } : {}), quality: 'auto:good', fetch_format: 'auto' }];
+      const transforms = [thumbnail
+        ? { crop: 'fill', width: 800, height: 1000, gravity: 'auto', quality: 'auto:good', fetch_format: 'auto' }
+        : { crop: 'limit', width, ...(height ? { height } : {}), quality: 'auto:good', fetch_format: 'auto' }];
       if (watermark) {
         transforms.push({
           overlay: { font_family: 'Arial', font_size: 38, font_weight: 'bold', text: String(watermark).slice(0, 40) },
           color: '#ffffff',
-          opacity: 28,
+          opacity: 55,
           gravity: 'south_east',
           x: 24,
           y: 24

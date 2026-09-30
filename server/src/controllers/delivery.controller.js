@@ -123,7 +123,7 @@ function ownerAsset(asset, watermark = null) {
   return {
     ...data,
     url: signedImageUrl(asset.publicId, { watermark }),
-    thumbnailUrl: signedImageUrl(asset.publicId, { thumbnail: true }),
+    thumbnailUrl: signedImageUrl(asset.publicId, { thumbnail: true, watermark }),
     srcSet: [480, 960, 1600].map(width => `${signedImageUrl(asset.publicId, { width, watermark })} ${width}w`).join(', ')
   };
 }
@@ -246,7 +246,7 @@ export async function updateDeliveryDetails(req, res) {
     }
     await delivery.save();
     const data = delivery.toObject();
-    data.assets = delivery.assets.map(ownerAsset);
+    data.assets = delivery.assets.map(asset => ownerAsset(asset));
     res.json({ success: true, data });
   } catch (error) {
     console.error('[deliveries/details]', error.message);
@@ -377,7 +377,7 @@ export async function getDelivery(req, res) {
     const data = delivery.toObject();
     data.hasPin = Boolean(data.access?.pinDigest);
     if (data.access) delete data.access.pinDigest;
-    data.assets = delivery.assets.map(ownerAsset);
+    data.assets = delivery.assets.map(asset => ownerAsset(asset));
     data.generationJob = generationJob || null;
     if (data.soundtrack?.catalogId && data.soundtrack?.source === 'curated') {
       data.soundtrack.url = curatedPreviewUrl(data.soundtrack.catalogId, soundtrackPreviewToken(req.user.id));
@@ -610,7 +610,7 @@ export async function addLibraryAssets(req, res) {
       throw error;
     }
     const addedIds = new Set(newAssets.map(item => item.assetId));
-    const data = updated.assets.filter(item => addedIds.has(item.assetId)).map(ownerAsset);
+    const data = updated.assets.filter(item => addedIds.has(item.assetId)).map(asset => ownerAsset(asset));
     await discardV3Narration(delivery);
     recordAnalyticsEventAsync({ name: 'upload.completed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'completed', count: data.length, bytes: newAssets.reduce((total, asset) => total + Number(asset.bytes || 0), 0), format: delivery.format, metadata: { surface: 'delivery', resourceType: 'library-copy' } });
     res.status(201).json({ success: true, data });
@@ -935,7 +935,7 @@ export async function updateDeliveryReview(req, res) {
     delivery.markModified('assets');
     await delivery.save();
     const data = delivery.toObject();
-    data.assets = delivery.assets.sort((a, b) => a.sortOrder - b.sortOrder).map(ownerAsset);
+    data.assets = delivery.assets.sort((a, b) => a.sortOrder - b.sortOrder).map(asset => ownerAsset(asset));
     res.json({ success: true, data });
   } catch (error) {
     console.error('[deliveries/review]', error.message);
@@ -1448,13 +1448,36 @@ export async function getGalleryDownload(req, res) {
   }
 }
 
+export async function getDeliveryPreviewMedia(req, res) {
+  try {
+    const parsed = z.object({ downloadsLocked: z.boolean(), watermarkEnabled: z.boolean(), watermarkText: z.string().trim().max(40) }).strict().safeParse(req.body);
+    if (!parsed.success) return failValidation(res, parsed);
+    const delivery = await ownedDelivery(req.params.id, req.user.id, true);
+    if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    await delivery.populate('userId', 'name studio');
+    const owner = delivery.userId;
+    const watermark = parsed.data.downloadsLocked && parsed.data.watermarkEnabled
+      ? parsed.data.watermarkText || owner.studio?.name || owner.name || 'PREVIEW'
+      : null;
+    const assets = delivery.assets.map(asset => {
+      const media = ownerAsset(asset, watermark);
+      return { assetId: media.assetId, url: media.url, thumbnailUrl: media.thumbnailUrl, srcSet: media.srcSet };
+    });
+    res.json({ success: true, data: { assets } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'We could not prepare the watermarked preview. Try again.' });
+  }
+}
+
 export async function updateDownloadLock(req, res) {
   try {
     const parsed = z.object({
       locked: z.boolean(),
       note: z.string().trim().max(200).optional(),
       watermarkEnabled: z.boolean().optional(),
-      watermarkText: z.string().trim().max(40).optional()
+      watermarkText: z.string().trim().max(40).optional(),
+      allowIndividualDownloads: z.boolean().optional(),
+      allowDownloadAll: z.boolean().optional()
     }).strict().safeParse(req.body);
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
@@ -1463,6 +1486,8 @@ export async function updateDownloadLock(req, res) {
     if (parsed.data.note !== undefined) delivery.access.downloadLockNote = parsed.data.note;
     if (parsed.data.watermarkEnabled !== undefined) delivery.access.watermarkEnabled = parsed.data.watermarkEnabled;
     if (parsed.data.watermarkText !== undefined) delivery.access.watermarkText = parsed.data.watermarkText;
+    if (parsed.data.allowIndividualDownloads !== undefined) delivery.access.allowIndividualDownloads = parsed.data.allowIndividualDownloads;
+    if (parsed.data.allowDownloadAll !== undefined) delivery.access.allowDownloadAll = parsed.data.allowDownloadAll;
     delivery.markModified('access');
     await delivery.save();
     res.json({
@@ -1471,7 +1496,9 @@ export async function updateDownloadLock(req, res) {
         downloadsLocked: delivery.access.downloadsLocked,
         downloadLockNote: delivery.access.downloadLockNote,
         watermarkEnabled: delivery.access.watermarkEnabled,
-        watermarkText: delivery.access.watermarkText
+        watermarkText: delivery.access.watermarkText,
+        allowIndividualDownloads: delivery.access.allowIndividualDownloads,
+        allowDownloadAll: delivery.access.allowDownloadAll
       }
     });
   } catch (error) {
