@@ -362,7 +362,7 @@ test('short or generic first-pass captions are repaired before the showcase is s
     assert.equal(result.direction.frames.every(frame => frame.headline !== 'The photograph'), true);
     assert.equal(result.direction.frames.every(frame => frame.caption.split(/\s+/).length >= 18), true);
     assert.equal(result.direction.frames[0].headline, 'Twenty-five begins');
-    assert.match(calls[2].messages[1].content[0].text, /Let the photographer’s purpose supply nearly all the meaning/);
+    assert.match(calls[2].messages[0].content, /purpose provides almost all the meaning/);
   } finally { restore(); }
 });
 
@@ -391,6 +391,55 @@ test('regenerated headline and caption use the purpose with only a light image c
     assert.deepEqual(text, { headline: 'Ada at Twenty-Five', caption: 'Ada, turning twenty-five is a chance to celebrate how far you have come and choose what matters most in the year ahead.' });
     assert.match(calls[0].messages[1].content[0].text, /A woman smiles at the camera/);
     assert.match(calls[0].messages[0].content, /18-24 words/);
+  } finally { restore(); }
+});
+
+test('replacing a birthday photograph keeps Convennant as the client through generation and repair', async () => {
+  const calls = [];
+  const wrong = { headline: "Lora's Birthday Year", caption: 'Lora, this birthday gives you space to mark how far you have come and choose what matters most next.' };
+  const correct = { headline: "Convennant's Birthday Year", caption: 'Convennant, this birthday is a chance to mark what matters to you and make room for what you want next.' };
+  const restore = mockModel([wrong, { frames: [{ ...correct, assetId: 'selected-photo' }] }], calls);
+  try {
+    const result = await regenerateV3Caption({ clientName: 'Convennant', brief: 'birthday', shootType: 'Birthday', format: 'photo-story' }, { summary: 'A smiling person. The filename is Lora.jpg.' }, 'Keep this about the birthday.');
+    assert.deepEqual(result, correct);
+    assert.equal(calls.length, 2);
+    for (const call of calls) {
+      assert.match(call.messages[1].content[0].text, /"clientName":"Convennant","purpose":"birthday"/);
+      assert.match(call.messages[0].content, /Copy supplied names exactly/);
+      assert.doesNotMatch(call.messages[0].content, /Lora|25th|Twenty-Five/);
+    }
+    assert.match(calls[0].messages[1].content[0].text, /Keep this about the birthday/);
+  } finally { restore(); }
+});
+
+test('failed identity repair cannot return an unrelated personal name', async () => {
+  const wrong = { headline: "Lora's Birthday Year", caption: 'Lora, this birthday gives you space to mark how far you have come and choose what matters most next.' };
+  const restore = mockModel([wrong, { frames: [{ ...wrong, assetId: 'selected-photo' }] }], []);
+  try {
+    const result = await regenerateV3Caption({ clientName: 'Convennant', brief: 'birthday', shootType: 'Birthday', format: 'photo-story' }, { summary: 'A person smiles.' });
+    assert.doesNotMatch(JSON.stringify(result), /Lora/);
+    assert.match(result.headline, /Convennant/);
+    assert.match(result.caption, /birthday/);
+  } finally { restore(); }
+});
+
+test('natural contractions and ordinary sentence openings are not mistaken for personal names', async () => {
+  const text = { headline: 'A Birthday to Keep', caption: "It's your birthday, and these photos give you time to mark the day and choose what you want next." };
+  const calls = [];
+  const restore = mockModel([text], calls);
+  try {
+    assert.deepEqual(await regenerateV3Caption({ clientName: 'Convennant', brief: 'birthday', shootType: 'Birthday', format: 'photo-story' }, { summary: 'A person smiles.' }), text);
+    assert.equal(calls.length, 1);
+  } finally { restore(); }
+});
+
+test('a subject explicitly named in the purpose remains valid even when the paying client differs', async () => {
+  const text = { headline: "Lora's Birthday Year", caption: 'Lora, this birthday gives you space to mark how far you have come and choose what matters most next.' };
+  const calls = [];
+  const restore = mockModel([text], calls);
+  try {
+    assert.deepEqual(await regenerateV3Caption({ clientName: 'Convennant', brief: "Lora's birthday", shootType: 'Birthday', format: 'photo-story' }, { summary: 'A person smiles.' }), text);
+    assert.equal(calls.length, 1);
   } finally { restore(); }
 });
 

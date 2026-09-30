@@ -3,6 +3,81 @@ import { expect, test } from '@playwright/test';
 const draftId = '507f1f77bcf86cd799439011';
 const user = { _id: '507f1f77bcf86cd799439012', name: 'Amara', email: 'amara@example.com', emailVerified: true, onboardingComplete: true, plan: 'free' };
 
+for (const width of [320, 768, 834, 1440]) test(`Showcase visual photo picker keeps the original selection on failure at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: width === 320 ? 740 : 900 });
+  await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 3, necessary: true, serviceAnalytics: true })));
+  const assets = Array.from({ length: 12 }, (_, index) => ({ assetId: `photo-${index}`, originalFilename: `finished-${index + 1}.jpg`, url: '/veylo/web/demo-lora-1-960.webp', thumbnailUrl: '/veylo/web/demo-lora-1-480.webp' }));
+  const draft = { _id: draftId, schemaVersion: 3, status: 'review', clientName: 'Convennant', shootType: 'Birthday', brief: 'birthday', format: 'photo-story', assets, curatedAssetIds: assets.slice(0, 10).map(asset => asset.assetId), creativeDirection: { title: "Convennant's birthday", openingLine: 'Your birthday photographs are here.', closingLine: 'Your full collection is ready.', frames: assets.slice(0, 10).map(asset => ({ assetId: asset.assetId, headline: "Convennant's Birthday", caption: 'Convennant, this birthday is yours to celebrate.' })) }, v3: { step: 'showcase', revision: 1, openingAssetId: 'photo-10', closingAssetId: 'photo-11' } };
+  const requests = [];
+  let fail = true;
+  let holdResponse = true;
+  let releaseResponse;
+  await page.route('**/api/v1/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    const reply = data => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data }) });
+    if (path.endsWith('/auth/me')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, user }) });
+    if (path.endsWith('/billing/status')) return reply({ plan: 'free', limits: { photosPerDelivery: 100 }, usage: { deliveriesRemaining: 3 } });
+    if (path.endsWith('/deliveries/' + draftId)) return reply(draft);
+    if (path.endsWith('/regenerate')) {
+      requests.push({ path, body: route.request().postDataJSON() });
+      if (holdResponse) await new Promise(resolve => { releaseResponse = resolve; });
+      if (fail) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ success: false, message: 'Caption service is busy. Please try again.' }) });
+      return reply({ headline: "Convennant's Birthday Year", caption: 'Convennant, this birthday is a chance to mark what matters to you and make room for what you want next.' });
+    }
+    return reply({});
+  });
+  await page.goto('/create?draft=' + draftId);
+  await expect(page.getByRole('heading', { name: 'Make the selection yours.' })).toBeVisible();
+  await page.getByRole('button', { name: 'Replace this photo', exact: true }).click();
+  let picker = page.getByRole('dialog');
+  await expect(picker.getByRole('button', { name: /^Choose finished-/ })).toHaveCount(2);
+  await expect.poll(() => picker.locator('img').evaluateAll(images => images.every(image => image.complete && image.naturalWidth > 0))).toBe(true);
+  const box = await picker.boundingBox();
+  expect(box.x).toBeGreaterThanOrEqual(0); expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(width); expect(box.y + box.height).toBeLessThanOrEqual(width === 320 ? 740 : 900);
+  await picker.getByRole('button', { name: 'Choose finished-11.jpg' }).click();
+  await picker.getByRole('button', { name: 'Use this photo' }).click();
+  await expect(picker.getByRole('status')).toContainText('Writing a headline and caption');
+  await expect(picker.getByRole('button', { name: 'Preparing photo' })).toBeDisabled();
+  await expect(page.locator('.v3-showcase-item>img')).toHaveAttribute('alt', 'finished-1.jpg');
+  holdResponse = false; releaseResponse();
+  await expect(picker.getByRole('alert')).toContainText('Your current photo and words have been kept');
+  await expect(page.getByLabel('Headline')).toHaveValue("Convennant's Birthday");
+  await expect(page.locator('.v3-showcase-item>img')).toHaveAttribute('alt', 'finished-1.jpg');
+  fail = false;
+  await picker.getByRole('button', { name: 'Use this photo' }).click();
+  await expect(picker).toHaveCount(0);
+  await expect(page.locator('.v3-showcase-item>img')).toHaveAttribute('alt', 'finished-11.jpg');
+  await expect(page.getByLabel('Headline')).toHaveValue("Convennant's Birthday Year");
+  expect(requests[0].path).toContain('/captions/photo-10/regenerate');
+  await page.getByRole('button', { name: 'Choose opening photo', exact: true }).click();
+  picker = page.getByRole('dialog');
+  await expect(picker.getByRole('button', { name: /^Choose finished-/ })).toHaveCount(12);
+  await picker.getByLabel('Search uploaded photos').fill('finished-2.jpg');
+  await expect(picker.locator('img')).toHaveCount(1);
+  await picker.getByRole('button', { name: 'Choose finished-2.jpg' }).click();
+  await picker.getByRole('button', { name: 'Use this photo' }).click();
+  await expect(page.locator('.v3-bookend-image').first().locator('img')).toHaveAttribute('alt', 'finished-2.jpg');
+  expect(requests).toHaveLength(2);
+  await page.getByRole('button', { name: 'Choose closing photo', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Choose closing photo', exact: true })).toBeFocused();
+  await page.getByRole('button', { name: 'Remove from showcase' }).click();
+  await page.getByRole('button', { name: 'Add another showcase photo' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Choose finished-1.jpg' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Use this photo' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByText('10 chosen')).toBeVisible();
+  await page.getByLabel(/Instruction for photo/).fill('Keep the birthday message personal.');
+  fail = true;
+  await page.getByRole('button', { name: 'Regenerate headline and caption' }).click();
+  await expect(page.locator('.v3-caption-error')).toContainText('Your current headline and caption have been kept');
+  await expect(page.getByLabel('Headline')).toHaveValue("Convennant's Birthday Year");
+  expect(requests.at(-1).body.instruction).toBe('Keep the birthday message personal.');
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+});
+
 for (const width of [320, 834, 1440]) {
   test('V3 details and recommended format remain usable at ' + width + 'px', async ({ page }) => {
     await page.setViewportSize({ width, height: width === 320 ? 740 : 900 });

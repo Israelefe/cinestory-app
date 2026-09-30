@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { AlertCircle, ArrowLeft, ArrowRight, AudioLines, Check, ChevronLeft, ChevronRight, Clock3, ExternalLink, Image, LoaderCircle, Mail, Mic2, Music2, Pause, Play, QrCode, RefreshCw, RotateCcw, Search, Share2, Trash2, Upload } from 'lucide-react';
+import { Plus, AlertCircle, ArrowLeft, ArrowRight, AudioLines, Check, ChevronLeft, ChevronRight, Clock3, ExternalLink, Image, LoaderCircle, Mail, Mic2, Music2, Pause, Play, QrCode, RefreshCw, RotateCcw, Search, Share2, Trash2, Upload } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
 import { API_BASE_URL } from '../config/env.js';
@@ -13,6 +13,7 @@ import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID } from '../constants/narra
 import { DELIVERY_FORMATS } from '../constants/deliveryFormats.js';
 import DeliveryFormatVisual from '../components/DeliveryFormatVisual.jsx';
 import NarrationVoicePicker from '../components/delivery/NarrationVoicePicker.jsx';
+import ShowcasePhotoPicker from '../components/delivery/ShowcasePhotoPicker.jsx';
 import { ClientPreviewPhoneFrame } from '../components/delivery/PhonePresentation.jsx';
 import './CreateDeliveryV3.css';
 
@@ -113,6 +114,11 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const [job, setJob] = useState(initialDelivery?.generationJob || null);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [photoPicker, setPhotoPicker] = useState(null);
+  const [captionError, setCaptionError] = useState(null);
+  const captionPending = useRef(false);
+  const captionRequest = useRef(null);
+  useEffect(() => () => captionRequest.current?.abort(), []);
   const [selected, setSelected] = useState(initialDelivery?.curatedAssetIds || []);
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [captions, setCaptions] = useState(Object.fromEntries((initialDelivery?.creativeDirection?.frames || []).map(frame => [frame.assetId, frame.caption])));
@@ -320,15 +326,28 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
       setJob(data.data); setStage('preparing');
     });
   }
-  function replaceSelected(index, id) {
-    setSelected(current => current.map((value, at) => at === index ? id : value));
-    setActivePhotoIndex(index);
-    void regenerate(id);
-  }
-  function addSelected(id) {
-    setSelected(current => [...current, id]);
-    setActivePhotoIndex(selected.length);
-    void regenerate(id);
+  async function chooseShowcasePhoto(id, signal) {
+    if (!assetById.has(id)) throw new Error('This photo is no longer in the gallery. Choose another photo.');
+    if (photoPicker.mode === 'opening') { setOpeningAssetId(id); return; }
+    if (photoPicker.mode === 'closing') { setClosingAssetId(id); return; }
+    if (selected.includes(id) || captionPending.current || busy) throw new Error('Choose a photo that is not already in the showcase.');
+    if (photoPicker.mode === 'add' && selected.length >= bounds[1]) throw new Error('The showcase already has its maximum number of photos.');
+    captionPending.current = true;
+    setBusy('caption-' + id); setCaptionError(null);
+    try {
+      const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/captions/' + id + '/regenerate', { instruction: instructions[id] || '' }, { signal });
+      if (signal.aborted) return;
+      setHeadlines(current => ({ ...current, [id]: data.data.headline }));
+      setCaptions(current => ({ ...current, [id]: data.data.caption }));
+      if (photoPicker.mode === 'replace') {
+        setSelected(current => current.map((value, at) => at === photoPicker.index ? id : value));
+        setActivePhotoIndex(photoPicker.index);
+      } else {
+        setSelected(current => [...current, id]);
+        setActivePhotoIndex(selected.length);
+      }
+    } catch (failure) { throw new Error(message(failure).text); }
+    finally { captionPending.current = false; setBusy(''); }
   }
   function moveSelected(index, offset) {
     if (index + offset < 0 || index + offset >= selected.length) return;
@@ -336,11 +355,18 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     setActivePhotoIndex(index + offset);
   }
   async function regenerate(id) {
-    await action('caption-' + id, async () => {
-      const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/captions/' + id + '/regenerate', { instruction: instructions[id] || '' });
+    if (busy || captionPending.current) return;
+    captionPending.current = true;
+    setBusy('caption-' + id); setCaptionError(null);
+    const controller = new AbortController();
+    captionRequest.current = controller;
+    try {
+      const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/captions/' + id + '/regenerate', { instruction: instructions[id] || '' }, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       setHeadlines(current => ({ ...current, [id]: data.data.headline }));
       setCaptions(current => ({ ...current, [id]: data.data.caption }));
-    });
+    } catch (failure) { if (!controller.signal.aborted) setCaptionError({ assetId: id, text: message(failure).text }); }
+    finally { captionPending.current = false; setBusy(''); }
   }
   async function saveShowcase() {
     if (selected.length < bounds[0] || selected.length > bounds[1]) { setError(`Choose between ${bounds[0]} and ${bounds[1]} showcase photos before continuing.`); return; }
@@ -570,11 +596,11 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
             <div className="v3-bookends">
               <article className="v3-bookend-card">
                 <div className="v3-bookend-image">{assetById.get(openingAssetId) ? <img src={assetById.get(openingAssetId)?.thumbnailUrl || assetById.get(openingAssetId)?.url} alt={assetById.get(openingAssetId)?.originalFilename || 'Opening photograph'} /> : <Image size={26} />}</div>
-                <label><span>Opening photograph</span><small>Shown before the showcase begins.</small><select value={openingAssetId} onChange={event => setOpeningAssetId(event.target.value)}>{assets.map((asset, index) => <option key={asset.assetId} value={asset.assetId}>{index + 1}. {asset.originalFilename}</option>)}</select></label>
+                <div className="v3-bookend-choice"><span>Opening photograph</span><small>Shown before the showcase begins.</small><button type="button" className="v3-photo-choice-button" disabled={!!busy} onClick={() => setPhotoPicker({ mode: 'opening', currentId: openingAssetId, title: 'Choose the opening photograph' })}><Image size={18} /> Choose opening photo</button></div>
               </article>
               <article className="v3-bookend-card">
                 <div className="v3-bookend-image">{assetById.get(closingAssetId) ? <img src={assetById.get(closingAssetId)?.thumbnailUrl || assetById.get(closingAssetId)?.url} alt={assetById.get(closingAssetId)?.originalFilename || 'Closing photograph'} /> : <Image size={26} />}</div>
-                <label><span>Closing photograph</span><small>Shown after the final showcase photo.</small><select value={closingAssetId} onChange={event => setClosingAssetId(event.target.value)}>{assets.map((asset, index) => <option key={asset.assetId} value={asset.assetId}>{index + 1}. {asset.originalFilename}</option>)}</select></label>
+                <div className="v3-bookend-choice"><span>Closing photograph</span><small>Shown after the final showcase photo.</small><button type="button" className="v3-photo-choice-button" disabled={!!busy} onClick={() => setPhotoPicker({ mode: 'closing', currentId: closingAssetId, title: 'Choose the closing photograph' })}><Image size={18} /> Choose closing photo</button></div>
               </article>
             </div>
           </div>
@@ -589,17 +615,18 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
             {activeShowcaseId && <article className="v3-showcase-item">
               <img src={assetById.get(activeShowcaseId)?.thumbnailUrl || assetById.get(activeShowcaseId)?.url} alt={assetById.get(activeShowcaseId)?.originalFilename || 'Selected photograph'} />
               <div className="v3-showcase-controls">
-                <div className="v3-showcase-toolbar"><strong>PHOTO {String(activeShowcaseIndex + 1).padStart(2, '0')} OF {String(selected.length).padStart(2, '0')}</strong><button type="button" onClick={() => moveSelected(activeShowcaseIndex, -1)} disabled={activeShowcaseIndex === 0} aria-label="Move earlier"><ChevronLeft size={18} /></button><button type="button" onClick={() => moveSelected(activeShowcaseIndex, 1)} disabled={activeShowcaseIndex === selected.length - 1} aria-label="Move later"><ChevronRight size={18} /></button><button type="button" onClick={() => setSelected(current => current.filter(value => value !== activeShowcaseId))} disabled={selected.length <= bounds[0]} aria-label="Remove from showcase"><Trash2 size={17} /></button></div>
-                <label>Headline<textarea className="v3-showcase-headline" rows={2} maxLength={70} value={headlines[activeShowcaseId] || ''} onChange={event => setHeadlines(current => ({ ...current, [activeShowcaseId]: event.target.value }))} /><small>{(headlines[activeShowcaseId] || '').length} / 70 · A short title for this photograph</small></label>
-                <label>Caption<textarea rows={format === 'photo-story' ? 4 : 5} maxLength={format === 'photo-story' ? 150 : 180} value={captions[activeShowcaseId] || ''} onChange={event => setCaptions(current => ({ ...current, [activeShowcaseId]: event.target.value }))} /><small>{(captions[activeShowcaseId] || '').length} / {format === 'photo-story' ? 150 : 180}{format === 'photo-story' ? ' · Written to fit within three mobile lines' : ''}</small></label>
-                <div className="v3-caption-assist"><input value={instructions[activeShowcaseId] || ''} maxLength={400} onChange={event => setInstructions(current => ({ ...current, [activeShowcaseId]: event.target.value }))} placeholder="Tell Veylo what to emphasize (optional)" aria-label={'Instruction for photo ' + (activeShowcaseIndex + 1)} /><button type="button" onClick={() => regenerate(activeShowcaseId)} disabled={!!busy}>{busy === 'caption-' + activeShowcaseId ? <LoaderCircle className="v3-spin" size={15} /> : <RefreshCw size={15} />} Regenerate headline and caption</button></div>
-                <label>Replace this photo<select value="" onChange={event => replaceSelected(activeShowcaseIndex, event.target.value)}><option value="">Choose another uploaded photo</option>{unselected.map(asset => <option key={asset.assetId} value={asset.assetId}>{asset.originalFilename}</option>)}</select></label>
+                <div className="v3-showcase-toolbar"><strong>PHOTO {String(activeShowcaseIndex + 1).padStart(2, '0')} OF {String(selected.length).padStart(2, '0')}</strong><button type="button" onClick={() => moveSelected(activeShowcaseIndex, -1)} disabled={!!busy || activeShowcaseIndex === 0} aria-label="Move earlier"><ChevronLeft size={18} /></button><button type="button" onClick={() => moveSelected(activeShowcaseIndex, 1)} disabled={!!busy || activeShowcaseIndex === selected.length - 1} aria-label="Move later"><ChevronRight size={18} /></button><button type="button" onClick={() => setSelected(current => current.filter(value => value !== activeShowcaseId))} disabled={!!busy || selected.length <= bounds[0]} aria-label="Remove from showcase"><Trash2 size={17} /></button></div>
+                <label>Headline<textarea className="v3-showcase-headline" disabled={busy === 'caption-' + activeShowcaseId} rows={2} maxLength={70} value={headlines[activeShowcaseId] || ''} onChange={event => setHeadlines(current => ({ ...current, [activeShowcaseId]: event.target.value }))} /><small>{(headlines[activeShowcaseId] || '').length} / 70 · A short title for this photograph</small></label>
+                <label>Caption<textarea disabled={busy === 'caption-' + activeShowcaseId} rows={format === 'photo-story' ? 4 : 5} maxLength={format === 'photo-story' ? 150 : 180} value={captions[activeShowcaseId] || ''} onChange={event => setCaptions(current => ({ ...current, [activeShowcaseId]: event.target.value }))} /><small>{(captions[activeShowcaseId] || '').length} / {format === 'photo-story' ? 150 : 180}{format === 'photo-story' ? ' · Written to fit within three mobile lines' : ''}</small></label>
+                <div className="v3-caption-assist"><input disabled={busy === 'caption-' + activeShowcaseId} value={instructions[activeShowcaseId] || ''} maxLength={400} onChange={event => setInstructions(current => ({ ...current, [activeShowcaseId]: event.target.value }))} placeholder="Tell Veylo what to emphasize (optional)" aria-label={'Instruction for photo ' + (activeShowcaseIndex + 1)} /><button type="button" onClick={() => regenerate(activeShowcaseId)} disabled={!!busy}>{busy === 'caption-' + activeShowcaseId ? <LoaderCircle className="v3-spin" size={15} /> : <RefreshCw size={15} />} Regenerate headline and caption</button></div>
+                {captionError?.assetId === activeShowcaseId && <p className="v3-caption-error" role="alert"><AlertCircle size={18} />{captionError.text} Your current headline and caption have been kept. Try again.</p>}
+                <button type="button" className="v3-photo-choice-button" disabled={!!busy || !unselected.length} onClick={() => setPhotoPicker({ mode: 'replace', index: activeShowcaseIndex, title: 'Replace this showcase photo' })}><Image size={18} /> Replace this photo</button>
                 <div className="v3-showcase-pager"><button type="button" onClick={() => setActivePhotoIndex(activeShowcaseIndex - 1)} disabled={activeShowcaseIndex === 0}><ArrowLeft size={16} /> Previous photo</button><button type="button" onClick={() => setActivePhotoIndex(activeShowcaseIndex + 1)} disabled={activeShowcaseIndex === selected.length - 1}>Next photo <ArrowRight size={16} /></button></div>
               </div>
             </article>}
           </div>
-          {selected.length < bounds[1] && unselected.length > 0 && <label className="v3-add-photo">Add another showcase photo<select value="" onChange={event => { const id = event.target.value; if (id) addSelected(id); }}><option value="">Choose from your full gallery</option>{unselected.map(asset => <option key={asset.assetId} value={asset.assetId}>{asset.originalFilename}</option>)}</select></label>}
-          <div className="v3-actions"><StepButton secondary onClick={() => setStage('upload')}><ArrowLeft size={17} /> Back to photos</StepButton><StepButton onClick={saveShowcase} disabled={!!busy}><ArrowRight size={17} /> Continue</StepButton></div>
+          {selected.length < bounds[1] && unselected.length > 0 && <div className="v3-add-photo"><button type="button" className="v3-photo-choice-button" disabled={!!busy} onClick={() => setPhotoPicker({ mode: 'add', title: 'Add a showcase photo' })}><Plus size={18} /> Add another showcase photo</button></div>}
+          <div className="v3-actions"><StepButton secondary onClick={() => { captionRequest.current?.abort(); setStage('upload'); }}><ArrowLeft size={17} /> Back to photos</StepButton><StepButton onClick={saveShowcase} disabled={!!busy}><ArrowRight size={17} /> Continue</StepButton></div>
         </>}
         {(stage === 'narration' || stage === 'narration-job') && <>
           <Head eyebrow="05 / OPTIONAL PHOTO STORY VOICE" title="Choose a voice for your story.">Every message stays visible on screen. Spoken captions must fit the existing six-second photo timing.</Head>
@@ -722,6 +749,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
       </motion.main></AnimatePresence>
       </div>
       {published && <section className="v3-published-extra"><div className="v3-actions"><a className="v3-button is-secondary" href={published.url} target="_blank" rel="noopener noreferrer">Open client view <ExternalLink size={16} /></a><StepButton secondary onClick={shareDelivery}><Share2 size={16} /> Open share menu</StepButton><StepButton secondary onClick={downloadQr} disabled={!!busy}><QrCode size={16} /> Download QR</StepButton></div><form onSubmit={sendEmail}><label><Mail size={17} /><input type="email" required maxLength={254} value={clientEmail} onChange={event => setClientEmail(event.target.value)} placeholder="Client email address" aria-label="Client email address" /></label><StepButton type="submit" disabled={!!busy}>{busy === 'email' ? 'Sending…' : 'Send by email'}</StepButton></form></section>}
+      {photoPicker && <ShowcasePhotoPicker title={photoPicker.title} assets={['replace', 'add'].includes(photoPicker.mode) ? unselected : assets} currentId={photoPicker.currentId} mediaUrl={withMediaUrl} onSelect={chooseShowcasePhoto} onClose={() => setPhotoPicker(null)} />}
     </div>
   </div>;
 }
