@@ -9,6 +9,7 @@ import { improvePurpose, recommendV3Format, regenerateV3Caption, repickV3Palette
 import { reservePublishSlot, resolveEntitlements } from '../services/entitlement.service.js';
 import { removeDeliveryAudio } from '../services/deliveryMedia.service.js';
 import { NARRATION_RENDER_VERSION } from '../services/narration.service.js';
+import { warmLockedDeliveryPreviews } from '../services/deliveryPreviewCache.service.js';
 
 const details = z.object({ kind: z.enum(['showcase', 'pinboard']).default('showcase'), clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().max(80).default(''), purpose: z.string().trim().max(3000).default(''), title: z.string().trim().max(120).default(''), originalPurpose: z.string().trim().max(3000).default(''), clarificationAnswers: z.array(z.object({ question: z.string().trim().max(180), answer: z.string().trim().min(1).max(300) }).strict()).max(3).default([]) }).strict();
 const formatInput = z.object({ format: z.enum(Object.keys(V3_FORMATS)) }).strict();
@@ -353,6 +354,7 @@ export async function v3Access(req, res) {
     if (delivery.format === 'campaign') { delivery.formatConfig = { ...delivery.formatConfig, usageTerms: data.usageTerms }; delivery.markModified('formatConfig'); }
     if (data.pin !== undefined) delivery.access.pinDigest = data.pin ? await bcrypt.hash(data.pin, 12) : undefined;
     saveV3(delivery, { step: 'access' }); await delivery.save();
+    void warmLockedDeliveryPreviews(delivery).catch(() => {});
     const access = delivery.access.toObject();
     delete access.pinDigest;
     res.json({ success: true, data: { access, formatConfig: delivery.formatConfig, hasPin: Boolean(delivery.access.pinDigest) } });
@@ -400,6 +402,7 @@ export async function v3Publish(req, res) {
       { new: true }
     );
     if (!published) { const error = new Error('This delivery changed. Preview it again before publishing.'); error.status = 409; throw error; }
+    void warmLockedDeliveryPreviews(published).catch(() => {});
     res.json({ success: true, data: { publicId: delivery.publicId, url: `${String(process.env.CLIENT_URL || 'https://veylo.com.ng').replace(/\/$/, '')}/d/${delivery.publicId}`, entitlements: reservation.entitlements } });
   } catch (error) { await reservation?.release().catch(() => {}); fail(res, error); }
 }

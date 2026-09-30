@@ -12,6 +12,7 @@ import EmailDelivery from '../models/EmailDelivery.js';
 import AccountDeletionRequest from '../models/AccountDeletionRequest.js';
 import DeliveryUsage from '../models/DeliveryUsage.js';
 import Delivery from '../models/Delivery.js';
+import DeliveryPreviewFile from '../models/DeliveryPreviewFile.js';
 import DeliveryJob from '../models/DeliveryJob.js';
 import DeliveryShareGrant from '../models/DeliveryShareGrant.js';
 import PhotoLike from '../models/PhotoLike.js';
@@ -190,6 +191,7 @@ async function deleteOwnedRecords({ accountId, deliveryIds, storyIds, volumeJobI
   await deleteMany('deliveryUsage', DeliveryUsage, { userId: accountId });
   await deleteMany('deliveryLikes', PhotoLike, deliveryIds.length ? { deliveryId: { $in: deliveryIds } } : { _id: { $in: [] } });
   await deleteMany('deliveryViews', DeliveryView, deliveryIds.length ? { deliveryId: { $in: deliveryIds } } : { _id: { $in: [] } });
+  await deleteMany('deliveryPreviews', DeliveryPreviewFile, { deliveryId: { $in: deliveryIds } });
   await deleteMany('deliveryShareGrants', DeliveryShareGrant, { userId: accountId });
   await deleteMany('deliveryJobs', DeliveryJob, { userId: accountId });
   await deleteMany('deliveries', Delivery, { userId: accountId });

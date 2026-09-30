@@ -1,5 +1,13 @@
 import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { imageSrcSetCandidates, mapImageSrcSet } from '../src/utils/imageSrcSet.js';
+
+test('responsive URL parsing keeps Cloudinary commas and maps only complete URL candidates', () => {
+  const source = 'https://res.cloudinary.com/demo/image/authenticated/c_limit,f_auto,q_auto:good,w_480/photo.webp 480w, /api/v1/media/photo?width=960 960w';
+  expect(imageSrcSetCandidates(source).map(candidate => candidate.width)).toEqual([480, 960]);
+  expect(mapImageSrcSet(source, url => url.startsWith('/') ? `https://api.example.test${url}` : url)).toBe(source.replace('/api/v1', 'https://api.example.test/api/v1'));
+  expect(imageSrcSetCandidates('https://example.test/c_fill,w_480/photo.webp 1x, https://example.test/c_fill,w_960/photo.webp 2x').map(candidate => candidate.descriptor)).toEqual(['1x', '2x']);
+});
 
 const id = '507f1f77bcf86cd799439011';
 const user = { _id: '507f1f77bcf86cd799439012', name: 'Amara', emailVerified: true, onboardingComplete: true, plan: 'free' };
@@ -31,6 +39,40 @@ async function mock(page, delivery, patchHandler) {
   });
   return requests;
 }
+
+for (const format of ['photo-story', 'editorial', 'gridboard']) test(`${format} loads unlocked Cloudinary photos with comma-containing responsive URLs`, async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const delivery = fixture(format, false);
+  delivery.assets = delivery.assets.map(asset => {
+    const source = width => `https://res.cloudinary.com/veylo-test/image/authenticated/s--offline--/c_limit,f_auto,q_auto:good,w_${width}/${asset.assetId}.webp`;
+    return { ...asset, url: source(1600), thumbnailUrl: source(480), srcSet: [480, 960, 1600].map(width => `${source(width)} ${width}w`).join(', ') };
+  });
+  await mock(page, delivery);
+  const photo = readFileSync(new URL('../public/veylo/web/demo-lora-1-1440.webp', import.meta.url));
+  await page.route('https://res.cloudinary.com/veylo-test/**', route => route.fulfill({ contentType: 'image/webp', body: photo }));
+  await page.goto('/d/access-test?phoneView=1');
+  if (format === 'gridboard') {
+    await expect.poll(() => page.locator('.pb-tile-open img').first().evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
+    await page.locator('.pb-tile-open').first().click();
+    await expect.poll(() => page.locator('.pb-lightbox-photo-main').evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
+  } else {
+    if (format === 'photo-story') {
+      await page.getByRole('button', { name: 'Begin the story', exact: true }).click();
+      await expect.poll(async () => page.locator('.v-story-scene img').evaluateAll(images => images.some(image => image.naturalWidth > 0))).toBe(true);
+      await page.getByRole('button', { name: 'Open gallery', exact: true }).click();
+    } else await page.getByRole('button', { name: 'Open full gallery', exact: true }).click();
+    const gallery = page.locator('.client-gallery');
+    await expect.poll(() => gallery.locator('img').first().evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
+    await gallery.getByRole('button', { name: 'Open photograph 1', exact: true }).click();
+    await expect.poll(async () => gallery.locator('img').evaluateAll(images => images.some(image => image.naturalWidth > 0 && image.currentSrc.includes('w_1600')))).toBe(true);
+  }
+  const rendered = await page.locator('img[src*="res.cloudinary.com/veylo-test/"]').evaluateAll(images => images.map(image => ({ srcSet: image.srcset, currentSrc: image.currentSrc })));
+  expect(rendered.length).toBeGreaterThan(0);
+  for (const image of rendered) {
+    expect(image.srcSet).not.toContain('undefined');
+    if (image.currentSrc) expect(image.currentSrc).toContain('res.cloudinary.com/veylo-test/');
+  }
+});
 
 for (const format of ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign', 'gridboard']) {
   test(`${format} makes the photographer name and mark visible at 320px`, async ({ page }) => {

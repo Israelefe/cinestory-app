@@ -100,7 +100,7 @@ export async function removeDeliveryMedia(userId, deliveryId) {
     cloudinary.api.delete_resources_by_prefix(prefix, { resource_type: 'image', type: 'authenticated', invalidate: true }),
     cloudinary.api.delete_resources_by_prefix(prefix, { resource_type: 'video', type: 'authenticated', invalidate: true })
   ]);
-  const folders = [`${prefix}/narration`, `${prefix}/audio`, prefix];
+  const folders = [`${prefix}/previews`, `${prefix}/narration`, `${prefix}/audio`, prefix];
   for (const folder of folders) await cloudinary.api.delete_folder(folder).catch(error => { if (error?.http_code !== 404) throw error; });
 }
 

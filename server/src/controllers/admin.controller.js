@@ -34,6 +34,7 @@ import { checkCloudinaryConnection, cloudinary, configureCloudinary } from '../s
 import { PLAN_DEFINITIONS, PRO_PRICE_KOBO } from '../config/plans.js';
 import { tokenDigest } from '../utils/auth.js';
 import { removeDeliveryMedia } from '../services/deliveryMedia.service.js';
+import { removeStoredPreviews } from '../services/deliveryPreviewCache.service.js';
 import { AccountDeletionError, deleteUserAccount } from '../services/accountDeletion.service.js';
 import { NARRATION_RENDER_VERSION } from '../services/narration.service.js';
 import { DELIVERY_SOUNDTRACKS, deliverySoundtrackFile } from '../constants/deliverySoundtracks.js';
@@ -868,7 +869,7 @@ export async function adminDeleteDelivery(req, res) {
     const userId = delivery.userId;
     const result = await Delivery.deleteOne({ _id: deliveryId });
     if (!result.deletedCount) return res.status(404).json({ success: false, message: 'Delivery was already removed.' });
-    await Promise.allSettled([DeliveryJob.deleteMany({ deliveryId }), DeliveryShareGrant.deleteMany({ deliveryId }), PhotoLike.deleteMany({ deliveryId }), DeliveryView.deleteMany({ deliveryId })]);
+    await Promise.allSettled([DeliveryJob.deleteMany({ deliveryId }), DeliveryShareGrant.deleteMany({ deliveryId }), PhotoLike.deleteMany({ deliveryId }), DeliveryView.deleteMany({ deliveryId }), removeStoredPreviews(deliveryId)]);
     void removeDeliveryMedia(userId, deliveryId).catch(error => console.error('[admin/delivery-media-cleanup]', error.message));
     await AdminAudit.create({ adminId: adminId(req), userId, action: 'delivery.deleted_by_admin', resourceType: 'Delivery', resourceId: String(deliveryId), details: { publicId: delivery.publicId, reason: safeReason(req.body.reason, 'Deleted by administrator') } });
     res.json({ success: true, message: 'Delivery deleted and its client link disabled.' });

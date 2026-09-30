@@ -10,6 +10,7 @@ import PinboardViewer from '../components/delivery/PinboardViewer.jsx';
 import DeliveryBrandMark from '../components/delivery/DeliveryBrandMark.jsx';
 import { resolvedGridboardPalette } from '../utils/gridboardPalette.js';
 import { getDeliveryCapabilities } from '../constants/deliveryCapabilities.js';
+import { imageSrcSetCandidates, mapImageSrcSet } from '../utils/imageSrcSet.js';
 import '../styles/format-demos.css';
 import './DeliveryViewer.css';
 import './DeliveryViewerRole.css';
@@ -55,13 +56,8 @@ function fadeAudioVolume(element, target, duration = 420) {
 }
 
 function displayAssetUrl(asset, targetWidth = 960) {
-  const candidates = String(asset?.srcSet || '')
-    .split(',')
-    .map(item => {
-      const match = item.trim().match(/^(.*)\s+(\d+)w$/);
-      return match ? { url: match[1], width: Number(match[2]) } : null;
-    })
-    .filter(Boolean)
+  const candidates = imageSrcSetCandidates(asset?.srcSet)
+    .filter(candidate => candidate.width)
     .sort((a, b) => a.width - b.width);
   return apiMediaUrl((candidates.find(candidate => candidate.width >= targetWidth) || candidates.at(-1))?.url || asset?.thumbnailUrl || asset?.url || '');
 }
@@ -287,10 +283,7 @@ export default function DeliveryViewer() {
       ...delivery,
       assets: (delivery.assets || []).map(asset => {
         const url = preloadedMedia.assets?.[asset.assetId] || apiMediaUrl(asset.url);
-        const srcSet = asset.srcSet?.split(',').map(candidate => {
-          const [source, descriptor] = candidate.trim().split(/\s+/);
-          return `${apiMediaUrl(source)} ${descriptor}`;
-        }).join(', ');
+        const srcSet = mapImageSrcSet(asset.srcSet, apiMediaUrl);
         return { ...asset, url, thumbnailUrl: apiMediaUrl(asset.thumbnailUrl) || url, srcSet };
       }),
       soundtrack: (capabilities.music || delivery.kind === 'pinboard') && delivery.soundtrack?.url ? { ...delivery.soundtrack, url: preloadedMedia.soundtrack || delivery.soundtrack.url } : undefined,

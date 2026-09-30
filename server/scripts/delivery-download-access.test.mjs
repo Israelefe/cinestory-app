@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import Delivery from '../src/models/Delivery.js';
 import DeliveryShareGrant from '../src/models/DeliveryShareGrant.js';
+import DeliveryPreviewFile from '../src/models/DeliveryPreviewFile.js';
 import sharp from 'sharp';
 import { getDeliveryPreviewMedia, getWatermarkedDeliveryPhoto, updateDownloadLock, getPhotoDownload, streamPhotoDownload, getGalleryDownload, getPinboardStatusCard } from '../src/controllers/delivery.controller.js';
 import { signedImageUrl } from '../src/services/deliveryMedia.service.js';
@@ -14,7 +15,7 @@ process.env.CLOUDINARY_API_KEY = 'test-key';
 process.env.CLOUDINARY_API_SECRET = 'test-secret';
 process.env.JWT_SECRET = 'offline-watermark-test-secret';
 function response() {
-  return { statusCode: 200, headers: {}, set(key, value) { if (typeof key === 'object') Object.assign(this.headers, key); else this.headers[key] = value; return this; }, send(value) { this.body = value; return this; }, status(value) { this.statusCode = value; return this; }, json(value) { this.body = value; return this; } };
+  return { statusCode: 200, headers: {}, set(key, value) { if (typeof key === 'object') Object.assign(this.headers, key); else this.headers[key] = value; return this; }, send(value) { this.body = value; return this; }, redirect(status, url) { this.statusCode = status; this.headers.Location = url; return this; }, status(value) { this.statusCode = value; return this; }, json(value) { this.body = value; return this; } };
 }
 const ownerId = '507f1f77bcf86cd799439012';
 const deliveryId = '507f1f77bcf86cd799439011';
@@ -40,6 +41,7 @@ test('storage URLs no longer ask Cloudinary to draw a watermark; original URLs s
 });
 
 test('only the owner can request watermarked preview media; studio fallback and clean previews work', async t => {
+  t.mock.method(DeliveryPreviewFile, 'find', () => ({ lean: async () => [] }));
   const doc = document();
   stubFind(t, doc, query => assert.deepEqual(query, { _id: deliveryId, userId: ownerId }));
   const req = { params: { id: deliveryId }, user: { id: ownerId }, body: { downloadsLocked: true, watermarkEnabled: true, watermarkText: '' } };
@@ -138,21 +140,18 @@ function photoRequest(claims, changes = {}) {
   return { params: { id: deliveryId, assetId: 'one' }, query: { token: watermarkMediaToken({ deliveryId, ...claims }), width: '480', ...changes } };
 }
 
-test('owner preview token draws actual image pixels, never a Cloudinary overlay', async t => {
+test('owner preview token serves the private prepared file without fetching or drawing it again', async t => {
   const doc = document();
   stubFind(t, doc, query => assert.deepEqual(query, { _id: deliveryId, userId: ownerId }));
-  const input = await sharp({ create: { width: 480, height: 600, channels: 3, background: '#202030' } }).png().toBuffer();
-  t.mock.method(globalThis, 'fetch', async url => {
-    assert.match(url, /^https:\/\/res.cloudinary.com\/veylo-test\/image\/authenticated\//);
-    assert.doesNotMatch(url, /l_text/);
-    return new Response(input, { headers: { 'content-type': 'image/png' } });
-  });
+  t.mock.method(DeliveryPreviewFile, 'findOne', () => ({ lean: async () => ({ variants: [{ width: 480, height: 600, publicId: 'private-shoot/previews/one-480' }] }) }));
+  t.mock.method(globalThis, 'fetch', () => { throw new Error('Prepared files must not be fetched again'); });
   const res = response();
   await getWatermarkedDeliveryPhoto(photoRequest({ ownerId, text: 'Owner preview' }), res);
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.headers['Content-Type'], 'image/webp');
-  assert.equal(res.headers['Cache-Control'], 'private, no-store');
-  assert.equal((await sharp(res.body).metadata()).width, 480);
+  assert.equal(res.statusCode, 302);
+  assert.match(new URL(res.headers.Location).pathname, /image\/authenticated\/.*private-shoot\/previews\/one-480.webp$/);
+  assert.doesNotMatch(res.headers.Location, /l_text/);
+  assert.equal(res.headers['Cache-Control'], 'private, max-age=300');
+  assert.equal(globalThis.fetch.mock.callCount(), 0);
 });
 
 test('tampered preview tokens, wrong deliveries and arbitrary sizes cannot fetch photos', async t => {

@@ -41,8 +41,8 @@ export async function renderDeliveryWatermark(input, text, { width: requestedWid
   const resized = thumbnail
     ? image.resize(800, 1000, { fit: 'cover', position: 'attention', withoutEnlargement: true })
     : image.resize({ width: requestedWidth, withoutEnlargement: true });
-  // Encode before compositing so SVG dimensions match the rotated, resized photo.
-  const { data, info } = await resized.webp({ quality: 90 }).toBuffer({ resolveWithObject: true });
+  // Resolve resized pixels before compositing, with only one final WebP encode.
+  const { data, info } = await resized.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width, height } = info;
   const label = String(text || 'PREVIEW').slice(0, 40).trim() || 'PREVIEW';
   const angle = -Math.min(32, Math.atan2(height, width) * 180 / Math.PI * .65);
@@ -50,7 +50,7 @@ export async function renderDeliveryWatermark(input, text, { width: requestedWid
   const lineLength = Math.min(width * .86 / Math.cos(radians), height * .7 / Math.sin(radians));
   const fontSize = Math.min(Math.min(width, height) * .14, lineLength / (Math.max(7, Array.from(label).length) * .68));
   const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><g transform="translate(${width / 2} ${height / 2}) rotate(${angle})"><text x="0" y="0" dominant-baseline="middle" font-family="Arial, sans-serif" font-weight="700" font-size="${fontSize}" text-anchor="middle" fill="white" fill-opacity=".58" stroke="#111111" stroke-opacity=".4" stroke-width="${Math.max(.5, fontSize * .05)}" paint-order="stroke fill">${xmlText(label)}</text></g></svg>`);
-  return sharp(data).composite([{ input: svg }]).webp({ quality: 86 }).toBuffer();
+  return sharp(data, { raw: { width, height, channels: info.channels } }).composite([{ input: svg }]).webp({ quality: 86 }).toBuffer();
 }
 
 async function sourceBuffer(url) {

@@ -22,6 +22,7 @@ import { sendDeliveryDownloadedEmail, sendDeliveryViewedEmail, sendShareGrantEma
 import QRCode from 'qrcode';
 import { renderGridboardStatusCard } from '../services/gridboardStatusCard.service.js';
 import { deliveryWatermarkedPreview, watermarkMediaToken, verifyWatermarkMediaToken, watermarkedAssetMedia } from '../services/deliveryWatermark.service.js';
+import { ensureStoredWatermark, storedDeliveryPreviews, warmDeliveryPreviews, warmLockedDeliveryPreviews, removeStoredPreviews } from '../services/deliveryPreviewCache.service.js';
 import { DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
 import { DELIVERY_SOUNDTRACKS, deliverySoundtrack, deliverySoundtrackFile } from '../constants/deliverySoundtracks.js';
 import { supportsDeliveryMusic, supportsDeliveryNarration } from '../constants/deliveryCapabilities.js';
@@ -464,6 +465,7 @@ export async function deleteDelivery(req, res) {
       () => EmailDelivery.deleteMany({ deliveryId: removed._id }),
       () => PhotoLike.deleteMany({ deliveryId: removed._id }),
       () => DeliveryView.deleteMany({ deliveryId: removed._id }),
+      () => removeStoredPreviews(removed._id),
       () => removeDeliveryMedia(req.user.id, removed._id)
     ];
     // Respond as soon as the owned database record is gone. Cloudinary and
@@ -645,6 +647,7 @@ export async function deleteDeliveryAsset(req, res) {
     }
     await delivery.save();
     await discardV3Narration({ schemaVersion: delivery.schemaVersion, narration: oldNarration });
+    void removeStoredPreviews(delivery._id, asset.assetId).catch(() => {});
     res.json({ success: true, message: 'Photograph removed.', data: delivery });
   } catch (error) {
     recordAnalyticsEventAsync({ name: 'storage.delete.failed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'failed', errorCode: error.code || 'DELIVERY_PHOTO_DELETE_FAILED', metadata: { surface: 'delivery' } });
@@ -994,6 +997,7 @@ export async function publishDelivery(req, res) {
     delivery.status = 'published';
     delivery.publishedAt = new Date();
     await delivery.save();
+    void warmLockedDeliveryPreviews(delivery).catch(() => {});
     res.json({ success: true, data: { publicId: delivery.publicId, url: `${String(process.env.CLIENT_URL).replace(/\/$/, '')}/d/${delivery.publicId}`, entitlements: reservation.entitlements } });
   } catch (error) {
     await reservation?.release().catch(() => {});
@@ -1080,9 +1084,11 @@ async function publicPayload(delivery, grant = null) {
     ? (delivery.access?.watermarkText || owner.studio?.name || owner.name || 'PREVIEW')
     : null;
   const watermarkToken = watermarkText ? watermarkMediaToken({ deliveryId: String(delivery._id), publicId: delivery.publicId, grantId: grant ? String(grant._id) : null, pinVersion: tokenDigest(delivery.access?.pinDigest || '') }) : null;
+  const storedMedia = watermarkText ? await storedDeliveryPreviews(delivery, watermarkText) : new Map();
+  if (watermarkText) warmDeliveryPreviews({ _id: delivery._id, userId: delivery.userId, assets: visibleDeliveryAssets }, watermarkText, storedMedia);
   object.assets = visibleDeliveryAssets.map(asset => {
     const safe = ownerAsset(asset);
-    if (watermarkToken) Object.assign(safe, watermarkedAssetMedia(asset, watermarkToken, String(delivery._id)));
+    if (watermarkToken) Object.assign(safe, storedMedia.get(asset.assetId) || watermarkedAssetMedia(asset, watermarkToken, String(delivery._id)));
     const photoColors = (asset.analysis?.colors || []).filter(color => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color)).slice(0, 4);
     const dominantColor = photoColors[0];
     if (typeof dominantColor === 'string' && /^#[0-9a-f]{6}$/i.test(dominantColor)) safe.dominantColor = dominantColor;
@@ -1464,8 +1470,9 @@ export async function getDeliveryPreviewMedia(req, res) {
       ? parsed.data.watermarkText || owner.studio?.name || owner.name || 'PREVIEW'
       : null;
     const token = watermark ? watermarkMediaToken({ deliveryId: String(delivery._id), ownerId: String(req.user.id), text: String(watermark).slice(0, 40) }) : null;
+    const storedMedia = watermark ? await storedDeliveryPreviews(delivery, watermark) : new Map();
     const assets = delivery.assets.map(asset => {
-      const media = token ? { assetId: asset.assetId, ...watermarkedAssetMedia(asset, token, String(delivery._id)) } : ownerAsset(asset);
+      const media = token ? { assetId: asset.assetId, ...(storedMedia.get(asset.assetId) || watermarkedAssetMedia(asset, token, String(delivery._id))) } : ownerAsset(asset);
       return { assetId: media.assetId, url: media.url, thumbnailUrl: media.thumbnailUrl, srcSet: media.srcSet };
     });
     res.json({ success: true, data: { assets } });
@@ -1508,8 +1515,11 @@ export async function getWatermarkedDeliveryPhoto(req, res) {
     }
     const asset = delivery?.assets.find(item => item.assetId === req.params.assetId);
     if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
-    const buffer = await deliveryWatermarkedPreview(asset, text, req.query.thumbnail === '1' ? { thumbnail: true } : { width });
-    return res.set({ 'Content-Type': 'image/webp', 'Content-Length': String(buffer.length), 'X-Content-Type-Options': 'nosniff' }).send(buffer);
+    const file = await ensureStoredWatermark(delivery, asset, text);
+    const variants = [...file.variants].sort((a, b) => a.width - b.width);
+    const variant = req.query.thumbnail === '1' ? variants[0] : variants.find(item => item.width >= width) || variants.at(-1);
+    const remaining = Math.max(0, Number(claims.exp) - Math.floor(Date.now() / 1000));
+    return res.set({ 'Cache-Control': `private, max-age=${Math.min(300, remaining)}`, 'X-Content-Type-Options': 'nosniff' }).redirect(302, signedImageUrl(variant.publicId, { original: true, format: 'webp' }));
   } catch (error) {
     console.warn('[deliveries/watermarked-photo]', { deliveryId: req.params.id, assetId: req.params.assetId, upstreamStatus: error.upstreamStatus, code: error.code || 'PHOTO_PREVIEW_FAILED' });
     return res.status(502).json({ success: false, message: 'The photo preview could not be loaded. Please try again.' });
@@ -1537,6 +1547,7 @@ export async function updateDownloadLock(req, res) {
     if (parsed.data.allowDownloadAll !== undefined) delivery.access.allowDownloadAll = parsed.data.allowDownloadAll;
     delivery.markModified('access');
     await delivery.save();
+    void warmLockedDeliveryPreviews(delivery).catch(() => {});
     res.json({
       success: true,
       data: {
