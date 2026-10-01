@@ -1,53 +1,69 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ArrowLeft, ChevronLeft, ChevronRight, Download, Heart, LoaderCircle, X } from 'lucide-react';
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'framer-motion';
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, Heart, Image as ImageIcon, LoaderCircle, X } from 'lucide-react';
 import { Photo } from '../PublicDesign.jsx';
 import { useDialogFocus } from '../useDialogFocus.js';
 import { trackEvent } from '../../services/analytics.js';
-import './ClientGallery.css';
 import DeliveryBrandMark from './DeliveryBrandMark.jsx';
+import './ClientGallery.css';
 
 const photoKey = (photo, index) => photo?.assetId || photo?.id || photo?.name || index;
 const imageUrl = (photo, width = 1440) => photo?.url || (typeof photo === 'string' && (photo.startsWith('http') || photo.startsWith('/')) ? photo : `/veylo/web/${photo?.name || photo}-${width}.webp`);
+const allowedFonts = new Set(['Playfair Display', 'Outfit', 'Plus Jakarta Sans', 'Cormorant Garamond', 'DM Sans', 'Libre Baskerville', 'Manrope']);
 
 export default function ClientGallery({ photos = [], title = 'Your photographs', eyebrow = 'The complete collection', onClose, initialIndex = null, liked, onLike, onDownload, onDownloadAll, busy, downloading = null, allDownloading = false, downloadNotice = '', downloadProgress = null, delivery, demoId }) {
   const reduced = useReducedMotion();
+  const galleryId = useId();
   const panel = useRef(null);
-  const [selected, setSelected] = useState(initialIndex);
+  const collection = useRef(null);
+  const photoButtons = useRef(new Map());
+  const gridScroll = useRef(0);
+  const previousSelected = useRef(null);
+  const navigation = useRef(null);
+  const lightboxBack = useRef(null);
+  const [selected, setSelected] = useState(() => Number.isInteger(initialIndex) && initialIndex >= 0 && initialIndex < photos.length ? initialIndex : null);
   const [swipeDirection, setSwipeDirection] = useState(1);
-  useDialogFocus(true, panel, onClose);
+  const [favouritesOnly, setFavouritesOnly] = useState(false);
+  const [ratios, setRatios] = useState({});
+  useDialogFocus(true, panel, () => selected === null ? onClose?.() : setSelected(null));
 
-  const allowDownloadAll = delivery ? (delivery.access?.allowDownloadAll !== false) : Boolean(onDownloadAll);
-  const allowIndividualDownloads = Boolean(onDownload) && (!delivery || (delivery.access?.allowIndividualDownloads !== false));
+  const allowDownloadAll = delivery ? delivery.access?.allowDownloadAll !== false : Boolean(onDownloadAll);
+  const allowIndividualDownloads = Boolean(onDownload) && (!delivery || delivery.access?.allowIndividualDownloads !== false);
   const allowLikes = delivery ? Boolean(delivery.access?.allowLikes && onLike) : Boolean(onLike);
   const resolvedPhotos = useMemo(() => photos.map((photo, index) => demoId ? { ...photo, name: `demo-${demoId}-${index + 1}`, url: `/veylo/web/demo-${demoId}-${index + 1}-1440.webp`, thumbnailUrl: `/veylo/web/demo-${demoId}-${index + 1}-480.webp` } : photo), [photos, demoId]);
-  const direction = delivery?.creativeDirection || {};
-  const typography = direction.typography || {};
-  const allowedFonts = new Set(['Playfair Display', 'Outfit', 'Plus Jakarta Sans', 'Cormorant Garamond', 'DM Sans', 'Libre Baskerville', 'Manrope']);
+  const typography = delivery?.creativeDirection?.typography || {};
   const displayFont = allowedFonts.has(typography.display) ? `'${typography.display}', Georgia, serif`
-    : typography.display === 'soft-serif' ? "'Cormorant Garamond', 'Playfair Display', Georgia, serif"
-    : typography.display === 'condensed-sans' ? "'Outfit', 'Plus Jakarta Sans', sans-serif"
-      : typography.display === 'clean-sans' ? "'Plus Jakarta Sans', system-ui, sans-serif"
-        : "'Playfair Display', Georgia, serif";
+    : typography.display === 'soft-serif' ? "'Cormorant Garamond', Georgia, serif"
+      : ['condensed-sans', 'clean-sans'].includes(typography.display) ? "'Outfit', sans-serif" : "'Playfair Display', Georgia, serif";
   const bodyFont = allowedFonts.has(typography.body) ? `'${typography.body}', system-ui, sans-serif`
     : typography.body === 'editorial-serif' ? "'Playfair Display', Georgia, serif" : "'Plus Jakarta Sans', system-ui, sans-serif";
-  const galleryTheme = {
-    '--gallery-display': displayFont,
-    '--gallery-body': bodyFont,
-    '--fd-caption-weight': direction.variation?.captionTreatment === 'bold' ? '650' : direction.variation?.captionTreatment === 'quiet' ? '400' : '500'
-  };
+  const galleryTheme = { '--gallery-display': displayFont, '--gallery-body': bodyFont };
+  const favouriteCount = resolvedPhotos.filter((photo, index) => liked?.has(photoKey(photo, index))).length;
+  const visibleIndexes = resolvedPhotos.map((_, index) => index).filter(index => !allowLikes || !favouritesOnly || liked?.has(photoKey(resolvedPhotos[index], index)));
   const activePhoto = selected === null ? null : resolvedPhotos[selected];
   const activeKey = selected === null ? null : photoKey(activePhoto, selected);
   const activeImageUrl = activePhoto ? imageUrl(activePhoto) : '';
   const suggestedTone = activePhoto?.dominantColor || activePhoto?.analysis?.colors?.[0];
-  const photoTone = typeof suggestedTone === 'string' && /^#[0-9a-f]{6}$/i.test(suggestedTone) ? suggestedTone : direction.palette?.background || '#08080b';
+  const photoTone = typeof suggestedTone === 'string' && /^#[0-9a-f]{6}$/i.test(suggestedTone) ? suggestedTone : '#08080b';
   const resolvedBusy = busy ?? (allDownloading ? 'all' : downloading === null ? null : photoKey(resolvedPhotos[downloading], downloading));
+  const navigationIndexes = navigation.current || resolvedPhotos.map((_, index) => index);
+  const navigationPosition = navigationIndexes.indexOf(selected);
+  const atStart = navigationPosition <= 0;
+  const atEnd = navigationPosition >= navigationIndexes.length - 1;
+
+  function openPhoto(index) {
+    gridScroll.current = collection.current?.scrollTop || 0;
+    navigation.current = visibleIndexes;
+    setSwipeDirection(1);
+    setSelected(index);
+  }
 
   function navigatePhoto(step) {
     if (selected === null) return;
-    const next = Math.max(0, Math.min(resolvedPhotos.length - 1, selected + step));
-    if (next !== selected) { setSwipeDirection(step); setSelected(next); }
+    const nextPosition = Math.max(0, Math.min(navigationIndexes.length - 1, navigationPosition + step));
+    const next = navigationIndexes[nextPosition];
+    if (next !== undefined && next !== selected) { setSwipeDirection(step); setSelected(next); }
   }
 
   function finishPhotoSwipe(_, info) {
@@ -66,54 +82,92 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
   }, [activePhoto, delivery?.format, selected]);
 
   useEffect(() => {
+    const previous = previousSelected.current;
+    previousSelected.current = selected;
+    const frame = requestAnimationFrame(() => {
+      if (selected === null && previous !== null) {
+        if (collection.current) collection.current.scrollTop = gridScroll.current;
+        (photoButtons.current.get(previous) || panel.current)?.focus({ preventScroll: true });
+      } else if (selected !== null && previous === null) lightboxBack.current?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [selected]);
+
+  useEffect(() => {
     const onKey = event => {
-      if (event.key === 'Escape' && selected !== null) { event.preventDefault(); setSelected(null); return; }
-      if (selected === null) return;
+      if (selected === null || event.target?.closest('input, textarea, select')) return;
       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); navigatePhoto(event.key === 'ArrowRight' ? 1 : -1); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [resolvedPhotos.length, selected]);
 
+  useEffect(() => {
+    if (selected === null) return;
+    const neighbours = [navigationIndexes[navigationPosition - 1], navigationIndexes[navigationPosition + 1]];
+    const images = neighbours.filter(index => index !== undefined).map(index => {
+      const img = new window.Image();
+      if (resolvedPhotos[index]?.srcSet) img.srcset = resolvedPhotos[index].srcSet;
+      img.sizes = '(max-width: 640px) 94vw, (max-width: 1024px) 86vw, 1080px';
+      img.src = imageUrl(resolvedPhotos[index]);
+      return img;
+    });
+    return () => images.forEach(img => { img.onload = null; img.onerror = null; });
+  }, [selected, resolvedPhotos]);
+
+  useEffect(() => {
+    if (selected !== null && !resolvedPhotos[selected]) setSelected(null);
+  }, [resolvedPhotos, selected]);
+
   const runDownload = (photo, index) => onDownload?.(photoKey(photo, index), index);
   const runLike = (photo, index) => onLike?.(photoKey(photo, index), index);
+  const layoutId = key => `${galleryId}-photograph-${key}`;
+  const sceneTransition = { duration: reduced ? 0 : .32, ease: [.22, 1, .36, 1] };
 
-  return createPortal(<motion.div className="client-gallery-overlay" initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={event => { if (event.target === event.currentTarget) onClose?.(); }}>
-    <motion.section ref={panel} className="client-gallery" style={galleryTheme} role="dialog" aria-modal="true" aria-labelledby="client-gallery-title" tabIndex={-1} initial={reduced ? false : { opacity: 0, y: 24, scale: .985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={reduced ? { opacity: 0 } : { opacity: 0, y: 14 }} transition={reduced ? { duration: 0 } : { type: 'spring', damping: 28, stiffness: 270 }}>
+  return createPortal(<LayoutGroup id={galleryId}><motion.div className="client-gallery-overlay" initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .2 }} onMouseDown={event => { if (event.target === event.currentTarget) onClose?.(); }}>
+    <motion.section ref={panel} className={`client-gallery ${selected === null ? 'is-collection' : 'is-lightbox'}`} style={galleryTheme} role="dialog" aria-modal="true" aria-labelledby={`${galleryId}-title`} tabIndex={-1} initial={reduced ? false : { opacity: 0, y: 28, scale: .985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={reduced ? { opacity: 0 } : { opacity: 0, y: 18 }} transition={reduced ? { duration: 0 } : { type: 'spring', damping: 28, stiffness: 270 }}>
       <header className="client-gallery-header">
-        <div><p>{eyebrow} · {photos.length} {photos.length === 1 ? 'photograph' : 'photographs'}</p><h2 id="client-gallery-title">{selected === null ? title : `Photograph ${selected + 1}`}</h2></div>
+        <div className="client-gallery-heading"><p>{selected === null ? eyebrow : `${title} · ${selected + 1} of ${photos.length}`}</p><h2 id={`${galleryId}-title`}>{selected === null ? title : `Photograph ${selected + 1}`}</h2><span className="client-gallery-count">{selected === null ? `${photos.length} ${photos.length === 1 ? 'photograph' : 'photographs'}` : 'Your complete collection'}</span></div>
         <div className="client-gallery-header-actions">
-          {selected === null && allowDownloadAll && onDownloadAll && <button className="client-gallery-download-all" type="button" onClick={onDownloadAll} disabled={Boolean(resolvedBusy)}>{resolvedBusy === 'all' ? <LoaderCircle className="client-gallery-spin" size={16} /> : <Download size={16} />}<span>{resolvedBusy === 'all' && downloadProgress ? `Starting ${downloadProgress.current}/${downloadProgress.total}` : resolvedBusy === 'all' ? 'Starting...' : 'Download all photos'}</span></button>}
+          {selected === null && allowDownloadAll && onDownloadAll && <button className="client-gallery-download-all" type="button" onClick={onDownloadAll} disabled={Boolean(resolvedBusy)}>{resolvedBusy === 'all' ? <LoaderCircle className="client-gallery-spin" size={16} /> : <Download size={16} />}<span>{resolvedBusy === 'all' && downloadProgress ? `Starting ${downloadProgress.current}/${downloadProgress.total}` : resolvedBusy === 'all' ? 'Starting…' : 'Download all photos'}</span></button>}
           <button className="client-gallery-icon" type="button" onClick={onClose} aria-label="Close gallery"><X size={21} /></button>
         </div>
       </header>
-      {selected === null && delivery?.branding?.type === 'studio' && <div className="client-gallery-studio"><DeliveryBrandMark branding={delivery.branding} /><div><span>Photographed by</span><strong>{delivery.branding.name}</strong></div></div>}
       {downloadNotice && <p className="client-gallery-download-tip" role="status">{downloadNotice}</p>}
-
-      {selected === null ? <div className="client-gallery-grid">{resolvedPhotos.map((photo, index) => {
-        const key = photoKey(photo, index);
-        const isLiked = liked?.has(key);
-        return <motion.figure key={key} data-frame-layout={photo.layout || undefined} data-caption-position={photo.captionPosition || undefined} data-text-background={photo.textBackground || undefined} data-type-style={photo.typographyStyle || undefined} style={photo.colorAccent ? { '--frame-accent': photo.colorAccent } : undefined} initial={reduced ? false : { opacity: 0, y: 15 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .12 }} transition={{ delay: reduced ? 0 : Math.min(index * .025, .2) }}>
-          <button className="client-gallery-photo" type="button" onClick={() => setSelected(index)} aria-label={`Open photograph ${index + 1}`}><Photo name={photo.name} url={photo.thumbnailUrl || photo.url} srcSet={photo.srcSet} alt={photo.alt || photo.caption || `Photograph ${index + 1}`} sizes="(max-width: 640px) 48vw, (max-width: 1024px) 31vw, 24vw" /></button>
-          <figcaption data-text-animation={photo.textAnimation || undefined}><span>{String(index + 1).padStart(2, '0')}</span><p>{photo.caption || ''}</p><div>
-            {allowLikes && <button className={isLiked ? 'is-liked' : ''} type="button" onClick={() => runLike(photo, index)} aria-label={isLiked ? 'Remove from favourites' : 'Add to favourites'}><Heart size={16} fill={isLiked ? 'currentColor' : 'none'} /></button>}
-            {allowIndividualDownloads && <button type="button" onClick={() => runDownload(photo, index)} disabled={resolvedBusy === key || resolvedBusy === 'all'} aria-label={`Download photograph ${index + 1}`}>{resolvedBusy === key ? <LoaderCircle className="client-gallery-spin" size={16} /> : <Download size={16} />}</button>}
-          </div></figcaption>
-        </motion.figure>;
-      })}</div> : <div className="client-gallery-lightbox">
+      <div ref={collection} className="client-gallery-collection" hidden={selected !== null}>
+        <div className="client-gallery-collection-top">
+          {delivery?.branding?.type === 'studio' && <div className="client-gallery-studio"><DeliveryBrandMark branding={delivery.branding} /><div><span>Photographed by</span><strong>{delivery.branding.name}</strong></div></div>}
+          {allowLikes && <div className="client-gallery-filters" role="group" aria-label="Filter photographs"><button type="button" className={!favouritesOnly ? 'is-active' : ''} aria-pressed={!favouritesOnly} onClick={() => { setFavouritesOnly(false); gridScroll.current = 0; collection.current?.scrollTo(0, 0); }}><ImageIcon size={15} />All photos<span>{photos.length}</span></button><button type="button" className={favouritesOnly ? 'is-active' : ''} aria-pressed={favouritesOnly} onClick={() => { setFavouritesOnly(true); gridScroll.current = 0; collection.current?.scrollTo(0, 0); }}><Heart size={15} />Favourites<span>{favouriteCount}</span></button></div>}
+        </div>
+        {demoId && allowLikes && <p className="client-gallery-demo-note">Favourites stay in this demo preview.</p>}
+        {visibleIndexes.length ? <div className="client-gallery-grid">{visibleIndexes.map((index, order) => {
+          const photo = resolvedPhotos[index];
+          const key = photoKey(photo, index);
+          const isLiked = liked?.has(key);
+          const ratio = ratios[key] || (photo.width && photo.height ? photo.width / photo.height : .8);
+          return <motion.figure key={key} initial={reduced ? false : { opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .12 }} transition={{ duration: reduced ? 0 : .35, delay: reduced ? 0 : Math.min(order * .025, .12) }}>
+            <motion.button ref={element => { if (element) photoButtons.current.set(index, element); else photoButtons.current.delete(index); }} layoutId={reduced ? undefined : layoutId(key)} className="client-gallery-photo" style={{ aspectRatio: Math.max(.55, Math.min(2.2, ratio)), borderRadius: 6 }} transition={sceneTransition} type="button" onClick={() => openPhoto(index)} aria-label={`Open photograph ${index + 1}`} onLoadCapture={event => { const img = event.target; if (img.naturalWidth && img.naturalHeight) setRatios(current => current[key] ? current : { ...current, [key]: img.naturalWidth / img.naturalHeight }); }}><Photo name={photo.name} url={photo.thumbnailUrl || photo.url} srcSet={photo.srcSet} alt={photo.alt || photo.caption || `Photograph ${index + 1}`} sizes="(max-width: 640px) 44vw, (max-width: 1024px) 29vw, 24vw" /></motion.button>
+            <figcaption><span>{String(index + 1).padStart(2, '0')}</span><div>
+              {allowLikes && <button className={isLiked ? 'is-liked' : ''} type="button" onClick={() => runLike(photo, index)} aria-pressed={Boolean(isLiked)} aria-label={isLiked ? 'Remove from favourites' : 'Add to favourites'}><Heart size={17} fill={isLiked ? 'currentColor' : 'none'} /></button>}
+              {allowIndividualDownloads && <button type="button" onClick={() => runDownload(photo, index)} disabled={resolvedBusy === key || resolvedBusy === 'all'} aria-label={`Download photograph ${index + 1}`}>{resolvedBusy === key ? <LoaderCircle className="client-gallery-spin" size={17} /> : <Download size={17} />}</button>}
+            </div></figcaption>
+          </motion.figure>;
+        })}</div> : <div className="client-gallery-empty"><Heart size={28} /><h3>No favourites yet.</h3><p>Tap the heart on a photograph to keep it here.</p><button type="button" onClick={() => setFavouritesOnly(false)}>View all photos</button></div>}
+      </div>
+      <AnimatePresence>{selected !== null && activePhoto && <motion.div className="client-gallery-lightbox" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .15 }}>
         <div className="client-gallery-lightbox-photo" style={{ backgroundColor: photoTone }}>
           <img className="client-gallery-lightbox-ambient" src={activeImageUrl} alt="" aria-hidden="true" draggable="false" />
-          <AnimatePresence mode="wait"><motion.div className="client-gallery-lightbox-frame" key={activeKey} drag="x" dragConstraints={{ left: 0, right: 0 }} dragElastic={.28} dragMomentum={false} onDragEnd={finishPhotoSwipe} initial={reduced ? false : { opacity: 0, x: swipeDirection * 56, scale: .98 }} animate={{ opacity: 1, x: 0, scale: 1 }} exit={reduced ? { opacity: 0 } : { opacity: 0, x: -swipeDirection * 56, scale: .98 }} transition={{ duration: reduced ? 0 : .27, ease: [.16, 1, .3, 1] }}><img className="client-gallery-lightbox-main" src={activeImageUrl} alt={activePhoto?.alt || activePhoto?.caption || `Photograph ${selected + 1}`} data-frame-motion={activePhoto?.motion || undefined} data-frame-transition={activePhoto?.transition || undefined} draggable="false" /></motion.div></AnimatePresence>
+          <AnimatePresence mode="sync" custom={swipeDirection}><motion.div className="client-gallery-lightbox-frame" layoutId={reduced ? undefined : layoutId(activeKey)} key={activeKey} style={{ borderRadius: 6 }} drag="x" dragConstraints={{ left: 0, right: 0 }} dragElastic={.2} dragMomentum={false} onDragEnd={finishPhotoSwipe} initial={reduced ? false : { opacity: 0, x: swipeDirection * 36 }} animate={{ opacity: 1, x: 0 }} variants={{ departing: direction => ({ opacity: 0, x: -direction * 36 }) }} exit="departing" transition={sceneTransition}><img className="client-gallery-lightbox-main" src={activeImageUrl} srcSet={activePhoto.srcSet} sizes="(max-width: 640px) 94vw, (max-width: 1024px) 86vw, 1080px" alt={activePhoto.alt || activePhoto.caption || `Photograph ${selected + 1}`} draggable="false" /></motion.div></AnimatePresence>
         </div>
-        <p className="client-gallery-lightbox-caption" data-caption-position={activePhoto?.captionPosition || undefined} data-text-background={activePhoto?.textBackground || undefined} data-type-style={activePhoto?.typographyStyle || undefined} style={activePhoto?.colorAccent ? { '--frame-accent': activePhoto.colorAccent } : undefined}>{activePhoto?.caption || ''}</p>
+        {activePhoto.caption && <p className="client-gallery-lightbox-caption">{activePhoto.caption}</p>}
         <div className="client-gallery-lightbox-actions">
-          <button className="client-gallery-icon" type="button" onClick={() => navigatePhoto(-1)} disabled={selected === 0} aria-label="Previous photograph"><ChevronLeft size={21} /></button>
-          <button className="client-gallery-back" type="button" onClick={() => setSelected(null)}><ArrowLeft size={16} /><span>All photographs</span></button>
-          {allowLikes && <button className={`client-gallery-icon ${liked?.has(activeKey) ? 'is-liked' : ''}`} type="button" onClick={() => runLike(activePhoto, selected)} aria-label={liked?.has(activeKey) ? 'Remove from favourites' : 'Add to favourites'}><Heart size={17} fill={liked?.has(activeKey) ? 'currentColor' : 'none'} /></button>}
+          <button className="client-gallery-icon" type="button" onClick={() => navigatePhoto(-1)} disabled={atStart} aria-label="Previous photograph"><ChevronLeft size={21} /></button>
+          <button ref={lightboxBack} className="client-gallery-back" type="button" onClick={() => setSelected(null)} aria-label="All photographs"><ArrowLeft size={16} /><span>All photographs</span></button>
+          {allowLikes && <button className={`client-gallery-icon ${liked?.has(activeKey) ? 'is-liked' : ''}`} type="button" onClick={() => runLike(activePhoto, selected)} aria-pressed={Boolean(liked?.has(activeKey))} aria-label={liked?.has(activeKey) ? 'Remove from favourites' : 'Add to favourites'}><Heart size={17} fill={liked?.has(activeKey) ? 'currentColor' : 'none'} /></button>}
           {allowIndividualDownloads && <button className="client-gallery-download-one" type="button" aria-label="Download photograph" onClick={() => runDownload(activePhoto, selected)} disabled={resolvedBusy === activeKey || resolvedBusy === 'all'}>{resolvedBusy === activeKey ? <LoaderCircle className="client-gallery-spin" size={16} /> : <Download size={16} />}<span>{resolvedBusy === activeKey ? 'Preparing…' : 'Download'}</span></button>}
-          <button className="client-gallery-icon" type="button" onClick={() => navigatePhoto(1)} disabled={selected === photos.length - 1} aria-label="Next photograph"><ChevronRight size={21} /></button>
+          <button className="client-gallery-icon" type="button" onClick={() => navigatePhoto(1)} disabled={atEnd} aria-label="Next photograph"><ChevronRight size={21} /></button>
         </div>
-      </div>}
+      </motion.div>}</AnimatePresence>
     </motion.section>
-  </motion.div>, document.body);
+  </motion.div></LayoutGroup>, document.body);
 }

@@ -25,6 +25,7 @@ for (const width of [390, 834, 1440]) test(`Showcase gallery fills the photo sta
   await page.mouse.move(box.x + box.width * .18, box.y + box.height * .5, { steps: 8 });
   await page.mouse.up();
   await expect(viewer.getByRole('heading', { name: 'Photograph 2' })).toBeVisible();
+  await expect(photo).toHaveCount(1);
   await expect.poll(() => photo.getAttribute('src')).not.toBe(firstPhoto);
   await expect(viewer.getByRole('button', { name: 'Previous photograph' })).toBeEnabled();
 
@@ -34,4 +35,5 @@ for (const width of [390, 834, 1440]) test(`Showcase gallery fills the photo sta
   await page.mouse.move(nextBox.x + nextBox.width * .76, nextBox.y + nextBox.height * .5, { steps: 8 });
   await page.mouse.up();
   await expect(viewer.getByRole('heading', { name: 'Photograph 1' })).toBeVisible();
+  await expect(photo).toHaveCount(1);
 });

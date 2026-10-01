@@ -1,14 +1,15 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { storyFrameDurationSeconds } from '../utils/storyPacing';
-import { Play, Pause, Volume2, VolumeX, Download, Share2, X, Grid, RotateCcw, ChevronLeft, ChevronRight, ArrowUpRight, Film, Eye, EyeOff } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Download, Share2, Grid, RotateCcw, ArrowUpRight, Film, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api from '../services/api.js';
 import { API_BASE_URL } from '../config/env.js';
 import { trackEvent } from '../services/analytics.js';
 import { DEMO_PRESETS } from '../constants/demoStories.js';
-import { useDialogFocus } from '../components/useDialogFocus.js';
+import { StoryCaptionContent, StoryCaptionDialog } from '../components/delivery/StoryCaption.jsx';
+import { photoStoryDemoDelivery } from '../utils/photoStoryDemo.js';
 import ClientGallery from '../components/delivery/ClientGallery.jsx';
 import DeliveryBrandMark from '../components/delivery/DeliveryBrandMark.jsx';
 import { useSmoothSoundtrackLoop } from '../utils/smoothSoundtrackLoop.js';
@@ -74,13 +75,6 @@ function fadeAudioVolume(element, target, duration = 420, onComplete) {
  };
  volumeRamps.set(element, requestAnimationFrame(tick));
 }
-function LegacyGalleryDialog({ photos, clientName, demoId, onClose, onDownload, downloading, onDownloadAll, allDownloading }) {
- const panel = useRef(null);
- const [selected, setSelected] = useState(null);
- useDialogFocus(true, panel, onClose);
- return <motion.div className="v-gallery-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}><div className="v-gallery-dialog" ref={panel} role="dialog" aria-modal="true" aria-labelledby="gallery-title" tabIndex={-1}><header className="v-gallery-header"><div><p className="v-eyebrow">{clientName}</p><h2 id="gallery-title">{selected === null ? 'The photographs.' : 'A closer look.'}</h2></div><button className="v-view-icon" onClick={onClose} aria-label="Close gallery"><X size={21} /></button></header>{selected === null ? <><div className="v-gallery-grid">{photos.map((photo, i) => <div key={photo.id || i}><button className="v-gallery-image" onClick={() => setSelected(i)} aria-label={'View photograph ' + (i + 1)}><img src={demoId ? '/veylo/web/demo-' + demoId + '-' + (i + 1) + '-480.webp' : mediaUrl(photo.thumbnailUrl || photo.url)} alt={photo.caption || 'Photograph ' + (i + 1)} loading="lazy" decoding="async" /></button><button className="v-gallery-download" onClick={() => onDownload(i)} disabled={downloading === i || allDownloading}><span>{String(i + 1).padStart(2, '0')}</span>{downloading === i ? 'Preparing…' : 'Download'}<Download size={14} /></button></div>)}</div><footer className="v-gallery-footer"><p>Download the uploaded photographs.<br /><span>Your browser may ask you to allow multiple downloads.</span></p><button className="v-button" onClick={onDownloadAll} disabled={allDownloading || downloading !== null}>{allDownloading ? 'Preparing downloads…' : 'Download all'}<Download size={17} /></button></footer></> : <div className="v-lightbox"><img src={mediaUrl(photos[selected].url)} alt={photos[selected].caption || 'Photograph ' + (selected + 1)} /><div className="v-lightbox-controls"><button className="v-view-icon" onClick={() => setSelected(Math.max(0, selected - 1))} disabled={selected === 0} aria-label="Previous photograph"><ChevronLeft size={20} /></button><button className="v-gallery-download" onClick={() => setSelected(null)}>Back to gallery</button><button className="v-view-icon" onClick={() => setSelected(Math.min(photos.length - 1, selected + 1))} disabled={selected === photos.length - 1} aria-label="Next photograph"><ChevronRight size={20} /></button></div></div>}</div></motion.div>;
-}
-
 const STORY_LAYOUTS = ['cinema', 'poster', 'split', 'collage'];
 const TEXT_STYLES = ['typewriter', 'editorial_quote', 'neon_pop', 'cinematic_drift', 'minimal_clean', 'bold_banner'];
 const TEXT_BACKGROUNDS = ['frosted_glass', 'solid_dark', 'neon_pill', 'transparent_shadow', 'vogue_bordered'];
@@ -105,11 +99,11 @@ const storyTransition = value => ({
  }[value] || 'fade');
 
 function SceneTransition({ kind, accent, reduced }) {
- if (reduced) return null;
+ if (reduced || kind === 'cut') return null;
  const transitionKind = ['cut', 'fade', 'slide_left', 'rise', 'scale'].includes(kind) ? kind : 'fade';
  return <div className={'v-story-transition is-' + transitionKind} style={{ '--transition-accent': accent }} aria-hidden="true">
   {transitionKind === 'cut' && <><motion.i className="v-story-transition-flash" initial={{ opacity: .82 }} animate={{ opacity: 0 }} transition={{ duration: .34, ease: 'easeOut' }} /><motion.i className="v-story-transition-cutline" initial={{ scaleX: 0, opacity: 1 }} animate={{ scaleX: 1, opacity: 0 }} transition={{ scaleX: { duration: .38, ease: [0.22, 1, 0.36, 1] }, opacity: { delay: .3, duration: .14 } }} /></>}
-  {transitionKind === 'fade' && <motion.i className="v-story-transition-veil" initial={{ opacity: 1, scale: 1.08 }} animate={{ opacity: 0, scale: 1 }} transition={{ duration: .72, ease: [0.22, 1, 0.36, 1] }} />}
+  {transitionKind === 'fade' && <motion.i className="v-story-transition-veil" initial={{ opacity: .18, scale: 1.04 }} animate={{ opacity: 0, scale: 1 }} transition={{ duration: .52, ease: [0.22, 1, 0.36, 1] }} />}
   {transitionKind === 'slide_left' && <><motion.i className="v-story-transition-panel is-one" initial={{ x: '0%' }} animate={{ x: '-104%' }} transition={{ duration: .72, ease: [0.76, 0, 0.24, 1] }} /><motion.i className="v-story-transition-panel is-two" initial={{ x: '0%' }} animate={{ x: '104%' }} transition={{ duration: .78, delay: .06, ease: [0.76, 0, 0.24, 1] }} /></>}
   {transitionKind === 'rise' && <><motion.i className="v-story-transition-rise is-one" initial={{ y: '0%' }} animate={{ y: '-104%' }} transition={{ duration: .76, ease: [0.76, 0, 0.24, 1] }} /><motion.i className="v-story-transition-rise is-two" initial={{ y: '0%' }} animate={{ y: '104%' }} transition={{ duration: .76, delay: .08, ease: [0.76, 0, 0.24, 1] }} /></>}
   {transitionKind === 'scale' && <motion.i className="v-story-transition-iris" initial={{ clipPath: 'circle(145% at 50% 50%)' }} animate={{ clipPath: 'circle(0% at 50% 50%)' }} transition={{ duration: .84, ease: [0.76, 0, 0.24, 1] }} />}
@@ -128,8 +122,9 @@ function AnimatedStoryText({ text, mode, animation, reduced }) {
  if (reduced) return <h2>{text}</h2>;
  if (effect === 'typewriter') {
   let letterIndex = 0;
+  const letterDelay = Math.min(.025, 1.6 / Math.max(1, text.length));
   return <h2 className="v-story-typewriter">{text.split(/\s+/).map((word, wordIndex, words) => <span className="v-story-type-word" key={wordIndex}>{[...word].map(character => {
-   const delay = Math.min(letterIndex++, 60) * .06;
+   const delay = letterIndex++ * letterDelay;
    return <motion.span className="v-story-type-character" key={letterIndex} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: .06, delay }}>{character}</motion.span>;
   })}{wordIndex < words.length - 1 ? '\u00a0' : ''}</span>)}</h2>;
  }
@@ -141,7 +136,7 @@ function AnimatedStoryText({ text, mode, animation, reduced }) {
  return <motion.h2 initial="hidden" animate="visible" variants={{ visible: { transition: { staggerChildren: .055, delayChildren: .12 } } }}>{words.map((word, i) => <motion.span className="v-story-word" key={i} variants={letterVariants}>{word}{i < words.length - 1 ? '\u00a0' : ''}</motion.span>)}</motion.h2>;
 }
 
-function StoryScene({ demo, demoId, photos, photo, index, mode, started, finished, reduced, displaySrc, displaySet, motionForPhoto, accent, pace = 'warm', v3CloserSrc = '' }) {
+function StoryScene({ demo, demoId, photos, photo, index, mode, started, finished, reduced, displaySrc, displaySet, motionForPhoto, accent, navigationDirection = 1, pace = 'warm', v3CloserSrc = '' }) {
  const adjacentIndex = index < photos.length - 1 ? index + 1 : Math.max(0, index - 1);
  const adjacentSrc = demo ? '/veylo/web/demo-' + demoId + '-' + (adjacentIndex + 1) + '-960.webp' : mediaUrl(photos[adjacentIndex]?.url);
  const finaleIndexes = [...new Set([0, Math.floor((photos.length - 1) / 2), photos.length - 1])];
@@ -156,28 +151,32 @@ function StoryScene({ demo, demoId, photos, photo, index, mode, started, finishe
 
  if (!started) return <div className="v-story-scene is-cover"><img className="v-story-scene-backdrop v-story-cover-backdrop" src={displaySrc} alt="" aria-hidden="true" /><motion.div className="v-story-cover-photo" initial={reduced ? false : { opacity: .35, filter: 'blur(10px) brightness(.65)' }} animate={{ opacity: 1, filter: 'blur(0px) brightness(1)' }} transition={{ duration: reduced ? 0 : 1.1, ease: [0.22, 1, 0.36, 1] }}><motion.img src={displaySrc} srcSet={displaySet} sizes="(max-width: 767px) 100vw, 58vw" style={{ objectPosition: focus }} alt={photo?.caption || 'Opening photograph'} initial={reduced ? false : photoMotionStart} animate={photoMotionEnd} transition={{ duration: reduced ? 0 : Math.max(8, duration * 1.4), ease: 'easeInOut', repeat: reduced ? 0 : Infinity, repeatType: 'mirror' }} draggable="false" /></motion.div><motion.i className="v-story-cover-line" initial={reduced ? false : { scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ duration: reduced ? 0 : 1.1, delay: reduced ? 0 : .3, ease: [0.22, 1, 0.36, 1] }} /></div>;
 
+ if (finished && v3CloserSrc) return <motion.div className="v-story-scene v-story-finale is-selected-closer" initial={reduced ? false : { opacity: 0, scale: .97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: reduced ? 0 : .6 }}><figure className="v-story-closing-photo"><img src={v3CloserSrc} alt="Closing photograph" draggable="false" /></figure><span className="v-story-finale-number" aria-hidden="true">END</span><motion.i className="v-story-closing-line" initial={reduced ? false : { scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ duration: reduced ? 0 : .7, delay: reduced ? 0 : .15 }} /></motion.div>;
+
  if (finished) return <motion.div className="v-story-scene v-story-finale" initial={reduced ? false : { opacity: 0, scale: .94 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: reduced ? 0 : .7, ease: [0.22, 1, 0.36, 1] }}>
   <div className="v-story-finale-number" aria-hidden="true">END</div>
 <div className="v-story-finale-photos">{finaleIndexes.map((photoIndex, i) => <motion.figure key={photoIndex} initial={reduced ? false : { opacity: 0, y: 42, rotate: (i - 1) * 7 }} animate={{ opacity: 1, y: 0, rotate: (i - 1) * 4 }} transition={{ type: 'spring', damping: 24, stiffness: 150, delay: reduced ? 0 : i * .1 }}><motion.img src={i === 1 && v3CloserSrc ? v3CloserSrc : finaleSource(photoIndex)} alt="" animate={reduced ? { scale: 1 } : { scale: i === 1 ? [1.03, 1.11] : [1.11, 1.03], x: i === 0 ? ['2%', '-2%'] : i === 2 ? ['-2%', '2%'] : 0 }} transition={{ duration: reduced ? 0 : 8 + i, ease: 'easeInOut', repeat: reduced ? 0 : Infinity, repeatType: 'mirror' }} /></motion.figure>)}</div>
  </motion.div>;
 
  const transitionKind = ['cut', 'fade', 'slide_left', 'rise', 'scale'].includes(photo?.transition) ? photo.transition : 'fade';
- const sceneEntrance = transitionKind === 'slide_left' ? { opacity: .55, x: '5%', scale: 1.035 } : transitionKind === 'rise' ? { opacity: .55, y: '4%', scale: 1.035 } : transitionKind === 'scale' ? { opacity: .5, scale: 1.08 } : { opacity: .55, scale: 1.025 };
- return <AnimatePresence mode="wait"><motion.div key={demoId + ':' + index} className={'v-story-scene is-' + mode + ' transition-' + transitionKind + (index === 0 ? ' is-opening-frame' : '')} initial={reduced ? false : sceneEntrance} animate={{ opacity: 1, x: 0, y: 0, scale: 1 }} exit={{ opacity: 0, scale: .985 }} transition={{ duration: reduced ? 0 : .58, ease: [0.22, 1, 0.36, 1] }}>
-  {mode === 'cinema' && <><img className="v-story-scene-backdrop v-story-cinema-backdrop" src={displaySrc} alt="" aria-hidden="true" /><motion.div className="v-story-cinema-photo" initial={reduced ? false : { clipPath: 'inset(0 0 100% 0)', scale: 1.06 }} animate={{ clipPath: 'inset(0 0 0% 0)', scale: 1 }} transition={{ duration: reduced ? 0 : .85, ease: [0.22, 1, 0.36, 1] }}><motion.img src={displaySrc} srcSet={displaySet} sizes="(max-width: 767px) 100vw, 52vw" style={{ objectPosition: focus }} alt={photo?.caption || 'Photograph ' + (index + 1)} initial={reduced ? false : photoMotionStart} animate={photoMotionEnd} transition={photoTransition} draggable="false" /></motion.div><span className="v-story-cinema-number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span><span className="v-story-cinema-label">{index === 0 ? 'Opening frame' : 'Story frame'}</span><motion.i className="v-story-cinema-sweep" initial={reduced ? false : { scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ duration: reduced ? 0 : .9, delay: reduced ? 0 : .2, ease: [0.22, 1, 0.36, 1] }} /></>}
+ const sceneEntrance = transitionKind === 'slide_left' ? { opacity: .55, x: navigationDirection * 36, scale: 1.015 } : transitionKind === 'rise' ? { opacity: .55, y: '4%', scale: 1.035 } : transitionKind === 'scale' ? { opacity: .5, scale: 1.08 } : { opacity: .55, scale: 1.025 };
+ return <AnimatePresence mode="sync" custom={navigationDirection}><motion.div key={demoId + ':' + index} className={'v-story-scene is-' + mode + ' transition-' + transitionKind + (index === 0 ? ' is-opening-frame' : '')} initial={reduced ? false : sceneEntrance} animate={{ opacity: 1, x: 0, y: 0, scale: 1 }} variants={{ departing: direction => ({ opacity: 0, x: transitionKind === 'slide_left' ? -direction * 36 : 0, scale: .995 }) }} exit="departing" transition={{ duration: reduced || transitionKind === 'cut' ? 0 : .52, ease: [0.22, 1, 0.36, 1] }}>
+  {mode === 'cinema' && <><img className="v-story-scene-backdrop v-story-cinema-backdrop" src={displaySrc} alt="" aria-hidden="true" /><motion.div className="v-story-cinema-photo" initial={reduced || transitionKind !== 'rise' ? false : { clipPath: 'inset(0 0 100% 0)', scale: 1.06 }} animate={{ clipPath: 'inset(0 0 0% 0)', scale: 1 }} transition={{ duration: reduced || transitionKind === 'cut' ? 0 : .65, ease: [0.22, 1, 0.36, 1] }}><motion.img src={displaySrc} srcSet={displaySet} sizes="(max-width: 767px) 100vw, 52vw" style={{ objectPosition: focus }} alt={photo?.caption || 'Photograph ' + (index + 1)} initial={reduced ? false : photoMotionStart} animate={photoMotionEnd} transition={photoTransition} draggable="false" /></motion.div><span className="v-story-cinema-number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span><span className="v-story-cinema-label">{index === 0 ? 'Opening frame' : 'Story frame'}</span><motion.i className="v-story-cinema-sweep" initial={reduced ? false : { scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ duration: reduced ? 0 : .9, delay: reduced ? 0 : .2, ease: [0.22, 1, 0.36, 1] }} /></>}
   {mode === 'poster' && <><img className="v-story-scene-backdrop" src={displaySrc} alt="" aria-hidden="true" /><motion.figure className="v-story-poster-card" initial={reduced ? false : { y: 70, rotate: 5, scale: .86 }} animate={{ y: 0, rotate: -2, scale: 1 }} transition={{ type: 'spring', damping: 23, stiffness: 125 }}><motion.img src={displaySrc} srcSet={displaySet} style={{ objectPosition: focus }} alt={photo?.caption || 'Photograph ' + (index + 1)} initial={reduced ? false : photoMotionStart} animate={photoMotionEnd} transition={photoTransition} draggable="false" /></motion.figure><span className="v-story-scene-number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span></>}
   {mode === 'split' && <><motion.div className="v-story-split-photo" initial={reduced ? false : { x: '-22%', scale: 1.08 }} animate={{ x: 0, scale: 1 }} transition={{ duration: reduced ? 0 : .7, ease: [0.22, 1, 0.36, 1] }}><motion.img src={displaySrc} srcSet={displaySet} style={{ objectPosition: focus }} alt={photo?.caption || 'Photograph ' + (index + 1)} initial={reduced ? false : photoMotionStart} animate={photoMotionEnd} transition={photoTransition} draggable="false" /></motion.div><motion.div className="v-story-split-panel" initial={reduced ? false : { y: '100%' }} animate={{ y: 0 }} transition={{ duration: reduced ? 0 : .65, ease: [0.22, 1, 0.36, 1] }}><span aria-hidden="true">{String(index + 1).padStart(2, '0')}</span></motion.div></>}
   {mode === 'collage' && <><div className="v-story-collage-backdrop" /><motion.figure className="v-story-collage-main" initial={reduced ? false : { x: '-35%', rotate: -9, scale: .84 }} animate={{ x: 0, rotate: -3, scale: 1 }} transition={{ type: 'spring', damping: 22, stiffness: 120 }}><motion.img src={displaySrc} style={{ objectPosition: focus }} alt={photo?.caption || 'Photograph ' + (index + 1)} initial={reduced ? false : photoMotionStart} animate={photoMotionEnd} transition={photoTransition} draggable="false" /></motion.figure><motion.figure className="v-story-collage-side" initial={reduced ? false : { x: '45%', rotate: 10, opacity: 0 }} animate={{ x: 0, rotate: 4, opacity: 1 }} transition={{ type: 'spring', damping: 24, stiffness: 125, delay: reduced ? 0 : .12 }}><motion.img src={adjacentSrc} style={{ objectPosition: adjacentFocus }} alt="" aria-hidden="true" animate={adjacentMotion} transition={photoTransition} draggable="false" /></motion.figure><span className="v-story-scene-number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span></>}
   <SceneTransition kind={transitionKind} accent={accent} reduced={reduced} />
  </motion.div></AnimatePresence>;
 }
-export default function StoryViewer({ demoMode = false, delivery: deliveryProp = null, galleryProps = null }) {
+export default function StoryViewer({ demoMode = false, delivery: suppliedDelivery = null, galleryProps = null }) {
  const { storyId } = useParams();
  const [params] = useSearchParams();
  const location = useLocation();
  const navigate = useNavigate();
- const demo = (demoMode || storyId === 'demo') && !deliveryProp;
+ const demo = (demoMode || storyId === 'demo') && !suppliedDelivery;
  const demoId = DEMO_PRESETS.some(p => p.id === params.get('preset')) ? params.get('preset') : 'ada';
+ const demoDelivery = useMemo(() => demo ? photoStoryDemoDelivery(DEMO_PRESETS.find(preset => preset.id === demoId)) : null, [demo, demoId]);
+ const deliveryProp = suppliedDelivery || demoDelivery;
 
  const isFromFormats =
   location.state?.from === 'formats' ||
@@ -212,6 +211,9 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
  const [narrationLoading, setNarrationLoading] = useState(false);
  const [captions, setCaptions] = useState(true);
  const [gallery, setGallery] = useState(false);
+ const [captionExpanded, setCaptionExpanded] = useState(false);
+ const [navigationDirection, setNavigationDirection] = useState(1);
+ const [demoLiked, setDemoLiked] = useState(() => new Set());
   const [holding, setHolding] = useState(false);
   const [downloading, setDownloading] = useState(null);
   const [allDownloading, setAllDownloading] = useState(false);
@@ -236,7 +238,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
  const photos = story?.photos || [];
  const galleryPhotos = story?.galleryPhotos || photos;
  const photo = photos[index];
- const running = started && !paused && !finished && !gallery && !holding && !hidden;
+ const running = started && !paused && !finished && !gallery && !captionExpanded && !holding && !hidden;
  const captionNarration = deliveryProp?.schemaVersion === 3 ? null : deliveryProp?.narration;
  const captionNarrationUrl = captionNarration?.url || (deliveryProp?.schemaVersion !== 3 ? deliveryProp?.narration?.url : '');
  const narrationSegments = captionNarration?.segments || (deliveryProp?.schemaVersion !== 3 ? deliveryProp?.narration?.segments : null) || EMPTY_NARRATION_SEGMENTS;
@@ -311,7 +313,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   let active = true;
   if (narrationLeadTimer.current) window.clearTimeout(narrationLeadTimer.current);
   narrationLeadRef.current = false;
-  setStarted(false); setIndex(0); setPaused(false); setFinished(false); setGallery(false); setError(''); setLoading(true); elapsed.current = 0;
+  setStarted(false); setIndex(0); setPaused(false); setFinished(false); setGallery(false); setCaptionExpanded(false); setDemoLiked(new Set()); setError(''); setLoading(true); elapsed.current = 0;
   v3OpeningPlayed.current = false; setV3OpeningNarrating(false);
   if (deliveryProp) {
     const cd = deliveryProp.creativeDirection || {};
@@ -332,10 +334,10 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
         duration: deliveryProp.schemaVersion === 3 ? 6 : storyFrameDurationSeconds(frame),
         motion: storyMotion(frame.motion),
         sceneLayout: frame.layout || STORY_LAYOUTS[i % STORY_LAYOUTS.length],
-        typographyStyle: deliveryProp.schemaVersion === 3 ? 'typewriter' : frame.typographyStyle || 'cinematic_drift',
+        typographyStyle: frame.typographyStyle || (deliveryProp.schemaVersion === 3 ? 'typewriter' : 'cinematic_drift'),
         textBackground: frame.textBackground || 'transparent_shadow',
         captionPosition: frame.captionPosition || 'bottom',
-        textAnimation: deliveryProp.schemaVersion === 3 ? 'typewriter' : frame.textAnimation || undefined,
+        textAnimation: frame.textAnimation || (deliveryProp.schemaVersion === 3 ? 'typewriter' : undefined),
         transition: storyTransition(frame.transition),
         focalPoint: frame.focalPoint || '50% 50%',
         colorAccent: frame.colorAccent || palette.accent || '#ff5a47'
@@ -392,6 +394,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   return () => { active = false; if (narrationLeadTimer.current) window.clearTimeout(narrationLeadTimer.current); };
  }, [demo, demoId, storyId, deliveryProp]);
  const go = useCallback(direction => {
+  setNavigationDirection(direction); setCaptionExpanded(false);
   elapsed.current = 0; setFinished(false); setIndex(current => {
    const nextIndex = Math.max(0, Math.min(photos.length - 1, current + direction));
    const assetId = photos[nextIndex]?.id;
@@ -415,7 +418,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
    if (progress.current) progress.current.style.transform = 'scaleX(' + Math.min(1, elapsed.current / duration) + ')';
    if (elapsed.current >= duration) {
     elapsed.current = 0;
-    if (index >= photos.length - 1) setFinished(true); else setIndex(i => i + 1);
+    if (index >= photos.length - 1) setFinished(true); else { setNavigationDirection(1); setIndex(i => i + 1); }
     return;
    }
    frame = requestAnimationFrame(tick);
@@ -459,13 +462,13 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
  }, [running, muted, story, v3OpeningNarrating, finished, gallery, deliveryProp?.schemaVersion]);
  useEffect(() => {
   const handle = e => {
-   if (gallery || /INPUT|TEXTAREA|SELECT|BUTTON|A/.test(e.target.tagName)) return;
+   if (gallery || captionExpanded || /INPUT|TEXTAREA|SELECT|BUTTON|A/.test(e.target.tagName)) return;
    if (e.key === 'ArrowRight' && started) { e.preventDefault(); go(1); }
    if (e.key === 'ArrowLeft' && started) { e.preventDefault(); go(-1); }
    if (e.code === 'Space' && started) { e.preventDefault(); setPaused(p => !p); }
   };
   document.addEventListener('keydown', handle); return () => document.removeEventListener('keydown', handle);
- }, [gallery, started, go]);
+ }, [gallery, captionExpanded, started, go]);
   useEffect(() => {
     if (!photos.length) return;
     const nextIdx = (index + 1) % photos.length;
@@ -741,7 +744,7 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   const displaySrc = demo ? '/veylo/web/demo-' + demoId + '-' + (index + 1) + '-960.webp' : mediaUrl(!started && v3OpeningAsset ? v3OpeningAsset.url : photo?.url);
   const displaySet = demo ? [480, 960, 1440].map(w => '/veylo/web/demo-' + demoId + '-' + (index + 1) + '-' + w + '.webp ' + w + 'w').join(', ') : photo?.srcSet;
   const motionName = String(photo?.motion || photo?.zoomEffect || 'zoom_in').replaceAll('_', '-');
- const motionForPhoto = reduced ? { scale: 1, x: 0, y: 0 } : motionName === 'pan-down' ? { scale: 1.16, y: ['-4%', '4%'] } : motionName === 'pan-up' ? { scale: 1.16, y: ['4%', '-4%'] } : motionName === 'pan-right' ? { scale: 1.16, x: ['-4%', '4%'] } : motionName === 'pan-left' ? { scale: 1.16, x: ['4%', '-4%'] } : motionName === 'zoom-out' ? { scale: [1.18, 1.03] } : { scale: [1.02, 1.16] };
+ const motionForPhoto = reduced || motionName === 'still' ? { scale: 1, x: 0, y: 0 } : motionName === 'pan-down' ? { scale: 1.16, y: ['-4%', '4%'] } : motionName === 'pan-up' ? { scale: 1.16, y: ['4%', '-4%'] } : motionName === 'pan-right' ? { scale: 1.16, x: ['-4%', '4%'] } : motionName === 'pan-left' ? { scale: 1.16, x: ['4%', '-4%'] } : motionName === 'zoom-out' ? { scale: [1.18, 1.03] } : { scale: [1.02, 1.16] };
   const layoutMode = sceneLayout(photo, index);
   const textStyle = safeChoice(photo?.typographyStyle, TEXT_STYLES, 'cinematic_drift');
   const textBackground = safeChoice(photo?.textBackground, TEXT_BACKGROUNDS, 'transparent_shadow');
@@ -750,23 +753,73 @@ export default function StoryViewer({ demoMode = false, delivery: deliveryProp =
   const finale = story.finale || {};
   return <div className={'v-public v-story-shell' + (deliveryProp?.schemaVersion === 3 ? ' is-v3' : '')} style={{ '--story-accent': photo?.colorAccent || story.theme?.accentColor || '#ff5a47', '--story-glow': photo?.glowColor || story.theme?.glowColor || 'rgba(255,90,71,.35)', '--story-secondary': photo?.secondaryColor || story.theme?.secondaryColor || '#151518', '--story-bg': story.theme?.backgroundColor || '#050506', '--story-text': story.theme?.textColor || '#ffffff', '--story-font-display': story.theme?.displayFont || "'Playfair Display', Georgia, serif", '--story-font-body': story.theme?.bodyFont || "'Plus Jakarta Sans', system-ui, sans-serif" }}>
   <div className="v-story-ambient" aria-hidden="true"><img src={displaySrc} alt="" /></div>
-  <main className={'v-story-canvas ' + (!started ? 'is-cover-state' : finished ? 'is-finale-state' : 'is-playing-state')} id="main-content" ref={stage} onPointerDown={e => { if (e.pointerType !== 'mouse') touch.current = { x: e.clientX, y: e.clientY }; if (started) setHolding(true); }} onPointerUp={e => { setHolding(false); if (touch.current) { const dx = e.clientX - touch.current.x; const dy = e.clientY - touch.current.y; if (started && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) go(dx < 0 ? 1 : -1); touch.current = null; } }} onPointerCancel={() => { setHolding(false); touch.current = null; }} onPointerLeave={() => setHolding(false)}>
-   <StoryScene demo={demo} demoId={demoId} photos={photos} photo={photo} index={index} mode={layoutMode} started={started} finished={finished} reduced={reduced} displaySrc={displaySrc} displaySet={!started && v3OpeningAsset ? v3OpeningAsset.srcSet : displaySet} motionForPhoto={motionForPhoto} accent={photo?.colorAccent || story.theme?.accentColor || '#ff5a47'} pace={story.theme?.pace} v3CloserSrc={mediaUrl(v3ClosingAsset?.url)} />
-   <div className="v-story-shade" aria-hidden="true" />
-   <div className="v-story-progress" role="progressbar" aria-label="Photo Story progress" aria-valuemin={1} aria-valuemax={photos.length} aria-valuenow={index + 1}>{photos.map((_, i) => <span key={i} className={i < index ? 'is-done' : i === index ? 'is-current' : ''}><i ref={i === index ? progress : null} /></span>)}</div>
-   <header className="v-story-top"><div className="v-story-studio"><Link to={backDestination} onClick={handleBack} className="v-story-mark" aria-label={demo ? (isFromFormats ? 'Back to Photo Story on the formats page' : isFromNiche ? 'Back to the page you opened this story from' : 'Back to the Photo Story section on the homepage') : `${story.studioName || 'Studio'} home`}><DeliveryBrandMark branding={story.branding} /></Link><div><strong style={{ fontFamily: 'var(--story-font-body)' }}>{story.studioName || story.occasion}</strong><span style={{ fontFamily: 'var(--story-font-body)' }}>{story.clientName || story.title}</span></div></div><div className="v-story-top-actions"><button onClick={() => setMuted(value => !value)} aria-label={muted ? 'Turn sound on' : 'Turn sound off'}>{muted ? <VolumeX size={17} /> : <Volume2 size={17} />}</button><button onClick={share} aria-label="Share story"><Share2 size={17} /></button></div></header>
-   {!started ? <section className="v-story-cover"><p className="v-story-kicker">{opening.eyebrow || (demo ? 'A Veylo Photo Story' : 'Your photographs are ready')}</p><h1 style={{ fontFamily: 'var(--story-font-display)' }}>{opening.headline || story.clientName || story.title}</h1><p className="v-story-cover-occasion">{story.occasion}</p><p className="v-story-summary">{opening.copy || story.storySummary || 'Your finished photographs, brought together for you.'}</p><button className="v-story-primary" onClick={start} disabled={v3OpeningNarrating}><Play size={18} fill="currentColor" />{v3OpeningNarrating ? 'Reading the introduction…' : opening.buttonLabel || 'Begin the story'}</button><p className="v-story-hint">{opening.hint || 'Turn your sound on. Tap either side to move through the story.'}</p></section> : <>
-    <button className="v-story-tap v-story-tap-left" onClick={() => go(-1)} disabled={index === 0} aria-label="Previous photograph" />
-    <button className="v-story-tap v-story-tap-right" onClick={() => go(1)} disabled={index === photos.length - 1} aria-label="Next photograph" />
-    <section key={finished ? 'finale' : 'caption-' + index} className={'v-story-caption is-' + layoutMode + ' is-type-' + textStyle + ' has-' + textBackground + ' position-' + captionPosition + ' ' + (!captions ? 'is-hidden ' : '') + (finished ? 'is-finale' : '')} style={captions ? undefined : { display: 'none', visibility: 'hidden', opacity: 0, pointerEvents: 'none' }} aria-live={paused || finished ? 'polite' : 'off'}>{finished ? <><motion.p className="v-story-kicker" initial={reduced ? false : { opacity: 0, x: -18 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: reduced ? 0 : .18 }}>{finale.eyebrow || 'That’s the story'}</motion.p><AnimatedStoryText text={finale.headline || 'The full gallery is ready.'} mode="poster" animation={finale.textAnimation || 'word_fade_up'} reduced={reduced} /><motion.p initial={reduced ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: reduced ? 0 : .5 }}>{finale.copy || 'Take your time with every photograph. Save one, or keep the whole set.'}</motion.p><motion.button className="v-story-gallery-cta" onClick={() => setGallery(true)} initial={reduced ? false : { opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: reduced ? 0 : .65 }}>{finale.buttonLabel || 'Open your gallery'}<Grid size={16} /></motion.button></> : <><motion.p className="v-story-kicker" initial={reduced ? false : { opacity: 0, x: -18 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: reduced ? 0 : .08 }}>{photo?.chapterTitle || (deliveryProp?.schemaVersion === 3 ? '' : 'The photographs')}</motion.p><AnimatedStoryText text={photo?.caption || 'One more moment from the day.'} mode={layoutMode} animation={photo?.textAnimation} reduced={reduced} /></>}</section>
-    <div className={'v-story-controls ' + (finished ? 'is-finished' : '')}><button onClick={() => setCaptions(value => !value)} aria-label={captions ? 'Hide captions' : 'Show captions'}>{captions ? <Eye size={17} /> : <EyeOff size={17} />}</button><button className="v-story-play" onClick={finished ? start : () => setPaused(value => !value)} aria-label={finished ? 'Replay story' : paused ? 'Resume story' : 'Pause story'}>{finished ? <RotateCcw size={18} /> : paused ? <Play size={18} fill="currentColor" /> : <Pause size={18} fill="currentColor" />}</button>{!finished && <button onClick={() => setGallery(true)} aria-label="Open gallery"><Grid size={17} /></button>}</div>
-   </>}
+  <main className={'v-story-canvas ' + (!started ? 'is-cover-state' : finished ? 'is-finale-state' : 'is-playing-state caption-position-' + captionPosition) + (!captions && !finished ? ' captions-off' : '')} id="main-content" ref={stage}>
+   <div className="v-story-visual" onPointerDown={event => {
+     if (event.target.closest('button, a')) return;
+     if (event.pointerType !== 'mouse') touch.current = { x: event.clientX, y: event.clientY };
+     if (started && !finished) setHolding(true);
+   }} onPointerUp={event => {
+     setHolding(false);
+     if (touch.current) {
+       const dx = event.clientX - touch.current.x;
+       const dy = event.clientY - touch.current.y;
+       if (started && !finished && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) go(dx < 0 ? 1 : -1);
+       touch.current = null;
+     }
+   }} onPointerCancel={() => { setHolding(false); touch.current = null; }} onPointerLeave={() => setHolding(false)}>
+    <StoryScene demo={false} demoId={demoId} photos={photos} photo={photo} index={index} mode={layoutMode} started={started} finished={finished} reduced={reduced} displaySrc={displaySrc} displaySet={!started && v3OpeningAsset ? v3OpeningAsset.srcSet : displaySet} motionForPhoto={motionForPhoto} accent={photo?.colorAccent || story.theme?.accentColor || '#ff5a47'} navigationDirection={navigationDirection} pace={story.theme?.pace} v3CloserSrc={mediaUrl(v3ClosingAsset?.url)} />
+    <div className="v-story-shade" aria-hidden="true" />
+    {started && !finished && <>
+      <button className="v-story-tap v-story-tap-left" type="button" onClick={() => go(-1)} disabled={index === 0} aria-label="Previous photograph" />
+      <button className="v-story-tap v-story-tap-right" type="button" onClick={() => go(1)} disabled={index === photos.length - 1} aria-label="Next photograph" />
+    </>}
+   </div>
+   <div className="v-story-progress" role="progressbar" aria-label="Photo Story progress" aria-valuemin={1} aria-valuemax={photos.length} aria-valuenow={finished ? photos.length : index + 1}>{photos.map((_, i) => <span key={i} className={finished || i < index ? 'is-done' : i === index ? 'is-current' : ''}><i ref={!finished && i === index ? progress : null} /></span>)}</div>
+   <header className="v-story-top">
+    <div className="v-story-studio"><Link to={backDestination} onClick={handleBack} className="v-story-mark" aria-label={demo ? (isFromFormats ? 'Back to Photo Story on the formats page' : isFromNiche ? 'Back to the page you opened this story from' : 'Back to the Photo Story section on the homepage') : `${story.studioName || 'Studio'} home`}><DeliveryBrandMark branding={story.branding} /></Link><div><strong>{story.studioName || story.occasion}</strong><span>{story.clientName || story.title}</span></div></div>
+    <div className="v-story-top-actions">{(story.soundtrack?.audioUrl || hasNarration || deliveryProp?.narration?.opening?.url || deliveryProp?.narration?.closing?.url) && <button type="button" onClick={() => setMuted(value => !value)} aria-label={muted ? 'Turn sound on' : 'Turn sound off'}>{muted ? <VolumeX size={17} /> : <Volume2 size={17} />}</button>}<button type="button" onClick={share} aria-label="Share story"><Share2 size={17} /></button></div>
+   </header>
+   <AnimatePresence>
+    {!started && <motion.section className="v-story-cover" initial={reduced ? false : { opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -14 }} transition={{ duration: reduced ? 0 : .4, delay: reduced ? 0 : .1 }}>
+      <p className="v-story-kicker">{opening.eyebrow || 'Your photographs are ready'}</p>
+      <h1>{opening.headline || story.clientName || story.title}</h1>
+      <p className="v-story-cover-occasion">{story.occasion}</p>
+      <p className="v-story-summary">{opening.copy || story.storySummary || 'Your finished photographs, brought together for you.'}</p>
+      <button className="v-story-primary" type="button" onClick={start} disabled={v3OpeningNarrating}><Play size={18} fill="currentColor" />{v3OpeningNarrating ? 'Reading the introduction…' : opening.buttonLabel || 'Begin the story'}</button>
+      <p className="v-story-hint">{story.soundtrack?.audioUrl || hasNarration || deliveryProp?.narration?.opening?.url ? 'Sound on. Swipe or tap either side to move.' : 'Swipe or tap either side to move through the story.'}</p>
+    </motion.section>}
+   </AnimatePresence>
+   {started && <div className="v-story-caption-slot">
+    <AnimatePresence mode="popLayout" initial={false}>
+     {(captions || finished) && <motion.section key={finished ? 'finale' : 'caption-' + index} className={'v-story-caption is-' + layoutMode + ' is-type-' + textStyle + ' has-' + textBackground + ' position-' + captionPosition + (finished ? ' is-finale' : '')} initial={reduced ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: reduced ? 0 : .24 }} aria-live={paused || finished ? 'polite' : 'off'}>
+      {finished ? <>
+       <p className="v-story-kicker">{finale.eyebrow || 'That’s the story'}</p>
+       <AnimatedStoryText text={finale.headline || 'The full gallery is ready.'} mode="poster" animation="word_fade_up" reduced={reduced} />
+       <p>{finale.copy || 'Take your time with every photograph. Save one, or keep the whole set.'}</p>
+       <button className="v-story-gallery-cta" type="button" onClick={() => setGallery(true)}>{finale.buttonLabel || 'Open your gallery'}<Grid size={16} /></button>
+      </> : <>
+       {photo?.chapterTitle && <p className="v-story-kicker">{photo.chapterTitle}</p>}
+       <StoryCaptionContent text={photo?.caption || ''} onRead={() => setCaptionExpanded(true)}>
+        <AnimatedStoryText text={photo?.caption || ''} mode={layoutMode} animation={photo?.textAnimation} reduced={reduced} />
+       </StoryCaptionContent>
+      </>}
+     </motion.section>}
+    </AnimatePresence>
+   </div>}
+   {started && <footer className={'v-story-controls ' + (finished ? 'is-finished' : '')}>
+    {!finished && <button type="button" onClick={() => setCaptions(value => !value)} aria-label={captions ? 'Hide captions' : 'Show captions'} aria-pressed={captions}>{captions ? <Eye size={17} /> : <EyeOff size={17} />}</button>}
+    <button className="v-story-play" type="button" onClick={finished ? start : () => setPaused(value => !value)} aria-label={finished ? 'Replay story' : paused ? 'Resume story' : 'Pause story'}>{finished ? <RotateCcw size={18} /> : paused ? <Play size={18} fill="currentColor" /> : <Pause size={18} fill="currentColor" />}</button>
+    <span className="v-story-frame-count" aria-label={`Photograph ${index + 1} of ${photos.length}`}>{String(index + 1).padStart(2, '0')}<span> / {String(photos.length).padStart(2, '0')}</span></span>
+    <button type="button" onClick={() => setGallery(true)} aria-label="Open gallery"><Grid size={17} /></button>
+   </footer>}
    {(story.soundtrack?.audioUrl || hasNarration) && <div className={`v-story-sound ${audioLoading || narrationLoading ? 'is-loading' : ''}`} role="status" aria-live="polite"><span className={audioLoading || narrationLoading ? 'is-loading' : audioPlaying || narrationPlaying ? 'is-playing' : ''} /><p>{audioLoading && narrationLoading ? 'Loading music and narration…' : narrationLoading ? 'Loading narration…' : audioLoading ? 'Loading soundtrack…' : audioPlaying ? `Now playing · ${story.soundtrack?.title || 'Selected track'}` : narrationPlaying ? 'Narration playing' : muted ? 'Sound off' : `Soundtrack · ${story.soundtrack?.title || 'Selected track'}`}</p></div>}
   </main>
+
   {story.soundtrack?.audioUrl && <audio ref={audio} crossOrigin="anonymous" src={mediaUrl(story.soundtrack.audioUrl)} loop preload="metadata" onWaiting={() => { if (started && !muted) setAudioLoading(true); }} onStalled={() => { if (started && !muted) setAudioLoading(true); }} onPlaying={() => { audioPlayPending.current = false; setAudioLoading(false); setAudioPlaying(true); }} onPause={() => { audioPlayPending.current = false; setAudioLoading(false); }} onError={() => { audioPlayPending.current = false; setAudioPlaying(false); setAudioLoading(false); toast.info('The soundtrack could not load. The story will continue without it.'); }} />}
   {captionNarrationUrl && <audio ref={narrationRef} src={mediaUrl(captionNarrationUrl)} preload="metadata" onWaiting={() => { if (started && !muted) setNarrationLoading(true); }} onStalled={() => { if (started && !muted) setNarrationLoading(true); }} onPlaying={() => { setNarrationLoading(false); setNarrationPlaying(true); if (deliveryProp?.schemaVersion === 3) fadeAudioVolume(audio.current, .16, 450); }} onPause={() => { if (deliveryProp?.schemaVersion === 3) { setNarrationPlaying(false); setNarrationLoading(false); fadeAudioVolume(audio.current, 1, 600); } }} onEnded={handleNarrationEnded} onError={() => { setNarrationPlaying(false); setNarrationLoading(false); fadeAudioVolume(audio.current, 1); toast.info('The narration could not load. The story will continue without it.'); }} />}
   {deliveryProp?.schemaVersion === 3 && deliveryProp?.narration?.opening?.url && <audio ref={v3OpeningRef} src={mediaUrl(deliveryProp.narration.opening.url)} preload="metadata" onEnded={() => beginFrames(true)} onError={() => { if (v3OpeningPlayed.current) beginFrames(true); }} />}
   {deliveryProp?.schemaVersion === 3 && deliveryProp?.narration?.closing?.url && <audio ref={v3ClosingRef} src={mediaUrl(deliveryProp.narration.closing.url)} preload="metadata" onEnded={finishV3ClosingNarration} onError={finishV3ClosingNarration} />}
-  <AnimatePresence>{gallery && <ClientGallery photos={galleryPhotos} title={story.clientName || story.title} demoId={demo ? demoId : null} delivery={deliveryProp} onClose={() => setGallery(false)} liked={galleryProps?.liked} onLike={galleryProps?.onLike} onDownload={galleryProps?.onDownload || ((_key, photoIndex) => download(photoIndex))} busy={galleryProps?.busy} downloading={downloading} onDownloadAll={galleryProps?.onDownloadAll || downloadAll} allDownloading={allDownloading} downloadNotice={galleryProps?.downloadNotice || downloadNotice} downloadProgress={galleryProps?.downloadProgress || downloadProgress} />}</AnimatePresence>
+  <AnimatePresence>{gallery && <ClientGallery photos={galleryPhotos} title={story.clientName || story.title} demoId={demo ? demoId : null} delivery={deliveryProp} onClose={() => setGallery(false)} liked={galleryProps?.liked || (demo ? demoLiked : undefined)} onLike={galleryProps?.onLike || (demo ? key => setDemoLiked(current => { const next = new Set(current); next.has(key) ? next.delete(key) : next.add(key); return next; }) : undefined)} onDownload={galleryProps?.onDownload || ((_key, photoIndex) => download(photoIndex))} busy={galleryProps?.busy} downloading={downloading} onDownloadAll={galleryProps?.onDownloadAll || downloadAll} allDownloading={allDownloading} downloadNotice={galleryProps?.downloadNotice || downloadNotice} downloadProgress={galleryProps?.downloadProgress || downloadProgress} />}</AnimatePresence>
+  <AnimatePresence>{captionExpanded && <StoryCaptionDialog title={photo?.chapterTitle || `Photograph ${index + 1}`} text={photo?.caption || ""} onClose={() => setCaptionExpanded(false)} />}</AnimatePresence>
   </div>;
 }

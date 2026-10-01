@@ -333,7 +333,7 @@ test('V3 keeps validation and API errors visible at the current scroll position'
     if (path.endsWith('/deliveries/v3/assist')) return json(503, { success: false, code: 'MODEL_UNAVAILABLE', message: 'The writing service is unavailable. Try again shortly.' });
     return json(200, { success: true, data: {} });
   });
-  await page.goto('/create');
+  await page.goto('/create?type=showcase');
   const cookieButton = page.getByRole('button', { name: 'Got it' });
   if (await cookieButton.isVisible()) await cookieButton.click();
   await page.getByRole('button', { name: 'Continue to formats' }).click();
@@ -478,12 +478,11 @@ for (const width of [390, 834, 1440]) {
       await expect(clientPreview.locator('.v-story-cover-photo img')).toHaveAttribute('src', /demo-lora-1-960\.webp/);
       await clientPreview.getByRole('button', { name: 'Begin the story' }).click();
       await expect(clientPreview.locator('.v-story-cinema-number')).toBeVisible();
-      await expect(clientPreview.locator('.v-story-kicker')).toContainText('A birthday year 1');
+      await expect(clientPreview.locator('.v-story-caption .v-story-kicker')).toContainText('A birthday year 1');
       await clientPreview.locator('.v-story-shell').screenshot({ path: '../.visual-review/delivery-v3/v3-first-frame-390.png' });
       for (let index = 0; index < 4; index += 1) await clientPreview.getByRole('button', { name: 'Next photograph' }).click();
       await expect(clientPreview.locator('.v-story-finale')).toBeVisible({ timeout: 10000 });
-      await expect(clientPreview.locator('.v-story-finale-photos figure')).toHaveCount(3);
-      await expect(clientPreview.locator('.v-story-finale-photos figure').nth(1).locator('img')).toHaveAttribute('src', /demo-lora-5-960\.webp/);
+      await expect(clientPreview.locator('.v-story-closing-photo img')).toHaveAttribute('src', /demo-lora-5-960\.webp/);
       await expect(clientPreview.locator('.v-story-caption.is-finale')).toContainText('Here is the full collection from your day.');
       await expect.poll(() => clientPreview.locator('.v-story-caption.is-finale').evaluate(element => Number(getComputedStyle(element).opacity))).toBeGreaterThan(0.9);
       await clientPreview.locator('.v-story-shell').screenshot({ path: '../.visual-review/delivery-v3/v3-finale-390.png' });
