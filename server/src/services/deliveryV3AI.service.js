@@ -2,6 +2,8 @@ import { signedImageUrl } from './deliveryMedia.service.js';
 import { contrastRatio, V3_DEFAULT_PALETTE, V3_FONT_CHOICES, V3_FORMATS } from '../constants/deliveryV3.js';
 import { purposeWordingIssues } from '../utils/purposeWording.js';
 import { writeEditorialDirection, rewriteEditorialCaption, rewriteEditorialBlock } from './editorialDirection.service.js';
+import { deliveryWritingContext, deliveryWritingPolicy, requiresDirectAddress, supportsVisualWriting, shootWritingIssues, writingFallback } from '../constants/deliveryWriting.js';
+import { writingBlockLimit } from '../constants/deliveryWritingBlocks.js';
 
 const MODEL = 'deepseek-v4.1-flash';
 const TRANSIENT = new Set([429, 500, 502, 503, 504]);
@@ -456,24 +458,18 @@ export async function directV3Pinboard(delivery, insights) {
 
 async function groupV3Sections(delivery, rows, selected) {
   if (!['chapters', 'event-coverage', 'campaign'].includes(delivery.format)) return [{ id: 'showcase', title: 'The photographs', subtitle: '', layout: 'grid', assetIds: selected }];
-  const result = await request('Return JSON {"sections":[{"title":"...","subtitle":"...","assetIds":["..."]}]}. Group every supplied asset ID into 2 to 5 useful sections. Include each ID exactly once. Event Coverage sections should describe real scenes, people or shifts visible in the supplied summaries. Campaign sections should group assets by clear use or visual role. Chapters should mark real changes in outfit, place or activity. Never invent event details or usage rights.', 'Format: ' + delivery.format + '\nPhoto observations: ' + JSON.stringify(rows), { maxTokens: 1800 });
-  const known = new Set(selected);
-  const seen = new Set();
-  const sections = (Array.isArray(result.sections) ? result.sections : []).slice(0, 5).map((section, index) => ({
-    id: 'section-' + (index + 1),
-    title: String(section.title || 'Photographs').slice(0, 60),
-    subtitle: String(section.subtitle || '').slice(0, 120),
-    layout: 'grid',
-    assetIds: (Array.isArray(section.assetIds) ? section.assetIds : []).filter(id => {
-      if (!known.has(id) || seen.has(id)) return false;
-      seen.add(id);
-      return true;
-    })
-  })).filter(section => section.assetIds.length);
-  if (sections.length < 2) throw Object.assign(new Error('The photo groups were incomplete. Retry this step.'), { code: 'V3_INCOMPLETE_SECTIONS' });
-  const missing = selected.filter(id => !seen.has(id));
-  if (missing.length) sections[0].assetIds.push(...missing);
-  return sections;
+  const system = 'Return JSON {"sections":[{"title":"...","subtitle":"...","assetIds":["..."]}]}. Group every supplied asset ID into 2 to 5 useful sections. Include each ID exactly once. Section titles maximum 60 characters; subtitles maximum 120. Event Coverage sections should describe real scenes, people or shifts visible in the supplied summaries. Campaign sections should group assets by clear use or visual role. Chapters should mark real changes in outfit, place or activity. Never invent event details or usage rights. ' + deliveryWritingPolicy(delivery);
+  const prompt = 'Authoritative context: ' + narrativeContext(delivery) + '\nPhoto observations: ' + JSON.stringify(rows);
+  const deadline = Date.now() + 45000;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const result = await request(system, prompt + (attempt ? '\nRepair the incomplete groups or invalid wording. Return every supplied photo exactly once and keep complete text within each section limit.' : ''), { maxTokens: 1800, deadline });
+    const sections = Array.isArray(result?.sections) ? result.sections : [];
+    const grouped = sections.flatMap(section => Array.isArray(section?.assetIds) ? section.assetIds : []);
+    if (sections.length < 2 || sections.length > 5 || grouped.length !== selected.length || new Set(grouped).size !== grouped.length || grouped.some(id => !selected.includes(id))) continue;
+    if (sections.some(section => !section?.assetIds?.length || typeof section.title !== 'string' || section.title.trim().length < 2 || section.title.trim().length > 60 || section.subtitle !== undefined && typeof section.subtitle !== 'string' || String(section.subtitle || '').trim().length > 120 || hasUnsupportedAddress(section.title + '. ' + (section.subtitle || ''), delivery) || hasUnsupportedNumbers(section.title + '. ' + (section.subtitle || ''), delivery) || shootWritingIssues(section.title + '. ' + (section.subtitle || ''), delivery).length)) continue;
+    return sections.map((section, index) => ({ id: 'section-' + (index + 1), title: section.title.trim(), subtitle: String(section.subtitle || '').trim(), layout: 'grid', assetIds: section.assetIds }));
+  }
+  throw Object.assign(new Error('The photo groups or their wording need another pass. Retry this step.'), { code: 'V3_INCOMPLETE_SECTIONS', status: 502 });
 }
 
 async function chooseV3Showcase(delivery, insights, maximum) {
@@ -506,10 +502,10 @@ function fitText(value, limit) {
 
 const BIRTHDAY_FALLBACKS = [
   ['A Birthday on Your Terms', 'may the year ahead bring you more time for what you love and more reasons to smile.'],
-  ['A Year to Enjoy', 'may you feel free to choose what matters to you and enjoy the year at your own pace.'],
-  ['Room for What You Love', 'make room to celebrate yourself, rest when you need it, and look forward to what you want next.'],
-  ['Good Days Ahead', 'may you enjoy the small things, welcome the good days, and leave room for plans of your own.'],
-  ['Time That Feels Like Yours', 'may next year give you reasons to be glad, people to enjoy, and time that feels like yours.'],
+  ['One for Your Album', 'these portraits are yours to keep and revisit whenever you want to remember this birthday.'],
+  ['A Birthday Worth Keeping', 'you have a collection to return to, long after this birthday has passed.'],
+  ['Just for You', 'take your time with these portraits. You do not need another occasion to enjoy them.'],
+  ['Your Birthday Collection', 'these photographs mark this birthday, with a full gallery for you to explore in your own time.'],
   ['Celebrate Your Own Way', 'take this day for yourself, with space to do what you enjoy and mark it your own way.'],
   ['Keep What Matters Close', 'may you keep close to what matters, try something you want, and give yourself room to enjoy it.'],
   ['A Pace of Your Own', 'may you find a pace that suits you, with time to grow and time to enjoy being here.'],
@@ -518,8 +514,9 @@ const BIRTHDAY_FALLBACKS = [
 ];
 
 function purposeHeadline(delivery, index = 0) {
+  if (deliveryWritingContext(delivery).shoot !== 'birthday' || deliveryWritingContext(delivery).separateSubject) return writingFallback(delivery, index).headline;
   const purpose = String(delivery.brief || '').replace(/\s+/g, ' ').trim();
-  if (index > 0 && /\bbirthday\b/i.test(purpose)) {
+  if (index > 0) {
     const heading = BIRTHDAY_FALLBACKS[index % BIRTHDAY_FALLBACKS.length][0];
     return (index >= 20 ? 'Your Birthday: ' : index >= 10 ? 'For You: ' : '') + heading;
   }
@@ -531,8 +528,9 @@ function purposeHeadline(delivery, index = 0) {
 }
 
 function purposeCaption(delivery, limit, index = 0) {
+  if (deliveryWritingContext(delivery).shoot !== 'birthday' || deliveryWritingContext(delivery).separateSubject) return writingFallback(delivery, index, limit).caption;
   const purpose = String(delivery.brief || '').replace(/\s+/g, ' ').trim();
-  if (/\bbirthday\b/i.test(purpose)) {
+  if (deliveryWritingContext(delivery).shoot === 'birthday') {
     const normalized = normalizeOccasionNumbers(purpose);
     const age = Number(normalized.match(/\b(\d{1,3})(?:st|nd|rd|th)?\s+birthday\b/)?.[1] || normalized.match(/\b(?:turning|turns|turned)\s+(\d{1,3})\b/)?.[1] || 0);
     const suffix = age % 100 >= 11 && age % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[age % 10] || 'th');
@@ -549,9 +547,9 @@ function purposeCaption(delivery, limit, index = 0) {
 
 function bookendMessage(value, delivery, limit, opening) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
-  if (text.length >= 5 && text.length <= limit && !hasUnsupportedAddress(text, delivery) && !hasUnsupportedNumbers(text, delivery) && !hasUnsupportedGathering(text, delivery) && !describesPhoto(text, delivery)) return text;
+  if (text.length >= 5 && text.length <= limit && !hasUnsupportedAddress(text, delivery) && !hasUnsupportedNumbers(text, delivery) && !hasUnsupportedGathering(text, delivery) && !describesPhoto(text, delivery) && !shootWritingIssues(text, delivery).length) return text;
   // Return a complete sentence instead of clipping a longer AI thought halfway.
-  if (/\bbirthday\b/i.test(delivery.brief || '')) return opening
+  if (deliveryWritingContext(delivery).shoot === 'birthday' && !deliveryWritingContext(delivery).separateSubject) return opening
     ? 'Your birthday is worth taking a moment for. These photographs are here for you to enjoy, in your own time.'
     : 'May the year ahead bring you more of what matters to you. Your full birthday gallery is ready whenever you are.';
   return opening
@@ -573,7 +571,7 @@ function purposeTokens(delivery) {
     .replace(/[’']/g, '')
     .match(/[a-z0-9]+/g) || [];
   const clientTokens = normalize(delivery.clientName);
-  const briefTokens = normalize(delivery.brief);
+  const briefTokens = normalize(`${delivery.brief || ''} ${delivery.shootType || ''}`);
   return new Set([...clientTokens, ...briefTokens].filter(token => clientTokens.includes(token) || (/^\d+$/.test(token) || token.length > 2) && !stopWords.has(token)));
 }
 
@@ -584,6 +582,7 @@ function headlineHasPurposeAnchor(value, delivery, caption = '') {
 }
 
 function textHasPurposeAnchor(value, delivery) {
+  if (supportsVisualWriting(delivery)) return true;
   const anchors = purposeTokens(delivery);
   if (!anchors.size) return true;
   const tokens = normalizeOccasionNumbers(value)
@@ -603,25 +602,25 @@ function normalizeOccasionNumbers(value) {
 }
 
 function hasUnsupportedNumbers(value, delivery) {
-  const known = new Set(normalizeOccasionNumbers(delivery.brief).match(/\b\d+(?:st|nd|rd|th)?\b/g)?.map(number => parseInt(number, 10)) || []);
+  const known = new Set(normalizeOccasionNumbers(`${delivery.brief || ''} ${delivery.shootType || ''}`).match(/\b\d+(?:st|nd|rd|th)?\b/g)?.map(number => parseInt(number, 10)) || []);
   const numbers = normalizeOccasionNumbers(value).match(/\b\d+(?:st|nd|rd|th)?\b/g) || [];
   return numbers.some(number => !known.has(parseInt(number, 10)));
 }
 
 function substantialCaption(value, delivery, limit, headline = '', index = 0) {
   const caption = String(value || '').trim();
-  const words = wordCount(caption);
-  return words < 18 || words > (limit === 150 ? 24 : 30) || caption.length > limit || !textHasPurposeAnchor(headline + ' ' + caption, delivery) || hasUnsupportedAddress(caption, delivery) || hasUnsupportedNumbers(caption, delivery) || describesPhoto(caption, delivery) || hasUnsupportedGathering(headline + '. ' + caption, delivery) || !addressesRecipient(caption, delivery) ? purposeCaption(delivery, limit, index) : caption;
+  return caption.length < 5 || caption.length > limit || !textHasPurposeAnchor(headline + ' ' + caption, delivery) || hasUnsupportedAddress(caption, delivery) || hasUnsupportedNumbers(caption, delivery) || describesPhoto(caption, delivery) || shootWritingIssues(caption, delivery, { caption: true }).length || hasUnsupportedGathering(headline + '. ' + caption, delivery) || !addressesRecipient(caption, delivery) ? purposeCaption(delivery, limit, index) : caption;
 }
 
 function addressesRecipient(value, delivery) {
-  return ['event-coverage', 'campaign'].includes(delivery.format) || /\b(?:you|your|yours|yourself|yourselves)\b/i.test(String(value || ''));
+  return !requiresDirectAddress(delivery) || /\b(?:you|your|yours|yourself|yourselves)\b/i.test(String(value || ''));
 }
 
 function hasUnsupportedGathering(value, delivery) {
   const purpose = String(delivery.brief || '');
   if (/\b(?:family|friends|guests|party|people|loved ones|gathering|gathered|together)\b/i.test(purpose)) return false;
   return String(value || '').split(/[.!?]+/).some(sentence => {
+    if (deliveryWritingContext(delivery).style === 'documentary' && !/\b(?:family|friends|loved ones)\b/i.test(sentence)) return false;
     if (!/\b(?:everyone|everybody|guests?|family|friends|loved ones|people|surrounded|gathered|came together|we all|us all)\b/i.test(sentence)) return false;
     // Future wishes can mention company; supplied occasion facts are still
     // required for claims about people being present at this shoot.
@@ -633,8 +632,9 @@ function hasUnsupportedGathering(value, delivery) {
 
 // Full vision summaries belong to selection and grouping. Caption writing only
 // needs a small visible cue; passing the summary makes props and clothes the story.
-function captionCue(insight) {
+function captionCue(insight, delivery) {
   const summary = String(insight?.summary || '');
+  if (delivery && supportsVisualWriting(delivery)) return summary.slice(0, 600);
   const sentences = summary.split(/[.!?\n]+/).filter(sentence => !/\b(?:not|no|without|unclear|cannot|can't|unable)\b/i.test(sentence));
   if (sentences.some(sentence => /\b(?:laughs?|laughing|laughter)\b/i.test(sentence))) return 'visible laughter';
   if (sentences.some(sentence => /\b(?:smiles?|smiling)\b/i.test(sentence))) return 'visible smile';
@@ -642,6 +642,7 @@ function captionCue(insight) {
 }
 
 function describesPhoto(value, delivery) {
+  if (supportsVisualWriting(delivery)) return false;
   // These are descriptions of a shot, not a message about why it was made.
   // A product or outfit explicitly named in a commercial brief remains usable.
   const normalizeDetail = text => String(text || '').toLocaleLowerCase().replace(/-/g, ' ').replace(/\b([a-z]+)s\b/g, '$1').replace(/\s+/g, ' ').trim();
@@ -667,20 +668,8 @@ function hasUnsupportedAddress(value, delivery) {
   });
 }
 
-const NARRATIVE_POLICY = [
-  "The photographer's purpose provides almost all the meaning. Write a thoughtful message from the photographer to this client, not an image description.",
-  'For a personal delivery, address the recipient directly using you and your. Their own name may be a natural address, not the start of a third-person report about them. The recipient is reading this themselves: do not introduce them to themselves or narrate their actions. Start with what the occasion means, not what the subject is doing in a photograph.',
-  'A birthday message can celebrate the supplied milestone, wish the recipient well, or make room for what they want from the coming year. A wedding message can honour the stated celebration and offer wishes for the couple. Event messages can address the people celebrating without naming unidentified guests. Commercial messages should communicate the stated product or campaign purpose. Keep each thought specific to the supplied purpose without inventing a personal history.',
-  'Mentioning a name or the word birthday does not make a photo description purpose-led. Do not write a report about outfits, colours, props, poses, backgrounds, camera work or image composition. Do not turn a prop into a metaphor. Every caption must still carry a complete, meaningful message if its optional visual cue is removed.',
-  'A birthday purpose alone does not establish a party, guests, friends attending, cake, candles, location, achievements, or personality. Never imply these unless the photographer explicitly supplied them. Do not say the photographer witnessed joy, spent the day with the recipient, or joined a celebration unless the purpose states this. A visible smile does not prove a feeling or character trait. Prefer a sincere wish over an invented observation.',
-  "The client name and photographer's purpose below are the only sources of names and occasion facts. Copy supplied names exactly. Never get a name, age, relationship or event fact from a filename, image observation, draft text or an example. Do not assume an age when the purpose only says birthday. Do not invent relationships, feelings, personal achievements or life history. If the purpose names a subject different from the client, honour that purpose.",
-  'Shoot type is light context only. An optional visible smile or laugh can lightly support a message, but must never become its subject. If no cue is supplied, write from the purpose alone. Write distinct, complete thoughts in plain, warm language, not the same birthday wish reworded for every frame.',
-  'Headlines must use 2-7 words, be meaningful and point to a detail from the purpose rather than a visual detail. The Year Ahead alone is too broad. Never use generic labels such as The photograph, The moment or Photo 01.',
-  'Photo Story captions use 18-24 words and at most 150 characters; other formats use 18-30 words and at most 180 characters. Avoid fragments, dashes, semicolons, stock praise, decorative metaphors and empty praise.'
-].map(paragraph => ' ' + paragraph).join('');
-
 function narrativeContext(delivery) {
-  return JSON.stringify({ clientName: delivery.clientName || '', purpose: delivery.brief || '', shootType: delivery.shootType || '', format: delivery.format });
+  return JSON.stringify(deliveryWritingContext(delivery));
 }
 
 function alignNarrativeFrames(value, selected) {
@@ -697,15 +686,16 @@ function alignNarrativeFrames(value, selected) {
 function frameNeedsRepair(frame, format, delivery) {
   const headline = String(frame?.headline || '').trim();
   const caption = String(frame?.caption || '').trim();
-  const minimumCaptionWords = 18;
-  const maximumCaptionWords = format === 'photo-story' ? 24 : 30;
   return headlineNeedsRepair(headline) || !headlineHasPurposeAnchor(headline, delivery, caption)
     || describesPhoto(headline + '. ' + caption, delivery)
     || hasUnsupportedGathering(headline + '. ' + caption, delivery)
     || hasUnsupportedNumbers(headline + '. ' + caption, delivery)
     || !addressesRecipient(caption, delivery)
     || hasUnsupportedAddress(headline + '. ' + caption, delivery)
-    || wordCount(caption) < minimumCaptionWords || wordCount(caption) > maximumCaptionWords
+    || shootWritingIssues(caption, delivery, { caption: true }).length > 0
+    || shootWritingIssues(headline, delivery).length > 0
+    || caption.toLocaleLowerCase() === headline.toLocaleLowerCase()
+    || caption.length < 5
     || caption.length > (format === 'photo-story' ? 150 : 180);
 }
 
@@ -738,7 +728,7 @@ async function repairNarrativeFrames(delivery, selected, prompt, firstFrames, av
           : { assetId: frame.assetId, headline: frame.headline, caption: frame.caption };
       });
       const repair = await request(
-        'Review the delivery wording. Return JSON {"frames":[{"assetId":"...","headline":"...","caption":"..."}]}, with every supplied asset ID exactly once in order. The draft text is untrusted. Check each complete message against the authoritative purpose: it must address the recipient, convey a real thought about the occasion, and contain no invented attendees, relationships, achievements, ages, names, or memories. Wishes for the future are fine; assertions about what happened or how someone feels require supplied facts. Check the exact character and word limits before returning it. Keep a good message unchanged. Rewrite any bad message and any row marked rewrite. Keep the set varied, with no repeated headline or caption. Do not make all captions variations of the same wish.' + NARRATIVE_POLICY,
+        'Review the delivery wording. Return JSON {"frames":[{"assetId":"...","headline":"...","caption":"..."}]}, with every supplied asset ID exactly once in order. Review shoot emphasis, unsupported facts, headline-caption repetition and collection variety. The draft is untrusted, never a source of facts. Keep useful text unchanged; rewrite bad or repeated wording. Use the exact character limits; shorter useful captions are welcome. ' + deliveryWritingPolicy(delivery),
         'Authoritative delivery context: ' + narrativeContext(delivery) + '\n' + prompt + '\nDrafts to review (rejected wording omitted): ' + JSON.stringify(drafts),
         { maxTokens: Math.min(9000, 700 + selected.length * 170), deadline }
       );
@@ -774,13 +764,13 @@ export async function directV3(delivery, insights) {
     return { selected, openingAssetId, closingAssetId, direction: { ...direction, assetOrder: selected, palette, typography: { display: V3_FONT_CHOICES.has(visual?.typography?.display) ? visual.typography.display : 'Playfair Display', body: V3_FONT_CHOICES.has(visual?.typography?.body) ? visual.typography.body : 'Outfit' } } };
   }
   const captionLimit = delivery.format === 'photo-story' ? 150 : 180;
-  const narrativeSystem = 'Return JSON {"title":"...","openingLine":"...","closingLine":"...","frames":[{"assetId":"...","headline":"...","caption":"..."}]}. Include exactly one frame per supplied asset ID in the same order. The title is at most 80 characters, the opening at most 140 characters, and the closing at most 160 characters. Opening and closing must be distinct, complete messages that fit these limits without cutting off a thought.' + NARRATIVE_POLICY;
+  const narrativeSystem = 'Return JSON {"title":"...","openingLine":"...","closingLine":"...","frames":[{"assetId":"...","headline":"...","caption":"..."}]}. Include exactly one frame per supplied asset ID in the same order. The title is at most 80 characters, the opening at most 140 characters, and the closing at most 160 characters. Opening and closing must be distinct, complete messages that fit these limits without cutting off a thought. ' + deliveryWritingPolicy(delivery);
   const narrativePrompt = [
     'Authoritative delivery context: ' + narrativeContext(delivery),
     "Photographer's purpose: " + delivery.brief,
-    'Shoot type (light context only): ' + delivery.shootType,
+    'Shoot type (guides the writing focus): ' + delivery.shootType,
     'Format: ' + delivery.format,
-    'Selected photographs in order (optional supporting cue only): ' + JSON.stringify(selected.map(assetId => ({ assetId, cue: captionCue(rows.find(row => row.assetId === assetId)) })))
+    'Selected photographs in order (supporting observations appropriate to this shoot): ' + JSON.stringify(selected.map(assetId => ({ assetId, cue: captionCue(rows.find(row => row.assetId === assetId), delivery) })))
   ].join('\n');
   let narrative = await request(narrativeSystem, narrativePrompt, { maxTokens: Math.min(12000, 1200 + selected.length * 220) });
   let responseFrames = alignNarrativeFrames(narrative.frames, selected);
@@ -789,11 +779,11 @@ export async function directV3(delivery, insights) {
   const captions = responseFrames.map((frame, index) => {
     const rawHeadline = String(frame?.headline || '').replace(/^\s*headline\s*:\s*/i, '').trim();
     const rawCaption = String(frame?.caption || '').replace(/^\s*caption\s*:\s*/i, '').trim();
-    const headline = fitText(headlineNeedsRepair(rawHeadline) || !headlineHasPurposeAnchor(rawHeadline, delivery, rawCaption) || hasUnsupportedAddress(rawHeadline + '. ' + rawCaption, delivery) || hasUnsupportedNumbers(rawHeadline, delivery) || describesPhoto(rawHeadline, delivery) || hasUnsupportedGathering(rawHeadline, delivery) ? purposeHeadline(delivery, index) : rawHeadline, 70);
+    const headline = fitText(shootWritingIssues(rawHeadline, delivery).length || headlineNeedsRepair(rawHeadline) || !headlineHasPurposeAnchor(rawHeadline, delivery, rawCaption) || hasUnsupportedAddress(rawHeadline + '. ' + rawCaption, delivery) || hasUnsupportedNumbers(rawHeadline, delivery) || describesPhoto(rawHeadline, delivery) || hasUnsupportedGathering(rawHeadline, delivery) ? purposeHeadline(delivery, index) : rawHeadline, 70);
     const caption = substantialCaption(rawCaption, delivery, captionLimit, headline, index);
     return { assetId: selected[index], headline, caption, textAnimation: delivery.format === 'photo-story' ? 'typewriter' : 'word_fade_up' };
   });
-  if (/\bbirthday\b/i.test(delivery.brief || '')) {
+  {
     const accepted = [];
     for (const frame of captions) {
       if (repeatsWording(frame, accepted)) {
@@ -817,8 +807,8 @@ export async function directV3(delivery, insights) {
   const closingLine = bookendMessage(result.closingLine, delivery, 160, false);
   const sections = await groupV3Sections(delivery, rows, selected);
   const proposedTitle = String(result.title || '').replace(/\s+/g, ' ').trim();
-  const title = proposedTitle.length >= 2 && proposedTitle.length <= 80 && textHasPurposeAnchor(proposedTitle, delivery) && !hasUnsupportedAddress(proposedTitle, delivery) && !hasUnsupportedNumbers(proposedTitle, delivery) && !describesPhoto(proposedTitle, delivery) ? proposedTitle : purposeHeadline(delivery);
-  return { selected, openingAssetId, closingAssetId, direction: { title: fitText(title.length >= 2 ? title : purposeHeadline(delivery), 80), openingLine: fitText(openingLine, 140), closingLine: fitText(closingLine, 160), palette, typography: { display: V3_FONT_CHOICES.has(result.typography?.display) ? result.typography.display : 'Playfair Display', body: V3_FONT_CHOICES.has(result.typography?.body) ? result.typography.body : 'Outfit' }, frames: captions, assetOrder: selected, sections } };
+  const title = proposedTitle.length >= 2 && proposedTitle.length <= 80 && textHasPurposeAnchor(proposedTitle, delivery) && !hasUnsupportedAddress(proposedTitle, delivery) && !hasUnsupportedNumbers(proposedTitle, delivery) && !describesPhoto(proposedTitle, delivery) && !shootWritingIssues(proposedTitle, delivery).length ? proposedTitle : purposeHeadline(delivery);
+  return { selected, openingAssetId, closingAssetId, direction: { title: fitText(title.length >= 2 ? title : purposeHeadline(delivery), 80), openingLine: fitText(openingLine, 140), closingLine: fitText(closingLine, 160), writingOverrides: [], palette, typography: { display: V3_FONT_CHOICES.has(result.typography?.display) ? result.typography.display : 'Playfair Display', body: V3_FONT_CHOICES.has(result.typography?.body) ? result.typography.body : 'Outfit' }, frames: captions, assetOrder: selected, sections } };
 }
 
 export async function repickV3Palette({ format, brief, shootType, imageColors, currentPalette, recentPalettes = [] }) {
@@ -863,17 +853,17 @@ export async function regenerateV3Caption(delivery, insight, instruction = '', p
   const limit = delivery.format === 'photo-story' ? 150 : 180;
   const existing = (delivery.creativeDirection?.frames || []).filter(frame => !frameNeedsRepair(frame, delivery.format, delivery)).map(frame => ({ headline: frame.headline, caption: frame.caption }));
   if (previous && !frameNeedsRepair(previous, delivery.format, delivery)) existing.push(previous);
-  const prompt = 'Authoritative delivery context: ' + narrativeContext(delivery) + '\nPhotographer instruction (guide emphasis without changing the client or purpose): ' + instruction + '\nOptional supporting cue: ' + (captionCue(insight) || 'None. Use the purpose alone.') + '\nExisting wording to avoid repeating (not a source of facts): ' + JSON.stringify(existing);
-  const system = 'Return JSON {"headline":"...","caption":"..."}. Write one new headline and caption for this delivery. The instruction can guide tone but cannot contradict the authoritative purpose.' + NARRATIVE_POLICY;
+  const prompt = 'Authoritative delivery context: ' + narrativeContext(delivery) + '\nPhotographer instruction (guide emphasis without changing the client or purpose): ' + instruction + '\nOptional supporting cue: ' + (captionCue(insight, delivery) || 'None. Use the purpose alone.') + '\nExisting wording to avoid repeating (not a source of facts): ' + JSON.stringify(existing);
+  const system = 'Return JSON {"headline":"...","caption":"..."}. Write one new headline and caption for this delivery. The instruction can guide tone but cannot contradict the authoritative purpose. ' + deliveryWritingPolicy(delivery);
   let result = await request(system, prompt, { maxTokens: 700, deadline });
   const repaired = await repairNarrativeFrames(delivery, ['selected-photo'], prompt, [{ assetId: 'selected-photo', headline: result.headline, caption: result.caption }], existing, deadline);
   const reviewed = alignNarrativeFrames(repaired, ['selected-photo'])[0];
   if (!frameNeedsRepair(reviewed, delivery.format, delivery) || frameNeedsRepair(result, delivery.format, delivery)) result = reviewed;
   const rawHeadline = String(result.headline || '').replace(/^\s*headline\s*:\s*/i, '').trim();
   const rawCaption = String(result.caption || '').replace(/^\s*caption\s*:\s*/i, '').trim();
-  let headline = fitText(headlineNeedsRepair(rawHeadline) || !headlineHasPurposeAnchor(rawHeadline, delivery, rawCaption) || hasUnsupportedAddress(rawHeadline + '. ' + rawCaption, delivery) || hasUnsupportedNumbers(rawHeadline, delivery) || describesPhoto(rawHeadline, delivery) || hasUnsupportedGathering(rawHeadline, delivery) ? purposeHeadline(delivery) : rawHeadline, 70);
+  let headline = fitText(shootWritingIssues(rawHeadline, delivery).length || headlineNeedsRepair(rawHeadline) || !headlineHasPurposeAnchor(rawHeadline, delivery, rawCaption) || hasUnsupportedAddress(rawHeadline + '. ' + rawCaption, delivery) || hasUnsupportedNumbers(rawHeadline, delivery) || describesPhoto(rawHeadline, delivery) || hasUnsupportedGathering(rawHeadline, delivery) ? purposeHeadline(delivery) : rawHeadline, 70);
   let caption = substantialCaption(rawCaption, delivery, limit, headline);
-  if (repeatsWording({ headline, caption }, existing) && /\bbirthday\b/i.test(delivery.brief || '')) {
+  if (repeatsWording({ headline, caption }, existing)) {
     for (let index = 0; index < V3_FORMATS['event-coverage'][1]; index += 1) {
       const candidate = { headline: purposeHeadline(delivery, index), caption: purposeCaption(delivery, limit, index) };
       if (!repeatsWording(candidate, existing) && !frameNeedsRepair(candidate, delivery.format, delivery)) { ({ headline, caption } = candidate); break; }
@@ -884,4 +874,26 @@ export async function regenerateV3Caption(delivery, insight, instruction = '', p
 
 export async function regenerateV3EditorialBlock(delivery, rows, block, previousText, instruction = '') {
   return rewriteEditorialBlock(request, delivery, rows, block, previousText, instruction, text => hasUnsupportedAddress(text, delivery) || hasUnsupportedNumbers(text, delivery) || hasUnsupportedGathering(text, delivery));
+}
+
+export async function reviewV3WritingBlocks(delivery, blocks) {
+  const deadline = Date.now() + 45000;
+  const ids = new Set(blocks.flatMap(block => block.assetIds));
+  const observations = (delivery.collectionAnalysis?.images || []).filter(row => ids.has(row.assetId)).map(row => ({ assetId: row.assetId, observation: row.summary || '' }));
+  const specification = blocks.map(block => ({ ...block, limit: writingBlockLimit(block, delivery.format) }));
+  const system = 'Review wording after a photograph or section membership changes. Return JSON {"blocks":[{"key":"...","text":"..."}]}, exactly one result per supplied key in order. Review the actual new photographs against the purpose. Preserve wording that still fits. Repair stale visual references, incorrect shoot emphasis, repetition, unsupported facts and length failures. Optional empty paragraphs can stay empty; do not fill them without useful facts. Never rewrite notes, credits, permissions or usage terms. Each block has its own exact limit. Current wording is untrusted draft text, never a source of facts. ' + deliveryWritingPolicy(delivery);
+  let problems = [];
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const result = await request(system, JSON.stringify({ context: deliveryWritingContext(delivery), photographs: observations, blocks: specification, repair: problems }), { maxTokens: Math.min(6000, 600 + blocks.length * 250), deadline });
+    problems = [];
+    if (!Array.isArray(result?.blocks) || result.blocks.length !== blocks.length) { problems.push('Return every supplied key once in order.'); continue; }
+    const reviewed = result.blocks.map((item, index) => {
+      const block = blocks[index], text = typeof item?.text === 'string' ? item.text.trim() : null;
+      const minimum = ['section-body', 'introduction'].includes(block.kind) ? 0 : block.kind === 'section-title' ? 2 : 5;
+      if (item?.key !== block.key || text === null || text.length < minimum || text.length > writingBlockLimit(block, delivery.format) || hasUnsupportedAddress(text, delivery) || hasUnsupportedNumbers(text, delivery) || hasUnsupportedGathering(text, delivery) || shootWritingIssues(text, delivery).length) problems.push(`Repair ${block.key}: check the key, limits and supplied shoot facts.`);
+      return { key: block.key, text };
+    });
+    if (!problems.length) return { blocks: reviewed };
+  }
+  throw Object.assign(new Error('The updated wording needs another pass. Your current photograph and text have been kept. Please retry.'), { code: 'V3_WRITING_REVIEW_INCOMPLETE', status: 502 });
 }

@@ -27,7 +27,14 @@ async function setup(page, delivery, captures = {}) {
     let body = { success: true, data: {} };
     if (path.endsWith('/auth/me')) body = { success: true, user };
     else if (path.endsWith('/billing/status')) body.data = { plan: 'pro', limits: { deliveriesPerMonth: 20, photosPerDelivery: 500 }, usage: { deliveriesRemaining: 20 } };
-    else if (path.endsWith('/regenerate')) { captures.regeneration = input; body.data = input.editorialBlock ? { text: 'Ada’s emerald suit and ivory telephone bring the birthday portraits together. The full look and closer photographs give the feature its variety.' } : { headline: 'The emerald suit', caption: 'Ada wears her emerald suit beside the ivory telephone in this closer birthday portrait.' }; }
+    else if (path.endsWith('/regenerate')) {
+      captures.regeneration = input;
+      if (input.writingBlocks) {
+        (captures.reviews ||= []).push(input.writingBlocks);
+        if (captures.failReview) return route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ success: false, message: 'The wording needs another pass. Please retry.' }) });
+        body.data = { blocks: captures.review ? await captures.review(input.writingBlocks) : input.writingBlocks.map(block => ({ key: block.key, text: block.text })) };
+      } else body.data = input.editorialBlock ? { text: 'Ada’s emerald suit and ivory telephone bring the birthday portraits together. The full look and closer photographs give the feature its variety.' } : { headline: 'One for your album', caption: 'Ada, keep this portrait from the year you turned thirty.' };
+    }
     else if (path.endsWith('/v3/showcase')) { captures.showcase = input; delivery.creativeDirection = { ...delivery.creativeDirection, ...input, sections: input.editorial?.sections || delivery.creativeDirection.sections }; delivery.curatedAssetIds = input.assetIds; delivery.v3 = { ...delivery.v3, openingAssetId: input.openingAssetId, closingAssetId: input.closingAssetId, step: 'design' }; body.data = delivery; }
     else if (path.endsWith('/v3/theme')) { captures.theme = input; Object.assign(delivery.creativeDirection, input); body.data = delivery; }
     else if (path.endsWith('/v3/approve')) { delivery.v3.step = 'access'; body.data = delivery; }
@@ -126,4 +133,65 @@ test('creation saves reviewed writing, sections, credits and framing and preview
 test('moving a photo to a section retains its caption and saves the displayed sequence', async ({ page }) => {
   await page.setViewportSize({ width: 834, height: 1000 }); const delivery = fixture(), captures = {}; await setup(page, delivery, captures); await page.goto('/create?draft=' + draftId); const original = delivery.creativeDirection.frames[0].caption;
   await page.getByLabel('Editorial section').selectOption('feature-3'); await expect(page.locator('.v3-showcase-item textarea').last()).toHaveValue(original); await page.getByRole('button', { name: 'Continue', exact: true }).click(); expect(captures.showcase.assetIds.at(-1)).toBe(uuid(0)); expect(captures.showcase.editorial.sections.flatMap(section => section.assetIds)).toEqual(captures.showcase.assetIds);
+});
+
+function withSparePhotos() {
+  const delivery = fixture();
+  for (const index of [5, 6]) {
+    delivery.assets.push({ ...delivery.assets[0], assetId: uuid(index), originalFilename: `spare-${index}.jpg` });
+    delivery.collectionAnalysis.images.push({ assetId: uuid(index), summary: 'Another finished birthday portrait.' });
+  }
+  return delivery;
+}
+const repairedBlocks = blocks => blocks.map(block => ({ key: block.key, text: block.kind === 'section-title' ? 'Birthday portraits to keep' : block.kind === 'section-body' ? 'Ada, these portraits mark the year you turned thirty.' : 'Ada, your birthday portraits are ready to enjoy.' }));
+
+test('replacing an Editorial photo automatically writes its caption and repairs generated section text', async ({ page }) => {
+  const delivery = withSparePhotos(), captures = { review: repairedBlocks };
+  await setup(page, delivery, captures); await page.goto('/create?draft=' + draftId);
+  await page.getByRole('button', { name: 'Replace this photo', exact: true }).click();
+  const picker = page.getByRole('dialog'); await picker.getByRole('button', { name: 'Choose spare-5.jpg' }).click(); await picker.getByRole('button', { name: 'Use this photo' }).click(); await expect(picker).toHaveCount(0);
+  await expect(page.locator('.v3-showcase-headline')).toHaveValue('One for your album'); await expect(page.locator('.v3-showcase-item textarea:not(.v3-showcase-headline)')).toHaveValue('Ada, keep this portrait from the year you turned thirty.');
+  await expect(page.getByLabel('Section 1 heading')).toHaveValue('Birthday portraits to keep'); await expect(page.getByLabel('Section 1 paragraph')).toHaveValue('Ada, these portraits mark the year you turned thirty.');
+  await expect(page.getByRole('button', { name: 'Use suggested text' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  expect(captures.showcase.assetIds[0]).toBe(uuid(5)); expect(captures.showcase.editorial.sections[0].assetIds[0]).toBe(uuid(5)); expect(captures.showcase.writingOverrides).toEqual([]);
+});
+
+for (const width of [320, 768, 834, 1440]) test(`manual cover wording stays protected and the review fits at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: width === 320 ? 740 : 1000 });
+  const delivery = withSparePhotos(), captures = { review: repairedBlocks }; await setup(page, delivery, captures); await page.goto('/create?draft=' + draftId);
+  await page.getByLabel('Cover summary').fill('Ada, these portraits are for your thirtieth birthday.');
+  await page.getByRole('button', { name: 'Choose cover photo', exact: true }).click(); const picker = page.getByRole('dialog'); await picker.getByRole('button', { name: 'Choose spare-5.jpg' }).click(); await picker.getByRole('button', { name: 'Use this photo' }).click(); await expect(picker).toHaveCount(0);
+  await expect(page.getByLabel('Cover summary')).toHaveValue('Ada, these portraits are for your thirtieth birthday.');
+  const review = page.getByRole('region', { name: 'Photo wording review' }); await expect(review).toContainText('Ada, your birthday portraits are ready to enjoy.');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click(); await expect(page.getByRole('alert')).toContainText('Review the suggested wording');
+  await review.getByRole('button', { name: 'Keep my text' }).click();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+  await page.getByRole('button', { name: 'Continue', exact: true }).click(); expect(captures.showcase.openingAssetId).toBe(uuid(5)); expect(captures.showcase.writingOverrides).toContain('openingLine'); expect(captures.showcase.openingLine).toBe('Ada, these portraits are for your thirtieth birthday.');
+});
+
+test('a failed section review preserves order and wording, then Retry applies the change', async ({ page }) => {
+  const delivery = fixture(), captures = { failReview: true, review: repairedBlocks }; await setup(page, delivery, captures); await page.goto('/create?draft=' + draftId);
+  const original = delivery.creativeDirection.frames[0].caption;
+  await page.getByLabel('Editorial section').selectOption('feature-3'); await expect(page.getByRole('region', { name: 'Photo wording review' })).toContainText('Your previous photo order and text have been kept.');
+  await expect(page.getByLabel('Editorial section')).toHaveValue('feature-1'); await expect(page.locator('.v3-showcase-item textarea:not(.v3-showcase-headline)')).toHaveValue(original);
+  captures.failReview = false; await page.getByRole('button', { name: 'Retry wording review' }).click(); await expect(page.getByLabel('Editorial section')).toHaveValue('feature-3');
+  await expect(page.locator('.v3-showcase-item textarea:not(.v3-showcase-headline)')).toHaveValue(original); await page.getByRole('button', { name: 'Continue', exact: true }).click(); expect(captures.showcase.assetIds.at(-1)).toBe(uuid(0));
+});
+
+test('Undo restores the photo and generated wording while retaining a later manual caption', async ({ page }) => {
+  const delivery = withSparePhotos(), captures = { review: repairedBlocks }; await setup(page, delivery, captures); await page.goto('/create?draft=' + draftId);
+  await page.getByRole('button', { name: 'Replace this photo', exact: true }).click(); const picker = page.getByRole('dialog'); await picker.getByRole('button', { name: 'Choose spare-5.jpg' }).click(); await picker.getByRole('button', { name: 'Use this photo' }).click(); await expect(picker).toHaveCount(0);
+  await page.getByRole('button', { name: 'Edit showcase photo 2' }).click(); await page.locator('.v3-showcase-item textarea:not(.v3-showcase-headline)').fill('Ada, I want you to keep this birthday portrait.'); await page.getByRole('button', { name: 'Undo photo change' }).click();
+  await expect(page.locator('.v3-showcase-item textarea:not(.v3-showcase-headline)')).toHaveValue('Ada, I want you to keep this birthday portrait.'); await expect(page.getByLabel('Section 1 heading')).toHaveValue(delivery.creativeDirection.editorial.sections[0].title);
+  await page.getByRole('button', { name: 'Continue', exact: true }).click(); expect(captures.showcase.assetIds[0]).toBe(uuid(0)); expect(captures.showcase.frames[1].caption).toBe('Ada, I want you to keep this birthday portrait.'); expect(captures.showcase.writingOverrides).toContain(`frame:${uuid(1)}:caption`);
+});
+
+test('cancelled wording reviews cannot apply a stale photograph', async ({ page }) => {
+  const delivery = withSparePhotos(); let release; const captures = { review: blocks => new Promise(resolve => { release = () => resolve(repairedBlocks(blocks)); }) };
+  await setup(page, delivery, captures); await page.goto('/create?draft=' + draftId); const original = delivery.creativeDirection.openingLine;
+  await page.getByRole('button', { name: 'Choose cover photo', exact: true }).click(); const picker = page.getByRole('dialog'); await picker.getByRole('button', { name: 'Choose spare-5.jpg' }).click(); await picker.getByRole('button', { name: 'Use this photo' }).click(); await expect.poll(() => Boolean(release)).toBe(true);
+  await picker.getByRole('button', { name: 'Choose spare-6.jpg' }).click(); release(); captures.review = repairedBlocks;
+  await expect(page.getByLabel('Cover summary')).toHaveValue(original); await picker.getByRole('button', { name: 'Use this photo' }).click(); await expect(picker).toHaveCount(0);
+  await page.getByRole('button', { name: 'Continue', exact: true }).click(); expect(captures.showcase.openingAssetId).toBe(uuid(6)); expect(captures.reviews).toHaveLength(2);
 });

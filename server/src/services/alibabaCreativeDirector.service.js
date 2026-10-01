@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { DELIVERY_SOUNDTRACKS, recommendSoundtracks } from '../constants/deliverySoundtracks.js';
 import { supportsDeliveryMusic, supportsDeliveryNarration } from '../constants/deliveryCapabilities.js';
+import { deliveryWritingPolicy, supportsVisualWriting, shootWritingIssues, FORMAT_WRITING_PROFILES } from '../constants/deliveryWriting.js';
 
 const FORMATS = ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign'];
 const AI_DELIVERY_SOUNDTRACKS = DELIVERY_SOUNDTRACKS.filter(track => track.category === 'afrobeat');
@@ -446,8 +447,8 @@ const frameSchema = z.preprocess(raw => {
   assetId: z.preprocess(val => String(val ?? '').trim().slice(0, 100), z.string()),
   sectionId: z.preprocess(val => String(val || '').toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 32) || 'section-1', z.string()),
   role: z.preprocess(val => ['opening', 'hero', 'supporting', 'detail', 'pair', 'finale'].includes(val) ? val : 'supporting', z.enum(['opening', 'hero', 'supporting', 'detail', 'pair', 'finale'])),
-  headline: z.preprocess(val => String(val || '').trim().slice(0, 70), z.string().max(70)),
-  caption: z.preprocess(val => String(val || '').trim().slice(0, 180), z.string().min(18).max(180)),
+  headline: z.preprocess(val => String(val || '').trim(), z.string().min(2).max(70)),
+  caption: z.preprocess(val => String(val || '').trim(), z.string().min(5).max(320)),
   eventType: z.preprocess(val => { const value = String(val || '').trim().toLowerCase(); return EVENT_FRAME_TYPES.includes(value) ? value : ''; }, z.string().max(20)).default(''),
   campaignType: z.preprocess(val => { const value = String(val || '').trim().toLowerCase(); return CAMPAIGN_ASSET_TYPES.includes(value) ? value : ''; }, z.string().max(20)).default(''),
   motion: z.preprocess(val => MOTIONS.includes(val) ? val : 'slow-push', z.enum(MOTIONS)),
@@ -1020,7 +1021,7 @@ Do not choose the generic quiet/rules/balanced combination unless the photograph
   const result = await completion({
     model: provider.creativeModel,
     messages: [
-      { role: 'system', content: `You are Veylo’s senior creative director. Design one ${format} presentation around the actual finished shoot. The format must have its own structure. Photo Story is paced and sequential. Editorial is a scrollable publication. Photo Reveal is client-paced and suspenseful. Canvas is spatial and freely explored. Chapters is a non-linear moment selector. Album uses deliberate page turns and spreads. Event Coverage is documentary browsing organised into scenes for many subjects. Campaign is a commercial showcase followed by practical asset sets. ${voiceRules}\n\n${schemaInstructions}` },
+      { role: 'system', content: `You are Veylo’s senior creative director. Design one ${format} presentation around the actual finished shoot. ${deliveryWritingPolicy({ format, brief, shootType, clientName })}\n\n${schemaInstructions}` },
       { role: 'system', content: formatDirectionRules },
       { role: 'system', content: designContract },
       { role: 'user', content: JSON.stringify({
@@ -1124,7 +1125,7 @@ Return one frame per photograph in the supplied order.`;
   const captionFormatRules = {
     'event-coverage': `This is multi-subject event coverage. Do not address one named client and do not assume a private celebration. Write each caption as a useful, human record of the people, scene, purpose, or atmosphere the photographer described. Use plural or neutral language where appropriate. Explain why the moment matters to the event, not only what is visible. Classify each frame as people, programme, networking, or details so the event viewer can filter it.`,
     campaign: `This is a campaign handoff. Write for the brand, campaign objective, audience, and approved usage described in the brief. Captions should clarify the role of each frame in the campaign or asset set without inventing claims, sales copy, product specifications, or a private-person celebration. Classify every frame as hero, detail, lifestyle, kit, or context so the campaign viewer can filter and group the approved assets.`,
-    'photo-story': `This is a personal Photo Story. The shoot type and photographer's brief are the subject of every caption. For a birthday, every caption must connect to the birthday, the supplied age or milestone, and what the photographer says it means to the client. Do not write about how the photographer made the image, what the client is wearing, or what is visible in the frame. Each caption should be one short, natural sentence, ideally 8 to 18 words. Vary the thought across the sequence without inventing extra facts. Give each frame visible, restrained image motion; do not choose still. Keep its duration between 3.5 and 5.5 seconds.`,
+    'photo-story': `This is a paced Photo Story. Follow the shoot guidance and actual brief, including commercial or professional intent when supplied. Vary each thought without inventing extra facts or forcing a minimum word count. Give each frame restrained image motion; do not choose still. Keep its duration between 3.5 and 5.5 seconds.`,
     editorial: `This is an editorial delivery. Use the brief to give each frame a clear point of view and editorial role. Address the subject or story naturally, but do not write generic praise or describe pixels as alt text.`,
     'photo-reveal': `This is a reveal sequence. Make each caption build the approved story and explain the significance of the frame in the brief. Keep the writing concise enough to read during a reveal.`,
     canvas: `This is a browsable canvas. Give each frame a distinct, meaningful line tied to the brief so the collection does not read like a repeated template.`,
@@ -1132,11 +1133,7 @@ Return one frame per photograph in the supplied order.`;
     album: `This is an album delivery. Write captions that feel like considered album notes: specific to the brief, calm, and useful to the person receiving the finished photographs.`
   }[format] || `Use the photographer's brief and the supplied photograph context to write a meaningful caption for this delivery.`;
 
-  const captionAudienceRule = format === 'event-coverage'
-    ? `The audience is a group of guests, organisers, vendors, and people revisiting the event. Do not address one named client or use singular celebration language.`
-    : format === 'campaign'
-      ? `The audience is a brand or production team reviewing approved assets. Keep the writing useful for selection and handoff, not like a personal biography or sales claim.`
-      : `Speak directly to the named client with warmth, while staying grounded in the photographer's brief.`;
+  const captionAudienceRule = deliveryWritingPolicy({ format, brief, shootType, clientName });
 
   const frameDesignDefaults = (index, insight = {}) => {
     const layouts = format === 'photo-story'
@@ -1222,21 +1219,21 @@ Return one frame per photograph in the supplied order.`;
       if (typeof frame.headline !== 'string') frame.headline = '';
       let caption = typeof frame.caption === 'string' ? frame.caption.replace(/[<>]/g, '').replace(/\s+/g, ' ').trim() : '';
       const rejected = GENERIC_CAPTION_PATTERNS.some(pattern => pattern.test(caption))
-        || (format === 'photo-story' && captionDescribesVisiblePhoto(caption))
+        || shootWritingIssues(caption, { format, brief, shootType, clientName }, { caption: true, observation: imageInsights[index]?.summary }).length > 0
+        || (format === 'photo-story' && !supportsVisualWriting({ format, brief, shootType, clientName }) && captionDescribesVisiblePhoto(caption))
         || (format === 'photo-story' && /\bbirthday\b/i.test(shootType)
-          && !/\b(?:birthday|turning|celebrat(?:e|es|ed|ing|ion)|milestone|age|years? old|\d{1,3}(?:st|nd|rd|th)?)\b/i.test(caption));
+          && !/\b(?:birthday|turning|celebrat(?:e|es|ed|ing|ion)|milestone|age|years? old|\d{1,3}(?:st|nd|rd|th)?)\b/i.test(`${frame.headline} ${caption}`));
       if (rejected && repairRejectedBirthdayCaptions && format === 'photo-story' && /\bbirthday\b/i.test(shootType)) {
         caption = photoStoryBirthdayFallbackCaption({ clientName, shootType, brief }, index);
       } else if (rejected) {
         throw Object.assign(new Error(`Caption for photograph ${id} must focus on the shoot type and brief instead of describing the photograph or its production.`), { code: 'GENERIC_CAPTION', assetId: id, rejectedCaption: caption });
       }
       const normalizedCaption = caption.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-      const captionWords = caption.split(/\s+/).filter(Boolean).length;
-      if (caption.length < 18 || captionWords < 4 || (format === 'photo-story' && captionWords > 22) || /^(a finished|a final|this frame|a photograph|photograph from the shoot)\b/i.test(caption) || seenCaptions.has(normalizedCaption)) {
+      if (caption.length < 5 || caption.length > (FORMAT_WRITING_PROFILES[format]?.caption || 180) || /^(a finished|a final|this frame|a photograph|photograph from the shoot)\b/i.test(caption) || seenCaptions.has(normalizedCaption)) {
         throw Object.assign(new Error(`The creative director returned an unusable caption for photograph ${id}.`), { code: 'INVALID_MODEL_OUTPUT' });
       }
       seenCaptions.add(normalizedCaption);
-      frame.caption = caption.slice(0, 180);
+      frame.caption = caption;
       if (!MOTIONS.includes(frame.motion) || (format === 'photo-story' && frame.motion === 'still')) frame.motion = 'slow-push';
       if (!TRANSITIONS.includes(frame.transition)) frame.transition = 'crossfade';
       frame.duration = format === 'photo-story'
@@ -1260,7 +1257,7 @@ Return one frame per photograph in the supplied order.`;
 
 Every photograph must have a meaningful caption. Start with the photographer's brief and the stated purpose of the shoot. Give each headline and caption a clear job: name a useful idea or section, add context, or explain why the work matters to the client or brand.
 
-Inspect each attached photograph yourself. The photographer's brief and notes are the source for meaning, names, relationships, and purpose. Use a visible detail only when it helps connect this particular frame to that meaning. Do not describe the frame, list its visible contents, or narrate what the client can already see. If the brief does not support a personal or emotional claim, stay direct and factual.
+Inspect each attached photograph yourself. The photographer's brief and notes are the source for meaning, names, relationships, and purpose. Relevant visible details may support commercial and documentary writing. For personal shoots, keep them secondary to why the photographs were made. Avoid lists of visible contents. If the brief does not support a personal or emotional claim, stay direct and factual.
 
 Keep captions distinct from one another. Do not force a celebration or address the client by name in every line. Avoid mechanical alt-text, camera jargon, invented facts, and details that are not supported by the brief or photograph.
 
@@ -1268,7 +1265,7 @@ When photographer-provided library context is supplied for a photograph, preserv
 
 Assign every photograph to one existing section (${validSectionIds.join(', ')}). Choose cinematic motions and transitions that suit the emotional rhythm. If currentFrames contains earlier captions, treat them as text to improve: do not keep a vague or stock line just because it was approved before.
 
- ${voiceRules}
+ ${deliveryWritingPolicy({ format, brief, shootType, clientName })}
 
  FORMAT-SPECIFIC DIRECTION (this overrides any generic personal-portrait wording above):
  ${captionFormatRules}
@@ -1297,7 +1294,7 @@ Assign every photograph to one existing section (${validSectionIds.join(', ')}).
             currentFrames: (currentFrames || []).slice(0, 20),
             photographCount: photographInputs.length,
             qualityFeedback: attempt && lastError?.code === 'GENERIC_CAPTION'
-              ? `${lastError.message} The rejected caption for this asset was ${JSON.stringify(lastError.rejectedCaption || '')}. Replace that line with a natural sentence tied to the birthday, age, or other facts in the brief. A phrase such as "birthday portraits" names the shoot type and is allowed; do not describe clothing, poses, expressions, lighting, or camera work.`
+              ? `${lastError.message} The rejected caption for this asset was ${JSON.stringify(lastError.rejectedCaption || '')}. Rewrite it using the shared shoot and format rules above. Preserve the actual purpose and supplied facts; avoid inventing a personal occasion or commercial claim.`
               : '',
             completenessInstruction: attempt
               ? `A previous response was incomplete or unusable. Return exactly ${expectedAssetIds.length} unique frames, one for each assetId, in this exact order: ${expectedAssetIds.join(', ')}. Do not omit, merge, or duplicate photographs.`

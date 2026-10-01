@@ -21,6 +21,8 @@ import { ClientPreviewPhoneFrame } from '../components/delivery/PhonePresentatio
 import EditorialEditor, { EditorialDesignControls, EditorialPhotoControls } from '../components/delivery/EditorialEditor.jsx';
 import EditorialPreview from '../components/delivery/EditorialPreview.jsx';
 import { editorialFromDelivery, reconcileEditorial } from '../utils/editorial.js';
+import DeliveryWritingReview from '../components/delivery/DeliveryWritingReview.jsx';
+import { initialWritingOverrides, planPhotoWritingChange, applyWritingReview, setWritingText, undoWritingChange } from '../utils/deliveryWritingChanges.js';
 import './CreateDeliveryV3.css';
 
 const BOUNDS = { 'photo-story': [5, 10], editorial: [5, 14], 'photo-reveal': [5, 12], canvas: [8, 18], chapters: [8, 20], album: [6, 16], 'event-coverage': [10, 24], campaign: [6, 16] };
@@ -140,6 +142,14 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const [editorial, setEditorial] = useState(() => editorialFromDelivery(initialDelivery));
   const [frameSettings, setFrameSettings] = useState(() => Object.fromEntries((initialDelivery?.creativeDirection?.frames || []).map(frame => [frame.assetId, { imageFit: frame.imageFit || 'contain', focalPoint: frame.focalPoint || '50% 50%' }])));
   const [captionUndo, setCaptionUndo] = useState({});
+  const [sections, setSections] = useState(initialDelivery?.creativeDirection?.sections || []);
+  const [writingSuggestions, setWritingSuggestions] = useState([]);
+  const [photoUndo, setPhotoUndo] = useState(null);
+  const [writingReviewError, setWritingReviewError] = useState('');
+  const writingOverrides = useRef(initialWritingOverrides(initialDelivery));
+  const writingState = useRef(null);
+  const photoRequestVersion = useRef(0);
+  const retryWritingReview = useRef(null);
   const [narrationVoiceId, setNarrationVoiceId] = useState(initialDelivery?.generationJob?.input?.voiceId || initialDelivery?.v3?.narrationVoiceId || initialDelivery?.narration?.voiceId || DEFAULT_NARRATION_VOICE_ID);
   const selectedVoiceName = NARRATION_VOICES.find(voice => voice.id === narrationVoiceId)?.name || 'Hannah';
   const [instructions, setInstructions] = useState({});
@@ -168,6 +178,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const previewBranding = creationPreviewBranding(user, entitlements);
   const editorialFrames = useMemo(() => selected.map(assetId => ({ assetId, headline: headlines[assetId] || '', caption: captions[assetId] || '', imageFit: frameSettings[assetId]?.imageFit || 'contain', focalPoint: frameSettings[assetId]?.focalPoint || '50% 50%' })), [selected, headlines, captions, frameSettings]);
   const publication = useMemo(() => reconcileEditorial(editorial, selected, editorialFrames), [editorial, selected, editorialFrames]);
+  writingState.current = { format, selected, headlines, captions, openingLine, closingLine, openingAssetId, closingAssetId, editorial: publication, sections };
   const designPreviewDelivery = useMemo(() => {
     if (!draft) return null;
     const savedFrames = new Map((draft.creativeDirection?.frames || []).map(frame => [frame.assetId, frame]));
@@ -192,11 +203,12 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
         assetOrder: selected,
         palette,
         typography,
+        sections,
         ...(format === 'editorial' ? { editorial: publication, sections: publication.sections } : {})
       },
       v3: { ...draft.v3, openingAssetId, closingAssetId }
     };
-  }, [draft, previewBranding.type, previewBranding.name, previewBranding.logoUrl, selected, headlines, captions, title, openingLine, closingLine, format, palette, typography, openingAssetId, closingAssetId, publication, frameSettings]);
+  }, [draft, previewBranding.type, previewBranding.name, previewBranding.logoUrl, selected, headlines, captions, title, openingLine, closingLine, format, palette, typography, openingAssetId, closingAssetId, publication, frameSettings, sections]);
   const bounds = BOUNDS[format] || [5, 10];
   const recommendedFormat = DELIVERY_FORMATS.find(item => item.value === recommendation?.format);
   const assets = draft?.assets || [];
@@ -230,6 +242,9 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     setEditorial(editorialFromDelivery(next));
     setFrameSettings(Object.fromEntries((next.creativeDirection?.frames || []).map(frame => [frame.assetId, { imageFit: frame.imageFit || 'contain', focalPoint: frame.focalPoint || '50% 50%' }])));
     setCaptionUndo({});
+    setSections(next.creativeDirection?.sections || []);
+    writingOverrides.current = initialWritingOverrides(next);
+    setWritingSuggestions([]); setPhotoUndo(null); setWritingReviewError('');
     setPalette(next.creativeDirection?.palette || defaultPalette);
     setTypography(next.creativeDirection?.typography || { display: 'Playfair Display', body: 'Outfit' });
   }
@@ -371,32 +386,80 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   }
   async function chooseShowcasePhoto(id, signal) {
     if (!assetById.has(id)) throw new Error('This photo is no longer in the gallery. Choose another photo.');
-    if (photoPicker.mode === 'opening') { setOpeningAssetId(id); return; }
-    if (photoPicker.mode === 'closing') { setClosingAssetId(id); return; }
-    if (selected.includes(id) || captionPending.current || busy) throw new Error('Choose a photo that is not already in the showcase.');
+    if (captionPending.current || busy) throw new Error('Wait for the current wording check to finish.');
+    if (['replace', 'add'].includes(photoPicker.mode) && selected.includes(id)) throw new Error('Choose a photo that is not already in the showcase.');
     if (photoPicker.mode === 'add' && selected.length >= bounds[1]) throw new Error('The showcase already has its maximum number of photos.');
+    const before = writingState.current, change = { mode: photoPicker.mode, assetId: id, index: photoPicker.index };
+    const version = ++photoRequestVersion.current;
+    const release = () => { if (version === photoRequestVersion.current) { captionPending.current = false; setBusy(''); } };
+    signal.addEventListener('abort', release, { once: true });
     captionPending.current = true;
     setBusy('caption-' + id); setCaptionError(null);
     try {
-      const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/captions/' + id + '/regenerate', { instruction: instructions[id] || '', previous: { headline: (headlines[id] || '').slice(0, 70), caption: (captions[id] || '').slice(0, format === 'editorial' ? 320 : 180) } }, { signal });
-      if (signal.aborted) return;
-      setHeadlines(current => ({ ...current, [id]: data.data.headline }));
-      setCaptions(current => ({ ...current, [id]: data.data.caption }));
-      if (photoPicker.mode === 'replace') {
-        if (format === 'editorial') setEditorial({ ...publication, sections: publication.sections.map(section => ({ ...section, assetIds: section.assetIds.map(value => value === selected[photoPicker.index] ? id : value) })) });
-        setSelected(current => current.map((value, at) => at === photoPicker.index ? id : value));
-        setActivePhotoIndex(photoPicker.index);
-      } else {
-        setSelected(current => [...current, id]);
-        setActivePhotoIndex(selected.length);
+      let frame;
+      if (['replace', 'add'].includes(change.mode)) {
+        const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/captions/' + id + '/regenerate', { instruction: instructions[id] || '', previous: { headline: (headlines[id] || '').slice(0, 70), caption: (captions[id] || '').slice(0, format === 'editorial' ? 320 : 180) } }, { signal });
+        frame = data.data;
+        if (typeof frame?.headline !== 'string' || frame.headline.trim().length < 2 || frame.headline.length > 70 || typeof frame.caption !== 'string' || frame.caption.trim().length < 5 || frame.caption.length > (format === 'photo-story' ? 150 : format === 'editorial' ? 320 : 180)) throw new Error('The new photograph’s wording was incomplete. Try this photo again.');
       }
+      if (signal.aborted || version !== photoRequestVersion.current) return;
+      const source = frame ? { ...writingState.current, headlines: { ...writingState.current.headlines, [id]: frame.headline }, captions: { ...writingState.current.captions, [id]: frame.caption } } : writingState.current;
+      const plan = planPhotoWritingChange(source, change);
+      const reviewed = await reviewPhotoBlocks(plan.blocks, signal);
+      if (signal.aborted || version !== photoRequestVersion.current) return;
+      const latest = frame ? { ...writingState.current, headlines: { ...writingState.current.headlines, [id]: frame.headline }, captions: { ...writingState.current.captions, [id]: frame.caption } } : writingState.current;
+      const finalPlan = planPhotoWritingChange(latest, change);
+      const result = applyWritingReview(finalPlan.next, plan.blocks, reviewed, writingOverrides.current);
+      commitWritingState(result.next);
+      setWritingSuggestions(current => [...current.filter(item => !plan.blocks.some(block => block.key === item.key)), ...result.suggestions]);
+      setPhotoUndo({ before, after: result.next, overrides: new Set(writingOverrides.current) });
+      if (frame) { writingOverrides.current.delete(`frame:${id}:headline`); writingOverrides.current.delete(`frame:${id}:caption`); setActivePhotoIndex(change.mode === 'replace' ? change.index : result.next.selected.length - 1); }
     } catch (failure) { throw new Error(message(failure).text); }
-    finally { captionPending.current = false; setBusy(''); }
+    finally { signal.removeEventListener('abort', release); release(); }
+  }
+  async function reviewPhotoBlocks(blocks, signal) {
+    if (!blocks.length) return [];
+    const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/captions/' + blocks[0].assetIds[0] + '/regenerate', { writingBlocks: blocks }, { signal });
+    return data.data.blocks;
+  }
+  function commitWritingState(next) {
+    setSelected(next.selected); setHeadlines(next.headlines); setCaptions(next.captions);
+    setOpeningAssetId(next.openingAssetId); setClosingAssetId(next.closingAssetId);
+    setOpeningLine(next.openingLine); setClosingLine(next.closingLine);
+    setEditorial(next.editorial); setSections(next.sections);
+  }
+  function markManual(key) {
+    writingOverrides.current.add(key);
+    setWritingSuggestions(current => current.filter(item => item.key !== key));
+  }
+  function editEditorial(next) {
+    const current = writingState.current.editorial;
+    if (next.introduction !== current.introduction) markManual('editorial.introduction');
+    for (const section of next.sections) for (const field of ['title', 'body']) if (section[field] !== current.sections.find(item => item.id === section.id)?.[field]) markManual(`section:${section.id}:${field}`);
+    setEditorial(next);
+  }
+  async function changePhotoOrder(order, activeId, nextEditorial) {
+    if (busy || captionPending.current) return;
+    const before = writingState.current, change = { mode: 'order', order, editorial: nextEditorial };
+    const version = ++photoRequestVersion.current;
+    const controller = new AbortController(); captionRequest.current = controller;
+    retryWritingReview.current = () => changePhotoOrder(order, activeId, nextEditorial);
+    captionPending.current = true; setBusy('writing-review'); setWritingReviewError('');
+    try {
+      const plan = planPhotoWritingChange(before, change), reviewed = await reviewPhotoBlocks(plan.blocks, controller.signal);
+      if (controller.signal.aborted || version !== photoRequestVersion.current) return;
+      const latest = planPhotoWritingChange(writingState.current, change);
+      const result = applyWritingReview(latest.next, plan.blocks, reviewed, writingOverrides.current);
+      commitWritingState(result.next); setPhotoUndo({ before, after: result.next, overrides: new Set(writingOverrides.current) });
+      setWritingSuggestions(current => [...current.filter(item => !plan.blocks.some(block => block.key === item.key)), ...result.suggestions]);
+      if (activeId) setActivePhotoIndex(Math.max(0, order.indexOf(activeId)));
+    } catch (failure) { if (!controller.signal.aborted) setWritingReviewError(message(failure).text + ' Your previous photo order and text have been kept.'); }
+    finally { if (version === photoRequestVersion.current) { captionPending.current = false; setBusy(''); } }
   }
   function moveSelected(index, offset) {
     if (index + offset < 0 || index + offset >= selected.length) return;
-    setSelected(current => { const next = [...current]; const other = index + offset; if (other < 0 || other >= next.length) return current; [next[index], next[other]] = [next[other], next[index]]; return next; });
-    setActivePhotoIndex(index + offset);
+    const next = [...selected]; [next[index], next[index + offset]] = [next[index + offset], next[index]];
+    changePhotoOrder(next, selected[index]);
   }
   async function regenerate(id) {
     if (busy || captionPending.current) return;
@@ -408,12 +471,15 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
       const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/captions/' + id + '/regenerate', { instruction: instructions[id] || '', previous: { headline: (headlines[id] || '').slice(0, 70), caption: (captions[id] || '').slice(0, format === 'editorial' ? 320 : 180) } }, { signal: controller.signal });
       if (controller.signal.aborted) return;
       setCaptionUndo(current => ({ ...current, [id]: { headline: headlines[id] || '', caption: captions[id] || '' } }));
+      writingOverrides.current.delete(`frame:${id}:headline`); writingOverrides.current.delete(`frame:${id}:caption`);
       setHeadlines(current => ({ ...current, [id]: data.data.headline }));
       setCaptions(current => ({ ...current, [id]: data.data.caption }));
     } catch (failure) { if (!controller.signal.aborted) setCaptionError({ assetId: id, text: message(failure).text }); }
     finally { captionPending.current = false; setBusy(''); }
   }
   async function saveShowcase() {
+    if (captionPending.current || busy) return;
+    if (writingSuggestions.length) { setError('Review the suggested wording: use the new text or keep your current text before continuing.'); document.querySelector('.delivery-writing-review')?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' }); return; }
     if (selected.length < bounds[0] || selected.length > bounds[1]) { setError(`Choose between ${bounds[0]} and ${bounds[1]} showcase photos before continuing.`); return; }
     if (title.trim().length < 2) { setError('Give this delivery a title with at least two characters.'); return; }
     if (openingLine.trim().length < 5) { setError('Write an opening message with at least five characters.'); return; }
@@ -442,7 +508,8 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   }
   function showcasePayload() {
     if (format === 'editorial' && publication.credits.some(credit => !credit.role.trim() || !credit.name.trim())) throw new Error('Add a role and a name for each credit, or remove the empty credit.');
-    return { assetIds: selected, frames: selected.map(assetId => ({ assetId, headline: (headlines[assetId] || '').trim(), caption: (captions[assetId] || '').trim(), ...(format === 'editorial' ? frameSettings[assetId] || { imageFit: 'contain', focalPoint: '50% 50%' } : {}) })), title: title.trim(), openingLine: openingLine.trim(), closingLine: closingLine.trim(), openingAssetId, closingAssetId, ...(format === 'editorial' ? { editorial: publication } : {}) };
+    const validKeys = new Set(['openingLine', 'closingLine', 'editorial.introduction', ...selected.flatMap(id => [`frame:${id}:headline`, `frame:${id}:caption`]), ...(format === 'editorial' ? publication.sections : sections).flatMap(section => [`section:${section.id}:title`, `section:${section.id}:body`])]);
+    return { assetIds: selected, frames: selected.map(assetId => ({ assetId, headline: (headlines[assetId] || '').trim(), caption: (captions[assetId] || '').trim(), ...(format === 'editorial' ? frameSettings[assetId] || { imageFit: 'contain', focalPoint: '50% 50%' } : {}) })), title: title.trim(), openingLine: openingLine.trim(), closingLine: closingLine.trim(), openingAssetId, closingAssetId, writingOverrides: [...writingOverrides.current].filter(key => validKeys.has(key)), ...(format === 'editorial' ? { editorial: publication } : { sectionWriting: sections.map(section => ({ id: section.id, title: section.title || '', subtitle: section.subtitle || '', assetIds: section.assetIds })) }) };
   }
   async function regenerateEditorialBlock(block, ids, previousText) {
     if (busy || captionPending.current || !ids.length) return null;
@@ -482,6 +549,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     });
   }
   async function approveDesign() {
+    if (captionPending.current || busy || writingSuggestions.length) return;
     if (!themeStatus.valid) { setError({ text: themeStatus.message, fix: 'contrast' }); return; }
     await action('approve', async () => {
       if (format === 'editorial') await api.patch('/v1/deliveries/' + draft._id + '/v3/showcase', showcasePayload());
@@ -503,6 +571,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     });
   }
   async function publish() {
+    if (captionPending.current || busy || writingSuggestions.length) return;
     if (pin && pin.length !== 6) { setError('A PIN needs six digits. Finish entering it, or clear the field to publish without one.'); return; }
     if (access.expiresAt && new Date(access.expiresAt) <= new Date()) { setError('Choose a future expiry date, or clear the field for a link that does not expire.'); return; }
     await action('publish', async () => {
@@ -645,7 +714,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
             <section className="v3-panel v3-showcase-words">
               <div className="v3-panel-heading"><span>01</span><div><h2>{format === 'editorial' ? 'The magazine cover' : 'Opening and closing words'}</h2><p>{format === 'editorial' ? 'Choose the title and photographs that open and close the feature.' : 'These messages frame the showcase for your client.'}</p></div></div>
               <label>Delivery title<input maxLength={80} value={title} onChange={event => setTitle(event.target.value)} /></label>
-              {format !== 'editorial' && <><label>Opening message<textarea value={openingLine} maxLength={140} rows={3} onChange={event => setOpeningLine(event.target.value)} /></label><label>Closing message<textarea value={closingLine} maxLength={160} rows={3} onChange={event => setClosingLine(event.target.value)} /></label></>}
+              {format !== 'editorial' && <><label>Opening message<textarea value={openingLine} maxLength={140} rows={3} onChange={event => { markManual('openingLine'); setOpeningLine(event.target.value); }} /></label><label>Closing message<textarea value={closingLine} maxLength={160} rows={3} onChange={event => { markManual('closingLine'); setClosingLine(event.target.value); }} /></label></>}
             </section>
             <div className="v3-bookends">
               <article className="v3-bookend-card">
@@ -658,7 +727,8 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
               </article>
             </div>
           </div>
-          {format === 'editorial' && <EditorialEditor value={publication} onChange={setEditorial} assets={assets} frames={editorialFrames} onRegenerate={regenerateEditorialBlock} busy={!!busy} openingLine={openingLine} closingLine={closingLine} onOpeningChange={setOpeningLine} onClosingChange={setClosingLine} openingAssetId={openingAssetId} closingAssetId={closingAssetId} />}
+          {format === 'editorial' && <EditorialEditor value={publication} onChange={editEditorial} assets={assets} frames={editorialFrames} onRegenerate={regenerateEditorialBlock} busy={!!busy} openingLine={openingLine} closingLine={closingLine} onOpeningChange={text => { markManual('openingLine'); setOpeningLine(text); }} onClosingChange={text => { markManual('closingLine'); setClosingLine(text); }} openingAssetId={openingAssetId} closingAssetId={closingAssetId} />}
+          <DeliveryWritingReview suggestions={writingSuggestions} undo={!!photoUndo} pending={busy === 'writing-review'} error={writingReviewError} onRetry={() => retryWritingReview.current?.()} onUse={item => { commitWritingState(setWritingText(writingState.current, item.key, item.text)); markManual(item.key); }} onKeep={item => markManual(item.key)} onUndo={() => { commitWritingState(undoWritingChange(writingState.current, photoUndo.before, photoUndo.after)); for (const key of photoUndo.overrides) writingOverrides.current.add(key); setPhotoUndo(null); setWritingSuggestions([]); }} />
           <div className="v3-showcase-section-heading"><div><span>02 / THE SHOWCASE PHOTOS</span><h2>Review each photo and its caption.</h2></div><p>Drag-free ordering: use the arrows to change the sequence.</p></div>
           <div className="v3-showcase-editor">
             <div className="v3-showcase-nav" aria-label="Showcase photographs">
@@ -670,12 +740,12 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
             {activeShowcaseId && <article className="v3-showcase-item">
               <img src={assetById.get(activeShowcaseId)?.thumbnailUrl || assetById.get(activeShowcaseId)?.url} alt={assetById.get(activeShowcaseId)?.originalFilename || 'Selected photograph'} />
               <div className="v3-showcase-controls">
-                <div className="v3-showcase-toolbar"><strong>PHOTO {String(activeShowcaseIndex + 1).padStart(2, '0')} OF {String(selected.length).padStart(2, '0')}</strong><button type="button" onClick={() => moveSelected(activeShowcaseIndex, -1)} disabled={!!busy || activeShowcaseIndex === 0} aria-label="Move earlier"><ChevronLeft size={18} /></button><button type="button" onClick={() => moveSelected(activeShowcaseIndex, 1)} disabled={!!busy || activeShowcaseIndex === selected.length - 1} aria-label="Move later"><ChevronRight size={18} /></button><button type="button" onClick={() => setSelected(current => current.filter(value => value !== activeShowcaseId))} disabled={!!busy || selected.length <= bounds[0]} aria-label="Remove from showcase"><Trash2 size={17} /></button></div>
-                <label>Headline<textarea className="v3-showcase-headline" disabled={busy === 'caption-' + activeShowcaseId} rows={2} maxLength={70} value={headlines[activeShowcaseId] || ''} onChange={event => setHeadlines(current => ({ ...current, [activeShowcaseId]: event.target.value }))} /><small>{(headlines[activeShowcaseId] || '').length} / 70 · A short title for this photograph</small></label>
-                <label>Caption<textarea disabled={busy === 'caption-' + activeShowcaseId} rows={format === 'photo-story' ? 4 : 5} maxLength={format === 'photo-story' ? 150 : format === 'editorial' ? 320 : 180} value={captions[activeShowcaseId] || ''} onChange={event => setCaptions(current => ({ ...current, [activeShowcaseId]: event.target.value }))} /><small>{(captions[activeShowcaseId] || '').length} / {format === 'photo-story' ? 150 : format === 'editorial' ? 320 : 180}{format === 'photo-story' || format === 'editorial' ? ' · Check the caption in your client preview' : ''}</small></label>
-                {format === 'editorial' && <EditorialPhotoControls value={publication} onChange={setEditorial} activeId={activeShowcaseId} settings={frameSettings[activeShowcaseId] || {}} onSettingsChange={settings => setFrameSettings(current => ({ ...current, [activeShowcaseId]: settings }))} onOrderChange={(ids, activeId) => { setSelected(ids); setActivePhotoIndex(ids.indexOf(activeId)); }} />}
+                <div className="v3-showcase-toolbar"><strong>PHOTO {String(activeShowcaseIndex + 1).padStart(2, '0')} OF {String(selected.length).padStart(2, '0')}</strong><button type="button" onClick={() => moveSelected(activeShowcaseIndex, -1)} disabled={!!busy || activeShowcaseIndex === 0} aria-label="Move earlier"><ChevronLeft size={18} /></button><button type="button" onClick={() => moveSelected(activeShowcaseIndex, 1)} disabled={!!busy || activeShowcaseIndex === selected.length - 1} aria-label="Move later"><ChevronRight size={18} /></button><button type="button" onClick={() => changePhotoOrder(selected.filter(value => value !== activeShowcaseId))} disabled={!!busy || selected.length <= bounds[0]} aria-label="Remove from showcase"><Trash2 size={17} /></button></div>
+                <label>Headline<textarea className="v3-showcase-headline" disabled={busy === 'caption-' + activeShowcaseId} rows={2} maxLength={70} value={headlines[activeShowcaseId] || ''} onChange={event => { markManual('frame:' + activeShowcaseId + ':headline'); setHeadlines(current => ({ ...current, [activeShowcaseId]: event.target.value })); }} /><small>{(headlines[activeShowcaseId] || '').length} / 70 · A short title for this photograph</small></label>
+                <label>Caption<textarea disabled={busy === 'caption-' + activeShowcaseId} rows={format === 'photo-story' ? 4 : 5} maxLength={format === 'photo-story' ? 150 : format === 'editorial' ? 320 : 180} value={captions[activeShowcaseId] || ''} onChange={event => { markManual('frame:' + activeShowcaseId + ':caption'); setCaptions(current => ({ ...current, [activeShowcaseId]: event.target.value })); }} /><small>{(captions[activeShowcaseId] || '').length} / {format === 'photo-story' ? 150 : format === 'editorial' ? 320 : 180}{format === 'photo-story' || format === 'editorial' ? ' · Check the caption in your client preview' : ''}</small></label>
+                {format === 'editorial' && <EditorialPhotoControls value={publication} onChange={editEditorial} busy={!!busy} onMove={(next, ids, activeId) => changePhotoOrder(ids, activeId, next)} activeId={activeShowcaseId} settings={frameSettings[activeShowcaseId] || {}} onSettingsChange={settings => setFrameSettings(current => ({ ...current, [activeShowcaseId]: settings }))} onOrderChange={(ids, activeId) => { setSelected(ids); setActivePhotoIndex(ids.indexOf(activeId)); }} />}
                 <div className="v3-caption-assist"><input disabled={busy === 'caption-' + activeShowcaseId} value={instructions[activeShowcaseId] || ''} maxLength={400} onChange={event => setInstructions(current => ({ ...current, [activeShowcaseId]: event.target.value }))} placeholder="Tell Veylo what to emphasize (optional)" aria-label={'Instruction for photo ' + (activeShowcaseIndex + 1)} /><button type="button" onClick={() => regenerate(activeShowcaseId)} disabled={!!busy}>{busy === 'caption-' + activeShowcaseId ? <LoaderCircle className="v3-spin" size={15} /> : <RefreshCw size={15} />} Regenerate headline and caption</button></div>
-                {captionUndo[activeShowcaseId] && <button type="button" className="v3-photo-choice-button" disabled={!!busy} onClick={() => { const previous = captionUndo[activeShowcaseId]; setHeadlines(current => ({ ...current, [activeShowcaseId]: previous.headline })); setCaptions(current => ({ ...current, [activeShowcaseId]: previous.caption })); setCaptionUndo(current => { const next = { ...current }; delete next[activeShowcaseId]; return next; }); }}>Undo regeneration</button>}
+                {captionUndo[activeShowcaseId] && <button type="button" className="v3-photo-choice-button" disabled={!!busy} onClick={() => { const previous = captionUndo[activeShowcaseId]; markManual('frame:' + activeShowcaseId + ':headline'); markManual('frame:' + activeShowcaseId + ':caption'); setHeadlines(current => ({ ...current, [activeShowcaseId]: previous.headline })); setCaptions(current => ({ ...current, [activeShowcaseId]: previous.caption })); setCaptionUndo(current => { const next = { ...current }; delete next[activeShowcaseId]; return next; }); }}>Undo regeneration</button>}
                 {captionError?.assetId === activeShowcaseId && <p className="v3-caption-error" role="alert"><AlertCircle size={18} />{captionError.text} Your current headline and caption have been kept. Try again.</p>}
                 <button type="button" className="v3-photo-choice-button" disabled={!!busy || !unselected.length} onClick={() => setPhotoPicker({ mode: 'replace', index: activeShowcaseIndex, title: 'Replace this showcase photo' })}><Image size={18} /> Replace this photo</button>
                 <div className="v3-showcase-pager"><button type="button" onClick={() => setActivePhotoIndex(activeShowcaseIndex - 1)} disabled={activeShowcaseIndex === 0}><ArrowLeft size={16} /> Previous photo</button><button type="button" onClick={() => setActivePhotoIndex(activeShowcaseIndex + 1)} disabled={activeShowcaseIndex === selected.length - 1}>Next photo <ArrowRight size={16} /></button></div>

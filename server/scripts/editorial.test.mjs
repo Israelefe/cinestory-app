@@ -91,15 +91,15 @@ test('invalid section membership, excerpts and framing never save', async t => {
 test('unowned drafts cannot be changed', async t => {
   t.mock.method(Delivery, 'findOne', () => Promise.resolve(null)); const res = response(); await v3Showcase({ body: payload(), params: { id: draft()._id }, user: { id: 'other-user' } }, res); assert.equal(res.statusCode, 409);
 });
-test('Editorial generation and regeneration retain relevant visual detail and third-person writing', async t => {
-  const delivery = draft();
+test('Fashion Editorial retains relevant visual detail and third-person writing', async t => {
+  const delivery = draft(); delivery.shootType = 'Fashion';
   const narrative = { title: 'Thirty, in green', openingLine: 'An emerald suit and ivory telephone for Ada’s thirtieth birthday portraits.', closingLine: 'Ada, the full birthday collection is ready.', introduction: '', frames: frames.map((frame, index) => ({ ...frame, caption: `Ada wears her emerald suit in this ${['opening', 'closer', 'full-length', 'side-facing', 'final'][index]} portrait, with the ivory telephone appearing alongside it in the birthday feature.` })), sections: editorial.sections };
   const calls = []; model(t, [narrative, { palette: { background: '#ffffff', surface: '#f5f3ef', text: '#17130f', accent: '#883e32' } }, { headline: 'The emerald suit', caption: 'Ada wears her emerald suit beside the ivory telephone in this closer birthday portrait.' }], calls);
   const result = await directV3(delivery, delivery.collectionAnalysis.images); assert.equal(result.direction.frames[0].caption, narrative.frames[0].caption); assert.equal(result.direction.editorial.sections[0].body, body);
   const rewritten = await regenerateV3Caption(delivery, delivery.collectionAnalysis.images[0]); assert.match(rewritten.caption, /Ada wears/); assert.match(calls[0].messages[0].content, /Third-person editorial writing is allowed/); assert.match(calls[0].messages[1].content[0].text, /holding an ivory telephone/);
 });
 test('invalid provider wording is repaired without clipping text or filling the publication with fallback wishes', async t => {
-  const delivery = draft(); const valid = { title: 'Thirty, in green', openingLine: 'Ada at thirty in an emerald suit.', closingLine: 'Your birthday collection is ready.', frames, sections: editorial.sections };
+  const delivery = draft(); delivery.shootType = 'Fashion'; const valid = { title: 'Thirty, in green', openingLine: 'Ada at thirty in an emerald suit.', closingLine: 'Your birthday collection is ready.', frames, sections: editorial.sections };
   model(t, [{ ...valid, openingLine: 'x'.repeat(301) }, valid, { palette: {} }]); const result = await directV3(delivery, delivery.collectionAnalysis.images); assert.equal(result.direction.openingLine, valid.openingLine);
 });
 test('section regeneration uses only owned photographs and leaves saved text unchanged', async t => {

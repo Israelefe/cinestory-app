@@ -19,7 +19,8 @@ for (const width of [320, 768, 834, 1440]) test(`Showcase visual photo picker ke
     if (path.endsWith('/billing/status')) return reply({ plan: 'free', limits: { photosPerDelivery: 100 }, usage: { deliveriesRemaining: 3 } });
     if (path.endsWith('/deliveries/' + draftId)) return reply(draft);
     if (path.endsWith('/regenerate')) {
-      requests.push({ path, body: route.request().postDataJSON() });
+      const input = route.request().postDataJSON(); requests.push({ path, body: input });
+      if (input.writingBlocks) return reply({ blocks: input.writingBlocks.map(block => ({ key: block.key, text: block.text })) });
       if (holdResponse) await new Promise(resolve => { releaseResponse = resolve; });
       if (fail) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ success: false, message: 'Caption service is busy. Please try again.' }) });
       return reply({ headline: "Convennant's Birthday Year", caption: 'Convennant, this birthday is a chance to mark what matters to you and make room for what you want next.' });
@@ -37,7 +38,7 @@ for (const width of [320, 768, 834, 1440]) test(`Showcase visual photo picker ke
   expect(box.x + box.width).toBeLessThanOrEqual(width); expect(box.y + box.height).toBeLessThanOrEqual(width === 320 ? 740 : 900);
   await picker.getByRole('button', { name: 'Choose finished-11.jpg' }).click();
   await picker.getByRole('button', { name: 'Use this photo' }).click();
-  await expect(picker.getByRole('status')).toContainText('Writing a headline and caption');
+  await expect(picker.getByRole('status')).toContainText('Checking the words');
   await expect(picker.getByRole('button', { name: 'Preparing photo' })).toBeDisabled();
   await expect(page.locator('.v3-showcase-item>img')).toHaveAttribute('alt', 'finished-1.jpg');
   holdResponse = false; releaseResponse();
@@ -58,7 +59,7 @@ for (const width of [320, 768, 834, 1440]) test(`Showcase visual photo picker ke
   await picker.getByRole('button', { name: 'Choose finished-2.jpg' }).click();
   await picker.getByRole('button', { name: 'Use this photo' }).click();
   await expect(page.locator('.v3-bookend-image').first().locator('img')).toHaveAttribute('alt', 'finished-2.jpg');
-  expect(requests).toHaveLength(2);
+  expect(requests).toHaveLength(3);
   await page.getByRole('button', { name: 'Choose closing photo', exact: true }).click();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);

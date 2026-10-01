@@ -5,7 +5,8 @@ import Delivery from '../models/Delivery.js';
 import DeliveryJob from '../models/DeliveryJob.js';
 import User from '../models/User.js';
 import { contrastRatio, V3_FONT_CHOICES, V3_FORMATS, V3_MUSIC_FORMATS, validShowcase } from '../constants/deliveryV3.js';
-import { improvePurpose, recommendV3Format, regenerateV3Caption, regenerateV3EditorialBlock, repickV3Palette } from '../services/deliveryV3AI.service.js';
+import { improvePurpose, recommendV3Format, regenerateV3Caption, regenerateV3EditorialBlock, reviewV3WritingBlocks, repickV3Palette } from '../services/deliveryV3AI.service.js';
+import { writingOverridesSchema, writingBlocksSchema, validWritingBlock } from '../constants/deliveryWritingBlocks.js';
 import { editorialSchema, editorialFrameFields, validEditorialOrder, editorialExcerptMatches, reconcileSavedEditorial } from '../constants/editorial.js';
 import { reservePublishSlot, resolveEntitlements } from '../services/entitlement.service.js';
 import { removeDeliveryAudio } from '../services/deliveryMedia.service.js';
@@ -16,7 +17,7 @@ import { cleanDeliveryAccess } from '../utils/deliveryAccess.js';
 const details = z.object({ kind: z.enum(['showcase', 'pinboard']).default('showcase'), clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().max(80).default(''), purpose: z.string().trim().max(3000).default(''), title: z.string().trim().max(120).default(''), originalPurpose: z.string().trim().max(3000).default(''), clarificationAnswers: z.array(z.object({ question: z.string().trim().max(180), answer: z.string().trim().min(1).max(300) }).strict()).max(3).default([]) }).strict();
 const formatInput = z.object({ format: z.enum(Object.keys(V3_FORMATS)) }).strict();
 const idList = z.array(z.string().uuid()).max(24);
-const showcaseInput = z.object({ assetIds: idList, frames: z.array(z.object({ assetId: z.string().uuid(), headline: z.string().trim().max(70).default(''), caption: z.string().trim().min(5).max(320), imageFit: editorialFrameFields.imageFit.unwrap().optional(), focalPoint: editorialFrameFields.focalPoint.unwrap().optional() }).strict()).max(24), title: z.string().trim().min(2).max(80), openingLine: z.string().trim().min(5).max(300), closingLine: z.string().trim().min(5).max(280), openingAssetId: z.string().uuid(), closingAssetId: z.string().uuid(), editorial: editorialSchema.optional() }).strict();
+const showcaseInput = z.object({ assetIds: idList, frames: z.array(z.object({ assetId: z.string().uuid(), headline: z.string().trim().max(70).default(''), caption: z.string().trim().min(5).max(320), imageFit: editorialFrameFields.imageFit.unwrap().optional(), focalPoint: editorialFrameFields.focalPoint.unwrap().optional() }).strict()).max(24), title: z.string().trim().min(2).max(80), openingLine: z.string().trim().min(5).max(300), closingLine: z.string().trim().min(5).max(280), openingAssetId: z.string().uuid(), closingAssetId: z.string().uuid(), editorial: editorialSchema.optional(), writingOverrides: writingOverridesSchema.optional(), sectionWriting: z.array(z.object({ id: z.string().regex(/^[a-z0-9-]{1,60}$/), title: z.string().trim().max(60), subtitle: z.string().trim().max(120), assetIds: idList.min(1).optional() }).strict()).max(5).optional() }).strict();
 const themeInput = z.object({ palette: z.object({ background: z.string().regex(/^#[0-9a-f]{6}$/i), surface: z.string().regex(/^#[0-9a-f]{6}$/i), text: z.string().regex(/^#[0-9a-f]{6}$/i), accent: z.string().regex(/^#[0-9a-f]{6}$/i) }).strict(), typography: z.object({ display: z.string(), body: z.string() }).strict() }).strict();
 const pinboardInput = z.object({
   title: z.string().trim().min(2).max(120),
@@ -200,12 +201,21 @@ export async function v3Showcase(req, res) {
     if (!assetIds.has(input.data.openingAssetId) || !assetIds.has(input.data.closingAssetId)) return res.status(400).json({ success: false, message: 'Choose photographs from this delivery for the opening and closing.' });
     if (delivery.format === 'photo-story' && input.data.frames.some(frame => frame.caption.length > 150)) return res.status(400).json({ success: false, message: 'Photo Story captions must fit within 150 characters.' });
     const previous = delivery.creativeDirection;
+    if (input.data.sectionWriting && (delivery.format === 'editorial' || new Set(input.data.sectionWriting.map(section => section.id)).size !== input.data.sectionWriting.length || input.data.sectionWriting.some(section => !previous.sections?.some(saved => saved.id === section.id)))) return res.status(400).json({ success: false, message: 'Edit headings only for sections in this delivery.' });
+    const groupedWriting = input.data.sectionWriting?.some(section => section.assetIds);
+    if (groupedWriting) {
+      const groupedIds = input.data.sectionWriting.flatMap(section => section.assetIds || []);
+      if (input.data.sectionWriting.some(section => !section.assetIds) || groupedIds.length !== input.data.assetIds.length || new Set(groupedIds).size !== groupedIds.length || groupedIds.some(id => !input.data.assetIds.includes(id))) return res.status(400).json({ success: false, message: 'Keep each selected photograph in one section.' });
+    }
     const selectedSet = new Set(input.data.assetIds);
     const sections = (previous.sections || []).map(section => ({ ...section, assetIds: (section.assetIds || []).filter(id => selectedSet.has(id)) })).filter(section => section.assetIds.length);
     const assigned = new Set(sections.flatMap(section => section.assetIds));
     if (!sections.length) sections.push({ id: 'showcase', title: 'The photographs', subtitle: '', layout: 'grid', assetIds: [] });
     sections[0].assetIds.push(...input.data.assetIds.filter(id => !assigned.has(id)));
+    if (groupedWriting) sections.splice(0, sections.length, ...input.data.sectionWriting.map(writing => ({ ...previous.sections.find(section => section.id === writing.id), ...writing })));
+    for (const section of sections) { const writing = input.data.sectionWriting?.find(item => item.id === section.id); if (writing) { section.title = writing.title; section.subtitle = writing.subtitle; } }
     const editorial = delivery.format === 'editorial' ? input.data.editorial || reconcileSavedEditorial(previous.editorial, input.data.assetIds, input.data.frames) : undefined;
+    if (input.data.writingOverrides) previous.writingOverrides = input.data.writingOverrides;
     delivery.creativeDirection = { ...previous, title: input.data.title, openingLine: input.data.openingLine, closingLine: input.data.closingLine, frames: input.data.assetIds.map(id => { const frame = input.data.frames.find(frame => frame.assetId === id), savedFrame = previous.frames?.find(item => item.assetId === id); return { assetId: id, headline: frame.headline, caption: frame.caption, textAnimation: delivery.format === 'photo-story' ? 'typewriter' : 'word_fade_up', ...(delivery.format === 'editorial' ? { imageFit: frame.imageFit || savedFrame?.imageFit || 'contain', focalPoint: frame.focalPoint || savedFrame?.focalPoint || '50% 50%' } : {}) }; }), assetOrder: input.data.assetIds, sections: editorial?.sections || sections, ...(editorial ? { editorial } : {}) };
     delivery.title = input.data.title; delivery.curatedAssetIds = input.data.assetIds; delivery.presentationOrder = input.data.assetIds;
     delivery.galleryAssetIds = delivery.assets.map(asset => asset.assetId); delivery.galleryOrder = delivery.galleryAssetIds;
@@ -263,11 +273,19 @@ export async function v3Pinboard(req, res) {
 
 export async function v3Caption(req, res) {
   try {
-    const input = z.object({ instruction: z.string().trim().max(400).default(''), previous: z.object({ headline: z.string().trim().max(70), caption: z.string().trim().max(320) }).strict().optional(), editorialBlock: z.enum(['summary', 'introduction', 'section', 'closing']).optional(), sectionAssetIds: idList.optional(), previousText: z.string().trim().max(700).optional() }).strict().safeParse(req.body); if (!input.success) return bad(res, input);
+    const input = z.object({ instruction: z.string().trim().max(400).default(''), previous: z.object({ headline: z.string().trim().max(70), caption: z.string().trim().max(320) }).strict().optional(), editorialBlock: z.enum(['summary', 'introduction', 'section', 'closing']).optional(), sectionAssetIds: idList.optional(), previousText: z.string().trim().max(700).optional(), writingBlocks: writingBlocksSchema.optional() }).strict().safeParse(req.body); if (!input.success) return bad(res, input);
     const delivery = await owned(req); if (!editable(delivery) || !delivery.collectionAnalysis) return res.status(409).json({ success: false, message: 'Analyse the photographs first.' });
     if (delivery.format !== 'editorial' && (input.data.editorialBlock || input.data.sectionAssetIds || input.data.previousText !== undefined || (input.data.previous?.caption.length || 0) > 180)) return res.status(400).json({ success: false, message: 'Use the caption limits for this format.' });
     const insight = delivery.collectionAnalysis.images?.find(row => row.assetId === req.params.assetId);
-    if (!insight) return res.status(404).json({ success: false, message: 'Photograph not found.' });
+    if (!insight || !delivery.assets.some(asset => asset.assetId === req.params.assetId)) return res.status(404).json({ success: false, message: 'Photograph not found.' });
+    if (input.data.writingBlocks) {
+      if (input.data.editorialBlock || input.data.sectionAssetIds || input.data.previousText !== undefined || input.data.previous) return res.status(400).json({ success: false, message: 'Request one wording review at a time.' });
+      const blocks = input.data.writingBlocks;
+      const images = new Set((delivery.collectionAnalysis.images || []).map(row => row.assetId));
+      const assets = new Set(delivery.assets.map(asset => asset.assetId));
+      if (new Set(blocks.map(block => block.key)).size !== blocks.length || blocks.some(block => !validWritingBlock(block, delivery.format) || new Set(block.assetIds).size !== block.assetIds.length || block.assetIds.some(id => !assets.has(id) || !images.has(id)))) return res.status(400).json({ success: false, message: 'Review wording only for photographs in this delivery, within this format’s limits.' });
+      return res.json({ success: true, data: await reviewV3WritingBlocks(delivery, blocks) });
+    }
     if (input.data.editorialBlock) {
       const ids = input.data.sectionAssetIds || [insight.assetId];
       const images = delivery.collectionAnalysis.images || [];

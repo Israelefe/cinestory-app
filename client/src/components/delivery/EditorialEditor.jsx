@@ -16,16 +16,17 @@ export function EditorialDesignControls({ value, onChange }) {
   return <section className="ed-edit-design"><h2>Publication style</h2><p>The photographs and text stay in your chosen order.</p><label>Layout treatment<select value={value.treatment} onChange={event => onChange({ ...value, treatment: event.target.value })}>{EDITORIAL_TREATMENTS.map(id => <option key={id} value={id}>{editorialTreatmentLabel[id]}</option>)}</select></label></section>;
 }
 
-export function EditorialPhotoControls({ value, onChange, activeId, settings, onSettingsChange, onOrderChange }) {
+export function EditorialPhotoControls({ value, onChange, activeId, settings, onSettingsChange, onOrderChange, onMove, busy = false }) {
   const sectionId = value.sections.find(section => section.assetIds.includes(activeId))?.id || '';
   function moveToSection(targetId) {
     const sections = value.sections.map(section => ({ ...section, assetIds: section.assetIds.filter(id => id !== activeId) }));
     sections.find(section => section.id === targetId)?.assetIds.push(activeId);
     const next = sections.filter(section => section.assetIds.length);
+    if (onMove) { onMove({ ...value, sections: next }, next.flatMap(section => section.assetIds), activeId); return; }
     onChange({ ...value, sections: next });
     onOrderChange(next.flatMap(section => section.assetIds), activeId);
   }
-  return <div className="ed-photo-controls"><label>Editorial section<select value={sectionId} onChange={event => moveToSection(event.target.value)}>{value.sections.map((section, index) => <option key={section.id} value={section.id}>{String(index + 1).padStart(2, '0')} / {section.title || 'Selected photographs'}</option>)}</select></label><label>Photo framing<select value={settings.imageFit || 'contain'} onChange={event => onSettingsChange({ ...settings, imageFit: event.target.value })}><option value="contain">Show the whole photograph</option><option value="cover">Fill the frame</option></select></label><label>Framing focus<select value={settings.focalPoint || '50% 50%'} onChange={event => onSettingsChange({ ...settings, focalPoint: event.target.value })}>{[['50% 50%', 'Centre'], ['50% 20%', 'Upper part'], ['50% 80%', 'Lower part'], ['20% 50%', 'Left side'], ['80% 50%', 'Right side']].map(([id, text]) => <option key={id} value={id}>{text}</option>)}</select></label></div>;
+  return <div className="ed-photo-controls"><label>Editorial section<select disabled={busy} value={sectionId} onChange={event => moveToSection(event.target.value)}>{value.sections.map((section, index) => <option key={section.id} value={section.id}>{String(index + 1).padStart(2, '0')} / {section.title || 'Selected photographs'}</option>)}</select></label><label>Photo framing<select disabled={busy} value={settings.imageFit || 'contain'} onChange={event => onSettingsChange({ ...settings, imageFit: event.target.value })}><option value="contain">Show the whole photograph</option><option value="cover">Fill the frame</option></select></label><label>Framing focus<select disabled={busy} value={settings.focalPoint || '50% 50%'} onChange={event => onSettingsChange({ ...settings, focalPoint: event.target.value })}>{[['50% 50%', 'Centre'], ['50% 20%', 'Upper part'], ['50% 80%', 'Lower part'], ['20% 50%', 'Left side'], ['80% 50%', 'Right side']].map(([id, text]) => <option key={id} value={id}>{text}</option>)}</select></label></div>;
 }
 
 export default function EditorialEditor({ value, onChange, assets, frames, onRegenerate, busy, openingLine, closingLine, onOpeningChange, onClosingChange, openingAssetId, closingAssetId }) {
