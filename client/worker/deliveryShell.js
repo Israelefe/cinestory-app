@@ -78,7 +78,7 @@ export function applyShareMeta(html, meta, canonical) {
   const description = meta?.description ?? '';
   const image = meta?.image ?? '';
 
-  let output = html.replace(/<title>[^<]*<\/title>/i, `<title>${escapeHtml(title)}</title>`);
+  let output = html.replace(/<title>[^<]*<\/title>/i, () => `<title>${escapeHtml(title)}</title>`);
   output = replaceMeta(output, 'og:title', title);
   output = replaceMeta(output, 'og:description', description);
   output = replaceMeta(output, 'og:image', image);
@@ -97,7 +97,7 @@ function replaceMeta(html, property, value, attribute = 'property') {
   const pattern = new RegExp(`<meta\\s+${attribute}=["']${property}["'][^>]*>`, 'i');
   const tag = `<meta ${attribute}="${property}" content="${escapeHtml(value)}" />`;
   // `og:url` has no tag in the base shell, so it gets appended to <head>.
-  return pattern.test(html) ? html.replace(pattern, tag) : html.replace('</head>', `  ${tag}\n</head>`);
+  return pattern.test(html) ? html.replace(pattern, () => tag) : html.replace('</head>', () => `  ${tag}\n</head>`);
 }
 
 function plain(body, status, cacheControl = 'no-store') {

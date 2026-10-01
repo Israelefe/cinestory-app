@@ -1,3 +1,8 @@
+import PortfolioHandle from '../models/PortfolioHandle.js';
+import PortfolioMedia from '../models/PortfolioMedia.js';
+import PortfolioJob from '../models/PortfolioJob.js';
+import { resolveEntitlements } from './entitlement.service.js';
+import { processPortfolioRemovals } from './portfolioLifecycle.service.js';
 import Portfolio from '../models/Portfolio.js';
 import StorageAsset from '../models/StorageAsset.js';
 import User from '../models/User.js';
@@ -66,6 +71,7 @@ export async function purgeExpiredProData(now = new Date()) {
   if (running) return;
   running = true;
   try {
+    await processPortfolioRemovals();
     const runtime = await getRuntimeConfig();
     const retention = runtime.retention || {};
     const retentionDays = Math.max(1, Number(retention.proRetentionDays) || 30);
@@ -86,7 +92,7 @@ export async function purgeExpiredProData(now = new Date()) {
           : { $set: { plan: 'free', proRetentionUntil: new Date(now.getTime() + retentionDays * 24 * 60 * 60 * 1000) }, $unset: { planOverride: 1 } }
       );
     }
-    const endedSubscriptions = await Subscription.find({ status: { $in: ['past_due', 'canceling'] }, $or: [{ status: 'past_due', graceEndsAt: { $lte: now } }, { status: 'canceling', paidThrough: { $lte: now } }] }).select('userId');
+    const endedSubscriptions = await Subscription.find({ $or: [{ status: 'past_due', graceEndsAt: { $lte: now } }, { status: { $in: ['active', 'canceling'] }, paidThrough: { $lte: now } }] });
     for (const subscription of endedSubscriptions) {
       subscription.status = 'expired'; subscription.canceledAt ||= now; await subscription.save();
       const [anotherPaidSubscription, owner] = await Promise.all([
@@ -112,6 +118,12 @@ export async function purgeExpiredProData(now = new Date()) {
     }
     const users = await User.find({ proRetentionUntil: { $lte: now } }).select('_id').limit(50).lean();
     for (const user of users) {
+      const currentOwner = await User.findById(user._id);
+      if (!currentOwner || (await resolveEntitlements(currentOwner, { includeUsage: false, now })).plan !== 'free') continue;
+      const portfolios = await Portfolio.find({ userId: user._id }).select('_id items.publicId draft.items.publicId').lean();
+      await PortfolioHandle.deleteMany({ portfolioId: { $in: portfolios.map(item => item._id) } });
+      await PortfolioJob.deleteMany({ userId: user._id });
+      await PortfolioMedia.deleteMany({ $or: [{ publicId: { $in: portfolios.flatMap(item => [...(item.items || []), ...(item.draft?.items || [])].map(photo => photo.publicId)) } }, { publicId: { $regex: `^veylo/users/${user._id}/` } }] });
       const assets = await StorageAsset.find({ userId: user._id }).select('publicId').lean();
       for (const asset of assets) await removeStorageAsset(asset.publicId).catch(error => {
         recordAnalyticsEventAsync({ name: 'storage.delete.failed', source: 'system', actorType: 'system', userId: user._id, status: 'failed', errorCode: error.code || 'RETENTION_LIBRARY_DELETE_FAILED', metadata: { surface: 'retention', publicId: String(asset.publicId).slice(0, 180) } });

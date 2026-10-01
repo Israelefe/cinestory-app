@@ -50,7 +50,7 @@ const routeScrollPositions = new Map();
 function publicPortfolioHandle(pathname) {
   let decodedPath = pathname;
   try { decodedPath = decodeURIComponent(pathname); } catch {}
-  const match = decodedPath.match(/^\/@([^/]+)\/?$/);
+  const match = decodedPath.match(/^\/@([^/]+)(?:\/projects\/[A-Za-z0-9_-]{8,80})?\/?$/);
   return match?.[1] || '';
 }
 
@@ -213,6 +213,7 @@ export default function App() {
   const handleAuthenticated = nextUser => { authVersion.current += 1; setUser(nextUser); setAuthLoading(false); };
   const handleLogout = async () => {
     try { await api.post('/v1/auth/logout'); } catch {}
+    for (const key of Object.keys(sessionStorage)) if (key.startsWith('veylo_portfolio_draft:')) sessionStorage.removeItem(key);
     authVersion.current += 1;
     setUser(null);
     window.location.assign('/');

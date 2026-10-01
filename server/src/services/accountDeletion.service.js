@@ -1,3 +1,6 @@
+import PortfolioHandle from '../models/PortfolioHandle.js';
+import PortfolioMedia from '../models/PortfolioMedia.js';
+import PortfolioCleanup from '../models/PortfolioCleanup.js';
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import AuthCode from '../models/AuthCode.js';
@@ -199,6 +202,10 @@ async function deleteOwnedRecords({ accountId, deliveryIds, storyIds, volumeJobI
   await deleteMany('volumeSubjects', VolumeSubject, { userId: accountId });
   await deleteMany('volumeJobs', VolumeJob, { userId: accountId });
   await deleteMany('storageAssets', StorageAsset, { userId: accountId });
+  const ownedPortfolios = await Portfolio.find({ userId: accountId }).select('_id items.publicId draft.items.publicId').session(session || null).lean();
+  await deleteMany('portfolioHandles', PortfolioHandle, { portfolioId: { $in: ownedPortfolios.map(item => item._id) } });
+  await deleteMany('portfolioMedia', PortfolioMedia, { $or: [{ publicId: { $in: ownedPortfolios.flatMap(item => [...(item.items || []), ...(item.draft?.items || [])].map(photo => photo.publicId)) } }, { publicId: { $regex: `^veylo/users/${accountId}/` } }] });
+  await deleteMany('portfolioCleanup', PortfolioCleanup, { userId: accountId });
   await deleteMany('portfolioJobs', PortfolioJob, { userId: accountId });
   await deleteMany('portfolios', Portfolio, { userId: accountId });
   await deleteMany('deletionRequests', AccountDeletionRequest, { userId: accountId });

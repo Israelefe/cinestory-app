@@ -30,7 +30,8 @@ export async function resolveEntitlements(user, { includeUsage = true, now = new
   // Both the paid Pro plan and the legacy Studio plan receive studio branding.
   // Billing writes `pro` to User.plan, so treating only `studio` as paid made
   // current Pro deliveries fall back to the Veylo mark.
-  const pro = ['pro', 'studio'].includes(user?.plan) || overrideIsPro(user, now) || subscriptionGrantsPro(subscription, now);
+  const subscriptions = await Subscription.find({ userId: user._id }).select('status paidThrough graceEndsAt').lean();
+  const pro = (!subscriptions.length && !user?.planOverride?.plan && ['pro', 'studio'].includes(user?.plan)) || overrideIsPro(user, now) || subscriptions.some(item => subscriptionGrantsPro(item, now));
   const runtime = await getRuntimeConfig();
   const plan = (pro ? runtime.plans?.pro : runtime.plans?.free) || (pro ? PLAN_DEFINITIONS.pro : PLAN_DEFINITIONS.free);
   const enabledFormats = new Set(Object.values(runtime.formats || {}).filter(format => format?.enabled !== false).map(format => format.id));
@@ -60,7 +61,7 @@ export async function resolveEntitlements(user, { includeUsage = true, now = new
       formats: (plan.formats || []).filter(format => enabledFormats.has(format)),
       branding: plan.branding,
       portfolio: Boolean(plan.portfolio && featureFlags.portfolio !== false),
-      portfolioMode: plan.portfolio && featureFlags.portfolio !== false ? (pro ? 'public' : user.proRetentionUntil > now ? 'private' : 'unavailable') : 'unavailable',
+      portfolioMode: featureFlags.portfolio !== false ? (pro && plan.portfolio ? 'public' : user.proRetentionUntil > now ? 'private' : 'unavailable') : 'unavailable',
       storageMode: pro ? 'read-write' : user.proRetentionUntil > now ? 'read-only' : 'unavailable',
       music: featureFlags.music !== false,
       narration: featureFlags.narration !== false,

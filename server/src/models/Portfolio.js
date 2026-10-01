@@ -1,11 +1,17 @@
 import mongoose from 'mongoose';
 
 const itemSchema = new mongoose.Schema({
+  id: String,
   publicId: { type: String, required: true },
   title: { type: String, trim: true, maxlength: 100, default: '' },
   category: { type: String, trim: true, maxlength: 50, default: 'Selected work' },
-  sortOrder: { type: Number, min: 0, default: 0 }
+  sortOrder: { type: Number, min: 0, default: 0 },
+  alt: { type: String, maxlength: 180, default: '' }, featured: { type: Boolean, default: true },
+  width: Number, height: Number, focalX: { type: Number, default: 50, min: 0, max: 100 }, focalY: { type: Number, default: 50, min: 0, max: 100 },
+  crop: { type: String, enum: ['fit', 'fill'], default: 'fit' }
 }, { _id: false });
+
+const projectSchema = new mongoose.Schema({ id: { type: String, required: true }, title: { type: String, maxlength: 100 }, description: { type: String, maxlength: 400, default: '' }, category: { type: String, maxlength: 50 }, coverId: String, photoIds: [String] }, { _id: false });
 
 const previousHandleSchema = new mongoose.Schema({
   handle: { type: String, required: true, lowercase: true, trim: true, maxlength: 40 },
@@ -29,6 +35,9 @@ const portfolioSchema = new mongoose.Schema({
   whatsapp: { type: String, trim: true, maxlength: 30, default: '' },
   heroPublicId: { type: String, trim: true, maxlength: 500, default: '' },
   items: { type: [itemSchema], default: [] },
+  projects: { type: [projectSchema], default: [] },
+  schemaVersion: { type: Number, default: 2 },
+  mediaNotice: { type: String, default: '' },
   direction: {
     background: { type: String, enum: ['ink', 'warm-black', 'ivory'], default: 'ink' },
     accent: { type: String, match: /^#[0-9a-f]{6}$/i, default: '#ff9b8e' },
@@ -42,7 +51,7 @@ const portfolioSchema = new mongoose.Schema({
     showPhotoTitles: { type: Boolean, default: true },
     showContact: { type: Boolean, default: true }
   },
-  draft: { type: mongoose.Schema.Types.Mixed, default: null },
+  draft: { type: new mongoose.Schema({ handle: String, studioName: String, bio: String, headline: String, introLine: String, location: String, contactLabel: String, instagram: String, whatsapp: String, heroPublicId: String, items: [itemSchema], projects: [projectSchema], direction: mongoose.Schema.Types.Mixed }, { _id: false }), default: null },
   draftRevision: { type: Number, default: 0, min: 0 },
   publishedRevision: { type: Number, default: 0, min: 0 },
   publishedAt: Date

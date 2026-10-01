@@ -10,6 +10,7 @@
  */
 import { handleApiProxy } from './apiProxy.js';
 import { handleDeliveryShell } from './deliveryShell.js';
+import { handlePortfolioShell, PORTFOLIO_PATH } from './portfolioShell.js';
 
 const DELIVERY_PATH = /^\/d\/([^/]+)\/?$/;
 
@@ -25,6 +26,9 @@ export default {
     if (delivery) {
       return handleDeliveryShell(request, env, ctx, decodeURIComponent(delivery[1]));
     }
+    const portfolio = pathname.match(PORTFOLIO_PATH);
+    if (portfolio) return handlePortfolioShell(request, env, portfolio[1], portfolio[2] || '');
+    if (pathname.startsWith('/@')) return new Response('Portfolio not found.', { status: 404, headers: { 'Cache-Control': 'no-store' } });
 
     // Belt and braces: these paths are routed here by `run_worker_first`, so this
     // only runs if that config is missing or edited.

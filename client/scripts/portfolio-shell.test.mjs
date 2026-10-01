@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import { after, test } from 'node:test';
+import { handlePortfolioShell, PORTFOLIO_PATH } from '../worker/portfolioShell.js';
+const originalFetch = globalThis.fetch;
+const html = '<html><head><title>Veylo</title><meta property="og:title" content="Veylo"><meta property="og:image" content=""><meta name="twitter:title" content=""><link rel="canonical" href="https://veylo.com.ng/"></head></html>';
+const env = { VEYLO_WEB_ORIGIN: 'https://veylo.com.ng', VEYLO_API_ORIGIN: 'https://api.example.com', ASSETS: { fetch: async () => new Response(html) } };
+const request = new Request('https://veylo.com.ng/@amara-studio');
+after(() => { globalThis.fetch = originalFetch; });
+test('legacy handles and project URLs reach the dynamic shell', () => { assert.ok(PORTFOLIO_PATH.test('/@amara--studio')); assert.ok(PORTFOLIO_PATH.test('/@amara--studio/projects/project-one')); assert.equal(PORTFOLIO_PATH.test('/@amara.studio'), false); });
+test('portfolio shell escapes studio text and preserves dollar replacement characters', async () => { globalThis.fetch = async () => Response.json({ data: { title: 'Amara $& <script> Studio', description: 'Finished portraits', image: 'https://veylo.com.ng/api/cover', canonical: 'https://veylo.com.ng/@amara-studio' } }); const res = await handlePortfolioShell(request, env, 'amara-studio'); const body = await res.text(); assert.equal(res.status, 200); assert.match(body, /Amara \$&amp; &lt;script&gt; Studio/); assert.equal((body.match(/rel="canonical"/g) || []).length, 1); assert.equal(res.headers.get('Cache-Control'), 'no-store'); });
+test('private portfolios return a real 404 without marketing metadata', async () => { globalThis.fetch = async () => new Response('', { status: 404 }); const res = await handlePortfolioShell(request, env, 'amara-studio'); assert.equal(res.status, 404); assert.match(await res.text(), /noindex/); });
+test('previous addresses redirect to the canonical project URL', async () => { globalThis.fetch = async () => Response.json({ data: { canonical: 'https://veylo.com.ng/@amara-new/projects/project-one', redirectedFrom: 'amara-studio' } }); const res = await handlePortfolioShell(request, env, 'amara-studio', 'project-one'); assert.equal(res.status, 301); assert.equal(res.headers.get('Location'), 'https://veylo.com.ng/@amara-new/projects/project-one'); });
+test('metadata outages return a retryable status without caching a fake public page', async () => { globalThis.fetch = async () => { throw new Error('offline'); }; const res = await handlePortfolioShell(request, env, 'amara-studio'); assert.equal(res.status, 503); assert.equal(res.headers.get('Retry-After'), '30'); });

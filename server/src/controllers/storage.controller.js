@@ -1,3 +1,4 @@
+import { schedulePortfolioRemoval, finishPortfolioRemoval } from '../services/portfolioLifecycle.service.js';
 import { z } from 'zod';
 import User from '../models/User.js';
 import StorageAsset from '../models/StorageAsset.js';
@@ -92,14 +93,10 @@ export async function deleteStorageAsset(req, res) {
   try {
     const asset = await StorageAsset.findOne({ _id: req.params.id, userId: req.user.id });
     if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
+    const cleanup = await schedulePortfolioRemoval(req.user.id, [asset.publicId]);
     await removeStorageAsset(asset.publicId);
     await StorageAsset.deleteOne({ _id: asset._id, userId: req.user.id });
-    const portfolio = await Portfolio.findOne({ userId: req.user.id, 'items.publicId': asset.publicId });
-    if (portfolio) {
-      portfolio.items = portfolio.items.filter(item => item.publicId !== asset.publicId);
-      if (portfolio.status === 'published' && portfolio.items.length < 4) { portfolio.status = 'draft'; portfolio.publishedAt = undefined; }
-      await portfolio.save();
-    }
+    await finishPortfolioRemoval(cleanup);
     await User.updateOne(
       { _id: req.user.id },
       [{ $set: { storageUsedBytes: { $max: [0, { $subtract: [{ $ifNull: ['$storageUsedBytes', 0] }, asset.bytes] }] } } }]

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Camera } from 'lucide-react';
 import { useLocation, useParams } from 'react-router-dom';
 import api, { apiMessage } from '../services/api.js';
+import { normalizePortfolio } from '../services/portfolio.js';
 import PortfolioCanvas from './PortfolioCanvas.jsx';
 import './PublicStudioPortfolio.css';
 
@@ -15,6 +16,8 @@ export default function PublicStudioPortfolio({ requestedHandle = '' }) {
   const { handle: routeHandle } = useParams();
   const location = useLocation();
   const handle = String(routeHandle || requestedHandle || pathHandle(location.pathname)).replace(/^@/, '');
+  const projectId = location.pathname.match(/\/projects\/([^/]+)\/?$/)?.[1] || '';
+  const [retry, setRetry] = useState(0);
   const [portfolio, setPortfolio] = useState(null);
   const [error, setError] = useState('');
 
@@ -28,34 +31,23 @@ export default function PublicStudioPortfolio({ requestedHandle = '' }) {
     if (!handle) { setError('That portfolio address is incomplete.'); return () => { active = false; }; }
     setError('');
     setPortfolio(null);
-    api.get(`/v1/portfolios/public/${encodeURIComponent(handle)}`).then(({ data }) => {
+    api.get(`/v1/portfolios/public/${encodeURIComponent(handle)}${projectId ? `/projects/${encodeURIComponent(projectId)}` : ''}`).then(({ data }) => {
       if (!active) return;
-      if (data.data.handle && data.data.handle !== handle && typeof window !== 'undefined') window.history.replaceState({}, '', `/@${encodeURIComponent(data.data.handle)}`);
-      setPortfolio(data.data);
+      if (data.data.handle && data.data.handle !== handle && typeof window !== 'undefined') window.history.replaceState(window.history.state, '', `/@${encodeURIComponent(data.data.handle)}${projectId ? `/projects/${projectId}` : ''}`);
+      setPortfolio(normalizePortfolio(data.data));
       document.title = `${data.data.studioName} — Portfolio`;
     }).catch(err => { if (active) setError(apiMessage(err, 'That portfolio is not available.')); });
     return () => { active = false; };
-  }, [handle]);
+  }, [handle, projectId, retry]);
 
-  useEffect(() => {
-    const onPortfolioLinkClick = event => {
-      const anchor = event.target.closest?.('a');
-      const href = String(anchor?.getAttribute('href') || '');
-      if (href.startsWith('https://wa.me/')) {
-        trackPortfolio('whatsapp.clicked');
-        trackPortfolio('enquiry.clicked');
-      } else if (href.startsWith('https://instagram.com/')) trackPortfolio('instagram.clicked');
-    };
-    document.addEventListener('click', onPortfolioLinkClick);
-    return () => document.removeEventListener('click', onPortfolioLinkClick);
-  }, [handle]);
-
-  if (error) return <main className="v-public-portfolio-state"><img src="/veylo/veylo-mark.svg" alt="Veylo" /><Camera size={25} /><h1>Portfolio unavailable</h1><p>{error}</p><a href="/"><ArrowLeft size={15} />Back to Veylo</a></main>;
+  if (error) return <main className="v-public-portfolio-state"><img src="/veylo/veylo-mark.svg" alt="Veylo" /><Camera size={25} /><h1>Portfolio unavailable</h1><p>{error}</p><button onClick={() => setRetry(value => value + 1)}>Try again</button><a href="/"><ArrowLeft size={15} />Back to Veylo</a></main>;
   if (!portfolio) return <main className="v-public-portfolio-state" role="status"><img src="/veylo/veylo-mark.svg" alt="Veylo" /><p>Opening portfolio…</p></main>;
 
   return <PortfolioCanvas
     portfolio={portfolio}
-    onPhotoOpen={(itemIndex, category) => trackPortfolio('project.opened', { itemIndex, category })}
+    projectId={projectId}
+    onPhotoOpen={(itemIndex, category, projectId) => trackPortfolio('photo.opened', { itemIndex, category, ...(projectId ? { projectId } : {}) })}
+    onContact={(route, projectId) => { trackPortfolio(`${route}.clicked`, projectId ? { projectId } : {}); trackPortfolio('enquiry.clicked', projectId ? { projectId } : {}); }}
     onFilter={category => trackPortfolio('filter.used', { category })}
   />;
 }

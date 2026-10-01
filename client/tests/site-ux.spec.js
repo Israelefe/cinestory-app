@@ -3,12 +3,14 @@ import { expect, test } from '@playwright/test';
 const account = { _id: '507f1f77bcf86cd799439012', name: 'Amara', email: 'amara@example.com', emailVerified: true, onboardingComplete: true, plan: 'pro', studio: { name: 'Amara Studio', city: 'Lagos', state: 'Lagos' } };
 
 async function mockAccount(page) {
+  let portfolioDraft = { handle: 'amarastudio', studioName: 'Amara Studio', bio: 'Portraits and celebrations in Lagos.', items: [], projects: [], direction: {} };
+  let draftRevision = 0;
   await page.route('**/api/v1/**', async route => {
     const url = new URL(route.request().url());
     const path = url.pathname;
     const reply = (data, extra = {}) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data, ...extra }) });
     if (path.endsWith('/auth/me')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, user: account }) });
-    if (path.endsWith('/portfolios/mine')) return reply({ handle: 'amarastudio', studioName: 'Amara Studio', bio: 'Portraits and celebrations in Lagos.', items: [], direction: {} }, { status: 'draft', access: 'public', hasUnpublishedChanges: false, changePolicy: {} });
+    if (path.endsWith('/portfolios/mine')) { if (route.request().method() === 'PUT') { const { expectedDraftRevision, ...content } = route.request().postDataJSON(); portfolioDraft = content; draftRevision += 1; } return reply(portfolioDraft, { status: 'draft', access: 'public', draftRevision, publishedRevision: 0, hasUnpublishedChanges: draftRevision > 0, changePolicy: {} }); }
     if (path.includes('/portfolios/handles/')) return reply({}, { available: true });
     if (path.endsWith('/portfolios/sources')) return reply([], { nextCursor: null });
     if (path.endsWith('/billing/status')) return reply({ plan: 'pro', limits: { deliveriesPerMonth: null }, usage: { deliveriesThisMonth: 0, deliveriesRemaining: null } });
@@ -83,9 +85,10 @@ test('portfolio preview keeps ordinary words on one line', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockAccount(page);
   await page.goto('/portfolio/manage');
-  await page.getByLabel('Opening headline').fill('Welcome to Ada Studio');
-  await page.locator('.v-pedit-steps button').last().click();
-  const title = page.locator('.v-pedit-preview-panel .vpc-hero h1');
+  await page.getByRole('button', { name: 'Studio', exact: true }).click();
+  await page.getByLabel('Headline', { exact: true }).fill('Welcome to Ada Studio');
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+  const title = page.locator('.v-pedit-preview-scroll .vpc-hero h1');
   await expect(title).toHaveText('Welcome to Ada Studio');
   const tops = await title.evaluate(element => {
     const textNode = element.firstChild;
@@ -120,8 +123,7 @@ test('portfolio editor opens its photo picker with keyboard focus and closes on 
   await mockAccount(page);
   await page.goto('/portfolio/manage');
   await page.getByRole('button', { name: 'Got it' }).click();
-  await expect(page.locator('.v-pedit-preview-modal')).toHaveCSS('display', 'none');
-  await page.locator('.v-pedit-steps button').nth(1).click();
+  await expect(page.getByRole('dialog', { name: 'Preview your portfolio' })).toHaveCount(0);
   const opener = page.getByRole('button', { name: 'Add photographs' });
   await opener.click();
   const picker = page.getByRole('dialog', { name: 'Add photographs' });
@@ -150,17 +152,14 @@ test('portfolio steps and full preview fit phone, tablet, and desktop', async ({
     await page.setViewportSize({ width, height: width < 400 ? 568 : 800 });
     await page.goto('/portfolio/manage');
     if (await page.getByRole('button', { name: 'Got it' }).count()) await page.getByRole('button', { name: 'Got it' }).click();
-    await page.locator('.v-pedit-steps button').last().click();
-    await expect(page.getByRole('heading', { name: 'Review and publish' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Publish portfolio' })).toBeDisabled();
+    await expect(page.getByRole('heading', { name: 'Choose the work clients see' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `portfolio editor at ${width}px`).toBe(true);
-    await page.getByRole('button', { name: 'Open full preview' }).click();
-    await expect(page.getByRole('dialog', { name: 'Full-screen portfolio preview' })).toBeVisible();
+    await page.getByRole('button', { name: 'Preview', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Preview your portfolio' })).toBeVisible();
     await page.getByRole('button', { name: 'Tablet' }).last().click();
-    const dimensions = await page.locator('.v-pedit-preview-modal .v-pedit-preview-scroll').evaluate(element => ({ content: Math.round(element.getBoundingClientRect().width / Number(getComputedStyle(element).transform.match(/matrix\(([^,]+)/)?.[1] || 1)), visible: element.parentElement.getBoundingClientRect().width }));
-    expect(dimensions.content).toBeGreaterThanOrEqual(767);
-    expect(dimensions.visible).toBeLessThanOrEqual(width);
-    await page.getByRole('button', { name: 'Close full-screen preview' }).click();
+    await expect(page.locator('.v-pedit-preview-scroll>div')).toHaveCSS('width', '834px');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.getByRole('button', { name: 'Close Preview your portfolio' }).click();
   }
 });
 
@@ -182,18 +181,17 @@ test('portfolio picker browses a delivery and adds one photograph', async ({ pag
   await mockAccount(page);
   await page.route('**/api/v1/portfolios/sources**', route => {
     const kind = new URL(route.request().url()).searchParams.get('kind');
-    const data = kind === 'deliveries' ? [{ sourceId: 'ada-birthday', title: 'Ada birthday', photoCount: 1, thumbnailUrl: '' }] : kind === 'delivery' ? [{ publicId: 'studio/ada-portrait', title: 'Ada portrait', source: 'delivery', sourceId: 'ada-birthday', thumbnailUrl: '' }] : [];
+    const data = kind === 'deliveries' ? [{ sourceId: 'ada-birthday', title: 'Ada birthday', photoCount: 1, thumbnailUrl: '' }] : kind === 'delivery' ? [{ id: 'photo-ada', publicId: 'studio/ada-portrait', title: '', filename: 'ada-portrait.jpg', source: 'delivery', sourceId: 'ada-birthday', thumbnailUrl: '' }] : [];
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data, nextCursor: null }) });
   });
   await page.goto('/portfolio/manage');
   await page.getByRole('button', { name: 'Got it' }).click();
-  await page.locator('.v-pedit-steps button').nth(1).click();
   await page.getByRole('button', { name: 'Add photographs' }).click();
   await page.getByRole('button', { name: /Ada birthday/ }).click();
   await page.locator('.v-pedit-source-grid>button').first().click();
-  await expect(page.getByText('1 of 50 selected')).toBeVisible();
-  await page.getByRole('button', { name: 'Done' }).click();
-  await expect(page.locator('.v-pedit-selected-work article')).toHaveCount(1);
+  await expect(page.getByText(/1 chosen/)).toBeVisible();
+  await page.getByRole('button', { name: 'Add selected photographs' }).click();
+  await expect(page.locator('.v-pedit-photo')).toHaveCount(1);
 });
 
 test('editing a published portfolio sends only editable draft fields', async ({ page }) => {
@@ -203,16 +201,17 @@ test('editing a published portfolio sends only editable draft fields', async ({ 
   await page.route('**/api/v1/portfolios/mine', async route => {
     if (route.request().method() === 'PUT') {
       saved = route.request().postDataJSON();
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { ...portfolio, bio: saved.bio }, status: 'published', hasUnpublishedChanges: true, changePolicy: {} }) });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { ...portfolio, bio: saved.bio }, status: 'published', access: 'public', draftRevision: 1, publishedRevision: 0, hasUnpublishedChanges: true, changePolicy: {} }) });
     }
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: portfolio, status: 'published', live: { handle: 'amarastudio', publishedAt: portfolio.publishedAt }, hasUnpublishedChanges: false, access: 'public', changePolicy: {} }) });
   });
   await page.goto('/portfolio/manage');
   await page.getByRole('button', { name: 'Got it' }).click();
-  await page.locator('#pedit-studio textarea').first().fill('A revised introduction for clients.');
-  await page.getByRole('button', { name: 'Save draft' }).click();
-  await expect(page.getByText('Saved draft awaiting publication')).toBeVisible();
+  await page.getByRole('button', { name: 'Studio', exact: true }).click();
+  await page.getByLabel('About your studio').fill('A revised introduction for clients.');
+  await expect.poll(() => saved?.bio).toBe('A revised introduction for clients.');
+  await expect(page.getByText('Changes are waiting to be published.')).toBeVisible();
   expect(saved.bio).toBe('A revised introduction for clients.');
   expect(saved).not.toHaveProperty('publishedAt');
-  await expect(page.getByRole('button', { name: 'Save draft' })).toBeDisabled();
+  await expect(page.getByText('Private draft saved', { exact: true })).toBeVisible();
 });

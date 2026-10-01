@@ -1,3 +1,4 @@
+import { resolveEntitlements } from '../services/entitlement.service.js';
 import crypto from 'crypto';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
@@ -997,6 +998,10 @@ export async function adminRetryAiJob(req, res) {
     const found = await findAiJob(req.params.jobId);
     if (!found || found.job.status !== 'failed') return res.status(409).json({ success: false, message: 'This job is not waiting to be retried.' });
     const job = found.job;
+    if (found.kind === 'portfolio') {
+      if (await PortfolioJob.exists({ portfolioId: job.portfolioId, active: true, _id: { $ne: job._id } })) return res.status(409).json({ success: false, message: 'Another suggestion is already running for this portfolio.' });
+      job.active = true;
+    }
     job.status = 'queued';
     job.stage = 'queued';
     job.errorCode = undefined;
@@ -1021,6 +1026,7 @@ export async function adminCancelAiJob(req, res) {
     const job = found.job;
     const now = new Date();
     if (job.status === 'queued') {
+      if (found.kind === 'portfolio') job.active = false;
       job.status = 'cancelled';
       job.stage = 'cancelled';
       job.cancelledAt = now;
@@ -1765,6 +1771,7 @@ export async function exportFinance(req, res) {
 
 const portfolioAnalyticsNames = [
   'portfolio.viewed',
+  'portfolio.photo.opened',
   'portfolio.project.opened',
   'portfolio.filter.used',
   'portfolio.instagram.clicked',
@@ -1806,7 +1813,8 @@ export async function getPortfolioOverview(req, res) {
       portfolioIds.length ? PortfolioJob.find({ portfolioId: { $in: portfolioIds } }).sort({ updatedAt: -1 }).limit(Math.max(500, portfolioIds.length * 5)).lean() : [],
       AnalyticsEvent.aggregate([
         { $match: { name: { $in: portfolioAnalyticsNames }, occurredAt: { $gte: since } } },
-        { $group: { _id: { name: '$name', handle: '$metadata.handle' }, count: { $sum: 1 }, sessions: { $addToSet: '$sessionDigest' } } },
+        { $set: { resolvedPortfolio: { $ifNull: ['$metadata.portfolioId', { $switch: { branches: (portfolios.length ? portfolios : [{ _id: '', handle: '', previousHandles: [] }]).map(portfolio => ({ case: { $in: ['$metadata.handle', [portfolio.handle, ...(portfolio.previousHandles || []).map(entry => entry.handle)]] }, then: String(portfolio._id) })), default: '$metadata.handle' } }] } } },
+        { $group: { _id: { name: '$name', portfolioId: '$resolvedPortfolio' }, count: { $sum: 1 }, sessions: { $addToSet: '$sessionDigest' } } },
         { $project: { _id: 1, count: 1, uniqueVisitors: { $size: { $setDifference: ['$sessions', [null, '']] } } } }
       ])
     ]);
@@ -1814,11 +1822,11 @@ export async function getPortfolioOverview(req, res) {
       ...storedAssets.map(asset => String(asset.publicId)),
       ...deliveryAssets.flatMap(delivery => (delivery.assets || []).map(asset => String(asset.publicId)))
     ]);
-    const metricsByHandle = new Map();
+    const metricsByPortfolio = new Map();
     for (const event of analytics) {
-      const handle = String(event._id?.handle || '').toLowerCase();
+      const handle = String(event._id?.portfolioId || '');
       if (!handle) continue;
-      const bucket = metricsByHandle.get(handle) || portfolioMetricBucket();
+      const bucket = metricsByPortfolio.get(handle) || portfolioMetricBucket();
       const count = Number(event.count || 0);
       const uniqueVisitors = Number(event.uniqueVisitors || 0);
       if (event._id.name === 'portfolio.viewed') { bucket.views += count; bucket.uniqueVisitors += uniqueVisitors; }
@@ -1827,13 +1835,14 @@ export async function getPortfolioOverview(req, res) {
       if (event._id.name === 'portfolio.instagram.clicked') bucket.instagramClicks += count;
       if (event._id.name === 'portfolio.whatsapp.clicked') bucket.whatsappClicks += count;
       if (event._id.name === 'portfolio.enquiry.clicked') bucket.enquiryClicks += count;
-      metricsByHandle.set(handle, bucket);
+      metricsByPortfolio.set(handle, bucket);
     }
     const latestJobByPortfolio = new Map();
     for (const job of jobs) {
       const key = String(job.portfolioId);
       if (!latestJobByPortfolio.has(key)) latestJobByPortfolio.set(key, job);
     }
+    const effectiveAccess = new Map(await Promise.all(portfolios.filter(portfolio => portfolio.userId).map(async portfolio => [String(portfolio._id), (await resolveEntitlements(portfolio.userId, { includeUsage: false })).features.portfolioMode])));
     const records = portfolios.map(portfolio => {
       const owner = portfolio.userId;
       const items = Array.isArray(portfolio.items) ? portfolio.items : [];
@@ -1845,18 +1854,18 @@ export async function getPortfolioOverview(req, res) {
       const latestJob = latestJobByPortfolio.get(String(portfolio._id));
       const reasons = [];
       if (!owner) reasons.push('Owner account is missing');
-      if (!owner || !['pro', 'studio'].includes(owner.plan) && !(owner.planOverride?.plan === 'pro' && (!owner.planOverride.expiresAt || new Date(owner.planOverride.expiresAt).getTime() > now))) reasons.push('Account is not currently entitled to public Portfolio');
+      if (!owner || owner.accountStatus !== 'active' || effectiveAccess.get(String(portfolio._id)) !== 'public') reasons.push('Account is not currently entitled to public Portfolio');
       if (portfolio.status === 'published' && !String(portfolio.bio || '').trim()) reasons.push('Published portfolio has no bio');
       if (portfolio.status === 'published' && items.length < 4) reasons.push(`Published portfolio has only ${items.length} photograph${items.length === 1 ? '' : 's'}`);
       if (missingItemCount) reasons.push(`${missingItemCount} selected photograph${missingItemCount === 1 ? '' : 's'} no longer resolve`);
       if (latestJob?.status === 'failed') reasons.push(`Latest direction job failed${latestJob.errorCode ? ` (${latestJob.errorCode})` : ''}`);
-      const metrics = metricsByHandle.get(String(portfolio.handle || '').toLowerCase()) || portfolioMetricBucket();
+      const metrics = metricsByPortfolio.get(String(portfolio._id)) || portfolioMetricBucket();
       return {
         id: portfolio._id,
         handle: portfolio.handle,
         publicPath: `/@${encodeURIComponent(portfolio.handle)}`,
         status: portfolio.status,
-        studioName: portfolio.studioName || owner?.studio?.name || owner?.name || 'Unnamed studio',
+        studioName: owner?.studio?.name || portfolio.studioName || owner?.name || 'Unnamed studio',
         owner: owner ? { id: owner._id, name: owner.name, email: owner.email, plan: owner.plan, accountStatus: owner.accountStatus } : null,
         itemCount: items.length,
         missingItemCount,
@@ -1894,9 +1903,9 @@ export async function adminUnpublishPortfolio(req, res) {
     if (!portfolio) return res.status(404).json({ success: false, message: 'Portfolio not found.' });
     if (portfolio.status !== 'published') return res.status(409).json({ success: false, message: 'That portfolio is already private.' });
     const before = { status: portfolio.status, publishedAt: portfolio.publishedAt || null };
+    const changed = await Portfolio.updateOne({ _id: portfolio._id, status: 'published', draftRevision: portfolio.draftRevision }, { $set: { status: 'draft' }, $inc: { draftRevision: 1 } });
+    if (!changed.modifiedCount) return res.status(409).json({ success: false, message: 'This portfolio changed. Reload before making it private.' });
     portfolio.status = 'draft';
-    portfolio.publishedAt = undefined;
-    await portfolio.save();
     await AdminAudit.create({ adminId: adminId(req), userId: portfolio.userId, action: 'portfolio.unpublished_by_admin', resourceType: 'Portfolio', resourceId: String(portfolio._id), details: { before, after: { status: portfolio.status, publishedAt: null }, reason: safeReason(req.body.reason, 'Made private by administrator') } });
     res.json({ success: true, message: 'Portfolio is now private.' });
   } catch (error) {

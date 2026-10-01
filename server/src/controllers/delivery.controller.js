@@ -1,3 +1,4 @@
+import { schedulePortfolioRemoval, finishPortfolioRemoval } from '../services/portfolioLifecycle.service.js';
 import crypto from 'crypto';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
@@ -416,6 +417,8 @@ export async function deleteDelivery(req, res) {
     deleteStep = 'lookup';
     const removed = await Delivery.collection.findOne(filter);
     if (!removed) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    const removedIds = new Set((Array.isArray(removed.assets) ? removed.assets : []).map(asset => asset?.publicId).filter(Boolean));
+    const portfolioCleanup = await schedulePortfolioRemoval(req.user.id, [...removedIds]);
     const deleteFilter = { _id: removed._id, userId: removed.userId || ownerId };
     deleteStep = 'delete';
     let deleted;
@@ -447,16 +450,8 @@ export async function deleteDelivery(req, res) {
       if (stillPresent) return res.status(404).json({ success: false, message: 'Delivery not found.' });
     }
     deleteStep = 'schedule-cleanup';
-    const removedIds = new Set((Array.isArray(removed.assets) ? removed.assets : []).map(asset => asset?.publicId).filter(Boolean));
+    await finishPortfolioRemoval(portfolioCleanup);
     const cleanupTasks = [
-      async () => {
-        if (!removedIds.size) return;
-        const portfolio = await Portfolio.findOne({ userId: req.user.id, 'items.publicId': { $in: [...removedIds] } });
-        if (!portfolio) return;
-        portfolio.items = portfolio.items.filter(item => !removedIds.has(item.publicId));
-        if (portfolio.status === 'published' && portfolio.items.length < 4) { portfolio.status = 'draft'; portfolio.publishedAt = undefined; }
-        await portfolio.save();
-      },
       () => DeliveryJob.deleteMany({ deliveryId: removed._id }),
       () => DeliveryShareGrant.deleteMany({ deliveryId: removed._id }),
       () => EmailDelivery.deleteMany({ deliveryId: removed._id }),
@@ -631,6 +626,7 @@ export async function deleteDeliveryAsset(req, res) {
     const asset = delivery.assets.find(item => item.assetId === req.params.assetId);
     if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
     const oldNarration = delivery.schemaVersion === 3 ? delivery.narration : null;
+    const portfolioCleanup = await schedulePortfolioRemoval(req.user.id, [asset.publicId]);
     await removeDeliveryImage(asset.publicId);
     delivery.assets = delivery.assets.filter(item => item.assetId !== asset.assetId).map((item, sortOrder) => ({ ...item.toObject(), sortOrder }));
     delivery.collectionAnalysis = undefined;
@@ -645,6 +641,7 @@ export async function deleteDeliveryAsset(req, res) {
       delivery.markModified('v3');
     }
     await delivery.save();
+    await finishPortfolioRemoval(portfolioCleanup);
     await discardV3Narration({ schemaVersion: delivery.schemaVersion, narration: oldNarration });
     void removeStoredPreviews(delivery._id, asset.assetId).catch(() => {});
     res.json({ success: true, message: 'Photograph removed.', data: delivery });

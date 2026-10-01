@@ -10,6 +10,9 @@ export function useDialogFocus(open, containerRef, onClose, triggerRef) {
   const selector = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex="0"]';
   const frame = requestAnimationFrame(() => (containerRef.current?.querySelector(selector) || containerRef.current)?.focus());
   const onKey = (event) => {
+   const dialogs = [...document.querySelectorAll('[role="dialog"][aria-modal="true"],dialog[open]')];
+   const top = dialogs.at(-1);
+   if (top && top !== containerRef.current) return;
    if (event.key === 'Escape') { event.preventDefault(); closeRef.current(); }
    if (event.key !== 'Tab') return;
    const items = [...(containerRef.current?.querySelectorAll(selector) || [])].filter(el => el.getClientRects().length);

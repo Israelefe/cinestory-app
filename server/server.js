@@ -131,8 +131,8 @@ connectDB().then(async connection => {
       if (result.ok) console.info('[cloudinary] Connection verified.');
       else console.error(`[cloudinary] Configuration rejected: ${result.reason}`);
     });
+    startPortfolioWorker();
     if (process.env.DELIVERY_PIPELINE_ENABLED === 'true') {
-      startPortfolioWorker();
       startDeliveryWorker();
     }
     startRetentionWorker();
