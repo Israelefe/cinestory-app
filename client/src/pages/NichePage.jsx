@@ -35,7 +35,7 @@ const pages = {
       heading: 'Each tap brings them to the next finished portrait.',
       copy: 'Veylo decides the reveal order, which portraits deserve the full screen, and which images belong together. Your client controls the pace, so every reaction has room to happen.',
       demo: '/demo/reveal',
-      demoLabel: 'Begin Sharon’s Photo Reveal',
+      demoLabel: 'View Photo Reveal demo',
       format: {
         id: 'photo-reveal',
         photos: ['niche-camera'],
@@ -87,7 +87,7 @@ const pages = {
       heading: 'Let the couple choose where they want to begin.',
       copy: 'Veylo studies the complete collection and finds the natural parts of the day. Each chapter gets its own cover and presentation, while every finished photograph remains together in the full gallery.',
       demo: '/demo/chapters',
-      demoLabel: 'Open Folake & Tunde’s Chapters',
+      demoLabel: 'View Chapters demo',
       format: {
         id: 'chapters',
         photos: ['demo-wedding-1', 'demo-wedding-2', 'demo-wedding-5'],
@@ -143,7 +143,7 @@ const pages = {
       heading: 'Begin with their energy. Build towards the portrait they will remember.',
       copy: 'Veylo uses the photographer’s description and the finished photographs to plan the order, captions, colour, typography, movement, transitions, pacing, music, opening, and finale. You approve every choice.',
       demo: '/demo?preset=lora',
-      demoLabel: 'Watch Lora’s Photo Story',
+      demoLabel: 'Watch Photo Story demo',
       format: {
         id: 'photo-story',
         photos: ['portrait-striking'],
@@ -196,7 +196,7 @@ const pages = {
       heading: 'Let the campaign read like the work your team set out to make.',
       copy: 'Veylo builds a scrollable editorial around the finished photographs. Image scale, type, colour, spacing, and movement follow the campaign instead of forcing every production into the same layout.',
       demo: '/demo/editorial',
-      demoLabel: 'Explore Ada’s Editorial Page',
+      demoLabel: 'View Editorial Page demo',
       format: {
         id: 'editorial-page',
         photos: ['portrait-brand', 'portrait-motion'],
@@ -279,7 +279,11 @@ function RecommendedFormat({ item, slug }) {
         <Reveal className="v-niche-format-copy">
           <Eyebrow>Best first choice · {item.recommendation.name}</Eyebrow>
           <p className="v-niche-format-verb">{item.recommendation.verb}</p>
-          <h2>{item.recommendation.heading}</h2>
+          <h2>{item.recommendation.heading}</h2></Reveal>
+        <Reveal className="v-niche-format-art" delay={0.08}>
+          <DeliveryFormatVisual format={item.recommendation.format} />
+        </Reveal>
+<Reveal className="v-polish-after v-niche-format-copy-after">
           <p>{item.recommendation.copy}</p>
           <Action
             to={item.recommendation.demo}
@@ -289,9 +293,6 @@ function RecommendedFormat({ item, slug }) {
           >
             {item.recommendation.demoLabel}
           </Action>
-        </Reveal>
-        <Reveal className="v-niche-format-art" delay={0.08}>
-          <DeliveryFormatVisual format={item.recommendation.format} />
         </Reveal>
         <Action
           to={item.recommendation.demo}
@@ -342,7 +343,6 @@ function CollectionSection({ item }) {
         <Reveal className="v-niche-collection-intro">
           <Eyebrow>Made for the work you already shoot</Eyebrow>
           <h2>{item.collectionHeading}</h2>
-          <p>{item.collectionCopy}</p>
         </Reveal>
         <div className="v-niche-photo-triptych">
           {item.gallery.map(([photo, label], index) => <Reveal key={photo} className={`v-niche-gallery-photo is-${index + 1}`} delay={index * 0.06}>
@@ -350,6 +350,7 @@ function CollectionSection({ item }) {
             <div><span>0{index + 1}</span><p>{label}</p></div>
           </Reveal>)}
         </div>
+        <Reveal className="v-niche-collection-after"><p>{item.collectionCopy}</p></Reveal>
         <Reveal className="v-niche-shoot-list">
           <p>COMMON SHOOTS</p>
           <div>{item.shootTypes.map((shoot, index) => <span key={shoot}><i>0{index + 1}</i>{shoot}</span>)}</div>
@@ -372,7 +373,7 @@ function OtherFormats({ item }) {
             <div><Icon size={20} aria-hidden="true" /><span>0{index + 1}</span></div>
             <h3>{name}</h3>
             <p>{copy}</p>
-            <Link to={to} className="v-niche-option-link"><span>Open the live demo</span><ArrowRight size={16} aria-hidden="true" /></Link>
+            <Link to={to} className="v-niche-option-link"><span>View {name} demo</span><ArrowRight size={16} aria-hidden="true" /></Link>
           </Reveal>)}
         </div>
         <Reveal className="v-niche-all-formats"><TextLink to="/formats">Compare the eight Showcase formats</TextLink></Reveal>

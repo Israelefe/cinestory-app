@@ -1,0 +1,100 @@
+/* Supporting public pages share the homepage's type and spacing. */
+:is(.v-niche-page, .v-about-simple-page, .v-contact-page, .v-changelog-page, .v-policy-page, .v-not-found-page) :is(h1, h2, h3) { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 500; letter-spacing: -.045em; line-height: 1.16; }
+:is(.v-niche-page, .v-about-simple-page, .v-contact-page, .v-changelog-page, .v-policy-page, .v-not-found-page) h1 { font-size: clamp(36px, 9vw, 64px); }
+:is(.v-niche-page, .v-about-simple-page, .v-contact-page, .v-changelog-page, .v-policy-page, .v-not-found-page) :is(h1, h2) em { font-family: 'Playfair Display', Georgia, serif; font-weight: 400; }
+:is(.v-niche-page, .v-about-simple-page, .v-contact-page, .v-changelog-page, .v-policy-page, .v-not-found-page) :is(.v-copy, .v-lead) { color: #b8b1aa; font-size: 15px; line-height: 1.85; }
+:is(.v-niche-page, .v-about-simple-page, .v-contact-page, .v-changelog-page, .v-policy-page, .v-not-found-page) .v-button { min-height: 52px; padding: 15px 20px; border-radius: 4px; font-size: 12px; line-height: 1.5; transition: transform .18s, background .2s, border-color .2s; }
+:is(.v-niche-page, .v-about-simple-page, .v-contact-page, .v-changelog-page, .v-policy-page, .v-not-found-page) .v-button:active { transform: scale(.98); }
+:is(.v-niche-page, .v-about-simple-page) .v-section { padding-block: 68px; }
+.v-niche-page .v-niche-hero-grid { row-gap: 26px; }
+.v-niche-page .v-niche-hero-copy h1 { margin-block: 20px 0; }
+.v-niche-page .v-niche-hero-copy > p { font-size: 15px; line-height: 1.85; }
+.v-niche-page .v-niche-hero-demo { min-height: 48px; font-size: 13px; }
+.v-niche-page .v-niche-recommended-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'title' 'art' 'after' 'action'; row-gap: 28px; }
+.v-niche-page .v-niche-format-copy { grid-area: title; order: 0; }
+.v-niche-page .v-niche-format-art { grid-area: art; order: 0; border-radius: 5px; overflow: hidden; }
+.v-niche-page .v-niche-format-copy-after { grid-area: after; }
+.v-niche-page .v-niche-format-copy-after > p { max-width: 570px; color: #b8b1aa; font-size: 15px; line-height: 1.85; }
+.v-niche-page .v-niche-format-mobile-action { grid-area: action; margin-top: 0; }
+.v-niche-page .v-niche-format-copy h2 { font-size: clamp(31px, 7.6vw, 52px); }
+.v-niche-page .v-niche-flow-grid { gap: 20px; }
+.v-niche-page :is(.v-niche-flow-step, .v-niche-option-card) { padding: 26px; border-radius: 5px; }
+.v-niche-page :is(.v-niche-flow-step, .v-niche-option-card) p { color: #b8b1aa; font-size: 14px; line-height: 1.85; }
+.v-niche-page .v-niche-client-quote { gap: 14px; padding: 24px 20px; border-radius: 5px; }
+.v-niche-page .v-niche-client-quote small { font-size: 9px; line-height: 1.6; }
+.v-niche-page .v-niche-collection-intro h2 { font-size: clamp(34px, 8.6vw, 64px); }
+.v-niche-page .v-niche-photo-triptych { margin-top: 32px; }
+.v-niche-page .v-niche-collection-after { max-width: 620px; margin-top: 28px; color: #b8b1aa; font-size: 15px; line-height: 1.85; }
+.v-niche-page .v-niche-gallery-photo > div { align-items: flex-start; font-size: 12px; line-height: 1.6; letter-spacing: 0; }
+.v-niche-page .v-niche-shoot-list span { font-size: 14px; padding-block: 18px; }
+.v-niche-page .v-niche-option-grid { gap: 20px; }
+.v-niche-page .v-niche-option-link { min-height: 48px; padding-block: 16px 4px; font-size: 13px; line-height: 1.6; }
+.v-about-simple-page .v-about-statement { font-size: clamp(26px, 5.2vw, 49px); line-height: 1.45; }
+.v-about-simple-page .v-about-statement span { color: #b8b1aa; }
+.v-about-simple-page .v-values { gap: 26px; }
+.v-about-simple-page .v-value { padding-block: 28px; }
+.v-about-simple-page .v-value h3 { font-size: 23px; line-height: 1.3; }
+.v-about-simple-page .v-value p { color: #b8b1aa; font-size: 14px; line-height: 1.85; }
+.v-about-simple-page .v-about-local-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'title' 'art' 'after'; gap: 28px; }
+.v-about-simple-page .v-about-local-copy { grid-area: title; }
+.v-about-simple-page .v-niche-photos { grid-area: art; }
+.v-about-simple-page .v-about-local-copy-after { grid-area: after; }
+.v-contact-page .v-contact-grid { gap: 40px; }
+.v-contact-page .v-contact-info > a { margin-block: 20px 26px; font-family: 'Plus Jakarta Sans', sans-serif; font-size: clamp(21px, 4.4vw, 31px); }
+.v-contact-page .v-contact-info .v-contact-image { height: 280px; margin-block: 0 26px; border: 1px solid #ffffff14; border-radius: 5px; }
+.v-contact-page .v-contact-info .v-text-link { min-height: 48px; margin: 0; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px; line-height: 1.6; letter-spacing: 0; }
+.v-contact-page .v-form { gap: 26px; padding: 26px 20px; border: 1px solid #ffffff18; border-radius: 6px; background: radial-gradient(ellipse at 100% 0, #ff5a4709, transparent 55%), #0c0c10; }
+.v-contact-page .v-form-row { grid-template-columns: minmax(0, 1fr); gap: 26px; }
+.v-contact-page .v-field label { font-size: 13px; line-height: 1.6; }
+.v-contact-page .v-field :is(input, textarea, select) { min-height: 54px; border-radius: 4px; font-size: 16px; line-height: 1.6; background: #070709; }
+.v-contact-page .v-form > button { width: 100%; justify-content: space-between; }
+.v-contact-page .v-form-status { display: flex; align-items: flex-start; gap: 10px; border-radius: 4px; overflow-wrap: anywhere; }
+.v-contact-page .v-form-status svg { flex-shrink: 0; margin-top: 4px; }
+.v-policy-page .v-policy-content { max-width: 70ch; }
+.v-policy-page .v-policy-content section { padding-block: 36px; }
+.v-policy-page .v-policy-content h2 { font-size: 26px; line-height: 1.3; }
+.v-policy-page .v-policy-content :is(p, li) { color: #bbb4ad; font-size: 15px; line-height: 1.95; }
+.v-policy-page .v-policy-nav a { min-height: 48px; font-size: 13px; }
+.v-policy-page .v-policy-mobile-nav { border-radius: 5px; }
+.v-policy-page .v-policy-mobile-nav summary { min-height: 52px; }
+.v-policy-page .v-policy-mobile-nav nav a { min-height: 48px; font-size: 13px; }
+.v-policy-page .v-policy-note { padding: 24px; font-size: 14px; line-height: 1.85; border-radius: 0 5px 5px 0; }
+.v-changelog-page .v-release { padding-block: 42px; gap: 26px; }
+.v-changelog-page .v-release h2 { max-width: 760px; font-size: clamp(26px, 5vw, 36px); line-height: 1.3; }
+.v-changelog-page .v-release li { color: #bbb4ad; font-size: 14px; line-height: 1.85; }
+.v-not-found-page .v-page-intro { min-height: 65svh; }
+.v-not-found-page .v-actions { margin-top: 30px; }
+@media (min-width: 640px) {
+  :is(.v-niche-page, .v-about-simple-page) .v-section { padding-block: 84px; }
+  .v-contact-page .v-form { padding: 32px; }
+  .v-niche-page .v-niche-option-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 768px) {
+  :is(.v-niche-page, .v-about-simple-page, .v-contact-page, .v-changelog-page, .v-policy-page, .v-not-found-page) h1 { font-size: clamp(44px, 5.8vw, 66px); }
+  .v-about-simple-page .v-about-local-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: 'art title' 'art after'; column-gap: 36px; row-gap: 24px; }
+  .v-about-simple-page .v-about-local-copy { align-self: end; }
+  .v-about-simple-page .v-about-local-copy-after { align-self: start; }
+  .v-about-simple-page .v-niche-photos { align-self: center; }
+  .v-contact-page .v-contact-grid { grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 32px; }
+  .v-contact-page .v-form { padding: 28px 24px; }
+  .v-niche-page .v-niche-format-art .v-format-visual { min-height: 460px; }
+}
+@media (min-width: 1024px) {
+  :is(.v-niche-page, .v-about-simple-page, .v-contact-page, .v-changelog-page, .v-policy-page, .v-not-found-page) h1 { font-size: clamp(54px, 5vw, 76px); }
+  :is(.v-niche-page, .v-about-simple-page) .v-section { padding-block: 104px; }
+  .v-niche-page .v-niche-recommended-grid { grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); grid-template-areas: 'title art' 'after art'; grid-template-rows: auto 1fr; column-gap: 60px; row-gap: 24px; }
+  .v-niche-page .v-niche-recommended-grid.is-reverse { grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); grid-template-areas: 'art title' 'art after'; }
+  .v-niche-page .v-niche-format-copy { align-self: end; }
+  .v-niche-page .v-niche-format-copy-after { align-self: start; }
+  .v-niche-page .v-niche-format-copy-after .v-button { margin-top: 28px; }
+  .v-niche-page .v-niche-format-art .v-format-visual { min-height: 570px; }
+  .v-niche-page .v-niche-option-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .v-about-simple-page .v-about-local-grid { column-gap: 64px; }
+  .v-contact-page .v-contact-grid { column-gap: 64px; }
+  .v-contact-page .v-form { padding: 36px; }
+  .v-contact-page .v-form-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.v-niche-page, .v-about-simple-page, .v-contact-page, .v-changelog-page, .v-policy-page, .v-not-found-page) .v-button { transition: none; transform: none !important; }
+  .v-contact-page .animate-pulse { animation: none; }
+}
