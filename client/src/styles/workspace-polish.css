@@ -1,0 +1,92 @@
+/* Studio tools keep every control; public portfolios keep their selected design. */
+:is(.v-dashboard-page, .v-library-page, .v-account-page, .v-billing-page, .v-pedit) { --studio-muted: #b0aaa4; }
+:is(.v-dashboard-page, .v-library-page, .v-account-page, .v-billing-page, .v-pedit) h1 { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 500; font-size: clamp(32px,8vw,56px); line-height: 1.15; letter-spacing: -.045em; }
+:is(.v-dashboard-page, .v-library-page, .v-account-page, .v-billing-page, .v-pedit) h1 em { font-family: 'Playfair Display', Georgia, serif; font-weight: 400; }
+.v-dashboard-page .v-dashboard-hero { gap: 30px; padding-block: 26px 36px; }
+.v-dashboard-page .v-dashboard-hero-actions { gap: 12px; }
+.v-dashboard-page :is(.v-dashboard-new, .v-workspace-secondary, .v-dashboard-command-primary) { min-height: 50px; padding: 14px 18px; border-radius: 4px; line-height: 1.5; }
+.v-dashboard-page .v-dashboard-overview { gap: 12px; background: none; border: 0; }
+.v-dashboard-page .v-dashboard-overview article { padding: 22px 18px; border: 1px solid #ffffff14; border-radius: 5px; }
+.v-dashboard-page .v-dashboard-overview article p { line-height: 1.65; }
+.v-dashboard-page .v-studio-command { margin-top: 28px; border-radius: 5px; }
+.v-dashboard-page .v-dashboard-deliveries { padding-top: 48px; }
+.v-dashboard-page .v-dashboard-deliveries > header { gap: 24px; }
+.v-dashboard-page .v-dashboard-tools { gap: 14px; }
+.v-dashboard-page .v-dashboard-tools input { min-height: 50px; font-size: 16px; }
+.v-dashboard-page :is(.v-dashboard-view button, .v-dashboard-filter button) { min-height: 44px; }
+.v-dashboard-page .v-delivery-grid { gap: 22px; }
+.v-dashboard-page .v-delivery-card { border-radius: 5px; }
+.v-dashboard-page .v-delivery-body { padding: 22px 20px; }
+.v-dashboard-page .v-delivery-numbers { gap: 18px; padding-block: 18px 4px; }
+.v-dashboard-page :is(.v-delivery-whatsapp, .v-delivery-resume) { min-height: 48px; border-radius: 4px; }
+.v-library-page .v-library-head { gap: 28px; padding-bottom: 36px; }
+.v-library-page .v-library-head > div > span { font-size: 14px; line-height: 1.85; }
+.v-library-page .v-library-tools { gap: 18px; padding-block: 28px; }
+.v-library-page .v-library-search input { min-height: 50px; font-size: 16px; }
+.v-library-page .v-library-folders { gap: 10px; }
+.v-library-page .v-library-folders button { min-height: 44px; padding: 10px 16px; border-radius: 4px; }
+.v-library-page .v-library-grid { gap: 18px; }
+.v-library-page .v-library-card { border-radius: 5px; }
+.v-library-page .v-library-details { padding: 26px 22px; }
+.v-library-page .v-library-details :is(input, textarea) { font-size: 16px; border-radius: 4px; }
+.v-library-page .v-library-details button { min-height: 48px; border-radius: 4px; }
+.v-library-page .v-library-close { min-width: 44px; min-height: 44px; }
+.v-account-page .v-account-heading { padding-bottom: 30px; }
+.v-account-page .v-account-layout { gap: 28px; }
+.v-account-page :is(.v-account-profile, .v-account-summary, .v-account-billing) { border-radius: 5px; }
+.v-account-page .v-account-profile-head { padding: 28px 22px; }
+.v-account-page .v-account-form-section { padding: 26px 22px; }
+.v-account-page .v-profile-grid { gap: 22px; }
+.v-account-page .v-field :is(input, select) { min-height: 52px; font-size: 16px; border-radius: 4px; }
+.v-account-page .v-profile-help { line-height: 1.75; }
+.v-account-page .v-profile-actions { gap: 16px; padding-top: 24px; }
+.v-account-page .v-account-section-nav a { min-height: 46px; padding: 12px 16px; }
+.v-account-page .v-account-tool-grid { gap: 18px; }
+.v-account-page .v-delete-account { margin-top: 36px; border-color: #ff9b8e35; }
+.v-billing-page .v-billing-heading { padding-bottom: 32px; }
+.v-billing-page .v-billing-grid { gap: 24px; }
+.v-billing-page .v-billing-grid > :is(section, article) { border-radius: 5px; }
+.v-billing-page .v-billing-actions { gap: 14px; margin-top: 26px; }
+.v-billing-page .v-billing-actions :is(button, a) { min-height: 48px; padding: 14px 18px; border-radius: 4px; line-height: 1.5; }
+.v-billing-page .v-billing-includes { gap: 14px; }
+.v-billing-page .v-billing-includes li { line-height: 1.75; }
+.v-billing-page .v-billing-history { margin-top: 36px; }
+.v-billing-page .v-billing-payment-list > article { padding-block: 22px; }
+.v-billing-page .v-billing-modal { border-radius: 5px; padding: 28px 22px; max-height: calc(100dvh - 48px); overflow-y: auto; }
+.v-pedit .v-pedit-header { gap: 24px; padding-bottom: 26px; }
+.v-pedit .v-pedit-header h1 { font-size: clamp(30px,7vw,44px); }
+.v-pedit .v-pedit-header-actions { gap: 12px; }
+.v-pedit :is(.v-pedit-primary, .v-pedit-header-actions button) { min-height: 48px; padding: 12px 18px; border-radius: 4px; }
+.v-pedit .v-pedit-tabs { gap: 10px; padding-block: 18px; }
+.v-pedit .v-pedit-tabs button { min-height: 46px; padding: 12px 16px; border-radius: 4px; }
+.v-pedit .v-pedit-form-grid { gap: 24px; }
+.v-pedit .v-pedit-field { gap: 10px; }
+.v-pedit .v-pedit-field :is(input:not([type='color']), select, textarea) { font-size: 16px; border-radius: 4px; }
+.v-pedit .v-pedit-photo-grid { gap: 18px; }
+.v-pedit .v-pedit-photo { border-radius: 5px; }
+.v-pedit .v-pedit-photo-info { padding: 14px; }
+.v-pedit .v-pedit-project-grid { gap: 22px; }
+.v-pedit .v-pedit-section-head { gap: 18px; margin-bottom: 26px; }
+.v-pedit .v-pedit-publication { padding-block: 20px; line-height: 1.75; }
+.v-pedit .v-pedit-sheet-actions { gap: 14px; padding-top: 24px; }
+.v-portfolio-canvas .vpc-categories { gap: 10px; }
+.v-portfolio-canvas .vpc-categories button { min-height: 44px; padding: 10px 14px; }
+.v-portfolio-canvas .vpc-project-entry { min-height: 44px; }
+.v-portfolio-canvas .vpc-contact-actions { gap: 14px; }
+.v-portfolio-canvas .vpc-contact-actions a { min-height: 48px; }
+.v-portfolio-canvas :is(.vpc-lightbox-close, .vpc-lightbox-prev, .vpc-lightbox-next) { min-width: 44px; min-height: 44px; }
+:is(.v-dashboard-page, .v-library-page, .v-account-page, .v-billing-page, .v-pedit, .v-portfolio-canvas) :is(button,a):focus-visible { outline: 2px solid var(--portfolio-accent, #ff9b8e); outline-offset: 4px; }
+@media (min-width: 768px) {
+  .v-library-page .v-library-grid { gap: 22px; }
+  .v-account-page :is(.v-account-profile-head, .v-account-form-section) { padding: 30px; }
+  .v-pedit .v-pedit-photo-grid { gap: 22px; }
+  .v-dashboard-page .v-dashboard-overview article { padding: 24px; }
+}
+@media (min-width: 1024px) {
+  .v-dashboard-page .v-dashboard-overview { gap: 18px; }
+  .v-account-page .v-account-layout { gap: 38px; }
+  .v-pedit .v-pedit-header { padding-bottom: 32px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.v-dashboard-page, .v-library-page, .v-account-page, .v-billing-page, .v-pedit) :is(.v-button,.v-pedit-primary,.v-billing-primary) { transition: none; transform: none !important; }
+}

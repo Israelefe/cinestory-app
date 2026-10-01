@@ -9,6 +9,7 @@ import './styles/site-ux.css';
 import './styles/client-polish.css';
 import './styles/account-polish.css';
 import './styles/creation-polish.css';
+import './styles/workspace-polish.css';
 
 installPageLoadRecovery();
 
