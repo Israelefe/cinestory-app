@@ -35,16 +35,16 @@ visitors, project opens and contact clicks over 30 days; clicks are not bookings
 ## Portfolio designs
 
 The Design tab offers Editorial, Cinema, Gallery and Folio. Each has its own
-opening, photograph arrangement and mobile composition. Cinema includes manual
-cover crossfades and a swipeable filmstrip; Folio places projects before individual
-photographs and includes project preview strips. All designs share category
+opening, photograph arrangement and mobile composition. Cinema has one opening
+photograph and category filmstrips; Folio places projects before individual
+photographs. All designs share category
 filters, project routes, the photograph viewer and contact links.
 
 `direction.template` is validated on the server and stored in both the private
 draft and published snapshot. Existing portfolios default to Editorial. No data
 migration is needed for the design field. `direction.motion` accepts expressive,
 subtle or still; browser reduced-motion preferences always take precedence and
-are observed while the page is open. Cover browsing is manual, without autoplay.
+are observed while the page is open. Filmstrip browsing is manual, without autoplay.
 
 Previewing another design does not save it. Choosing a design applies its starting
 colours, typography, spacing and motion to the private draft. The photographer can
@@ -53,6 +53,32 @@ design, and saving a different design keeps the current public version unchanged
 
 Deploy the server with the new template and motion validation before the client.
 An older server rejects the new design fields in draft saves.
+
+## Categories and photograph placement
+
+The Categories tab creates, renames and removes groups. Photographers can choose
+group membership there, use the category selector in photograph/project details,
+or assign selected photographs in bulk. Each photograph has one category; projects
+have their own category labels. Removing a group resets its photo/project labels
+to `Selected work` without deleting photographs or changing project photo IDs.
+
+`categories` is an ordered string list in both the typed draft and live snapshot.
+Empty groups remain in the editor but are hidden from public navigation. Labels
+already stored on photographs/projects are folded into the list, so older
+portfolios need no category migration. Validation rejects duplicate names ignoring
+case/whitespace, non-text names, blank names, names longer than 50 characters, and
+more than 100 groups. The category list uses the existing revision and explicit
+publication checks. Deploy this API version before the category editor: the old
+strict draft schema rejects `categories` in save requests.
+
+The overview allocates photographs once across the opening, project cards and
+category groups. Projects whose covers are already on the page use text links
+instead of repeated images. Category filters show their complete featured set
+(including opening photographs) while omitting the opening images and any
+overlapping project thumbnails. Project pages likewise place their cover once.
+All photographs remain available in the scoped viewer. The public `/portfolio`
+samples use `PortfolioCanvas`, the same renderer as the private preview and public
+portfolio, with isolated sample project/contact interactions.
 
 ## Deployment sequence
 
@@ -84,4 +110,6 @@ An older server rejects the new design fields in draft saves.
 Local checks: `node --test scripts/portfolio-draft.test.mjs`,
 `node scripts/security-audit-delivery-v2.mjs`, client `npm run build`,
 `npx playwright test tests/portfolio.spec.js`, and
-`node --test scripts/portfolio-shell.test.mjs` in `client`.
+`node --test scripts/portfolio-shell.test.mjs scripts/portfolio-presentation.test.mjs`
+in `client`. Browser checks include 320, 390, 768, 834 and 1440px views, photo
+uniqueness, category lifecycle, reduced motion and the four public design samples.

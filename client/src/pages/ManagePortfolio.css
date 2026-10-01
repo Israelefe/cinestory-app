@@ -333,7 +333,7 @@
   margin-bottom: 20px;
   font-size: 13px
 }
-.v-pedit-bulk input {
+.v-pedit-bulk input, .v-pedit-bulk select {
   flex: 1;
   min-width: 150px
 }

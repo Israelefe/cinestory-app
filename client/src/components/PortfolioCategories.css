@@ -1,0 +1,21 @@
+.v-pcategories-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; }
+.v-pcategory-card { position: relative; min-width: 0; border: 1px solid #ffffff18; background: linear-gradient(135deg, #ff9b8e08, #0c0c10); border-radius: 16px; }
+.v-pedit .v-pcategory-open { width: 100%; display: flex; flex-direction: column; align-items: start; gap: 12px; padding: 24px; border: 0; background: transparent; text-align: left; }
+.v-pcategory-open strong { font-size: 21px; max-width: calc(100% - 34px); overflow-wrap: anywhere; }
+.v-pcategory-open :is(span, small), .v-pcategories-note { color: #c7bdba; font-size: 13px; line-height: 1.8; }
+.v-pcategory-thumbs { display: flex; width: 100%; gap: 8px; height: 120px; align-items: center; margin-bottom: 10px; }
+.v-pcategory-thumbs img { width: calc((100% - 16px) / 3); height: 100%; object-fit: cover; border-radius: 6px; }
+.v-pedit .v-pcategory-remove { position: absolute; bottom: 20px; right: 16px; min-width: 44px; min-height: 44px; padding: 12px; }
+.v-pcategories-note { margin: 24px 0; }
+.v-pcategories-selection-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-top: 28px; }
+.v-pcategories-selection-head span { font-size: 13px; color: #ff9b8e; }
+.v-pcategories-selection { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.v-pedit .v-pcategories-selection button { display: block; padding: 0; overflow: hidden; border-radius: 10px; border: 1px solid #ffffff22; text-align: left; }
+.v-pedit .v-pcategories-selection button[aria-pressed=true] { border-color: #ff9b8e; background: #ff9b8e14; }
+.v-pcategories-selection img { width: 100%; aspect-ratio: 4/5; display: block; object-fit: cover; }
+.v-pcategories-selection button span { display: flex; gap: 8px; justify-content: space-between; font-size: 12px; padding: 12px; overflow-wrap: anywhere; }
+.v-pcategories-selection button svg { flex: none; }
+.v-pedit .v-pcategories-actions { position: sticky; bottom: -1px; z-index: 2; background: #0c0c10; padding-bottom: 12px; box-shadow: 0 -16px 20px #0c0c10; }
+@media (min-width: 641px) { .v-pcategories-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1025px) { .v-pcategories-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (prefers-reduced-motion: reduce) { .v-pcategory-card, .v-pcategory-card button { transition: none; } }

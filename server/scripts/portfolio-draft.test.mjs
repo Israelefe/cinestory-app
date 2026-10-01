@@ -47,6 +47,41 @@ test('portfolio design validation rejects arbitrary templates and unsupported mo
   const saved = await save();
   assert.equal(saved.body.data.direction.template, 'editorial');
 });
+test('categories retain empty groups, normalize legacy labels, and remain private until publication', async () => {
+  const legacy = normalizeSnapshot({ items: [{ publicId: ids[0], category: ' Studio   portraits ' }, { publicId: ids[1], category: 'studio portraits' }] });
+  assert.deepEqual(legacy.categories, ['Studio portraits']);
+  assert.equal(legacy.items[1].category, 'Studio portraits');
+  const saved = await save({ categories: ['Weddings', 'Portraits', 'Campaigns'] });
+  assert.equal(saved.code, 200);
+  assert.deepEqual(saved.body.data.categories, ['Weddings', 'Portraits', 'Campaigns']);
+  assert.deepEqual((await Portfolio.findOne()).draft.categories.toObject(), ['Weddings', 'Portraits', 'Campaigns']);
+  await publish();
+  const before = await invoke(getPublicPortfolio, {}, { handle: 'amara-studio' });
+  assert.deepEqual(before.body.data.categories, ['Weddings', 'Portraits', 'Campaigns']);
+  const renamed = await save({ categories: ['Weddings', 'Studio portraits'], items: ids.map(publicId => ({ publicId, category: 'Studio portraits' })), projects: [{ id: 'project-one', title: 'Portrait session', category: 'Studio portraits', coverId: portfolioId(ids[0]), photoIds: ids.map(portfolioId) }] });
+  assert.equal(renamed.code, 200);
+  assert.equal((await invoke(getPublicPortfolio, {}, { handle: 'amara-studio' })).body.data.items[0].category, 'Portraits');
+  await publish();
+  const after = await invoke(getPublicPortfolio, {}, { handle: 'amara-studio', projectId: 'project-one' });
+  assert.deepEqual(after.body.data.categories, ['Weddings', 'Studio portraits']);
+  assert.equal(after.body.data.projects[0].category, 'Studio portraits');
+  assert.equal(after.body.data.items.length, 4);
+  const removed = await save({ categories: [], items: ids.map(publicId => ({ publicId, category: 'Selected work' })), projects: [{ id: 'project-one', title: 'Portrait session', category: 'Selected work', coverId: portfolioId(ids[0]), photoIds: ids.map(portfolioId) }] });
+  assert.equal(removed.code, 200);
+  assert.deepEqual(removed.body.data.categories, []);
+  await publish();
+  const ungrouped = await invoke(getPublicPortfolio, {}, { handle: 'amara-studio' });
+  assert.deepEqual(ungrouped.body.data.categories, []);
+  assert.equal(ungrouped.body.data.items.length, 4);
+  assert.equal(ungrouped.body.data.projects[0].photoIds.length, 4);
+});
+test('category validation rejects duplicate, empty, oversized, and non-text names', async () => {
+  for (const categories of [['Portraits', ' portraits '], [''], ['a'.repeat(51)], [42], ['Selected work'], Array.from({ length: 101 }, (_, index) => `Group ${index}`)]) {
+    const result = await save({ categories });
+    assert.equal(result.code, 400, JSON.stringify(categories));
+  }
+  assert.equal(await Portfolio.countDocuments(), 0);
+});
 let mongo; let owner; const ids = ['studio/test-1', 'studio/test-2', 'studio/test-3', 'studio/test-4'];
 function response() { return { code: 200, body: null, headers: {}, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; }, set(key, value) { this.headers[key] = value; return this; }, cookie(name, value, options) { this.cookieOptions = options; return this; }, end() { return this; } }; }
 async function invoke(handler, body = {}, params = {}, user = owner, query = {}) { const res = response(); await handler({ user: { id: String(user._id) }, body, params, query, cookies: {} }, res); return res; }

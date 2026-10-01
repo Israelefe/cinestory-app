@@ -1,117 +1,18 @@
-import React, { useState } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import React from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import {
-  ArrowUpRight,
   Camera,
   Clapperboard,
   Image,
   LayoutGrid,
-  MapPin,
   MessageSquare,
   Palette,
   ShieldCheck,
   Smartphone,
   Type
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import PortfolioShowcase from '../components/PortfolioShowcase.jsx';
 import { Action, Eyebrow, Page, Photo, Reveal } from '../components/PublicDesign.jsx';
-
-const studioProfile = {
-  name: 'KOLAWOLE MEDIA',
-  tagline: 'Weddings · Editorial Portraits · Commercial',
-  location: 'Lekki, Lagos',
-  handle: 'veylo.com.ng/@kolawolemedia',
-  bio: 'Photographing modern celebrations and distinctive portraits across Lagos, Abuja, and beyond.',
-  status: 'Taking bookings for 2026 and 2027'
-};
-
-const categories = [
-  { id: 'all', label: 'Selected work' },
-  { id: 'weddings', label: 'Weddings & Owambe' },
-  { id: 'portraits', label: 'Portraits' },
-  { id: 'editorial', label: 'Fashion & Editorial' },
-  { id: 'milestones', label: 'Celebrations' }
-];
-
-const portfolioWorks = [
-  {
-    id: 'work-wedding',
-    category: 'weddings',
-    title: 'Folake & Tunde',
-    subtitle: 'Traditional and white wedding · Lekki, Lagos',
-    formatTag: 'Chapters',
-    photoName: 'demo-wedding-1',
-    alt: 'Folake and Tunde celebrating their traditional wedding in Lagos',
-    link: '/demo/chapters',
-    linkLabel: 'Open their Chapters delivery'
-  },
-  {
-    id: 'work-editorial',
-    category: 'editorial',
-    title: 'Ada / The Green Issue',
-    subtitle: 'Fashion editorial · Victoria Island',
-    formatTag: 'Editorial Page',
-    photoName: 'demo-ada-1',
-    alt: 'Ada wearing an emerald green velvet suit for a fashion editorial',
-    link: '/demo/editorial',
-    linkLabel: 'Explore the Editorial Page'
-  },
-  {
-    id: 'work-portrait',
-    category: 'portraits',
-    title: 'Sharon / In Natural Light',
-    subtitle: 'Portrait session · Ikeja',
-    formatTag: 'Photo Reveal',
-    photoName: 'demo-sharon-1',
-    alt: 'Sharon photographed in soft natural light',
-    link: '/demo/reveal',
-    linkLabel: 'Begin Sharon’s Photo Reveal'
-  },
-  {
-    id: 'work-story',
-    category: 'milestones',
-    title: 'Lora / Thirty',
-    subtitle: 'Birthday portraits · Ikoyi, Lagos',
-    formatTag: 'Photo Story',
-    photoName: 'demo-lora-4',
-    alt: 'Lora smiling in an emerald dress during her birthday shoot',
-    link: '/demo?preset=lora',
-    linkLabel: 'Watch Lora’s Photo Story'
-  },
-  {
-    id: 'work-courage',
-    category: 'milestones',
-    title: 'Courage / The Next Chapter',
-    subtitle: 'Graduation portraits · Lagos',
-    formatTag: 'Canvas',
-    photoName: 'demo-courage-1',
-    alt: 'Courage celebrating her graduation in Lagos',
-    link: '/demo/canvas',
-    linkLabel: 'Explore Courage’s Canvas'
-  },
-  {
-    id: 'work-family-album',
-    category: 'portraits',
-    title: 'The Adeyemi Family',
-    subtitle: 'Family portraits · Lagos',
-    formatTag: 'Album',
-    photoName: 'demo-album-fa-4',
-    alt: 'The Adeyemi family together in coordinated traditional clothing',
-    link: '/demo/album',
-    linkLabel: 'Turn through their Album'
-  },
-  {
-    id: 'work-mens-studio',
-    category: 'portraits',
-    title: 'The Executive Study',
-    subtitle: 'Studio portraits · Abuja',
-    formatTag: 'Selected work',
-    photoName: 'portrait-male',
-    alt: 'Colour portrait of a man in a brown jacket against a sandstone studio wall',
-    link: null,
-    linkLabel: null
-  }
-];
 
 const directionChoices = [
   { icon: Image, label: 'Opening image', value: 'Lead with the work you want to book again' },
@@ -120,28 +21,8 @@ const directionChoices = [
   { icon: Palette, label: 'Presentation', value: 'Let colour and spacing support the photographs' }
 ];
 
-function ProjectContent({ work }) {
-  return (
-    <>
-      <Photo name={work.photoName} alt={work.alt} sizes="(max-width: 639px) 100vw, (max-width: 1023px) 50vw, 45vw" />
-      <div className="v-pstudio-project-shade" />
-      <div className="v-pstudio-project-copy">
-        <span>{work.formatTag}</span>
-        <h3>{work.title}</h3>
-        <p>{work.subtitle}</p>
-        {work.link && <small>{work.linkLabel}<ArrowUpRight size={14} /></small>}
-      </div>
-    </>
-  );
-}
-
 export default function PortfolioPage({ user }) {
   const reduced = useReducedMotion();
-  const [activeCategory, setActiveCategory] = useState('all');
-
-  const visibleWorks = activeCategory === 'all'
-    ? portfolioWorks
-    : portfolioWorks.filter((work) => work.category === activeCategory);
 
   return (
     <Page className="v-portfolio-page">
@@ -193,90 +74,7 @@ export default function PortfolioPage({ user }) {
         </div>
       </header>
 
-      <section className="v-pstudio-section" id="portfolio-showcase">
-        <div className="v-wrap">
-          <motion.div
-            className="v-pstudio-shell"
-            initial={reduced ? false : { opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.05 }}
-            transition={reduced ? { duration: 0 } : { duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <div className="v-pstudio-topline">
-              <span>A sample Veylo Portfolio</span>
-              <span>{studioProfile.handle}</span>
-            </div>
-
-            <div className="v-pstudio-header">
-              <div className="v-pstudio-identity">
-                <div className="v-pstudio-mark" aria-hidden="true">KM</div>
-                <div>
-                  <h2>{studioProfile.name}</h2>
-                  <p>{studioProfile.tagline}</p>
-                </div>
-              </div>
-              <div className="v-pstudio-contact">
-                <span><MapPin size={14} />{studioProfile.location}</span>
-                <span className="v-pstudio-demo-contact"><MessageSquare size={15} />Example contact button</span>
-              </div>
-            </div>
-
-            <div className="v-pstudio-intro">
-              <p>{studioProfile.bio}</p>
-              <span>{studioProfile.status}</span>
-            </div>
-
-            <div className="v-pstudio-tabs" role="tablist" aria-label="Portfolio category filter">
-              {categories.map((category) => {
-                const isActive = activeCategory === category.id;
-                return (
-                  <button
-                    key={category.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={isActive}
-                    className={isActive ? 'is-active' : ''}
-                    onClick={() => setActiveCategory(category.id)}
-                  >
-                    {category.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            <motion.div layout className={`v-pstudio-grid${visibleWorks.length < 3 ? ' is-compact' : ''}`}>
-              <AnimatePresence mode="popLayout">
-                {visibleWorks.map((work, index) => (
-                  <motion.article
-                    layout
-                    key={work.id}
-                    className={`v-pstudio-project is-${(index % 6) + 1}`}
-                    initial={reduced ? false : { opacity: 0, y: 18, scale: 0.985 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.98 }}
-                    transition={reduced ? { duration: 0 } : { duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-                  >
-                    {work.link ? (
-                      <Link to={work.link} aria-label={`${work.title}. ${work.linkLabel}`}>
-                        <ProjectContent work={work} />
-                      </Link>
-                    ) : (
-                      <div>
-                        <ProjectContent work={work} />
-                      </div>
-                    )}
-                  </motion.article>
-                ))}
-              </AnimatePresence>
-            </motion.div>
-
-            <div className="v-pstudio-foot">
-              <span>Selected commissions · 2024–2026</span>
-              <span>Portfolio designed around the work with Veylo</span>
-            </div>
-          </motion.div>
-        </div>
-      </section>
+      <section id="portfolio-showcase" className="v-wrap"><PortfolioShowcase /></section>
 
       <section className="v-section v-portfolio-direction">
         <div className="v-wrap v-portfolio-direction-grid">
@@ -339,7 +137,7 @@ export default function PortfolioPage({ user }) {
           <div className="v-portfolio-steps">
             {[
               ['I', 'Choose the work', 'Add a completed Veylo project or select individual photographs you want in your public portfolio.'],
-              ['II', 'Review the direction', 'Check the proposed colour, typography, image order, categories, and page arrangement. Change anything that does not feel like your studio.'],
+              ['II', 'Choose a design', 'Try Editorial, Cinema, Gallery, or Folio. Group your photographs by category, then check the page on a phone before publishing.'],
               ['III', 'Publish one address', 'Add your Veylo address to Instagram, WhatsApp Business, or a client proposal. Update it whenever you have stronger work to show.']
             ].map(([number, title, copy], index) => (
               <motion.article

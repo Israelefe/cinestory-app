@@ -43,6 +43,9 @@ const itemSchema = z.object({
   focalY: z.number().min(0).max(100).default(50),
   crop: z.enum(['fit', 'fill']).default('fit')
 }).strict();
+const categoryName = value => value.trim().replace(/\s+/g, ' ');
+const categoryKey = value => categoryName(value).toLocaleLowerCase('en');
+const categorySchema = z.string().transform(categoryName).pipe(z.string().min(1).max(50));
 export const draftSchema = z.object({
   expectedDraftRevision: z.number().int().min(0),
   handle: z.string().trim().toLowerCase().max(40),
@@ -56,6 +59,7 @@ export const draftSchema = z.object({
   whatsapp: z.string().trim().max(30).default(''),
   heroPublicId: z.string().max(500).default(''),
   items: z.array(itemSchema).max(50).default([]),
+  categories: z.array(categorySchema).max(100).default([]).refine(names => new Set(names.map(categoryKey)).size === names.length, 'Each category needs a different name.').refine(names => !names.some(name => categoryKey(name) === 'selected work'), 'Selected work is reserved for photographs without a category.'),
   projects: z.array(z.object({
     id: z.string().regex(/^[A-Za-z0-9_-]{8,80}$/),
     title: z.string().trim().max(100),
@@ -86,12 +90,18 @@ export function normalizeInstagram(value) {
 }
 export function normalizeSnapshot(value = {}) {
   const plain = value.toObject?.() || value;
+  const names = new Map();
+  for (const value of [...(plain.categories || []), ...(plain.items || []).map(item => item.category || ''), ...(plain.projects || []).map(project => project.category || '')]) {
+    const name = categoryName(value), key = categoryKey(name);
+    if (name && key !== 'selected work' && !names.has(key)) names.set(key, name);
+  }
+  const normalizedCategory = value => names.get(categoryKey(value || '')) || 'Selected work';
   const keys = ['handle', 'studioName', 'bio', 'headline', 'introLine', 'location', 'instagram', 'whatsapp'];
   const items = (plain.items || []).map((item, sortOrder) => ({
     id: portfolioId(item.publicId),
     publicId: item.publicId,
     title: item.title || '',
-    category: item.category?.trim() || 'Selected work',
+    category: normalizedCategory(item.category),
     alt: item.alt || '',
     featured: item.featured ?? true,
     width: item.width || undefined,
@@ -105,12 +115,13 @@ export function normalizeSnapshot(value = {}) {
     ...Object.fromEntries(keys.map(key => [key, plain[key] || ''])),
     contactLabel: plain.contactLabel || 'Ask about a shoot',
     heroPublicId: plain.heroPublicId || items.find(item => item.featured)?.publicId || items[0]?.publicId || '',
+    categories: [...names.values()],
     items,
     projects: (plain.projects || []).map(project => ({
       id: project.id,
       title: project.title,
       description: project.description || '',
-      category: project.category || 'Selected work',
+      category: normalizedCategory(project.category),
       coverId: project.coverId || project.photoIds[0] || '',
       photoIds: [...project.photoIds]
     })),
@@ -125,6 +136,7 @@ export function snapshotErrors(snapshot, {
 } = {}) {
   const errors = [];
   const ids = new Set(snapshot.items.map(item => item.id));
+  if (snapshot.categories.length > 100) errors.push('Use no more than 100 categories.');
   if (new Set(snapshot.items.map(item => item.publicId)).size !== snapshot.items.length) errors.push('Each photograph can only be added once.');
   if (new Set(snapshot.projects.map(project => project.id)).size !== snapshot.projects.length) errors.push('Each project needs its own address.');
   for (const project of snapshot.projects) {

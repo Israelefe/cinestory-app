@@ -1,0 +1,23 @@
+.v-public .v-portfolio-showcase { min-width: 0; padding-block: 36px 64px; }
+.v-public .v-portfolio-showcase-heading { display: grid; gap: 24px; margin-bottom: 30px; }
+.v-public .v-portfolio-showcase-heading h2 { margin: 16px 0; font: 450 clamp(30px, 4vw, 56px)/1.12 'Outfit', sans-serif; letter-spacing: -.04em; }
+.v-public .v-portfolio-showcase-heading p:not(.v-eyebrow) { font-size: 15px; line-height: 1.8; max-width: 650px; color: #c9c0bb; }
+.v-public .v-portfolio-showcase-heading nav { display: flex; flex-wrap: wrap; gap: 10px; align-self: end; }
+.v-public .v-portfolio-showcase > :is(.v-portfolio-showcase-heading, .v-portfolio-showcase-designs) button { color: #f4eee8; background: #0c0c10; border: 1px solid #ffffff26; cursor: pointer; min-height: 48px; border-radius: 8px; transition: transform .2s, border-color .2s, background .2s; }
+.v-public .v-portfolio-showcase > :is(.v-portfolio-showcase-heading, .v-portfolio-showcase-designs) button:hover { transform: translateY(-2px); border-color: #ffffff50; }
+.v-public .v-portfolio-showcase > :is(.v-portfolio-showcase-heading, .v-portfolio-showcase-designs) button:active { transform: scale(.98); }
+.v-public .v-portfolio-showcase > :is(.v-portfolio-showcase-heading, .v-portfolio-showcase-designs) button[aria-pressed=true] { border-color: #ff9b8e; background: #ff9b8e12; }
+.v-public .v-portfolio-showcase-heading nav button { display: flex; align-items: center; gap: 10px; padding: 12px 16px; font-size: 12px; }
+.v-public .v-portfolio-showcase-designs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.v-public .v-portfolio-showcase-designs button { text-align: left; padding: 18px; min-width: 0; }
+.v-public .v-portfolio-showcase-designs span { font-size: 18px; display: block; }
+.v-public .v-portfolio-showcase-designs small { display: block; font-size: 11px; color: #c9c0bb; line-height: 1.7; margin-top: 10px; }
+.v-public .v-portfolio-showcase-description { display: flex; align-items: baseline; flex-wrap: wrap; gap: 12px 24px; margin: 24px 0; font-size: 12px; line-height: 1.8; }
+.v-public .v-portfolio-showcase-description p { font-size: 13px; color: #c9c0bb; max-width: 580px; margin: 0; }
+.v-public .v-portfolio-showcase-description > span { color: #aa9f99; }
+.v-public .v-portfolio-showcase-viewport { height: min(760px, 78dvh); min-height: 380px; overflow: auto; overscroll-behavior: contain; border: 1px solid #ffffff26; background: #070709; border-radius: 12px; scrollbar-width: thin; }
+.v-public .v-portfolio-showcase-screen { margin-inline: auto; max-width: none; min-height: 100%; }
+.v-public .v-portfolio-showcase :is(button, [tabindex]):focus-visible { outline: 2px solid #ff9b8e; outline-offset: 4px; }
+@media (min-width: 768px) { .v-public .v-portfolio-showcase-designs { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (min-width: 1025px) { .v-public .v-portfolio-showcase-heading { grid-template-columns: minmax(0, 1fr) auto; gap: 40px; } }
+@media (prefers-reduced-motion: reduce) { .v-public .v-portfolio-showcase > :is(.v-portfolio-showcase-heading, .v-portfolio-showcase-designs) button { transition: none; } }

@@ -35,6 +35,7 @@ const portfolioSchema = new mongoose.Schema({
   whatsapp: { type: String, trim: true, maxlength: 30, default: '' },
   heroPublicId: { type: String, trim: true, maxlength: 500, default: '' },
   items: { type: [itemSchema], default: [] },
+  categories: { type: [String], default: [] },
   projects: { type: [projectSchema], default: [] },
   schemaVersion: { type: Number, default: 2 },
   mediaNotice: { type: String, default: '' },
@@ -52,7 +53,7 @@ const portfolioSchema = new mongoose.Schema({
     showPhotoTitles: { type: Boolean, default: true },
     showContact: { type: Boolean, default: true }
   },
-  draft: { type: new mongoose.Schema({ handle: String, studioName: String, bio: String, headline: String, introLine: String, location: String, contactLabel: String, instagram: String, whatsapp: String, heroPublicId: String, items: [itemSchema], projects: [projectSchema], direction: mongoose.Schema.Types.Mixed }, { _id: false }), default: null },
+  draft: { type: new mongoose.Schema({ handle: String, studioName: String, bio: String, headline: String, introLine: String, location: String, contactLabel: String, instagram: String, whatsapp: String, heroPublicId: String, categories: [String], items: [itemSchema], projects: [projectSchema], direction: mongoose.Schema.Types.Mixed }, { _id: false }), default: null },
   draftRevision: { type: Number, default: 0, min: 0 },
   publishedRevision: { type: Number, default: 0, min: 0 },
   publishedAt: Date

@@ -8,7 +8,7 @@ export const portfolioDesigns = [
   {
     id: 'cinema', name: 'Cinema', label: 'The photograph comes first',
     description: 'A screen-filling cover, quiet titles and large photographic scenes.',
-    mobile: 'A portrait opening and a swipeable strip of featured photographs.',
+    mobile: 'A portrait opening and swipeable strips for each category of work.',
     defaults: { background: 'ink', accent: '#d6b995', typeStyle: 'modern', rhythm: 'bold', layout: 'editorial', motion: 'expressive' }
   },
   {
@@ -20,7 +20,7 @@ export const portfolioDesigns = [
   {
     id: 'folio', name: 'Folio', label: 'A studio, in collections',
     description: 'Bold titles, layered covers and numbered projects lead the page.',
-    mobile: 'A layered opening and large project cards with swipeable photo previews.',
+    mobile: 'A layered opening, clear project links, and photographs grouped by category.',
     defaults: { background: 'ink', accent: '#ff735d', typeStyle: 'modern', rhythm: 'measured', layout: 'editorial', motion: 'expressive' }
   }
 ];

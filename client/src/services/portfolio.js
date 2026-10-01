@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../config/env.js';
+import { portfolioCategories } from './portfolioCategories.js';
 export const directionDefaults = {
   template: 'editorial',
   background: 'ink',
@@ -19,6 +20,7 @@ export function mediaUrl(url) {
 }
 export function normalizePortfolio(value = {}) {
   return {
+    categories: portfolioCategories(value),
     ...Object.fromEntries(textFields.map(key => [key, value[key] || (key === 'contactLabel' ? 'Ask about a shoot' : '')])),
     items: (value.items || []).map(item => ({
       ...item,
@@ -49,6 +51,7 @@ export function normalizePortfolio(value = {}) {
 }
 export function editablePortfolio(value) {
   return {
+    categories: portfolioCategories(value),
     ...Object.fromEntries(textFields.map(key => [key, value[key] || ''])),
     items: value.items.map(item => Object.fromEntries(['id', 'publicId', 'title', 'category', 'alt', 'featured', 'crop', 'focalX', 'focalY'].map(key => [key, item[key]]))),
     projects: value.projects.map(project => Object.fromEntries(['id', 'title', 'description', 'category', 'coverId', 'photoIds'].map(key => [key, project[key]]))),

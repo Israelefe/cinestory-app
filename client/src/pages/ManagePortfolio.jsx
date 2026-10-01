@@ -11,6 +11,8 @@ import { usePortfolioDraft } from '../hooks/usePortfolioDraft.js';
 import { useDialogFocus } from '../components/useDialogFocus.js';
 import PortfolioPhotoPicker from '../components/PortfolioPhotoPicker.jsx';
 import PortfolioDesignPicker from '../components/PortfolioDesignPicker.jsx';
+import PortfolioCategories, { PortfolioCategoryField } from '../components/PortfolioCategories.jsx';
+import { portfolioCategories } from '../services/portfolioCategories.js';
 import { portfolioDesigns, findPortfolioDesign } from '../components/portfolioDesigns.js';
 import PortfolioCanvas from './PortfolioCanvas.jsx';
 import './ManagePortfolio.css';
@@ -22,7 +24,7 @@ const sensors = [PointerSensor.configure({
     value: 5
   })]
 }), KeyboardSensor];
-const tabs = ['Work', 'Projects', 'Studio', 'Design'];
+const tabs = ['Work', 'Categories', 'Projects', 'Studio', 'Design'];
 function Sheet({
   title,
   children,
@@ -92,7 +94,7 @@ function Preview({
     return () => observer.disconnect();
   }, []);
   const scale = Math.min(1, available / widths[device]);
-  return <Sheet title="Preview your portfolio" onClose={onClose} wide><div className="v-pedit-preview-tools"><p>This is your private draft. Visitors see your last published version.</p><nav aria-label="Preview screen size">{[['phone', Smartphone, 'Phone'], ['tablet', Tablet, 'Tablet'], ['desktop', Monitor, 'Desktop']].map(([key, Icon, name]) => <button key={key} aria-pressed={device === key} onClick={() => setDevice(key)}><Icon size={16} />{name}</button>)}</nav></div><div className="v-pedit-preview-design"><label><span>Preview design</span><select value={design.id} onChange={event => setDesignId(event.target.value)}>{portfolioDesigns.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><p>{design.mobile}</p>{design.id !== form.direction.template && onUseDesign && <button className="v-pedit-primary" onClick={() => { onUseDesign(direction); onClose(); }}>Use {design.name} design</button>}</div><div className="v-pedit-preview-scroll" ref={ref}><div style={{
+  return <Sheet title="Preview your portfolio" onClose={onClose} wide><div className="v-pedit-preview-tools"><p>This is your private draft. Visitors see your last published version.</p><nav aria-label="Preview screen size">{[['phone', Smartphone, 'Phone'], ['tablet', Tablet, 'Tablet'], ['desktop', Monitor, 'Desktop']].map(([key, Icon, name]) => <button key={key} aria-pressed={device === key} onClick={() => setDevice(key)}><Icon size={16} />{name}</button>)}</nav></div><div className="v-pedit-preview-design"><label><span>Preview design</span><select value={design.id} onChange={event => setDesignId(event.target.value)}>{portfolioDesigns.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><p>{design.mobile}</p>{design.id !== form.direction.template && onUseDesign && <button className="v-pedit-primary" onClick={() => { onUseDesign(direction); onClose(); }}>Use {design.name} design</button>}</div><div className="v-pedit-preview-scroll" data-portfolio-scroll ref={ref}><div style={{
         width: widths[device],
         zoom: scale
       }}><PortfolioCanvas key={design.id} portfolio={{ ...form, direction }} preview /></div></div></Sheet>;
@@ -126,6 +128,7 @@ export default function ManagePortfolio() {
   const aiUndo = useRef(null);
   const photo = form.items.find(item => item.id === detail);
   const project = form.projects.find(item => item.id === projectId);
+  const categories = portfolioCategories(form);
   const errors = contactErrors(form);
   const visibleIds = new Set([...form.items.filter(item => item.featured).map(item => item.id), ...form.projects.flatMap(item => item.photoIds)]);
   const readiness = [!form.studioName.trim() && 'Set your studio name in account settings.', (form.handle !== profile?.persistedHandle && (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(form.handle) || form.handle.length < 3 || form.handle.length > 40)) && 'Choose a portfolio address with 3–40 letters, numbers or single hyphens.', !form.bio.trim() && 'Write a short studio introduction.', visibleIds.size < 4 && 'Choose at least four public photographs.', !form.items.some(item => item.publicId === form.heroPublicId && visibleIds.has(item.id)) && 'Choose a public cover photograph.', ...Object.values(errors), ...form.projects.flatMap(item => [!item.title.trim() && 'Give each project a title.', !item.photoIds.length && 'Add photographs to each project.'])].filter(Boolean);
@@ -386,7 +389,8 @@ export default function ManagePortfolio() {
         setSelected([]);
       }}>{name}{name === 'Work' && <span>{form.items.length}/50</span>}</button>)}</nav>
     <fieldset className="v-pedit-content" disabled={!canEdit || busy}>
-      {tab === 'Work' && <><div className="v-pedit-section-head"><div><h2>Choose the work clients see</h2><p>Drag to reorder, or use the arrows. Add a caption only when it helps.</p></div><button ref={addRef} onClick={() => setPicker(true)} disabled={form.items.length >= 50}><Plus size={17} />Add photographs</button></div>{selected.length > 0 && <div className="v-pedit-bulk"><span>{selected.length} selected</span><input value={bulkCategory} onChange={event => setBulkCategory(event.target.value)} placeholder="Category, e.g. Portraits" maxLength={50} aria-label="Category for selected photographs" /><button disabled={!bulkCategory.trim()} onClick={() => {
+      {tab === 'Categories' && <PortfolioCategories form={form} setForm={setForm} Sheet={Sheet} />}
+      {tab === 'Work' && <><div className="v-pedit-section-head"><div><h2>Choose the work clients see</h2><p>Drag to reorder, or use the arrows. Add a caption only when it helps.</p><button onClick={() => setTab('Categories')}>Manage categories</button></div><button ref={addRef} onClick={() => setPicker(true)} disabled={form.items.length >= 50}><Plus size={17} />Add photographs</button></div>{selected.length > 0 && <div className="v-pedit-bulk"><span>{selected.length} selected</span><select value={bulkCategory} onChange={event => setBulkCategory(event.target.value)} aria-label="Category for selected photographs"><option value="">Choose a category</option><option value="Selected work">No category</option>{categories.map(name => <option key={name} value={name}>{name}</option>)}</select><button disabled={!bulkCategory} onClick={() => {
             setForm(current => ({
               ...current,
               items: current.items.map(item => selected.includes(item.id) ? {
@@ -395,6 +399,7 @@ export default function ManagePortfolio() {
               } : item)
             }));
             setSelected([]);
+            setBulkCategory('');
           }}>Apply category</button><button onClick={() => setConfirmation('remove')}>Remove selected</button><button onClick={() => setSelected([])}>Clear</button></div>}{form.items.length ? <DragDropProvider sensors={sensors} onDragEnd={event => {
           if (event.canceled) return;
           const source = event.operation.source;
@@ -461,9 +466,9 @@ export default function ManagePortfolio() {
           objectPosition: `${photo.focalX}% ${photo.focalY}%`
         }} /></div><Field label="Caption" value={photo.title} onChange={value => patchPhoto(photo.id, {
         title: value
-      })} maxLength={100} hint="Optional. File names are never used as new captions." /><Field label="Category" value={photo.category} onChange={value => patchPhoto(photo.id, {
+      })} maxLength={100} hint="Optional. File names are never used as new captions." /><PortfolioCategoryField categories={categories} value={photo.category} onChange={value => patchPhoto(photo.id, {
         category: value
-      })} maxLength={50} /><Field label="Image description" value={photo.alt} onChange={value => patchPhoto(photo.id, {
+      })} /><Field label="Image description" value={photo.alt} onChange={value => patchPhoto(photo.id, {
         alt: value
       })} maxLength={180} hint="Describe what is in the photograph for people using a screen reader." /><label className="v-pedit-toggle"><input type="checkbox" checked={photo.featured} onChange={event => patchPhoto(photo.id, {
           featured: event.target.checked
@@ -481,9 +486,9 @@ export default function ManagePortfolio() {
         title
       })} maxLength={100} placeholder="A traditional wedding in Lagos" /><Field label="Introduction" value={project.description} onChange={description => patchProject({
         description
-      })} maxLength={400} multiline rows={3} /><Field label="Category" value={project.category} onChange={category => patchProject({
+      })} maxLength={400} multiline rows={3} /><PortfolioCategoryField categories={categories} value={project.category} onChange={category => patchProject({
         category
-      })} maxLength={50} /><p>Choose only the photographs you have permission to show publicly.</p><div className="v-pedit-project-photos">{form.items.map(item => <button key={item.id} aria-pressed={project.photoIds.includes(item.id)} onClick={() => {
+      })} /><p>Choose only the photographs you have permission to show publicly.</p><div className="v-pedit-project-photos">{form.items.map(item => <button key={item.id} aria-pressed={project.photoIds.includes(item.id)} onClick={() => {
           const photoIds = project.photoIds.includes(item.id) ? project.photoIds.filter(id => id !== item.id) : [...project.photoIds, item.id];
           patchProject({
             photoIds,
