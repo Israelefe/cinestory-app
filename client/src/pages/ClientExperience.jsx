@@ -179,12 +179,13 @@ export default function ClientExperience() {
     </div></section>
 
     <section className="v-section v-ce-control"><div className="v-wrap v-ce-control-grid">
-      <Reveal className="v-ce-control-copy"><Eyebrow number="03">Before you send</Eyebrow><h2 className="v-heading">Nothing reaches your client<br /><em>until you say it is ready.</em></h2><p className="v-copy">Read the captions. Check the order. Swap anything that feels wrong. When it looks like your work and sounds like you, publish the link.</p></Reveal>
+      <Reveal className="v-ce-control-copy"><Eyebrow number="03">Before you send</Eyebrow><h2 className="v-heading">Nothing reaches your client<br /><em>until you say it is ready.</em></h2></Reveal>
       <Reveal className="v-ce-control-card" delay={.08}>
         <header><span>FINAL CHECK</span><strong>ZAINAB · STUDIO PORTRAITS</strong></header>
         {[['Finished photographs', 'Kept as edited'], ['Words and order', 'Checked'], ['Full gallery', 'Ready'], ['Private link', 'Not sent yet']].map(([label, status]) => <div key={label}><Check size={15} /><span>{label}</span><strong>{status}</strong></div>)}
         <footer><span><LockKeyhole size={14} /> Only you can publish</span><strong>Ready to send <ArrowRight size={14} /></strong></footer>
       </Reveal>
+<Reveal className="v-polish-after v-ce-control-copy-after"><p className="v-copy">Read the captions. Check the order. Swap anything that feels wrong. When it looks like your work and sounds like you, publish the link.</p></Reveal>
     </div></section>
 
     <EndNote title="They are already asking," accent="“Are my pictures ready?”" description="When the answer is yes, send one link with the first viewing and full gallery inside." formatsTo="/formats" />

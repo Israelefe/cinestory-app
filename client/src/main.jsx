@@ -6,6 +6,7 @@ import { installPageLoadRecovery } from './utils/pageLoadRecovery.js';
 import './index.css';
 import './styles/public.css';
 import './styles/site-ux.css';
+import './styles/client-polish.css';
 
 installPageLoadRecovery();
 

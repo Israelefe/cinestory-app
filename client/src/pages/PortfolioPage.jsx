@@ -285,20 +285,7 @@ export default function PortfolioPage({ user }) {
             <h2 className="v-heading">
               Show the work<br />
               <em>you want to be hired for.</em>
-            </h2>
-            <p className="v-copy">
-              A visitor may give your portfolio less than a minute. Choose the opening photograph, make your main categories obvious, and keep your location and contact route close to the work. You can change any of it before the page goes public.
-            </p>
-            <div className="v-portfolio-direction-list">
-              {directionChoices.map(({ icon: Icon, label, value }) => (
-                <div key={label}>
-                  <Icon size={18} aria-hidden="true" />
-                  <span>{label}</span>
-                  <strong>{value}</strong>
-                </div>
-              ))}
-            </div>
-          </Reveal>
+            </h2></Reveal>
 
           <Reveal className="v-portfolio-direction-art" delay={0.08}>
             <div className="v-pdirection-board">
@@ -320,6 +307,20 @@ export default function PortfolioPage({ user }) {
               </div>
               <p>ADA<br /><em>Moves in green.</em></p>
               <div className="v-pdirection-status"><Clapperboard size={14} />Public preview ready</div>
+            </div>
+          </Reveal>
+<Reveal className="v-polish-after v-portfolio-direction-copy-after">
+            <p className="v-copy">
+              A visitor may give your portfolio less than a minute. Choose the opening photograph, make your main categories obvious, and keep your location and contact route close to the work. You can change any of it before the page goes public.
+            </p>
+            <div className="v-portfolio-direction-list">
+              {directionChoices.map(({ icon: Icon, label, value }) => (
+                <div key={label}>
+                  <Icon size={18} aria-hidden="true" />
+                  <span>{label}</span>
+                  <strong>{value}</strong>
+                </div>
+              ))}
             </div>
           </Reveal>
         </div>

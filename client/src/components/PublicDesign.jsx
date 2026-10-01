@@ -6,7 +6,7 @@ import Footer from './Footer.jsx';
 
 export function Reveal({ children, className = '', delay = 0, ...props }) {
   const reduced = useReducedMotion();
-  return <motion.div className={className} initial={reduced ? false : { opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.14, margin: "-30px 0px" }} transition={{ duration: reduced ? 0 : 0.65, delay: reduced ? 0 : delay, ease: [0.22, 1, 0.36, 1] }} {...props}>{children}</motion.div>;
+  return <motion.div className={className} initial={reduced ? false : { opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.14, margin: "-30px 0px" }} transition={{ duration: reduced ? 0 : 0.65, delay: reduced ? 0 : delay, ease: [0.22, 1, 0.36, 1] }} {...props}>{children}</motion.div>;
 }
 
 export function Photo({ name, url, thumbnailUrl, srcSet, alt, className = '', eager = false, sizes = '(max-width: 640px) 100vw, (max-width: 1024px) 60vw, 50vw', ...props }) {

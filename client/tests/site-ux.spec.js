@@ -35,6 +35,7 @@ test('public heroes show the visual before supporting copy on phones', async ({ 
   const cases = [
     ['/', '.v-hero-title-block', '.v-hero-art', '.v-hero-after'],
     ['/formats', '.v-fguide-hero-copy', '.v-fguide-brief', '.v-fguide-hero-after'],
+    ['/gridboard', '.v-gb-hero-title', '.v-gb-hero-art', '.v-gb-hero-after'],
     ['/portfolio', '.v-portfolio-hero-title', '.v-portfolio-hero-art', '.v-portfolio-hero-after'],
     ['/pricing', '.v-pricing-hero-copy:not(.v-pricing-hero-after)', '.v-pricing-format-board', '.v-pricing-hero-after'],
     ['/for/portrait-photographers', '.v-niche-hero-title', '.v-niche-hero-art', '.v-niche-hero-after'],
@@ -47,6 +48,24 @@ test('public heroes show the visual before supporting copy on phones', async ({ 
       const [title, visual, after] = await Promise.all([titleSelector, visualSelector, afterSelector].map(selector => page.locator(selector).first().boundingBox()));
       expect(title?.y, `${route} title at ${width}px`).toBeLessThan(visual?.y);
       expect(visual?.y, `${route} visual at ${width}px`).toBeLessThan(after?.y);
+    }
+  }
+});
+
+test('each Showcase format has a clearly labelled, touch-friendly demo action', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  for (const width of [320, 390, 640, 768, 834, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/formats');
+    const links = page.locator('.v-fguide-demo-link');
+    await expect(links).toHaveCount(8);
+    for (const link of await links.all()) {
+      await link.scrollIntoViewIfNeeded();
+      await expect(link).toHaveAccessibleName(/(?:Watch|View) .+ demo/);
+      const box = await link.boundingBox();
+      expect(box.height).toBeGreaterThanOrEqual(52);
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
     }
   }
 });

@@ -32,7 +32,7 @@ const formats = [
     tagline: 'A finished shoot with a beginning, a rhythm, and a finale.',
     icon: Film,
     demo: '/demo?preset=lora',
-    demoLabel: 'Experience Lora’s Photo Story',
+    demoLabel: 'Watch Photo Story demo',
     photos: ['demo-lora-4', 'demo-lora-6'],
     storyEyebrow: 'THIS SMILE',
     storyCaption: 'This is the smile we would send to anyone who asked how your birthday went.',
@@ -49,7 +49,7 @@ const formats = [
     tagline: 'A scrollable publication shaped by the visual language of the shoot.',
     icon: Clapperboard,
     demo: '/demo/editorial',
-    demoLabel: 'Explore Ada’s Fashion Editorial',
+    demoLabel: 'View Editorial Page demo',
     photos: ['demo-ada-2', 'demo-ada-4'],
     editorialMast: 'THE GREEN ISSUE',
     editorialIssue: '01',
@@ -69,7 +69,7 @@ const formats = [
     tagline: 'A first viewing that moves only when your client is ready.',
     icon: MousePointer2,
     demo: '/demo/reveal',
-    demoLabel: 'Begin Sharon’s Photo Reveal',
+    demoLabel: 'View Photo Reveal demo',
     photos: ['demo-sharon-2', 'demo-sharon-4'],
     revealCount: '02 / 04',
     photoAlt: 'Sharon’s confident profile portrait appearing during Photo Reveal',
@@ -85,7 +85,7 @@ const formats = [
     tagline: 'A visual space where related photographs can live together.',
     icon: Grid2X2,
     demo: '/demo/canvas',
-    demoLabel: 'Explore Courage’s Graduation Canvas',
+    demoLabel: 'View Canvas demo',
     photos: ['demo-courage-2', 'demo-courage-4', 'demo-courage-6'],
     canvasCoordinate: 'COURAGE / GRADUATION',
     clientAction: 'Your client moves through the collection freely, following visual clusters instead of a fixed first-to-last order.',
@@ -100,7 +100,7 @@ const formats = [
     tagline: 'A large collection organised around the moments already inside it.',
     icon: Layers3,
     demo: '/demo/chapters',
-    demoLabel: 'Open Folake & Tunde’s Chapters',
+    demoLabel: 'View Chapters demo',
     photos: ['demo-wedding-4', 'demo-wedding-2', 'demo-wedding-5'],
     chapterNames: ['Arrivals & Greetings', 'Side by Side', 'The Celebration'],
     chapterLines: ['The joy as family and friends gathered.', 'The smiles you kept finding between frames.', 'Dancing into the evening with everyone who came to celebrate.'],
@@ -116,7 +116,7 @@ const formats = [
     tagline: 'A page-by-page keepsake composed from the finished shoot.',
     icon: BookOpen,
     demo: '/demo/album',
-    demoLabel: 'Turn through the Adeyemi Family Album',
+    demoLabel: 'View Album demo',
     photos: ['demo-album-fa-2', 'demo-album-fa-3', 'demo-album-fa-5'],
     albumLabel: 'THE ADEYEMI FAMILY',
     clientAction: 'Your client opens a cover and turns through a set order of designed pages. Each photograph gets space to be seen before the complete gallery opens.',
@@ -131,7 +131,7 @@ const formats = [
     tagline: 'A complete event organised by scenes, people, and shifts in the day.',
     icon: CalendarRange,
     demo: '/demo/event-coverage',
-    demoLabel: 'Browse the Event Coverage demo',
+    demoLabel: 'View Event Coverage demo',
     photos: EVENT_COVERAGE_DEMO_PHOTOS.map(photo => photo.name),
     photoAlt: 'A Nigerian conference moving from arrivals to the main programme',
     eventLabel: 'THE ROOM, IN FULL',
@@ -149,7 +149,7 @@ const formats = [
     tagline: 'A commercial presentation followed by an organised asset handoff.',
     icon: BriefcaseBusiness,
     demo: '/demo/campaign',
-    demoLabel: 'Open the Campaign Delivery demo',
+    demoLabel: 'View Campaign Delivery demo',
     photos: [
       '/veylo/demo/campaign/campaign-01-hero.webp',
       '/veylo/demo/campaign/campaign-02-detail.webp',
@@ -299,12 +299,7 @@ export default function DeliveryFormats() {
         <div className="v-wrap v-fguide-director-grid">
           <Reveal className="v-fguide-director-copy">
             <Eyebrow number="02">The AI Creative Director</Eyebrow>
-            <h2 className="v-heading">The format sets the experience.<br /><em>The shoot sets the direction.</em></h2>
-            <p className="v-copy">
-              Choosing Photo Story does not make every Photo Story look alike. You explain what the shoot is about and upload the finished photographs. Veylo studies the complete collection and proposes the creative direction inside the chosen format.
-            </p>
-            <p className="v-fguide-director-note">You check the result, change anything you want, and decide when it is ready to share.</p>
-          </Reveal>
+            <h2 className="v-heading">The format sets the experience.<br /><em>The shoot sets the direction.</em></h2></Reveal>
 
           <Reveal className="v-fguide-director-stage" delay={0.08}>
             <div className="v-fguide-director-image">
@@ -318,6 +313,12 @@ export default function DeliveryFormats() {
               ))}
               <footer>Ready for the photographer’s review</footer>
             </div>
+          </Reveal>
+<Reveal className="v-polish-after v-fguide-director-copy-after">
+            <p className="v-copy">
+              Choosing Photo Story does not make every Photo Story look alike. You explain what the shoot is about and upload the finished photographs. Veylo studies the complete collection and proposes the creative direction inside the chosen format.
+            </p>
+            <p className="v-fguide-director-note">You check the result, change anything you want, and decide when it is ready to share.</p>
           </Reveal>
         </div>
       </section>
