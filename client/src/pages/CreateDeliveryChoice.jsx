@@ -35,11 +35,12 @@ export default function CreateDeliveryChoice() {
       {types.map((type, index) => {
         const Icon = type.icon;
         return <motion.article key={type.id} className={'v-create-choice-card is-' + type.id} initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .38, delay: index * .08 }}>
-          <div className="v-create-choice-visual" aria-hidden="true">
+          <div className="v-create-choice-heading"><Icon size={20} aria-hidden="true" /><h2>{type.title}</h2></div>
+<div className="v-create-choice-visual" aria-hidden="true">
             <span className="v-create-choice-visual-tag">{type.id === 'showcase' ? 'EIGHT WAYS TO OPEN' : 'THE FULL BOARD FIRST'}</span>
             {type.id === 'showcase' ? <div className="v-choice-showcase">{showcaseFormats.map(([name, photo]) => <span className="v-choice-format" key={name}><img src={photo} alt="" loading="lazy" decoding="async" /><b>{name}</b></span>)}</div> : <div className="v-choice-masonry">{gridboardPreviewPhotos.map(photo => <span key={photo}><img src={photo} alt="" loading="lazy" decoding="async" /></span>)}</div>}
           </div>
-          <div className="v-create-choice-copy"><Icon size={20} aria-hidden="true" /><h2>{type.title}</h2><p className="v-create-choice-line">{type.line}</p><p>{type.detail}</p>
+          <div className="v-create-choice-copy"><p className="v-create-choice-line">{type.line}</p><p>{type.detail}</p>
             <Link className="v-create-choice-cta" to={'/create?type=' + type.id}>{type.action}<ArrowRight size={17} /></Link>
             {type.id === 'pinboard' && <Link className="v-create-choice-demo" to="/demo/gridboard">See a GridBoard example</Link>}
           </div>

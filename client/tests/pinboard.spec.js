@@ -80,7 +80,7 @@ test('published GridBoard shows every photo, moment navigation, and fits phone, 
     await expect(client.locator('.pb-tile')).toHaveCount(16);
     await expect(page.locator('.v-phone-device')).toHaveCount(width > 1024 ? 1 : 0);
     await expect(client.locator('.pb-board-column')).toHaveCount(width === 834 ? 3 : 2);
-    await expect(client.getByRole('navigation', { name: 'Find a moment' })).toBeVisible();
+    await expect(client.getByRole('navigation', { name: 'Explore the photographs' }).getByRole('region', { name: 'Find a moment' })).toBeVisible();
     if (width === 320) {
       await page.evaluate(() => {
         const opened = [];
@@ -127,11 +127,13 @@ test('GridBoard demo opens in the shared desktop phone mockup', async ({ page })
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/demo/gridboard');
   const client = page.frameLocator('.v-phone-screen iframe');
-  await expect(client.getByRole('heading', { name: "Lora's 25th birthday" })).toBeVisible();
-  await expect(client.locator('.pb-tile')).toHaveCount(6);
+  await expect(client.getByRole('heading', { name: 'A Veylo sample board' })).toBeVisible();
+  await expect(client.locator('.pb-tile')).toHaveCount(8);
   await expect(client.getByRole('button', { name: 'Download all photos' })).toBeVisible();
   await expect(client.getByRole('button', { name: 'Make a WhatsApp Status card' })).toBeVisible();
   await expect(client.getByText('Private gallery')).toBeVisible();
   await expect(page.locator('.v-phone-device')).toHaveCount(1);
-  expect(await client.locator('.pb-board').evaluate(element => element.getBoundingClientRect().width)).toBeLessThan(380);
+  const board = await client.locator('.pb-board').evaluate(element => ({ width: element.getBoundingClientRect().width, viewport: innerWidth, overflow: document.documentElement.scrollWidth - innerWidth }));
+  expect(board.width).toBeLessThanOrEqual(board.viewport);
+  expect(board.overflow).toBeLessThanOrEqual(0);
 });
