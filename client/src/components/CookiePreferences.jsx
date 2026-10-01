@@ -3,6 +3,7 @@ import { Check, ShieldCheck, SlidersHorizontal, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useDialogFocus } from './useDialogFocus.js';
 import { setAnalyticsConsent } from '../services/analytics.js';
+import './CookiePreferences.css';
 
 const STORAGE_KEY = 'veylo_cookie_preferences_v1';
 const OPEN_EVENT = 'veylo:open-cookie-settings';
@@ -41,11 +42,11 @@ export default function CookiePreferences() {
   }
 
   return <>
-    {!acknowledged && <aside className="v-cookie-banner" aria-label="Cookies and browser storage notice">
+    {!acknowledged && <aside className="v-cookie-banner v-cookie-compact" aria-label="Cookies and browser storage notice">
       <span><ShieldCheck size={20} /></span>
       <div>
-        <strong>How Veylo uses browser storage</strong>
-        <p>Veylo uses necessary cookies and first-party service analytics to sign you in, protect account actions, measure visits, and improve the platform. We do not use advertising cookies or sell visitor data.</p>
+        <strong>Your privacy</strong>
+        <p>We use necessary cookies and first-party analytics. No advertising cookies.</p>
       </div>
       <div className="v-cookie-actions">
         <button type="button" onClick={() => setOpen(true)}>View details</button>
