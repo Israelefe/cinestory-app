@@ -22,7 +22,7 @@ export const SHOOT_WRITING_PROFILES = Object.freeze({
 export const FORMAT_WRITING_PROFILES = Object.freeze({
   'photo-story': { caption: 150, opening: 140, closing: 160, focus: 'Short personal thoughts that develop through the sequence. Keep the photographs primary.' },
   editorial: { caption: 320, opening: 300, closing: 280, focus: 'A magazine cover, useful section paragraphs and supporting captions. Third-person prose is welcome. A birthday magazine remains a birthday feature; this format does not turn every shoot into fashion.' },
-  'photo-reveal': { caption: 180, opening: 140, closing: 160, focus: 'Concise captions that stand on their own as the client reveals each photograph.' },
+  'photo-reveal': { caption: 180, opening: 140, closing: 160, focus: 'Each photograph gets a short heading, usually 2–5 words, and a concise caption that stands on its own. Usually one useful sentence is enough. The heading introduces the thought; the caption adds to it. Keep each reveal personal or factual according to the shoot purpose, with variety across the set. Do not narrate a transition, invent a reaction, or repeatedly describe clothes and poses.' },
   canvas: { caption: 180, opening: 140, closing: 160, focus: 'Brief useful captions and clear labels for freely exploring the collection.' },
   chapters: { caption: 180, opening: 140, closing: 160, focus: 'Meaningful chapter headings and introductions grounded in actual parts of the shoot.' },
   album: { caption: 180, opening: 140, closing: 160, focus: 'Restrained headings and occasional notes, with generous space for photographs.' },

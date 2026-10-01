@@ -35,7 +35,7 @@ export const DELIVERY_FORMATS = [
     name: 'Photo Reveal',
     verb: 'Discover',
     line: 'A first viewing that moves only when the client is ready.',
-    description: 'Each tap reveals the next finished photograph. Veylo decides which images deserve the full screen, which belong together, and where the strongest portrait should land. The client controls the pace.',
+    description: 'Each tap reveals one finished photograph. Choose the order, add a short caption, and let the client take their time before opening the complete gallery.',
     bestFor: 'Portraits, beauty sessions, birthdays, maternity, and graduation shoots.',
     clientMindset: 'Discover my photos.',
     photos: ['demo-sharon-1', 'demo-sharon-4']

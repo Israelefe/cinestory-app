@@ -13,12 +13,13 @@ import { removeDeliveryAudio } from '../services/deliveryMedia.service.js';
 import { NARRATION_BOOKEND_RENDER_VERSION } from '../services/narration.service.js';
 import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
 import { cleanDeliveryAccess } from '../utils/deliveryAccess.js';
+import { revealSchema } from '../constants/photoReveal.js';
 
 const details = z.object({ kind: z.enum(['showcase', 'pinboard']).default('showcase'), clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().max(80).default(''), purpose: z.string().trim().max(3000).default(''), title: z.string().trim().max(120).default(''), originalPurpose: z.string().trim().max(3000).default(''), clarificationAnswers: z.array(z.object({ question: z.string().trim().max(180), answer: z.string().trim().min(1).max(300) }).strict()).max(3).default([]) }).strict();
 const formatInput = z.object({ format: z.enum(Object.keys(V3_FORMATS)) }).strict();
 const idList = z.array(z.string().uuid()).max(24);
 const showcaseInput = z.object({ assetIds: idList, frames: z.array(z.object({ assetId: z.string().uuid(), headline: z.string().trim().max(70).default(''), caption: z.string().trim().min(5).max(320), imageFit: editorialFrameFields.imageFit.unwrap().optional(), focalPoint: editorialFrameFields.focalPoint.unwrap().optional() }).strict()).max(24), title: z.string().trim().min(2).max(80), openingLine: z.string().trim().min(5).max(300), closingLine: z.string().trim().min(5).max(280), openingAssetId: z.string().uuid(), closingAssetId: z.string().uuid(), editorial: editorialSchema.optional(), writingOverrides: writingOverridesSchema.optional(), sectionWriting: z.array(z.object({ id: z.string().regex(/^[a-z0-9-]{1,60}$/), title: z.string().trim().max(60), subtitle: z.string().trim().max(120), assetIds: idList.min(1).optional() }).strict()).max(5).optional() }).strict();
-const themeInput = z.object({ palette: z.object({ background: z.string().regex(/^#[0-9a-f]{6}$/i), surface: z.string().regex(/^#[0-9a-f]{6}$/i), text: z.string().regex(/^#[0-9a-f]{6}$/i), accent: z.string().regex(/^#[0-9a-f]{6}$/i) }).strict(), typography: z.object({ display: z.string(), body: z.string() }).strict() }).strict();
+const themeInput = z.object({ palette: z.object({ background: z.string().regex(/^#[0-9a-f]{6}$/i), surface: z.string().regex(/^#[0-9a-f]{6}$/i), text: z.string().regex(/^#[0-9a-f]{6}$/i), accent: z.string().regex(/^#[0-9a-f]{6}$/i) }).strict(), typography: z.object({ display: z.string(), body: z.string() }).strict(), reveal: revealSchema.optional() }).strict();
 const pinboardInput = z.object({
   title: z.string().trim().min(2).max(120),
   useStandardBoard: z.boolean().default(false),
@@ -336,6 +337,7 @@ export async function v3Theme(req, res) {
     const weak = [contrastRatio(input.data.palette.background, input.data.palette.text) < 4.5 ? 'background' : null, contrastRatio(input.data.palette.surface, input.data.palette.text) < 4.5 ? 'panels' : null].filter(Boolean);
     if (weak.length) return res.status(400).json({ success: false, code: 'V3_THEME_CONTRAST', field: 'palette.text', message: `Text is hard to read on the ${weak.join(' and ')}. Change the text colour or use Fix text contrast.` });
     const delivery = await owned(req);
+    if (input.data.reveal && delivery?.format !== 'photo-reveal') return res.status(400).json({ success: false, message: 'Reveal settings are only available for Photo Reveal.' });
     if (delivery?.kind === 'pinboard') {
       if (!editable(delivery) || !delivery.pinboard) return res.status(409).json({ success: false, message: 'Analyse this GridBoard before choosing its design.' });
       delivery.pinboard = { ...delivery.pinboard, palette: input.data.palette, typography: input.data.typography };
@@ -343,7 +345,7 @@ export async function v3Theme(req, res) {
       return res.json({ success: true, data: delivery });
     }
     if (!editable(delivery) || !delivery.creativeDirection) return res.status(409).json({ success: false, message: 'Finish the showcase first.' });
-    delivery.creativeDirection = { ...delivery.creativeDirection, palette: input.data.palette, typography: input.data.typography };
+    delivery.creativeDirection = { ...delivery.creativeDirection, palette: input.data.palette, typography: input.data.typography, ...(input.data.reveal ? { reveal: input.data.reveal } : {}) };
     invalidateApproval(delivery); saveV3(delivery, { step: 'design' }); delivery.markModified('creativeDirection'); await delivery.save();
     res.json({ success: true, data: delivery });
   } catch (error) { fail(res, error); }

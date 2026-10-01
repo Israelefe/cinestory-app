@@ -112,7 +112,7 @@ async function checkStudioBrand(page, format, width) {
   delivery.branding = { type: 'studio', name: 'Amara Photography', ...(format === 'editorial' ? {} : { logoUrl: '/veylo/web/demo-lora-1-480.webp' }) };
   await mock(page, delivery);
   await page.goto('/d/access-test?phoneView=1');
-  const header = page.locator(format === 'gridboard' ? '.pb-header' : format === 'photo-story' ? '.v-story-top' : '.fd-header');
+  const header = page.locator(format === 'gridboard' ? '.pb-header' : format === 'photo-story' ? '.v-story-top' : format === 'photo-reveal' ? '.rv-header' : '.fd-header');
   const name = header.getByText('Amara Photography', { exact: true });
   await expect(name).toBeVisible();
   const brandMark = header.locator('.delivery-brand-mark');

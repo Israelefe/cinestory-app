@@ -20,6 +20,8 @@ import ShowcasePhotoPicker from '../components/delivery/ShowcasePhotoPicker.jsx'
 import { ClientPreviewPhoneFrame } from '../components/delivery/PhonePresentation.jsx';
 import EditorialEditor, { EditorialDesignControls, EditorialPhotoControls } from '../components/delivery/EditorialEditor.jsx';
 import EditorialPreview from '../components/delivery/EditorialPreview.jsx';
+import RevealDesignControls from '../components/delivery/RevealDesignControls.jsx';
+import { revealSettings } from '../utils/photoReveal.js';
 import { editorialFromDelivery, reconcileEditorial } from '../utils/editorial.js';
 import DeliveryWritingReview from '../components/delivery/DeliveryWritingReview.jsx';
 import { initialWritingOverrides, planPhotoWritingChange, applyWritingReview, setWritingText, undoWritingChange } from '../utils/deliveryWritingChanges.js';
@@ -140,6 +142,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const [openingAssetId, setOpeningAssetId] = useState(initialDelivery?.v3?.openingAssetId || '');
   const [closingAssetId, setClosingAssetId] = useState(initialDelivery?.v3?.closingAssetId || '');
   const [editorial, setEditorial] = useState(() => editorialFromDelivery(initialDelivery));
+  const [reveal, setReveal] = useState(() => revealSettings(initialDelivery));
   const [frameSettings, setFrameSettings] = useState(() => Object.fromEntries((initialDelivery?.creativeDirection?.frames || []).map(frame => [frame.assetId, { imageFit: frame.imageFit || 'contain', focalPoint: frame.focalPoint || '50% 50%' }])));
   const [captionUndo, setCaptionUndo] = useState({});
   const [sections, setSections] = useState(initialDelivery?.creativeDirection?.sections || []);
@@ -204,11 +207,12 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
         palette,
         typography,
         sections,
+        ...(format === 'photo-reveal' ? { reveal } : {}),
         ...(format === 'editorial' ? { editorial: publication, sections: publication.sections } : {})
       },
       v3: { ...draft.v3, openingAssetId, closingAssetId }
     };
-  }, [draft, previewBranding.type, previewBranding.name, previewBranding.logoUrl, selected, headlines, captions, title, openingLine, closingLine, format, palette, typography, openingAssetId, closingAssetId, publication, frameSettings, sections]);
+  }, [draft, previewBranding.type, previewBranding.name, previewBranding.logoUrl, selected, headlines, captions, title, openingLine, closingLine, format, palette, typography, openingAssetId, closingAssetId, publication, frameSettings, sections, reveal]);
   const bounds = BOUNDS[format] || [5, 10];
   const recommendedFormat = DELIVERY_FORMATS.find(item => item.value === recommendation?.format);
   const assets = draft?.assets || [];
@@ -240,6 +244,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     setOpeningAssetId(next.v3?.openingAssetId || '');
     setClosingAssetId(next.v3?.closingAssetId || '');
     setEditorial(editorialFromDelivery(next));
+    setReveal(revealSettings(next));
     setFrameSettings(Object.fromEntries((next.creativeDirection?.frames || []).map(frame => [frame.assetId, { imageFit: frame.imageFit || 'contain', focalPoint: frame.focalPoint || '50% 50%' }])));
     setCaptionUndo({});
     setSections(next.creativeDirection?.sections || []);
@@ -553,7 +558,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     if (!themeStatus.valid) { setError({ text: themeStatus.message, fix: 'contrast' }); return; }
     await action('approve', async () => {
       if (format === 'editorial') await api.patch('/v1/deliveries/' + draft._id + '/v3/showcase', showcasePayload());
-      await api.patch('/v1/deliveries/' + draft._id + '/v3/theme', { palette, typography });
+      await api.patch('/v1/deliveries/' + draft._id + '/v3/theme', { palette, typography, ...(format === 'photo-reveal' ? { reveal } : {}) });
       await api.post('/v1/deliveries/' + draft._id + '/v3/approve');
       const next = await refresh(); syncShowcase(next); setStage('access');
     });
@@ -840,6 +845,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
                 {['display', 'body'].map(role => <label className="v3-font" key={role}>{role === 'display' ? 'Headings and titles' : 'Captions and supporting text'}<select value={typography[role]} onChange={event => setTypography(current => ({ ...current, [role]: event.target.value }))}>{FONTS.map(font => <option key={font}>{font}</option>)}</select></label>)}
               </div>
               {format === 'editorial' && <EditorialDesignControls value={publication} onChange={setEditorial} />}
+              {format === 'photo-reveal' && <RevealDesignControls value={reveal} onChange={setReveal} disabled={!!busy} />}
             </div>
             <div className="v3-design-preview">{format === 'editorial' ? <EditorialPreview delivery={designPreviewDelivery} access={access} /> : <ClientPreviewPhoneFrame delivery={designPreviewDelivery} narrationEnabled={false} access={access} isolate />}</div>
           </div>
