@@ -1,10 +1,138 @@
 import { expect, test } from '@playwright/test';
 import { DEMO_PRESETS } from '../src/constants/demoStories.js';
 import { photoStoryDemoDelivery } from '../src/utils/photoStoryDemo.js';
+import { gridboardPaletteContrast } from '../src/utils/gridboardPalette.js';
 
 const sample = photoStoryDemoDelivery(DEMO_PRESETS.find(preset => preset.id === 'ada'));
 const user = { _id: 'story-ui-user', name: 'Apex Imagery', studioName: sample.branding.name, email: 'studio@example.com', emailVerified: true, onboardingComplete: true, plan: 'pro', role: 'photographer' };
 const draftId = '507f1f77bcf86cd799439099';
+
+for (const background of ['#ffffff', '#fffaf6', '#7d7871', '#070709']) test(`names, logo frame, progress, and controls stay readable on ${background}`, async ({ page }) => {
+  await page.setViewportSize({ width: 834, height: 1000 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const delivery = structuredClone(sample);
+  delivery.creativeDirection.palette = { background, surface: background, text: '#ffffff', accent: '#ffffff' };
+  delivery.creativeDirection.frames = delivery.creativeDirection.frames.map(frame => ({ ...frame, colorAccent: '#ffffff' }));
+  await setup(page, delivery);
+  await page.goto('/d/presentation-story');
+  const readColor = async (selector, property = 'color') => page.locator(selector).evaluate((el, property) => getComputedStyle(el)[property], property);
+  const hex = color => '#' + color.match(/[\d.]+/g).slice(0, 3).map(value => Math.round(Number(value)).toString(16).padStart(2, '0')).join('');
+  const contrast = color => gridboardPaletteContrast({ background, surface: background, text: hex(color), accent: hex(color) }).background;
+  expect(hex(await readColor('.v-story-studio strong'))).toBe('#fffaf6');
+  await begin(page);
+  for (const selector of ['.v-story-studio strong', '.v-story-studio>div>span', '.v-story-mark>.delivery-brand-mark', '.v-story-frame-count', '.v-story-caption h2']) expect(contrast(await readColor(selector))).toBeGreaterThanOrEqual(4.5);
+  expect(contrast(await readColor('.v-story-progress .is-current i', 'backgroundColor'))).toBeGreaterThanOrEqual(3);
+  const border = await readColor('.v-story-mark', 'borderTopColor');
+  expect(border).not.toBe('rgba(0, 0, 0, 0)');
+  if (background === '#ffffff' || background === '#fffaf6') expect(hex(border)).toBe('#17171c');
+  const playText = hex(await readColor('.v-story-play'));
+  const playBg = hex(await readColor('.v-story-play', 'backgroundColor'));
+  expect(gridboardPaletteContrast({ background: playBg, surface: playBg, text: playText, accent: playText }).background).toBeGreaterThanOrEqual(4.5);
+  await page.screenshot({ path: `../.visual-review/client-ui-audit/story-theme-${background.slice(1)}.png` });
+  await page.getByRole('button', { name: 'Next photograph', exact: true }).click();
+  await expect(page.getByRole('progressbar', { name: 'Photo Story progress' })).toHaveAttribute('aria-valuenow', '2');
+  expect(contrast(await readColor('.v-story-progress>span.is-done i', 'backgroundColor'))).toBeGreaterThanOrEqual(3);
+});
+
+test('rapid navigation does not show a stale photograph when a delayed request finishes', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await setup(page, { ...sample, soundtrack: undefined });
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  await page.route('**/veylo/web/demo-ada-2-*.webp', async route => { await gate; await route.continue(); });
+  try {
+    await page.goto('/d/presentation-story');
+    await begin(page);
+    await page.getByRole('button', { name: 'Next photograph', exact: true }).click();
+    await expect(page.locator('.v-story-image-status')).toBeVisible();
+    await page.getByRole('button', { name: 'Previous photograph', exact: true }).click();
+    await expect(page.locator('.v-story-image-status')).toHaveCount(0);
+    release();
+    await page.waitForTimeout(300);
+    await expect(page.getByRole('progressbar', { name: 'Photo Story progress' })).toHaveAttribute('aria-valuenow', '1');
+    await expect(page.locator('.v-story-caption h2')).toHaveText(sample.creativeDirection.frames[0].caption);
+  } finally { release(); }
+});
+
+test('a delayed closing photograph keeps the last photo visible until the slice ending is ready', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await setup(page, { ...sample, soundtrack: undefined, curatedAssetIds: [sample.assets[0].assetId] });
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  await page.route('**/veylo/web/demo-ada-5-*.webp', async route => { await gate; await route.continue(); });
+  try {
+    await page.goto('/d/presentation-story');
+    await page.getByRole('button', { name: 'Begin the story', exact: true }).click();
+    await expect(page.locator('.v-story-canvas.is-finale-state')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('.v-story-image-status')).toContainText('Loading closing photograph');
+    await expect(page.locator('.v-story-cinema-photo img')).toHaveAttribute('src', /demo-ada-1-/);
+    await expect(page.getByRole('button', { name: 'Open your gallery', exact: true })).toBeVisible();
+    release();
+    await expect(page.locator('.v-story-finale-slice.is-centre img')).toHaveAttribute('src', /demo-ada-5-/);
+    await expect(page.locator('.v-story-image-status')).toHaveCount(0);
+  } finally { release(); }
+});
+
+test('the cover warms only its first and upcoming photo rather than fetching the entire collection', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setup(page, { ...sample, soundtrack: undefined });
+  const requested = new Set();
+  page.on('request', request => { const match = request.url().match(/demo-ada-(\d+)-\d+\.webp/); if (match) requested.add(Number(match[1])); });
+  await page.goto('/d/presentation-story');
+  await expect.poll(() => requested.has(2)).toBe(true);
+  await page.waitForTimeout(500);
+  expect([...requested].sort()).toEqual([1, 2]);
+});
+
+test('Photo Story preloads the next image and holds its photograph and caption during a slow request', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await setup(page, { ...sample, soundtrack: undefined });
+  let nextRequests = 0;
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  await page.route('**/veylo/web/demo-ada-2-*.webp', async route => { nextRequests++; await gate; await route.continue(); });
+  try {
+    await page.goto('/d/presentation-story');
+    await expect.poll(() => nextRequests).toBeGreaterThan(0);
+    await page.getByRole('button', { name: 'Begin the story', exact: true }).click();
+    await expect(page.locator('.v-story-cinema-photo img')).toBeVisible();
+    const originalCaption = await page.locator('.v-story-caption h2').textContent();
+    await page.getByRole('button', { name: 'Next photograph', exact: true }).click();
+    await expect(page.locator('.v-story-image-status')).toContainText('Loading photograph');
+    await page.waitForTimeout(6500);
+    await expect(page.getByRole('progressbar', { name: 'Photo Story progress' })).toHaveAttribute('aria-valuenow', '1');
+    await expect(page.locator('.v-story-cinema-photo img')).toHaveAttribute('src', /demo-ada-1-/);
+    await expect(page.locator('.v-story-caption h2')).toHaveText(originalCaption);
+    expect(await page.locator('.v-story-cinema-photo img').evaluate(img => img.naturalWidth)).toBeGreaterThan(0);
+    release();
+    await expect(page.getByRole('progressbar', { name: 'Photo Story progress' })).toHaveAttribute('aria-valuenow', '2');
+    await expect(page.locator('.v-story-image-status')).toHaveCount(0);
+    await expect(page.locator('.v-story-caption h2')).toHaveText(sample.creativeDirection.frames[1].caption);
+    expect(await page.locator('.v-story-poster-card img').evaluate(img => img.naturalWidth)).toBeGreaterThan(0);
+  } finally { release(); }
+});
+
+test('a failed upcoming image retains the current photo and supports retry', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await setup(page, { ...sample, soundtrack: undefined });
+  let attempts = 0;
+  let failing = true;
+  await page.route('**/veylo/web/demo-ada-2-*.webp', route => { attempts++; return failing ? route.abort() : route.continue(); });
+  await page.goto('/d/presentation-story');
+  await begin(page);
+  await expect.poll(() => attempts).toBeGreaterThan(0);
+  await page.getByRole('button', { name: 'Next photograph', exact: true }).click();
+  await expect(page.locator('.v-story-image-status')).toContainText('This photo couldn’t load.');
+  await expect(page.locator('.v-story-cinema-photo img')).toHaveAttribute('src', /demo-ada-1-/);
+  failing = false;
+  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(page.getByRole('progressbar', { name: 'Photo Story progress' })).toHaveAttribute('aria-valuenow', '2');
+  await expect(page.locator('.v-story-image-status')).toHaveCount(0);
+});
 
 for (const layout of ['cinema', 'poster', 'split', 'collage']) test(`${layout} retains its outlined frame number and photograph treatment`, async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -205,6 +333,40 @@ test('demo, creation preview, and published delivery use equivalent Photo Story 
   expect(await snapshot(page)).toEqual(previewPresentation);
   await page.goto('/d/presentation-story?phoneView=1');
   expect(await snapshot(page)).toEqual(previewPresentation);
+});
+
+for (const [width, height] of [[320, 844], [390, 844], [768, 1000], [834, 1000], [1440, 1000], [320, 568], [844, 390], [834, 600]]) test(`three-photo ending preserves the centre closing photograph and fits at ${width} by ${height}`, async ({ page }) => {
+  await page.setViewportSize({ width, height });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await setup(page, { ...sample, soundtrack: undefined });
+  await page.goto('/d/presentation-story');
+  const view = viewer(page, width);
+  await view.getByRole('button', { name: 'Begin the story', exact: true }).click();
+  for (let i = 1; i < sample.curatedAssetIds.length; i++) await view.getByRole('button', { name: 'Next photograph', exact: true }).click();
+  await expect(view.locator('.v-story-canvas.is-finale-state')).toBeVisible({ timeout: 10000 });
+  const slices = view.locator('.v-story-finale-slice');
+  await expect(slices).toHaveCount(3);
+  await expect(view.locator('.v-story-finale-slice.is-centre img')).toHaveAttribute('src', /demo-ada-5-960.webp/);
+  const sources = await slices.locator('img').evaluateAll(images => images.map(image => image.src));
+  expect(new Set(sources).size).toBe(3);
+  const stage = await view.locator('.v-story-visual').boundingBox();
+  expect(stage.height).toBeGreaterThan(60);
+  for (const slice of await slices.all()) {
+    const box = await slice.boundingBox();
+    expect(box.x).toBeGreaterThanOrEqual(stage.x - 1);
+    expect(box.y).toBeGreaterThanOrEqual(stage.y - 1);
+    expect(box.x + box.width).toBeLessThanOrEqual(stage.x + stage.width + 1);
+    expect(box.y + box.height).toBeLessThanOrEqual(stage.y + stage.height + 1);
+  }
+  await expect(view.getByRole('button', { name: 'Replay story', exact: true })).toBeVisible();
+  await expect(view.locator('.v-story-caption.is-finale>p:not(.v-story-kicker)')).toBeVisible();
+  await expect(view.getByRole('button', { name: 'Open your gallery', exact: true })).toBeVisible();
+  for (const button of [view.getByRole('button', { name: 'Replay story', exact: true }), view.getByRole('button', { name: 'Open your gallery', exact: true })]) {
+    const box = await button.boundingBox();
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height).toBeLessThanOrEqual(height + 1);
+  }
+  await page.screenshot({ path: `../.visual-review/client-ui-audit/three-photo-ending-${width}-${height}.png` });
 });
 
 test('the ending uses the selected closing photograph and keeps gallery access with captions hidden', async ({ page }) => {

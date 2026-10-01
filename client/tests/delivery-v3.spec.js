@@ -482,7 +482,8 @@ for (const width of [390, 834, 1440]) {
       await clientPreview.locator('.v-story-shell').screenshot({ path: '../.visual-review/delivery-v3/v3-first-frame-390.png' });
       for (let index = 0; index < 4; index += 1) await clientPreview.getByRole('button', { name: 'Next photograph' }).click();
       await expect(clientPreview.locator('.v-story-finale')).toBeVisible({ timeout: 10000 });
-      await expect(clientPreview.locator('.v-story-closing-photo img')).toHaveAttribute('src', /demo-lora-5-960\.webp/);
+      await expect(clientPreview.locator('.v-story-finale-slice')).toHaveCount(3);
+      await expect(clientPreview.locator('.v-story-finale-slice.is-centre img')).toHaveAttribute('src', /demo-lora-5-960\.webp/);
       await expect(clientPreview.locator('.v-story-caption.is-finale')).toContainText('Here is the full collection from your day.');
       await expect.poll(() => clientPreview.locator('.v-story-caption.is-finale').evaluate(element => Number(getComputedStyle(element).opacity))).toBeGreaterThan(0.9);
       await clientPreview.locator('.v-story-shell').screenshot({ path: '../.visual-review/delivery-v3/v3-finale-390.png' });

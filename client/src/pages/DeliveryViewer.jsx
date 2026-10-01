@@ -382,6 +382,8 @@ export default function DeliveryViewer() {
 
   useEffect(() => {
     if (!delivery || !experienceReady || !delivery.assets?.length) return undefined;
+    // Photo Story warms its next responsive image as playback advances.
+    if (delivery.kind !== 'pinboard' && delivery.format === 'photo-story') return undefined;
     const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
     if (connection?.saveData || ['slow-2g', '2g'].includes(connection?.effectiveType)) return undefined;
     const cleanup = [];

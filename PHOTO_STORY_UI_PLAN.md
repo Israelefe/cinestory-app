@@ -115,6 +115,7 @@ Initial timing targets: controls 120-200ms, captions 250-400ms, scene transition
 - Use a compact, touch-friendly dock for playback, captions, and gallery access.
 - Keep sound and sharing accessible in the header.
 - Give the selected closing photograph proper prominence.
+- **Keep the three-photo slice ending the user prefers. Refine its layered framing and staggered entrance; show the selected closing photograph in the prominent centre slice. Do not replace this ending with one full-stage photograph.**
 - Present the approved closing message, a primary Open your gallery action, and secondary replay.
 - Keep gallery access visible when captions are hidden.
 - Preserve soundtrack and narration behaviour through the ending.
@@ -133,6 +134,8 @@ Initial timing targets: controls 120-200ms, captions 250-400ms, scene transition
 - Retain permission-aware favourites and add a favourites filter.
 - Preserve existing download behaviour; show accurate preparation, download-started, and failure feedback.
 - Use responsive images, appropriate thumbnails, and nearby-image preloading without fetching the whole collection.
+- Preload and decode the next Photo Story image in the background using the same responsive image candidate as playback. Keep the current photo and caption visible while the next image loads, pause its timer, and allow retry after an image failure.
+- Keep progress, studio and client names, logo framing, controls, and borders readable on light and dark story backgrounds. Preserve a contrasting header on the photographic opening cover.
 - Verify the shared gallery in every delivery format.
 
 ## Implementation order
@@ -164,10 +167,20 @@ Initial timing targets: controls 120-200ms, captions 250-400ms, scene transition
 
 - Photo Story now uses a photograph stage, a flexible caption area, and a separate control dock. Longer captions open for reading with playback paused. Saved top, centre, and right alignment treatments retain safe placement, and hiding captions gives the photograph more space.
 - Outlined frame numbers, fine rules, frame borders, and animated line reveals remain. Cinema, poster, split, and collage layouts retain distinct treatments. The cover enters in a short sequence; frame and gallery transitions overlap and follow navigation direction.
-- The selected closing photograph has its own ending stage. The ending message, replay, and gallery remain accessible with captions hidden.
+- The ending uses three layered photo slices, with the selected closing photograph in the centre. The ending message, replay, and gallery remain accessible with captions hidden. If a saved story has fewer photographs, the composition adapts to the available images.
 - Public Photo Story demos now use the same delivery data shape and viewer as creation previews and published links. Demo favourites are explicitly local to the preview.
 - The shared dark gallery has spacious collection controls, photograph ratios, a favourites filter, full captions, thumbnail/lightbox transitions, nearby responsive image preloading, and restored grid scroll and focus. Escape returns to the collection before closing the gallery. The full photograph and controls fit the lightbox on short and landscape screens.
 - Final browser run: **102 tests passed** across `photo-story-presentation`, `showcase-gallery-swipe`, `delivery-v3`, `delivery-download-access`, and `soundtrack-loop`. Browser API fixtures cover creation/preview/publishing, PIN/expiry responses, downloads and favourites permissions, all eight shared-gallery formats, supported audio, reduced motion, 320–1440px widths, tablets, and short/landscape viewports.
 - Production build and responsive contract verification passed. Scoped diff whitespace checks passed. Visual screenshots are saved under `.visual-review/client-ui-audit/`.
 - Separate repository check `verify-delivery-v2.mjs` still fails on the dashboard assertion expecting “Some studio information is unavailable”. That dashboard-copy assertion is outside this redesign; the script was not weakened or changed.
-- These changes are local; no production deployment was performed.
+- No production deployment was performed as part of this work.
+
+## Follow-up refinements
+
+- Restored the three-photo slice ending, with the chosen closing photo in the centre and a restrained staggered entrance. The composition adapts when fewer photos are available.
+- Added a bounded responsive-image cache: decode the upcoming photo in the background, retain the visible photo and caption during loading, pause playback while waiting, and offer retry after a failed image request. Removed the older duplicate preloader and the parent viewer's bulk preload for Photo Story.
+- Added contrast-aware colours for studio/client names, initials, logo framing, progress segments, captions, sound status, controls, and focus indicators. The opening photograph keeps its dark scrim and light header.
+- Expanded the review to delayed and failed images, stale requests after rapid navigation, delayed closing photos, white/ivory/medium/dark palettes, completed progress segments, and the three-photo ending at phone, tablet, and desktop sizes. Preserved outlined numbering and decorative lines.
+- Removed a legacy short-screen rule that hid the photographer's closing message. Compact spacing keeps the message, photographs, replay, and gallery access visible on small phones and landscape screens.
+- Validation: all **116 delivery regression checks passed** across the five browser suites (three checks were rerun after Windows sleep interrupted the original run). Eight ending checks passed with the final closing-message fix, including 320×568, 844×390, and 834×600; two were rerun after the preview server stopped. Production build, responsive contract, and scoped whitespace checks passed. These browser checks use API fixtures rather than a production deployment.
+- Follow-up scope: the Photo Story viewer, image preparation and contrast utilities, related browser tests, and this plan.
