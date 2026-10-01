@@ -1,3 +1,4 @@
+import { openPresentationGallery } from './helpers/presentationGallery.js';
 import { expect, test } from '@playwright/test';
 
 for (const width of [390, 834, 1440]) test(`Showcase gallery fills the photo stage and swipes both ways at ${width}px`, async ({ page }) => {
@@ -7,7 +8,7 @@ for (const width of [390, 834, 1440]) test(`Showcase gallery fills the photo sta
   });
   await page.goto('/demo/editorial');
   const viewer = width > 1024 ? page.frameLocator('.v-phone-screen iframe') : page;
-  await viewer.getByRole('button', { name: 'Open full gallery' }).click();
+  await openPresentationGallery(viewer, 'editorial');
   await viewer.getByRole('button', { name: 'Open photograph 1' }).click();
   await expect(viewer.getByRole('heading', { name: 'Photograph 1' })).toBeVisible();
 

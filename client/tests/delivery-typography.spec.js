@@ -1,3 +1,4 @@
+import { completePresentation, openPresentationGallery } from './helpers/presentationGallery.js';
 import { expect, test } from '@playwright/test';
 import { DEMO_PRESETS } from '../src/constants/demoStories.js';
 import { photoStoryDemoDelivery } from '../src/utils/photoStoryDemo.js';
@@ -80,9 +81,10 @@ for (const format of formats) for (const width of [320, 834, 1440]) test(`${form
   const caption = await captionFor(view, format);
   await expect(caption).toBeAttached();
   await expectFont(caption, 'Manrope');
-  await expectFont(view.getByRole('button', { name: format === 'photo-story' ? 'Open gallery' : 'Open full gallery', exact: true }), 'Outfit');
   if (format === 'canvas') await view.getByRole('button', { name: 'Return to canvas', exact: true }).click();
-  await view.getByRole('button', { name: format === 'photo-story' ? 'Open gallery' : 'Open full gallery', exact: true }).click();
+  await completePresentation(view, format);
+  await expectFont(view.getByRole('button', { name: format === 'photo-story' ? 'Open gallery' : 'Open full gallery', exact: true }), 'Outfit');
+  await openPresentationGallery(view, format);
   const gallery = view.locator('.client-gallery');
   await expectFont(gallery.locator('h2'), 'Cormorant Garamond');
   await expectFont(gallery.getByRole('button', { name: 'Download all photos', exact: true }), 'Outfit');

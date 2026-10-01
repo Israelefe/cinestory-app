@@ -1,3 +1,4 @@
+import { openPresentationGallery } from './helpers/presentationGallery.js';
 import { expect, test } from '@playwright/test';
 import { DEMO_PRESETS } from '../src/constants/demoStories.js';
 import { photoStoryDemoDelivery } from '../src/utils/photoStoryDemo.js';
@@ -165,7 +166,7 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 844, height: 390 }
   expect((await page.locator('.v-story-visual').boundingBox()).height).toBeGreaterThan(100);
   const controls = await page.locator('.v-story-controls').boundingBox();
   expect(controls.y + controls.height).toBeLessThanOrEqual(viewport.height);
-  await page.getByRole('button', { name: 'Open gallery', exact: true }).click();
+  await openPresentationGallery(page, 'photo-story');
   await page.getByRole('button', { name: 'Open photograph 1', exact: true }).click();
   expect(await page.locator('.client-gallery').evaluate(el => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
   expect((await page.locator('.client-gallery-lightbox-photo').boundingBox()).height).toBeGreaterThan(60);
@@ -251,8 +252,8 @@ for (const format of ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'cha
   await page.goto('/d/presentation-story');
   if (format === 'photo-story') {
     await begin(page);
-    await page.getByRole('button', { name: 'Open gallery', exact: true }).click();
-  } else await page.getByRole('button', { name: 'Open full gallery', exact: true }).click();
+    await openPresentationGallery(page, 'photo-story');
+  } else await openPresentationGallery(page, format);
   const gallery = page.locator('.client-gallery');
   await expect(gallery).toBeVisible();
   await expect(gallery.getByRole('button', { name: /Download|favourites/i })).toHaveCount(0);
@@ -295,7 +296,7 @@ for (const width of [320, 390, 768, 834, 1440]) {
     await view.getByRole('button', { name: 'Hide captions' }).click();
     await expect(view.locator('.v-story-caption')).toHaveCount(0);
     expect((await view.locator('.v-story-visual').boundingBox()).height).toBeGreaterThan(photoHeight);
-    await view.getByRole('button', { name: 'Open gallery', exact: true }).click();
+    await openPresentationGallery(view, 'photo-story');
     await page.screenshot({ path: `../.visual-review/client-ui-audit/approved-gallery-${width}.png` });
     await view.getByRole('button', { name: 'Open photograph 1', exact: true }).click();
     const gallery = view.locator('.client-gallery');
@@ -413,7 +414,7 @@ test('demo favourites filter retains collection order and navigates only the fil
   await setup(page);
   await page.goto('/demo');
   await begin(page);
-  await page.getByRole('button', { name: 'Open gallery', exact: true }).click();
+  await openPresentationGallery(page, 'photo-story');
   const cards = page.locator('.client-gallery-grid figure');
   await cards.nth(1).getByRole('button', { name: 'Add to favourites' }).click();
   await cards.nth(3).getByRole('button', { name: 'Add to favourites' }).click();

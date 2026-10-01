@@ -13,7 +13,10 @@ import './DeliveryTypography.css';
 const photoKey = (photo, index) => photo?.assetId || photo?.id || photo?.name || index;
 const imageUrl = (photo, width = 1440) => photo?.url || (typeof photo === 'string' && (photo.startsWith('http') || photo.startsWith('/')) ? photo : `/veylo/web/${photo?.name || photo}-${width}.webp`);
 
-export default function ClientGallery({ photos = [], title = 'Your photographs', eyebrow = 'The complete collection', onClose, initialIndex = null, liked, onLike, onDownload, onDownloadAll, busy, downloading = null, allDownloading = false, downloadNotice = '', downloadProgress = null, delivery, demoId, fontStyles }) {
+export default function ClientGallery({ photos: collectionPhotos = [], singlePhoto = false, title = 'Your photographs', eyebrow = 'The complete collection', onClose, initialIndex = null, liked, onLike, onDownload, onDownloadAll, busy, downloading = null, allDownloading = false, downloadNotice = '', downloadProgress = null, delivery, demoId, fontStyles }) {
+  const photos = useMemo(() => singlePhoto ? collectionPhotos.slice(initialIndex, initialIndex + 1) : collectionPhotos, [collectionPhotos, singlePhoto, initialIndex]);
+  const originalIndex = index => singlePhoto ? initialIndex : index;
+  const photographNumber = index => originalIndex(index) + 1;
   const reduced = useReducedMotion();
   const galleryId = useId();
   const panel = useRef(null);
@@ -23,16 +26,20 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
   const previousSelected = useRef(null);
   const navigation = useRef(null);
   const lightboxBack = useRef(null);
-  const [selected, setSelected] = useState(() => Number.isInteger(initialIndex) && initialIndex >= 0 && initialIndex < photos.length ? initialIndex : null);
+  const [selected, setSelected] = useState(() => singlePhoto ? 0 : Number.isInteger(initialIndex) && initialIndex >= 0 && initialIndex < photos.length ? initialIndex : null);
   const [swipeDirection, setSwipeDirection] = useState(1);
   const [favouritesOnly, setFavouritesOnly] = useState(false);
   const [ratios, setRatios] = useState({});
-  useDialogFocus(true, panel, () => selected === null ? onClose?.() : setSelected(null));
+  useDialogFocus(true, panel, () => singlePhoto || selected === null ? onClose?.() : setSelected(null));
+  useEffect(() => {
+    navigation.current = null;
+    setSelected(singlePhoto ? 0 : Number.isInteger(initialIndex) && initialIndex >= 0 && initialIndex < photos.length ? initialIndex : null);
+  }, [singlePhoto, initialIndex]);
 
-  const allowDownloadAll = delivery ? delivery.access?.allowDownloadAll !== false : Boolean(onDownloadAll);
+  const allowDownloadAll = !singlePhoto && (delivery ? delivery.access?.allowDownloadAll !== false : Boolean(onDownloadAll));
   const allowIndividualDownloads = Boolean(onDownload) && (!delivery || delivery.access?.allowIndividualDownloads !== false);
   const allowLikes = delivery ? Boolean(delivery.access?.allowLikes && onLike) : Boolean(onLike);
-  const resolvedPhotos = useMemo(() => photos.map((photo, index) => demoId ? { ...photo, name: `demo-${demoId}-${index + 1}`, url: `/veylo/web/demo-${demoId}-${index + 1}-1440.webp`, thumbnailUrl: `/veylo/web/demo-${demoId}-${index + 1}-480.webp` } : photo), [photos, demoId]);
+  const resolvedPhotos = useMemo(() => photos.map((photo, index) => demoId ? { ...photo, name: `demo-${demoId}-${photographNumber(index)}`, url: `/veylo/web/demo-${demoId}-${photographNumber(index)}-1440.webp`, thumbnailUrl: `/veylo/web/demo-${demoId}-${photographNumber(index)}-480.webp` } : photo), [photos, demoId, singlePhoto, initialIndex]);
   const fonts = deliveryFontStyles(delivery?.kind === 'pinboard' ? delivery?.pinboard?.typography : delivery?.creativeDirection?.typography, { display: fontStyles?.['--delivery-font-heading'], body: fontStyles?.['--delivery-font-caption'] });
   const galleryTheme = { ...fonts, '--gallery-display': fonts['--delivery-font-heading'], '--gallery-body': fonts['--delivery-font-caption'] };
   const favouriteCount = resolvedPhotos.filter((photo, index) => liked?.has(photoKey(photo, index))).length;
@@ -115,22 +122,22 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
     if (selected !== null && !resolvedPhotos[selected]) setSelected(null);
   }, [resolvedPhotos, selected]);
 
-  const runDownload = (photo, index) => onDownload?.(photoKey(photo, index), index);
-  const runLike = (photo, index) => onLike?.(photoKey(photo, index), index);
+  const runDownload = (photo, index) => onDownload?.(photoKey(photo, originalIndex(index)), originalIndex(index));
+  const runLike = (photo, index) => onLike?.(photoKey(photo, originalIndex(index)), originalIndex(index));
   const layoutId = key => `${galleryId}-photograph-${key}`;
   const sceneTransition = { duration: reduced ? 0 : .32, ease: [.22, 1, .36, 1] };
 
   return createPortal(<LayoutGroup id={galleryId}><motion.div className="client-gallery-overlay" initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .2 }} onMouseDown={event => { if (event.target === event.currentTarget) onClose?.(); }}>
     <motion.section ref={panel} className={`client-gallery ${selected === null ? 'is-collection' : 'is-lightbox'}`} style={galleryTheme} role="dialog" aria-modal="true" aria-labelledby={`${galleryId}-title`} tabIndex={-1} initial={reduced ? false : { opacity: 0, y: 28, scale: .985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={reduced ? { opacity: 0 } : { opacity: 0, y: 18 }} transition={reduced ? { duration: 0 } : { type: 'spring', damping: 28, stiffness: 270 }}>
       <header className="client-gallery-header">
-        <div className="client-gallery-heading"><p>{selected === null ? eyebrow : `${title} · ${selected + 1} of ${photos.length}`}</p><h2 id={`${galleryId}-title`}>{selected === null ? title : `Photograph ${selected + 1}`}</h2><span className="client-gallery-count">{selected === null ? `${photos.length} ${photos.length === 1 ? 'photograph' : 'photographs'}` : 'Your complete collection'}</span></div>
+        <div className="client-gallery-heading"><p>{selected === null ? eyebrow : singlePhoto ? title : `${title} · ${selected + 1} of ${photos.length}`}</p><h2 id={`${galleryId}-title`}>{selected === null ? title : `Photograph ${photographNumber(selected)}`}</h2><span className="client-gallery-count">{selected === null ? `${photos.length} ${photos.length === 1 ? 'photograph' : 'photographs'}` : singlePhoto ? 'The photograph you opened' : 'Your complete collection'}</span></div>
         <div className="client-gallery-header-actions">
           {selected === null && allowDownloadAll && onDownloadAll && <button className="client-gallery-download-all" type="button" onClick={onDownloadAll} disabled={Boolean(resolvedBusy)}>{resolvedBusy === 'all' ? <LoaderCircle className="client-gallery-spin" size={16} /> : <Download size={16} />}<span>{resolvedBusy === 'all' && downloadProgress ? `Starting ${downloadProgress.current}/${downloadProgress.total}` : resolvedBusy === 'all' ? 'Starting…' : 'Download all photos'}</span></button>}
           <button className="client-gallery-icon" type="button" onClick={onClose} aria-label="Close gallery"><X size={21} /></button>
         </div>
       </header>
       {downloadNotice && <p className="client-gallery-download-tip" role="status">{downloadNotice}</p>}
-      <div ref={collection} className="client-gallery-collection" hidden={selected !== null}>
+      {!singlePhoto && <div ref={collection} className="client-gallery-collection" hidden={selected !== null}>
         <div className="client-gallery-collection-top">
           {delivery?.branding?.type === 'studio' && <div className="client-gallery-studio"><DeliveryBrandMark branding={delivery.branding} /><div><span>Photographed by</span><strong>{delivery.branding.name}</strong></div></div>}
           {allowLikes && <div className="client-gallery-filters" role="group" aria-label="Filter photographs"><button type="button" className={!favouritesOnly ? 'is-active' : ''} aria-pressed={!favouritesOnly} onClick={() => { setFavouritesOnly(false); gridScroll.current = 0; collection.current?.scrollTo(0, 0); }}><ImageIcon size={15} />All photos<span>{photos.length}</span></button><button type="button" className={favouritesOnly ? 'is-active' : ''} aria-pressed={favouritesOnly} onClick={() => { setFavouritesOnly(true); gridScroll.current = 0; collection.current?.scrollTo(0, 0); }}><Heart size={15} />Favourites<span>{favouriteCount}</span></button></div>}
@@ -149,7 +156,7 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
             </div></figcaption>
           </motion.figure>;
         })}</div> : <div className="client-gallery-empty"><Heart size={28} /><h3>No favourites yet.</h3><p>Tap the heart on a photograph to keep it here.</p><button type="button" onClick={() => setFavouritesOnly(false)}>View all photos</button></div>}
-      </div>
+      </div>}
       <AnimatePresence>{selected !== null && activePhoto && <motion.div className="client-gallery-lightbox" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .15 }}>
         <div className="client-gallery-lightbox-photo" style={{ backgroundColor: photoTone }}>
           <img className="client-gallery-lightbox-ambient" src={activeImageUrl} alt="" aria-hidden="true" draggable="false" />
@@ -157,11 +164,11 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
         </div>
         {activePhoto.caption && <p className="client-gallery-lightbox-caption">{activePhoto.caption}</p>}
         <div className="client-gallery-lightbox-actions">
-          <button className="client-gallery-icon" type="button" onClick={() => navigatePhoto(-1)} disabled={atStart} aria-label="Previous photograph"><ChevronLeft size={21} /></button>
-          <button ref={lightboxBack} className="client-gallery-back" type="button" onClick={() => setSelected(null)} aria-label="All photographs"><ArrowLeft size={16} /><span>All photographs</span></button>
+          {!singlePhoto && <button className="client-gallery-icon" type="button" onClick={() => navigatePhoto(-1)} disabled={atStart} aria-label="Previous photograph"><ChevronLeft size={21} /></button>}
+          <button ref={lightboxBack} className="client-gallery-back" type="button" onClick={() => singlePhoto ? onClose?.() : setSelected(null)} aria-label={singlePhoto ? 'Return to presentation' : 'All photographs'}><ArrowLeft size={16} /><span>{singlePhoto ? 'Return to presentation' : 'All photographs'}</span></button>
           {allowLikes && <button className={`client-gallery-icon ${liked?.has(activeKey) ? 'is-liked' : ''}`} type="button" onClick={() => runLike(activePhoto, selected)} aria-pressed={Boolean(liked?.has(activeKey))} aria-label={liked?.has(activeKey) ? 'Remove from favourites' : 'Add to favourites'}><Heart size={17} fill={liked?.has(activeKey) ? 'currentColor' : 'none'} /></button>}
           {allowIndividualDownloads && <button className="client-gallery-download-one" type="button" aria-label="Download photograph" onClick={() => runDownload(activePhoto, selected)} disabled={resolvedBusy === activeKey || resolvedBusy === 'all'}>{resolvedBusy === activeKey ? <LoaderCircle className="client-gallery-spin" size={16} /> : <Download size={16} />}<span>{resolvedBusy === activeKey ? 'Preparing…' : 'Download'}</span></button>}
-          <button className="client-gallery-icon" type="button" onClick={() => navigatePhoto(1)} disabled={atEnd} aria-label="Next photograph"><ChevronRight size={21} /></button>
+          {!singlePhoto && <button className="client-gallery-icon" type="button" onClick={() => navigatePhoto(1)} disabled={atEnd} aria-label="Next photograph"><ChevronRight size={21} /></button>}
         </div>
       </motion.div>}</AnimatePresence>
     </motion.section>

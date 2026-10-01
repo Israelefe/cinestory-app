@@ -1,3 +1,4 @@
+import { openPresentationGallery } from './helpers/presentationGallery.js';
 import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { imageSrcSetCandidates, mapImageSrcSet } from '../src/utils/imageSrcSet.js';
@@ -9,18 +10,6 @@ test('responsive URL parsing keeps Cloudinary commas and maps only complete URL 
   expect(imageSrcSetCandidates('https://example.test/c_fill,w_480/photo.webp 1x, https://example.test/c_fill,w_960/photo.webp 2x').map(candidate => candidate.descriptor)).toEqual(['1x', '2x']);
 });
 
-async function openFullGallery(page, format) {
-  if (format === 'photo-reveal') {
-    await page.getByRole('button', { name: 'Begin reveal', exact: true }).click();
-    await expect(page.locator('.rv-position')).toHaveAttribute('aria-label', 'Photograph 1 of 6');
-    for (let at = 1; at < 6; at++) {
-      await page.getByRole('button', { name: 'Reveal next photo', exact: true }).click();
-      await expect(page.locator('.rv-position')).toHaveAttribute('aria-label', `Photograph ${at + 1} of 6`);
-    }
-    await page.getByRole('button', { name: 'Complete reveal', exact: true }).click();
-  }
-  await page.getByRole('button', { name: 'Open full gallery', exact: true }).click();
-}
 
 const id = '507f1f77bcf86cd799439011';
 const user = { _id: '507f1f77bcf86cd799439012', name: 'Amara', emailVerified: true, onboardingComplete: true, plan: 'free' };
@@ -72,8 +61,8 @@ for (const format of ['photo-story', 'editorial', 'gridboard']) test(`${format} 
     if (format === 'photo-story') {
       await page.getByRole('button', { name: 'Begin the story', exact: true }).click();
       await expect.poll(async () => page.locator('.v-story-scene img').evaluateAll(images => images.some(image => image.naturalWidth > 0))).toBe(true);
-      await page.getByRole('button', { name: 'Open gallery', exact: true }).click();
-    } else await page.getByRole('button', { name: 'Open full gallery', exact: true }).click();
+      await openPresentationGallery(page, 'photo-story');
+    } else await openPresentationGallery(page, format);
     const gallery = page.locator('.client-gallery');
     await expect.poll(() => gallery.locator('img').first().evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
     await gallery.getByRole('button', { name: 'Open photograph 1', exact: true }).click();
@@ -106,8 +95,8 @@ for (const format of ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'cha
     } else {
       if (format === 'photo-story') {
         await page.getByRole('button', { name: 'Begin the story', exact: true }).click();
-        await page.getByRole('button', { name: 'Open gallery', exact: true }).click();
-      } else await openFullGallery(page, format);
+        await openPresentationGallery(page, 'photo-story');
+      } else await openPresentationGallery(page, format);
       const gallery = page.locator('.client-gallery');
       await expect(gallery.getByRole('button', { name: 'Download all photos', exact: true })).toBeVisible();
       await gallery.getByRole('button', { name: 'Open photograph 1', exact: true }).click();
@@ -125,7 +114,7 @@ async function checkStudioBrand(page, format, width) {
   delivery.branding = { type: 'studio', name: 'Amara Photography', ...(format === 'editorial' ? {} : { logoUrl: '/veylo/web/demo-lora-1-480.webp' }) };
   await mock(page, delivery);
   await page.goto('/d/access-test?phoneView=1');
-  const header = page.locator(format === 'gridboard' ? '.pb-header' : format === 'photo-story' ? '.v-story-top' : format === 'photo-reveal' ? '.rv-header' : '.fd-header');
+  const header = page.locator(format === 'gridboard' ? '.pb-header' : format === 'photo-story' ? '.v-story-top' : format === 'photo-reveal' ? '.rv-header' : format === 'editorial' ? '.ed-nav' : '.fd-header');
   const name = header.getByText('Amara Photography', { exact: true });
   await expect(name).toBeVisible();
   const brandMark = header.locator('.delivery-brand-mark');
@@ -141,8 +130,8 @@ async function checkStudioBrand(page, format, width) {
   if (format !== 'gridboard') {
     if (format === 'photo-story') {
       await page.getByRole('button', { name: 'Begin the story', exact: true }).click();
-      await page.getByRole('button', { name: 'Open gallery', exact: true }).click();
-    } else await openFullGallery(page, format);
+      await openPresentationGallery(page, 'photo-story');
+    } else await openPresentationGallery(page, format);
     await expect(page.locator('.client-gallery-studio')).toContainText('Amara Photography');
     await expect(page.locator('.client-gallery-studio .delivery-brand-mark')).toBeVisible();
   }
@@ -223,7 +212,7 @@ for (const format of ['editorial', 'gridboard']) test(`${format} creation previe
   await page.goto('/__phone-preview');
   await expect(page.getByText('Waiting for the preview.', { exact: true })).toBeVisible();
   await page.evaluate(payload => window.postMessage({ type: 'veylo:phone-preview-data', payload }, location.origin), { delivery, access: delivery.access });
-  if (format !== 'gridboard') await page.getByRole('button', { name: 'Open full gallery', exact: true }).click();
+  if (format !== 'gridboard') await openPresentationGallery(page, format);
   const image = page.locator(format === 'gridboard' ? '.pb-tile img' : '.client-gallery-photo img').first();
   await expect.poll(() => image.evaluate(element => element.naturalWidth)).toBeGreaterThan(0);
   expect(await image.getAttribute('src')).not.toContain('watermark');

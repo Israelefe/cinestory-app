@@ -8,6 +8,7 @@ import { useDialogFocus } from '../useDialogFocus.js';
 import DeliveryBrandMark from './DeliveryBrandMark.jsx';
 import ClientGallery from './ClientGallery.jsx';
 import { editorialFromDelivery, editorialPhotos, editorialTheme } from '../../utils/editorial.js';
+import { useClosingGallery } from '../../utils/useClosingGallery.js';
 import './EditorialViewer.css';
 
 const number = value => String(value).padStart(2, '0');
@@ -86,6 +87,7 @@ export default function EditorialViewer({ delivery, galleryProps = {}, demo = fa
   const direction = delivery.creativeDirection || {};
   const cover = byId.get(delivery.v3?.openingAssetId) || photos[0];
   const closing = byId.get(delivery.v3?.closingAssetId) || photos.at(-1);
+  const { galleryUnlocked, closingRef } = useClosingGallery(`${delivery.publicId || delivery._id || 'editorial-demo'}:${photos.map(photo => photo.assetId).join('|')}`);
   const title = direction.title || delivery.title || 'Your photographs';
   const items = useMemo(() => [{ id: 'editorial-cover', title: 'Cover' }, ...editorial.sections.map(section => ({ id: `ed-${section.id}`, title: section.title || 'Selected photographs' })), ...(editorial.note || editorial.credits.length ? [{ id: 'editorial-notes', title: 'Notes and credits' }] : []), { id: 'editorial-close', title: 'The full collection' }], [editorial]);
   const reveal = delay => reduced ? {} : { initial: { opacity: 0, y: 16 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, amount: .15 }, transition: { duration: .55, delay: delay || 0, ease } };
@@ -103,7 +105,7 @@ export default function EditorialViewer({ delivery, galleryProps = {}, demo = fa
     setContents(false); setActive(id);
     requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' }));
   };
-  const openGallery = index => { readingPosition.current = window.scrollY; setGallery({ index }); };
+  const openGallery = index => { if (index === null && !galleryUnlocked) return; readingPosition.current = window.scrollY; setGallery({ index }); };
   const openPhoto = id => { const index = allPhotos.findIndex(photo => photo.assetId === id); if (index >= 0) openGallery(index); };
   const inPreview = location.pathname === '/__phone-preview';
   let hostWindow = window;
@@ -126,7 +128,7 @@ export default function EditorialViewer({ delivery, galleryProps = {}, demo = fa
       <nav aria-label="Publication controls">
         {!inPreview && (parentDesktop || wide) && <button type="button" className="ed-reader-switch" onClick={toggleReadingView} aria-label={wide ? 'Show phone view' : 'Read Editorial at full width'}>{wide ? <Smartphone size={19} /> : <Monitor size={19} />}<span>{wide ? 'Phone view' : 'Read Editorial'}</span></button>}
         <button type="button" onClick={() => setContents(true)} aria-label="Open contents"><List size={20} /><span>Contents</span></button>
-        <button type="button" onClick={() => openGallery(null)} aria-label="Open full gallery"><Images size={20} /><span>Gallery</span></button>
+        {galleryUnlocked && <button type="button" onClick={() => openGallery(null)} aria-label="Open full gallery"><Images size={20} /><span>Gallery</span></button>}
       </nav>
     </header>
     <motion.div className="ed-progress" style={{ scaleX: scrollYProgress }} aria-hidden="true" />
@@ -151,9 +153,9 @@ export default function EditorialViewer({ delivery, galleryProps = {}, demo = fa
         </section>;
       })}
       {(editorial.note || editorial.credits.length > 0) && <motion.section id="editorial-notes" className="ed-notes" {...reveal()}>{editorial.note && <div><span className="ed-eyebrow">FROM THE PHOTOGRAPHER</span><h2>A note from {delivery.branding?.name || 'your photographer'}</h2><p>{editorial.note}</p></div>}{editorial.credits.length > 0 && <div className="ed-credits"><span className="ed-eyebrow">CREDITS</span><dl>{editorial.credits.map((credit, index) => <div key={index}><dt>{credit.role}</dt><dd>{credit.name}</dd></div>)}</dl></div>}</motion.section>}
-      <section id="editorial-close" className="ed-closing"><div className="ed-closing-grid"><EditorialImage photo={closing} index={order.get(closing?.assetId) ?? photos.length - 1} onOpen={openPhoto} cover /><motion.div {...reveal()}><span className="ed-eyebrow">THE COMPLETE COLLECTION</span><h2>The last page.<em>Your full collection.</em></h2><p>{direction.closingLine}</p><button type="button" className="ed-gallery-cta" onClick={() => openGallery(null)}>View full gallery<ArrowUpRight size={20} /></button></motion.div></div><footer><span>{delivery.branding?.name || 'Your photographer'}</span>{demo && <Link to={location.state?.returnTo || (new URLSearchParams(location.search).get('from') === 'formats' ? '/formats#editorial-page' : '/#editorial-page')}>Leave the demo</Link>}<button type="button" onClick={() => goTo('editorial-cover')}>Back to the cover<ArrowUpRight size={16} /></button></footer></section>
+      <section ref={closingRef} id="editorial-close" className="ed-closing"><div className="ed-closing-grid"><EditorialImage photo={closing} index={order.get(closing?.assetId) ?? photos.length - 1} onOpen={openPhoto} cover /><motion.div {...reveal()}><span className="ed-eyebrow">THE COMPLETE COLLECTION</span><h2>The last page.<em>Your full collection.</em></h2><p>{direction.closingLine}</p><button type="button" className="ed-gallery-cta" disabled={!galleryUnlocked} onClick={() => openGallery(null)}>View full gallery<ArrowUpRight size={20} /></button></motion.div></div><footer><span>{delivery.branding?.name || 'Your photographer'}</span>{demo && <Link to={location.state?.returnTo || (new URLSearchParams(location.search).get('from') === 'formats' ? '/formats#editorial-page' : '/#editorial-page')}>Leave the demo</Link>}<button type="button" onClick={() => goTo('editorial-cover')}>Back to the cover<ArrowUpRight size={16} /></button></footer></section>
     </main>
     <AnimatePresence>{contents && <Contents items={items} active={active} theme={theme} onClose={() => setContents(false)} onChoose={goTo} />}</AnimatePresence>
-    <AnimatePresence onExitComplete={() => window.scrollTo({ top: readingPosition.current, behavior: 'instant' })}>{gallery && <ClientGallery photos={allPhotos} title={delivery.clientName || title} initialIndex={gallery.index} onClose={() => setGallery(null)} delivery={delivery} fontStyles={theme} {...demoGalleryProps} {...galleryProps} />}</AnimatePresence>
+    <AnimatePresence onExitComplete={() => window.scrollTo({ top: readingPosition.current, behavior: 'instant' })}>{gallery && <ClientGallery photos={allPhotos} title={delivery.clientName || title} initialIndex={gallery.index} onClose={() => setGallery(null)} delivery={delivery} fontStyles={theme} {...demoGalleryProps} {...galleryProps} singlePhoto={!galleryUnlocked} />}</AnimatePresence>
   </div>;
 }

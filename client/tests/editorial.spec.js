@@ -1,3 +1,4 @@
+import { openPresentationGallery } from './helpers/presentationGallery.js';
 import { expect, test } from '@playwright/test';
 import { EDITORIAL_DEMO_DELIVERY } from '../src/constants/editorialDemo.js';
 import { editorialTheme, colourContrast } from '../src/utils/editorial.js';
@@ -84,12 +85,13 @@ test('opening a photograph selects its actual gallery image and returns to the a
 
 test('demo uses the same publication structure and offers local favourites', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await setup(page, fixture()); await page.goto('/demo/editorial'); await expect(page.locator('.ed-cover h1')).toHaveText(EDITORIAL_DEMO_DELIVERY.creativeDirection.title); await expect(page.locator('.ed-section .ed-photo')).toHaveCount(5); await expect(page.locator('.fd-v3-bookend')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Open full gallery' }).click(); await page.getByRole('button', { name: 'Add to favourites' }).first().click(); await page.getByRole('button', { name: /Favourites/ }).click(); await expect(page.locator('.client-gallery-grid>figure')).toHaveCount(1);
+  await openPresentationGallery(page, 'editorial'); await page.getByRole('button', { name: 'Add to favourites' }).first().click(); await page.getByRole('button', { name: /Favourites/ }).click(); await expect(page.locator('.client-gallery-grid>figure')).toHaveCount(1);
 });
 
 test('the closing gallery returns to the last page', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await setup(page, fixture()); await page.goto('/d/editorial-test');
-  const button = page.getByRole('button', { name: 'View full gallery', exact: true }); await button.click();
+  const button = page.getByRole('button', { name: 'View full gallery', exact: true });
+  await button.scrollIntoViewIfNeeded(); await expect(button).toBeEnabled(); await button.click();
   const position = await page.evaluate(() => scrollY);
   await page.getByRole('button', { name: 'Close gallery' }).click(); await expect(button).toBeFocused();
   await expect.poll(async () => Math.abs((await page.evaluate(() => scrollY)) - position)).toBeLessThan(3);

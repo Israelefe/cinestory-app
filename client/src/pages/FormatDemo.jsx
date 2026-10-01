@@ -14,6 +14,7 @@ import EditorialViewer from '../components/delivery/EditorialViewer.jsx';
 import RevealViewer from '../components/delivery/RevealViewer.jsx';
 import { PHOTO_REVEAL_DEMO } from '../constants/photoRevealDemo.js';
 import { EDITORIAL_DEMO_DELIVERY } from '../constants/editorialDemo.js';
+import { useClosingGallery } from '../utils/useClosingGallery.js';
 import '../styles/format-demos.css';
 import '../components/delivery/DeliveryTypography.css';
 
@@ -388,7 +389,7 @@ function V3Bookend({ delivery, kind, onGallery }) {
   const line = kind === 'opening' ? delivery.creativeDirection?.openingLine : delivery.creativeDirection?.closingLine;
   return <section className={'fd-v3-bookend is-' + kind}>
     {photo && <img src={photo.url} alt="" />}
-    <div><span>{kind === 'opening' ? 'A VEYLO DELIVERY' : 'THE COMPLETE COLLECTION'}</span><h2>{kind === 'opening' ? delivery.creativeDirection?.title || delivery.clientName : 'The full gallery is ready.'}</h2><p>{line}</p>{kind === 'closing' && <button type="button" onClick={onGallery}>View full gallery<Images size={17} /></button>}</div>
+    <div><span>{kind === 'opening' ? 'A VEYLO DELIVERY' : 'THE COMPLETE COLLECTION'}</span><h2>{kind === 'opening' ? delivery.creativeDirection?.title || delivery.clientName : 'The full gallery is ready.'}</h2><p>{line}</p>{kind === 'closing' && onGallery && <button type="button" onClick={onGallery}>View full gallery<Images size={17} /></button>}</div>
   </section>;
 }
 
@@ -604,7 +605,15 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
     return chapters.map(chapter => ({ ...chapter, layout: chapter.layout || 'chapter-cover' }));
   }, [delivery, photos, frames]);
 
+  const galleryUnlocked = chaptersData.length > 0 && chaptersData.every((_, index) => visited.includes(index));
+  const openGallery = () => { if (!galleryUnlocked) return; setGalleryIndex(null); setGallery(true); };
   const openChapterData = openIndex === null ? null : chaptersData[openIndex];
+  const chapterIdentity = `${delivery?.publicId || delivery?._id || 'chapters-demo'}:${photos.map(photo => photo.assetId || photo.name).join('|')}`;
+  const { galleryUnlocked: chapterExplored, closingRef: chapterEndRef } = useClosingGallery(`${chapterIdentity}:${openIndex}`);
+  useEffect(() => {
+    if (chapterExplored && openIndex !== null) setVisited(current => current.includes(openIndex) ? current : [...current, openIndex]);
+  }, [chapterExplored, openIndex]);
+  useEffect(() => { setVisited([]); setOpenIndex(null); setGallery(false); }, [chapterIdentity]);
 
   const themeStyles = getFormatThemeStyles(delivery, {
     bg: '#090708',
@@ -614,7 +623,6 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
   });
 
   const openChapter = index => {
-    setVisited(value => value.includes(index) ? value : [...value, index]);
     setOpenIndex(index);
     onNarrationNavigate?.(chaptersData[index]?.photos?.map(photo => photo.assetId) || []);
   };
@@ -630,7 +638,6 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
       const matchedIndex = segment.sectionId ? (delivery.creativeDirection?.sections || []).findIndex(section => section.id === segment.sectionId) : -1;
       const nextIndex = matchedIndex >= 0 ? Math.min(matchedIndex, chaptersData.length - 1) : Math.min(chaptersData.length - 1, Math.floor((segmentIndex / Math.max(1, segments.length)) * chaptersData.length));
       setNarrationChapter(nextIndex);
-      setVisited(value => value.includes(nextIndex) ? value : [...value, nextIndex]);
       setOpenIndex(current => current === nextIndex ? current : nextIndex);
     };
     const finish = () => setNarrationChapter(null);
@@ -648,7 +655,7 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
   };
 
   return <div className="fd-page fd-chapters" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} data-pace={themeStyles['--fd-pace']} style={{ ...themeStyles, '--chapter-accent': openChapterData?.accent || themeStyles['--fd-accent'] }}>
-    <DemoHeader format="Chapters" client={client} sectionId="chapters" onGallery={() => { setGalleryIndex(null); setGallery(true); }} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
+    <DemoHeader format="Chapters" client={client} sectionId="chapters" onGallery={galleryUnlocked ? openGallery : undefined} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     {openChapterData === null && <V3Bookend delivery={delivery} kind="opening" onGallery={() => setGallery(true)} />}
 
     <AnimatePresence mode="wait">
@@ -665,8 +672,8 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
           <span className="fd-chapter-directory-copy"><i>{item.photos.length} {item.photos.length === 1 ? 'portrait' : 'portraits'}</i><strong>{item.name}</strong><p>{item.line}</p><b>Open chapter<ChevronRight size={15} /></b></span>
           {visited.includes(index) && <span className="fd-chapter-directory-viewed"><Check size={12} />Viewed</span>}
         </motion.button>)}</section>
-        <footer><span>Take your time. You can return here or open your complete gallery whenever you want.</span><button type="button" onClick={() => { setGalleryIndex(null); setGallery(true); }}>View all {photos.length} portraits<Images size={16} /></button></footer>
-      </motion.main> : <motion.main key={'chapter-room-' + openIndex} className={`fd-chapter-room${narrationChapter === openIndex ? ' is-narrating' : ''}`} style={{ '--chapter-accent': openChapterData.accent }} initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+        <footer><span>Explore each chapter. Your full gallery will be ready afterwards.</span>{galleryUnlocked && <button type="button" onClick={openGallery}>View all {photos.length} portraits<Images size={16} /></button>}</footer>
+      </motion.main> : <motion.main data-chapter-explored={visited.includes(openIndex)} key={'chapter-room-' + openIndex} className={`fd-chapter-room${narrationChapter === openIndex ? ' is-narrating' : ''}`} style={{ '--chapter-accent': openChapterData.accent }} initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
         <aside className="fd-chapter-room-copy">
           <button type="button" onClick={() => setOpenIndex(null)}><ArrowLeft size={16} />All chapters</button>
           <span>{openChapterData.kicker}</span>
@@ -683,13 +690,13 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
             const frame = frames.get(photo.assetId) || {};
             return <motion.button type="button" key={photo.url || photo.name} {...formatFrameAttributes(frame)} style={formatFrameStyle(frame)} onClick={() => openPhoto(photo)} initial={reduced ? false : { opacity: 0, y: 38, clipPath: 'inset(0 0 14% 0)' }} animate={{ opacity: 1, y: 0, clipPath: 'inset(0 0 0% 0)' }} transition={{ duration: reduced ? 0 : .78, delay: reduced ? 0 : .14 + index * .12, ease: [0.22, 1, 0.36, 1] }} aria-label={`Open ${caption}`}><motion.div animate={frameMotionValues(frame, reduced)} transition={frameMotionTransition(frame, index, reduced)}><Photo name={photo.name} url={photo.url} alt={photo.alt} style={frame.focalPoint ? { objectPosition: frame.focalPoint } : undefined} eager sizes="(max-width: 767px) 92vw, 48vw" /></motion.div><span>0{index + 1}</span><p>{caption}</p></motion.button>;
           })}</div>
-          <footer><button type="button" onClick={() => setOpenIndex(null)}>All chapters<Grid2X2 size={17} /></button><button type="button" onClick={() => { setGalleryIndex(null); setGallery(true); }}>View full gallery<Images size={17} /></button></footer>
+          <footer ref={chapterEndRef}><button type="button" onClick={() => setOpenIndex(null)}>All chapters<Grid2X2 size={17} /></button>{galleryUnlocked && <button type="button" onClick={openGallery}>View full gallery<Images size={17} /></button>}</footer>
         </section>
       </motion.main>}
     </AnimatePresence>
 
-    {openChapterData === null && <V3Bookend delivery={delivery} kind="closing" onGallery={() => { setGalleryIndex(null); setGallery(true); }} />}
-    <AnimatePresence>{gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} fontStyles={themeStyles} {...galleryProps} />}</AnimatePresence>
+    {openChapterData === null && galleryUnlocked && <V3Bookend delivery={delivery} kind="closing" onGallery={galleryUnlocked ? openGallery : undefined} />}
+    <AnimatePresence>{gallery && (galleryUnlocked || galleryIndex !== null) && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} fontStyles={themeStyles} {...galleryProps} singlePhoto={!galleryUnlocked} />}</AnimatePresence>
   </div>;
 }
 
@@ -714,7 +721,8 @@ export const albumSpreads = [
   }
 ];
 
-export function AlbumSpread({ spread, index, reduced, onGallery }) {
+export function AlbumSpread({ spread, index, reduced, onGallery, onViewed }) {
+  useEffect(() => { const frame = requestAnimationFrame(() => onViewed?.(index)); return () => cancelAnimationFrame(frame); }, [index, onViewed]);
   const frameAttrs = formatFrameAttributes(spread.frame);
   const frameStyle = formatFrameStyle(spread.frame);
   if (spread.id === 'opening') return <section className="fd-album-spread is-opening" data-layout={spread.layout || 'spread'} {...frameAttrs} style={frameStyle}>
@@ -730,12 +738,14 @@ export function AlbumSpread({ spread, index, reduced, onGallery }) {
 
   return <section className="fd-album-spread is-finale" data-layout={spread.layout || 'spread'} {...frameAttrs} style={frameStyle}>
     <figure className="is-family"><motion.div animate={frameMotionValues(spread.frame || {}, reduced)} transition={frameMotionTransition(spread.frame || {}, index, reduced)}><Photo name={spread.photo1.name} url={spread.photo1.url} alt={spread.photo1.alt} eager sizes="(max-width: 767px) 100vw, 50vw" /></motion.div></figure>
-    <article>{spread.photo2 && <figure className="is-mother"><motion.div animate={frameMotionValues(spread.frame || {}, reduced)} transition={frameMotionTransition(spread.frame || {}, index, reduced)}><Photo name={spread.photo2.name} url={spread.photo2.url} alt={spread.photo2.alt || 'Photograph from this album'} eager sizes="(max-width: 767px) 100vw, 34vw" /></motion.div></figure>}<div><span>{spread.label}</span><h1>{spread.title}</h1><p>{spread.copy}</p><button type="button" onClick={onGallery}>View full gallery<Images size={17} /></button></div></article>
+    <article>{spread.photo2 && <figure className="is-mother"><motion.div animate={frameMotionValues(spread.frame || {}, reduced)} transition={frameMotionTransition(spread.frame || {}, index, reduced)}><Photo name={spread.photo2.name} url={spread.photo2.url} alt={spread.photo2.alt || 'Photograph from this album'} eager sizes="(max-width: 767px) 100vw, 34vw" /></motion.div></figure>}<div><span>{spread.label}</span><h1>{spread.title}</h1><p>{spread.copy}</p>{onGallery ? <button type="button" onClick={onGallery}>View full gallery<Images size={17} /></button> : <p>View the earlier pages to open your full gallery.</p>}</div></article>
     <i className="fd-album-spine" aria-hidden="true" />
   </section>;
 }
 
 export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onNarrationNavigate }) {
+  const [readSpreads, setReadSpreads] = useState([]);
+  const markSpreadViewed = React.useCallback(index => setReadSpreads(current => current.includes(index) ? current : [...current, index]), []);
   const [started, setStarted] = useState(false);
   const [page, setPage] = useState(0);
   const [direction, setDirection] = useState(1);
@@ -842,7 +852,12 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
     ];
   }, [delivery, photos, frames, clientName, v3ClosingPhoto]);
 
+  const galleryUnlocked = started && page === spreadsData.length - 1 && spreadsData.every((_, index) => readSpreads.includes(index));
+  const openGallery = () => { if (galleryUnlocked) setGallery(true); };
+  const albumIdentity = `${delivery?.publicId || delivery?._id || 'album-demo'}:${spreadsData.map(spread => `${spread.id}:${spread.photo1?.assetId || spread.photo1?.name}:${spread.photo2?.assetId || spread.photo2?.name}`).join('|')}`;
+  useEffect(() => { setReadSpreads([]); setGallery(false); setStarted(false); setPage(0); }, [albumIdentity]);
   const openAlbum = () => {
+    setReadSpreads([]);
     setStarted(true);
     setPage(0);
     onNarrationNavigate?.([spreadsData[0]?.photo1?.assetId, spreadsData[0]?.photo2?.assetId].filter(Boolean));
@@ -925,7 +940,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
 
   return <div className="fd-page fd-album" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} data-pace={themeStyles['--fd-pace']} style={themeStyles}>
     {audioTrack && <audio ref={audio} crossOrigin="anonymous" src={audioTrack} loop preload="auto" muted={muted} onWaiting={() => setAudioLoading(true)} onStalled={() => setAudioLoading(true)} onPlaying={() => { setAudioLoading(false); setAudioFailed(false); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioLoading(false); setAudioFailed(true); }} />}
-    <DemoHeader format="Album" client={client} sectionId="album" onGallery={() => setGallery(true)} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} hideSoundtrack />
+    <DemoHeader format="Album" client={client} sectionId="album" onGallery={galleryUnlocked ? openGallery : undefined} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} hideSoundtrack />
     {!started ? <main className="fd-album-cover">
       <motion.figure initial={reduced ? false : { scale: 1.01 }} animate={{ scale: reduced ? 1 : 1.035 }} transition={{ duration: reduced ? 0 : 10, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={v3OpeningPhoto.name} url={v3OpeningPhoto.url} alt={`${clientName} cover photograph`} eager sizes="100vw" /></motion.figure>
       <div className="fd-album-cover-shade" />
@@ -933,7 +948,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
       <div className="fd-album-cover-folio"><span>{delivery?.shootType?.toUpperCase() || 'FAMILY PORTRAITS'}</span><b>{new Date().getFullYear()}</b></div>
     </main> : <main className="fd-album-reader" aria-live="polite" onTouchStart={event => { touchStart.current = event.changedTouches[0].clientX; }} onTouchEnd={event => { if (touchStart.current === null) return; const distance = event.changedTouches[0].clientX - touchStart.current; touchStart.current = null; if (Math.abs(distance) > 45) distance < 0 ? next() : previous(); }}>
       <div className="fd-album-reader-head"><span>{clientName.toUpperCase()}</span><div><i>{String(page + 1).padStart(2, '0')}</i><b>/</b><i>{String(spreadsData.length).padStart(2, '0')}</i></div><span>{albumTitle.toUpperCase()} · {new Date().getFullYear()}</span></div>
-      <div className="fd-album-stage"><AnimatePresence mode="wait" custom={direction}><motion.div key={spreadsData[page].id + page} custom={direction} initial={reduced ? false : { opacity: .58, x: direction > 0 ? 38 : -38, clipPath: direction > 0 ? 'inset(0 0 0 7%)' : 'inset(0 7% 0 0)' }} animate={{ opacity: 1, x: 0, clipPath: 'inset(0 0 0 0%)' }} exit={reduced ? undefined : { opacity: 0, x: direction > 0 ? -26 : 26, clipPath: direction > 0 ? 'inset(0 7% 0 0)' : 'inset(0 0 0 7%)' }} transition={{ duration: reduced ? 0 : .68, ease: [0.22, 1, 0.36, 1] }}><AlbumSpread spread={spreadsData[page]} index={page} reduced={reduced} onGallery={() => setGallery(true)} /></motion.div></AnimatePresence></div>
+      <div className="fd-album-stage"><AnimatePresence mode="wait" custom={direction}><motion.div data-spread-index={page} key={spreadsData[page].id + page} custom={direction} initial={reduced ? false : { opacity: .58, x: direction > 0 ? 38 : -38, clipPath: direction > 0 ? 'inset(0 0 0 7%)' : 'inset(0 7% 0 0)' }} animate={{ opacity: 1, x: 0, clipPath: 'inset(0 0 0 0%)' }} exit={reduced ? undefined : { opacity: 0, x: direction > 0 ? -26 : 26, clipPath: direction > 0 ? 'inset(0 7% 0 0)' : 'inset(0 0 0 7%)' }} transition={{ duration: reduced ? 0 : .68, ease: [0.22, 1, 0.36, 1] }}><AlbumSpread spread={spreadsData[page]} index={page} reduced={reduced} onViewed={markSpreadViewed} onGallery={galleryUnlocked ? openGallery : undefined} /></motion.div></AnimatePresence></div>
       <footer className="fd-album-controls">
         <button type="button" onClick={previous}>
           <ChevronLeft size={18} />
@@ -966,7 +981,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
       </footer>
     </main>}
     {started && audioTrack && <button className={`fd-album-sound ${audioLoading ? 'is-loading' : ''} ${audioFailed ? 'is-error' : ''}`} type="button" onClick={toggleSound} aria-label={audioLoading ? 'Stop loading album soundtrack' : audioFailed ? 'Try album soundtrack again' : muted ? 'Turn album soundtrack on' : 'Mute album soundtrack'} aria-busy={audioLoading}>{audioLoading ? <LoaderCircle className="v-spin" size={17} /> : muted || audioFailed ? <VolumeX size={17} /> : <Volume2 size={17} />}<span aria-live="polite">{audioLoading ? 'Loading music…' : audioFailed ? 'Try music again' : muted ? 'Sound off' : 'Sound on'}</span></button>}
-    <AnimatePresence>{gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} onClose={() => setGallery(false)} delivery={delivery} fontStyles={themeStyles} {...galleryProps} />}</AnimatePresence>
+    <AnimatePresence>{galleryUnlocked && gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} onClose={() => setGallery(false)} delivery={delivery} fontStyles={themeStyles} {...galleryProps} />}</AnimatePresence>
   </div>;
 }
 
