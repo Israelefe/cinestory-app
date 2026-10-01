@@ -27,14 +27,14 @@ const direction = [
 ];
 
 const demoLinks = {
-  'photo-story': ['/demo?preset=lora', 'Watch the live Photo Story'],
-  'editorial-page': ['/demo/editorial', 'Explore the live Editorial Page'],
-  'photo-reveal': ['/demo/reveal', 'Begin the live Photo Reveal'],
-  canvas: ['/demo/canvas', 'Explore the live Canvas'],
-  chapters: ['/demo/chapters', 'Open the live Chapters experience'],
-  album: ['/demo/album', 'Turn through the live Album'],
-  'event-coverage': ['/demo/event-coverage', 'Browse the live Event Coverage'],
-  campaign: ['/demo/campaign', 'Open the live Campaign Delivery']
+  'photo-story': ['/demo?preset=lora', 'Watch Photo Story demo'],
+  'editorial-page': ['/demo/editorial', 'View Editorial Page demo'],
+  'photo-reveal': ['/demo/reveal', 'View Photo Reveal demo'],
+  canvas: ['/demo/canvas', 'View Canvas demo'],
+  chapters: ['/demo/chapters', 'View Chapters demo'],
+  album: ['/demo/album', 'View Album demo'],
+  'event-coverage': ['/demo/event-coverage', 'View Event Coverage demo'],
+  campaign: ['/demo/campaign', 'View Campaign Delivery demo']
 };
 
 const romanNumerals = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
@@ -137,7 +137,7 @@ export default function LandingPage() {
 
       <Reveal className="v-hero-text v-hero-after" delay={.18}>
         <p className="v-copy">Every photoshoot deserves a delivery worth remembering. Veylo turns the finished shoot into a designed first viewing your client can enjoy before opening the full gallery. You choose how the experience begins, and Veylo shapes its direction around the photographs.</p>
-        <div className="v-actions"><Action to="/signup">Get started</Action><Action to="/demo?preset=lora" secondary>Watch a demo</Action></div>
+        <div className="v-actions"><Action to="/signup">Get started</Action></div>
         <div className="v-hero-points"><span><Check size={13} />3 free deliveries each month</span><span><Check size={13} />Full gallery and downloads</span><span><Check size={13} />No app for your client</span></div>
       </Reveal>
     </div></section>

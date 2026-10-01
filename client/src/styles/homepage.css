@@ -55,7 +55,32 @@
 .v-home-refined .v-format-after { grid-area: after; align-self: start; min-width: 0; }
 .v-home-refined .v-format-after p { max-width: 450px; font-size: 14px; line-height: 1.85; color: #b0aaa4; }
 .v-home-refined .v-format-after .v-formats-intro { margin-bottom: 18px; }
-.v-home-refined .v-format-after .v-text-link { margin-top: 19px; }
+.v-home-refined .v-format-after .v-text-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  width: 100%;
+  max-width: 100%;
+  min-height: 52px;
+  margin-top: 24px;
+  padding: 14px 18px;
+  border: 1px solid #ff9b8e55;
+  border-radius: 4px;
+  background: #ff9b8e0a;
+  color: #ffd1c9;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0;
+  text-transform: none;
+  text-decoration: none;
+  transition: transform .2s, background .2s, border-color .2s;
+}
+.v-home-refined .v-format-after .v-text-link svg { flex-shrink: 0; }
+.v-home-refined .v-format-after .v-text-link:hover { transform: translate3d(0, -2px, 0); border-color: #ff9b8eaa; background: #ff9b8e14; }
+.v-home-refined .v-format-after .v-text-link:active { transform: scale(.98); }
+.v-home-refined .v-format-after .v-text-link:focus-visible { outline: 2px solid #ff9b8e; outline-offset: 4px; }
 .v-home-refined .v-format-row:nth-child(even) .v-format-copy,
 .v-home-refined .v-format-row:nth-child(even) .v-format-art { order: initial; }
 .v-home-refined .v-assurance-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'title' 'art' 'after'; gap: 28px; align-items: start; }
@@ -85,6 +110,7 @@
 .v-home-refined .v-copy { color: #b0aaa4; }
 
 @media (min-width: 640px) {
+  .v-home-refined .v-format-after .v-text-link { width: fit-content; }
   .v-home-refined .v-section, .v-home-refined .v-definition { padding-block: 85px; }
   .v-home-refined .v-hero-title { font-size: 57px; }
 }
@@ -123,6 +149,8 @@
   .v-home-refined .v-hero-after .v-button { width: 100%; justify-content: space-between; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .v-home-refined .v-button { transition: none; }
-  .v-home-refined .v-button:hover, .v-home-refined .v-button:active { transform: none; }
+  .v-home-refined .v-button, .v-home-refined .v-format-after .v-text-link { transition: none; }
+  .v-home-refined .v-button:hover, .v-home-refined .v-button:active,
+  .v-home-refined .v-format-after .v-text-link:hover,
+  .v-home-refined .v-format-after .v-text-link:active { transform: none; }
 }

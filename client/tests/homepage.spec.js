@@ -56,7 +56,7 @@ test('a format demo returns directly to its visible homepage section', async ({ 
   await openHome(page, { hash: '#album' });
   const album = page.locator('#album');
   await expect(album.locator('h3')).toHaveText('Album');
-  await album.getByRole('link', { name: 'Turn through the live Album' }).click();
+  await album.getByRole('link', { name: 'View Album demo' }).click();
   await expect(page).toHaveURL(/\/demo\/album$/);
   await page.goBack();
   await expect(page).toHaveURL(/\/#album$/);
