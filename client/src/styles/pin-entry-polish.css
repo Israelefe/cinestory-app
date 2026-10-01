@@ -1,0 +1,26 @@
+/* Only the locked delivery screen; format viewers own their presentation. */
+.vd-gate.vd-pin-entry {
+  position: relative;
+  padding: max(32px, env(safe-area-inset-top)) 24px max(32px, env(safe-area-inset-bottom));
+  background: radial-gradient(ellipse at 50% 12%, color-mix(in srgb, var(--vd-ready-accent) 9%, transparent), transparent 58%), var(--vd-ready-bg);
+  color: var(--vd-ready-text);
+}
+.vd-gate.vd-pin-entry > .delivery-brand-mark { width: 52px; height: 52px; }
+.vd-gate.vd-pin-entry > .delivery-brand-mark-initials { background: var(--vd-ready-accent); color: var(--vd-gate-button-ink); }
+.vd-gate.vd-pin-entry > p { max-width: 380px; margin-top: 24px; color: var(--vd-ready-text); font-size: 10px; line-height: 1.7; letter-spacing: .13em; }
+.vd-gate.vd-pin-entry h1 { max-width: 480px; margin-top: 22px; font-family: 'Plus Jakarta Sans', sans-serif; font-size: clamp(30px, 7.8vw, 46px); font-weight: 500; line-height: 1.17; letter-spacing: -.045em; text-wrap: balance; }
+.vd-gate.vd-pin-entry > span:not(.delivery-brand-mark) { max-width: 340px; margin-top: 20px; color: var(--vd-ready-text); font-size: 14px; line-height: 1.8; }
+.vd-gate.vd-pin-entry form { gap: 14px; width: min(100%, 360px); margin-top: 30px; }
+.vd-gate.vd-pin-entry label { color: var(--vd-ready-text); font-size: 12px; font-weight: 600; text-align: left; }
+.vd-gate.vd-pin-entry input { width: 100%; min-width: 0; height: 62px; border: 1px solid color-mix(in srgb, var(--vd-ready-text) 24%, transparent); border-radius: 6px; background: var(--vd-ready-surface); color: var(--vd-ready-text); font-size: 24px; font-variant-numeric: tabular-nums; letter-spacing: .28em; transition: border-color .18s, box-shadow .18s; }
+.vd-gate.vd-pin-entry input::placeholder { color: color-mix(in srgb, var(--vd-ready-text) 48%, var(--vd-ready-surface)); }
+.vd-gate.vd-pin-entry input:focus { border-color: var(--vd-ready-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--vd-ready-accent) 14%, transparent); }
+.vd-gate.vd-pin-entry input[aria-invalid='true'] { border-color: var(--vd-ready-text); }
+.vd-gate.vd-pin-entry form button { min-height: 54px; padding: 14px 20px; border: 1px solid var(--vd-ready-accent); border-radius: 6px; background: var(--vd-ready-accent); color: var(--vd-gate-button-ink); font-size: 13px; line-height: 1.5; transition: transform .18s, opacity .18s; }
+.vd-gate.vd-pin-entry form button:disabled { opacity: .55; cursor: not-allowed; }
+.vd-gate.vd-pin-entry form button:focus-visible { outline: 2px solid var(--vd-ready-text); outline-offset: 4px; }
+.vd-gate.vd-pin-entry form button:active:not(:disabled) { transform: scale(.98); }
+.vd-gate.vd-pin-entry > small { width: min(100%, 360px); margin-top: 18px; padding: 14px 16px; border: 1px solid color-mix(in srgb, var(--vd-ready-text) 22%, transparent); border-radius: 6px; background: var(--vd-ready-surface); color: var(--vd-ready-text); font-size: 13px; line-height: 1.7; text-align: left; }
+@media (hover: hover) { .vd-gate.vd-pin-entry form button:hover:not(:disabled) { transform: translateY(-1px); } }
+@media (min-width: 768px) { .vd-gate.vd-pin-entry { padding: 48px; } .vd-gate.vd-pin-entry h1 { font-size: 46px; } .vd-gate.vd-pin-entry > span:not(.delivery-brand-mark) { max-width: 370px; font-size: 15px; } }
+@media (prefers-reduced-motion: reduce) { .vd-gate.vd-pin-entry input, .vd-gate.vd-pin-entry form button { transition: none; transform: none !important; } .vd-gate.vd-pin-entry .v-spin { animation: none !important; } }

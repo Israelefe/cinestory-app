@@ -8,7 +8,7 @@ import { trackEvent } from '../services/analytics.js';
 import { DeliveryFormatViewer } from '../components/delivery/viewerRegistry.jsx';
 import PinboardViewer from '../components/delivery/PinboardViewer.jsx';
 import DeliveryBrandMark from '../components/delivery/DeliveryBrandMark.jsx';
-import { resolvedGridboardPalette } from '../utils/gridboardPalette.js';
+import { gridboardAccentInk, resolvedGridboardPalette } from '../utils/gridboardPalette.js';
 import { getDeliveryCapabilities } from '../constants/deliveryCapabilities.js';
 import { imageSrcSetCandidates, mapImageSrcSet } from '../utils/imageSrcSet.js';
 import '../styles/format-demos.css';
@@ -261,6 +261,7 @@ export default function DeliveryViewer() {
   const [delivery, setDelivery] = useState(null);
   const [locked, setLocked] = useState(false);
   const [lockedBrand, setLockedBrand] = useState(null);
+  const [lockedPalette, setLockedPalette] = useState({});
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -345,6 +346,7 @@ export default function DeliveryViewer() {
       if (response.data.data.locked) {
         setLocked(true);
         setLockedBrand(response.data.data.branding);
+        setLockedPalette(response.data.data.palette || {});
         setDelivery(null);
       } else {
         const current = response.data.data;
@@ -586,7 +588,7 @@ export default function DeliveryViewer() {
     }
   }
 
-  if (loading) {
+  if (loading && !locked) {
     return (
       <div className="vd-state">
         <LoaderCircle className="v-spin" size={28} />
@@ -597,13 +599,18 @@ export default function DeliveryViewer() {
 
   if (locked) {
     return (
-      <div className="vd-gate">
+      <main className="vd-gate vd-pin-entry" style={{ ...readinessTheme({ theme: lockedPalette }), '--vd-gate-button-ink': gridboardAccentInk(/^#[0-9a-f]{6}$/i.test(lockedPalette.accent || '') ? lockedPalette.accent : '#ff9b8e') }}>
         <DeliveryBrandMark branding={lockedBrand} />
         <p>{lockedBrand?.name ? `${lockedBrand.name.toUpperCase()} · PRIVATE DELIVERY` : 'PRIVATE CLIENT DELIVERY'}</p>
         <h1>Enter the six-digit PIN.</h1>
-        <span>The photographer protected this delivery. Use the PIN sent with your link.</span>
-        <form onSubmit={unlock}>
+        <span id="delivery-pin-help">The photographer protected this delivery. Use the PIN sent with your link.</span>
+        <form onSubmit={unlock} aria-busy={loading}>
+          <label htmlFor="delivery-pin">Six-digit PIN</label>
           <input
+            id="delivery-pin"
+            aria-describedby={error ? 'delivery-pin-help delivery-pin-error' : 'delivery-pin-help'}
+            aria-invalid={Boolean(error)}
+            disabled={loading}
             value={pin}
             onChange={event => setPin(event.target.value.replace(/\D/g, '').slice(0, 6))}
             inputMode="numeric"
@@ -611,12 +618,12 @@ export default function DeliveryViewer() {
             placeholder="000000"
             autoFocus
           />
-          <button disabled={pin.length !== 6}>
-            Open delivery<ArrowRight size={17} />
+          <button disabled={pin.length !== 6 || loading}>
+            {loading ? <>Opening delivery<LoaderCircle className="v-spin" size={17} /></> : <>Open delivery<ArrowRight size={17} /></>}
           </button>
         </form>
-        {error && <small role="alert">{error}</small>}
-      </div>
+        {error && <small id="delivery-pin-error" role="alert">{error}</small>}
+      </main>
     );
   }
 

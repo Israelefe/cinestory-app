@@ -1,5 +1,6 @@
 import { schedulePortfolioRemoval, finishPortfolioRemoval } from '../services/portfolioLifecycle.service.js';
 import crypto from 'crypto';
+import { deliveryGatePalette } from '../utils/deliveryGatePalette.js';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import bcrypt from 'bcryptjs';
@@ -1216,7 +1217,7 @@ export async function getPublicDelivery(req, res) {
       const owner = delivery.userId;
       const entitlements = await resolveEntitlements(owner, { includeUsage: false });
       const branding = entitlements.features.branding === 'studio' ? { type: 'studio', name: owner.studio?.name || owner.name, logoUrl: owner.studio?.logoUrl || owner.avatar || '' } : { type: 'veylo', name: 'Veylo', logoUrl: '/veylo/veylo-mark.svg' };
-      return res.json({ success: true, data: { locked: true, publicId: delivery.publicId, branding } });
+      return res.json({ success: true, data: { locked: true, publicId: delivery.publicId, branding, palette: deliveryGatePalette(delivery) } });
     }
     const sessionDigest = !isLikelyBot(req) ? tokenDigest(visitorId(req, res)) : undefined;
     recordAnalyticsEventAsync({ name: 'client.delivery.opened', source: 'server', actorType: grant ? 'guest' : 'client', deliveryId: delivery._id, sessionDigest, format: delivery.format, status: 'opened', route: req.originalUrl, metadata: { access: grant ? 'share-grant' : 'public', role: grant?.role || null } });
