@@ -9,6 +9,19 @@ test('responsive URL parsing keeps Cloudinary commas and maps only complete URL 
   expect(imageSrcSetCandidates('https://example.test/c_fill,w_480/photo.webp 1x, https://example.test/c_fill,w_960/photo.webp 2x').map(candidate => candidate.descriptor)).toEqual(['1x', '2x']);
 });
 
+async function openFullGallery(page, format) {
+  if (format === 'photo-reveal') {
+    await page.getByRole('button', { name: 'Begin reveal', exact: true }).click();
+    await expect(page.locator('.rv-position')).toHaveAttribute('aria-label', 'Photograph 1 of 6');
+    for (let at = 1; at < 6; at++) {
+      await page.getByRole('button', { name: 'Reveal next photo', exact: true }).click();
+      await expect(page.locator('.rv-position')).toHaveAttribute('aria-label', `Photograph ${at + 1} of 6`);
+    }
+    await page.getByRole('button', { name: 'Complete reveal', exact: true }).click();
+  }
+  await page.getByRole('button', { name: 'Open full gallery', exact: true }).click();
+}
+
 const id = '507f1f77bcf86cd799439011';
 const user = { _id: '507f1f77bcf86cd799439012', name: 'Amara', emailVerified: true, onboardingComplete: true, plan: 'free' };
 const note = 'Downloads open once the final balance is paid. Message Amara to confirm payment.';
@@ -94,7 +107,7 @@ for (const format of ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'cha
       if (format === 'photo-story') {
         await page.getByRole('button', { name: 'Begin the story', exact: true }).click();
         await page.getByRole('button', { name: 'Open gallery', exact: true }).click();
-      } else await page.getByRole('button', { name: 'Open full gallery', exact: true }).click();
+      } else await openFullGallery(page, format);
       const gallery = page.locator('.client-gallery');
       await expect(gallery.getByRole('button', { name: 'Download all photos', exact: true })).toBeVisible();
       await gallery.getByRole('button', { name: 'Open photograph 1', exact: true }).click();
@@ -129,7 +142,7 @@ async function checkStudioBrand(page, format, width) {
     if (format === 'photo-story') {
       await page.getByRole('button', { name: 'Begin the story', exact: true }).click();
       await page.getByRole('button', { name: 'Open gallery', exact: true }).click();
-    } else await page.getByRole('button', { name: 'Open full gallery', exact: true }).click();
+    } else await openFullGallery(page, format);
     await expect(page.locator('.client-gallery-studio')).toContainText('Amara Photography');
     await expect(page.locator('.client-gallery-studio .delivery-brand-mark')).toBeVisible();
   }

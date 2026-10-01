@@ -25,6 +25,14 @@ async function setup(page, delivery, captures = {}) {
 }
 const viewAt = (page, width) => width > 1024 ? page.frameLocator('.v-phone-screen iframe') : page;
 async function begin(view) { await view.getByRole('button', { name: 'Begin reveal', exact: true }).click(); await expect(view.locator('.rv-photo').last()).toHaveAttribute('data-asset-id', PHOTO_REVEAL_DEMO.assets[0].assetId); }
+async function complete(view, delivery) {
+  for (let at = 1; at < delivery.assets.length; at++) {
+    await view.getByRole('button', { name: 'Reveal next photo', exact: true }).click();
+    await expect(view.locator('.rv-position')).toHaveAttribute('aria-label', `Photograph ${at + 1} of ${delivery.assets.length}`);
+  }
+  await view.getByRole('button', { name: 'Complete reveal', exact: true }).click();
+  await expect(view.locator('.rv-closing')).toBeVisible();
+}
 
 for (const width of [320, 390, 768, 834, 1024, 1440]) test(`Reveal shows complete photos, readable captions and three closing photos at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: width === 320 ? 568 : 1000 }); const d = fixture();
@@ -33,7 +41,7 @@ for (const width of [320, 390, 768, 834, 1024, 1440]) test(`Reveal shows complet
   await expect(view.locator('.rv-caption p')).toHaveText(d.creativeDirection.frames[0].caption);
   expect(await view.locator('.rv-caption p').evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(14);
   await expect.poll(() => view.locator('html').evaluate(el => el.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
-  await view.getByRole('button', { name: 'Seen photos', exact: true }).click(); await expect(view.getByRole('button', { name: 'Revisit photograph 1' })).toBeVisible();
+  await view.getByRole('button', { name: 'Revisit photos', exact: true }).click(); await expect(view.getByRole('button', { name: 'Revisit photograph 1' })).toBeVisible();
   for (let at = 1; at < d.assets.length; at++) { await view.getByRole('button', { name: 'Reveal next photo', exact: true }).click(); await expect(view.locator('.rv-caption h2')).toHaveText(d.creativeDirection.frames[at].headline); }
   await view.getByRole('button', { name: 'Complete reveal', exact: true }).click();
   await expect(view.locator('.rv-ending-photos figure')).toHaveCount(3);
@@ -64,21 +72,39 @@ test('normal motion preloads the next photo and honours the chosen reveal transi
   await expect.poll(() => page.locator('.rv-caption').evaluate(el => getComputedStyle(el).opacity)).toBe('1');
 });
 
-test('gallery gestures leave reveal position unchanged and current photo opens directly in lightbox', async ({ page }) => {
-  const d = fixture(); await setup(page, d); await page.goto('/d/reveal-test'); await begin(page);
-  await page.getByRole('button', { name: 'View photo', exact: true }).click();
+test('gallery unlocks only after completing the reveal and replay closes access again', async ({ page }) => {
+  const d = fixture(); await setup(page, d); await page.goto('/d/reveal-test');
+  await expect(page.getByRole('button', { name: 'Open full gallery', exact: true })).toHaveCount(0);
+  await begin(page);
+  await expect(page.getByRole('button', { name: 'Open full gallery', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'View photo', exact: true })).toHaveCount(0);
+  await page.locator('.rv-photo').last().click();
+  await expect(page.locator('.client-gallery')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Revisit photos', exact: true }).click();
+  await expect(page.locator('.rv-seen button')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Add to favourites', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Remove from favourites', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await complete(page, d);
+  await page.getByRole('button', { name: 'Open full gallery', exact: true }).click();
+  await expect(page.locator('.client-gallery')).toBeVisible();
+  await page.getByRole('button', { name: 'Close gallery', exact: true }).click();
+  await page.getByRole('button', { name: 'View closing photograph 1', exact: true }).click();
   await expect(page.locator('.client-gallery.is-lightbox')).toBeVisible();
   await page.locator('.client-gallery').evaluate(el => { for (const [type, x] of [['touchstart', 250], ['touchend', 60]]) { const e = new Event(type, { bubbles: true }); Object.defineProperty(e, 'changedTouches', { value: [{ clientX: x, clientY: 150 }] }); el.dispatchEvent(e); } });
   await page.getByRole('button', { name: 'Close gallery', exact: true }).click();
-  await expect(page.locator('.rv-position')).toHaveAttribute('aria-label', 'Photograph 1 of 5');
-  await page.getByRole('button', { name: 'Add to favourites', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Remove from favourites', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.rv-closing')).toBeVisible();
+  await page.getByRole('button', { name: 'Start again', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Open full gallery', exact: true })).toHaveCount(0);
+  await begin(page);
+  await expect(page.locator('.client-gallery')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open full gallery', exact: true })).toHaveCount(0);
 });
 
 test('access settings hide favourites and downloads in the reveal and shared gallery', async ({ page }) => {
   const d = fixture(); d.access = { allowLikes: false, allowIndividualDownloads: false, allowDownloadAll: false };
   await setup(page, d); await page.goto('/d/reveal-test'); await begin(page);
   await expect(page.getByRole('button', { name: 'Add to favourites' })).toHaveCount(0);
+  await complete(page, d);
   await page.getByRole('button', { name: 'Open full gallery', exact: true }).click();
   await expect(page.locator('.client-gallery').getByRole('button', { name: /Download|Favourites/ })).toHaveCount(0);
 });
@@ -118,8 +144,14 @@ test('creation preview and saved theme carry the same reveal and ending settings
 });
 
 test('demo and client use the same renderer, settings and five-photo sample', async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' }); await page.goto('/demo/reveal?phoneView=1'); await begin(page);
+  await page.emulateMedia({ reducedMotion: 'reduce' }); await page.goto('/demo/reveal?phoneView=1');
+  await expect(page.getByRole('button', { name: 'Open full gallery', exact: true })).toHaveCount(0);
+  await begin(page);
+  await expect(page.getByRole('button', { name: 'Open full gallery', exact: true })).toHaveCount(0);
   await expect(page.locator('.rv-viewer')).toHaveAttribute('data-reveal-style', 'curtain');
   await expect(page.locator('.rv-position')).toHaveAttribute('aria-label', 'Photograph 1 of 5');
   await expect(page.locator('.rv-caption p')).toHaveText(PHOTO_REVEAL_DEMO.creativeDirection.frames[0].caption);
+  await complete(page, PHOTO_REVEAL_DEMO);
+  await page.getByRole('button', { name: 'View full gallery', exact: true }).click();
+  await expect(page.locator('.client-gallery')).toBeVisible();
 });
