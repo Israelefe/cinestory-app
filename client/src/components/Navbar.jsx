@@ -5,7 +5,6 @@ import { Menu, X, ArrowUpRight, ArrowRight, LayoutDashboard, LogOut } from 'luci
 import { useDialogFocus } from './useDialogFocus.js';
 import './Header.css';
 const links = [['Home', '/'], ['Formats', '/formats'], ['GridBoard', '/gridboard'], ['Portfolio', '/portfolio'], ['Client experience', '/client-experience'], ['Pricing', '/pricing'], ['About', '/about']];
-const primaryLinks = links.filter(([, path]) => ['/formats', '/gridboard', '/portfolio', '/pricing'].includes(path));
 export default function Navbar({ user, onLogout }) {
  const [open, setOpen] = useState(false);
  const { pathname } = useLocation();
@@ -24,7 +23,7 @@ export default function Navbar({ user, onLogout }) {
  <a href="#main-content" className="v-skip-link">Skip to content</a>
  <header className="v-nav"><div className="v-wrap v-nav-inner">
  <Link to="/" className="v-logo" aria-label="Veylo home"><img src="/veylo/veylo-mark.svg" alt="" width="27" height="27" />veylo<span className="text-[#ff9b8e]">.</span></Link>
- <nav className="v-nav-links" aria-label="Main navigation">{primaryLinks.map(([label, path]) => <Link key={path} to={path} aria-current={pathname === path ? 'page' : undefined}>{label}</Link>)}</nav>
+ <nav className="v-nav-links" aria-label="Main navigation">{links.map(([label, path]) => <Link key={path} to={path} aria-current={pathname === path ? 'page' : undefined}>{label}</Link>)}</nav>
  <div className="v-nav-actions">
  <Link className="v-nav-home" to="/" aria-current={pathname === '/' ? 'page' : undefined}>Home</Link>
  {user ? <><Link className="v-nav-dashboard" to="/dashboard"><LayoutDashboard size={17} /><span>Dashboard</span></Link><button className="v-nav-signin v-nav-logout" onClick={onLogout} aria-label="Sign out"><LogOut size={17} /></button></> : <Link className="v-nav-signin" to="/signin">Sign in</Link>}

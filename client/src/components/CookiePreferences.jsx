@@ -45,8 +45,8 @@ export default function CookiePreferences() {
     {!acknowledged && <aside className="v-cookie-banner v-cookie-compact" aria-label="Cookies and browser storage notice">
       <span><ShieldCheck size={20} /></span>
       <div>
-        <strong>Your privacy</strong>
-        <p>We use necessary cookies and first-party analytics. No advertising cookies.</p>
+        <strong>How Veylo uses browser storage</strong>
+        <p>Veylo uses necessary cookies and first-party service analytics to sign you in, protect account actions, measure visits, and improve the platform. We do not use advertising cookies or sell visitor data.</p>
       </div>
       <div className="v-cookie-actions">
         <button type="button" onClick={() => setOpen(true)}>View details</button>
