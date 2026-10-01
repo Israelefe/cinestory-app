@@ -13,6 +13,7 @@ import { uploadDeliveryPhotosV3 } from '../utils/deliveryUploadV3.js';
 import { SHOOT_TYPES } from '../constants/shootTypes.js';
 import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
 import { DELIVERY_FORMATS } from '../constants/deliveryFormats.js';
+import { DELIVERY_FONTS as FONTS } from '../utils/deliveryTypography.js';
 import DeliveryFormatVisual from '../components/DeliveryFormatVisual.jsx';
 import NarrationVoicePicker from '../components/delivery/NarrationVoicePicker.jsx';
 import ShowcasePhotoPicker from '../components/delivery/ShowcasePhotoPicker.jsx';
@@ -21,7 +22,6 @@ import './CreateDeliveryV3.css';
 
 const BOUNDS = { 'photo-story': [5, 10], editorial: [6, 14], 'photo-reveal': [5, 12], canvas: [8, 18], chapters: [8, 20], album: [6, 16], 'event-coverage': [10, 24], campaign: [6, 16] };
 const MUSIC = new Set(['photo-story', 'photo-reveal', 'album']);
-const FONTS = ['Playfair Display', 'Outfit', 'Plus Jakarta Sans', 'Cormorant Garamond', 'DM Sans', 'Libre Baskerville', 'Manrope'];
 const STEPS = [{ id: 'details', label: 'Shoot' }, { id: 'format', label: 'Format' }, { id: 'upload', label: 'Photos' }, { id: 'preparing', label: 'Preparing' }, { id: 'showcase', label: 'Showcase' }, { id: 'narration', label: 'Narration' }, { id: 'music', label: 'Music' }, { id: 'design', label: 'Design' }, { id: 'access', label: 'Publish' }];
 const DEFAULT_ACCESS = { allowIndividualDownloads: true, allowDownloadAll: true, allowLikes: true, expiresAt: '', usageTerms: '' };
 const defaultPalette = { background: '#0c0c10', surface: '#17171c', text: '#fffaf6', accent: '#ff5a47' };
@@ -729,7 +729,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
           <div className="v3-actions"><StepButton secondary onClick={() => { audioRef.current?.pause(); setActiveTrack(''); setStage(format === 'photo-story' ? 'narration' : 'showcase'); }}><ArrowLeft size={17} /> Back</StepButton>{draft?.soundtrack && <StepButton onClick={() => { audioRef.current?.pause(); setActiveTrack(''); setStage('design'); }}><ArrowRight size={17} /> Continue to design</StepButton>}</div>
         </>}
         {stage === 'design' && <>
-          <Head eyebrow={String(currentIndex + 1).padStart(2, '0') + ' / DESIGN'} title="See how your delivery will look.">These colours and fonts change the opening and photo showcase. The full gallery and its controls keep Veylo's standard design.</Head>
+          <Head eyebrow={String(currentIndex + 1).padStart(2, '0') + ' / DESIGN'} title="See how your delivery will look.">These colours change the opening and photo showcase. Your chosen fonts also carry through to gallery titles and captions. The gallery layout and controls keep Veylo's standard design.</Head>
           <div className="v3-design-grid">
             <div className="v3-panel v3-design-controls">
               <div className="v3-design-colour-heading"><div className="v3-panel-heading"><span>01</span><div><h2>Colours from your photographs</h2><p>Choose another set until it feels right.</p></div></div><StepButton secondary onClick={repickPalette} disabled={!!busy}><RefreshCw size={15} className={busy === 'palette' ? 'v3-spin' : ''} />{busy === 'palette' ? 'Choosing colours…' : 'Choose another palette'}</StepButton></div>

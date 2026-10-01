@@ -1,7 +1,15 @@
 // Sample deliveries use the same saved shape as creation previews and client links.
 // Only the content and local demo actions differ from a published delivery.
+import demoNarration from '../constants/demoNarration.json' with { type: 'json' };
+
 export function photoStoryDemoDelivery(preset) {
   if (!preset) return null;
+  const openingLine = preset.opening?.copy || preset.storySummary;
+  const closingLine = preset.finale?.copy || '';
+  const recorded = Object.hasOwn(demoNarration, preset.id) ? demoNarration[preset.id] : null;
+  const narration = recorded?.opening?.text === openingLine && recorded?.closing?.text === closingLine
+    ? { ...recorded, opening: { ...recorded.opening }, closing: { ...recorded.closing } }
+    : undefined;
   const assets = preset.photos.map((photo, index) => ({
     assetId: `demo-${preset.id}-${index + 1}`,
     url: `/veylo/web/demo-${preset.id}-${index + 1}-960.webp`,
@@ -22,8 +30,8 @@ export function photoStoryDemoDelivery(preset) {
     curatedAssetIds: assets.map(asset => asset.assetId),
     creativeDirection: {
       title: preset.opening?.headline || preset.title,
-      openingLine: preset.opening?.copy || preset.storySummary,
-      closingLine: preset.finale?.copy || '',
+      openingLine,
+      closingLine,
       palette: { background: '#0c0c10', surface: '#17171c', text: '#fffaf6', accent: preset.theme?.accentColor || '#ff5a47' },
       typography: { display: 'Playfair Display', body: 'Outfit' },
       frames: preset.photos.map((photo, index) => ({
@@ -41,7 +49,8 @@ export function photoStoryDemoDelivery(preset) {
         captionPosition: 'bottom'
       }))
     },
-    v3: { openingAssetId: assets[0]?.assetId, closingAssetId: assets.at(-1)?.assetId, narrationChoice: 'skip' },
+    v3: { openingAssetId: assets[0]?.assetId, closingAssetId: assets.at(-1)?.assetId, narrationChoice: narration ? 'voice' : 'skip' },
+    narration,
     soundtrack: preset.soundtrack?.audioUrl ? { url: preset.soundtrack.audioUrl, title: preset.soundtrack.title } : undefined,
     access: { allowLikes: true, allowIndividualDownloads: true, allowDownloadAll: true }
   };

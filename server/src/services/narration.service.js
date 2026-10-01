@@ -140,17 +140,26 @@ export async function narrationVoicePreview(voiceId) {
   return synthesize({ apiKey, voiceId, speed: 0.85, text: 'Your photographs are ready. Take your time with each one, and enjoy the full story.' });
 }
 
-export async function synthesizeV3Bookends(delivery, { voiceId = DEFAULT_NARRATION_VOICE_ID } = {}) {
+// Public demo clips and private delivery bookends use the same speech settings.
+// This server-only helper returns audio without uploading it or exposing credentials.
+export async function synthesizeBookendAudio(value, { voiceId = DEFAULT_NARRATION_VOICE_ID } = {}) {
   const voice = requiredVoice(voiceId);
   const apiKey = String(process.env.DEEPGRAM_API_KEY || '').trim();
   if (!apiKey) throw Object.assign(new Error('Narration is unavailable right now. Retry this step or skip narration.'), { code: 'NARRATION_UNAVAILABLE' });
+  const text = narrationLine(value);
+  if (text.length < 8) throw Object.assign(new Error('Write an opening and closing message first.'), { code: 'NARRATION_TEXT_REQUIRED' });
+  return synthesize({ apiKey, text, voiceId: voice.id });
+}
+
+export async function synthesizeV3Bookends(delivery, { voiceId = DEFAULT_NARRATION_VOICE_ID } = {}) {
+  const voice = requiredVoice(voiceId);
   const opening = narrationLine(delivery.creativeDirection?.openingLine);
   const closing = narrationLine(delivery.creativeDirection?.closingLine);
   if (opening.length < 8 || closing.length < 8) throw Object.assign(new Error('Write an opening and closing message first.'), { code: 'NARRATION_TEXT_REQUIRED' });
   const uploaded = [];
   try {
     for (const [key, text] of [['opening', opening], ['closing', closing]]) {
-      const audio = await synthesize({ apiKey, text, voiceId: voice.id, speed: 0.85 });
+      const audio = await synthesizeBookendAudio(text, { voiceId: voice.id });
       const result = await uploadAudio(audio, delivery);
       uploaded.push({ key, publicId: result.public_id, text });
     }

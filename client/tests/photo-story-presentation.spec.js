@@ -4,6 +4,9 @@ import { photoStoryDemoDelivery } from '../src/utils/photoStoryDemo.js';
 import { gridboardPaletteContrast } from '../src/utils/gridboardPalette.js';
 
 const sample = photoStoryDemoDelivery(DEMO_PRESETS.find(preset => preset.id === 'ada'));
+// Layout/image tests use a quiet delivery; demo narration has its own playback checks.
+delete sample.narration;
+sample.v3.narrationChoice = 'skip';
 const user = { _id: 'story-ui-user', name: 'Apex Imagery', studioName: sample.branding.name, email: 'studio@example.com', emailVerified: true, onboardingComplete: true, plan: 'pro', role: 'photographer' };
 const draftId = '507f1f77bcf86cd799439099';
 
@@ -263,6 +266,9 @@ for (const format of ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'cha
 
 async function begin(view) {
   await view.getByRole('button', { name: 'Begin the story', exact: true }).click();
+  // This suite mocks media playback; finish the public demo's introduction explicitly.
+  const opening = view.locator('audio[src*="/demo-bookends/"][src*="-opening-"]');
+  if (await opening.count()) await opening.evaluate(el => el.dispatchEvent(new Event('ended')));
   await view.getByRole('button', { name: 'Pause story', exact: true }).click();
   await expect(view.locator('.v-story-canvas.is-playing-state')).toBeVisible();
 }

@@ -6,13 +6,14 @@ import { Photo } from '../PublicDesign.jsx';
 import { useDialogFocus } from '../useDialogFocus.js';
 import { trackEvent } from '../../services/analytics.js';
 import DeliveryBrandMark from './DeliveryBrandMark.jsx';
+import { deliveryFontStyles } from '../../utils/deliveryTypography.js';
 import './ClientGallery.css';
+import './DeliveryTypography.css';
 
 const photoKey = (photo, index) => photo?.assetId || photo?.id || photo?.name || index;
 const imageUrl = (photo, width = 1440) => photo?.url || (typeof photo === 'string' && (photo.startsWith('http') || photo.startsWith('/')) ? photo : `/veylo/web/${photo?.name || photo}-${width}.webp`);
-const allowedFonts = new Set(['Playfair Display', 'Outfit', 'Plus Jakarta Sans', 'Cormorant Garamond', 'DM Sans', 'Libre Baskerville', 'Manrope']);
 
-export default function ClientGallery({ photos = [], title = 'Your photographs', eyebrow = 'The complete collection', onClose, initialIndex = null, liked, onLike, onDownload, onDownloadAll, busy, downloading = null, allDownloading = false, downloadNotice = '', downloadProgress = null, delivery, demoId }) {
+export default function ClientGallery({ photos = [], title = 'Your photographs', eyebrow = 'The complete collection', onClose, initialIndex = null, liked, onLike, onDownload, onDownloadAll, busy, downloading = null, allDownloading = false, downloadNotice = '', downloadProgress = null, delivery, demoId, fontStyles }) {
   const reduced = useReducedMotion();
   const galleryId = useId();
   const panel = useRef(null);
@@ -32,13 +33,8 @@ export default function ClientGallery({ photos = [], title = 'Your photographs',
   const allowIndividualDownloads = Boolean(onDownload) && (!delivery || delivery.access?.allowIndividualDownloads !== false);
   const allowLikes = delivery ? Boolean(delivery.access?.allowLikes && onLike) : Boolean(onLike);
   const resolvedPhotos = useMemo(() => photos.map((photo, index) => demoId ? { ...photo, name: `demo-${demoId}-${index + 1}`, url: `/veylo/web/demo-${demoId}-${index + 1}-1440.webp`, thumbnailUrl: `/veylo/web/demo-${demoId}-${index + 1}-480.webp` } : photo), [photos, demoId]);
-  const typography = delivery?.creativeDirection?.typography || {};
-  const displayFont = allowedFonts.has(typography.display) ? `'${typography.display}', Georgia, serif`
-    : typography.display === 'soft-serif' ? "'Cormorant Garamond', Georgia, serif"
-      : ['condensed-sans', 'clean-sans'].includes(typography.display) ? "'Outfit', sans-serif" : "'Playfair Display', Georgia, serif";
-  const bodyFont = allowedFonts.has(typography.body) ? `'${typography.body}', system-ui, sans-serif`
-    : typography.body === 'editorial-serif' ? "'Playfair Display', Georgia, serif" : "'Plus Jakarta Sans', system-ui, sans-serif";
-  const galleryTheme = { '--gallery-display': displayFont, '--gallery-body': bodyFont };
+  const fonts = deliveryFontStyles(delivery?.kind === 'pinboard' ? delivery?.pinboard?.typography : delivery?.creativeDirection?.typography, { display: fontStyles?.['--delivery-font-heading'], body: fontStyles?.['--delivery-font-caption'] });
+  const galleryTheme = { ...fonts, '--gallery-display': fonts['--delivery-font-heading'], '--gallery-body': fonts['--delivery-font-caption'] };
   const favouriteCount = resolvedPhotos.filter((photo, index) => liked?.has(photoKey(photo, index))).length;
   const visibleIndexes = resolvedPhotos.map((_, index) => index).filter(index => !allowLikes || !favouritesOnly || liked?.has(photoKey(resolvedPhotos[index], index)));
   const activePhoto = selected === null ? null : resolvedPhotos[selected];

@@ -1,0 +1,62 @@
+{
+  "sharon": {
+    "voiceId": "flux-hannah-en",
+    "voiceName": "Hannah",
+    "renderVersion": "flux-bookends-v4",
+    "opening": {
+      "url": "/veylo/audio/demo-bookends/sharon-opening-35e332538f4f.mp3",
+      "text": "You stepped onto the cobalt set with a quiet confidence that carried through the entire session.",
+      "bytes": 55584
+    },
+    "closing": {
+      "url": "/veylo/audio/demo-bookends/sharon-closing-2cdd59d57d5a.mp3",
+      "text": "Your finished portraits are ready. Take your time and enjoy every one of them.",
+      "bytes": 43488
+    }
+  },
+  "lora": {
+    "voiceId": "flux-hannah-en",
+    "voiceName": "Hannah",
+    "renderVersion": "flux-bookends-v4",
+    "opening": {
+      "url": "/veylo/audio/demo-bookends/lora-opening-6c2e3bf27653.mp3",
+      "text": "You brought the green dress and a smile that made the whole room feel lighter.",
+      "bytes": 44928
+    },
+    "closing": {
+      "url": "/veylo/audio/demo-bookends/lora-closing-f8e71a7e306a.mp3",
+      "text": "Keep this smile close. Your complete birthday gallery is ready whenever you want to see it again.",
+      "bytes": 32976
+    }
+  },
+  "ada": {
+    "voiceId": "flux-hannah-en",
+    "voiceName": "Hannah",
+    "renderVersion": "flux-bookends-v4",
+    "opening": {
+      "url": "/veylo/audio/demo-bookends/ada-opening-cbf6398a8950.mp3",
+      "text": "You chose the green suit and a set that felt just like you. Happy 30th birthday.",
+      "bytes": 48816
+    },
+    "closing": {
+      "url": "/veylo/audio/demo-bookends/ada-closing-ef0c68328c10.mp3",
+      "text": "May this new decade bring you more laughter, bigger wins, and many more reasons to celebrate.",
+      "bytes": 41616
+    }
+  },
+  "wedding": {
+    "voiceId": "flux-hannah-en",
+    "voiceName": "Hannah",
+    "renderVersion": "flux-bookends-v4",
+    "opening": {
+      "url": "/veylo/audio/demo-bookends/wedding-opening-9acad36c753b.mp3",
+      "text": "Before the music and celebration, we had a few quiet minutes to photograph the two of you together.",
+      "bytes": 31536
+    },
+    "closing": {
+      "url": "/veylo/audio/demo-bookends/wedding-closing-573a03606cf7.mp3",
+      "text": "May the love and happiness you shared on this day stay with you through every year ahead.",
+      "bytes": 33408
+    }
+  }
+}

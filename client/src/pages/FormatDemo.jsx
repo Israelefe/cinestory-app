@@ -9,7 +9,9 @@ import DeliveryBrandMark from '../components/delivery/DeliveryBrandMark.jsx';
 import { EVENT_COVERAGE_DEMO_PHOTOS } from '../constants/eventCoverageDemo.js';
 import { getDeliveryCapabilities } from '../constants/deliveryCapabilities.js';
 import { useSmoothSoundtrackLoop } from '../utils/smoothSoundtrackLoop.js';
+import { deliveryFontStyles } from '../utils/deliveryTypography.js';
 import '../styles/format-demos.css';
+import '../components/delivery/DeliveryTypography.css';
 
 const soundtrackRamps = new WeakMap();
 function fadeSoundtrack(element, target, duration = 900, onComplete) {
@@ -59,21 +61,6 @@ export const imageSrc = (photo, width = 1440) => {
   return `/veylo/web/${name || photo}-${width}.webp`;
 };
 
-function getFontFamily(type, fallback = "'Playfair Display', Georgia, serif") {
-  switch (type) {
-    case 'editorial-serif':
-      return "'Playfair Display', Georgia, serif";
-    case 'soft-serif':
-      return "'Cormorant Garamond', 'Playfair Display', Georgia, serif";
-    case 'condensed-sans':
-      return "'Outfit', 'Plus Jakarta Sans', sans-serif";
-    case 'clean-sans':
-      return "'Plus Jakarta Sans', system-ui, sans-serif";
-    default:
-      return type ? `"${type}", ${fallback}` : fallback;
-  }
-}
-
 export function getFormatThemeStyles(delivery, fallback = {}) {
   const cd = delivery?.creativeDirection;
   const palette = cd?.palette || {};
@@ -83,8 +70,7 @@ export function getFormatThemeStyles(delivery, fallback = {}) {
   const bg = palette.background || palette.backgroundColor || fallback.bg || '#070709';
   const surface = palette.surface || palette.surfaceColor || fallback.surface || '#0e0e13';
   const text = palette.text || palette.textColor || fallback.text || '#f2eee8';
-  const displayFont = getFontFamily(typography.display || typography.displayFont, fallback.fontDisplay || "'Playfair Display', Georgia, serif");
-  const bodyFont = getFontFamily(typography.body || typography.bodyFont, fallback.fontBody || "'Plus Jakarta Sans', sans-serif");
+  const fonts = deliveryFontStyles(typography, { display: fallback.fontDisplay, body: fallback.fontBody });
   const variation = cd?.variation || {};
   // A delivery must never recolour or re-grade the photographer's finished files.
   // The selected treatment remains available to the art direction record, while the
@@ -98,8 +84,9 @@ export function getFormatThemeStyles(delivery, fallback = {}) {
     '--fd-bg': bg,
     '--fd-surface': surface,
     '--fd-text': text,
-    '--fd-font-display': displayFont,
-    '--fd-font-body': bodyFont,
+    ...fonts,
+    '--fd-font-display': fonts['--delivery-font-heading'],
+    '--fd-font-body': fonts['--delivery-font-caption'],
     '--fd-image-filter': imageFilter,
     '--fd-density-gap': densityGap,
     '--fd-caption-weight': variation.captionTreatment === 'bold' ? '650' : variation.captionTreatment === 'quiet' ? '400' : '500',
@@ -488,7 +475,7 @@ export function EditorialDemo({ delivery, galleryProps, audioState, toggleAudio,
         <EditorialPhoto photo={photo2} frame={frame2} accent={frame2.colorAccent} sizes="(max-width: 767px) 92vw, 48vw" caption={frame2.caption || frame2.headline || (demoOnly ? "02 / The suit, held with quiet confidence." : section2.subtitle || '')} direction={-1} onNarrationNavigate={onNarrationNavigate} />
         <motion.div className="fd-ed-quote" {...reveal(.08)}>
           <span>{frame2.headline ? 'KEY FRAME' : (section2.label || (demoOnly ? 'THE GREEN SUIT' : 'FEATURE'))}</span>
-          <blockquote>
+          <blockquote data-delivery-font={frame2.headline || section2.title || demoOnly ? 'heading' : 'caption'}>
             <motion.span {...reveal(.12)}>{`“${frame2.headline || section2.title || (demoOnly ? 'One outfit.' : frame2.caption || 'A closer look.')}”`}</motion.span>
             {!frame2.headline && (section2.subtitle || demoOnly) && <motion.span {...reveal(.2)}>{section2.subtitle || 'Five different ways to own it.'}</motion.span>}
           </blockquote>
@@ -504,7 +491,7 @@ export function EditorialDemo({ delivery, galleryProps, audioState, toggleAudio,
           <motion.small {...reveal()}>{frame4.headline ? 'HIGHLIGHT' : (section4.label || (demoOnly ? 'THE FULL LOOK' : 'SELECTED FRAME'))}</motion.small>
           <h2>
             <motion.span {...reveal(.08)}>{frame4.headline || section4.title || (demoOnly ? 'Green velvet, sculpted lines,' : '')}</motion.span>
-            <motion.span {...reveal(.16)}>{frame4.caption || section4.subtitle || (demoOnly ? 'and Ada in complete control of the frame.' : '')}</motion.span>
+            <motion.span data-delivery-font="caption" {...reveal(.16)}>{frame4.caption || section4.subtitle || (demoOnly ? 'and Ada in complete control of the frame.' : '')}</motion.span>
           </h2>
         </motion.div>
       </section>
@@ -550,7 +537,7 @@ export function EditorialDemo({ delivery, galleryProps, audioState, toggleAudio,
       </section>
     </main>
     <V3Bookend delivery={delivery} kind="closing" onGallery={() => setGallery(true)} />
-    <AnimatePresence>{gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} onClose={() => setGallery(false)} delivery={delivery} {...galleryProps} />}</AnimatePresence>
+    <AnimatePresence>{gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} onClose={() => setGallery(false)} delivery={delivery} fontStyles={themeStyles} {...galleryProps} />}</AnimatePresence>
   </div>;
 }
 
@@ -748,7 +735,7 @@ export function RevealDemo({ delivery, galleryProps, audioState, toggleAudio, on
       </motion.section>}
     </main>}
     {started && audioTrack && <button className={`fd-reveal-sound ${audioLoading ? 'is-loading' : ''} ${audioFailed ? 'is-error' : ''}`} type="button" onClick={toggleSound} aria-label={audioLoading ? 'Stop loading soundtrack' : audioFailed ? 'Try soundtrack again' : muted ? 'Turn soundtrack on' : 'Mute soundtrack'} aria-busy={audioLoading}>{audioLoading ? <LoaderCircle className="v-spin" size={17} /> : muted || audioFailed ? <VolumeX size={17} /> : <Volume2 size={17} />}<span aria-live="polite">{audioLoading ? 'Loading music…' : audioFailed ? 'Try music again' : muted ? 'Sound off' : 'Sound on'}</span></button>}
-    <AnimatePresence>{gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} onClose={() => setGallery(false)} delivery={delivery} {...galleryProps} />}</AnimatePresence>
+    <AnimatePresence>{gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} onClose={() => setGallery(false)} delivery={delivery} fontStyles={themeStyles} {...galleryProps} />}</AnimatePresence>
   </div>;
 }
 
@@ -889,7 +876,7 @@ export function CanvasDemo({ delivery, galleryProps, audioState, toggleAudio, on
     </main>
     <V3Bookend delivery={delivery} kind="closing" onGallery={() => setGallery(true)} />
     <AnimatePresence>{selected !== null && <CanvasFocus photos={wallPhotos} index={selected} onSelect={selectPhoto} onClose={() => setSelected(null)} reduced={reduced} clientName={clientName} frames={frames} />}</AnimatePresence>
-    <AnimatePresence>{gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} onClose={() => setGallery(false)} delivery={delivery} {...galleryProps} />}</AnimatePresence>
+    <AnimatePresence>{gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} onClose={() => setGallery(false)} delivery={delivery} fontStyles={themeStyles} {...galleryProps} />}</AnimatePresence>
   </div>;
 }
 
@@ -1041,7 +1028,7 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
     </AnimatePresence>
 
     {openChapterData === null && <V3Bookend delivery={delivery} kind="closing" onGallery={() => { setGalleryIndex(null); setGallery(true); }} />}
-    <AnimatePresence>{gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} {...galleryProps} />}</AnimatePresence>
+    <AnimatePresence>{gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} fontStyles={themeStyles} {...galleryProps} />}</AnimatePresence>
   </div>;
 }
 
@@ -1318,7 +1305,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
       </footer>
     </main>}
     {started && audioTrack && <button className={`fd-album-sound ${audioLoading ? 'is-loading' : ''} ${audioFailed ? 'is-error' : ''}`} type="button" onClick={toggleSound} aria-label={audioLoading ? 'Stop loading album soundtrack' : audioFailed ? 'Try album soundtrack again' : muted ? 'Turn album soundtrack on' : 'Mute album soundtrack'} aria-busy={audioLoading}>{audioLoading ? <LoaderCircle className="v-spin" size={17} /> : muted || audioFailed ? <VolumeX size={17} /> : <Volume2 size={17} />}<span aria-live="polite">{audioLoading ? 'Loading music…' : audioFailed ? 'Try music again' : muted ? 'Sound off' : 'Sound on'}</span></button>}
-    <AnimatePresence>{gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} onClose={() => setGallery(false)} delivery={delivery} {...galleryProps} />}</AnimatePresence>
+    <AnimatePresence>{gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} onClose={() => setGallery(false)} delivery={delivery} fontStyles={themeStyles} {...galleryProps} />}</AnimatePresence>
   </div>;
 }
 

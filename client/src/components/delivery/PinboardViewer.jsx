@@ -7,7 +7,9 @@ import api from '../../services/api.js';
 import { resolvedGridboardPalette } from '../../utils/gridboardPalette.js';
 import { useSmoothSoundtrackLoop } from '../../utils/smoothSoundtrackLoop.js';
 import DeliveryBrandMark from './DeliveryBrandMark.jsx';
+import { deliveryFontStyles } from '../../utils/deliveryTypography.js';
 import './PinboardViewer.css';
+import './DeliveryTypography.css';
 
 function accessHeaders(publicId) {
   const headers = {};
@@ -176,8 +178,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   useSmoothSoundtrackLoop(musicRef, soundtrackUrl);
   const slideshowAsset = slideshow ? assetById.get(String(slideshow.assetIds[slideshow.index])) : null;
   const palette = useMemo(() => resolvedGridboardPalette(board.palette, assets), [board.palette, assets]);
-  const typography = board.typography || {};
-  const fonts = { display: typography.display || 'Cormorant Garamond', body: typography.body || 'Outfit' };
+  const fonts = deliveryFontStyles(board.typography, { display: "'Cormorant Garamond', Georgia, serif" });
   const grid = board.grid || {};
   const columnCount = Math.max(1, Math.min(5, Number(viewportWidth <= 640 ? grid.mobileColumns || 2 : viewportWidth <= 1024 ? grid.tabletColumns || 3 : grid.desktopColumns || 4)));
   const masonryColumns = Array.from({ length: columnCount }, () => []);
@@ -195,8 +196,9 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
     '--pb-text': palette.text || '#fff6ec',
     '--pb-accent': palette.accent || '#efa57c',
     '--pb-on-accent': accentInk(palette.accent || '#efa57c'),
-    '--pb-display': `'${fonts.display}', Georgia, serif`,
-    '--pb-body': `'${fonts.body}', Arial, sans-serif`,
+    ...fonts,
+    '--pb-display': fonts['--delivery-font-heading'],
+    '--pb-body': fonts['--delivery-font-caption'],
     '--pb-gap': grid.gap === 'compact' ? '8px' : grid.gap === 'spacious' ? '22px' : '14px',
     '--pb-active-columns': columnCount,
     '--pb-animation-duration': board.animation === 'staggered' ? '.76s' : '.58s'

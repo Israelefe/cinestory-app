@@ -209,7 +209,7 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
 
       <footer className="vec-event-close">{closingPhoto && <img className="vec-v3-bookend-photo" src={closingPhoto.url} alt="" />}<span>{studio}</span><h2>{delivery?.schemaVersion === 3 ? delivery?.creativeDirection?.closingLine : 'The whole day, in one place.'}</h2><button type="button" onClick={() => { setGalleryIndex(null); setGallery(true); }}>Open all {galleryPhotos.length} photographs<Images size={18} /></button></footer>
     </main>
-    <AnimatePresence>{gallery && <DemoGallery photos={galleryPhotos} title={title} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} {...galleryProps} />}</AnimatePresence>
+    <AnimatePresence>{gallery && <DemoGallery photos={galleryPhotos} title={title} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} fontStyles={styles} {...galleryProps} />}</AnimatePresence>
   </div>;
 }
 
@@ -311,6 +311,6 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
 
       <footer className="vec-campaign-close">{closingPhoto && <img className="vec-v3-bookend-photo" src={closingPhoto.url} alt="" />}<span>04 / COMPLETE COLLECTION</span><h2>{delivery?.schemaVersion === 3 ? delivery?.creativeDirection?.closingLine : 'See every approved photograph.'}</h2><button type="button" onClick={() => { setGalleryIndex(null); setGallery(true); }}>Open the full gallery<Images size={18} /></button></footer>
     </main>
-    <AnimatePresence>{gallery && <DemoGallery photos={galleryPhotos} title={title} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} {...galleryProps} />}</AnimatePresence>
+    <AnimatePresence>{gallery && <DemoGallery photos={galleryPhotos} title={title} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} fontStyles={styles} {...galleryProps} />}</AnimatePresence>
   </div>;
 }

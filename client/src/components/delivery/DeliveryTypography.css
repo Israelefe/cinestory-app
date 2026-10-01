@@ -1,0 +1,20 @@
+/* Font roles stay consistent even when older per-photo styles are present.
+   Only the font family is shared; each format keeps its sizes and treatments. */
+:is(.fd-page,.pb-viewer,.client-gallery,.v-story-shell,.v-story-reading) :is(button,input,select,textarea),
+:is(.fd-page,.pb-viewer,.client-gallery,.v-story-shell) :is(.fd-header,.fd-reveal-position,.fd-wall-controls,.fd-album-reader-head,.fd-album-controls,.v-story-frame-count,.client-gallery-photo-number,.client-gallery-count,.client-gallery-download-notice,.pb-board-controls,.pb-slide-index,.pb-slide-loading,.pb-slide-loading-indicator){font-family:var(--delivery-font-ui,'Outfit',system-ui,sans-serif)!important}
+.fd-page :is(h1,h2,h3),.pb-viewer :is(h1,h2,h3),.client-gallery :is(h2,h3),.v-story-reading h2{font-family:var(--delivery-font-heading,'Playfair Display',Georgia,serif)!important}
+.fd-page :is(p,figcaption,blockquote,.fd-wall-caption,.vec-photo-caption),
+.fd-page .fd-chapter-room-photos>button>p,
+.fd-page .vec-campaign-set-support button>span,
+.pb-viewer :is(p,figcaption),
+.client-gallery-lightbox-caption,
+.v-story-reading>p{font-family:var(--delivery-font-caption,'Outfit',system-ui,sans-serif)!important}
+.v-story-shell .v-story-caption:not(.is-finale) h2{font-family:var(--delivery-font-caption,'Outfit',system-ui,sans-serif)!important}
+.v-story-shell .v-story-caption.is-finale>p:not(.v-story-kicker){font-family:var(--delivery-font-caption,'Outfit',system-ui,sans-serif)!important}
+.v-story-shell :is(.v-story-cover h1,.v-story-caption.is-finale h2){font-family:var(--delivery-font-heading,'Playfair Display',Georgia,serif)!important}
+.fd-page .fd-chapter-directory-copy strong,
+.fd-page [data-delivery-font="heading"]{font-family:var(--delivery-font-heading,'Playfair Display',Georgia,serif)!important}
+.fd-page [data-delivery-font="caption"]{font-family:var(--delivery-font-caption,'Outfit',system-ui,sans-serif)!important}
+.client-gallery :is(.client-gallery-download-tip,.client-gallery-demo-note,.client-gallery-grid figcaption>span,.client-gallery-heading>p),
+.pb-viewer .pb-lightbox figcaption,
+.pb-viewer :is(.pb-toast,.pb-slideshow-message){font-family:var(--delivery-font-ui,'Outfit',system-ui,sans-serif)!important}

@@ -15,26 +15,13 @@ import DeliveryBrandMark from '../components/delivery/DeliveryBrandMark.jsx';
 import { useSmoothSoundtrackLoop } from '../utils/smoothSoundtrackLoop.js';
 import { usePreparedStoryPhotos } from '../utils/usePreparedStoryPhotos.js';
 import { photoStoryChrome } from '../utils/photoStoryChrome.js';
+import { deliveryFontStyles } from '../utils/deliveryTypography.js';
 import './StoryV3.css';
+import '../components/delivery/DeliveryTypography.css';
 export { DEMO_PRESETS } from '../constants/demoStories.js';
 
 const EMPTY_NARRATION_SEGMENTS = Object.freeze([]);
 
-function getFontFamily(type, fallback = "'Playfair Display', Georgia, serif") {
-  if (['Playfair Display', 'Outfit', 'Plus Jakarta Sans', 'Cormorant Garamond', 'DM Sans', 'Libre Baskerville', 'Manrope'].includes(type)) return "'" + type + "', Georgia, sans-serif";
-  switch (type) {
-    case 'editorial-serif':
-      return "'Playfair Display', Georgia, serif";
-    case 'soft-serif':
-      return "'Cormorant Garamond', 'Playfair Display', Georgia, serif";
-    case 'condensed-sans':
-      return "'Outfit', 'Plus Jakarta Sans', sans-serif";
-    case 'clean-sans':
-      return "'Plus Jakarta Sans', system-ui, sans-serif";
-    default:
-      return fallback;
-  }
-}
 
 function mediaUrl(value) {
  if (typeof value !== 'string' || !value) return '';
@@ -335,6 +322,7 @@ export default function StoryViewer({ demoMode = false, delivery: suppliedDelive
     const cd = deliveryProp.creativeDirection || {};
     const palette = cd.palette || {};
     const typography = cd.typography || {};
+    const selectedFonts = deliveryFontStyles(typography);
     const frames = new Map((cd.frames || []).map(f => [f.assetId, f]));
     const mappedPhotos = (deliveryProp.assets || []).map((asset, i) => {
       const frame = frames.get(asset.assetId) || {};
@@ -392,8 +380,8 @@ export default function StoryViewer({ demoMode = false, delivery: suppliedDelive
         backgroundColor: palette.background || '#050506',
         surfaceColor: palette.surface || '#0c0c10',
         textColor: palette.text || '#ffffff',
-        displayFont: getFontFamily(typography.display),
-        bodyFont: getFontFamily(typography.body, "'Plus Jakarta Sans', system-ui, sans-serif"),
+        displayFont: selectedFonts['--delivery-font-heading'],
+        bodyFont: selectedFonts['--delivery-font-caption'],
         pace: deliveryProp.schemaVersion === 3 ? 'warm' : cd.pace || 'warm'
       }
     };
@@ -756,9 +744,10 @@ export default function StoryViewer({ demoMode = false, delivery: suppliedDelive
   const opening = story.opening || {};
   const finale = story.finale || {};
   const chrome = photoStoryChrome(story.theme?.backgroundColor, story.theme?.textColor, photo?.colorAccent || story.theme?.accentColor);
+  const fontStyles = deliveryFontStyles({}, { display: story.theme?.displayFont, body: story.theme?.bodyFont });
   const imageWaiting = started && (finished ? !preparedPhotos.closingReady : preparedPhotos.waiting);
   const imageFailed = finished ? preparedPhotos.closingFailed : preparedPhotos.failed;
-  return <div className={'v-public v-story-shell' + (deliveryProp?.schemaVersion === 3 ? ' is-v3' : '')} style={{ '--story-accent': photo?.colorAccent || story.theme?.accentColor || '#ff5a47', '--story-glow': photo?.glowColor || story.theme?.glowColor || 'rgba(255,90,71,.35)', '--story-secondary': photo?.secondaryColor || story.theme?.secondaryColor || '#151518', '--story-bg': story.theme?.backgroundColor || '#050506', '--story-font-display': story.theme?.displayFont || "'Playfair Display', Georgia, serif", '--story-font-body': story.theme?.bodyFont || "'Plus Jakarta Sans', system-ui, sans-serif", ...chrome }}>
+  return <div className={'v-public v-story-shell' + (deliveryProp?.schemaVersion === 3 ? ' is-v3' : '')} style={{ '--story-accent': photo?.colorAccent || story.theme?.accentColor || '#ff5a47', '--story-glow': photo?.glowColor || story.theme?.glowColor || 'rgba(255,90,71,.35)', '--story-secondary': photo?.secondaryColor || story.theme?.secondaryColor || '#151518', '--story-bg': story.theme?.backgroundColor || '#050506', '--story-font-display': fontStyles['--delivery-font-heading'], '--story-font-body': fontStyles['--delivery-font-caption'], ...fontStyles, ...chrome }}>
   <div className="v-story-ambient" aria-hidden="true"><img src={displaySrc} alt="" /></div>
   <main className={'v-story-canvas ' + (!started ? 'is-cover-state' : finished ? 'is-finale-state' : 'is-playing-state caption-position-' + captionPosition) + (!captions && !finished ? ' captions-off' : '')} id="main-content" ref={stage}>
    <div className="v-story-visual" onPointerDown={event => {
@@ -827,7 +816,7 @@ export default function StoryViewer({ demoMode = false, delivery: suppliedDelive
   {captionNarrationUrl && <audio ref={narrationRef} src={mediaUrl(captionNarrationUrl)} preload="metadata" onWaiting={() => { if (started && !muted) setNarrationLoading(true); }} onStalled={() => { if (started && !muted) setNarrationLoading(true); }} onPlaying={() => { setNarrationLoading(false); setNarrationPlaying(true); if (deliveryProp?.schemaVersion === 3) fadeAudioVolume(audio.current, .16, 450); }} onPause={() => { if (deliveryProp?.schemaVersion === 3) { setNarrationPlaying(false); setNarrationLoading(false); fadeAudioVolume(audio.current, 1, 600); } }} onEnded={handleNarrationEnded} onError={() => { setNarrationPlaying(false); setNarrationLoading(false); fadeAudioVolume(audio.current, 1); toast.info('The narration could not load. The story will continue without it.'); }} />}
   {deliveryProp?.schemaVersion === 3 && deliveryProp?.narration?.opening?.url && <audio ref={v3OpeningRef} src={mediaUrl(deliveryProp.narration.opening.url)} preload="metadata" onEnded={() => beginFrames(true)} onError={() => { if (v3OpeningPlayed.current) beginFrames(true); }} />}
   {deliveryProp?.schemaVersion === 3 && deliveryProp?.narration?.closing?.url && <audio ref={v3ClosingRef} src={mediaUrl(deliveryProp.narration.closing.url)} preload="metadata" onEnded={finishV3ClosingNarration} onError={finishV3ClosingNarration} />}
-  <AnimatePresence>{gallery && <ClientGallery photos={galleryPhotos} title={story.clientName || story.title} demoId={demo ? demoId : null} delivery={deliveryProp} onClose={() => setGallery(false)} liked={galleryProps?.liked || (demo ? demoLiked : undefined)} onLike={galleryProps?.onLike || (demo ? key => setDemoLiked(current => { const next = new Set(current); next.has(key) ? next.delete(key) : next.add(key); return next; }) : undefined)} onDownload={galleryProps?.onDownload || ((_key, photoIndex) => download(photoIndex))} busy={galleryProps?.busy} downloading={downloading} onDownloadAll={galleryProps?.onDownloadAll || downloadAll} allDownloading={allDownloading} downloadNotice={galleryProps?.downloadNotice || downloadNotice} downloadProgress={galleryProps?.downloadProgress || downloadProgress} />}</AnimatePresence>
-  <AnimatePresence>{captionExpanded && <StoryCaptionDialog title={photo?.chapterTitle || `Photograph ${shownIndex + 1}`} text={photo?.caption || ""} onClose={() => setCaptionExpanded(false)} />}</AnimatePresence>
+  <AnimatePresence>{gallery && <ClientGallery photos={galleryPhotos} title={story.clientName || story.title} demoId={demo ? demoId : null} delivery={deliveryProp} fontStyles={fontStyles} onClose={() => setGallery(false)} liked={galleryProps?.liked || (demo ? demoLiked : undefined)} onLike={galleryProps?.onLike || (demo ? key => setDemoLiked(current => { const next = new Set(current); next.has(key) ? next.delete(key) : next.add(key); return next; }) : undefined)} onDownload={galleryProps?.onDownload || ((_key, photoIndex) => download(photoIndex))} busy={galleryProps?.busy} downloading={downloading} onDownloadAll={galleryProps?.onDownloadAll || downloadAll} allDownloading={allDownloading} downloadNotice={galleryProps?.downloadNotice || downloadNotice} downloadProgress={galleryProps?.downloadProgress || downloadProgress} />}</AnimatePresence>
+  <AnimatePresence>{captionExpanded && <StoryCaptionDialog title={photo?.chapterTitle || `Photograph ${shownIndex + 1}`} text={photo?.caption || ""} fontStyles={fontStyles} onClose={() => setCaptionExpanded(false)} />}</AnimatePresence>
   </div>;
 }
