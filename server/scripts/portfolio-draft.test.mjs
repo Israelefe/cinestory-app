@@ -20,6 +20,33 @@ import AnalyticsEvent from '../src/models/AnalyticsEvent.js';
 import { getPortfolioActivity, recordPortfolioEngagement, directMyPortfolio } from '../src/controllers/portfolioV2.controller.js';
 import { normalizeSnapshot, portfolioId } from '../src/utils/portfolio.js';
 import { resolveEntitlements } from '../src/services/entitlement.service.js';
+test('all four portfolio designs and motion settings survive saving and publishing', async () => {
+  for (const template of ['editorial', 'cinema', 'gallery', 'folio']) {
+    const portfolio = await Portfolio.findOne();
+    const revision = portfolio?.draftRevision || 0;
+    const saved = await invoke(updateMyPortfolio, body({ expectedDraftRevision: revision, direction: { template, motion: 'expressive' }, projects: [{ id: 'project-one', title: 'Portraits', coverId: portfolioId(ids[0]), photoIds: ids.map(portfolioId) }] }));
+    assert.equal(saved.code, 200);
+    assert.equal(saved.body.data.direction.template, template);
+    if (portfolio?.status === 'published') {
+      const beforePublish = await invoke(getPublicPortfolio, {}, { handle: 'amara-studio' });
+      assert.equal(beforePublish.body.data.direction.template, portfolio.direction.template);
+    }
+    const published = await invoke(publishMyPortfolio, { expectedDraftRevision: saved.body.draftRevision, publicationConfirmed: true });
+    assert.equal(published.code, 200);
+    const publicPage = await invoke(getPublicPortfolio, {}, { handle: 'amara-studio' });
+    assert.equal(publicPage.body.data.direction.template, template);
+    assert.equal(publicPage.body.data.direction.motion, 'expressive');
+    assert.equal((await Portfolio.findOne()).direction.template, template);
+    const projectPage = await invoke(getPublicPortfolio, {}, { handle: 'amara-studio', projectId: 'project-one' });
+    assert.equal(projectPage.body.data.direction.template, template);
+  }
+});
+test('portfolio design validation rejects arbitrary templates and unsupported motion', async () => {
+  assert.equal((await save({ direction: { template: '../../admin' } })).code, 400);
+  assert.equal((await save({ direction: { template: 'cinema', motion: 'spin' } })).code, 400);
+  const saved = await save();
+  assert.equal(saved.body.data.direction.template, 'editorial');
+});
 let mongo; let owner; const ids = ['studio/test-1', 'studio/test-2', 'studio/test-3', 'studio/test-4'];
 function response() { return { code: 200, body: null, headers: {}, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; }, set(key, value) { this.headers[key] = value; return this; }, cookie(name, value, options) { this.cookieOptions = options; return this; }, end() { return this; } }; }
 async function invoke(handler, body = {}, params = {}, user = owner, query = {}) { const res = response(); await handler({ user: { id: String(user._id) }, body, params, query, cookies: {} }, res); return res; }

@@ -1,7 +1,17 @@
 import { expect, test } from '@playwright/test';
+import { portfolioDesigns } from '../src/components/portfolioDesigns.js';
 const account = { _id: '507f1f77bcf86cd799439012', name: 'Amara', email: 'amara@example.com', emailVerified: true, onboardingComplete: true, accountStatus: 'active', plan: 'pro', studio: { name: 'Amara Studio' } };
 const photographs = ['/veylo/pv-marvis.jpeg', '/veylo/pv-white-suit.jpeg', '/veylo/wedding/wedding-1.jpg', '/veylo/wedding/wedding-2.jpg'].map((url, index) => ({ id: `photo-${index}`, publicId: `studio/photo-${index}`, title: `Portrait ${index + 1}`, alt: `Finished portrait ${index + 1}`, category: index < 2 ? 'Portraits' : 'Weddings', featured: true, crop: 'fit', focalX: 50, focalY: 50, width: 1200, height: 1800, url, thumbnailUrl: url }));
 function initial() { return { handle: 'amara-studio', studioName: 'Amara Studio', bio: 'Wedding and portrait photography in Lagos.', headline: 'People, as they are.', introLine: 'Photographs for families and celebrations.', location: 'Lagos, Nigeria', contactLabel: 'Ask about a shoot', whatsapp: '08012345678', instagram: 'https://instagram.com/amara.studio/', heroPublicId: photographs[0].publicId, items: structuredClone(photographs), projects: [], direction: {} }; }
+async function captureDesign(page, filename) {
+  // Full-page screenshots do not scroll to trigger native lazy loading.
+  await page.evaluate(async () => {
+    await Promise.all([...document.images].map(image => { image.loading = 'eager'; return image.decode().catch(() => {}); }));
+    await document.fonts.ready;
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  });
+  await page.screenshot({ path: `../.visual-review/portfolio-designs/${filename}.png`, fullPage: true });
+}
 async function setup(page, options = {}) {
   const state = { draft: initial(), revision: 1, publishedRevision: 1, status: 'published', saves: [], publishes: [], fail: false, conflict: false, ...options };
   await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 3, necessary: true, analytics: false, marketing: false })));
@@ -96,4 +106,100 @@ test('suggestions survive refresh, need review, and undo preserves later caption
   await page.getByRole('button', { name: 'Use these suggestions' }).click(); await expect.poll(() => state.draft.headline).toBe('Suggested headline');
   await page.getByRole('button', { name: /^Work/ }).click(); await page.getByRole('button', { name: 'Edit photograph 1', exact: true }).click(); await page.getByLabel('Caption', { exact: true }).fill('My caption after the suggestions.'); await page.getByRole('button', { name: 'Done', exact: true }).click(); await page.getByRole('button', { name: 'Undo suggestions' }).click();
   await expect.poll(() => state.draft.headline).toBe('People, as they are.'); await expect.poll(() => state.draft.items.find(item => item.id === 'photo-1').title).toBe('My caption after the suggestions.'); expect(state.draft.items[0].id).toBe('photo-0'); expect(state.publishes.length).toBe(0);
+});
+
+test('design previews are private until chosen and the chosen design survives publishing and refresh', async ({ page }) => {
+  const state = await setup(page); await page.goto('/portfolio/manage');
+  await page.getByRole('button', { name: 'Design', exact: true }).click();
+  await expect(page.getByRole('radiogroup', { name: 'Portfolio design' }).getByRole('radio')).toHaveCount(4);
+  await page.getByRole('button', { name: 'Preview Cinema', exact: true }).click();
+  const preview = page.getByRole('dialog', { name: 'Preview your portfolio' });
+  await expect(preview.locator('.v-portfolio-canvas')).toHaveAttribute('data-design', 'cinema');
+  await preview.getByLabel('Preview design').selectOption('gallery');
+  await expect(preview.locator('.v-portfolio-canvas')).toHaveAttribute('data-design', 'gallery');
+  expect(state.saves.length).toBe(0);
+  await page.keyboard.press('Escape'); await page.getByRole('radio', { name: 'Folio design', exact: true }).check();
+  await expect.poll(() => state.draft.direction.template).toBe('folio');
+  expect(state.publishes.length).toBe(0);
+  await page.reload(); await page.getByRole('button', { name: 'Design', exact: true }).click();
+  await expect(page.getByRole('radio', { name: 'Folio design', exact: true })).toBeChecked();
+  await page.getByRole('radio', { name: 'Gallery design', exact: true }).check();
+  await page.getByRole('radio', { name: 'Folio design', exact: true }).check();
+  await page.reload(); await page.getByRole('button', { name: 'Design', exact: true }).click();
+  await expect(page.getByRole('radio', { name: 'Folio design', exact: true })).toBeChecked();
+  await expect(page.getByRole('button', { name: 'Restore browser changes', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Publish changes' }).click();
+  const confirm = page.getByRole('dialog', { name: 'Publish your portfolio' });
+  await confirm.getByRole('checkbox').check(); await confirm.getByRole('button', { name: 'Publish now' }).click();
+  await expect(confirm).toHaveCount(0); expect(state.publishes.length).toBe(1);
+  await page.goto('/@amara-studio'); await expect(page.locator('.v-portfolio-canvas')).toHaveAttribute('data-design', 'folio');
+});
+
+for (const template of ['editorial', 'cinema', 'gallery', 'folio']) {
+  test(`${template} has a distinct phone layout and fits phone, tablet and desktop widths`, async ({ page }) => {
+    test.setTimeout(90000);
+    const draft = initial(); draft.direction = { ...portfolioDesigns.find(design => design.id === template).defaults, template, motion: 'expressive' };
+    draft.projects = [{ id: 'project-one', title: 'Ada’s portraits', description: 'A portrait session in Lagos.', category: 'Portraits', coverId: 'photo-0', photoIds: ['photo-0', 'photo-1'] }];
+    await setup(page, { draft }); await page.emulateMedia({ reducedMotion: 'reduce' });
+    for (const width of [320, 390, 768, 834, 1440]) {
+      await page.setViewportSize({ width, height: 900 }); await page.goto('/@amara-studio');
+      await expect(page.locator('.v-portfolio-canvas')).toHaveAttribute('data-design', template);
+      await expect(page.locator('.vpc-gallery > figure')).toHaveCount(4);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${template} at ${width}`).toBe(true);
+      if (width === 390) {
+        const boxes = await page.locator('.vpc-gallery > figure').evaluateAll(nodes => nodes.map(node => ({ x: node.getBoundingClientRect().x, width: node.getBoundingClientRect().width })));
+        if (template === 'cinema') { expect(boxes[0].width).toBeGreaterThan(300); await expect(page.getByRole('region', { name: 'Featured photographs', exact: true })).toBeVisible(); }
+        if (template === 'editorial' || template === 'gallery') { expect(boxes[1].width).toBeLessThan(180); expect(boxes[2].x).toBeGreaterThan(boxes[1].x); }
+        if (template === 'gallery') expect(await page.locator('.vpc-gallery > figure button').first().evaluate(node => parseFloat(getComputedStyle(node).paddingLeft))).toBeGreaterThan(0);
+        if (template === 'folio') {
+          await expect(page.locator('.vpc-companion')).toBeVisible();
+          expect(await page.locator('.vpc-projects').evaluate(node => node.compareDocumentPosition(document.querySelector('.vpc-work')) & Node.DOCUMENT_POSITION_FOLLOWING)).toBeTruthy();
+        }
+        await captureDesign(page, `${template}-390`);
+      }
+      if (width === 834 || width === 1440) await captureDesign(page, `${template}-${width}`);
+    }
+    await page.locator('.vpc-project-card').click(); await expect(page).toHaveURL(/projects\/project-one/);
+    await expect(page.locator('.v-portfolio-canvas')).toHaveAttribute('data-design', template);
+    await expect(page.locator('.vpc-hero h1')).toHaveText('Ada’s portraits');
+    await expect(page.locator('.vpc-gallery > figure')).toHaveCount(2);
+  });
+}
+
+test('cinema filmstrip supports keyboard navigation, scoped viewing and reduced motion', async ({ page }) => {
+  const draft = initial(); draft.direction = { ...portfolioDesigns.find(design => design.id === 'cinema').defaults, template: 'cinema', motion: 'expressive' }; await setup(page, { draft });
+  await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/@amara-studio');
+  await expect(page.locator('.v-portfolio-canvas')).toHaveAttribute('data-motion', 'expressive');
+  await page.getByRole('button', { name: 'Next cover photograph', exact: true }).click();
+  await expect(page.locator('.vpc-cinema-switch')).toContainText('02 / 04');
+  await expect(page.locator('.vpc-cinema-stage').getByRole('button', { name: 'View Portrait 2', exact: true })).toBeVisible();
+  const rail = page.getByRole('region', { name: 'Featured photographs', exact: true });
+  await rail.focus(); await page.keyboard.press('ArrowRight');
+  await expect(page.locator('.vpc-filmstrip-top')).toContainText('02 / 04');
+  await rail.getByRole('button').nth(1).click();
+  const lightbox = page.getByRole('dialog', { name: 'Photograph viewer' }); await expect(lightbox).toBeVisible();
+  await expect(lightbox.locator('figcaption')).toContainText('2 / 4');
+  await page.keyboard.press('Escape'); await expect(lightbox).not.toBeVisible();
+  await page.emulateMedia({ reducedMotion: 'reduce' }); await expect(page.locator('.v-portfolio-canvas')).toHaveAttribute('data-motion', 'still');
+  await expect(page.locator('.vpc-hero-contact')).toHaveCSS('transition-duration', '0s');
+  await expect(page.locator('.vpc-gallery > figure').last()).toHaveCSS('opacity', '1');
+});
+
+test('design picker and preview controls fit a small phone and both tablet widths', async ({ page }) => {
+  const state = await setup(page); await page.emulateMedia({ reducedMotion: 'reduce' });
+  for (const width of [320, 390, 768, 834, 1440]) {
+    await page.setViewportSize({ width, height: 900 }); await page.goto('/portfolio/manage'); await page.getByRole('button', { name: 'Design', exact: true }).click();
+    await page.getByRole('radio', { name: 'Editorial design', exact: true }).check();
+    await expect.poll(() => state.draft.direction.template || 'editorial').toBe('editorial');
+    await expect(page.getByRole('radio', { name: 'Cinema design', exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `design picker at ${width}`).toBe(true);
+    if (width === 390 || width === 1440) await captureDesign(page, `picker-${width}`);
+    await page.getByRole('button', { name: 'Preview Cinema', exact: true }).click();
+    const preview = page.getByRole('dialog', { name: 'Preview your portfolio' });
+    await preview.getByRole('button', { name: 'Tablet', exact: true }).click();
+    await expect(preview.locator('.v-pedit-preview-scroll > div')).toHaveCSS('width', '834px');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `design preview at ${width}`).toBe(true);
+    await preview.getByRole('button', { name: 'Use Cinema design', exact: true }).click(); await expect(preview).toHaveCount(0);
+    await expect.poll(() => state.draft.direction.template).toBe('cinema');
+  }
 });

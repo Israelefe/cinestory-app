@@ -1,5 +1,6 @@
 import { API_BASE_URL } from '../config/env.js';
 export const directionDefaults = {
+  template: 'editorial',
   background: 'ink',
   accent: '#ff9b8e',
   typeStyle: 'editorial',

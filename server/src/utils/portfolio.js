@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 export const portfolioId = publicId => `p-${crypto.createHash('sha256').update(String(publicId)).digest('hex').slice(0, 24)}`;
 export const directionDefaults = Object.freeze({
+  template: 'editorial',
   background: 'ink',
   accent: '#ff9b8e',
   typeStyle: 'editorial',
@@ -18,12 +19,13 @@ export const handleSchema = z.string().trim().toLowerCase().min(3).max(40).regex
 export const publicHandleSchema = z.string().trim().toLowerCase().min(3).max(40).regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/);
 export const RESERVED = new Set(['admin', 'api', 'app', 'billing', 'dashboard', 'delivery', 'formats', 'help', 'home', 'login', 'portfolio', 'pricing', 'settings', 'signup', 'support', 'veylo']);
 const directionSchema = z.object({
+  template: z.enum(['editorial', 'cinema', 'gallery', 'folio']).default('editorial'),
   background: z.enum(['ink', 'warm-black', 'ivory']).default('ink'),
   accent: z.string().regex(/^#[0-9a-f]{6}$/i).default('#ff9b8e'),
   typeStyle: z.enum(['editorial', 'modern', 'classic']).default('editorial'),
   rhythm: z.enum(['measured', 'bold', 'quiet']).default('measured'),
   layout: z.enum(['editorial', 'grid', 'masonry']).default('editorial'),
-  motion: z.enum(['subtle', 'still']).default('subtle'),
+  motion: z.enum(['expressive', 'subtle', 'still']).default('subtle'),
   showBio: z.boolean().default(true),
   showLocation: z.boolean().default(true),
   showCategories: z.boolean().default(true),

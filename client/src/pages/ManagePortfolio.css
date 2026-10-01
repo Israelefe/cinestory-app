@@ -611,7 +611,8 @@
   border-color: #ff9b8e77
 }
 .v-pedit-preview-scroll {
-  height: 70dvh;
+  height: 62dvh;
+  min-height: 240px;
   overflow: auto;
   background: #050507;
   border: 1px solid #ffffff20;
@@ -620,6 +621,17 @@
 .v-pedit-preview-scroll>div {
   margin: auto
 }
+.v-pedit-preview-design {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px 24px;
+  padding: 0 0 22px;
+}
+.v-pedit-preview-design label { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; font-size: 12px; }
+.v-pedit-preview-design select { min-height: 44px; min-width: 140px; border: 1px solid #ffffff30; border-radius: 8px; background: #15131b; color: #f4eef1; font: inherit; padding: 10px 14px; }
+.v-pedit-preview-design p { max-width: 360px; font-size: 12px; line-height: 1.7; }
+.v-pedit p.v-pedit-design-hint { font-size: 12px; line-height: 1.8; margin-top: 20px; }
 .v-pedit-undo {
   position: fixed;
   bottom: 24px;

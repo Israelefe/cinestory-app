@@ -10,6 +10,8 @@ import { contactErrors } from '../services/portfolio.js';
 import { usePortfolioDraft } from '../hooks/usePortfolioDraft.js';
 import { useDialogFocus } from '../components/useDialogFocus.js';
 import PortfolioPhotoPicker from '../components/PortfolioPhotoPicker.jsx';
+import PortfolioDesignPicker from '../components/PortfolioDesignPicker.jsx';
+import { portfolioDesigns, findPortfolioDesign } from '../components/portfolioDesigns.js';
 import PortfolioCanvas from './PortfolioCanvas.jsx';
 import './ManagePortfolio.css';
 const sensors = [PointerSensor.configure({
@@ -69,9 +71,14 @@ function Field({
 }
 function Preview({
   form,
-  onClose
+  onClose,
+  initialDesign = '',
+  onUseDesign
 }) {
   const [device, setDevice] = useState('phone');
+  const [designId, setDesignId] = useState(initialDesign || form.direction.template);
+  const design = findPortfolioDesign(designId);
+  const direction = design.id === form.direction.template ? form.direction : { ...form.direction, ...design.defaults, template: design.id };
   const widths = {
     phone: 390,
     tablet: 834,
@@ -85,10 +92,10 @@ function Preview({
     return () => observer.disconnect();
   }, []);
   const scale = Math.min(1, available / widths[device]);
-  return <Sheet title="Preview your portfolio" onClose={onClose} wide><div className="v-pedit-preview-tools"><p>This is your private draft. Visitors see your last published version.</p><nav aria-label="Preview screen size">{[['phone', Smartphone, 'Phone'], ['tablet', Tablet, 'Tablet'], ['desktop', Monitor, 'Desktop']].map(([key, Icon, name]) => <button key={key} aria-pressed={device === key} onClick={() => setDevice(key)}><Icon size={16} />{name}</button>)}</nav></div><div className="v-pedit-preview-scroll" ref={ref}><div style={{
+  return <Sheet title="Preview your portfolio" onClose={onClose} wide><div className="v-pedit-preview-tools"><p>This is your private draft. Visitors see your last published version.</p><nav aria-label="Preview screen size">{[['phone', Smartphone, 'Phone'], ['tablet', Tablet, 'Tablet'], ['desktop', Monitor, 'Desktop']].map(([key, Icon, name]) => <button key={key} aria-pressed={device === key} onClick={() => setDevice(key)}><Icon size={16} />{name}</button>)}</nav></div><div className="v-pedit-preview-design"><label><span>Preview design</span><select value={design.id} onChange={event => setDesignId(event.target.value)}>{portfolioDesigns.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><p>{design.mobile}</p>{design.id !== form.direction.template && onUseDesign && <button className="v-pedit-primary" onClick={() => { onUseDesign(direction); onClose(); }}>Use {design.name} design</button>}</div><div className="v-pedit-preview-scroll" ref={ref}><div style={{
         width: widths[device],
         zoom: scale
-      }}><PortfolioCanvas portfolio={form} preview /></div></div></Sheet>;
+      }}><PortfolioCanvas key={design.id} portfolio={{ ...form, direction }} preview /></div></div></Sheet>;
 }
 export default function ManagePortfolio() {
   const draft = usePortfolioDraft();
@@ -100,6 +107,7 @@ export default function ManagePortfolio() {
   const [tab, setTab] = useState('Work');
   const [picker, setPicker] = useState(false);
   const [preview, setPreview] = useState(false);
+  const [previewDesign, setPreviewDesign] = useState('');
   const [detail, setDetail] = useState(null);
   const [projectId, setProjectId] = useState(null);
   const [selected, setSelected] = useState([]);
@@ -411,13 +419,13 @@ export default function ManagePortfolio() {
             return <button key={item.id} className="v-pedit-project-card" onClick={() => setProjectId(item.id)}>{cover ? <img src={cover.thumbnailUrl || cover.url} alt="" loading="lazy" /> : <div><ImageIcon size={28} /></div>}<strong>{item.title || 'Untitled project'}</strong><span>{item.photoIds.length} photographs<ChevronRight size={16} /></span></button>;
           })}</div>{!form.projects.length && <div className="v-pedit-empty"><h3>Projects are optional</h3><p>Give a wedding, portrait session or lookbook its own page and share that link with a new client.</p></div>}</>}
       {tab === 'Studio' && <div className="v-pedit-form-grid"><section><h2>Your studio</h2><Field label="Studio name" value={form.studioName} onChange={() => {}} readOnly hint="This name is shared with your studio account." /><Link to="/settings">Change your studio name in settings</Link><Field label="Portfolio address" value={form.handle} onChange={value => update('handle', value.toLowerCase())} maxLength={40} hint={`veylo.com/@${form.handle || 'your-studio'}${availability ? availability.available ? ' · Address available' : ' · This address is unavailable' : ''}`} /><Field label="About your studio" value={form.bio} onChange={value => update('bio', value)} multiline maxLength={600} rows={5} hint="Tell clients what you photograph and where you work." /><Field label="Location" value={form.location} onChange={value => update('location', value)} maxLength={80} placeholder="Lagos, Nigeria" /></section><section><h2>Contact and introduction</h2><Field label="Headline" value={form.headline} onChange={value => update('headline', value)} maxLength={100} placeholder="Wedding and portrait photography" /><Field label="Opening line" value={form.introLine} onChange={value => update('introLine', value)} maxLength={180} /><Field label="WhatsApp number" value={form.whatsapp} onChange={value => update('whatsapp', value)} maxLength={30} inputMode="tel" placeholder="08012345678" error={errors.whatsapp} /><Field label="Instagram" value={form.instagram} onChange={value => update('instagram', value)} maxLength={100} placeholder="@yourstudio or your profile link" error={errors.instagram} /><Field label="Contact button" value={form.contactLabel} onChange={value => update('contactLabel', value)} maxLength={40} hint="This opens WhatsApp or Instagram. It does not send a booking request." /></section></div>}
-      {tab === 'Design' && <><div className="v-pedit-form-grid"><section><h2>Keep the focus on your photographs</h2>{[['background', 'Background', [['ink', 'Ink'], ['warm-black', 'Warm black'], ['ivory', 'Ivory']]], ['layout', 'Photo layout', [['editorial', 'Editorial'], ['masonry', 'Natural heights'], ['grid', 'Grid']]], ['typeStyle', 'Headings', [['editorial', 'Editorial'], ['modern', 'Modern']]], ['rhythm', 'Spacing', [['measured', 'Measured'], ['quiet', 'More space'], ['bold', 'Less space']]], ['motion', 'Motion', [['subtle', 'Subtle'], ['still', 'Still']]]].map(([key, label, options]) => <label className="v-pedit-field" key={key}><span>{label}</span><select value={form.direction[key]} onChange={event => update('direction', {
+      {tab === 'Design' && <><PortfolioDesignPicker form={form} onChange={design => setForm(current => ({ ...current, direction: { ...current.direction, ...design.defaults, template: design.id } }))} onPreview={id => { setPreviewDesign(id); setPreview(true); }} /><div className="v-pedit-form-grid"><section><h2>Fine-tune this design</h2>{[['background', 'Background', [['ink', 'Ink'], ['warm-black', 'Warm black'], ['ivory', 'Ivory']]], ['typeStyle', 'Headings', [['editorial', 'Editorial'], ['modern', 'Modern'], ['classic', 'Classic']]], ['rhythm', 'Spacing', [['measured', 'Measured'], ['quiet', 'More space'], ['bold', 'Less space']]], ['motion', 'Motion', [['expressive', 'Expressive'], ['subtle', 'Subtle'], ['still', 'Still']]]].map(([key, label, options]) => <label className="v-pedit-field" key={key}><span>{label}</span><select value={form.direction[key]} onChange={event => update('direction', {
                 ...form.direction,
                 [key]: event.target.value
               })}>{options.map(([value, name]) => <option key={value} value={value}>{name}</option>)}</select></label>)}<Field label="Accent colour" type="color" value={form.direction.accent} onChange={value => update('direction', {
               ...form.direction,
               accent: value
-            })} hint="Text contrast is adjusted automatically." /></section><section><h2>What visitors see</h2>{[['showBio', 'Studio introduction'], ['showLocation', 'Location'], ['showCategories', 'Category filters'], ['showPhotoTitles', 'Photo captions'], ['showContact', 'Contact links']].map(([key, label]) => <label className="v-pedit-toggle" key={key}><input type="checkbox" checked={form.direction[key]} onChange={event => update('direction', {
+            })} hint="Text contrast is adjusted automatically." /><p className="v-pedit-design-hint">Expressive adds longer reveals and photo transitions. Subtle keeps movement short. Still removes animation. Your visitors’ reduced-motion setting is always respected.</p></section><section><h2>What visitors see</h2>{[['showBio', 'Studio introduction'], ['showLocation', 'Location'], ['showCategories', 'Category filters'], ['showPhotoTitles', 'Photo captions'], ['showContact', 'Contact links']].map(([key, label]) => <label className="v-pedit-toggle" key={key}><input type="checkbox" checked={form.direction[key]} onChange={event => update('direction', {
                 ...form.direction,
                 [key]: event.target.checked
               })} />{label}</label>)}<div className="v-pedit-ai"><h3>Get a second look</h3><p>Receive suggestions for your introduction and photo order. Your photographs stay unchanged, and nothing is published automatically.</p><button onClick={direct} disabled={form.items.length < 4 || ['queued', 'running'].includes(job?.status)}>Suggest an arrangement</button>{job && <p role="status">{['queued', 'running'].includes(job.status) ? `Working on your saved draft${job.progress ? ` · ${Math.round(job.progress)}%` : '…'}` : job.status === 'review' ? 'Your suggestions are ready to review.' : job.status === 'failed' ? 'The suggestions could not be completed. You can try again.' : job.status === 'cancelled' ? 'The job was cancelled. Your draft is unchanged.' : ''}</p>}{['queued', 'running'].includes(job?.status) && <button onClick={() => run(async () => {
@@ -505,6 +513,6 @@ export default function ManagePortfolio() {
             } else remove(selected);
             setConfirmation(null);
           }}>Remove</button></div></>}{actionError && <p role="alert" className="v-pedit-error">{actionError}</p>}</Sheet>}
-    {preview && <Preview form={form} onClose={() => setPreview(false)} />}
+    {preview && <Preview form={form} initialDesign={previewDesign} onClose={() => { setPreview(false); setPreviewDesign(''); }} onUseDesign={canEdit ? direction => update('direction', direction) : undefined} />}
   </main>;
 }

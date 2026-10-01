@@ -147,6 +147,10 @@ export function usePortfolioDraft() {
   }, [setForm]);
   const dirty = profile && JSON.stringify(editablePortfolio(form)) !== ref.current.saved;
   useEffect(() => {
+    if (!dirty && !loading && !ref.current.flight && !ref.current.blocked && !recovery && profile?.access === 'public') {
+      try { sessionStorage.removeItem(ref.current.storageKey); } catch {}
+      setSaveState('saved');
+    }
     if (!dirty || loading || ref.current.blocked || profile?.access !== 'public') return;
     try {
       sessionStorage.setItem(ref.current.storageKey, JSON.stringify({
@@ -159,7 +163,7 @@ export function usePortfolioDraft() {
       void flush(false).catch(() => {});
     }, 800);
     return () => clearTimeout(timer);
-  }, [form, dirty, loading, profile?.access, flush]);
+  }, [form, dirty, loading, profile?.access, flush, recovery]);
   useEffect(() => {
     const beforeUnload = event => {
       if (JSON.stringify(editablePortfolio(ref.current.form)) !== ref.current.saved || ref.current.flight) {

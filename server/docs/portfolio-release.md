@@ -32,6 +32,28 @@ after a retry or cancellation. Suggestions require review, never publish content
 and cannot be accepted after the input draft has changed. Analytics report visits,
 visitors, project opens and contact clicks over 30 days; clicks are not bookings.
 
+## Portfolio designs
+
+The Design tab offers Editorial, Cinema, Gallery and Folio. Each has its own
+opening, photograph arrangement and mobile composition. Cinema includes manual
+cover crossfades and a swipeable filmstrip; Folio places projects before individual
+photographs and includes project preview strips. All designs share category
+filters, project routes, the photograph viewer and contact links.
+
+`direction.template` is validated on the server and stored in both the private
+draft and published snapshot. Existing portfolios default to Editorial. No data
+migration is needed for the design field. `direction.motion` accepts expressive,
+subtle or still; browser reduced-motion preferences always take precedence and
+are observed while the page is open. Cover browsing is manual, without autoplay.
+
+Previewing another design does not save it. Choosing a design applies its starting
+colours, typography, spacing and motion to the private draft. The photographer can
+adjust those settings before publishing. Project pages inherit the published
+design, and saving a different design keeps the current public version unchanged.
+
+Deploy the server with the new template and motion validation before the client.
+An older server rejects the new design fields in draft saves.
+
 ## Deployment sequence
 
 1. Back up MongoDB. Use a replica set or sharded cluster; publishing fails closed
