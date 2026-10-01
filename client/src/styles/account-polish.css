@@ -1,0 +1,71 @@
+/* Account screens keep their existing authentication and setup flows. */
+.v-auth-page .v-auth-stage {
+  width: min(calc(100% - 32px), 520px);
+  margin: 30px auto 0;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'title' 'visual' 'form';
+  gap: 24px;
+}
+.v-auth-page .v-auth-title { grid-area: title; padding: 0; border: 0; gap: 12px; }
+.v-auth-page .v-auth-title h1 { margin: 0; font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 500; font-size: clamp(30px, 8vw, 38px); line-height: 1.15; letter-spacing: -.045em; }
+.v-auth-page .v-auth-title .v-eyebrow { font-size: 10px; line-height: 1.7; }
+.v-auth-page .v-auth-visual { display: block; grid-area: visual; position: relative; top: auto; min-height: 240px; height: 240px; border-radius: 5px; }
+.v-auth-page .v-auth-visual > img { object-position: center 24%; animation: none; }
+.v-auth-page .v-auth-visual-copy { left: 18px; right: 18px; bottom: 73px; }
+.v-auth-page .v-auth-visual-copy > p { font-size: 9px; margin-bottom: 8px; }
+.v-auth-page .v-auth-visual-copy h2 { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 23px; font-weight: 500; line-height: 1.15; letter-spacing: -.035em; }
+.v-auth-page .v-auth-visual-copy h2 em { color: #ff9b8e; font-family: 'Playfair Display', Georgia, serif; font-weight: 400; }
+.v-auth-page .v-auth-visual-copy > span { margin-top: 8px; font-size: 12px; line-height: 1.6; }
+.v-auth-page .v-auth-visual-note { left: 18px; right: 18px; bottom: 14px; width: auto; padding: 10px 12px; }
+.v-auth-page .v-auth-panel { grid-area: form; padding: 26px 20px; border-radius: 5px; max-height: none; overflow: visible; gap: 0; }
+.v-auth-page .v-auth-panel-copy { margin-top: 0; }
+.v-auth-page .v-auth-included { margin-top: 0; gap: 12px; }
+.v-auth-page .v-auth-included > span { font-size: 13px; line-height: 1.65; }
+.v-auth-page .v-auth-panel .v-form { gap: 22px; }
+.v-auth-page .v-auth-two { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+:is(.v-auth-page, .v-auth-flow-page, .v-onboarding-page) .v-field :is(input, select) { min-height: 52px; font-size: 16px; border-radius: 4px; transition: border-color .2s, box-shadow .2s; }
+:is(.v-auth-page, .v-auth-flow-page, .v-onboarding-page) .v-field :is(input, select):focus { border-color: #ff9b8e80; box-shadow: 0 0 0 3px #ff9b8e0d; }
+.v-auth-page .v-auth-consent { gap: 12px; padding-block: 4px; line-height: 1.8; }
+.v-auth-page :is(.v-password-toggle, .v-password-input > button) { min-height: 44px; }
+:is(.v-auth-page, .v-auth-flow-page, .v-onboarding-page) .v-button { min-height: 52px; border-radius: 4px; font-size: 14px; transition: transform .2s, background .2s; }
+:is(.v-auth-page, .v-auth-flow-page, .v-onboarding-page) .v-button:hover { transform: translate3d(0,-2px,0); }
+:is(.v-auth-page, .v-auth-flow-page, .v-onboarding-page) .v-button:active { transform: scale(.98); }
+.v-auth-flow-page .v-auth-flow-card { border-radius: 5px; padding: 28px 22px; }
+.v-auth-flow-page .v-auth-flow-card h1 { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 500; font-size: clamp(31px,8vw,42px); line-height: 1.15; letter-spacing: -.045em; }
+.v-auth-flow-page .v-auth-flow-card .v-copy { font-size: 14px; line-height: 1.85; }
+.v-auth-flow-page .v-auth-text-button { min-height: 44px; }
+.v-onboarding-page .v-onboarding-guide h1 { font-family: 'Plus Jakarta Sans', sans-serif; font-size: clamp(31px,8vw,46px); line-height: 1.15; font-weight: 500; }
+.v-onboarding-page .v-onboarding-workspace { border-radius: 5px; }
+.v-onboarding-page .v-onboarding-workspace > header { padding: 26px 22px; }
+.v-onboarding-page .v-onboarding-workspace > header h2 { font-family: 'Plus Jakarta Sans', sans-serif; font-size: clamp(28px,7vw,36px); line-height: 1.2; font-weight: 500; }
+.v-onboarding-page .v-onboarding-workspace > .v-form { padding: 26px 22px 30px; gap: 28px; }
+.v-onboarding-page :is(.v-choice-pair, .v-form-row) { gap: 18px; }
+.v-onboarding-page .v-onboarding-actions { gap: 16px; padding-top: 8px; }
+.v-onboarding-page .v-onboarding-guide > ol { display: grid; grid-template-columns: minmax(0,1fr); gap: 10px; background: none; }
+.v-onboarding-page .v-onboarding-guide li { padding: 14px; border: 1px solid #ffffff14; border-radius: 4px; }
+.v-onboarding-page .v-onboarding-guide > .v-onboarding-account { display: block; line-height: 1.7; overflow-wrap: anywhere; }
+@media (min-width: 640px) {
+  .v-auth-page .v-auth-stage { width: min(calc(100% - 48px), 580px); }
+  .v-auth-page .v-auth-panel { padding: 30px 28px; }
+  .v-auth-flow-page .v-auth-flow-card { padding: 38px; }
+}
+@media (min-width: 768px) {
+  .v-auth-page .v-auth-stage { width: min(calc(100% - 48px), 1080px); grid-template-columns: minmax(0,.85fr) minmax(0,1.15fr); grid-template-areas: 'visual title' 'visual form'; column-gap: 32px; row-gap: 24px; }
+  .v-auth-page .v-auth-visual { align-self: start; height: 620px; min-height: 0; position: sticky; top: 96px; }
+  .v-auth-page .v-auth-visual-copy { bottom: 104px; left: 24px; right: 24px; }
+  .v-auth-page .v-auth-visual-copy h2 { font-size: clamp(30px,3.8vw,45px); }
+  .v-auth-page .v-auth-visual-copy > span { font-size: 13px; }
+  .v-auth-page .v-auth-visual-note { left: 24px; right: 24px; bottom: 24px; padding: 14px; }
+  .v-auth-page .v-auth-panel { padding: 30px 24px; }
+  .v-onboarding-page .v-onboarding-workspace > :is(header, .v-form) { padding: 30px; }
+}
+@media (min-width: 1024px) {
+  .v-auth-page .v-auth-stage { width: min(calc(100% - 64px),1180px); column-gap: 48px; margin-top: 40px; }
+  .v-auth-page .v-auth-panel { padding: 34px; }
+  .v-auth-page .v-auth-two { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .v-onboarding-page .v-onboarding-guide h1 { font-size: 58px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.v-auth-page, .v-auth-flow-page, .v-onboarding-page) :is(.v-button, input, select) { transition: none; }
+  :is(.v-auth-page, .v-auth-flow-page, .v-onboarding-page) .v-button:is(:hover,:active) { transform: none; }
+}

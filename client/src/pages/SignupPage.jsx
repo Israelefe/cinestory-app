@@ -65,23 +65,24 @@ export default function SignupPage({ onAuthenticated }) {
 
   return <Page className="v-auth-page" footer={false}>
     <section className="v-auth-stage">
+<header className="v-auth-panel-head v-auth-title">
+          <p className="v-eyebrow"><ShieldCheck size={14} />Create your photographer account</p>
+          <h1>Start with Veylo Free.</h1>
+          <p className="v-auth-panel-subhead">Already have an account? <Link to="/signin">Sign in</Link></p>
+        </header>
       <div className="v-auth-visual">
         <img src="/veylo/pv-green-portrait.jpeg" alt="A finished studio portrait ready for client delivery" loading="eager" fetchPriority="high" decoding="async" />
         <div className="v-auth-visual-shade" />
         <div className="v-auth-visual-copy">
           <p><Image size={15} />The photographs are ready</p>
-          <h1 aria-hidden="true">Give the reveal<br /><em>the same care.</em></h1>
+          <h2 aria-hidden="true">Give the reveal<br /><em>the same care.</em></h2>
           <span>Your client remembers how the photographs arrived.</span>
         </div>
         <div className="v-auth-visual-note"><BadgeCheck size={17} /><span><strong>Veylo Free</strong>No payment card needed</span></div>
       </div>
 
       <div className="v-auth-panel">
-        <header className="v-auth-panel-head">
-          <p className="v-eyebrow"><ShieldCheck size={14} />Create your photographer account</p>
-          <h1>Start with Veylo Free.</h1>
-          <p className="v-auth-panel-subhead">Already have an account? <Link to="/signin">Sign in</Link></p>
-        </header>
+
         <div className="v-auth-included" aria-label="Included with Veylo Free">
           {included.map(item => <span key={item}><Check size={14} />{item}</span>)}
         </div>

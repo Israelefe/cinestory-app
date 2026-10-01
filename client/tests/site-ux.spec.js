@@ -70,6 +70,26 @@ test('each Showcase format has a clearly labelled, touch-friendly demo action', 
   }
 });
 
+test('account screens keep their heading, portrait, and form in order on phones', async ({ page }) => {
+  await page.route('**/api/v1/auth/me', route => route.fulfill({ status: 401, contentType: 'application/json', body: '{"success":false}' }));
+  for (const width of [320, 390, 640, 768, 834, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const route of ['/signup', '/signin']) {
+      await page.goto(route);
+      await expect(page.locator('.v-auth-title h1')).toBeVisible();
+      await expect(page.locator('.v-auth-visual')).toBeVisible();
+      await expect(page.locator('.v-auth-panel form')).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      if (width < 768) {
+        const [title, visual, form] = await Promise.all(['.v-auth-title', '.v-auth-visual', '.v-auth-panel'].map(selector => page.locator(selector).boundingBox()));
+        expect(title.y + title.height).toBeLessThanOrEqual(visual.y);
+        expect(visual.y + visual.height).toBeLessThanOrEqual(form.y);
+        expect(visual.height).toBeLessThanOrEqual(260);
+      }
+    }
+  }
+});
+
 test('public phone header shows Sign in or Dashboard without opening the menu', async ({ page }) => {
   for (const width of [320, 390]) {
     await page.setViewportSize({ width, height: 844 });
