@@ -10,6 +10,8 @@ import { EVENT_COVERAGE_DEMO_PHOTOS } from '../constants/eventCoverageDemo.js';
 import { getDeliveryCapabilities } from '../constants/deliveryCapabilities.js';
 import { useSmoothSoundtrackLoop } from '../utils/smoothSoundtrackLoop.js';
 import { deliveryFontStyles } from '../utils/deliveryTypography.js';
+import EditorialViewer from '../components/delivery/EditorialViewer.jsx';
+import { EDITORIAL_DEMO_DELIVERY } from '../constants/editorialDemo.js';
 import '../styles/format-demos.css';
 import '../components/delivery/DeliveryTypography.css';
 
@@ -388,157 +390,8 @@ function V3Bookend({ delivery, kind, onGallery }) {
   </section>;
 }
 
-function EditorialPhoto({ photo, className = '', caption, sizes, direction = 1, horizontal = false, onNarrationNavigate, accent, frame }) {
-  const ref = useRef(null);
-  const reduced = useReducedMotion();
-  const { scrollYProgress } = useScroll({ target: ref, offset: ['start end', 'end start'] });
-  const y = useTransform(scrollYProgress, [0, 1], direction > 0 ? [-24, 24] : [24, -24]);
-  const x = useTransform(scrollYProgress, [0, 1], direction > 0 ? [-18, 18] : [18, -18]);
-  const scale = useTransform(scrollYProgress, [0, .5, 1], [1.07, 1.025, 1.07]);
-  const imageMotion = frameMotionValues(frame || {}, reduced);
-  return <motion.figure ref={ref} className={className} {...formatFrameAttributes(frame)} style={formatFrameStyle(frame) || (accent ? { '--frame-accent': accent } : undefined)} initial={reduced ? false : { opacity: .72, clipPath: horizontal ? 'inset(0 18% 0 0)' : 'inset(0 0 18% 0)' }} whileInView={{ opacity: 1, clipPath: 'inset(0 0 0% 0)' }} viewport={{ once: true, amount: .08 }} onViewportEnter={() => onNarrationNavigate?.(photo?.assetId)} transition={{ duration: reduced ? 0 : .95, ease: [0.22, 1, 0.36, 1] }}>
-    <motion.div className="fd-ed-photo-motion" animate={imageMotion} transition={frameMotionTransition(frame || {}, 0, reduced)} style={reduced || frame?.motion ? undefined : { y: horizontal ? 0 : y, x: horizontal ? x : 0, scale }}>
-      <Photo name={photo.name} url={photo.url} alt={photo.alt} sizes={sizes} style={frame?.focalPoint ? { objectPosition: frame.focalPoint } : undefined} />
-    </motion.div>
-    {caption && <figcaption>{caption}</figcaption>}
-  </motion.figure>;
-}
-
-export function EditorialDemo({ delivery, galleryProps, audioState, toggleAudio, onNarrationNavigate }) {
-  const [gallery, setGallery] = useState(false);
-  const reduced = useReducedMotion();
-  const { scrollYProgress } = useScroll();
-  const reveal = (delay = 0) => reduced ? {} : { initial: { opacity: 0, y: 34 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, amount: .3 }, transition: { duration: .72, delay, ease: [0.22, 1, 0.36, 1] } };
-
-  const photos = normalizeDeliveryPhotos(delivery, editorialPhotos);
-  const frames = useMemo(() => new Map((delivery?.creativeDirection?.frames || []).map(f => [f.assetId, f])), [delivery]);
-  const sections = delivery?.creativeDirection?.sections || [];
-  const sectionByAsset = useMemo(() => new Map(sections.flatMap(section => (section.assetIds || []).map(assetId => [String(assetId), section]))), [sections]);
-
-  const client = delivery ? (delivery.clientName ? `${delivery.clientName} / ${delivery.title}` : delivery.title) : 'Ada / The Style Issue';
-  const masthead = delivery?.branding?.name ? `${delivery.branding.name.toUpperCase()} EDITORIAL / 001` : 'VEYLO EDITORIAL / 001';
-  const openingLine = delivery?.creativeDirection?.openingLine || 'One green suit. Five portraits. Ada gave every frame a different attitude.';
-  const closingLine = delivery?.creativeDirection?.closingLine || 'The feature ends here. Ada’s complete finished collection is ready when you are.';
-
-  const title = delivery?.creativeDirection?.title || delivery?.title || 'The Style Issue';
-  const words = title.split(' ');
-  const titleLines = [];
-  for (let i = 0; i < words.length; i += 2) {
-    titleLines.push(words.slice(i, i + 2).join(' '));
-  }
-  if (!titleLines.length) titleLines.push(title);
-
-  const themeStyles = getFormatThemeStyles(delivery, {
-    bg: '#e7dfd1',
-    text: '#17130f',
-    accent: '#a82f25',
-    surface: '#ded4c4'
-  });
-
-  const coverPhoto = photos[0];
-  const photo2 = photos[1] || coverPhoto;
-  const photo3 = photos[2] || photo2;
-  const photo4 = photos[3] || photo3;
-  const lastPhoto = photos[photos.length - 1] || coverPhoto;
-
-  const frame2 = frames.get(photo2?.assetId) || {};
-  const frame3 = frames.get(photo3?.assetId) || {};
-  const frame4 = frames.get(photo4?.assetId) || {};
-  const section2 = sectionByAsset.get(String(photo2?.assetId)) || sections[0] || {};
-  const section3 = sectionByAsset.get(String(photo3?.assetId)) || sections[1] || section2;
-  const section4 = sectionByAsset.get(String(photo4?.assetId)) || sections[2] || section3;
-  const demoOnly = !delivery;
-
-  return <div className="fd-page fd-editorial" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} data-pace={themeStyles['--fd-pace']} style={themeStyles}>
-    <DemoHeader format="Editorial Page" client={client} sectionId="editorial-page" onGallery={() => setGallery(true)} light delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
-    <V3Bookend delivery={delivery} kind="opening" onGallery={() => setGallery(true)} />
-    <motion.div className="fd-ed-scroll-progress" style={reduced ? undefined : { scaleX: scrollYProgress }} aria-hidden="true" />
-    <main>
-      <section className="fd-ed-cover">
-        <div className="fd-ed-mast">
-          <motion.span initial={reduced ? false : { opacity: 0, x: -18 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: reduced ? 0 : .6, delay: reduced ? 0 : .15 }}>{masthead}</motion.span>
-          <strong>{titleLines.map((line, index) => <motion.i key={line + index} initial={reduced ? false : { opacity: 0, y: 48 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .72, delay: reduced ? 0 : .22 + index * .09, ease: [0.22, 1, 0.36, 1] }}>{line}</motion.i>)}</strong>
-          <motion.p initial={reduced ? false : { opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .7, delay: reduced ? 0 : .62 }}>{openingLine}</motion.p>
-        </div>
-        <motion.figure initial={reduced ? false : { clipPath: 'inset(0 0 100% 0)', opacity: .4 }} animate={{ clipPath: 'inset(0 0 0% 0)', opacity: 1 }} transition={{ duration: reduced ? 0 : 1.15, delay: reduced ? 0 : .18, ease: [0.22, 1, 0.36, 1] }}><motion.div className="fd-ed-photo-motion" animate={reduced ? undefined : { scale: [1.015, 1.065], y: ['0%', '-1.6%'] }} transition={{ duration: 10, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={coverPhoto.name} url={coverPhoto.url} alt={coverPhoto.alt} eager sizes="(max-width: 767px) 100vw, 62vw" /></motion.div></motion.figure>
-        <motion.span className="fd-ed-folio" initial={reduced ? false : { opacity: 0, x: -28 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: reduced ? 0 : .7, delay: reduced ? 0 : .72 }}>01</motion.span>
-        <motion.i className="fd-ed-cover-rule" initial={reduced ? false : { scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ duration: reduced ? 0 : 1, delay: reduced ? 0 : .45, ease: [0.22, 1, 0.36, 1] }} aria-hidden="true" />
-      </section>
-
-      <section className="fd-ed-intro">
-        <motion.span {...reveal()}>{delivery?.shootType ? `${delivery.shootType.toUpperCase()} · ${delivery?.clientName?.toUpperCase() || 'COLLECTION'}` : 'FASHION PORTRAITS / LAGOS'}</motion.span>
-        <h1><motion.i {...reveal(.05)}>{titleLines[0] || (demoOnly ? 'One look.' : title)}</motion.i><motion.em {...reveal(.12)}>{delivery ? (section2.title || delivery.clientName || 'Selected work') : 'Completely Ada.'}</motion.em></h1>
-        <motion.p {...reveal(.18)}>{openingLine}</motion.p>
-      </section>
-
-      <section className="fd-ed-spread" data-section-layout={section2.layout || 'pair'}>
-        <EditorialPhoto photo={photo2} frame={frame2} accent={frame2.colorAccent} sizes="(max-width: 767px) 92vw, 48vw" caption={frame2.caption || frame2.headline || (demoOnly ? "02 / The suit, held with quiet confidence." : section2.subtitle || '')} direction={-1} onNarrationNavigate={onNarrationNavigate} />
-        <motion.div className="fd-ed-quote" {...reveal(.08)}>
-          <span>{frame2.headline ? 'KEY FRAME' : (section2.label || (demoOnly ? 'THE GREEN SUIT' : 'FEATURE'))}</span>
-          <blockquote data-delivery-font={frame2.headline || section2.title || demoOnly ? 'heading' : 'caption'}>
-            <motion.span {...reveal(.12)}>{`“${frame2.headline || section2.title || (demoOnly ? 'One outfit.' : frame2.caption || 'A closer look.')}”`}</motion.span>
-            {!frame2.headline && (section2.subtitle || demoOnly) && <motion.span {...reveal(.2)}>{section2.subtitle || 'Five different ways to own it.'}</motion.span>}
-          </blockquote>
-          <motion.p {...reveal(.24)}>{frame2.caption || section2.subtitle || (demoOnly ? 'The ivory telephone gave Ada something to play with. She did the rest.' : '')}</motion.p>
-        </motion.div>
-        <EditorialPhoto photo={photo3} frame={frame3} accent={frame3.colorAccent} className="fd-ed-tall" sizes="(max-width: 767px) 84vw, 35vw" caption={frame3.caption || frame3.headline || (demoOnly ? "03 / A quieter moment with the phone." : section3.subtitle || '')} direction={1} horizontal onNarrationNavigate={onNarrationNavigate} />
-      </section>
-
-      <section className="fd-ed-number" data-section-layout={section4.layout || 'hero'}>
-        <motion.span aria-hidden="true" initial={reduced ? false : { opacity: 0, x: 100 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, amount: .2 }} transition={{ duration: reduced ? 0 : 1, ease: [0.22, 1, 0.36, 1] }}>04</motion.span>
-        <EditorialPhoto photo={photo4} frame={frame4} accent={frame4.colorAccent} sizes="100vw" direction={-1} horizontal onNarrationNavigate={onNarrationNavigate} />
-        <motion.div>
-          <motion.small {...reveal()}>{frame4.headline ? 'HIGHLIGHT' : (section4.label || (demoOnly ? 'THE FULL LOOK' : 'SELECTED FRAME'))}</motion.small>
-          <h2>
-            <motion.span {...reveal(.08)}>{frame4.headline || section4.title || (demoOnly ? 'Green velvet, sculpted lines,' : '')}</motion.span>
-            <motion.span data-delivery-font="caption" {...reveal(.16)}>{frame4.caption || section4.subtitle || (demoOnly ? 'and Ada in complete control of the frame.' : '')}</motion.span>
-          </h2>
-        </motion.div>
-      </section>
-
-      {photos.length > 5 && (
-        <section className="fd-ed-gallery-preview">
-          <div className="fd-ed-preview-head">
-            <motion.span {...reveal()}>CURATED SELECTION</motion.span>
-            <motion.h3 {...reveal(0.08)}>Further highlights from this shoot</motion.h3>
-          </div>
-          <div className="fd-ed-preview-grid">
-            {photos.slice(4, Math.max(4, photos.length - 1)).map((p, idx) => (
-              <motion.figure
-                key={p.assetId || p.name || idx}
-                {...reveal(idx * 0.08)}
-                className="fd-ed-preview-card"
-                onClick={() => setGallery(true)}
-              >
-                <div className="fd-ed-preview-thumb">
-                  <Photo name={p.name} url={p.url} alt={p.alt} sizes="(max-width: 640px) 92vw, (max-width: 1024px) 46vw, 30vw" />
-                </div>
-                <figcaption>
-                  <span>{String(idx + 5).padStart(2, '0')}</span>
-                  <p>{frames.get(p.assetId)?.headline || frames.get(p.assetId)?.caption || ''}</p>
-                </figcaption>
-              </motion.figure>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section className="fd-ed-close">
-        <EditorialPhoto photo={lastPhoto} frame={frames.get(lastPhoto?.assetId)} accent={frames.get(lastPhoto?.assetId)?.colorAccent} sizes="(max-width: 767px) 88vw, 46vw" direction={1} onNarrationNavigate={onNarrationNavigate} />
-        <div>
-          <motion.span {...reveal()}>THE COMPLETE SESSION</motion.span>
-          <h2>
-            <motion.span {...reveal(.08)}>{delivery?.clientName ? `Every side of ${delivery.clientName},` : 'Every side of the look,'}</motion.span>
-            <motion.em {...reveal(.15)}>ready to explore.</motion.em>
-          </h2>
-          <motion.p {...reveal(.21)}>{closingLine}</motion.p>
-          <motion.button type="button" onClick={() => setGallery(true)} {...reveal(.27)}>View full gallery<Images size={17} /></motion.button>
-        </div>
-      </section>
-    </main>
-    <V3Bookend delivery={delivery} kind="closing" onGallery={() => setGallery(true)} />
-    <AnimatePresence>{gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} onClose={() => setGallery(false)} delivery={delivery} fontStyles={themeStyles} {...galleryProps} />}</AnimatePresence>
-  </div>;
+export function EditorialDemo(props) {
+  return <EditorialViewer {...props} delivery={props.delivery || EDITORIAL_DEMO_DELIVERY} demo={!props.delivery} />;
 }
 
 export const revealCaptions = [

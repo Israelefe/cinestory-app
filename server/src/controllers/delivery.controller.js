@@ -1,6 +1,7 @@
 import { schedulePortfolioRemoval, finishPortfolioRemoval } from '../services/portfolioLifecycle.service.js';
 import crypto from 'crypto';
 import { deliveryGatePalette } from '../utils/deliveryGatePalette.js';
+import { scopedEditorial } from '../constants/editorial.js';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import bcrypt from 'bcryptjs';
@@ -1105,6 +1106,7 @@ async function publicPayload(delivery, grant = null) {
       object.creativeDirection = { ...object.creativeDirection };
       if (Array.isArray(object.creativeDirection.frames)) object.creativeDirection.frames = object.creativeDirection.frames.filter(frame => visibleAssets.has(frame.assetId));
       if (Array.isArray(object.creativeDirection.sections)) object.creativeDirection.sections = object.creativeDirection.sections.map(section => ({ ...section, assetIds: (section.assetIds || []).filter(assetId => visibleAssets.has(assetId)) })).filter(section => section.assetIds.length);
+      if (object.creativeDirection.editorial) object.creativeDirection.editorial = scopedEditorial(object.creativeDirection.editorial, visibleAssets);
     }
     if (Array.isArray(object.presentationOrder)) object.presentationOrder = object.presentationOrder.filter(assetId => visibleAssets.has(assetId));
     if (Array.isArray(object.galleryOrder)) object.galleryOrder = object.galleryOrder.filter(assetId => visibleAssets.has(assetId));

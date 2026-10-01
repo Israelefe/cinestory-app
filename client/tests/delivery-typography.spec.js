@@ -125,13 +125,13 @@ test('creation font changes reach the live preview, saved theme, and reopened cl
   await page.getByLabel('Headings and titles').selectOption('Cormorant Garamond');
   await page.getByLabel('Captions and supporting text').selectOption('Manrope');
   const preview = page.frameLocator('.v3-design-preview iframe');
-  await expectFont(preview.locator('.fd-v3-bookend h2').first(), 'Cormorant Garamond');
+  await expectFont(preview.locator('.ed-cover h1').first(), 'Cormorant Garamond');
   await expectFont(preview.locator('.fd-ed-spread figcaption').first(), 'Manrope');
   await page.getByRole('button', { name: 'Approve and set access', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Set the rules for this link.', exact: true })).toBeVisible();
   expect(saved.typography).toEqual({ display: 'Cormorant Garamond', body: 'Manrope' });
   await page.goto('/d/font-story');
-  await expectFont(page.locator('.fd-v3-bookend h2').first(), 'Cormorant Garamond');
+  await expectFont(page.locator('.ed-cover h1').first(), 'Cormorant Garamond');
   await expectFont(page.locator('.fd-ed-spread figcaption').first(), 'Manrope');
 });
 

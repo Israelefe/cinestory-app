@@ -8,7 +8,7 @@ export function useDialogFocus(open, containerRef, onClose, triggerRef) {
   const oldOverflow = document.body.style.overflow;
   document.body.style.overflow = 'hidden';
   const selector = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex="0"]';
-  const frame = requestAnimationFrame(() => (containerRef.current?.querySelector(selector) || containerRef.current)?.focus());
+  const frame = requestAnimationFrame(() => (containerRef.current?.querySelector(selector) || containerRef.current)?.focus({ preventScroll: true }));
   const onKey = (event) => {
    const dialogs = [...document.querySelectorAll('[role="dialog"][aria-modal="true"],dialog[open]')];
    const top = dialogs.at(-1);
@@ -22,6 +22,6 @@ export function useDialogFocus(open, containerRef, onClose, triggerRef) {
    else if (!event.shiftKey && (document.activeElement === last || !containerRef.current?.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
   };
   document.addEventListener('keydown', onKey);
-  return () => { cancelAnimationFrame(frame); document.body.style.overflow = oldOverflow; document.removeEventListener('keydown', onKey); if (previous?.isConnected) previous.focus(); };
+  return () => { cancelAnimationFrame(frame); document.body.style.overflow = oldOverflow; document.removeEventListener('keydown', onKey); if (previous?.isConnected) previous.focus({ preventScroll: true }); };
  }, [open, containerRef, triggerRef]);
 }

@@ -18,9 +18,12 @@ import DeliveryFormatVisual from '../components/DeliveryFormatVisual.jsx';
 import NarrationVoicePicker from '../components/delivery/NarrationVoicePicker.jsx';
 import ShowcasePhotoPicker from '../components/delivery/ShowcasePhotoPicker.jsx';
 import { ClientPreviewPhoneFrame } from '../components/delivery/PhonePresentation.jsx';
+import EditorialEditor, { EditorialDesignControls, EditorialPhotoControls } from '../components/delivery/EditorialEditor.jsx';
+import EditorialPreview from '../components/delivery/EditorialPreview.jsx';
+import { editorialFromDelivery, reconcileEditorial } from '../utils/editorial.js';
 import './CreateDeliveryV3.css';
 
-const BOUNDS = { 'photo-story': [5, 10], editorial: [6, 14], 'photo-reveal': [5, 12], canvas: [8, 18], chapters: [8, 20], album: [6, 16], 'event-coverage': [10, 24], campaign: [6, 16] };
+const BOUNDS = { 'photo-story': [5, 10], editorial: [5, 14], 'photo-reveal': [5, 12], canvas: [8, 18], chapters: [8, 20], album: [6, 16], 'event-coverage': [10, 24], campaign: [6, 16] };
 const MUSIC = new Set(['photo-story', 'photo-reveal', 'album']);
 const STEPS = [{ id: 'details', label: 'Shoot' }, { id: 'format', label: 'Format' }, { id: 'upload', label: 'Photos' }, { id: 'preparing', label: 'Preparing' }, { id: 'showcase', label: 'Showcase' }, { id: 'narration', label: 'Narration' }, { id: 'music', label: 'Music' }, { id: 'design', label: 'Design' }, { id: 'access', label: 'Publish' }];
 const DEFAULT_ACCESS = { allowIndividualDownloads: true, allowDownloadAll: true, allowLikes: true, expiresAt: '', usageTerms: '' };
@@ -134,6 +137,9 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const [closingLine, setClosingLine] = useState(initialDelivery?.creativeDirection?.closingLine || '');
   const [openingAssetId, setOpeningAssetId] = useState(initialDelivery?.v3?.openingAssetId || '');
   const [closingAssetId, setClosingAssetId] = useState(initialDelivery?.v3?.closingAssetId || '');
+  const [editorial, setEditorial] = useState(() => editorialFromDelivery(initialDelivery));
+  const [frameSettings, setFrameSettings] = useState(() => Object.fromEntries((initialDelivery?.creativeDirection?.frames || []).map(frame => [frame.assetId, { imageFit: frame.imageFit || 'contain', focalPoint: frame.focalPoint || '50% 50%' }])));
+  const [captionUndo, setCaptionUndo] = useState({});
   const [narrationVoiceId, setNarrationVoiceId] = useState(initialDelivery?.generationJob?.input?.voiceId || initialDelivery?.v3?.narrationVoiceId || initialDelivery?.narration?.voiceId || DEFAULT_NARRATION_VOICE_ID);
   const selectedVoiceName = NARRATION_VOICES.find(voice => voice.id === narrationVoiceId)?.name || 'Hannah';
   const [instructions, setInstructions] = useState({});
@@ -160,6 +166,8 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const planName = entitlements?.plan === 'pro' || (!entitlements && proFallback) ? 'Pro' : 'Free';
   const quotaReached = freeMonthlyLimitReached(entitlements);
   const previewBranding = creationPreviewBranding(user, entitlements);
+  const editorialFrames = useMemo(() => selected.map(assetId => ({ assetId, headline: headlines[assetId] || '', caption: captions[assetId] || '', imageFit: frameSettings[assetId]?.imageFit || 'contain', focalPoint: frameSettings[assetId]?.focalPoint || '50% 50%' })), [selected, headlines, captions, frameSettings]);
+  const publication = useMemo(() => reconcileEditorial(editorial, selected, editorialFrames), [editorial, selected, editorialFrames]);
   const designPreviewDelivery = useMemo(() => {
     if (!draft) return null;
     const savedFrames = new Map((draft.creativeDirection?.frames || []).map(frame => [frame.assetId, frame]));
@@ -168,6 +176,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
       assetId,
       headline: headlines[assetId] ?? savedFrames.get(assetId)?.headline ?? '',
       caption: captions[assetId] ?? savedFrames.get(assetId)?.caption ?? '',
+      ...(format === 'editorial' ? frameSettings[assetId] || { imageFit: 'contain', focalPoint: '50% 50%' } : {}),
       textAnimation: savedFrames.get(assetId)?.textAnimation || (format === 'photo-story' ? 'typewriter' : undefined)
     }));
     return {
@@ -182,11 +191,12 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
         frames,
         assetOrder: selected,
         palette,
-        typography
+        typography,
+        ...(format === 'editorial' ? { editorial: publication, sections: publication.sections } : {})
       },
       v3: { ...draft.v3, openingAssetId, closingAssetId }
     };
-  }, [draft, previewBranding.type, previewBranding.name, previewBranding.logoUrl, selected, headlines, captions, title, openingLine, closingLine, format, palette, typography, openingAssetId, closingAssetId]);
+  }, [draft, previewBranding.type, previewBranding.name, previewBranding.logoUrl, selected, headlines, captions, title, openingLine, closingLine, format, palette, typography, openingAssetId, closingAssetId, publication, frameSettings]);
   const bounds = BOUNDS[format] || [5, 10];
   const recommendedFormat = DELIVERY_FORMATS.find(item => item.value === recommendation?.format);
   const assets = draft?.assets || [];
@@ -217,6 +227,9 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     setClosingLine(next.creativeDirection?.closingLine || '');
     setOpeningAssetId(next.v3?.openingAssetId || '');
     setClosingAssetId(next.v3?.closingAssetId || '');
+    setEditorial(editorialFromDelivery(next));
+    setFrameSettings(Object.fromEntries((next.creativeDirection?.frames || []).map(frame => [frame.assetId, { imageFit: frame.imageFit || 'contain', focalPoint: frame.focalPoint || '50% 50%' }])));
+    setCaptionUndo({});
     setPalette(next.creativeDirection?.palette || defaultPalette);
     setTypography(next.creativeDirection?.typography || { display: 'Playfair Display', body: 'Outfit' });
   }
@@ -365,11 +378,12 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     captionPending.current = true;
     setBusy('caption-' + id); setCaptionError(null);
     try {
-      const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/captions/' + id + '/regenerate', { instruction: instructions[id] || '', previous: { headline: (headlines[id] || '').slice(0, 70), caption: (captions[id] || '').slice(0, 180) } }, { signal });
+      const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/captions/' + id + '/regenerate', { instruction: instructions[id] || '', previous: { headline: (headlines[id] || '').slice(0, 70), caption: (captions[id] || '').slice(0, format === 'editorial' ? 320 : 180) } }, { signal });
       if (signal.aborted) return;
       setHeadlines(current => ({ ...current, [id]: data.data.headline }));
       setCaptions(current => ({ ...current, [id]: data.data.caption }));
       if (photoPicker.mode === 'replace') {
+        if (format === 'editorial') setEditorial({ ...publication, sections: publication.sections.map(section => ({ ...section, assetIds: section.assetIds.map(value => value === selected[photoPicker.index] ? id : value) })) });
         setSelected(current => current.map((value, at) => at === photoPicker.index ? id : value));
         setActivePhotoIndex(photoPicker.index);
       } else {
@@ -391,8 +405,9 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     const controller = new AbortController();
     captionRequest.current = controller;
     try {
-      const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/captions/' + id + '/regenerate', { instruction: instructions[id] || '', previous: { headline: (headlines[id] || '').slice(0, 70), caption: (captions[id] || '').slice(0, 180) } }, { signal: controller.signal });
+      const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/captions/' + id + '/regenerate', { instruction: instructions[id] || '', previous: { headline: (headlines[id] || '').slice(0, 70), caption: (captions[id] || '').slice(0, format === 'editorial' ? 320 : 180) } }, { signal: controller.signal });
       if (controller.signal.aborted) return;
+      setCaptionUndo(current => ({ ...current, [id]: { headline: headlines[id] || '', caption: captions[id] || '' } }));
       setHeadlines(current => ({ ...current, [id]: data.data.headline }));
       setCaptions(current => ({ ...current, [id]: data.data.caption }));
     } catch (failure) { if (!controller.signal.aborted) setCaptionError({ assetId: id, text: message(failure).text }); }
@@ -419,10 +434,21 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
       return;
     }
     await action('showcase', async () => {
-      const body = { assetIds: selected, frames: selected.map(assetId => ({ assetId, headline: headlines[assetId].trim(), caption: captions[assetId].trim() })), title: title.trim(), openingLine: openingLine.trim(), closingLine: closingLine.trim(), openingAssetId, closingAssetId };
+      const body = showcasePayload();
       await api.patch('/v1/deliveries/' + draft._id + '/v3/showcase', body);
       const next = await refresh();
       setStage(nextAfterShowcase(next.format));
+    });
+  }
+  function showcasePayload() {
+    if (format === 'editorial' && publication.credits.some(credit => !credit.role.trim() || !credit.name.trim())) throw new Error('Add a role and a name for each credit, or remove the empty credit.');
+    return { assetIds: selected, frames: selected.map(assetId => ({ assetId, headline: (headlines[assetId] || '').trim(), caption: (captions[assetId] || '').trim(), ...(format === 'editorial' ? frameSettings[assetId] || { imageFit: 'contain', focalPoint: '50% 50%' } : {}) })), title: title.trim(), openingLine: openingLine.trim(), closingLine: closingLine.trim(), openingAssetId, closingAssetId, ...(format === 'editorial' ? { editorial: publication } : {}) };
+  }
+  async function regenerateEditorialBlock(block, ids, previousText) {
+    if (busy || captionPending.current || !ids.length) return null;
+    return action('editorial-' + block, async () => {
+      const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/captions/' + ids[0] + '/regenerate', { editorialBlock: block, sectionAssetIds: ids, previousText });
+      return data.data.text;
     });
   }
   async function generateNarration() {
@@ -458,6 +484,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   async function approveDesign() {
     if (!themeStatus.valid) { setError({ text: themeStatus.message, fix: 'contrast' }); return; }
     await action('approve', async () => {
+      if (format === 'editorial') await api.patch('/v1/deliveries/' + draft._id + '/v3/showcase', showcasePayload());
       await api.patch('/v1/deliveries/' + draft._id + '/v3/theme', { palette, typography });
       await api.post('/v1/deliveries/' + draft._id + '/v3/approve');
       const next = await refresh(); syncShowcase(next); setStage('access');
@@ -616,15 +643,14 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
           <div className="v3-showcase-count"><div><strong>{selected.length} chosen</strong><span>photos in the showcase</span></div><small>{bounds[0]} minimum · {bounds[1]} maximum</small></div>
           <div className="v3-showcase-settings">
             <section className="v3-panel v3-showcase-words">
-              <div className="v3-panel-heading"><span>01</span><div><h2>Opening and closing words</h2><p>These messages frame the showcase for your client.</p></div></div>
+              <div className="v3-panel-heading"><span>01</span><div><h2>{format === 'editorial' ? 'The magazine cover' : 'Opening and closing words'}</h2><p>{format === 'editorial' ? 'Choose the title and photographs that open and close the feature.' : 'These messages frame the showcase for your client.'}</p></div></div>
               <label>Delivery title<input maxLength={80} value={title} onChange={event => setTitle(event.target.value)} /></label>
-              <label>Opening message<textarea value={openingLine} maxLength={140} rows={3} onChange={event => setOpeningLine(event.target.value)} /></label>
-              <label>Closing message<textarea value={closingLine} maxLength={160} rows={3} onChange={event => setClosingLine(event.target.value)} /></label>
+              {format !== 'editorial' && <><label>Opening message<textarea value={openingLine} maxLength={140} rows={3} onChange={event => setOpeningLine(event.target.value)} /></label><label>Closing message<textarea value={closingLine} maxLength={160} rows={3} onChange={event => setClosingLine(event.target.value)} /></label></>}
             </section>
             <div className="v3-bookends">
               <article className="v3-bookend-card">
                 <div className="v3-bookend-image">{assetById.get(openingAssetId) ? <img src={assetById.get(openingAssetId)?.thumbnailUrl || assetById.get(openingAssetId)?.url} alt={assetById.get(openingAssetId)?.originalFilename || 'Opening photograph'} /> : <Image size={26} />}</div>
-                <div className="v3-bookend-choice"><span>Opening photograph</span><small>Shown before the showcase begins.</small><button type="button" className="v3-photo-choice-button" disabled={!!busy} onClick={() => setPhotoPicker({ mode: 'opening', currentId: openingAssetId, title: 'Choose the opening photograph' })}><Image size={18} /> Choose opening photo</button></div>
+                <div className="v3-bookend-choice"><span>{format === 'editorial' ? 'Cover photograph' : 'Opening photograph'}</span><small>{format === 'editorial' ? 'The photograph on the magazine cover.' : 'Shown before the showcase begins.'}</small><button type="button" className="v3-photo-choice-button" disabled={!!busy} onClick={() => setPhotoPicker({ mode: 'opening', currentId: openingAssetId, title: format === 'editorial' ? 'Choose the cover photograph' : 'Choose the opening photograph' })}><Image size={18} /> {format === 'editorial' ? 'Choose cover photo' : 'Choose opening photo'}</button></div>
               </article>
               <article className="v3-bookend-card">
                 <div className="v3-bookend-image">{assetById.get(closingAssetId) ? <img src={assetById.get(closingAssetId)?.thumbnailUrl || assetById.get(closingAssetId)?.url} alt={assetById.get(closingAssetId)?.originalFilename || 'Closing photograph'} /> : <Image size={26} />}</div>
@@ -632,6 +658,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
               </article>
             </div>
           </div>
+          {format === 'editorial' && <EditorialEditor value={publication} onChange={setEditorial} assets={assets} frames={editorialFrames} onRegenerate={regenerateEditorialBlock} busy={!!busy} openingLine={openingLine} closingLine={closingLine} onOpeningChange={setOpeningLine} onClosingChange={setClosingLine} openingAssetId={openingAssetId} closingAssetId={closingAssetId} />}
           <div className="v3-showcase-section-heading"><div><span>02 / THE SHOWCASE PHOTOS</span><h2>Review each photo and its caption.</h2></div><p>Drag-free ordering: use the arrows to change the sequence.</p></div>
           <div className="v3-showcase-editor">
             <div className="v3-showcase-nav" aria-label="Showcase photographs">
@@ -645,8 +672,10 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
               <div className="v3-showcase-controls">
                 <div className="v3-showcase-toolbar"><strong>PHOTO {String(activeShowcaseIndex + 1).padStart(2, '0')} OF {String(selected.length).padStart(2, '0')}</strong><button type="button" onClick={() => moveSelected(activeShowcaseIndex, -1)} disabled={!!busy || activeShowcaseIndex === 0} aria-label="Move earlier"><ChevronLeft size={18} /></button><button type="button" onClick={() => moveSelected(activeShowcaseIndex, 1)} disabled={!!busy || activeShowcaseIndex === selected.length - 1} aria-label="Move later"><ChevronRight size={18} /></button><button type="button" onClick={() => setSelected(current => current.filter(value => value !== activeShowcaseId))} disabled={!!busy || selected.length <= bounds[0]} aria-label="Remove from showcase"><Trash2 size={17} /></button></div>
                 <label>Headline<textarea className="v3-showcase-headline" disabled={busy === 'caption-' + activeShowcaseId} rows={2} maxLength={70} value={headlines[activeShowcaseId] || ''} onChange={event => setHeadlines(current => ({ ...current, [activeShowcaseId]: event.target.value }))} /><small>{(headlines[activeShowcaseId] || '').length} / 70 · A short title for this photograph</small></label>
-                <label>Caption<textarea disabled={busy === 'caption-' + activeShowcaseId} rows={format === 'photo-story' ? 4 : 5} maxLength={format === 'photo-story' ? 150 : 180} value={captions[activeShowcaseId] || ''} onChange={event => setCaptions(current => ({ ...current, [activeShowcaseId]: event.target.value }))} /><small>{(captions[activeShowcaseId] || '').length} / {format === 'photo-story' ? 150 : 180}{format === 'photo-story' ? ' · Check the caption in your client preview' : ''}</small></label>
+                <label>Caption<textarea disabled={busy === 'caption-' + activeShowcaseId} rows={format === 'photo-story' ? 4 : 5} maxLength={format === 'photo-story' ? 150 : format === 'editorial' ? 320 : 180} value={captions[activeShowcaseId] || ''} onChange={event => setCaptions(current => ({ ...current, [activeShowcaseId]: event.target.value }))} /><small>{(captions[activeShowcaseId] || '').length} / {format === 'photo-story' ? 150 : format === 'editorial' ? 320 : 180}{format === 'photo-story' || format === 'editorial' ? ' · Check the caption in your client preview' : ''}</small></label>
+                {format === 'editorial' && <EditorialPhotoControls value={publication} onChange={setEditorial} activeId={activeShowcaseId} settings={frameSettings[activeShowcaseId] || {}} onSettingsChange={settings => setFrameSettings(current => ({ ...current, [activeShowcaseId]: settings }))} onOrderChange={(ids, activeId) => { setSelected(ids); setActivePhotoIndex(ids.indexOf(activeId)); }} />}
                 <div className="v3-caption-assist"><input disabled={busy === 'caption-' + activeShowcaseId} value={instructions[activeShowcaseId] || ''} maxLength={400} onChange={event => setInstructions(current => ({ ...current, [activeShowcaseId]: event.target.value }))} placeholder="Tell Veylo what to emphasize (optional)" aria-label={'Instruction for photo ' + (activeShowcaseIndex + 1)} /><button type="button" onClick={() => regenerate(activeShowcaseId)} disabled={!!busy}>{busy === 'caption-' + activeShowcaseId ? <LoaderCircle className="v3-spin" size={15} /> : <RefreshCw size={15} />} Regenerate headline and caption</button></div>
+                {captionUndo[activeShowcaseId] && <button type="button" className="v3-photo-choice-button" disabled={!!busy} onClick={() => { const previous = captionUndo[activeShowcaseId]; setHeadlines(current => ({ ...current, [activeShowcaseId]: previous.headline })); setCaptions(current => ({ ...current, [activeShowcaseId]: previous.caption })); setCaptionUndo(current => { const next = { ...current }; delete next[activeShowcaseId]; return next; }); }}>Undo regeneration</button>}
                 {captionError?.assetId === activeShowcaseId && <p className="v3-caption-error" role="alert"><AlertCircle size={18} />{captionError.text} Your current headline and caption have been kept. Try again.</p>}
                 <button type="button" className="v3-photo-choice-button" disabled={!!busy || !unselected.length} onClick={() => setPhotoPicker({ mode: 'replace', index: activeShowcaseIndex, title: 'Replace this showcase photo' })}><Image size={18} /> Replace this photo</button>
                 <div className="v3-showcase-pager"><button type="button" onClick={() => setActivePhotoIndex(activeShowcaseIndex - 1)} disabled={activeShowcaseIndex === 0}><ArrowLeft size={16} /> Previous photo</button><button type="button" onClick={() => setActivePhotoIndex(activeShowcaseIndex + 1)} disabled={activeShowcaseIndex === selected.length - 1}>Next photo <ArrowRight size={16} /></button></div>
@@ -740,8 +769,9 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
               <div className="v3-type-controls"><div className="v3-panel-heading"><span>02</span><div><h2>Typography</h2><p>Choose a pair that suits the delivery.</p></div></div>
                 {['display', 'body'].map(role => <label className="v3-font" key={role}>{role === 'display' ? 'Headings and titles' : 'Captions and supporting text'}<select value={typography[role]} onChange={event => setTypography(current => ({ ...current, [role]: event.target.value }))}>{FONTS.map(font => <option key={font}>{font}</option>)}</select></label>)}
               </div>
+              {format === 'editorial' && <EditorialDesignControls value={publication} onChange={setEditorial} />}
             </div>
-            <div className="v3-design-preview"><ClientPreviewPhoneFrame delivery={designPreviewDelivery} narrationEnabled={false} access={access} isolate /></div>
+            <div className="v3-design-preview">{format === 'editorial' ? <EditorialPreview delivery={designPreviewDelivery} access={access} /> : <ClientPreviewPhoneFrame delivery={designPreviewDelivery} narrationEnabled={false} access={access} isolate />}</div>
           </div>
           <div className="v3-actions"><StepButton secondary onClick={() => setStage(MUSIC.has(format) ? 'music' : 'showcase')}><ArrowLeft size={17} /> Back</StepButton><StepButton onClick={approveDesign} disabled={!!busy}>{busy === 'approve' ? <LoaderCircle className="v3-spin" size={17} /> : <Check size={17} />} Approve and set access</StepButton></div>
         </>}

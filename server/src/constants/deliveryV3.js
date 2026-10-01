@@ -1,5 +1,5 @@
 export const V3_FORMATS = Object.freeze({
-  'photo-story': [5, 10], editorial: [6, 14], 'photo-reveal': [5, 12],
+  'photo-story': [5, 10], editorial: [5, 14], 'photo-reveal': [5, 12],
   canvas: [8, 18], chapters: [8, 20], album: [6, 16],
   'event-coverage': [10, 24], campaign: [6, 16]
 });

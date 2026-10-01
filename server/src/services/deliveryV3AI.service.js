@@ -1,6 +1,7 @@
 import { signedImageUrl } from './deliveryMedia.service.js';
 import { contrastRatio, V3_DEFAULT_PALETTE, V3_FONT_CHOICES, V3_FORMATS } from '../constants/deliveryV3.js';
 import { purposeWordingIssues } from '../utils/purposeWording.js';
+import { writeEditorialDirection, rewriteEditorialCaption, rewriteEditorialBlock } from './editorialDirection.service.js';
 
 const MODEL = 'deepseek-v4.1-flash';
 const TRANSIENT = new Set([429, 500, 502, 503, 504]);
@@ -761,6 +762,17 @@ export async function directV3(delivery, insights) {
   const openingAssetId = extras[0]?.assetId || selected[0];
   const closingAssetId = extras[1]?.assetId || extras[0]?.assetId || selected.at(-1);
   const rows = insights.filter(row => selectedSet.has(row.assetId));
+  if (delivery.format === 'editorial') {
+    const direction = await writeEditorialDirection(request, delivery, rows, selected, text => hasUnsupportedAddress(text, delivery) || hasUnsupportedNumbers(text, delivery) || hasUnsupportedGathering(text, delivery));
+    const visual = await request('Return JSON {"palette":{"background":"#hex","surface":"#hex","text":"#hex","accent":"#hex"},"typography":{"display":"Playfair Display","body":"Outfit"}}. Choose a readable magazine palette from the photograph colours; do not recolour photographs. Fonts: Playfair Display, Outfit, Plus Jakarta Sans, Cormorant Garamond, DM Sans, Libre Baskerville, Manrope.', JSON.stringify(rows.map(row => ({ colors: row.colors }))), { maxTokens: 450 });
+    const palette = Object.fromEntries(Object.keys(V3_DEFAULT_PALETTE).map(key => [key, /^#[0-9a-f]{6}$/i.test(visual?.palette?.[key]) ? visual.palette[key] : V3_DEFAULT_PALETTE[key]]));
+    if (contrastRatio(palette.background, palette.text) < 4.5 || contrastRatio(palette.surface, palette.text) < 4.5) {
+      const readable = ['#ffffff', '#101010'].find(color => contrastRatio(palette.background, color) >= 4.5 && contrastRatio(palette.surface, color) >= 4.5);
+      if (readable) palette.text = readable;
+      else Object.assign(palette, V3_DEFAULT_PALETTE);
+    }
+    return { selected, openingAssetId, closingAssetId, direction: { ...direction, assetOrder: selected, palette, typography: { display: V3_FONT_CHOICES.has(visual?.typography?.display) ? visual.typography.display : 'Playfair Display', body: V3_FONT_CHOICES.has(visual?.typography?.body) ? visual.typography.body : 'Outfit' } } };
+  }
   const captionLimit = delivery.format === 'photo-story' ? 150 : 180;
   const narrativeSystem = 'Return JSON {"title":"...","openingLine":"...","closingLine":"...","frames":[{"assetId":"...","headline":"...","caption":"..."}]}. Include exactly one frame per supplied asset ID in the same order. The title is at most 80 characters, the opening at most 140 characters, and the closing at most 160 characters. Opening and closing must be distinct, complete messages that fit these limits without cutting off a thought.' + NARRATIVE_POLICY;
   const narrativePrompt = [
@@ -844,6 +856,7 @@ export async function repickV3Palette({ format, brief, shootType, imageColors, c
 }
 
 export async function regenerateV3Caption(delivery, insight, instruction = '', previous = null) {
+  if (delivery.format === 'editorial') return rewriteEditorialCaption(request, delivery, insight, instruction, previous, text => hasUnsupportedAddress(text, delivery) || hasUnsupportedNumbers(text, delivery) || hasUnsupportedGathering(text, delivery));
   // Stay below the browser's 60-second request timeout, including provider
   // retries and both review attempts. Slow reviews can keep a checked draft.
   const deadline = Date.now() + 45000;
@@ -867,4 +880,8 @@ export async function regenerateV3Caption(delivery, insight, instruction = '', p
     }
   }
   return { headline, caption };
+}
+
+export async function regenerateV3EditorialBlock(delivery, rows, block, previousText, instruction = '') {
+  return rewriteEditorialBlock(request, delivery, rows, block, previousText, instruction, text => hasUnsupportedAddress(text, delivery) || hasUnsupportedNumbers(text, delivery) || hasUnsupportedGathering(text, delivery));
 }

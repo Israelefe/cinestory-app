@@ -26,7 +26,8 @@ export function PhonePresentationRoute({ children, title = 'Mobile client delive
   const location = useLocation();
   const desktop = useDesktopPhoneMode();
   const embedded = new URLSearchParams(location.search).get('phoneView') === '1';
-  if (!desktop || embedded) return children;
+  const publication = new URLSearchParams(location.search).get('publicationView') === 'editorial';
+  if (!desktop || embedded || publication) return children;
 
   const params = new URLSearchParams(location.search);
   params.set('phoneView', '1');

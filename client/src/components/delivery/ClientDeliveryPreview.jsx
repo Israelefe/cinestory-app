@@ -62,7 +62,7 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
     },
     assets: (delivery?.assets || []).map(asset => {
       const url = preloadedMedia.assets?.[asset.assetId] || mediaUrl(asset.url);
-      return { ...asset, url, thumbnailUrl: url, srcSet: undefined };
+      return { ...asset, url, thumbnailUrl: preloadedMedia.assets?.[asset.assetId] ? url : mediaUrl(asset.thumbnailUrl || asset.url), srcSet: preloadedMedia.assets?.[asset.assetId] ? undefined : asset.srcSet };
     }),
     soundtrack: (capabilities.music || delivery?.kind === 'pinboard') && delivery?.soundtrack?.url
       ? { ...delivery.soundtrack, url: preloadedMedia.soundtrack || mediaUrl(delivery.soundtrack.url) }

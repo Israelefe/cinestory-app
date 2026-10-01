@@ -551,9 +551,9 @@ test('regeneration repairs each reported description using the same purpose-led 
         { frames: [{ assetId: 'selected-photo', ...corrected }] }
       ], calls);
       try {
-        // Editorial's wider limits isolate the meaning check from Photo Story's
+        // Photo Reveal's wider limits isolate the meaning check from Photo Story's
         // length check: all nine bad sentences have valid names and word counts.
-        const result = await regenerateV3Caption({ clientName: 'Ada', brief: "Ada's birthday celebration", shootType: 'Birthday', format: 'editorial' }, { summary: caption });
+        const result = await regenerateV3Caption({ clientName: 'Ada', brief: "Ada's birthday celebration", shootType: 'Birthday', format: 'photo-reveal' }, { summary: caption });
         assert.deepEqual(result, corrected);
         assert.equal(calls.length, 2);
         assert.doesNotMatch(calls[1].messages[1].content[0].text, /velvet|pearls|telephone|polaroid|newspaper/i);
@@ -566,7 +566,7 @@ test('failed description repair cannot return the same outfit report to the clie
   const description = { headline: "Ada's Green Birthday Outfit", caption: reportedBirthdayDescriptions[0] };
   const restore = mockModel([description, { frames: [{ assetId: 'selected-photo', ...description }] }], []);
   try {
-    const result = await regenerateV3Caption({ clientName: 'Ada', brief: "Ada's birthday celebration", shootType: 'Birthday', format: 'editorial' }, { summary: description.caption });
+    const result = await regenerateV3Caption({ clientName: 'Ada', brief: "Ada's birthday celebration", shootType: 'Birthday', format: 'photo-reveal' }, { summary: description.caption });
     assert.match(result.caption, /your birthday/);
     assert.doesNotMatch(JSON.stringify(result), /outfit|velvet|pearls|backdrop/i);
   } finally { restore(); }
@@ -780,8 +780,8 @@ test('opening and closing messages remain complete instead of clipping an oversi
   } finally { restore(); }
 });
 
-test('all eight Showcase formats use the purpose-led writing and review policy for initial and regenerated copy', async t => {
-  for (const [format, [minimum]] of Object.entries(V3_FORMATS)) await t.test(format, async () => {
+test('the other seven Showcase formats retain the purpose-led writing and review policy', async t => {
+  for (const [format, [minimum]] of Object.entries(V3_FORMATS).filter(([id]) => id !== 'editorial')) await t.test(format, async () => {
     const selected = ids.slice(0, minimum);
     const frames = selected.map((assetId, index) => ({ assetId, headline: narrativeHeadlines[index], caption: narrativeCaptions[index] }));
     const calls = [];

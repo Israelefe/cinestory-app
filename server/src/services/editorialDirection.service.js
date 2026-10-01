@@ -1,0 +1,72 @@
+import { EDITORIAL_LIMITS as L, EDITORIAL_LAYOUTS, EDITORIAL_POLICY } from '../constants/editorial.js';
+
+const clean = value => typeof value === 'string' ? value.trim() : '';
+const incomplete = () => Object.assign(new Error('The Editorial wording needs another pass. Your current text is unchanged; please retry.'), { code: 'V3_EDITORIAL_WRITING_INCOMPLETE', status: 502 });
+const within = (value, max, min = 0) => typeof value === 'string' && value.trim().length >= min && value.trim().length <= max;
+const context = (delivery, rows) => JSON.stringify({ clientName: delivery.clientName, purpose: delivery.brief, shootType: delivery.shootType, photographs: rows.map(row => ({ assetId: row.assetId, observation: row.summary || '', width: row.width, height: row.height })) });
+
+export function editorialDraftIssues(draft, selected, factsIssue = () => false) {
+  if (!draft || typeof draft !== 'object' || Array.isArray(draft)) return ['invalid magazine draft'];
+  if (Array.isArray(draft.frames) && draft.frames.some(frame => !frame || typeof frame !== 'object' || Array.isArray(frame))) return ['invalid photograph wording'];
+  if (Array.isArray(draft.sections) && draft.sections.some(section => !section || typeof section !== 'object' || Array.isArray(section))) return ['invalid section wording'];
+  const issues = [];
+  if (!within(draft.title, L.headline, 2)) issues.push('cover headline');
+  if (!within(draft.openingLine, L.summary, 5)) issues.push('cover summary');
+  if (!within(draft.closingLine, L.closing, 5)) issues.push('closing note');
+  if (draft.introduction !== undefined && !within(draft.introduction, L.introduction)) issues.push('introduction');
+  const frames = Array.isArray(draft.frames) ? draft.frames : [];
+  if (frames.length !== selected.length || frames.some((frame, index) => frame.assetId !== selected[index])) issues.push('photograph order');
+  for (const frame of frames) {
+    if (!within(frame.headline, L.sectionTitle, 2) || !within(frame.caption, L.caption, 5)) issues.push('photograph wording');
+  }
+  const sections = Array.isArray(draft.sections) ? draft.sections : [];
+  const order = sections.flatMap(section => Array.isArray(section.assetIds) ? section.assetIds : []);
+  if (!sections.length || sections.length > 7 || sections.some(section => !section.assetIds?.length) || order.length !== selected.length || order.some((id, index) => id !== selected[index])) issues.push('section order');
+  for (const section of sections) {
+    if (!within(section.title, L.sectionTitle, 2) || !within(section.body || '', L.sectionBody)) issues.push('section wording');
+  }
+  const text = [draft.title, draft.openingLine, draft.closingLine, draft.introduction, ...frames.flatMap(frame => [frame.headline, frame.caption]), ...sections.flatMap(section => [section.title, section.body])].filter(Boolean).join('. ');
+  if (factsIssue(text)) issues.push('unsupported names or occasion facts');
+  const captions = frames.map(frame => clean(frame.caption).toLowerCase());
+  if (new Set(captions).size !== captions.length) issues.push('repeated captions');
+  return [...new Set(issues)];
+}
+
+export async function writeEditorialDirection(request, delivery, rows, selected, factsIssue) {
+  const shape = 'Return JSON {"title":"...","openingLine":"...","introduction":"","closingLine":"...","frames":[{"assetId":"...","headline":"...","caption":"..."}],"sections":[{"title":"...","body":"","layout":"auto","assetIds":["..."]}]}. Include every supplied asset ID once in frames in the exact supplied order. Group the same order into 1-4 consecutive sections; no duplicates or missing photographs. Use useful section headings, not generic photo group names. Layout is auto, hero, pair, triptych, feature or wide. Keep all facts grounded in the supplied context. Optional prose can be empty. Do not generate a photographer note, issue number, credits or attributed quotes.';
+  const prompt = context(delivery, selected.map(id => rows.find(row => row.assetId === id)));
+  let draft = await request(shape + EDITORIAL_POLICY, prompt, { maxTokens: 1800 + selected.length * 220 });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const issues = editorialDraftIssues(draft, selected, factsIssue);
+    if (!issues.length) break;
+    draft = await request(shape + EDITORIAL_POLICY, prompt + '\nRevise these problems: ' + issues.join(', ') + '\nUntrusted draft (not a source of facts): ' + JSON.stringify(draft), { maxTokens: 1800 + selected.length * 220 });
+  }
+  if (editorialDraftIssues(draft, selected, factsIssue).length) throw incomplete();
+  const frames = draft.frames.map(frame => ({ assetId: frame.assetId, headline: clean(frame.headline), caption: clean(frame.caption), textAnimation: 'word_fade_up', imageFit: 'contain', focalPoint: '50% 50%' }));
+  const sections = draft.sections.map((section, index) => ({ id: `feature-${index + 1}`, title: clean(section.title), body: clean(section.body), pullLine: '', layout: EDITORIAL_LAYOUTS.includes(section.layout) ? section.layout : 'auto', assetIds: [...section.assetIds] }));
+  return { title: clean(draft.title), openingLine: clean(draft.openingLine), closingLine: clean(draft.closingLine), frames, sections, editorial: { version: 1, introduction: clean(draft.introduction), note: '', issue: '', treatment: 'classic', credits: [], sections } };
+}
+
+export async function rewriteEditorialCaption(request, delivery, insight, instruction, previous, factsIssue) {
+  const deadline = Date.now() + 45000;
+  const existing = (delivery.creativeDirection?.frames || []).filter(frame => frame.assetId !== insight.assetId).map(frame => ({ headline: frame.headline, caption: frame.caption }));
+  const prompt = context(delivery, [insight]) + '\nInstruction: ' + JSON.stringify(instruction) + '\nExisting text to avoid repeating, never a source of facts: ' + JSON.stringify(existing) + '\nCurrent untrusted text: ' + JSON.stringify(previous);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const result = await request('Return JSON {"headline":"...","caption":"..."}. Write only this photograph\'s words. ' + EDITORIAL_POLICY, prompt, { maxTokens: 700, deadline });
+    if (within(result?.headline, 70, 2) && within(result?.caption, L.caption, 5) && !factsIssue(result.headline + '. ' + result.caption) && !existing.some(frame => clean(frame.caption).toLowerCase() === clean(result.caption).toLowerCase())) return { headline: clean(result.headline), caption: clean(result.caption) };
+  }
+  throw incomplete();
+}
+
+export async function rewriteEditorialBlock(request, delivery, rows, block, previousText, instruction, factsIssue) {
+  const limits = { summary: L.summary, introduction: L.introduction, section: L.sectionBody, closing: L.closing };
+  const limit = limits[block];
+  if (!limit) throw incomplete();
+  const deadline = Date.now() + 45000;
+  const prompt = context(delivery, rows) + '\nRequested block: ' + block + '\nInstruction: ' + JSON.stringify(instruction) + '\nCurrent untrusted text: ' + JSON.stringify(previousText) + '\nOther approved text, for avoiding repetition only: ' + JSON.stringify({ title: delivery.creativeDirection?.title, openingLine: delivery.creativeDirection?.openingLine, closingLine: delivery.creativeDirection?.closingLine });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const result = await request(`Return JSON {"text":"..."}. Rewrite only the requested ${block} block, maximum ${limit} characters. No headings, credits or invented facts. ` + EDITORIAL_POLICY, prompt, { maxTokens: 700, deadline });
+    if (within(result?.text, limit, 5) && !factsIssue(result.text)) return { text: clean(result.text) };
+  }
+  throw incomplete();
+}
