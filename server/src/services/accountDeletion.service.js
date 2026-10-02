@@ -31,7 +31,10 @@ import SupportAccessGrant from '../models/SupportAccessGrant.js';
 import SupportTicket from '../models/SupportTicket.js';
 import AnalyticsEvent from '../models/AnalyticsEvent.js';
 import { cloudinary, configureCloudinary } from './cloudinary.service.js';
-import { billingConfigured, decryptBillingToken, paystackRequest } from './paystack.service.js';
+import Refund from '../models/Refund.js';
+import PaidUsage from '../models/PaidUsage.js';
+import { stopAccountRenewals } from './billingCancellation.service.js';
+import { withBillingLock } from './billingLock.service.js';
 
 export class AccountDeletionError extends Error {
   constructor(message, status = 500, code = 'ACCOUNT_DELETION_FAILED') {
@@ -90,42 +93,8 @@ async function removeCloudinaryFolder(prefix, resourceTypes) {
 }
 
 async function cancelActiveSubscriptions(userId) {
-  const subscriptions = await Subscription.find({
-    userId,
-    status: { $in: ['active', 'canceling', 'past_due'] },
-    subscriptionCode: { $exists: true, $ne: '' }
-  }).sort({ createdAt: -1 }).select('+emailTokenEncrypted cancelRequestedAt');
-  if (!subscriptions.length) return [];
-  const pending = subscriptions.filter(subscription => !subscription.cancelRequestedAt);
-  if (!pending.length) return subscriptions.map(subscription => subscription._id);
-  if (!billingConfigured()) throw new AccountDeletionError('Cancel the active Pro subscription before deleting this account. Billing is not available to confirm the cancellation.', 409, 'BILLING_CANCELLATION_REQUIRED');
-
-  const credentials = pending.map(subscription => {
-    try {
-      return { subscription, token: decryptBillingToken(subscription.emailTokenEncrypted) };
-    } catch {
-      return { subscription, token: '' };
-    }
-  });
-  if (credentials.some(item => !item.token)) throw new AccountDeletionError('Cancel the active Pro subscription before deleting this account. Veylo could not confirm the billing token.', 409, 'BILLING_CANCELLATION_REQUIRED');
-
-  for (const { subscription, token } of credentials) {
-    try {
-      await paystackRequest('/subscription/disable', { method: 'POST', body: { code: subscription.subscriptionCode, token } });
-    } catch (error) {
-      throw providerError(error, 'BILLING_CANCELLATION_FAILED');
-    }
-    subscription.status = 'canceling';
-    subscription.cancelRequestedAt = new Date();
-    try {
-      await subscription.save();
-    } catch (error) {
-      throw providerError(error, 'BILLING_RECORD_UPDATE_FAILED');
-    }
-  }
-  return subscriptions.map(subscription => subscription._id);
+  return stopAccountRenewals(userId);
 }
-
 function accountBeforeSnapshot(user) {
   return {
     id: String(user._id),
@@ -162,7 +131,7 @@ async function removeMedia({ user, stories, hasDeliveries, hasStorageAssets }) {
 
 function transactionUnsupported(error) {
   const message = String(error?.message || '');
-  return error?.code === 20 || /transaction numbers are only allowed|transactions are not supported|replica set|mongos/i.test(message);
+  return error?.code === 20 || /transaction numbers are only allowed|transactions are not supported|replica set|mongos/i.test(message) || Boolean(error?.cause && error.cause !== error && transactionUnsupported(error.cause));
 }
 
 async function deleteOwnedRecords({ accountId, deliveryIds, storyIds, volumeJobIds, session, deleted }) {
@@ -185,9 +154,14 @@ async function deleteOwnedRecords({ accountId, deliveryIds, storyIds, volumeJobI
   await deleteMany('sessions', Session, { userId: accountId });
   await deleteMany('authCodes', AuthCode, { userId: accountId });
   await deleteMany('passwordResetTokens', PasswordResetToken, { userId: accountId });
-  await deleteMany('subscriptions', Subscription, { userId: accountId });
-  await deleteMany('payments', Payment, { userId: accountId });
-  await deleteMany('billingEvents', BillingEvent, { userId: accountId });
+  // Retain a restricted ledger without the studio, email, payment credentials or raw provider payloads.
+  const accountDeletedAt = new Date();
+  const retainUntil = new Date(accountDeletedAt.getTime() + 6 * 365.25 * 86400000);
+  for (const model of [Subscription, Payment, Refund, BillingEvent, PaidUsage]) {
+    await model.updateMany({ userId: accountId }, { $set: { accountDeletedAt, retainUntil }, $unset: { providerSnapshot: 1, payload: 1, emailTokenEncrypted: 1, checkoutUrl: 1 } }, options);
+  }
+  await BillingEvent.updateMany({ userId: accountId, status: { $in: ['processed', 'ignored'] } }, { $unset: { payloadEncrypted: 1 } }, options);
+  deleted.financialRecordsRetained = true;
   await deleteMany('emailDeliveries', EmailDelivery, deliveryIds.length
     ? { $or: [{ userId: accountId }, { deliveryId: { $in: deliveryIds } }] }
     : { userId: accountId });
@@ -220,6 +194,8 @@ async function deleteOwnedRecords({ accountId, deliveryIds, storyIds, volumeJobI
     ? { $or: [{ userId: accountId }, { deliveryId: { $in: deliveryIds } }] }
     : { userId: accountId };
   await deleteMany('analyticsEvents', AnalyticsEvent, analyticsFilter);
+  // Deletion middleware may have recovered older usage evidence during product cleanup.
+  await PaidUsage.updateMany({ userId: accountId }, { $set: { accountDeletedAt, retainUntil } }, options);
 
   let userResult;
   try {
@@ -239,7 +215,7 @@ async function deleteOwnedRecords({ accountId, deliveryIds, storyIds, volumeJobI
  * Admin audit rows are deliberately not touched; they are the immutable record
  * that explains who approved the removal and why.
  */
-export async function deleteUserAccount({ userId } = {}) {
+async function deleteUserAccountLocked({ userId } = {}) {
   if (!mongoose.isValidObjectId(userId)) throw new AccountDeletionError('That account identifier is not valid.', 400, 'INVALID_ACCOUNT_ID');
   const accountId = new mongoose.Types.ObjectId(userId);
   const user = await User.findById(accountId).select('name email role plan accountStatus storageUsedBytes createdAt studio');
@@ -285,4 +261,9 @@ export async function deleteUserAccount({ userId } = {}) {
     cancelledSubscription: Boolean(cancelledSubscriptionIds.length),
     mediaRemoved: true
   };
+}
+
+export async function deleteUserAccount({ userId } = {}) {
+  if (!mongoose.isValidObjectId(userId)) throw new AccountDeletionError('That account identifier is not valid.', 400, 'INVALID_ACCOUNT_ID');
+  return withBillingLock(userId, () => deleteUserAccountLocked({ userId }));
 }

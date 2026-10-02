@@ -1,3 +1,4 @@
+import { recordPaidUsage } from '../services/paidUsage.service.js';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
@@ -257,6 +258,7 @@ export async function publishVolumeJob(req, res) {
     job.publishedAt = new Date();
     job.revokedAt = undefined;
     await job.save();
+    await recordPaidUsage(req.user.id, 'delivery', job._id, job.publishedAt);
     res.json({ success: true, data: { publicId: job.publicId, url: `${String(process.env.CLIENT_URL || '').replace(/\/$/, '')}/volume/${job.publicId}` } });
   } catch {
     res.status(500).json({ success: false, message: 'We could not publish this volume delivery.' });

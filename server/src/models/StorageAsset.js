@@ -1,3 +1,4 @@
+import { preservePaidUsageOnDelete } from './paidUsageEvidence.js';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
 
@@ -24,4 +25,5 @@ storageAssetSchema.index({ userId: 1, createdAt: -1 });
 storageAssetSchema.index({ userId: 1, _id: -1 });
 storageAssetSchema.index({ userId: 1, originalFilename: 1 });
 
+preservePaidUsageOnDelete(storageAssetSchema, 'storage');
 export default mongoose.model('StorageAsset', storageAssetSchema);

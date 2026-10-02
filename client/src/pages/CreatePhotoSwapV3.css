@@ -1,0 +1,9 @@
+@import './CreatePinboardV3.css';
+
+/* Photo Swap Creation Wizard Specific Adjustments */
+.ps-wizard-field-note {
+  font-size: 0.8125rem;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.5;
+  margin-top: 8px;
+}

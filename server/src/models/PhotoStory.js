@@ -1,3 +1,4 @@
+import { preservePaidUsageOnDelete } from './paidUsageEvidence.js';
 import mongoose from 'mongoose';
 import { randomUUID } from 'crypto';
 
@@ -47,4 +48,5 @@ const photoStorySchema = new mongoose.Schema({
   status: { type: String, enum: ['draft', 'published', 'archived'], default: 'published' }
 }, { timestamps: true });
 
+preservePaidUsageOnDelete(photoStorySchema, 'delivery');
 export default mongoose.model('PhotoStory', photoStorySchema);

@@ -22,6 +22,7 @@ import { resolveEdgeClientIp } from './src/middleware/clientIp.middleware.js';
 import { checkCloudinaryConnection } from './src/services/cloudinary.service.js';
 import { startDeliveryWorker } from './src/services/deliveryWorker.service.js';
 import { startRetentionWorker } from './src/services/retention.service.js';
+import { startBillingWorker } from './src/services/billingWorker.service.js';
 import { startPortfolioWorker } from './src/services/portfolioWorker.service.js';
 import { seedAdminFromEnv } from './src/utils/seedAdmin.js';
 import { maintenanceMiddleware } from './src/middleware/maintenance.middleware.js';
@@ -39,6 +40,7 @@ if (process.env.NODE_ENV === 'production') {
   if (process.env.BILLING_ENABLED === 'true') {
     const billingMissing = ['PAYSTACK_SECRET_KEY', 'PAYSTACK_PRO_PLAN_CODE', 'BILLING_ENCRYPTION_KEY'].filter(name => !process.env[name]);
     if (billingMissing.length) throw new Error(`Missing billing configuration: ${billingMissing.join(', ')}`);
+    if (process.env.BILLING_ENCRYPTION_KEY.length < 32) throw new Error('BILLING_ENCRYPTION_KEY must contain at least 32 characters.');
   }
   if (process.env.DELIVERY_PIPELINE_ENABLED === 'true') {
     const deliveryMissing = ['ALIBABA_MODEL_STUDIO_API_KEY', 'ALIBABA_WORKSPACE_ID', 'DEEPGRAM_API_KEY'].filter(name => !process.env[name]);
@@ -136,6 +138,7 @@ connectDB().then(async connection => {
       startDeliveryWorker();
     }
     startRetentionWorker();
+    startBillingWorker();
   });
   const shutdown = async () => {
     server.close();

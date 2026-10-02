@@ -1,4 +1,5 @@
-import React, { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { RegionalPricingProvider } from './components/RegionalPricing.jsx';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigationType } from 'react-router-dom';
 import { MotionConfig } from 'framer-motion';
 import { ToastContainer } from 'react-toastify';
@@ -21,9 +22,11 @@ const PhonePreviewPage = lazyWithRecovery(() => import('./pages/PhonePreviewPage
 const DeliverySharing = lazyWithRecovery(() => import('./pages/DeliverySharing.jsx'), 'delivery-sharing');
 const FormatDemo = lazyWithRecovery(() => import('./pages/FormatDemo.jsx'), 'format-demo');
 const PinboardDemo = lazyWithRecovery(() => import('./pages/PinboardDemo.jsx'), 'pinboard-demo');
+const PhotoSwapDemo = lazyWithRecovery(() => import('./pages/PhotoSwapDemo.jsx'), 'photoswap-demo');
 const PrivacyPolicy = lazyWithRecovery(() => import('./pages/PrivacyPolicy.jsx'), 'privacy');
 const TermsOfService = lazyWithRecovery(() => import('./pages/TermsOfService.jsx'), 'terms');
 const FairUsePolicy = lazyWithRecovery(() => import('./pages/FairUsePolicy.jsx'), 'fair-use');
+const RefundPolicy = lazyWithRecovery(() => import('./pages/RefundPolicy.jsx'), 'refund-policy');
 const AboutUs = lazyWithRecovery(() => import('./pages/AboutUs.jsx'), 'about');
 const NichePage = lazyWithRecovery(() => import('./pages/NichePage.jsx'), 'photographer-page');
 const ClientExperience = lazyWithRecovery(() => import('./pages/ClientExperience.jsx'), 'client-experience');
@@ -92,8 +95,8 @@ function RoutePosition() {
     return () => { stopped = true; window.cancelAnimationFrame(frame); };
   }, [pathname, hash, key, navigationType]);
   useEffect(() => {
-    const names = { '/': 'Photo delivery for finished shoots', '/formats': 'Two delivery types | Eight Showcase formats', '/gridboard': 'GridBoard delivery', '/portfolio': 'Veylo Portfolio', '/pricing': 'Plans and pricing', '/signup': 'Create your account', '/signin': 'Sign in', '/verify-email': 'Verify your email', '/forgot-password': 'Reset your password', '/reset-password': 'Choose a new password', '/onboarding': 'Set up your studio', '/settings': 'Account settings', '/about': 'About us', '/client-experience': 'The client experience', '/contact': 'Get in touch', '/privacy': 'Privacy policy', '/terms': 'Terms of use', '/fair-use': 'Fair use', '/changelog': 'Product updates', '/create': 'Create a delivery', '/demo': 'Watch a Photo Story', '/demo/gridboard': 'Browse a GridBoard delivery', '/demo/pinboard': 'Browse a GridBoard delivery', '/demo/editorial': 'Explore an Editorial Page', '/demo/reveal': 'Begin a Photo Reveal', '/demo/canvas': 'Explore a Canvas', '/demo/chapters': 'Choose a chapter', '/demo/album': 'Turn through an Album', '/demo/event-coverage': 'Browse Event Coverage', '/demo/campaign': 'Open a Campaign Delivery' };
-    names['/formats'] = 'Two delivery types | Eight Showcase formats';
+    const names = { '/': 'Photo delivery for finished shoots', '/formats': 'Three delivery types | Eight Showcase formats', '/gridboard': 'GridBoard delivery', '/portfolio': 'Veylo Portfolio', '/pricing': 'Plans and pricing', '/signup': 'Create your account', '/signin': 'Sign in', '/verify-email': 'Verify your email', '/forgot-password': 'Reset your password', '/reset-password': 'Choose a new password', '/onboarding': 'Set up your studio', '/settings': 'Account settings', '/about': 'About us', '/client-experience': 'The client experience', '/contact': 'Get in touch', '/privacy': 'Privacy policy', '/refund-policy': 'Refund policy', '/terms': 'Terms of use', '/fair-use': 'Fair use', '/changelog': 'Product updates', '/create': 'Create a delivery', '/demo': 'Watch a Photo Story', '/demo/gridboard': 'Browse a GridBoard delivery', '/demo/pinboard': 'Browse a GridBoard delivery', '/demo/photoswap': 'Swipe through a Photo Swap', '/demo/editorial': 'Explore an Editorial Page', '/demo/reveal': 'Begin a Photo Reveal', '/demo/canvas': 'Explore a Canvas', '/demo/chapters': 'Choose a chapter', '/demo/album': 'Turn through an Album', '/demo/event-coverage': 'Browse Event Coverage', '/demo/campaign': 'Open a Campaign Delivery' };
+    names['/formats'] = 'Three delivery types | Eight Showcase formats';
     names['/demo/event-coverage'] = 'Browse Event Coverage';
     names['/demo/campaign'] = 'Open a Campaign Delivery';
     if (pathname === '/billing') names[pathname] = 'Plan and billing';
@@ -183,7 +186,7 @@ function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountD
       <Route path="/library" element={<ProtectedRoute user={user} loading={authLoading}><ImageLibrary /></ProtectedRoute>} />
       <Route path="/portfolio/manage" element={<ProtectedRoute user={user} loading={authLoading}><ManagePortfolio /></ProtectedRoute>} />
       <Route path="/contact" element={<ContactSupport />} /><Route path="/changelog" element={<Changelog />} /><Route path="/about" element={<AboutUs />} /><Route path="/for/:slug" element={<NichePage />} /><Route path="/client-experience" element={<ClientExperience />} />
-      <Route path="/privacy" element={<PrivacyPolicy />} /><Route path="/terms" element={<TermsOfService />} /><Route path="/fair-use" element={<FairUsePolicy />} /><Route path="*" element={<NotFound />} />
+      <Route path="/privacy" element={<PrivacyPolicy />} /><Route path="/terms" element={<TermsOfService />} /><Route path="/fair-use" element={<FairUsePolicy />} /><Route path="/refund-policy" element={<RefundPolicy />} /><Route path="*" element={<NotFound />} />
     </Routes></main>
   </div>;
 }
@@ -223,8 +226,8 @@ export default function App() {
     setUser(null);
     window.location.assign('/');
   };
-  const handlePlanChanged = plan => setUser(current => current ? { ...current, plan } : current);
-  return <MotionConfig reducedMotion="user"><BrowserRouter><RoutePosition /><DeliveryChrome user={user} /><ToastContainer position="top-right" theme="dark" autoClose={3000} /><Suspense fallback={<div className="v-page-loading" role="status">Opening Veylo…</div>}><Routes>
+  const handlePlanChanged = useCallback(plan => setUser(current => current ? { ...current, plan } : current), []);
+  return <RegionalPricingProvider><MotionConfig reducedMotion="user"><BrowserRouter><RoutePosition /><DeliveryChrome user={user} /><ToastContainer position="top-right" theme="dark" autoClose={3000} /><Suspense fallback={<div className="v-page-loading" role="status">Opening Veylo…</div>}><Routes>
     <Route path="/story/:storyId" element={<PhonePresentationRoute title="Photo Story demo"><StoryViewer /></PhonePresentationRoute>} />
     <Route path="/d/:publicId" element={<PhonePresentationRoute title="Client delivery"><DeliveryViewer /></PhonePresentationRoute>} />
     <Route path="/__phone-preview" element={<PhonePreviewPage />} />
@@ -233,7 +236,8 @@ export default function App() {
     <Route path="/demo" element={<PhonePresentationRoute title="Photo Story demo"><StoryViewer demoMode /></PhonePresentationRoute>} />
     <Route path="/demo/gridboard" element={<PhonePresentationRoute title="GridBoard delivery demo"><PinboardDemo /></PhonePresentationRoute>} />
     <Route path="/demo/pinboard" element={<PhonePresentationRoute title="GridBoard delivery demo"><PinboardDemo /></PhonePresentationRoute>} />
+    <Route path="/demo/photoswap" element={<PhonePresentationRoute title="Photo Swap delivery demo"><PhotoSwapDemo /></PhonePresentationRoute>} />
     <Route path="/demo/:formatId" element={<PhonePresentationRoute title="Delivery format demo"><FormatDemo /></PhonePresentationRoute>} />
     <Route path="*" element={<WebsiteShell user={user} authLoading={authLoading} onAuthenticated={handleAuthenticated} onLogout={handleLogout} onAccountDeleted={handleAccountDeleted} onPlanChanged={handlePlanChanged} />} />
-  </Routes></Suspense></BrowserRouter></MotionConfig>;
+  </Routes></Suspense></BrowserRouter></MotionConfig></RegionalPricingProvider>;
 }

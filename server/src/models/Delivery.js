@@ -1,3 +1,4 @@
+import { preservePaidUsageOnDelete } from './paidUsageEvidence.js';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
 import { cleanDeliveryAccess } from '../utils/deliveryAccess.js';
@@ -38,7 +39,7 @@ const deliverySchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   schemaVersion: { type: Number, default: 2 },
   v3: { type: mongoose.Schema.Types.Mixed },
-  kind: { type: String, enum: ['showcase', 'pinboard', 'volume'], default: 'showcase', index: true },
+  kind: { type: String, enum: ['showcase', 'pinboard', 'photoswap', 'volume'], default: 'showcase', index: true },
   format: { type: String, enum: ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign'] },
   status: { type: String, enum: ['draft', 'analyzing', 'directing', 'review', 'published', 'archived'], default: 'draft', index: true },
   clientName: { type: String, trim: true, maxlength: 100, default: '' },
@@ -53,6 +54,8 @@ const deliverySchema = new mongoose.Schema({
   // Pinboard keeps every uploaded final photo and stores its chosen board
   // composition, moment groups, and display settings separately from Showcase.
   pinboard: { type: mongoose.Schema.Types.Mixed },
+  // Photo Swap stores its background mode, typography, and presentation config.
+  photoswap: { type: mongoose.Schema.Types.Mixed },
   presentationOrder: { type: [String], default: [] },
   galleryOrder: { type: [String], default: [] },
   curatedAssetIds: { type: [String], default: [] },
@@ -72,4 +75,5 @@ const deliverySchema = new mongoose.Schema({
 deliverySchema.index({ userId: 1, updatedAt: -1 });
 deliverySchema.index({ userId: 1, status: 1, _id: -1 });
 
+preservePaidUsageOnDelete(deliverySchema, 'delivery');
 export default mongoose.model('Delivery', deliverySchema);

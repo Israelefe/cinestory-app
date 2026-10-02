@@ -1,3 +1,4 @@
+import { recordPaidUsage } from '../services/paidUsage.service.js';
 import { schedulePortfolioRemoval, finishPortfolioRemoval } from '../services/portfolioLifecycle.service.js';
 import { z } from 'zod';
 import User from '../models/User.js';
@@ -63,6 +64,7 @@ export async function confirmStorageAsset(req, res) {
     if (!user) { await removeStorageAsset(resource.public_id); return res.status(403).json({ success: false, code: 'STORAGE_LIMIT_REACHED', message: `This upload would take your personal storage above ${Math.round(storageLimitBytes / (1024 ** 3))} GB.` }); }
     reserved = true;
     reservedBytes = resource.bytes;
+    await recordPaidUsage(user._id, 'storage', resource.public_id);
     const asset = await StorageAsset.create({ userId: user._id, publicId: resource.public_id, originalFilename: parsed.data.originalFilename, format: resource.format, width: resource.width, height: resource.height, bytes: resource.bytes, contentHash: resource.etag || undefined, hashAlgorithm: resource.etag ? 'cloudinary-etag' : undefined, hashVerifiedAt: resource.etag ? new Date() : undefined, folder: parsed.data.folder || 'All photographs', tags: [...new Set(parsed.data.tags.map(tag => tag.toLowerCase()))] });
     recordAnalyticsEventAsync({ name: 'upload.completed', source: 'server', actorType: 'photographer', userId: req.user?.id, status: 'completed', bytes: resource.bytes, metadata: { surface: 'library', format: resource.format } });
     res.status(201).json({ success: true, data: output(asset), usage: { usedBytes: user.storageUsedBytes, limitBytes: entitlements.limits.personalStorageBytes } });

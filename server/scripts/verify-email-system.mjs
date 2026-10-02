@@ -41,7 +41,9 @@ assert.match(billingController, /sendPaymentFailedEmail/);
 assert.match(billingController, /sendRenewalFailedEmail/);
 assert.match(billingController, /sendSubscriptionCancellationEmail/);
 assert.match(billingController, /sendSubscriptionResumedEmail/);
-assert.match(billingController, /processWebhookEvent\(event, eventKey\)/);
+assert.match(billingController, /processWebhookEvent\(event, record.eventKey\)/);
+assert.match(emailService, /messageEncrypted/);
+assert.match(emailService, /retryBillingEmails/);
 assert.match(shareModel, /recipientEmail/);
 assert.match(sharingPage, /recipientEmail/);
 for (const id of ['share-invitation', 'pro-welcome', 'payment-success', 'payment-failed', 'renewal-failed', 'subscription-canceled', 'subscription-resumed', 'pro-ended', 'refund-completed', 'refund-failed', 'payment-dispute']) {

@@ -1,10 +1,11 @@
 import crypto from 'crypto';
 import { PRO_PRICE_KOBO } from '../config/plans.js';
+import { planForRegion, REGIONAL_PRICES } from './billingPricing.service.js';
 
 const PAYSTACK_URL = 'https://api.paystack.co';
 
-export function billingConfigured() {
-  return process.env.BILLING_ENABLED === 'true' && Boolean(process.env.PAYSTACK_SECRET_KEY && process.env.PAYSTACK_PRO_PLAN_CODE && process.env.BILLING_ENCRYPTION_KEY);
+export function billingConfigured(region = 'nigeria') {
+  return process.env.BILLING_ENABLED === 'true' && Boolean(process.env.PAYSTACK_SECRET_KEY && planForRegion(region) && process.env.BILLING_ENCRYPTION_KEY?.length >= 32);
 }
 
 function secretKey() {
@@ -33,22 +34,23 @@ export async function paystackRequest(path, { method = 'GET', body } = {}) {
   return payload.data;
 }
 
-let checkedPlan;
-export async function validateConfiguredPlan() {
+const checkedPlans = new Map();
+export async function validateConfiguredPlan(region = 'nigeria') {
+  const code = planForRegion(region);
+  const checkedPlan = checkedPlans.get(code);
   if (checkedPlan && checkedPlan.expiresAt > Date.now()) return checkedPlan.data;
-  const code = process.env.PAYSTACK_PRO_PLAN_CODE;
   if (!code) {
     const error = new Error('Billing is not available yet.');
     error.status = 503;
     throw error;
   }
   const plan = await paystackRequest(`/plan/${encodeURIComponent(code)}`);
-  if (plan.interval !== 'monthly' || Number(plan.amount) !== PRO_PRICE_KOBO || plan.currency !== 'NGN') {
-    const error = new Error('The configured Paystack plan must charge ₦25,000 monthly in NGN.');
+  if (!plan.id || (plan.plan_code && plan.plan_code !== code) || plan.interval !== 'monthly' || Number(plan.amount) !== (REGIONAL_PRICES[region] || PRO_PRICE_KOBO) || plan.currency !== 'NGN') {
+    const error = new Error('The configured Paystack plan does not match the monthly NGN price.');
     error.status = 503;
     throw error;
   }
-  checkedPlan = { data: plan, expiresAt: Date.now() + 10 * 60 * 1000 };
+  checkedPlans.set(code, { data: plan, expiresAt: Date.now() + 10 * 60 * 1000 });
   return plan;
 }
 

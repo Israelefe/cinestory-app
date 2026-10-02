@@ -8,7 +8,8 @@ export const DELIVERY_CAPABILITIES = Object.freeze({
   canvas: Object.freeze({ music: false, narration: false, soundtrackOwner: 'none', narrationOwner: 'none' }),
   chapters: Object.freeze({ music: false, narration: false, soundtrackOwner: 'none', narrationOwner: 'none' }),
   'event-coverage': Object.freeze({ music: false, narration: false, soundtrackOwner: 'none', narrationOwner: 'none' }),
-  campaign: Object.freeze({ music: false, narration: false, soundtrackOwner: 'none', narrationOwner: 'none' })
+  campaign: Object.freeze({ music: false, narration: false, soundtrackOwner: 'none', narrationOwner: 'none' }),
+  photoswap: Object.freeze({ music: true, narration: false, soundtrackOwner: 'format', narrationOwner: 'none' })
 });
 
 export function getDeliveryCapabilities(format) {

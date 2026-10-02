@@ -1,3 +1,4 @@
+import { ProPrice } from '../components/RegionalPricing.jsx';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, BadgeCheck, Camera, CreditCard, Images, Save, ShieldCheck, Trash2, Upload, UserRound, MapPin, MessageCircle } from 'lucide-react';
@@ -192,13 +193,14 @@ export default function AccountSettings({ user, onAccountDeleted, onUserUpdated 
 
       <Reveal id="account-plan" className="v-account-billing" delay={.12}>
         <span><CreditCard size={20} /></span>
-        <div><small>PLAN AND BILLING</small><strong>Manage {isPro ? 'your Pro subscription' : 'your Veylo plan'}</strong><p>See plan limits, payment history, and monthly subscription controls.</p></div>
+        <div><small>PLAN AND BILLING</small><strong>Manage {isPro ? 'your Pro subscription' : 'your Veylo plan'}</strong><p>See plan limits, payment history, and monthly subscription controls. New Pro subscriptions: <ProPrice /> / month.</p></div>
         <Link to="/billing">Open billing</Link>
       </Reveal>
 
       <Reveal id="account-delete" className="v-delete-account" delay={.14}>
         <header><span><Trash2 size={20} /></span><div><p className="v-eyebrow">Permanent deletion</p><h2>Delete this account</h2></div></header>
         <p>This removes your profile, studio details, deliveries, account sessions, and Veylo-hosted files connected to this account. Published client links will stop working. This cannot be undone.</p>
+        <p>Renewals must stop before deletion completes. A restricted payment and refund record is kept for up to six years after deletion for billing disputes and accounting. See our <Link to="/privacy">Privacy Policy</Link>.</p>
         <div className="v-delete-list"><span>Account and studio profile</span><span>Every delivery and client link</span><span>Sessions, verification codes, and reset records</span><span>Veylo-hosted profile and delivery files</span></div>
         <div className="v-field"><label htmlFor="delete-confirmation">Type your email address to continue</label><input id="delete-confirmation" type="email" autoComplete="email" value={confirmation} onChange={event => setConfirmation(event.target.value)} placeholder={user?.email} disabled={status.loading} /></div>
         {usesPassword ? <form className="v-form" onSubmit={submitPassword}>

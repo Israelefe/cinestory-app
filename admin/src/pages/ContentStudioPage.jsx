@@ -229,7 +229,7 @@ export default function ContentStudioPage({ admin, onLogout }) {
                   <option value="signups">Get photographers to try Veylo</option>
                   <option value="awareness">Introduce Veylo</option>
                   <option value="feature">Explain client delivery & WhatsApp sharing</option>
-                  <option value="pro">Promote Veylo Pro (₦25,000/mo)</option>
+                  <option value="pro">Promote Veylo Pro (Nigeria ₦25,000; international ₦30,000/mo)</option>
                 </select>
               </label>
               <label className="cs-label">

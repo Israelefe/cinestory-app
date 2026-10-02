@@ -1,4 +1,10 @@
 import { resolveEntitlements } from '../services/entitlement.service.js';
+import Refund from '../models/Refund.js';
+import { recordPaidUsage, refundEvidence } from '../services/paidUsage.service.js';
+import { requestReviewedRefund } from '../services/billingRefund.service.js';
+import { stopAccountRenewals } from '../services/billingCancellation.service.js';
+import { withBillingLock } from '../services/billingLock.service.js';
+import { redactBillingSnapshot } from '../services/billingPricing.service.js';
 import crypto from 'crypto';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
@@ -30,9 +36,9 @@ import StoryView from '../models/StoryView.js';
 import PhotoLike from '../models/PhotoLike.js';
 import DeliveryShareGrant from '../models/DeliveryShareGrant.js';
 import SupportTicket from '../models/SupportTicket.js';
-import { billingConfigured, decryptBillingToken, paystackRequest } from '../services/paystack.service.js';
+import { billingConfigured, paystackRequest } from '../services/paystack.service.js';
 import { checkCloudinaryConnection, cloudinary, configureCloudinary } from '../services/cloudinary.service.js';
-import { PLAN_DEFINITIONS, PRO_PRICE_KOBO } from '../config/plans.js';
+import { PLAN_DEFINITIONS } from '../config/plans.js';
 import { tokenDigest } from '../utils/auth.js';
 import { removeDeliveryMedia } from '../services/deliveryMedia.service.js';
 import { removeStoredPreviews } from '../services/deliveryPreviewCache.service.js';
@@ -308,7 +314,7 @@ export async function getOperationsOverview(req, res) {
 
 export async function getAdminAnalytics(req, res) {
   try {
-    const [totalUsers, legacyStories, totalDeliveries, legacyAgg, deliveryAgg, activeSubscriptions, paymentAgg] = await Promise.all([
+    const [totalUsers, legacyStories, totalDeliveries, legacyAgg, deliveryAgg, recurringTotals, paymentAgg] = await Promise.all([
       User.countDocuments(),
       PhotoStory.countDocuments(),
       Delivery.countDocuments(),
@@ -323,7 +329,7 @@ export async function getAdminAnalytics(req, res) {
         }
       ]),
       Delivery.aggregate([{ $group: { _id: null, totalViews: { $sum: '$viewsCount' }, totalDownloads: { $sum: '$downloadsCount' }, totalLikes: { $sum: '$likesCount' } } }]),
-      Subscription.countDocuments({ status: { $in: ['active', 'canceling'] }, paidThrough: { $gt: new Date() } }),
+      Subscription.aggregate([{ $match: { provider: 'paystack', status: 'active', cancelRequestedAt: null, cancelPendingAt: null, paidThrough: { $gt: new Date() } } }, { $group: { _id: null, count: { $sum: 1 }, mrr: { $sum: { $ifNull: ['$amountKobo', 2500000] } } } }]),
       Payment.aggregate([
         { $match: { status: { $in: ['success', 'partially_refunded', 'refunded'] } } },
         { $group: { _id: null, collectedKobo: { $sum: '$amountKobo' }, refundedKobo: { $sum: '$refundedAmountKobo' } } }
@@ -345,8 +351,8 @@ export async function getAdminAnalytics(req, res) {
         totalViews: first.totalViews + second.totalViews,
         totalDownloads: first.totalDownloads + second.totalDownloads,
         totalLikes: first.totalLikes + second.totalLikes,
-        activeSubscriptions,
-        monthlyRecurringRevenueKobo: activeSubscriptions * PRO_PRICE_KOBO,
+        activeSubscriptions: recurringTotals[0]?.count || 0,
+        monthlyRecurringRevenueKobo: recurringTotals[0]?.mrr || 0,
         netCollectedKobo: Math.max(0, money.collectedKobo - money.refundedKobo)
       }
     });
@@ -567,8 +573,11 @@ export async function updateAccountStatus(req, res) {
     const user = await User.findById(accountId).select('name email role plan planOverride accountStatus');
     if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
     const before = accountSnapshot(user);
-    user.accountStatus = status;
-    await user.save();
+    await withBillingLock(user._id, async () => {
+      if (status === 'suspended') await stopAccountRenewals(user._id);
+      user.accountStatus = status;
+      await user.save();
+    });
     let revokedSessions = 0;
     if (status === 'suspended') {
       const result = await Session.updateMany({ userId: user._id, revokedAt: null }, { $set: { revokedAt: new Date() } });
@@ -578,7 +587,7 @@ export async function updateAccountStatus(req, res) {
     res.json({ success: true, data: accountSnapshot(user), revokedSessions });
   } catch (error) {
     console.error('[admin/account-status]', error.message);
-    res.status(500).json({ success: false, message: 'We could not change this account status.' });
+    res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'We could not change this account status.' });
   }
 }
 
@@ -1379,6 +1388,7 @@ export async function adminPublishVolumeJob(req, res) {
     const expiresAt = req.body.expiresAt ? new Date(req.body.expiresAt) : null;
     if (expiresAt && Number.isNaN(expiresAt.getTime())) return res.status(400).json({ success: false, message: 'Enter a valid expiry date.' });
     job.status = 'published'; job.publishedAt = job.publishedAt || new Date(); job.accessExpiresAt = expiresAt || undefined; job.revokedAt = undefined; job.accessVersion = Number(job.accessVersion || 1) + 1; await job.save();
+    await recordPaidUsage(job.userId, 'delivery', job._id, job.publishedAt);
     await AdminAudit.create({ adminId: adminId(req), userId: job.userId, action: 'volume.published_by_admin', resourceType: 'VolumeJob', resourceId: String(job._id), details: { accessExpiresAt: job.accessExpiresAt || null } });
     res.json({ success: true, data: { publicId: job.publicId, url: `${String(process.env.CLIENT_URL || 'https://veylo.com.ng').replace(/\/$/, '')}/volume/${job.publicId}` } });
   } catch (error) { console.error('[admin/volume-publish]', error.message); res.status(500).json({ success: false, message: 'We could not publish this volume delivery.' }); }
@@ -1421,20 +1431,8 @@ function billingDate(value) {
 }
 
 function safePaystackSubscriptionSnapshot(subscription) {
-  if (!subscription || typeof subscription !== 'object') return {};
-  return {
-    status: subscription.status || null,
-    subscriptionCode: subscription.subscription_code || subscription.subscriptionCode || null,
-    customerCode: subscription.customer?.customer_code || subscription.customer_code || null,
-    planCode: subscription.plan?.plan_code || subscription.plan?.id || null,
-    amount: subscription.amount || subscription.plan?.amount || null,
-    currency: subscription.currency || subscription.plan?.currency || null,
-    nextPaymentDate: subscription.next_payment_date || subscription.nextPaymentDate || null,
-    lastChargeAt: subscription.last_charge_at || subscription.lastChargeAt || null,
-    updatedAt: subscription.updatedAt || subscription.updated_at || null
-  };
+  return redactBillingSnapshot(subscription);
 }
-
 function accountBillingRow(user, snapshot) {
   return {
     id: user._id,
@@ -1592,7 +1590,7 @@ export async function verifyAccountPayment(req, res) {
     if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
     const provider = await paystackRequest(`/transaction/verify/${encodeURIComponent(payment.reference)}`);
     const providerEmail = String(provider?.customer?.email || '').trim().toLowerCase();
-    if (provider?.status !== 'success' || Number(provider.amount) !== PRO_PRICE_KOBO || String(provider.currency || 'NGN') !== 'NGN' || (providerEmail && providerEmail !== String(user.email || '').trim().toLowerCase())) {
+    if (provider?.reference !== payment.reference || provider?.status !== 'success' || Number(provider.amount) !== payment.amountKobo || provider.currency !== payment.currency || providerEmail !== String(user.email || '').trim().toLowerCase()) {
       return res.status(409).json({ success: false, message: 'Paystack has not confirmed a matching Veylo Pro payment for this account.' });
     }
     const subscription = payment.subscriptionId ? await Subscription.findById(payment.subscriptionId).select('+emailTokenEncrypted') : null;
@@ -1612,33 +1610,33 @@ export async function refreshAccountBillingFromPaystack(req, res) {
     const accountId = validId(req.params.id);
     if (!accountId) return res.status(400).json({ success: false, message: 'That account identifier is not valid.' });
     if (!billingConfigured()) return res.status(503).json({ success: false, message: 'Paystack billing is disabled or incomplete.' });
+    await withBillingLock(accountId, async () => {
     const subscription = await Subscription.findOne({ userId: accountId, provider: 'paystack', subscriptionCode: { $exists: true, $ne: '' } }).sort({ createdAt: -1 }).select('+providerSnapshot').lean();
     if (!subscription) return res.status(404).json({ success: false, message: 'No Paystack subscription is available for this account.' });
     const provider = await paystackRequest(`/subscription/${encodeURIComponent(subscription.subscriptionCode)}`);
     const providerStatus = String(provider?.status || '').trim().toLowerCase();
-    const nextPaymentDate = billingDate(provider?.next_payment_date || provider?.nextPaymentDate);
     const now = new Date();
     const update = { providerSnapshot: safePaystackSubscriptionSnapshot(provider) };
-    const cancellationStatuses = new Set(['non-renewing', 'non_renewing', 'cancelled', 'canceled', 'disabled', 'complete']);
-    if (providerStatus === 'active' && nextPaymentDate) {
-      update.status = 'active';
-      update.paidThrough = nextPaymentDate;
-      update.graceEndsAt = null;
-    } else if (cancellationStatuses.has(providerStatus)) {
-      const paidThrough = nextPaymentDate || billingDate(subscription.paidThrough);
+    if (provider.plan?.plan_code !== subscription.planCode || provider.customer?.customer_code !== subscription.customerCode) return res.status(409).json({ success: false, message: 'Provider subscription mismatch.' });
+    const cancellationStatuses = new Set(['non-renewing', 'non_renewing', 'cancelled', 'canceled', 'disabled', 'complete', 'completed']);
+    if (cancellationStatuses.has(providerStatus) && !['refunded', 'disputed'].includes(subscription.status)) {
+      const paidThrough = billingDate(subscription.paidThrough);
       update.status = paidThrough && paidThrough > now ? 'canceling' : 'expired';
       update.paidThrough = paidThrough || null;
       update.cancelRequestedAt = subscription.cancelRequestedAt || now;
+      update.providerCanceledAt = now;
+      update.cancelPendingAt = null;
       if (update.status === 'expired') update.canceledAt = subscription.canceledAt || now;
-    } else if (['attention', 'past_due', 'past-due'].includes(providerStatus)) {
+    } else if (['attention', 'past_due', 'past-due'].includes(providerStatus) && subscription.status === 'active' && subscription.paidThrough) {
       update.status = 'past_due';
-      update.graceEndsAt = subscription.graceEndsAt && billingDate(subscription.graceEndsAt) > now ? subscription.graceEndsAt : new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+      update.graceEndsAt = subscription.graceEndsAt || new Date(new Date(subscription.paidThrough).getTime() + 3 * 86400000);
     }
     const before = await loadBillingSnapshot(accountId);
     await Subscription.updateOne({ _id: subscription._id }, { $set: update });
-    const synced = await synchronizeBillingState(accountId, { reason: safeReason(req.body?.reason, 'Paystack billing status refreshed by administrator') });
+    const synced = await synchronizeBillingState(accountId, { accountLocked: true, reason: safeReason(req.body?.reason, 'Paystack billing status refreshed by administrator') });
     await AdminAudit.create({ adminId: adminId(req), userId: accountId, action: 'billing.provider_refreshed', resourceType: 'Subscription', resourceId: String(subscription._id), details: { before: before?.snapshot || null, after: synced?.after?.snapshot || null, providerStatus, providerReference: subscription.subscriptionCode } });
     res.json({ success: true, data: { provider: safePaystackSubscriptionSnapshot(provider), billing: synced?.after?.snapshot || null } });
+    });
   } catch (error) {
     console.error('[admin/billing-provider-refresh]', error.message);
     res.status(error.status || 502).json({ success: false, message: 'Paystack billing status could not be refreshed.' });
@@ -1667,7 +1665,9 @@ export async function getPayments(req, res) {
 }
 
 function csvCell(value) {
-  return `"${String(value ?? '').replace(/"/g, '""').replace(/[\r\n]+/g, ' ')}"`;
+  let cell = String(value ?? '').replace(/[\r\n]+/g, ' ');
+  if (/^[\s]*[=+@-]/.test(cell) || /^[\t\r]/.test(cell)) cell = `'${cell}`;
+  return `"${cell.replace(/"/g, '""')}"`;
 }
 
 function paymentFinanceSummary(payments = []) {
@@ -1698,7 +1698,7 @@ export async function getFinanceOverview(req, res) {
       const users = await User.find({ $or: [{ name: pattern }, { email: pattern }, { 'studio.name': pattern }] }).select('_id').limit(200).lean();
       paymentQuery.$or = [{ reference: pattern }, ...(users.length ? [{ userId: { $in: users.map(user => user._id) } }] : [])];
     }
-    const [payments, paymentTotals, billingEvents, subscriptionStatuses, manualGrants, failedBillingEvents, eventTypes, paymentTimeline] = await Promise.all([
+    const [payments, paymentTotals, billingEvents, subscriptionStatuses, manualGrants, failedBillingEvents, eventTypes, paymentTimeline, feeTotals] = await Promise.all([
       Payment.find(paymentQuery).populate('userId', 'name email studio.name').populate('subscriptionId', 'status paidThrough').sort({ createdAt: -1 }).limit(250).select('-providerSnapshot').lean(),
       Payment.aggregate([{ $match: paymentQuery }, { $group: { _id: null, total: { $sum: 1 }, pending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } }, successful: { $sum: { $cond: [{ $eq: ['$status', 'success'] }, 1, 0] } }, failed: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } }, refunded: { $sum: { $cond: [{ $eq: ['$status', 'refunded'] }, 1, 0] } }, partiallyRefunded: { $sum: { $cond: [{ $eq: ['$status', 'partially_refunded'] }, 1, 0] } }, disputed: { $sum: { $cond: [{ $eq: ['$status', 'disputed'] }, 1, 0] } }, grossKobo: { $sum: { $cond: [{ $in: ['$status', ['success', 'partially_refunded', 'refunded']] }, { $ifNull: ['$amountKobo', 0] }, 0] } }, refundedKobo: { $sum: { $ifNull: ['$refundedAmountKobo', 0] } } } }]),
       BillingEvent.find({ createdAt: { $gte: since } }).sort({ createdAt: -1 }).limit(250).select('eventKey eventType userId provider status attempts processedAt failure createdAt').lean(),
@@ -1706,28 +1706,35 @@ export async function getFinanceOverview(req, res) {
       User.find({ 'planOverride.plan': 'pro', $or: [{ 'planOverride.expiresAt': null }, { 'planOverride.expiresAt': { $exists: false } }, { 'planOverride.expiresAt': { $gt: new Date() } }] }).select('name email plan planOverride').sort({ 'planOverride.expiresAt': 1 }).limit(250).lean(),
       BillingEvent.countDocuments({ createdAt: { $gte: since }, status: 'failed' }),
       BillingEvent.aggregate([{ $match: { createdAt: { $gte: since } } }, { $group: { _id: { eventType: '$eventType', status: '$status' }, count: { $sum: 1 } } }, { $sort: { count: -1 } }]),
-      Payment.aggregate([{ $match: { createdAt: { $gte: since } } }, { $group: { _id: { day: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, status: '$status' }, count: { $sum: 1 }, amountKobo: { $sum: '$amountKobo' }, refundedKobo: { $sum: '$refundedAmountKobo' } } }, { $sort: { '_id.day': 1 } }])
+      Payment.aggregate([{ $match: { createdAt: { $gte: since } } }, { $group: { _id: { day: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, status: '$status' }, count: { $sum: 1 }, amountKobo: { $sum: '$amountKobo' }, refundedKobo: { $sum: '$refundedAmountKobo' } } }, { $sort: { '_id.day': 1 } }]),
+      Payment.aggregate([{ $match: { ...paymentQuery, paidAt: { $exists: true } } }, { $group: { _id: null, feesKobo: { $sum: { $ifNull: ['$feesKobo', 0] } }, feesMissing: { $sum: { $cond: [{ $eq: [{ $ifNull: ['$feesKobo', null] }, null] }, 1, 0] } } } }])
     ]);
     const paymentSummary = paymentTotals[0] || paymentFinanceSummary(payments);
     paymentSummary.netKobo = Math.max(0, Number(paymentSummary.grossKobo || 0) - Number(paymentSummary.refundedKobo || 0));
     const subscriptions = Object.fromEntries(subscriptionStatuses.map(item => [item._id || 'unknown', item.count]));
     const eventSummary = Object.fromEntries(eventTypes.map(item => [`${item._id.eventType}:${item._id.status}`, item.count]));
     const timeline = paymentTimeline.map(item => ({ day: item._id.day, status: item._id.status, count: item.count, amountKobo: item.amountKobo, refundedKobo: item.refundedKobo }));
-    const successfulEvents = billingEvents.filter(event => event.eventType === 'charge.success').length;
-    const renewalEvents = billingEvents.filter(event => ['invoice.create', 'invoice.payment_failed', 'charge.success'].includes(event.eventType)).length;
-    const cancellationEvents = billingEvents.filter(event => ['subscription.not_renew', 'subscription.disable'].includes(event.eventType)).length;
-    const refundEvents = billingEvents.filter(event => event.eventType.startsWith('refund.')).length;
-    const disputeEvents = billingEvents.filter(event => event.eventType.includes('dispute')).length;
+    const countEvents = predicate => eventTypes.filter(item => predicate(item._id.eventType)).reduce((sum, item) => sum + item.count, 0);
+    const successfulEvents = countEvents(name => name === 'charge.success');
+    const renewalEvents = countEvents(name => ['invoice.create', 'invoice.payment_failed', 'charge.success'].includes(name));
+    const cancellationEvents = countEvents(name => ['subscription.not_renew', 'subscription.disable'].includes(name));
+    const refundEvents = countEvents(name => name.startsWith('refund.'));
+    const disputeEvents = countEvents(name => name.includes('dispute'));
+    paymentSummary.providerFeesKobo = feeTotals[0]?.feesKobo || 0;
+    paymentSummary.paymentsMissingFees = feeTotals[0]?.feesMissing || 0;
+    paymentSummary.afterKnownFeesKobo = paymentSummary.netKobo - paymentSummary.providerFeesKobo;
     res.json({ success: true, data: {
       generatedAt: new Date(), windowDays: days,
-      summary: { ...paymentSummary, billingEvents: billingEvents.length, failedBillingEvents, successfulEvents, renewalEvents, cancellationEvents, refundEvents, disputeEvents, activeSubscriptions: subscriptions.active || 0, pastDueSubscriptions: subscriptions.past_due || 0 },
+      summary: { ...paymentSummary, billingEvents: countEvents(() => true), failedBillingEvents, successfulEvents, renewalEvents, cancellationEvents, refundEvents, disputeEvents, activeSubscriptions: subscriptions.active || 0, pastDueSubscriptions: subscriptions.past_due || 0 },
       subscriptions,
       payments: payments.map(payment => ({ ...payment, userId: payment.userId ? { _id: payment.userId._id, name: payment.userId.name, email: payment.userId.email, studio: payment.userId.studio?.name || '' } : null })),
       events: billingEvents.map(event => ({ id: event._id, eventKey: event.eventKey, eventType: event.eventType, provider: event.provider, status: event.status, attempts: event.attempts, failure: event.failure || '', processedAt: event.processedAt || null, createdAt: event.createdAt })),
       eventSummary,
       timeline,
       manualProGrants: manualGrants.map(user => ({ id: user._id, name: user.name, email: user.email, plan: user.plan, expiresAt: user.planOverride?.expiresAt || null, reason: user.planOverride?.reason || '', grantedBy: user.planOverride?.grantedBy || null })),
-      reconciliation: { status: billingConfigured() ? 'ready' : 'unavailable', reason: billingConfigured() ? 'Live Paystack reconciliation is available on request.' : 'Paystack billing is disabled or incomplete.', localSuccessfulPayments: paymentSummary.successful, localSuccessfulKobo: payments.filter(payment => payment.status === 'success').reduce((sum, payment) => sum + Number(payment.amountKobo || 0), 0), lastWebhookAt: billingEvents[0]?.createdAt || null }
+      listsTruncated: { payments: paymentSummary.total > payments.length, events: Object.values(eventSummary).reduce((sum, count) => sum + count, 0) > billingEvents.length },
+      settlement: { status: 'not-reconciled', note: 'Collected amounts after refunds are before Paystack fees and are not bank settlements.' },
+      reconciliation: { status: billingConfigured() ? 'ready' : 'unavailable', reason: billingConfigured() ? 'Live Paystack reconciliation is available on request.' : 'Paystack billing is disabled or incomplete.', localSuccessfulPayments: paymentSummary.successful, localSuccessfulKobo: paymentSummary.grossKobo, lastWebhookAt: billingEvents[0]?.createdAt || null }
     } });
   } catch (error) {
     console.error('[admin/finance]', error.message);
@@ -1739,25 +1746,41 @@ export async function reconcileFinanceWithPaystack(req, res) {
   try {
     if (!billingConfigured()) return res.status(503).json({ success: false, message: 'Paystack billing is disabled or incomplete.' });
     const days = Math.min(365, Math.max(1, Number.parseInt(req.query.days, 10) || 30));
-    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-    const remote = await paystackRequest(`/transaction?perPage=100&from=${encodeURIComponent(since.toISOString())}&to=${encodeURIComponent(new Date().toISOString())}`);
-    const remoteTransactions = Array.isArray(remote?.data) ? remote.data : Array.isArray(remote) ? remote : [];
-    const references = remoteTransactions.map(transaction => String(transaction.reference || '')).filter(Boolean);
-    const localPayments = await Payment.find({ reference: { $in: references } }).select('reference status amountKobo').lean();
-    const localMap = new Map(localPayments.map(payment => [payment.reference, payment]));
-    const missingLocal = remoteTransactions.filter(transaction => transaction.reference && !localMap.has(String(transaction.reference))).slice(0, 100).map(transaction => ({ reference: transaction.reference, status: transaction.status, amountKobo: transaction.amount, paidAt: transaction.paid_at || null }));
-    const amountMismatches = remoteTransactions.filter(transaction => { const local = localMap.get(String(transaction.reference)); return local && Number(local.amountKobo) !== Number(transaction.amount); }).slice(0, 100).map(transaction => ({ reference: transaction.reference, localAmountKobo: localMap.get(String(transaction.reference)).amountKobo, paystackAmountKobo: transaction.amount }));
-    res.json({ success: true, data: { status: 'complete', checkedAt: new Date(), days, paystackTransactions: remoteTransactions.length, localMatches: localPayments.length, missingLocal, amountMismatches } });
-  } catch (error) {
-    console.error('[admin/finance-reconcile]', error.message);
-    res.status(error.status || 502).json({ success: false, message: 'Paystack reconciliation could not be completed.' });
-  }
+    const since = new Date(Date.now() - days * 86400000), to = new Date();
+    const transactions = [];
+    let complete = false;
+    for (let page = 1; page <= 100; page++) {
+      const rows = await paystackRequest(`/transaction?perPage=100&page=${page}&from=${encodeURIComponent(since.toISOString())}&to=${encodeURIComponent(to.toISOString())}`);
+      if (!Array.isArray(rows)) throw new Error('Invalid provider transaction list.');
+      transactions.push(...rows);
+      if (rows.length < 100) { complete = true; break; }
+    }
+    const references = transactions.map(row => row.reference).filter(Boolean);
+    const local = await Payment.find({ $or: [{ reference: { $in: references } }, { createdAt: { $gte: since, $lte: to } }] }).select('reference status amountKobo currency').lean();
+    const localMap = new Map(local.map(row => [row.reference, row]));
+    const remoteMap = new Map(transactions.map(row => [row.reference, row]));
+    const amountMismatches = [], currencyMismatches = [], statusMismatches = [];
+    for (const remote of transactions) {
+      const payment = localMap.get(remote.reference);
+      if (!payment) continue;
+      if (payment.amountKobo !== Number(remote.amount)) amountMismatches.push({ reference: remote.reference, localAmountKobo: payment.amountKobo, paystackAmountKobo: remote.amount });
+      if (payment.currency !== remote.currency) currencyMismatches.push({ reference: remote.reference, local: payment.currency, provider: remote.currency });
+      const captured = ['success', 'refunded', 'partially_refunded', 'disputed'].includes(payment.status);
+      if (!(remote.status === 'success' && captured || remote.status === 'reversed' && ['refunded', 'partially_refunded', 'disputed'].includes(payment.status) || ['failed', 'abandoned'].includes(remote.status) && payment.status === 'failed' || ['pending', 'ongoing', 'processing'].includes(remote.status) && payment.status === 'pending')) statusMismatches.push({ reference: remote.reference, local: payment.status, provider: remote.status });
+    }
+    res.json({ success: true, data: { status: complete ? 'complete' : 'partial', truncated: !complete, checkedAt: new Date(), days, paystackTransactions: transactions.length,
+      localMatches: transactions.filter(row => localMap.has(row.reference)).length,
+      missingLocal: transactions.filter(row => !localMap.has(row.reference)).map(row => ({ reference: row.reference, status: row.status, amountKobo: row.amount, currency: row.currency })),
+      missingProvider: complete ? local.filter(row => !remoteMap.has(row.reference)) : [], amountMismatches, currencyMismatches, statusMismatches,
+      note: 'Local refunds and disputes are reviewed separately from the original transaction status. Settlements require a separate bank settlement report.' } });
+  } catch (error) { res.status(error.status || 502).json({ success: false, message: 'Paystack reconciliation could not be completed.' }); }
 }
-
 export async function exportFinance(req, res) {
   try {
     const days = Math.min(3650, Math.max(1, Number.parseInt(req.query.days, 10) || 365));
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const total = await Payment.countDocuments({ createdAt: { $gte: since } });
+    if (total > 10000) return res.status(409).json({ success: false, message: 'This export exceeds 10,000 records. Choose a shorter date window; no records were exported.' });
     const payments = await Payment.find({ createdAt: { $gte: since } }).populate('userId', 'name email').sort({ createdAt: -1 }).limit(10000).lean();
     const rows = [['reference', 'account', 'email', 'status', 'amount_ngn', 'refunded_ngn', 'currency', 'channel', 'paid_at', 'created_at']];
     for (const payment of payments) rows.push([payment.reference, payment.userId?.name || '', payment.userId?.email || '', payment.status, (Number(payment.amountKobo || 0) / 100).toFixed(2), (Number(payment.refundedAmountKobo || 0) / 100).toFixed(2), payment.currency || 'NGN', payment.channel || '', payment.paidAt || '', payment.createdAt || '']);
@@ -2200,56 +2223,20 @@ export async function updateRuntimeConfiguration(req, res) {
 }
 
 export async function refundPayment(req, res) {
-  let reserved = false;
-  let payment;
-  let cancellationRequested = false;
   try {
-    payment = await Payment.findById(req.params.id);
-    if (!payment || !['success', 'partially_refunded'].includes(payment.status)) return res.status(404).json({ success: false, message: 'A refundable payment was not found.' });
-    if (payment.refundPendingAmountKobo > 0) return res.status(409).json({ success: false, message: 'A refund for this payment is already being processed.' });
-    const requested = req.body.amountKobo === undefined ? payment.amountKobo - payment.refundedAmountKobo : Number(req.body.amountKobo);
-    const available = payment.amountKobo - payment.refundedAmountKobo;
-    if (!Number.isInteger(requested) || requested < 100 || requested > available) return res.status(400).json({ success: false, message: 'Enter a refund amount within the remaining payment balance.' });
-    const reservation = await Payment.updateOne({ _id: payment._id, refundPendingAmountKobo: 0 }, { $set: { refundPendingAmountKobo: requested } });
-    if (!reservation.modifiedCount) return res.status(409).json({ success: false, message: 'A refund for this payment is already being processed.' });
-    reserved = true;
-    const fullRefund = requested === available;
-    if (fullRefund && payment.subscriptionId) {
-      const subscription = await Subscription.findById(payment.subscriptionId).select('+emailTokenEncrypted');
-      const alreadyStopped = !subscription || subscription.provider !== 'paystack' || !subscription.subscriptionCode || ['canceling', 'expired', 'refunded', 'disputed'].includes(subscription.status);
-      if (!alreadyStopped) {
-        let token;
-        try { token = decryptBillingToken(subscription.emailTokenEncrypted); } catch {
-          await Payment.updateOne({ _id: payment._id }, { $set: { refundPendingAmountKobo: 0 } });
-          reserved = false;
-          return res.status(409).json({ success: false, message: 'Cancel the Paystack subscription before issuing a full refund. The saved billing token is invalid.' });
-        }
-        if (!token) {
-          await Payment.updateOne({ _id: payment._id }, { $set: { refundPendingAmountKobo: 0 } });
-          reserved = false;
-          return res.status(409).json({ success: false, message: 'Cancel the Paystack subscription before issuing a full refund. The saved billing token is unavailable.' });
-        }
-        try {
-          await paystackRequest('/subscription/disable', { method: 'POST', body: { code: subscription.subscriptionCode, token } });
-        } catch (error) {
-          await Payment.updateOne({ _id: payment._id }, { $set: { refundPendingAmountKobo: 0 } });
-          reserved = false;
-          throw error;
-        }
-        await Subscription.updateOne({ _id: subscription._id }, { $set: { status: 'canceling', cancelRequestedAt: new Date() } });
-        cancellationRequested = true;
-      }
-    }
-    const result = await paystackRequest('/refund', { method: 'POST', body: { transaction: payment.reference, amount: requested, currency: 'NGN', customer_note: String(req.body.note || 'Veylo support refund').slice(0, 240), merchant_note: `Approved by Veylo admin ${req.admin._id}` } });
-    await AdminAudit.create({ adminId: req.admin._id, userId: payment.userId, action: 'payment.refund_requested', resourceType: 'Payment', resourceId: String(payment._id), details: { amountKobo: requested, fullRefund, cancellationRequested, paystackRefundId: result.id, note: String(req.body.note || '').slice(0, 240) } });
-    res.status(202).json({ success: true, message: fullRefund && cancellationRequested ? 'Paystack accepted the refund request and the recurring subscription was stopped.' : 'Paystack accepted the refund request.', data: { refundId: result.id, status: result.status, amountKobo: requested, fullRefund, cancellationRequested } });
+    const data = await requestReviewedRefund({ paymentId: req.params.id, amountKobo: req.body?.amountKobo, reason: req.body?.note, requestKey: req.body?.requestKey, cancelRenewal: req.body?.cancelRenewal === true, adminId: adminId(req) });
+    res.status(202).json({ success: true, message: data.status === 'failed' ? 'Paystack rejected this refund. The failed request is saved; no completed refund has been recorded.' : data.status === 'uncertain' ? 'The provider result is uncertain. Review this refund before submitting another.' : 'The refund request was recorded. Check its status before submitting another.', data });
   } catch (error) {
-    if (reserved && payment && error.providerStatus && error.providerStatus < 500) await Payment.updateOne({ _id: payment._id }, { $set: { refundPendingAmountKobo: 0 } });
-    console.error('[admin/refund]', error.message);
-    res.status(error.status || 500).json({ success: false, message: 'We could not send this refund to Paystack.' });
+    res.status(error.status || 502).json({ success: false, message: error.status ? error.message : 'The refund result is uncertain. Review its record before retrying.' });
   }
 }
-
+export async function getRefundReview(req, res) {
+  try {
+    const payment = await Payment.findById(req.params.id);
+    if (!payment) return res.status(404).json({ success: false, message: 'Payment not found.' });
+    res.json({ success: true, data: { evidence: await refundEvidence(payment), refunds: await Refund.find({ paymentId: payment._id }).sort({ createdAt: -1 }).lean() } });
+  } catch { res.status(500).json({ success: false, message: 'We could not open refund evidence.' }); }
+}
 export async function getAllStories(req, res) {
   try {
     const { search, limit = 50 } = req.query;

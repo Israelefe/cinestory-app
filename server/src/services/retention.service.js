@@ -1,6 +1,7 @@
 import PortfolioHandle from '../models/PortfolioHandle.js';
 import PortfolioMedia from '../models/PortfolioMedia.js';
 import PortfolioJob from '../models/PortfolioJob.js';
+import { withBillingLock } from './billingLock.service.js';
 import { resolveEntitlements } from './entitlement.service.js';
 import { processPortfolioRemovals } from './portfolioLifecycle.service.js';
 import Portfolio from '../models/Portfolio.js';
@@ -81,6 +82,9 @@ export async function purgeExpiredProData(now = new Date()) {
     await recordWorkerHeartbeat('retention', { status: 'busy', stage: 'retention-scan', details: { analyticsEventsRemoved: Number(analyticsPurge.deletedCount || 0), analyticsRetentionDays } });
     const expiredOverrides = await User.find({ 'planOverride.expiresAt': { $lte: now } }).select('_id').limit(100).lean();
     for (const account of expiredOverrides) {
+      await withBillingLock(account._id, async () => {
+      const owner = await User.findById(account._id).select('planOverride').lean();
+      if (!owner?.planOverride?.expiresAt || owner.planOverride.expiresAt > now) return;
       const paid = await Subscription.exists({ userId: account._id, $or: [
         { status: { $in: ['active', 'canceling'] }, paidThrough: { $gt: now } },
         { status: 'past_due', graceEndsAt: { $gt: now } }
@@ -91,10 +95,13 @@ export async function purgeExpiredProData(now = new Date()) {
           ? { $set: { plan: 'pro' }, $unset: { planOverride: 1, proRetentionUntil: 1 } }
           : { $set: { plan: 'free', proRetentionUntil: new Date(now.getTime() + retentionDays * 24 * 60 * 60 * 1000) }, $unset: { planOverride: 1 } }
       );
+      });
     }
     const endedSubscriptions = await Subscription.find({ $or: [{ status: 'past_due', graceEndsAt: { $lte: now } }, { status: { $in: ['active', 'canceling'] }, paidThrough: { $lte: now } }] });
     for (const subscription of endedSubscriptions) {
-      subscription.status = 'expired'; subscription.canceledAt ||= now; await subscription.save();
+      await withBillingLock(subscription.userId, async () => {
+      const expired = await Subscription.updateOne({ _id: subscription._id, status: subscription.status, ...(subscription.status === 'past_due' ? { graceEndsAt: subscription.graceEndsAt } : { paidThrough: subscription.paidThrough }) }, { $set: { status: 'expired', canceledAt: subscription.canceledAt || now } });
+      if (!expired.modifiedCount) return;
       const [anotherPaidSubscription, owner] = await Promise.all([
         Subscription.exists({
           userId: subscription.userId,
@@ -115,11 +122,13 @@ export async function purgeExpiredProData(now = new Date()) {
           : { $set: { plan: 'free', proRetentionUntil: retentionUntil } }
       );
       if (!anotherPaidSubscription && !manualGrant && owner?.email) sendProEndedEmail({ to: owner.email, name: owner.name, retentionUntil, userId: owner._id, eventKey: `billing:subscription:${subscription._id}:ended` }).catch(error => console.error('[email/pro-ended]', error.message));
+      });
     }
     const users = await User.find({ proRetentionUntil: { $lte: now } }).select('_id').limit(50).lean();
     for (const user of users) {
+      await withBillingLock(user._id, async () => {
       const currentOwner = await User.findById(user._id);
-      if (!currentOwner || (await resolveEntitlements(currentOwner, { includeUsage: false, now })).plan !== 'free') continue;
+      if (!currentOwner || !currentOwner.proRetentionUntil || currentOwner.proRetentionUntil > now || (await resolveEntitlements(currentOwner, { includeUsage: false, now })).plan !== 'free') return;
       const portfolios = await Portfolio.find({ userId: user._id }).select('_id items.publicId draft.items.publicId').lean();
       await PortfolioHandle.deleteMany({ portfolioId: { $in: portfolios.map(item => item._id) } });
       await PortfolioJob.deleteMany({ userId: user._id });
@@ -134,6 +143,7 @@ export async function purgeExpiredProData(now = new Date()) {
         Portfolio.deleteMany({ userId: user._id }),
         User.updateOne({ _id: user._id }, { $set: { storageUsedBytes: 0 }, $unset: { proRetentionUntil: 1 } })
       ]);
+      });
     }
     await purgeOrphanedUploads(now, retention.orphanUploadHours);
   } catch (error) {

@@ -40,7 +40,7 @@ export default function ClientGallery({ photos: collectionPhotos = [], singlePho
   const allowIndividualDownloads = Boolean(onDownload) && (!delivery || delivery.access?.allowIndividualDownloads !== false);
   const allowLikes = delivery ? Boolean(delivery.access?.allowLikes && onLike) : Boolean(onLike);
   const resolvedPhotos = useMemo(() => photos.map((photo, index) => demoId ? { ...photo, name: `demo-${demoId}-${photographNumber(index)}`, url: `/veylo/web/demo-${demoId}-${photographNumber(index)}-1440.webp`, thumbnailUrl: `/veylo/web/demo-${demoId}-${photographNumber(index)}-480.webp` } : photo), [photos, demoId, singlePhoto, initialIndex]);
-  const fonts = deliveryFontStyles(delivery?.kind === 'pinboard' ? delivery?.pinboard?.typography : delivery?.creativeDirection?.typography, { display: fontStyles?.['--delivery-font-heading'], body: fontStyles?.['--delivery-font-caption'] });
+  const fonts = deliveryFontStyles(delivery?.kind === 'pinboard' ? delivery?.pinboard?.typography : delivery?.kind === 'photoswap' ? delivery?.photoswap?.typography : delivery?.creativeDirection?.typography, { display: fontStyles?.['--delivery-font-heading'], body: fontStyles?.['--delivery-font-caption'] });
   const galleryTheme = { ...fonts, '--gallery-display': fonts['--delivery-font-heading'], '--gallery-body': fonts['--delivery-font-caption'] };
   const favouriteCount = resolvedPhotos.filter((photo, index) => liked?.has(photoKey(photo, index))).length;
   const visibleIndexes = resolvedPhotos.map((_, index) => index).filter(index => !allowLikes || !favouritesOnly || liked?.has(photoKey(resolvedPhotos[index], index)));

@@ -14,24 +14,26 @@ export function lagosMonthWindow(now = new Date()) {
   return { start, end };
 }
 
-function overrideIsPro(user, now) {
-  return user?.planOverride?.plan === 'pro' && (!user.planOverride.expiresAt || user.planOverride.expiresAt > now);
+export function manualProGrantIsActive(user, now = new Date()) {
+  const expiresAt = user?.planOverride?.expiresAt ? new Date(user.planOverride.expiresAt) : null;
+  return user?.planOverride?.plan === 'pro' && (!expiresAt || expiresAt > now);
 }
 
 export function subscriptionGrantsPro(subscription, now = new Date()) {
   if (!subscription) return false;
-  if (['active', 'canceling'].includes(subscription.status)) return Boolean(subscription.paidThrough && subscription.paidThrough > now);
-  if (subscription.status === 'past_due') return Boolean(subscription.graceEndsAt && subscription.graceEndsAt > now);
+  if (['active', 'canceling'].includes(subscription.status)) return Boolean(subscription.paidThrough && new Date(subscription.paidThrough) > now);
+  if (subscription.status === 'past_due') return Boolean(subscription.graceEndsAt && new Date(subscription.graceEndsAt) > now);
   return false;
 }
 
 export async function resolveEntitlements(user, { includeUsage = true, now = new Date() } = {}) {
-  const subscription = await Subscription.findOne({ userId: user._id }).sort({ createdAt: -1 });
   // Both the paid Pro plan and the legacy Studio plan receive studio branding.
   // Billing writes `pro` to User.plan, so treating only `studio` as paid made
   // current Pro deliveries fall back to the Veylo mark.
-  const subscriptions = await Subscription.find({ userId: user._id }).select('status paidThrough graceEndsAt').lean();
-  const pro = (!subscriptions.length && !user?.planOverride?.plan && ['pro', 'studio'].includes(user?.plan)) || overrideIsPro(user, now) || subscriptions.some(item => subscriptionGrantsPro(item, now));
+  const subscriptions = await Subscription.find({ userId: user._id }).sort({ paidThrough: -1, createdAt: -1 }).lean();
+  const paidSubscription = subscriptions.find(item => subscriptionGrantsPro(item, now));
+  const subscription = paidSubscription || (manualProGrantIsActive(user, now) ? null : subscriptions[0]);
+  const pro = manualProGrantIsActive(user, now) || subscriptions.some(item => subscriptionGrantsPro(item, now));
   const runtime = await getRuntimeConfig();
   const plan = (pro ? runtime.plans?.pro : runtime.plans?.free) || (pro ? PLAN_DEFINITIONS.pro : PLAN_DEFINITIONS.free);
   const enabledFormats = new Set(Object.values(runtime.formats || {}).filter(format => format?.enabled !== false).map(format => format.id));
@@ -73,10 +75,13 @@ export async function resolveEntitlements(user, { includeUsage = true, now = new
     usage: { deliveriesThisMonth: usedThisMonth, deliveriesRemaining: remaining, periodStart: start, periodEnd: end },
     subscription: subscription ? {
       status: subscription.status,
+      amountKobo: subscription.amountKobo || (subscription.provider === 'paystack' ? 2500000 : 0),
+      currency: subscription.currency || 'NGN',
+      pricingRegion: subscription.pricingRegion || 'nigeria',
       paidThrough: subscription.paidThrough,
       graceEndsAt: subscription.graceEndsAt,
       cancelRequestedAt: subscription.cancelRequestedAt,
-      canResume: subscription.status === 'canceling' && Boolean(subscription.subscriptionCode),
+      canResume: subscription.status === 'canceling' && subscription.paidThrough > now && Boolean(subscription.subscriptionCode) && Boolean(subscription.providerCanceledAt) && !subscription.cancelPendingAt,
       canManageCard: Boolean(subscription.subscriptionCode)
     } : { status: 'free', canResume: false, canManageCard: false }
   };

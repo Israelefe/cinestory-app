@@ -1,3 +1,4 @@
+import { recordPaidUsage } from '../services/paidUsage.service.js';
 import crypto from 'node:crypto';
 import mongoose from 'mongoose';
 import { z } from 'zod';
@@ -310,6 +311,7 @@ export async function updateMyPortfolio(req, res) {
       runValidators: true
     });
     if (!saved) return fail(res, 409, 'DRAFT_CONFLICT', 'This draft changed while saving. Reload it to review the changes.');
+    await recordPaidUsage(user._id, 'portfolio', saved._id);
     recordAnalyticsEventAsync({
       name: 'portfolio.saved',
       source: 'server',

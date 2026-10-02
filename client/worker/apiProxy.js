@@ -34,11 +34,14 @@ export function handleApiProxy(request, env) {
   // comes from `cf-connecting-ip`, which Cloudflare sets and overwrites.
   headers.delete(EDGE_KEY_HEADER);
   headers.delete(EDGE_CLIENT_IP_HEADER);
+  headers.delete('x-veylo-country');
   const edgeKey = env?.VEYLO_EDGE_KEY;
   const clientIp = request.headers.get('cf-connecting-ip');
   if (edgeKey && clientIp) {
     headers.set(EDGE_KEY_HEADER, edgeKey);
     headers.set(EDGE_CLIENT_IP_HEADER, clientIp);
+    const country = request.cf?.country;
+    if (/^[A-Z]{2}$/.test(country || '') && country !== 'XX') headers.set('x-veylo-country', country);
   }
 
   const init = {

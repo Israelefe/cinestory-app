@@ -2,6 +2,7 @@ import { Resend } from 'resend';
 import EmailDelivery from '../models/EmailDelivery.js';
 import { recordAnalyticsEventAsync } from './analytics.service.js';
 import { emailTemplateEnabled } from './runtimeConfig.service.js';
+import { encryptBillingToken, decryptBillingToken } from './paystack.service.js';
 
 let client;
 
@@ -65,7 +66,7 @@ function button(label, url) {
   return `<a href="${escapeHtml(safeUrl(url))}" style="display:inline-block;margin-top:12px;background:#ff5a47;color:#100c0b;padding:14px 22px;text-decoration:none;font-size:13px;font-weight:700">${escapeHtml(label)}</a>`;
 }
 
-async function send(kind, message) {
+async function send(kind, message, idempotencyKey) {
   try {
     if (!(await emailTemplateEnabled(kind))) {
       console.info(`[email/${kind}] disabled by runtime configuration`);
@@ -73,8 +74,9 @@ async function send(kind, message) {
     }
     const { data, error } = await resend().emails.send({
       from: fromAddress(),
-      ...message
-    });
+      ...message,
+      ...(/^(pro-|payment-|renewal-|subscription-|refund-)/.test(kind) ? { replyTo: 'payment@veylo.com.ng' } : {})
+    }, idempotencyKey ? { idempotencyKey } : undefined);
     if (error) {
       console.error(`[email/${kind}] rejected`, error.name || error.statusCode || 'provider_error', error.message || 'Email could not be sent.');
       const failure = new Error(error.message || 'Email could not be sent.');
@@ -98,11 +100,12 @@ async function send(kind, message) {
 export async function sendOnce({ eventKey, kind, to, userId, deliveryId, subject, text, html }) {
   const recipientEmail = String(to || '').trim().toLowerCase();
   if (!eventKey || !recipientEmail) throw new Error('An email event key and recipient are required.');
+  const messageEncrypted = eventKey.startsWith('billing:') ? encryptBillingToken(JSON.stringify({ subject, text, html })) : undefined;
   let record;
   try {
     record = await EmailDelivery.findOneAndUpdate(
       { eventKey: String(eventKey).slice(0, 240) },
-      { $setOnInsert: { eventKey: String(eventKey).slice(0, 240), kind, recipientEmail, ...(userId ? { userId } : {}), ...(deliveryId ? { deliveryId } : {}), status: 'pending', attempts: 0 } },
+      { $setOnInsert: { eventKey: String(eventKey).slice(0, 240), kind, recipientEmail, messageEncrypted, ...(userId ? { userId } : {}), ...(deliveryId ? { deliveryId } : {}), status: 'pending', attempts: 0 } },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
   } catch (error) {
@@ -129,7 +132,7 @@ export async function sendOnce({ eventKey, kind, to, userId, deliveryId, subject
   if (!claimed) return { sent: false, duplicate: true, status: record.status };
 
   try {
-    const result = await send(kind, { to: recipientEmail, subject, text, html });
+    const result = await send(kind, { to: recipientEmail, subject, text, html }, eventKey);
     if (!result) {
       await EmailDelivery.updateOne({ _id: claimed._id }, { $set: { status: 'skipped', skippedAt: new Date() }, $unset: { leaseUntil: 1 } });
       return { sent: false, skipped: true, status: 'skipped' };
@@ -137,7 +140,8 @@ export async function sendOnce({ eventKey, kind, to, userId, deliveryId, subject
     await EmailDelivery.updateOne({ _id: claimed._id }, { $set: { status: 'sent', sentAt: new Date(), providerId: result.id || '' }, $unset: { leaseUntil: 1, failure: 1 } });
     return { sent: true, providerId: result.id || null, status: 'sent' };
   } catch (error) {
-    await EmailDelivery.updateOne({ _id: claimed._id }, { $set: { status: 'failed', failure: String(error.message || 'Email could not be sent.').slice(0, 500) }, $unset: { leaseUntil: 1 } });
+    await EmailDelivery.updateOne({ _id: claimed._id }, { $set: { status: 'failed', retryAfter: new Date(Date.now() + Math.min(3600000, 60000 * 2 ** Math.min(claimed.attempts, 6))), failure: String(error.message || 'Email could not be sent.').slice(0, 500) }, $unset: { leaseUntil: 1 } });
+    error.emailDeliveryRecorded = true;
     throw error;
   }
 }
@@ -150,6 +154,17 @@ export function sendVerificationEmail({ to, name, code }) {
     text: `Hi ${name}, your Veylo verification code is ${code}. It expires in 10 minutes. If you did not create this account, you can ignore this email.`,
     html: shell(`<p style="margin:0 0 14px;color:#ff9b8e;font-size:11px;font-weight:700;letter-spacing:1.6px">VERIFY YOUR EMAIL</p><h1 style="margin:0 0 16px;font-size:30px;font-weight:500">One quick step, ${firstName(name)}.</h1>${paragraph('Enter this code in Veylo to confirm your email address and finish setting up your account.')}<p style="margin:28px 0;padding:20px;border:1px solid #ff9b8e55;background:#ff9b8e0b;color:#fff;font-size:34px;font-weight:700;letter-spacing:10px;text-align:center">${safeCode}</p>${paragraph('<span style="color:#8f8983;font-size:13px">This code expires in 10 minutes. If you did not create this account, you can ignore this email.</span>')}`, { preheader: `Your Veylo verification code is ${code}.` })
   });
+}
+
+export async function retryBillingEmails() {
+  const now = new Date();
+  const records = await EmailDelivery.find({ eventKey: /^billing:/, messageEncrypted: { $exists: true }, $or: [{ status: 'pending' }, { status: 'failed', retryAfter: { $lte: now } }, { status: 'sending', leaseUntil: { $lte: now } }] }).sort({ createdAt: 1 }).limit(20).select('+messageEncrypted');
+  for (const record of records) {
+    try {
+      const message = JSON.parse(decryptBillingToken(record.messageEncrypted));
+      await sendOnce({ eventKey: record.eventKey, kind: record.kind, to: record.recipientEmail, userId: record.userId, ...message });
+    } catch (error) { console.error('[email/billing-retry]', error.message); }
+  }
 }
 
 export function sendPasswordResetEmail({ to, name, code }) {
@@ -227,7 +242,7 @@ export function sendProWelcomeEmail({ to, name, amountKobo, paidAt, paidThrough,
   const first = firstName(name);
   const billingUrl = `${appUrl()}/billing`;
   return sendOnce({
-    eventKey: `billing:pro-welcome:${reference || userId}`,
+    eventKey: `billing:payment:${reference || userId}`,
     kind: 'pro-welcome',
     to,
     userId,
@@ -239,7 +254,7 @@ export function sendProWelcomeEmail({ to, name, amountKobo, paidAt, paidThrough,
 
 export function sendPaymentReceiptEmail({ to, name, amountKobo, paidAt, paidThrough, reference, userId }) {
   return sendOnce({
-    eventKey: `billing:payment-receipt:${reference || userId}:${paidAt || ''}`,
+    eventKey: `billing:payment:${reference || userId}`,
     kind: 'payment-success',
     to,
     userId,
@@ -304,9 +319,16 @@ export function sendProEndedEmail({ to, name, retentionUntil, userId, eventKey }
     to,
     userId,
     subject: 'Your Veylo Pro access has ended',
-    text: `Hi ${name}, your Veylo Pro access has ended because the renewal was not completed. Veylo will keep your Pro delivery data until ${displayDate(retentionUntil)}. Review billing: ${appUrl()}/billing`,
-    html: shell(`<p style="margin:0 0 14px;color:#ff9b8e;font-size:11px;font-weight:700;letter-spacing:1.6px">PRO ACCESS UPDATE</p><h1 style="margin:0 0 16px;font-size:30px;font-weight:500">Your Pro access has ended.</h1>${paragraph(`Hi ${firstName(name)}, your Veylo Pro access ended because the renewal was not completed.`)}${paragraph(`Your Pro delivery data remains in its retention window until <strong style="color:#fff">${escapeHtml(displayDate(retentionUntil))}</strong>. Review billing if you want to restore Pro access.`)}${button('Open billing', `${appUrl()}/billing`)}`, { preheader: 'Your Veylo Pro access has ended.' })
+    text: `Hi ${name}, your Veylo Pro access has ended. Veylo will keep your personal library and portfolio data until ${displayDate(retentionUntil)}. Review billing: ${appUrl()}/billing`,
+    html: shell(`<p style="margin:0 0 14px;color:#ff9b8e;font-size:11px;font-weight:700;letter-spacing:1.6px">PRO ACCESS UPDATE</p><h1 style="margin:0 0 16px;font-size:30px;font-weight:500">Your Pro access has ended.</h1>${paragraph(`Hi ${firstName(name)}, your Veylo Pro access ended.`)}${paragraph(`Your personal library and portfolio data remains in its retention window until <strong style="color:#fff">${escapeHtml(displayDate(retentionUntil))}</strong>. Review billing if you want to restore Pro access.`)}${button('Open billing', `${appUrl()}/billing`)}`, { preheader: 'Your Veylo Pro access has ended.' })
   });
+}
+
+export function sendPaymentDisputeResolvedEmail({ to, name, reference, paymentSuccessful, userId, eventKey }) {
+  const message = paymentSuccessful ? 'Paystack has closed the dispute and verified the payment as successful. Billing shows your current access and renewal status.' : 'Paystack has closed the dispute. The disputed payment does not currently support Pro access. Billing shows any access from other valid payments.';
+  return sendOnce({ eventKey, kind: 'payment-dispute-resolved', to, userId, subject: 'An update on your Veylo payment review',
+    text: `Hi ${name}, ${message} Payment reference: ${reference}. For help, email payment@veylo.com.ng.`,
+    html: shell(`<h1 style="margin:0 0 16px;font-size:30px;font-weight:500">Your payment review has an update.</h1>${paragraph(`Hi ${firstName(name)}, ${message}`)}${paragraph(`Payment reference: ${escapeHtml(reference)}`)}${paragraph('For help, email <a href="mailto:payment@veylo.com.ng" style="color:#ff9b8e">payment@veylo.com.ng</a>.')}`, { preheader: 'Check Billing for your current access and renewal status.' }) });
 }
 
 export function sendRefundProcessedEmail({ to, name, amountKobo, reference, userId, eventKey }) {
@@ -316,8 +338,8 @@ export function sendRefundProcessedEmail({ to, name, amountKobo, reference, user
     to,
     userId,
     subject: 'Your Veylo refund has been processed',
-    text: `Hi ${name}, Paystack confirmed a ${naira(amountKobo)} refund for your Veylo payment${reference ? ` (${reference})` : ''}. It may take a few business days to appear with your bank.`,
-    html: shell(`<p style="margin:0 0 14px;color:#ff9b8e;font-size:11px;font-weight:700;letter-spacing:1.6px">REFUND PROCESSED</p><h1 style="margin:0 0 16px;font-size:30px;font-weight:500">Your refund is on its way.</h1>${paragraph(`Hi ${firstName(name)}, Paystack confirmed a refund of <strong style="color:#fff">${escapeHtml(naira(amountKobo))}</strong> for your Veylo payment.`)}${paragraph('Your bank may take a few business days to show the funds. If you do not see it after that, contact your bank with the payment reference.')}${reference ? paragraph(`<span style="color:#8f8983;font-size:13px">Reference: ${escapeHtml(reference)}</span>`) : ''}`, { preheader: `Paystack confirmed your ${naira(amountKobo)} Veylo refund.` })
+    text: `Hi ${name}, Paystack confirmed a ${naira(amountKobo)} refund for your Veylo payment${reference ? ` (${reference})` : ''}. It may take up to 10 business days to appear with your bank.`,
+    html: shell(`<p style="margin:0 0 14px;color:#ff9b8e;font-size:11px;font-weight:700;letter-spacing:1.6px">REFUND PROCESSED</p><h1 style="margin:0 0 16px;font-size:30px;font-weight:500">Your refund is on its way.</h1>${paragraph(`Hi ${firstName(name)}, Paystack confirmed a refund of <strong style="color:#fff">${escapeHtml(naira(amountKobo))}</strong> for your Veylo payment.`)}${paragraph('Your bank may take up to 10 business days to show the funds. Email payment@veylo.com.ng with the payment reference if it has not arrived after that.')}${reference ? paragraph(`<span style="color:#8f8983;font-size:13px">Reference: ${escapeHtml(reference)}</span>`) : ''}`, { preheader: `Paystack confirmed your ${naira(amountKobo)} Veylo refund.` })
   });
 }
 
@@ -329,7 +351,7 @@ export function sendRefundFailedEmail({ to, name, reference, userId, eventKey })
     userId,
     subject: 'Your Veylo refund needs attention',
     text: `Hi ${name}, Paystack could not complete your Veylo refund yet. Veylo is reviewing it and will try again. Payment reference: ${reference || 'not available'}.`,
-    html: shell(`<p style="margin:0 0 14px;color:#ff9b8e;font-size:11px;font-weight:700;letter-spacing:1.6px">REFUND UPDATE</p><h1 style="margin:0 0 16px;font-size:30px;font-weight:500">Your refund needs attention.</h1>${paragraph(`Hi ${firstName(name)}, Paystack could not complete your refund yet. The Veylo team has the failed request and will review it.`)}${reference ? paragraph(`<span style="color:#8f8983;font-size:13px">Payment reference: ${escapeHtml(reference)}</span>`) : ''}${paragraph('<span style="color:#8f8983;font-size:13px">You do not need to submit another request. Contact info@veylo.com.ng if you have questions.</span>')}`, { preheader: 'Your Veylo refund needs attention.' })
+    html: shell(`<p style="margin:0 0 14px;color:#ff9b8e;font-size:11px;font-weight:700;letter-spacing:1.6px">REFUND UPDATE</p><h1 style="margin:0 0 16px;font-size:30px;font-weight:500">Your refund needs attention.</h1>${paragraph(`Hi ${firstName(name)}, Paystack could not complete your refund yet. The Veylo team has the failed request and will review it.`)}${reference ? paragraph(`<span style="color:#8f8983;font-size:13px">Payment reference: ${escapeHtml(reference)}</span>`) : ''}${paragraph('<span style="color:#8f8983;font-size:13px">You do not need to submit another request. Contact payment@veylo.com.ng if you have questions.</span>')}`, { preheader: 'Your Veylo refund needs attention.' })
   });
 }
 
@@ -340,8 +362,8 @@ export function sendPaymentDisputeEmail({ to, name, reference, userId, eventKey 
     to,
     userId,
     subject: 'There is a payment dispute on your Veylo account',
-    text: `Hi ${name}, Paystack reported a dispute for your Veylo payment${reference ? ` (${reference})` : ''}. Veylo may pause the related Pro access while the payment is reviewed. Contact info@veylo.com.ng if this is unexpected.`,
-    html: shell(`<p style="margin:0 0 14px;color:#ff9b8e;font-size:11px;font-weight:700;letter-spacing:1.6px">PAYMENT REVIEW</p><h1 style="margin:0 0 16px;font-size:30px;font-weight:500">We received a payment dispute.</h1>${paragraph(`Hi ${firstName(name)}, Paystack reported a dispute for a Veylo payment${reference ? ` with reference <strong style="color:#fff">${escapeHtml(reference)}</strong>` : ''}.`)}${paragraph('The related Pro access may be paused while the payment is reviewed. If this is unexpected, contact <a style="color:#ff9b8e" href="mailto:info@veylo.com.ng">info@veylo.com.ng</a>.')}`, { preheader: 'Paystack reported a payment dispute for your Veylo account.' })
+    text: `Hi ${name}, Paystack reported a dispute for your Veylo payment${reference ? ` (${reference})` : ''}. Veylo may pause the related Pro access while the payment is reviewed. Contact payment@veylo.com.ng if this is unexpected.`,
+    html: shell(`<p style="margin:0 0 14px;color:#ff9b8e;font-size:11px;font-weight:700;letter-spacing:1.6px">PAYMENT REVIEW</p><h1 style="margin:0 0 16px;font-size:30px;font-weight:500">We received a payment dispute.</h1>${paragraph(`Hi ${firstName(name)}, Paystack reported a dispute for a Veylo payment${reference ? ` with reference <strong style="color:#fff">${escapeHtml(reference)}</strong>` : ''}.`)}${paragraph('The related Pro access may be paused while the payment is reviewed. If this is unexpected, contact <a style="color:#ff9b8e" href="mailto:payment@veylo.com.ng">payment@veylo.com.ng</a>.')}`, { preheader: 'Paystack reported a payment dispute for your Veylo account.' })
   });
 }
 

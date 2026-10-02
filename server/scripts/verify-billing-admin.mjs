@@ -26,14 +26,15 @@ assert.match(adminRoutes, /billing\/provider-refresh.*billingActionLimit.*requir
 assert.match(adminController, /billing\.entitlement_resynced/);
 assert.match(adminController, /billing\.payment_verified_by_admin/);
 assert.match(adminController, /billing\.provider_refreshed/);
-assert.match(adminController, /cancellationRequested/);
+assert.match(adminController, /requestReviewedRefund/);
+assert.match(await read('src/services/billingRefund.service.js'), /cancelRenewal/);
 assert.match(adminController, /Payment\.distinct\('userId'/);
 assert.match(adminPage, /Billing control room/);
 assert.match(adminPage, /Resync Veylo access/);
 assert.match(adminPage, /Verify payment/);
 assert.match(adminPage, /Check Paystack/);
 assert.match(billingController, /invoice\.payment_failed/);
-assert.match(billingController, /grantPro\(user\._id\)/);
+assert.match(billingController, /syncBillingPlan/);
 assert.match(retentionService, /anotherPaidSubscription/);
 
 const active = buildBillingSnapshot(

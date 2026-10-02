@@ -1,3 +1,4 @@
+import { preservePaidUsageOnDelete } from './paidUsageEvidence.js';
 import mongoose from 'mongoose';
 
 const itemSchema = new mongoose.Schema({
@@ -60,4 +61,5 @@ const portfolioSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 portfolioSchema.index({ status: 1, updatedAt: -1 });
+preservePaidUsageOnDelete(portfolioSchema, 'portfolio');
 export default mongoose.model('Portfolio', portfolioSchema);

@@ -1,3 +1,4 @@
+import { recordPaidUsage } from '../services/paidUsage.service.js';
 import PhotoStory from '../models/PhotoStory.js';
 import mongoose from 'mongoose';
 import crypto from 'crypto';
@@ -104,6 +105,7 @@ export async function createStory(req, res) {
       userId: req.user.id,
       status: 'published'
     });
+    if (reservation.entitlements.plan === 'pro') await recordPaidUsage(user._id, 'delivery', story._id, story.createdAt);
     res.status(201).json({ success: true, data: story });
   } catch (err) {
     await reservation?.release().catch(() => {});

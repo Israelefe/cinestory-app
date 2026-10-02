@@ -18,7 +18,14 @@ const DOCUMENTS = [
     title: 'Free and Pro plans',
     keywords: ['free', 'pro', 'price', 'pricing', 'storage', 'limit', 'photos', 'deliveries', 'subscription', 'upgrade', 'cancel', 'renewal'],
     audiences: ['studio', 'visitor'],
-    text: `Veylo Free is ₦0, allows up to 3 published deliveries each month, and up to 100 photographs in one delivery. Veylo Pro is ₦25,000 per month, removes the monthly delivery count, allows up to 500 photographs in one delivery, includes studio branding, includes a 50 GB personal image library, and includes Veylo Portfolio. Plan details shown in the Billing page are the source of truth. Cancelling stops the next renewal and normally leaves paid access until the paid period ends. A failed renewal can place an account into the billing recovery process and may end Pro access if payment is not recovered. The assistant cannot change a plan, issue a refund, or delete an account.`
+    text: `Veylo Free is ₦0, allows up to 3 published deliveries each month, and up to 100 photographs in one delivery. Veylo Pro is ₦25,000 per month in Nigeria and ₦30,000 per month outside Nigeria, charged in NGN, removes the monthly delivery count, allows up to 500 photographs in one delivery, includes studio branding, includes a 50 GB personal image library, and includes Veylo Portfolio. Plan details shown in the Billing page are the source of truth. Cancelling stops the next renewal and normally leaves paid access until the paid period ends. A failed renewal can place an account into the billing recovery process and may end Pro access if payment is not recovered. The assistant cannot change a plan, issue a refund, or delete an account.`
+  },
+  {
+    id: 'billing-refunds',
+    title: 'Payment support and refunds',
+    keywords: ['refund', 'cancel', 'charged', 'billing', 'payment', 'renewal'],
+    audiences: ['studio', 'visitor'],
+    text: `Payment support is payment@veylo.com.ng. The refund policy is at /refund-policy. A first payment may qualify for a change-of-mind refund within seven days if no client delivery was published during that paid period and no paid storage or Portfolio feature was used. Deleting work does not reset usage. Used paid periods and normal renewals are not routinely refunded or prorated. Duplicate payments, charges after confirmed cancellation, payments without access, and material service failures can be reviewed regardless of usage; applicable consumer rights still apply. Refunds require support review. Cancellation is separate: use Billing to stop future renewals and check the confirmation and remaining access date. Both regional prices are charged in NGN; an overseas card issuer handles currency conversion. Country detection is based on the current connection, so VPNs can affect it. Existing subscriptions retain their recorded price.`
   },
   {
     id: 'create-delivery',

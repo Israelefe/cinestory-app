@@ -55,7 +55,8 @@ import {
   reconcileFinanceWithPaystack,
   exportFinance,
   adminDeleteStory,
-  refundPayment
+  refundPayment,
+  getRefundReview
 } from '../controllers/admin.controller.js';
 import { adminLogin, getAdminMe, adminLogout } from '../controllers/adminAuth.controller.js';
 import {
@@ -103,6 +104,8 @@ export async function adminAuthMiddleware(req, res, next) {
         if (!decoded.sid) return res.status(401).json({ success: false, message: 'Your administrator session needs to be renewed. Please sign in again.' });
         const session = await AdminSession.findOne({ _id: decoded.sid, adminId: admin._id, tokenDigest: tokenDigest(token), revokedAt: null, expiresAt: { $gt: new Date() } }).select('+tokenDigest');
         if (!session) return res.status(401).json({ success: false, message: 'Your administrator session has been signed out. Please sign in again.' });
+        // A cross-site form can send the cookie but cannot supply this session's bearer token.
+        if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && !authHeader?.startsWith('Bearer ')) return res.status(403).json({ success: false, code: 'CSRF_INVALID', message: 'Refresh your admin sign-in before changing records.' });
         req.adminSession = session;
         AdminSession.updateOne({ _id: session._id }, { $set: { lastSeenAt: new Date() } }).catch(() => {});
         req.admin = admin;
@@ -201,6 +204,7 @@ router.get('/finance/reconcile', requireAdminRoles('superadmin', 'finance'), rec
 router.get('/finance/export', requireAdminRoles('superadmin', 'finance', 'analyst'), exportFinance);
 router.delete('/stories/:id', requireAdminRoles('superadmin', 'operations'), adminDeleteStory);
 router.post('/payments/:id/refund', billingActionLimit, requireAdminRoles('superadmin', 'finance'), refundPayment);
+router.get('/payments/:id/refund-review', requireAdminRoles('superadmin', 'finance'), getRefundReview);
 
 // Security centre. The audit trail and network history are intentionally
 // restricted to superadmins; each managed admin can set up their own

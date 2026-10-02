@@ -1,3 +1,4 @@
+import { preservePaidUsageOnDelete } from './paidUsageEvidence.js';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
 
@@ -27,4 +28,5 @@ const volumeJobSchema = new mongoose.Schema({
 
 volumeJobSchema.index({ userId: 1, updatedAt: -1 });
 
+preservePaidUsageOnDelete(volumeJobSchema, 'delivery');
 export default mongoose.model('VolumeJob', volumeJobSchema);

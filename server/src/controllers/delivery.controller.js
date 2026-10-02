@@ -1,3 +1,4 @@
+import { recordPaidUsage } from '../services/paidUsage.service.js';
 import { schedulePortfolioRemoval, finishPortfolioRemoval } from '../services/portfolioLifecycle.service.js';
 import crypto from 'crypto';
 import { deliveryGatePalette } from '../utils/deliveryGatePalette.js';
@@ -991,6 +992,7 @@ export async function publishDelivery(req, res) {
     delivery.status = 'published';
     delivery.publishedAt = new Date();
     await delivery.save();
+    if (reservation.entitlements.plan === 'pro') await recordPaidUsage(user._id, 'delivery', delivery._id, delivery.publishedAt);
     res.json({ success: true, data: { publicId: delivery.publicId, url: `${String(process.env.CLIENT_URL).replace(/\/$/, '')}/d/${delivery.publicId}`, entitlements: reservation.entitlements } });
   } catch (error) {
     await reservation?.release().catch(() => {});

@@ -1,0 +1,293 @@
+/* ─── Photo Swap Viewer ─────────────────────────────────────── */
+
+.ps-viewer {
+  position: relative;
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  background-color: #070709;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.ps-bg {
+  position: absolute;
+  inset: 0;
+  transition: background-image 0.6s ease, background-color 0.6s ease;
+  z-index: 0;
+}
+
+/* ─── Overlay (pointer-events: none, children opt in) ─────── */
+
+.ps-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.ps-top-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ps-brand {
+  pointer-events: auto;
+}
+
+.ps-counter {
+  font-family: var(--delivery-font-ui, 'Outfit', sans-serif);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  padding: 5px 14px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ps-counter-sep {
+  opacity: 0.4;
+  margin: 0 2px;
+}
+
+/* ─── Floating buttons ───────────────────────────────────── */
+
+.ps-sound,
+.ps-download {
+  position: absolute;
+  pointer-events: auto;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: background 0.2s, transform 0.2s, border-color 0.2s;
+}
+
+.ps-sound { bottom: 24px; left: 24px; }
+.ps-download { bottom: 24px; right: 24px; }
+
+.ps-sound:hover,
+.ps-download:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: translateY(-1px);
+}
+
+.ps-sound:active,
+.ps-download:active {
+  transform: scale(0.93);
+}
+
+.ps-download:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ─── Card stack ─────────────────────────────────────────── */
+
+.ps-stack {
+  position: relative;
+  z-index: 5;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  perspective: 1200px;
+}
+
+.ps-card {
+  position: absolute;
+  width: 88vw;
+  max-width: 460px;
+  height: 72vh;
+  max-height: 680px;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow:
+    0 8px 24px -6px rgba(0, 0, 0, 0.45),
+    0 24px 48px -12px rgba(0, 0, 0, 0.3);
+  cursor: grab;
+  will-change: transform;
+  background: #111;
+}
+
+.ps-card:active { cursor: grabbing; }
+
+.ps-card-behind {
+  z-index: 0;
+  cursor: default;
+  pointer-events: none;
+}
+
+.ps-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  background: #0a0a0c;
+}
+
+/* ─── End screen ─────────────────────────────────────────── */
+
+.ps-end {
+  text-align: center;
+  padding: 32px 24px;
+  max-width: 400px;
+  width: 88vw;
+}
+
+.ps-end-label {
+  font-family: var(--delivery-font-caption, 'Outfit', sans-serif);
+  font-size: 0.6875rem;
+  letter-spacing: 0.2em;
+  font-weight: 600;
+  color: #ff9b8e;
+  margin-bottom: 14px;
+}
+
+.ps-end h2 {
+  font-family: var(--delivery-font-heading, 'Playfair Display', serif);
+  font-size: 1.375rem;
+  font-weight: 400;
+  line-height: 1.35;
+  color: #f3ece6;
+  margin: 0 0 36px;
+}
+
+.ps-end-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ps-btn {
+  font-family: var(--delivery-font-ui, 'Outfit', sans-serif);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  padding: 13px 22px;
+  border-radius: 8px;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s, border-color 0.2s;
+  border: none;
+  line-height: 1;
+}
+
+.ps-btn:hover { transform: translateY(-1px); }
+.ps-btn:active { transform: scale(0.97); }
+.ps-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+.ps-btn-primary {
+  background: #fff;
+  color: #070709;
+}
+.ps-btn-primary:hover { background: #f0ede8; }
+
+.ps-btn-secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f3ece6;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.ps-btn-secondary:hover { background: rgba(255, 255, 255, 0.13); }
+
+.ps-btn-outline {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+}
+.ps-btn-outline:hover { color: #fff; }
+
+.ps-notice {
+  margin-top: 20px;
+  font-size: 0.8125rem;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.5;
+}
+
+.ps-demo-note {
+  margin-top: 20px;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 90, 71, 0.7);
+}
+
+/* ─── Tablet (641px+) ────────────────────────────────────── */
+
+@media (min-width: 641px) {
+  .ps-top-bar { padding: 28px 32px; }
+  .ps-sound { bottom: 28px; left: 32px; }
+  .ps-download { bottom: 28px; right: 32px; }
+
+  .ps-card {
+    width: 72vw;
+    max-width: 580px;
+    height: 76vh;
+    max-height: 740px;
+    border-radius: 10px;
+  }
+
+  .ps-end { max-width: 440px; }
+  .ps-end h2 { font-size: 1.625rem; }
+}
+
+/* ─── Desktop (1025px+) ──────────────────────────────────── */
+
+@media (min-width: 1025px) {
+  .ps-top-bar { padding: 36px 44px; }
+  .ps-sound { bottom: 36px; left: 44px; }
+  .ps-download { bottom: 36px; right: 44px; }
+
+  .ps-card {
+    width: 54vw;
+    max-width: 780px;
+    height: 82vh;
+    max-height: 860px;
+    border-radius: 10px;
+    box-shadow:
+      0 12px 32px -8px rgba(0, 0, 0, 0.5),
+      0 32px 64px -16px rgba(0, 0, 0, 0.35);
+  }
+
+  .ps-end { max-width: 480px; }
+  .ps-end h2 { font-size: 1.75rem; }
+  .ps-end-actions { max-width: 320px; margin: 0 auto; }
+}
+
+/* ─── Reduced motion ─────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .ps-bg { transition: none; }
+  .ps-card { will-change: auto; }
+}

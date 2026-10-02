@@ -1,3 +1,4 @@
+import { ProPrice } from '../components/RegionalPricing.jsx';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Download, FolderOpen, HardDrive, Image, MessageSquareText, Search, Tag, Trash2, Upload, X } from 'lucide-react';
@@ -112,7 +113,7 @@ export default function ImageLibrary() {
       </motion.header>
 
       {access === 'read-only' && <div className="v-library-notice"><HardDrive size={18} /><p><strong>Your library is being kept for 30 days.</strong><span>You can download or remove photographs now. Renew Pro to upload and organise them again.</span></p></div>}
-      {access === 'unavailable' && !loading && <section className="v-library-locked"><HardDrive size={28} /><p>PERSONAL IMAGE STORAGE</p><h2>50 GB for the work<br />you want close by.</h2><span>The personal image library is included with Veylo Pro. Client delivery hosting stays separate and does not use this space.</span><a className="v-button" href="/billing">See Veylo Pro</a></section>}
+      {access === 'unavailable' && !loading && <section className="v-library-locked"><HardDrive size={28} /><p>PERSONAL IMAGE STORAGE</p><h2>50 GB for the work<br />you want close by.</h2><span>The personal image library is included with Veylo Pro. Client delivery hosting stays separate and does not use this space.</span><a className="v-button" href="/billing">Pro · <ProPrice /> / month</a></section>}
 
       {access !== 'unavailable' && <>
         <section className="v-library-tools">

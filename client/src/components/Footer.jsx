@@ -8,7 +8,7 @@ const emailAddress = 'info@veylo.com.ng';
 const groups = [
   ['Explore', [['Delivery types', '/formats'], ['GridBoard delivery', '/gridboard'], ['Veylo Portfolio', '/portfolio'], ['Client experience', '/client-experience'], ['Plans and pricing', '/pricing']]],
   ['Your kind of work', [['Portraits', '/for/portrait-photographers'], ['Weddings', '/for/wedding-studios'], ['Birthdays', '/for/birthday-shoots'], ['Commercial', '/for/media-companies']]],
-  ['Veylo', [['About us', '/about'], ['Privacy', '/privacy'], ['Terms of use', '/terms'], ['Fair use', '/fair-use']]]
+  ['Veylo', [['About us', '/about'], ['Privacy', '/privacy'], ['Terms of use', '/terms'], ['Fair use', '/fair-use'], ['Refund policy', '/refund-policy']]]
 ];
 
 function copyWithFallback(value) {

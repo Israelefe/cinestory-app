@@ -1,5 +1,5 @@
 import express from 'express';
-import { v3Access, v3Approve, v3Assist, v3Caption, v3Create, v3Details, v3Format, v3Narration, v3Pinboard, v3Prepare, v3Publish, v3RepickTheme, v3Showcase, v3SkipNarration, v3Theme } from '../controllers/deliveryV3.controller.js';
+import { v3Access, v3Approve, v3Assist, v3Caption, v3Create, v3Details, v3Format, v3Narration, v3Photoswap, v3Pinboard, v3Prepare, v3Publish, v3RepickTheme, v3Showcase, v3SkipNarration, v3Theme } from '../controllers/deliveryV3.controller.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { aiGenerationLimit, clientDeliveryEmailLimit, mediaSignatureLimit, publicAccessLimit, publicMediaLimit } from '../middleware/rateLimit.middleware.js';
 import {
@@ -41,6 +41,7 @@ router.patch('/:id/v3/format', v3Format);
 router.post('/:id/v3/prepare', aiGenerationLimit, v3Prepare);
 router.patch('/:id/v3/showcase', v3Showcase);
 router.patch('/:id/v3/pinboard', v3Pinboard);
+router.patch('/:id/v3/photoswap', v3Photoswap);
 router.post('/:id/v3/captions/:assetId/regenerate', aiGenerationLimit, v3Caption);
 router.post('/:id/v3/narrate', aiGenerationLimit, v3Narration);
 router.post('/:id/v3/narration/skip', v3SkipNarration);

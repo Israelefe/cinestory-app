@@ -1,3 +1,4 @@
+import { ProPrice, PricingNotice } from '../components/RegionalPricing.jsx';
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useInView, useReducedMotion } from 'framer-motion';
@@ -192,6 +193,7 @@ export default function LandingPage() {
         <Reveal className="v-format-after">{i === 0 && <p className="v-formats-intro">Showcase deliveries open with a presentation, then lead to the complete gallery. The original photographs stay as supplied.</p>}<p>{format.line}</p><TextLink to={demoLinks[format.id][0]} onClick={event => keepFormatAsBackDestination(event, format.id)}>{demoLinks[format.id][1]}</TextLink></Reveal>
       </article>)}</div>
       <Reveal className="v-home-pinboard-card"><div className="v-home-pinboard-art" aria-hidden="true">{gridboardArtPhotos.map(photo => <span key={photo}><img src={photo} alt="" loading="lazy" decoding="async" /></span>)}</div><div><Eyebrow>GRIDBOARD DELIVERY</Eyebrow><h3>Put the full gallery first.</h3><p>Clients can find a moment, browse by outfit or backdrop colour, open Similar Shot for close visual matches, or start a slideshow with optional music. You choose the layout they see.</p><div className="v-home-pinboard-actions"><TextLink to="/gridboard">See what GridBoard can do</TextLink><TextLink to="/demo/gridboard">Browse the live demo</TextLink><TextLink to="/create?type=pinboard">Create a GridBoard</TextLink></div></div></Reveal>
+      <Reveal className="v-home-pinboard-card"><div><Eyebrow>PHOTO SWAP DELIVERY</Eyebrow><h3>One photo at a time.</h3><p>The client swipes through the full set like a stack of prints. No AI direction, no grid — just the photos in the order you set. Add optional music and publish a direct link.</p><div className="v-home-pinboard-actions"><TextLink to="/demo/photoswap">Swipe through the demo</TextLink><TextLink to="/create?type=photoswap">Create a Photo Swap</TextLink></div></div></Reveal>
       <Reveal className="v-formats-explore">
         <div><span>All eight Showcase formats</span><p>See what each one does and which shoots it suits.</p></div>
         <Action to="/formats" onClick={event => keepFormatAsBackDestination(event, 'album')}>Explore all formats</Action>
@@ -280,7 +282,7 @@ export default function LandingPage() {
         </Reveal>
         <Reveal className="v-home-plan-card is-pro" delay={.08}>
           <div className="v-home-plan-card-top"><span>PRO</span><small>For regular studio delivery</small></div>
-          <div className="v-home-plan-price"><strong>₦25,000</strong><span>/ month</span></div>
+          <PricingNotice /><div className="v-home-plan-price"><strong><ProPrice /></strong><span>/ month</span></div>
           <p>Unlimited deliveries under fair use, your studio branding, Veylo Portfolio, and 50 GB personal image storage.</p>
         </Reveal>
       </div>

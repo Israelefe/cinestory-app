@@ -6,6 +6,7 @@ import { DeliveryFormatViewer } from './viewerRegistry.jsx';
 import { DeliveryReadiness } from '../../pages/DeliveryViewer.jsx';
 import { getDeliveryCapabilities } from '../../constants/deliveryCapabilities.js';
 import PinboardViewer from './PinboardViewer.jsx';
+import PhotoSwapViewer from './PhotoSwapViewer.jsx';
 import '../../pages/DeliveryViewer.css';
 import './ClientDeliveryPreview.css';
 
@@ -64,7 +65,7 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
       const url = preloadedMedia.assets?.[asset.assetId] || mediaUrl(asset.url);
       return { ...asset, url, thumbnailUrl: preloadedMedia.assets?.[asset.assetId] ? url : mediaUrl(asset.thumbnailUrl || asset.url), srcSet: preloadedMedia.assets?.[asset.assetId] ? undefined : asset.srcSet };
     }),
-    soundtrack: (capabilities.music || delivery?.kind === 'pinboard') && delivery?.soundtrack?.url
+    soundtrack: (capabilities.music || ['pinboard', 'photoswap'].includes(delivery?.kind)) && delivery?.soundtrack?.url
       ? { ...delivery.soundtrack, url: preloadedMedia.soundtrack || mediaUrl(delivery.soundtrack.url) }
       : undefined,
     narration: capabilities.narration && delivery?.schemaVersion === 3 && delivery?.narration && (delivery.narration.opening?.url || delivery.narration.closing?.url)
@@ -154,6 +155,7 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
   }
 
   if (delivery?.kind === 'pinboard') return <div className="v-client-preview-runtime"><PinboardViewer delivery={playbackDelivery} preview galleryProps={{ onDownload: () => toast.info('Photo downloads will be available on the published client link.'), onDownloadAll: () => toast.info('The published link will download each photograph separately.') }} /></div>;
+  if (delivery?.kind === 'photoswap') return <div className="v-client-preview-runtime"><PhotoSwapViewer delivery={playbackDelivery} preview galleryProps={{ onDownload: () => toast.info('Photo downloads will be available on the published client link.'), onDownloadAll: () => toast.info('The published link will download each photograph separately.') }} /></div>;
 
   const galleryProps = {
     liked: previewLiked,

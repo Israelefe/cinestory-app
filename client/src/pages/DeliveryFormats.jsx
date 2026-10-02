@@ -254,15 +254,16 @@ export default function DeliveryFormats() {
         </motion.div>
         <div className="v-fguide-hero-after">
           <p className="v-lead">Some collections need a beginning and an ending. Some are better explored. Some should be revealed one photograph at a time. The format changes the first viewing, while your finished photographs remain untouched.</p>
-          <a className="v-fguide-hero-jump" href="#delivery-types">Compare two delivery types <ArrowDown size={16} /></a>
+          <a className="v-fguide-hero-jump" href="#delivery-types">Compare three delivery types <ArrowDown size={16} /></a>
         </div>
       </header>
 
       <section className="v-fguide-types" id="delivery-types"><div className="v-wrap">
-        <Reveal className="v-fguide-types-head"><Eyebrow number="01">Two delivery types</Eyebrow><h2>Lead with a presentation,<br /><em>or put the whole gallery first.</em></h2><p>Both deliver every finished photograph. Choose the first viewing that suits the job.</p></Reveal>
+        <Reveal className="v-fguide-types-head"><Eyebrow number="01">Three delivery types</Eyebrow><h2>Lead with a presentation,<br /><em>or put the whole gallery first.</em></h2><p>All three deliver every finished photograph. Choose the first viewing that suits the job.</p></Reveal>
         <div className="v-fguide-types-grid">
           <Reveal className="v-fguide-type-card is-showcase"><span><Clapperboard size={20} /> SHOWCASE DELIVERY</span><h3>Give the shoot a designed first viewing.</h3><p>Start with a directed Photo Story, scrollable page, reveal, open canvas, chapters, album, event coverage, or commercial handoff. The complete gallery follows.</p><div><strong>8 formats</strong><Link to="#format-guide" onClick={event => { event.preventDefault(); document.getElementById('format-guide')?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth' }); }}>Compare Showcase formats <ArrowDown size={15} /></Link></div></Reveal>
           <Reveal className="v-fguide-type-card is-pinboard" delay={.08}><span><Grid2X2 size={20} /> GRIDBOARD DELIVERY</span><h3>Let clients browse the complete board.</h3><p>Veylo suggests three arrangements and groups visible moments. Clients can filter by outfit or backdrop colour, open Similar Shot from a photograph, or start an optional music slideshow.</p><div><Link to="/gridboard">See all GridBoard features <ArrowUpRight size={15} /></Link><Link to="/demo/gridboard">Browse a GridBoard example <ArrowUpRight size={15} /></Link><Link to="/create?type=pinboard">Create a GridBoard <ArrowUpRight size={15} /></Link></div></Reveal>
+          <Reveal className="v-fguide-type-card is-pinboard" delay={.16}><span><Layers3 size={20} /> PHOTO SWAP DELIVERY</span><h3>One photo at a time, swipe to see the next.</h3><p>The client swipes through every finished photo like a stack of prints. No AI direction or grid layout — just the photos in the order you set, with an optional soundtrack.</p><div><Link to="/demo/photoswap">Swipe through the demo <ArrowUpRight size={15} /></Link><Link to="/create?type=photoswap">Create a Photo Swap <ArrowUpRight size={15} /></Link></div></Reveal>
         </div>
       </div></section>
 
@@ -394,7 +395,7 @@ export default function DeliveryFormats() {
           viewport={{ once: true, amount: 0.2 }}
           transition={reduced ? { duration: 0 } : { duration: 0.72, ease: [0.22, 1, 0.36, 1] }}
         >
-          <Eyebrow>Two delivery types · One complete gallery</Eyebrow>
+          <Eyebrow>Three delivery types · One complete gallery</Eyebrow>
           <h2>Choose how the photographs arrive.<br /><em>Let the shoot shape everything else.</em></h2>
           <p>Start with the finished photographs and the story behind them. Review Veylo’s proposed direction before your client sees a thing.</p>
           <div className="v-actions">

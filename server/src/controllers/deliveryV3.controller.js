@@ -1,3 +1,4 @@
+import { recordPaidUsage } from '../services/paidUsage.service.js';
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 import { z } from 'zod';
@@ -15,7 +16,7 @@ import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID } from '../constants/narra
 import { cleanDeliveryAccess } from '../utils/deliveryAccess.js';
 import { revealSchema } from '../constants/photoReveal.js';
 
-const details = z.object({ kind: z.enum(['showcase', 'pinboard']).default('showcase'), clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().max(80).default(''), purpose: z.string().trim().max(3000).default(''), title: z.string().trim().max(120).default(''), originalPurpose: z.string().trim().max(3000).default(''), clarificationAnswers: z.array(z.object({ question: z.string().trim().max(180), answer: z.string().trim().min(1).max(300) }).strict()).max(3).default([]) }).strict();
+const details = z.object({ kind: z.enum(['showcase', 'pinboard', 'photoswap']).default('showcase'), clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().max(80).default(''), purpose: z.string().trim().max(3000).default(''), title: z.string().trim().max(120).default(''), originalPurpose: z.string().trim().max(3000).default(''), clarificationAnswers: z.array(z.object({ question: z.string().trim().max(180), answer: z.string().trim().min(1).max(300) }).strict()).max(3).default([]) }).strict();
 const formatInput = z.object({ format: z.enum(Object.keys(V3_FORMATS)) }).strict();
 const idList = z.array(z.string().uuid()).max(24);
 const showcaseInput = z.object({ assetIds: idList, frames: z.array(z.object({ assetId: z.string().uuid(), headline: z.string().trim().max(70).default(''), caption: z.string().trim().min(5).max(320), imageFit: editorialFrameFields.imageFit.unwrap().optional(), focalPoint: editorialFrameFields.focalPoint.unwrap().optional() }).strict()).max(24), title: z.string().trim().min(2).max(80), openingLine: z.string().trim().min(5).max(300), closingLine: z.string().trim().min(5).max(280), openingAssetId: z.string().uuid(), closingAssetId: z.string().uuid(), editorial: editorialSchema.optional(), writingOverrides: writingOverridesSchema.optional(), sectionWriting: z.array(z.object({ id: z.string().regex(/^[a-z0-9-]{1,60}$/), title: z.string().trim().max(60), subtitle: z.string().trim().max(120), assetIds: idList.min(1).optional() }).strict()).max(5).optional() }).strict();
@@ -135,11 +136,13 @@ export async function v3Create(req, res) {
     const input = details.safeParse(req.body); if (!input.success) return bad(res, input);
     if (input.data.kind === 'showcase' && (input.data.shootType.length < 2 || !input.data.purpose)) return res.status(400).json({ success: false, code: 'V3_SHOWCASE_DETAILS_REQUIRED', message: 'Add the shoot type and purpose before creating a Showcase delivery.' });
     if (input.data.kind === 'pinboard' && input.data.title.length < 2) return res.status(400).json({ success: false, code: 'V3_PINBOARD_TITLE_REQUIRED', message: 'Give this GridBoard a title before adding photographs.' });
+    if (input.data.kind === 'photoswap' && input.data.title.length < 2) return res.status(400).json({ success: false, code: 'V3_PHOTOSWAP_TITLE_REQUIRED', message: 'Give this Photo Swap a title before adding photographs.' });
     const entitlements = await resolveEntitlements(await User.findById(req.user.id));
     if (entitlements.plan === 'free' && entitlements.usage.deliveriesRemaining === 0) return res.status(403).json({ success: false, code: 'MONTHLY_DELIVERY_LIMIT_REACHED', message: `You have published all ${entitlements.limits.deliveriesPerMonth} Free deliveries this month. Start another next month or move to Pro.` });
     const count = await Delivery.countDocuments({ userId: req.user.id, status: { $in: ['draft', 'analyzing', 'directing', 'review'] } });
     if (count >= 20) return res.status(409).json({ success: false, message: 'Finish or remove an existing draft before starting another one.' });
-    const delivery = await Delivery.create({ userId: req.user.id, schemaVersion: 3, kind: input.data.kind, clientName: input.data.clientName, title: input.data.title || '', shootType: input.data.shootType, brief: input.data.purpose || (input.data.kind === 'pinboard' ? 'GridBoard delivery' : ''), v3: { step: input.data.kind === 'pinboard' ? 'photos' : 'format', revision: 1, originalPurpose: input.data.originalPurpose, clarificationAnswers: input.data.clarificationAnswers, narrationChoice: 'skip', captionNarrationChoice: 'skip', approvedRevision: null } });
+    const briefFallback = input.data.kind === 'pinboard' ? 'GridBoard delivery' : input.data.kind === 'photoswap' ? 'Photo Swap delivery' : '';
+    const delivery = await Delivery.create({ userId: req.user.id, schemaVersion: 3, kind: input.data.kind, clientName: input.data.clientName, title: input.data.title || '', shootType: input.data.shootType, brief: input.data.purpose || briefFallback, v3: { step: ['pinboard', 'photoswap'].includes(input.data.kind) ? 'photos' : 'format', revision: 1, originalPurpose: input.data.originalPurpose, clarificationAnswers: input.data.clarificationAnswers, narrationChoice: 'skip', captionNarrationChoice: 'skip', approvedRevision: null } });
     res.status(201).json({ success: true, data: delivery });
   } catch (error) { fail(res, error); }
 }
@@ -150,14 +153,14 @@ export async function v3Details(req, res) {
     const delivery = await owned(req); if (!editable(delivery)) return res.status(404).json({ success: false, message: 'Draft not found.' });
     if (delivery.kind !== input.data.kind) return res.status(409).json({ success: false, code: 'V3_DELIVERY_KIND_LOCKED', message: 'The delivery type cannot be changed after its draft is created.' });
     if (delivery.kind === 'showcase' && (input.data.shootType.length < 2 || !input.data.purpose)) return res.status(400).json({ success: false, code: 'V3_SHOWCASE_DETAILS_REQUIRED', message: 'Add the shoot type and purpose before continuing.' });
-    const purpose = input.data.purpose || (delivery.kind === 'pinboard' ? 'GridBoard delivery' : '');
-    const titleChanged = delivery.kind === 'pinboard' && Boolean(input.data.title) && delivery.title !== input.data.title;
+    const purpose = input.data.purpose || (delivery.kind === 'pinboard' ? 'GridBoard delivery' : delivery.kind === 'photoswap' ? 'Photo Swap delivery' : '');
+    const titleChanged = ['pinboard', 'photoswap'].includes(delivery.kind) && Boolean(input.data.title) && delivery.title !== input.data.title;
     const changed = delivery.clientName !== input.data.clientName || delivery.shootType !== input.data.shootType || delivery.brief !== purpose || JSON.stringify(delivery.v3?.clarificationAnswers || []) !== JSON.stringify(input.data.clarificationAnswers);
     const discardedAudio = changed ? narrationAudioIds(delivery) : [];
     delivery.clientName = input.data.clientName; delivery.shootType = input.data.shootType; delivery.brief = purpose; if (input.data.title) delivery.title = input.data.title;
-    if (titleChanged) { delivery.pinboard = { ...delivery.pinboard, title: input.data.title }; delivery.markModified('pinboard'); if (!changed) invalidateApproval(delivery); }
+    if (titleChanged) { if (delivery.kind === 'pinboard') { delivery.pinboard = { ...delivery.pinboard, title: input.data.title }; delivery.markModified('pinboard'); } if (!changed) invalidateApproval(delivery); }
     if (changed) { delivery.collectionAnalysis = undefined; delivery.creativeDirection = undefined; delivery.curatedAssetIds = []; delivery.narration = undefined; if (delivery.kind === 'pinboard') delivery.pinboard = { ...delivery.pinboard, layouts: [], moments: [], analysisStatus: 'pending' }; delivery.status = 'draft'; invalidateApproval(delivery); saveV3(delivery, { narrationChoice: 'skip', captionNarrationChoice: 'skip' }); }
-    saveV3(delivery, { originalPurpose: input.data.originalPurpose, clarificationAnswers: input.data.clarificationAnswers, step: delivery.kind === 'pinboard' ? 'photos' : 'format' });
+    saveV3(delivery, { originalPurpose: input.data.originalPurpose, clarificationAnswers: input.data.clarificationAnswers, step: ['pinboard', 'photoswap'].includes(delivery.kind) ? 'photos' : 'format' });
     await delivery.save(); await removeAudioIds(discardedAudio); res.json({ success: true, data: delivery });
   } catch (error) { fail(res, error); }
 }
@@ -268,6 +271,27 @@ export async function v3Pinboard(req, res) {
     delivery.presentationOrder = activeLayout.assetOrder;
     invalidateApproval(delivery); saveV3(delivery, { step: 'pinboard' });
     delivery.markModified('pinboard'); await delivery.save();
+    res.json({ success: true, data: delivery });
+  } catch (error) { fail(res, error); }
+}
+
+const photoswapInput = z.object({
+  backgroundMode: z.enum(['auto', 'dark']).default('auto'),
+  typography: z.object({ display: z.string(), body: z.string() }).strict()
+}).strict();
+
+export async function v3Photoswap(req, res) {
+  try {
+    const input = photoswapInput.safeParse(req.body); if (!input.success) return bad(res, input);
+    const delivery = await owned(req);
+    if (!editable(delivery) || delivery.kind !== 'photoswap' || !delivery.assets.length) return res.status(409).json({ success: false, code: 'PHOTOSWAP_PHOTOS_REQUIRED', message: 'Add photographs before styling this Photo Swap.' });
+    if (!V3_FONT_CHOICES.has(input.data.typography.display) || !V3_FONT_CHOICES.has(input.data.typography.body)) return res.status(400).json({ success: false, code: 'V3_FONT_NOT_ALLOWED', field: 'typography', message: 'Choose a display and body font from the list.' });
+    const ids = delivery.assets.map(asset => asset.assetId);
+    delivery.photoswap = { ...delivery.photoswap, backgroundMode: input.data.backgroundMode, typography: input.data.typography };
+    delivery.galleryAssetIds = ids;
+    delivery.presentationOrder = ids;
+    invalidateApproval(delivery); saveV3(delivery, { step: 'photoswap' });
+    delivery.markModified('photoswap'); await delivery.save();
     res.json({ success: true, data: delivery });
   } catch (error) { fail(res, error); }
 }
@@ -405,12 +429,14 @@ export async function v3Access(req, res) {
 export async function v3Approve(req, res) {
   try {
     const delivery = await owned(req);
-    if (!editable(delivery) || (delivery.kind === 'pinboard' ? !delivery.pinboard?.layouts?.length : !delivery.creativeDirection)) return res.status(409).json({ success: false, message: 'Review the delivery design first.' });
+    if (!editable(delivery) || (delivery.kind === 'pinboard' ? !delivery.pinboard?.layouts?.length : delivery.kind === 'photoswap' ? !delivery.assets?.length : !delivery.creativeDirection)) return res.status(409).json({ success: false, message: 'Review the delivery design first.' });
     if (await DeliveryJob.exists({ deliveryId: delivery._id, status: { $in: ['queued', 'running'] }, cancelRequestedAt: { $exists: false } })) return res.status(409).json({ success: false, message: 'Wait for the current step to finish.' });
     const ids = new Set(delivery.assets.map(asset => asset.assetId));
     if (delivery.kind === 'pinboard') {
       const order = delivery.pinboard.layouts.find(layout => layout.id === delivery.pinboard.selectedLayoutId)?.assetOrder || [];
       if (!delivery.assets.length || order.length !== ids.size || new Set(order).size !== ids.size || order.some(id => !ids.has(id))) return res.status(409).json({ success: false, code: 'PINBOARD_PHOTO_ORDER_INVALID', message: 'This board no longer includes every finished photograph. Save the board arrangement again.' });
+    } else if (delivery.kind === 'photoswap') {
+      if (!delivery.assets.length) return res.status(409).json({ success: false, message: 'Add photographs before approving this Photo Swap.' });
     } else {
       if (!validShowcase(delivery.format, delivery.curatedAssetIds, ids)) return res.status(409).json({ success: false, message: 'Review the showcase photo count.' });
       if (V3_MUSIC_FORMATS.has(delivery.format) && !delivery.soundtrack) return res.status(409).json({ success: false, message: 'Choose music for this format.' });
@@ -435,6 +461,8 @@ export async function v3Publish(req, res) {
     if (delivery.kind === 'pinboard') {
       const order = delivery.pinboard?.layouts?.find(layout => layout.id === delivery.pinboard.selectedLayoutId)?.assetOrder || [];
       if (!delivery.assets.length || order.length !== ids.size || new Set(order).size !== ids.size || order.some(id => !ids.has(id))) return res.status(409).json({ success: false, code: 'PINBOARD_PHOTO_ORDER_INVALID', message: 'The board photo order changed. Preview it again before publishing.' });
+    } else if (delivery.kind === 'photoswap') {
+      if (!delivery.assets.length) return res.status(409).json({ success: false, message: 'Add photographs to publish this Photo Swap.' });
     } else {
       if (!validShowcase(delivery.format, delivery.curatedAssetIds, ids)) return res.status(409).json({ success: false, message: 'The showcase photo count has changed.' });
       if (V3_MUSIC_FORMATS.has(delivery.format) && !delivery.soundtrack) return res.status(409).json({ success: false, message: 'Choose music first.' });
@@ -447,6 +475,7 @@ export async function v3Publish(req, res) {
       { new: true }
     );
     if (!published) { const error = new Error('This delivery changed. Preview it again before publishing.'); error.status = 409; throw error; }
+    if (reservation.entitlements.plan === 'pro') await recordPaidUsage(req.user.id, 'delivery', delivery._id);
     res.json({ success: true, data: { publicId: delivery.publicId, url: `${String(process.env.CLIENT_URL || 'https://veylo.com.ng').replace(/\/$/, '')}/d/${delivery.publicId}`, entitlements: reservation.entitlements } });
   } catch (error) { await reservation?.release().catch(() => {}); fail(res, error); }
 }

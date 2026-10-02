@@ -1,3 +1,4 @@
+import { ProPrice } from '../components/RegionalPricing.jsx';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
@@ -660,7 +661,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
         </ol>
       </section>}
       {error && !['narration', 'narration-job'].includes(stage) && <div className="v3-error" role="alert"><AlertCircle size={20} aria-hidden="true" /><div><strong>{typeof error === 'string' ? error : error.text}</strong>{typeof error === 'object' && error.fix === 'contrast' && <button type="button" className="v3-error-fix" onClick={() => { setPalette(current => readablePalette(current)); setError(''); }}>Fix text contrast</button>}{typeof error === 'object' && error.code && <small>Support reference: {error.code}</small>}</div><button type="button" onClick={() => setError('')} aria-label="Dismiss error">×</button></div>}
-      {quotaReached && (stage === 'access' || stage === 'details' && !draft) && <div className="v3-quota-note" role="status"><Clock3 size={18} /><span>{freeMonthlyLimitMessage(entitlements)}</span><Link to="/billing">View Pro</Link></div>}
+      {quotaReached && (stage === 'access' || stage === 'details' && !draft) && <div className="v3-quota-note" role="status"><Clock3 size={18} /><span>{freeMonthlyLimitMessage(entitlements)}</span><Link to="/billing">Pro · <ProPrice /> / month</Link></div>}
       <div className="v3-workspace">
       <AnimatePresence mode="wait"><motion.main key={stage} className={'v3-main' + (stage === 'design' ? ' is-designing' : '')} initial={reduced ? false : { opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} exit={reduced ? {} : { opacity: 0, x: -12 }} transition={{ duration: reduced ? 0 : .3 }}>
         {stage === 'details' && <>

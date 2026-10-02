@@ -4,6 +4,10 @@ import BillingEvent from '../models/BillingEvent.js';
 import Payment from '../models/Payment.js';
 import { getRuntimeConfig } from './runtimeConfig.service.js';
 
+import { manualProGrantIsActive, subscriptionGrantsPro } from './entitlement.service.js';
+import { withBillingLock } from './billingLock.service.js';
+export { manualProGrantIsActive, subscriptionGrantsPro };
+
 const PAID_SUBSCRIPTION_STATUSES = new Set(['active', 'canceling']);
 const FAILURE_EVENTS = new Set(['invoice.payment_failed', 'charge.failed']);
 const SUCCESS_EVENTS = new Set(['charge.success']);
@@ -28,24 +32,6 @@ function maxDate(values = []) {
   return new Date(Math.max(...dates.map(date => date.getTime())));
 }
 
-export function manualProGrantIsActive(user, now = new Date()) {
-  const grant = user?.planOverride;
-  if (grant?.plan !== 'pro') return false;
-  const expiresAt = asDate(grant.expiresAt);
-  return !expiresAt || expiresAt > now;
-}
-
-export function subscriptionGrantsPro(subscription, now = new Date()) {
-  if (!subscription) return false;
-  if (PAID_SUBSCRIPTION_STATUSES.has(subscription.status)) {
-    return Boolean(asDate(subscription.paidThrough)?.getTime() > now.getTime());
-  }
-  if (subscription.status === 'past_due') {
-    return Boolean(asDate(subscription.graceEndsAt)?.getTime() > now.getTime());
-  }
-  return false;
-}
-
 function subscriptionState(subscription, now) {
   if (!subscription) return 'none';
   if (subscription.status === 'past_due' && subscriptionGrantsPro(subscription, now)) return 'grace_period';
@@ -68,6 +54,10 @@ function subscriptionSummary(subscription, now) {
   return {
     id: subscription._id,
     provider: subscription.provider || 'paystack',
+    amountKobo: subscription.amountKobo || 2500000,
+    currency: subscription.currency || 'NGN',
+    cancelPendingAt: subscription.cancelPendingAt || null,
+    providerCanceledAt: subscription.providerCanceledAt || null,
     status: subscription.status || 'unknown',
     paidThrough: subscription.paidThrough || null,
     graceEndsAt: subscription.graceEndsAt || null,
@@ -180,6 +170,10 @@ export function buildBillingSnapshot(user, subscriptions = [], { billingEvents =
     issues.push(issue('pending_payment_without_access', 'high', 'A payment has been pending for more than 24 hours without active Pro access. Verify the payment with Paystack.', latestSubscription));
   }
 
+  const recurringSchedules = orderedSubscriptions.filter(item => item.provider === 'paystack' && item.subscriptionCode && !item.providerCanceledAt);
+  if (recurringSchedules.length > 1) issues.push(issue('duplicate_recurring_schedules', 'high', 'More than one provider schedule can renew. Stop the extra schedules before taking another payment.'));
+  if (orderedSubscriptions.some(item => item.cancelPendingAt)) issues.push(issue('cancellation_pending', 'high', 'A cancellation is awaiting provider confirmation. Recovery will retry it.'));
+
   const uniqueIssues = [...new Map(issues.map(item => [`${item.code}:${String(item.subscriptionId || '')}`, item])).values()];
   const state = effectivePro
     ? (accessReasons.includes('payment_grace') ? 'grace_period' : accessReasons.includes('canceling_subscription') ? 'canceling' : activeManualGrant && accessReasons.length === 1 ? 'manual_pro' : 'pro')
@@ -215,7 +209,7 @@ export function buildBillingSnapshot(user, subscriptions = [], { billingEvents =
 export async function loadBillingSnapshot(userId, now = new Date()) {
   const [user, subscriptions, billingEvents, payments] = await Promise.all([
     User.findById(userId).select('name email plan planOverride proRetentionUntil studio accountStatus').lean(),
-    Subscription.find({ userId }).sort({ createdAt: -1 }).limit(50).select('provider status customerCode subscriptionCode planCode checkoutReference paidFrom paidThrough graceEndsAt cancelRequestedAt canceledAt lastPaymentAt lastPaymentReference createdAt updatedAt').lean(),
+    Subscription.find({ userId }).sort({ createdAt: -1 }).select('provider status amountKobo currency pricingRegion cancelPendingAt providerCanceledAt customerCode subscriptionCode planCode checkoutReference paidFrom paidThrough graceEndsAt cancelRequestedAt canceledAt lastPaymentAt lastPaymentReference createdAt updatedAt').lean(),
     BillingEvent.find({ userId }).sort({ createdAt: -1 }).limit(100).select('eventType provider status attempts processedAt failure createdAt').lean(),
     Payment.find({ userId }).sort({ createdAt: -1 }).limit(25).select('reference status amountKobo refundedAmountKobo refundPendingAmountKobo currency channel paidAt createdAt updatedAt').lean()
   ]);
@@ -223,7 +217,11 @@ export async function loadBillingSnapshot(userId, now = new Date()) {
   return { user, snapshot: buildBillingSnapshot(user, subscriptions, { billingEvents, payments, now }) };
 }
 
-export async function synchronizeBillingState(userId, { now = new Date(), reason = 'Billing entitlement resynchronised by administrator' } = {}) {
+export async function synchronizeBillingState(userId, options = {}) {
+  return options.accountLocked ? synchronizeLocked(userId, options) : withBillingLock(userId, () => synchronizeLocked(userId, options));
+}
+
+async function synchronizeLocked(userId, { now = new Date(), reason = 'Billing entitlement resynchronised by administrator' } = {}) {
   const loaded = await loadBillingSnapshot(userId, now);
   if (!loaded) return null;
   const { user, snapshot } = loaded;
@@ -241,7 +239,7 @@ export async function synchronizeBillingState(userId, { now = new Date(), reason
   for (const subscription of loaded.snapshot.subscriptions || []) {
     const endsAt = subscription.status === 'past_due' ? asDate(subscription.graceEndsAt) : asDate(subscription.paidThrough);
     if (['active', 'past_due', 'canceling'].includes(subscription.status) && endsAt && endsAt <= now) {
-      await Subscription.updateOne({ _id: subscription.id, status: subscription.status }, { $set: { status: 'expired', canceledAt: subscription.canceledAt || now } });
+      await Subscription.updateOne({ _id: subscription.id, status: subscription.status, ...(subscription.status === 'past_due' ? { graceEndsAt: subscription.graceEndsAt } : { paidThrough: subscription.paidThrough }) }, { $set: { status: 'expired', canceledAt: subscription.canceledAt || now } });
     }
   }
 

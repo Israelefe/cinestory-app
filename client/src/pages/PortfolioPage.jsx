@@ -1,3 +1,4 @@
+import { ProPrice, PricingNotice } from '../components/RegionalPricing.jsx';
 import React from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
@@ -209,7 +210,7 @@ export default function PortfolioPage({ user }) {
           <div className="v-portfolio-closing-copy">
             <Eyebrow>Veylo Portfolio · Included with Pro</Eyebrow>
             <h2>When someone asks to see your work,<br /><em>send one link you are proud of.</em></h2>
-            <p>Veylo Portfolio is included with Pro at ₦25,000 per month. See the pricing page for the complete plan comparison.</p>
+            <p>Veylo Portfolio is included with Pro at <ProPrice /> per month. See the pricing page for the complete plan comparison.</p>
             <div className="v-actions">
               <Action to="/signup">Create your account</Action>
               <Action to="/pricing" secondary>View what Pro includes</Action>
@@ -220,4 +221,3 @@ export default function PortfolioPage({ user }) {
     </Page>
   );
 }
-

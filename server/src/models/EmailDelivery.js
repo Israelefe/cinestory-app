@@ -11,6 +11,8 @@ const emailDeliverySchema = new mongoose.Schema({
   providerId: { type: String, trim: true, maxlength: 200 },
   failure: { type: String, trim: true, maxlength: 500 },
   leaseUntil: Date,
+  messageEncrypted: { type: String, select: false },
+  retryAfter: Date,
   sentAt: Date,
   skippedAt: Date
 }, { timestamps: true });

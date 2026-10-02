@@ -7,6 +7,7 @@ import { API_BASE_URL } from '../config/env.js';
 import { trackEvent } from '../services/analytics.js';
 import { DeliveryFormatViewer } from '../components/delivery/viewerRegistry.jsx';
 import PinboardViewer from '../components/delivery/PinboardViewer.jsx';
+import PhotoSwapViewer from '../components/delivery/PhotoSwapViewer.jsx';
 import DeliveryBrandMark from '../components/delivery/DeliveryBrandMark.jsx';
 import { gridboardAccentInk, resolvedGridboardPalette } from '../utils/gridboardPalette.js';
 import { getDeliveryCapabilities } from '../constants/deliveryCapabilities.js';
@@ -666,9 +667,11 @@ export default function DeliveryViewer() {
     onNarrationNavigate: seekNarrationToAssets
   };
 
-  const content = delivery.kind === 'pinboard'
-    ? <PinboardViewer delivery={playbackDelivery} galleryProps={galleryProps} />
-    : <DeliveryFormatViewer format={format} {...sharedProps} delivery={playbackDelivery} />;
+  const content = delivery.kind === 'photoswap'
+    ? <PhotoSwapViewer delivery={playbackDelivery} galleryProps={galleryProps} />
+    : delivery.kind === 'pinboard'
+      ? <PinboardViewer delivery={playbackDelivery} galleryProps={galleryProps} />
+      : <DeliveryFormatViewer format={format} {...sharedProps} delivery={playbackDelivery} />;
 
   return (
     <>

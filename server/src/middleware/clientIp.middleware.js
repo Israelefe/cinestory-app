@@ -27,6 +27,7 @@ const EDGE_CLIENT_IP_HEADER = 'x-veylo-client-ip';
  * (server.js) — so anyone could skip the edge and rotate the header.
  */
 export function resolveEdgeClientIp(req, res, next) {
+  req.billingCountry = null;
   const expectedKey = process.env.VEYLO_EDGE_KEY;
 
   // Captured before overwriting, so the value below is the edge's own header
@@ -37,6 +38,8 @@ export function resolveEdgeClientIp(req, res, next) {
   if (expectedKey) {
     if (secretMatches(expectedKey, req.get(EDGE_KEY_HEADER)) && claimedIp && isIP(claimedIp)) {
       req.headers['x-forwarded-for'] = claimedIp;
+      const country = req.get('x-veylo-country');
+      if (/^[A-Z]{2}$/.test(country || '') && country !== 'XX') req.billingCountry = country;
     }
   }
   // With no secret configured, or no match, nothing changes and `req.ip` keeps
