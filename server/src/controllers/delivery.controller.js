@@ -600,7 +600,7 @@ export async function addLibraryAssets(req, res) {
       $expr: { $lte: [{ $add: [{ $size: '$assets' }, newAssets.length] }, entitlements.limits.photosPerDelivery] }
     }, {
       $push: { assets: { $each: newAssets } },
-      $set: { status: 'draft', formatRecommendations: [], ...(delivery.schemaVersion === 3 ? { 'v3.step': delivery.kind === 'pinboard' ? 'photos' : 'upload', 'v3.approvedRevision': null, 'v3.narrationChoice': 'skip', 'v3.captionNarrationChoice': 'skip', curatedAssetIds: [], presentationOrder: [], ...(delivery.kind === 'pinboard' ? { 'pinboard.layouts': [], 'pinboard.moments': [], 'pinboard.analysisStatus': 'pending' } : {}) } : {}) },
+      $set: { status: 'draft', formatRecommendations: [], ...(delivery.schemaVersion === 3 ? { 'v3.step': ['pinboard', 'photoswap'].includes(delivery.kind) ? 'photos' : 'upload', 'v3.approvedRevision': null, 'v3.narrationChoice': 'skip', 'v3.captionNarrationChoice': 'skip', curatedAssetIds: [], presentationOrder: [], ...(delivery.kind === 'pinboard' ? { 'pinboard.layouts': [], 'pinboard.moments': [], 'pinboard.analysisStatus': 'pending' } : {}) } : {}) },
       $inc: delivery.schemaVersion === 3 ? { 'v3.revision': 1 } : {},
       $unset: { collectionAnalysis: 1, creativeDirection: 1, reviewApprovedAt: 1, ...(delivery.schemaVersion === 3 ? { narration: 1 } : {}) }
     }, { new: true, runValidators: true });
@@ -640,7 +640,7 @@ export async function deleteDeliveryAsset(req, res) {
     if (delivery.schemaVersion === 3) {
       delivery.curatedAssetIds = []; delivery.presentationOrder = []; delivery.narration = undefined;
       delivery.v3 = { ...delivery.v3, step: 'upload', narrationChoice: 'skip', captionNarrationChoice: 'skip', approvedRevision: null, revision: Number(delivery.v3?.revision || 0) + 1 };
-      if (delivery.kind === 'pinboard') { delivery.v3.step = 'photos'; delivery.pinboard = { ...delivery.pinboard, layouts: [], moments: [], analysisStatus: 'pending' }; delivery.markModified('pinboard'); }
+      if (['pinboard', 'photoswap'].includes(delivery.kind)) { delivery.v3.step = 'photos'; if (delivery.kind === 'pinboard') { delivery.pinboard = { ...delivery.pinboard, layouts: [], moments: [], analysisStatus: 'pending' }; delivery.markModified('pinboard'); } }
       delivery.markModified('v3');
     }
     await delivery.save();
@@ -659,7 +659,7 @@ export async function signSoundtrackUpload(req, res) {
   try {
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This delivery is not available for audio uploads.' });
-    if (delivery.kind !== 'pinboard' && !supportsDeliveryMusic(delivery.format)) return res.status(409).json({ success: false, code: 'MUSIC_FORMAT_UNSUPPORTED', message: 'This delivery format does not use music.' });
+    if (!['pinboard', 'photoswap'].includes(delivery.kind) && !supportsDeliveryMusic(delivery.format)) return res.status(409).json({ success: false, code: 'MUSIC_FORMAT_UNSUPPORTED', message: 'This delivery format does not use music.' });
     res.json({ success: true, data: createUploadSignature({ userId: req.user.id, deliveryId: delivery._id, resourceType: 'video' }) });
   } catch (error) {
     recordAnalyticsEventAsync({ name: 'upload.failed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'failed', errorCode: error.code || 'SOUNDTRACK_UPLOAD_SIGNATURE_FAILED', metadata: { surface: 'soundtrack', stage: 'signature' } });
@@ -674,7 +674,7 @@ export async function confirmSoundtrackUpload(req, res) {
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This delivery is not available for audio uploads.' });
-    if (delivery.kind !== 'pinboard' && !supportsDeliveryMusic(delivery.format)) return res.status(409).json({ success: false, code: 'MUSIC_FORMAT_UNSUPPORTED', message: 'This delivery format does not use music.' });
+    if (!['pinboard', 'photoswap'].includes(delivery.kind) && !supportsDeliveryMusic(delivery.format)) return res.status(409).json({ success: false, code: 'MUSIC_FORMAT_UNSUPPORTED', message: 'This delivery format does not use music.' });
     const resource = await confirmUploadedAsset({ userId: req.user.id, deliveryId: delivery._id, publicId: parsed.data.publicId, version: parsed.data.version, signature: parsed.data.signature, resourceType: 'video' });
     uploadedPublicId = resource.public_id;
     if (!['mp3', 'wav', 'm4a', 'ogg', 'aac'].includes(String(resource.format).toLowerCase()) || resource.bytes > 20 * 1024 * 1024 || Number(resource.duration || 0) > 20 * 60) throw Object.assign(new Error('Use an MP3, WAV, M4A, OGG, or AAC track no larger than 20 MB and no longer than 20 minutes.'), { status: 400 });
@@ -718,7 +718,7 @@ export async function selectCuratedSoundtrack(req, res) {
     if (!track) return res.status(404).json({ success: false, message: 'That soundtrack is not in Veylo’s approved library.' });
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This delivery is not available for audio selection.' });
-    if (delivery.kind !== 'pinboard' && !supportsDeliveryMusic(delivery.format)) return res.status(409).json({ success: false, code: 'MUSIC_FORMAT_UNSUPPORTED', message: 'This delivery format does not use music.' });
+    if (!['pinboard', 'photoswap'].includes(delivery.kind) && !supportsDeliveryMusic(delivery.format)) return res.status(409).json({ success: false, code: 'MUSIC_FORMAT_UNSUPPORTED', message: 'This delivery format does not use music.' });
     const previousTrackId = delivery.soundtrack?.catalogId || null;
     if (delivery.soundtrack?.publicId) await removeDeliveryAudio(delivery.soundtrack.publicId).catch(() => {});
     delivery.soundtrack = {

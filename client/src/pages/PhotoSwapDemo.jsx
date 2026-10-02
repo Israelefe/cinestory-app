@@ -26,14 +26,15 @@ const assets = photos.map((photo, index) => ({
 
 const demoDelivery = {
   kind: 'photoswap',
-  title: 'Photo Swap demo',
-  clientName: 'Veylo sample',
-  branding: { name: 'Veylo Studio', logoUrl: '/veylo/veylo-logo.png' },
+  title: "Lora's 25th Birthday Celebration",
+  clientName: 'Lora Ade',
+  branding: { name: 'Kora Media Studio', logoUrl: '/veylo/veylo-logo.png' },
   assets,
-  soundtrack: { title: 'Veylo soundtrack', url: '/audio/soundtrack-1.mp3' },
+  soundtrack: { title: 'Lagos Sunset · Ambient Chill', url: '/audio/soundtrack-1.mp3' },
   access: { allowIndividualDownloads: true, allowDownloadAll: true },
   photoswap: {
-    backgroundMode: 'auto'
+    backgroundMode: 'auto',
+    typography: { display: 'Playfair Display', body: 'Outfit' }
   }
 };
 
