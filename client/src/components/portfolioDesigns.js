@@ -19,8 +19,8 @@ export const portfolioDesigns = [
   },
   {
     id: 'folio', name: 'Folio', label: 'A studio, in collections',
-    description: 'Bold titles, layered covers and numbered projects lead the page.',
-    mobile: 'A layered opening, clear project links, and photographs grouped by category.',
+    description: 'Bold titles, layered covers and clear links to each project.',
+    mobile: 'A layered opening and separate collections for each category.',
     defaults: { background: 'ink', accent: '#ff735d', typeStyle: 'modern', rhythm: 'measured', layout: 'editorial', motion: 'expressive' }
   }
 ];

@@ -39,9 +39,6 @@
 .v-portfolio-canvas .vpc-hero-location { display: flex; align-items: center; gap: 8px; font-size: 12px; line-height: 1.6; margin-top: 20px; }
 .v-portfolio-canvas .vpc-hero-contact { margin-top: 24px; border-bottom: 1px solid var(--portfolio-accent-text); font-size: 13px; font-weight: 650; padding: 8px 0; gap: 16px; transition: transform .2s; }
 .v-portfolio-canvas .vpc-hero-contact:hover { transform: translateY(-2px); }
-.v-portfolio-canvas .vpc-explore { justify-content: space-between; gap: 24px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; width: fit-content; border-bottom: 1px solid var(--vpc-rule); padding: 12px 0; }
-.v-portfolio-canvas .vpc-explore svg { transition: transform .2s; }
-.v-portfolio-canvas .vpc-explore:hover svg { transform: translateY(3px); }
 .v-portfolio-canvas .vpc-cover { min-width: 0; }
 .v-portfolio-canvas .vpc-cover button, .v-portfolio-canvas .vpc-photo button, .v-portfolio-canvas .vpc-companion button { display: block; width: 100%; overflow: hidden; cursor: zoom-in; }
 .v-portfolio-canvas .vpc-cover img, .v-portfolio-canvas .vpc-photo img, .v-portfolio-canvas .vpc-companion img { display: block; width: 100%; height: auto; object-fit: contain; transition: transform .5s; }
@@ -56,22 +53,17 @@
 .v-portfolio-canvas .vpc-work-head { display: flex; align-items: end; justify-content: space-between; flex-wrap: wrap; gap: 18px; padding: 0 0 24px; margin-bottom: 26px; border-bottom: 1px solid var(--vpc-rule); }
 .v-portfolio-canvas .vpc-work-head h2 { font-family: 'Outfit', sans-serif; font-weight: 450; font-size: clamp(30px, 5cqi, 58px); letter-spacing: -.04em; line-height: 1.1; margin-top: 12px; }
 .v-portfolio-canvas .vpc-work-head > span { font-size: 11px; line-height: 1.7; color: var(--vpc-muted); }
-.v-portfolio-canvas .vpc-categories { display: flex; gap: 22px; overflow: auto; max-width: 100%; padding: 2px 3px 30px; scrollbar-width: thin; }
+.v-portfolio-canvas .vpc-categories { display: flex; gap: 24px; overflow: auto; max-width: 100%; padding: 24px 5px 12px; scrollbar-width: thin; scroll-padding-inline: 5px; }
 .v-portfolio-canvas .vpc-categories button { flex: none; font-size: 12px; padding: 10px 0; border-bottom: 1px solid transparent; color: var(--vpc-muted); }
 .v-portfolio-canvas .vpc-categories button.is-active { border-color: var(--portfolio-accent-text); color: var(--portfolio-accent-text); }
 .v-portfolio-canvas .vpc-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 36px 16px; }
 .v-portfolio-canvas .vpc-photo { min-width: 0; align-self: start; }
 .v-portfolio-canvas .vpc-empty { padding: 30px 0; grid-column: 1/-1; font-size: 15px; line-height: 1.8; }
 .v-portfolio-canvas .vpc-work-groups { display: grid; gap: clamp(48px, 8cqi, 100px); }
-.v-portfolio-canvas .vpc-group-heading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
-.v-portfolio-canvas .vpc-group-heading h3 { margin: 0; font-size: clamp(20px, 3cqi, 32px); font-weight: 450; letter-spacing: -.025em; }
-.v-portfolio-canvas .vpc-group-heading > span { font-size: 11px; color: var(--vpc-muted); }
 .v-portfolio-canvas .vpc-work-group.has-pair .vpc-gallery .vpc-photo { grid-column: auto; width: 100%; padding-top: 0; }
 .v-portfolio-canvas .vpc-project-entry.is-text { border-block: 1px solid var(--vpc-rule); }
 .v-portfolio-canvas .vpc-project-entry.is-text .vpc-project-card { padding: 28px 0; }
 .v-portfolio-canvas .vpc-project-entry.is-text .vpc-project-card > span { padding-top: 0; }
-.v-portfolio-canvas.is-filtered .vpc-hero { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: none; gap: 24px; padding-bottom: 32px; }
-.v-portfolio-canvas.is-filtered .vpc-hero-heading, .v-portfolio-canvas.is-filtered .vpc-hero-copy { grid-area: auto; }
 .v-portfolio-canvas.is-project.design-folio .vpc-folio-covers { padding: 0; }
 .v-portfolio-canvas.is-project.design-folio .vpc-cover { rotate: 0deg; }
 .v-portfolio-canvas .vpc-project-grid { display: grid; gap: 40px; }
@@ -112,7 +104,7 @@
 
 /* Cinema: a photographic opening, followed by a touch and keyboard filmstrip. */
 .design-cinema .vpc-hero { display: block; padding-top: 24px; }
-.design-cinema .vpc-cinema-stage { position: relative; isolation: isolate; min-height: 540px; min-height: clamp(500px, 148cqi, 720px); background: #09090b; color: #fff7ee; overflow: hidden; display: flex; align-items: end; padding: 30px 24px 100px; }
+.design-cinema .vpc-cinema-stage { position: relative; isolation: isolate; min-height: 540px; min-height: clamp(500px, 148cqi, 720px); background: #09090b; color: #fff7ee; overflow: hidden; display: flex; align-items: end; padding: 30px 24px 40px; }
 .design-cinema .vpc-cinema-stage::after { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, #0000 20%, #05050933 48%, #050509eb 100%); pointer-events: none; }
 .design-cinema .vpc-cinema-stage .vpc-cover { position: absolute; inset: 0; z-index: -2; margin: 0; }
 .design-cinema .vpc-cover button, .design-cinema .vpc-cover img { width: 100%; height: 100%; }
@@ -120,8 +112,6 @@
 .design-cinema .vpc-cinema-stage .vpc-hero-heading { pointer-events: none; max-width: 100%; }
 .design-cinema .vpc-hero h1 { font-family: 'Outfit', sans-serif; font-weight: 450; font-size: clamp(42px, 13cqi, 140px); line-height: .97; letter-spacing: -.055em; max-width: 11ch; }
 .design-cinema .vpc-cinema-stage .vpc-eyebrow { color: #e8ccab; }
-.design-cinema .vpc-cinema-bottom { position: absolute; bottom: 24px; left: 24px; right: 24px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; font-size: 10px; line-height: 1.7; }
-.design-cinema .vpc-cinema-bottom .vpc-explore { font-size: 10px; }
 .v-portfolio-canvas .vpc-cinema-switch { position: absolute; top: 22px; left: 24px; right: 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 11px; color: #fff7ee; }
 .v-portfolio-canvas .vpc-cinema-switch > span { padding: 8px 10px; background: #09090b99; border: 1px solid #ffffff26; }
 .v-portfolio-canvas .vpc-cinema-switch > div { display: flex; gap: 8px; }
@@ -142,7 +132,6 @@
 .v-portfolio-canvas .vpc-filmstrip-photo { position: relative; flex: 0 0 82%; min-width: 0; aspect-ratio: 4/5; scroll-snap-align: start; overflow: hidden; background: #ffffff05; display: block; }
 .v-portfolio-canvas .vpc-filmstrip-photo img { width: 100%; height: 100%; display: block; object-fit: contain; }
 .v-portfolio-canvas .vpc-filmstrip-photo.crop-fill img { object-fit: cover; }
-.v-portfolio-canvas .vpc-filmstrip-photo > span { position: absolute; bottom: 12px; left: 12px; padding: 5px 8px; background: #09090bcc; color: #fff7ee; font-size: 10px; }
 .v-portfolio-canvas .vpc-filmstrip.is-single .vpc-filmstrip-top { display: none; }
 .v-portfolio-canvas .vpc-filmstrip.is-single .vpc-filmstrip-track::after { display: none; }
 .v-portfolio-canvas .vpc-filmstrip.is-single .vpc-filmstrip-photo { flex-basis: 100%; max-width: 720px; }
@@ -189,12 +178,11 @@
 .design-folio .vpc-companion { position: absolute; width: 52%; left: 0; bottom: 0; rotate: -7deg; border: 6px solid color-mix(in srgb, currentColor 24%, #08080b); background: #151318; box-shadow: 0 12px 40px #0005; }
 .design-folio .vpc-companion button { aspect-ratio: 3/4; }
 .design-folio .vpc-companion img { height: 100%; }
-.design-folio .vpc-folio-count { display: block; margin-top: 36px; font-size: 11px; letter-spacing: .09em; color: var(--portfolio-accent-text); text-transform: uppercase; }
+.design-folio .vpc-folio-covers.is-single { width: 80%; padding: 0; margin-bottom: 16px; }
 .design-folio .vpc-opening-bottom { border-top: 1px solid var(--vpc-rule); padding-top: 28px; display: grid; gap: 24px; }
 .design-folio .vpc-project-grid { gap: 56px; }
 .design-folio .vpc-project-card > img { aspect-ratio: 4/5; }
 .design-folio .vpc-project-card strong { font-size: clamp(34px, 5cqi, 66px); letter-spacing: -.04em; }
-.design-folio .vpc-project-number { display: inline-block; margin-right: 10px; }
 .design-folio .vpc-gallery .photo-0 { grid-column: 1/-1; }
 .design-folio .vpc-gallery .photo-2 { padding-top: 28px; }
 .design-folio .vpc-photo-number { color: var(--portfolio-accent-text); }
@@ -222,15 +210,13 @@
   .v-portfolio-canvas .vpc-header-right a { font-size: 13px; }
   .v-portfolio-canvas .vpc-project-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .v-portfolio-canvas .vpc-contact-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .design-editorial .vpc-hero { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: 'heading cover' 'copy cover' 'explore cover'; gap: 28px 36px; padding: 60px 0 90px; }
+  .design-editorial .vpc-hero { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: 'heading cover' 'copy cover'; gap: 28px 36px; padding: 60px 0 90px; }
   .design-editorial .vpc-hero-heading { grid-area: heading; align-self: end; }
   .design-editorial .vpc-cover { grid-area: cover; width: 100%; align-self: center; }
   .design-editorial .vpc-hero-copy { grid-area: copy; }
-  .design-editorial .vpc-explore { grid-area: explore; align-self: start; }
   .design-editorial .vpc-hero h1 { font-size: clamp(46px, 8cqi, 114px); }
-  .design-cinema .vpc-cinema-stage { min-height: 70cqi; padding: 48px 40px 110px; }
+  .design-cinema .vpc-cinema-stage { min-height: 70cqi; padding: 48px 40px; }
   .design-cinema .vpc-cinema-stage .vpc-hero-heading { max-width: 100%; }
-  .design-cinema .vpc-cinema-bottom { left: 40px; right: 40px; bottom: 28px; }
   .v-portfolio-canvas .vpc-cinema-switch { left: 40px; right: 40px; top: 28px; }
   .design-cinema .vpc-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 60px 32px; }
   .design-cinema .vpc-photo:nth-child(3n+1) { grid-column: 1/-1; width: 100%; }
@@ -247,8 +233,7 @@
   .design-folio .vpc-folio-opening { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); align-items: center; padding-top: 30px; gap: 32px; }
   .design-folio .vpc-hero h1 { font-size: clamp(64px, 11cqi, 148px); }
   .design-folio .vpc-folio-covers { width: 100%; margin-top: 0; padding-bottom: 48px; }
-  .design-folio .vpc-folio-count { grid-column: 1/-1; margin-top: 0; }
-  .design-folio .vpc-opening-bottom { grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 36px; }
+  .design-folio .vpc-opening-bottom { grid-template-columns: minmax(0, 1fr); }
   .design-folio .vpc-project-card > img { aspect-ratio: 4/3; }
 }
 @container (min-width: 768px) {
@@ -274,12 +259,11 @@
   .design-editorial .vpc-hero { gap: 32px 72px; padding-top: 80px; }
   .design-editorial .vpc-cover { width: 90%; margin-left: auto; }
   .design-editorial .vpc-hero h1 { font-size: clamp(80px, 8.5cqi, 118px); }
-  .design-cinema .vpc-cinema-stage { min-height: min(75dvh, 850px); padding: 64px 64px 110px; }
+  .design-cinema .vpc-cinema-stage { min-height: min(75dvh, 850px); padding: 64px; }
   .design-cinema .vpc-hero-copy { display: grid; grid-template-columns: 1fr 1fr; column-gap: 80px; padding-top: 48px; }
   .design-cinema .vpc-hero-copy .vpc-intro { grid-column: 1; grid-row: 1/3; font-size: 25px; }
   .design-cinema .vpc-hero-copy .vpc-bio, .design-cinema .vpc-hero-copy .vpc-hero-contact { grid-column: 2; }
   .design-cinema .vpc-hero-contact { justify-self: start; }
-  .design-cinema .vpc-cinema-bottom { left: 64px; right: 64px; }
   .v-portfolio-canvas .vpc-cinema-switch { left: 64px; right: 64px; top: 32px; }
   .v-portfolio-canvas .vpc-filmstrip-photo { flex-basis: 30%; }
   .v-portfolio-canvas .vpc-filmstrip-track::after { flex-basis: calc(70% - 24px); }

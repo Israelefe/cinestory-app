@@ -13,7 +13,7 @@ function DesignThumbnail({ design, form }) {
     <div className="vpd-mini-nav"><span>{form.studioName || 'Your studio'}</span><span>Work / Contact</span></div>
     <div className="vpd-mini-heading">{form.headline || form.studioName || 'Your photographs'}</div>
     <div className="vpd-mini-images"><div>{image(0)}</div><div>{image(1)}</div><div>{image(2)}</div></div>
-    <span className="vpd-mini-label">{design.id === 'folio' ? '01 / Selected projects' : design.label}</span>
+    <span className="vpd-mini-label">{design.label}</span>
   </div>;
 }
 
