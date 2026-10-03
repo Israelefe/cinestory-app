@@ -84,18 +84,43 @@ test('normal-motion connections reveal in place, stay dashed, and avoid photo fr
   })).toBe(true);
 });
 
+test('Canvas respects separate bookend choices and reflows long group copy when resized',async({page})=>{
+  await init(page);await page.emulateMedia({reducedMotion:'reduce'});
+  const data=record(12,'mixed',true);data.v3.openingAssetId=data.assets[12].assetId;data.v3.closingAssetId=data.assets[13].assetId;
+  data.creativeDirection.sections[0].title='Graduation portraits to keep with your family photographs';
+  data.creativeDirection.sections[0].subtitle='Courage, these portraits belong together in your album. Keep a copy for yourself and share them with the people who have supported you.';
+  await page.setViewportSize({width:320,height:740});await preview(page,data);
+  await expect(page.locator('.cv-bookend.is-opening img')).toHaveAttribute('src',data.assets[12].url);
+  await expect(page.locator('.cv-bookend.is-closing img')).toHaveAttribute('src',data.assets[13].url);
+  for(const width of [320,768,834,1440]){
+    await page.setViewportSize({width,height:1000});
+    await expect.poll(()=>page.locator('.cv-path-board').evaluate(board=>{
+      const bounds=board.getBoundingClientRect(),parts=[...board.querySelectorAll('.cv-frame,.cv-group-heading,.cv-bookend')].map(el=>el.getBoundingClientRect());
+      return parts.every((r,i)=>r.left>=bounds.left-2&&r.right<=bounds.right+2&&r.top>=bounds.top&&r.bottom<=bounds.bottom+2&&parts.every((o,j)=>i===j||r.right<=o.left||r.left>=o.right||r.bottom<=o.top||r.top>=o.bottom));
+    })).toBe(true);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBe(0);
+    await expect(page.locator('.cv-paths>path')).toHaveCount(12);
+  }
+});
+
 for(const [count,mode] of [[6,'mixed'],[8,'single'],[12,'mixed'],[18,'group']]) for(const [width,height] of widths) test(`Canvas ${count} ${mode} photos scroll without overflow at ${width}px`,async({page})=>{
   await page.setViewportSize({width,height}); await page.emulateMedia({reducedMotion:'reduce'}); await init(page);
   const errors=[];page.on('pageerror',error=>errors.push(error.message)); await preview(page,record(count,mode,width===320));
   await expect(page.locator('.cv-photo-open')).toHaveCount(count);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBe(0);
-  expect(await page.locator('.cv-board').evaluate(el=>el.scrollHeight>innerHeight*2)).toBe(true);
+  expect(await page.locator('.cv-board').evaluate(el=>el.scrollHeight>innerHeight)).toBe(true);
   await page.mouse.move(width/2,height*.7); await page.mouse.wheel(0,700);
   await expect.poll(()=>page.evaluate(()=>scrollY)).toBeGreaterThan(400);
   const cards=page.locator('.cv-frame');
   for(let at=0;at<count;at++){await cards.nth(at).scrollIntoViewIfNeeded();await expect(cards.nth(at).locator('img')).toHaveJSProperty('complete',true);}
   await page.locator('.cv-bookend.is-closing').scrollIntoViewIfNeeded();await expect(page.getByRole('button',{name:'View full gallery',exact:true})).toBeVisible();
-  await expect(page.locator('.cv-paths>path')).toHaveCount((mode==='single'?count:mode==='group'?2:count-1)-1);
+  const checkpointCount=await page.locator('.cv-checkpoint').count();
+  const groupedPhotos=await page.locator('.cv-checkpoint.is-group .cv-frame').count();
+  await expect(page.locator('.cv-paths>path')).toHaveCount(checkpointCount-1+groupedPhotos);
+  expect(await page.locator('.cv-path-board').evaluate(board=>{
+    const bounds=board.getBoundingClientRect(), parts=[...board.querySelectorAll('.cv-frame,.cv-group-heading,.cv-bookend')].map(el=>el.getBoundingClientRect());
+    return parts.every((r,i)=>r.left>=bounds.left-2&&r.right<=bounds.right+2&&r.top>=bounds.top&&r.bottom<=bounds.bottom+2&&parts.every((other,j)=>i===j||r.right<=other.left||r.left>=other.right||r.bottom<=other.top||r.top>=other.bottom));
+  })).toBe(true);
   expect(errors).toEqual([]);
 });
 
