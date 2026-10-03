@@ -29,6 +29,7 @@ export default function ClientGallery({ photos: collectionPhotos = [], singlePho
   const [selected, setSelected] = useState(() => singlePhoto ? 0 : Number.isInteger(initialIndex) && initialIndex >= 0 && initialIndex < photos.length ? initialIndex : null);
   const [swipeDirection, setSwipeDirection] = useState(1);
   const [favouritesOnly, setFavouritesOnly] = useState(false);
+  const [groupId, setGroupId] = useState('all');
   const [ratios, setRatios] = useState({});
   useDialogFocus(true, panel, () => singlePhoto || selected === null ? onClose?.() : setSelected(null));
   useEffect(() => {
@@ -43,7 +44,10 @@ export default function ClientGallery({ photos: collectionPhotos = [], singlePho
   const fonts = deliveryFontStyles(delivery?.kind === 'pinboard' ? delivery?.pinboard?.typography : delivery?.kind === 'photoswap' ? delivery?.photoswap?.typography : delivery?.creativeDirection?.typography, { display: fontStyles?.['--delivery-font-heading'], body: fontStyles?.['--delivery-font-caption'] });
   const galleryTheme = { ...fonts, '--gallery-display': fonts['--delivery-font-heading'], '--gallery-body': fonts['--delivery-font-caption'] };
   const favouriteCount = resolvedPhotos.filter((photo, index) => liked?.has(photoKey(photo, index))).length;
-  const visibleIndexes = resolvedPhotos.map((_, index) => index).filter(index => !allowLikes || !favouritesOnly || liked?.has(photoKey(resolvedPhotos[index], index)));
+  const savedGroups = ['canvas', 'chapters', 'event-coverage', 'campaign'].includes(delivery?.format) ? delivery?.format === 'campaign' && delivery?.formatConfig?.campaign?.fileSets?.length ? delivery.formatConfig.campaign.fileSets : delivery?.creativeDirection?.sections || [] : [];
+  const groups = savedGroups.filter(group => group.assetIds?.some(id => resolvedPhotos.some(photo => photo.assetId === id)));
+  const activeGroup = groups.find(group => group.id === groupId);
+  const visibleIndexes = resolvedPhotos.map((_, index) => index).filter(index => (!activeGroup || activeGroup.assetIds.includes(resolvedPhotos[index].assetId)) && (!allowLikes || !favouritesOnly || liked?.has(photoKey(resolvedPhotos[index], index))));
   const activePhoto = selected === null ? null : resolvedPhotos[selected];
   const activeKey = selected === null ? null : photoKey(activePhoto, selected);
   const activeImageUrl = activePhoto ? imageUrl(activePhoto) : '';
@@ -135,6 +139,7 @@ export default function ClientGallery({ photos: collectionPhotos = [], singlePho
           {selected === null && allowDownloadAll && onDownloadAll && <button className="client-gallery-download-all" type="button" onClick={onDownloadAll} disabled={Boolean(resolvedBusy)}>{resolvedBusy === 'all' ? <LoaderCircle className="client-gallery-spin" size={16} /> : <Download size={16} />}<span>{resolvedBusy === 'all' && downloadProgress ? `Starting ${downloadProgress.current}/${downloadProgress.total}` : resolvedBusy === 'all' ? 'Starting…' : 'Download all photos'}</span></button>}
           <button className="client-gallery-icon" type="button" onClick={onClose} aria-label="Close gallery"><X size={21} /></button>
         </div>
+        {groups.length > 0 && <label className="client-gallery-group-filter">{delivery?.format === 'campaign' ? 'File set' : delivery?.format === 'chapters' ? 'Chapter' : 'Photo group'}<select aria-label={delivery?.format === 'campaign' ? 'File set' : delivery?.format === 'chapters' ? 'Chapter' : 'Photo group'} value={groupId} onChange={event => { setGroupId(event.target.value); gridScroll.current = 0; collection.current?.scrollTo(0, 0); }}><option value="all">All photographs</option>{groups.map(group => <option key={group.id} value={group.id}>{group.title}</option>)}</select></label>}
       </header>
       {downloadNotice && <p className="client-gallery-download-tip" role="status">{downloadNotice}</p>}
       {!singlePhoto && <div ref={collection} className="client-gallery-collection" hidden={selected !== null}>

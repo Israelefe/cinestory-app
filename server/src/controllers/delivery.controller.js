@@ -3,6 +3,7 @@ import { schedulePortfolioRemoval, finishPortfolioRemoval } from '../services/po
 import crypto from 'crypto';
 import { deliveryGatePalette } from '../utils/deliveryGatePalette.js';
 import { scopedEditorial } from '../constants/editorial.js';
+import { scopedPresentation } from '../constants/deliveryPresentation.js';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import bcrypt from 'bcryptjs';
@@ -1104,10 +1105,11 @@ async function publicPayload(delivery, grant = null) {
     delete board.model;
   }
   if (grant) {
+    object.formatConfig = scopedPresentation(object.formatConfig, visibleAssets);
     if (object.creativeDirection) {
       object.creativeDirection = { ...object.creativeDirection };
       if (Array.isArray(object.creativeDirection.frames)) object.creativeDirection.frames = object.creativeDirection.frames.filter(frame => visibleAssets.has(frame.assetId));
-      if (Array.isArray(object.creativeDirection.sections)) object.creativeDirection.sections = object.creativeDirection.sections.map(section => ({ ...section, assetIds: (section.assetIds || []).filter(assetId => visibleAssets.has(assetId)) })).filter(section => section.assetIds.length);
+      if (Array.isArray(object.creativeDirection.sections)) object.creativeDirection.sections = object.creativeDirection.sections.map(section => ({ ...section, assetIds: (section.assetIds || []).filter(assetId => visibleAssets.has(assetId)), ...(section.coverAssetId ? { coverAssetId: visibleAssets.has(section.coverAssetId) ? section.coverAssetId : (section.assetIds || []).find(assetId => visibleAssets.has(assetId)) } : {}) })).filter(section => section.assetIds.length);
       if (object.creativeDirection.editorial) object.creativeDirection.editorial = scopedEditorial(object.creativeDirection.editorial, visibleAssets);
     }
     if (Array.isArray(object.presentationOrder)) object.presentationOrder = object.presentationOrder.filter(assetId => visibleAssets.has(assetId));
@@ -1316,7 +1318,7 @@ export async function getPhotoDownload(req, res) {
     if (!delivery || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
     const individualAllowed = grant ? grant.allowIndividualDownloads : delivery.access?.allowIndividualDownloads;
     const galleryAllowed = grant ? grant.allowDownloadAll : delivery.access?.allowDownloadAll;
-    if (!individualAllowed && !galleryAllowed) return res.status(403).json({ success: false, message: 'Downloads are turned off for this link.' });
+    if (!individualAllowed) return res.status(403).json({ success: false, message: 'Downloads are turned off for this link.' });
     const asset = grantAssets(delivery, grant).find(item => item.assetId === req.params.assetId);
     if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
     recordAnalyticsEventAsync({ name: 'client.delivery.download_requested', source: 'server', actorType: grant ? 'guest' : 'client', deliveryId: delivery._id, sessionDigest: tokenDigest(visitorId(req, res)), format: delivery.format, status: 'requested', route: req.originalUrl, metadata: { downloadType: 'individual', role: grant?.role || null } });
@@ -1331,7 +1333,7 @@ export async function streamPhotoDownload(req, res) {
     if (!delivery || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
     const individualAllowed = grant ? grant.allowIndividualDownloads : delivery.access?.allowIndividualDownloads;
     const galleryAllowed = grant ? grant.allowDownloadAll : delivery.access?.allowDownloadAll;
-    if (!individualAllowed && !galleryAllowed) return res.status(403).json({ success: false, message: 'Downloads are turned off for this link.' });
+    if (!individualAllowed) return res.status(403).json({ success: false, message: 'Downloads are turned off for this link.' });
     const asset = grantAssets(delivery, grant).find(item => item.assetId === req.params.assetId);
     if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
     // Fetch the full-resolution image from Cloudinary
@@ -1381,8 +1383,7 @@ export async function trackPhotoDownload(req, res) {
     const grant = delivery ? await shareGrant(req, delivery) : null;
     if (!delivery || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
     const individualAllowed = grant ? grant.allowIndividualDownloads : delivery.access?.allowIndividualDownloads;
-    const galleryAllowed = grant ? grant.allowDownloadAll : delivery.access?.allowDownloadAll;
-    if (!individualAllowed && !galleryAllowed) return res.status(403).json({ success: false, message: 'Downloads are turned off for this link.' });
+    if (!individualAllowed) return res.status(403).json({ success: false, message: 'Individual downloads are turned off for this link.' });
     if (!grantAssets(delivery, grant).some(asset => asset.assetId === req.params.assetId)) return res.status(404).json({ success: false, message: 'Photograph not found.' });
     if (delivery.downloadsCount === 0 && delivery.userId?.email) {
       sendDeliveryDownloadedEmail({
