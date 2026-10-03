@@ -4,6 +4,7 @@ import { purposeWordingIssues } from '../utils/purposeWording.js';
 import { writeEditorialDirection, rewriteEditorialCaption, rewriteEditorialBlock } from './editorialDirection.service.js';
 import { deliveryWritingContext, deliveryWritingPolicy, requiresDirectAddress, supportsVisualWriting, shootWritingIssues, writingFallback } from '../constants/deliveryWriting.js';
 import { writingBlockLimit } from '../constants/deliveryWritingBlocks.js';
+import { SECTION_BODY_LIMITS } from '../constants/deliveryPresentation.js';
 
 const MODEL = 'deepseek-v4.1-flash';
 const TRANSIENT = new Set([429, 500, 502, 503, 504]);
@@ -457,17 +458,18 @@ export async function directV3Pinboard(delivery, insights) {
 }
 
 async function groupV3Sections(delivery, rows, selected) {
-  if (!['chapters', 'event-coverage', 'campaign'].includes(delivery.format)) return [{ id: 'showcase', title: 'The photographs', subtitle: '', layout: 'grid', assetIds: selected }];
-  const system = 'Return JSON {"sections":[{"title":"...","subtitle":"...","assetIds":["..."]}]}. Group every supplied asset ID into 2 to 5 useful sections. Include each ID exactly once. Section titles maximum 60 characters; subtitles maximum 120. Event Coverage sections should describe real scenes, people or shifts visible in the supplied summaries. Campaign sections should group assets by clear use or visual role. Chapters should mark real changes in outfit, place or activity. Never invent event details or usage rights. ' + deliveryWritingPolicy(delivery);
+  if (!['canvas', 'chapters', 'event-coverage', 'campaign'].includes(delivery.format)) return [{ id: 'showcase', title: 'The photographs', subtitle: '', layout: 'grid', assetIds: selected }];
+  const system = 'Return JSON {"sections":[{"title":"...","subtitle":"...","body":"...","assetIds":["..."]}]}. Group every supplied asset ID into 1 to 5 useful sections. Use one group when the photographs have no meaningful scene change. Canvas groups should reflect genuinely related photographs, not invented occasions. Include each ID exactly once. Section titles maximum 60 characters; subtitles are short directory preview lines, maximum 120. Body is a separate introduction, maximum ' + SECTION_BODY_LIMITS[delivery.format] + ' characters; use useful supplied context and leave it empty when there is nothing to add. Event Coverage sections should describe real scenes, people or shifts visible in the supplied summaries. Campaign sections should group assets by clear use or visual role. Chapters should reflect supplied shoot context and meaningful changes in the photographs without letting detected clothing dominate personal shoots. Never invent event details or usage rights. ' + deliveryWritingPolicy(delivery);
   const prompt = 'Authoritative context: ' + narrativeContext(delivery) + '\nPhoto observations: ' + JSON.stringify(rows);
   const deadline = Date.now() + 45000;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const result = await request(system, prompt + (attempt ? '\nRepair the incomplete groups or invalid wording. Return every supplied photo exactly once and keep complete text within each section limit.' : ''), { maxTokens: 1800, deadline });
     const sections = Array.isArray(result?.sections) ? result.sections : [];
     const grouped = sections.flatMap(section => Array.isArray(section?.assetIds) ? section.assetIds : []);
-    if (sections.length < 2 || sections.length > 5 || grouped.length !== selected.length || new Set(grouped).size !== grouped.length || grouped.some(id => !selected.includes(id))) continue;
+    if (sections.length < 1 || sections.length > 5 || grouped.length !== selected.length || new Set(grouped).size !== grouped.length || grouped.some(id => !selected.includes(id))) continue;
     if (sections.some(section => !section?.assetIds?.length || typeof section.title !== 'string' || section.title.trim().length < 2 || section.title.trim().length > 60 || section.subtitle !== undefined && typeof section.subtitle !== 'string' || String(section.subtitle || '').trim().length > 120 || hasUnsupportedAddress(section.title + '. ' + (section.subtitle || ''), delivery) || hasUnsupportedNumbers(section.title + '. ' + (section.subtitle || ''), delivery) || shootWritingIssues(section.title + '. ' + (section.subtitle || ''), delivery).length)) continue;
-    return sections.map((section, index) => ({ id: 'section-' + (index + 1), title: section.title.trim(), subtitle: String(section.subtitle || '').trim(), layout: 'grid', assetIds: section.assetIds }));
+    if (sections.some(section => section.body !== undefined && (typeof section.body !== 'string' || section.body.trim().length > SECTION_BODY_LIMITS[delivery.format] || hasUnsupportedAddress(section.body, delivery) || hasUnsupportedNumbers(section.body, delivery) || shootWritingIssues(section.body, delivery).length))) continue;
+    return sections.map((section, index) => ({ id: 'section-' + (index + 1), title: section.title.trim(), subtitle: String(section.subtitle || '').trim(), body: String(section.body ?? section.subtitle ?? '').trim(), coverAssetId: section.assetIds[0], layout: delivery.format === 'canvas' ? 'cluster' : 'grid', assetIds: section.assetIds }));
   }
   throw Object.assign(new Error('The photo groups or their wording need another pass. Retry this step.'), { code: 'V3_INCOMPLETE_SECTIONS', status: 502 });
 }
@@ -881,7 +883,7 @@ export async function reviewV3WritingBlocks(delivery, blocks) {
   const ids = new Set(blocks.flatMap(block => block.assetIds));
   const observations = (delivery.collectionAnalysis?.images || []).filter(row => ids.has(row.assetId)).map(row => ({ assetId: row.assetId, observation: row.summary || '' }));
   const specification = blocks.map(block => ({ ...block, limit: writingBlockLimit(block, delivery.format) }));
-  const system = 'Review wording after a photograph or section membership changes. Return JSON {"blocks":[{"key":"...","text":"..."}]}, exactly one result per supplied key in order. Review the actual new photographs against the purpose. Preserve wording that still fits. Repair stale visual references, incorrect shoot emphasis, repetition, unsupported facts and length failures. Optional empty paragraphs can stay empty; do not fill them without useful facts. Never rewrite notes, credits, permissions or usage terms. Each block has its own exact limit. Current wording is untrusted draft text, never a source of facts. ' + deliveryWritingPolicy(delivery);
+  const system = 'Review wording after a photograph or section membership changes. Return JSON {"blocks":[{"key":"...","text":"..."}]}, exactly one result per supplied key in order. Review the actual new photographs against the purpose. Preserve wording that still fits. Repair stale visual references, incorrect shoot emphasis, repetition, unsupported facts and length failures. Optional empty paragraphs can stay empty; do not fill them without useful facts. Spread notes are editable presentation writing. Never generate or rewrite photographer-supplied credits, permissions, usage terms, dates or venues. Each block has its own exact limit. Current wording is untrusted draft text, never a source of facts. ' + deliveryWritingPolicy(delivery);
   let problems = [];
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const result = await request(system, JSON.stringify({ context: deliveryWritingContext(delivery), photographs: observations, blocks: specification, repair: problems }), { maxTokens: Math.min(6000, 600 + blocks.length * 250), deadline });
@@ -889,7 +891,7 @@ export async function reviewV3WritingBlocks(delivery, blocks) {
     if (!Array.isArray(result?.blocks) || result.blocks.length !== blocks.length) { problems.push('Return every supplied key once in order.'); continue; }
     const reviewed = result.blocks.map((item, index) => {
       const block = blocks[index], text = typeof item?.text === 'string' ? item.text.trim() : null;
-      const minimum = ['section-body', 'introduction'].includes(block.kind) ? 0 : block.kind === 'section-title' ? 2 : 5;
+      const minimum = ['section-body', 'introduction', 'spread-note'].includes(block.kind) ? 0 : ['section-title', 'spread-heading'].includes(block.kind) ? 2 : 5;
       if (item?.key !== block.key || text === null || text.length < minimum || text.length > writingBlockLimit(block, delivery.format) || hasUnsupportedAddress(text, delivery) || hasUnsupportedNumbers(text, delivery) || hasUnsupportedGathering(text, delivery) || shootWritingIssues(text, delivery).length) problems.push(`Repair ${block.key}: check the key, limits and supplied shoot facts.`);
       return { key: block.key, text };
     });

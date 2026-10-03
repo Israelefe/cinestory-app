@@ -15,14 +15,16 @@ import { NARRATION_BOOKEND_RENDER_VERSION } from '../services/narration.service.
 import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
 import { cleanDeliveryAccess } from '../utils/deliveryAccess.js';
 import { revealSchema } from '../constants/photoReveal.js';
+import { presentationSchema, sectionWritingSchema, presentationIssues, sectionIssues, PRESENTATION_KEYS } from '../constants/deliveryPresentation.js';
 
 const details = z.object({ kind: z.enum(['showcase', 'pinboard', 'photoswap']).default('showcase'), clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().max(80).default(''), purpose: z.string().trim().max(3000).default(''), title: z.string().trim().max(120).default(''), originalPurpose: z.string().trim().max(3000).default(''), clarificationAnswers: z.array(z.object({ question: z.string().trim().max(180), answer: z.string().trim().min(1).max(300) }).strict()).max(3).default([]) }).strict();
 const formatInput = z.object({ format: z.enum(Object.keys(V3_FORMATS)) }).strict();
 const idList = z.array(z.string().uuid()).max(24);
-const showcaseInput = z.object({ assetIds: idList, frames: z.array(z.object({ assetId: z.string().uuid(), headline: z.string().trim().max(70).default(''), caption: z.string().trim().min(5).max(320), imageFit: editorialFrameFields.imageFit.unwrap().optional(), focalPoint: editorialFrameFields.focalPoint.unwrap().optional() }).strict()).max(24), title: z.string().trim().min(2).max(80), openingLine: z.string().trim().min(5).max(300), closingLine: z.string().trim().min(5).max(280), openingAssetId: z.string().uuid(), closingAssetId: z.string().uuid(), editorial: editorialSchema.optional(), writingOverrides: writingOverridesSchema.optional(), sectionWriting: z.array(z.object({ id: z.string().regex(/^[a-z0-9-]{1,60}$/), title: z.string().trim().max(60), subtitle: z.string().trim().max(120), assetIds: idList.min(1).optional() }).strict()).max(5).optional() }).strict();
-const themeInput = z.object({ palette: z.object({ background: z.string().regex(/^#[0-9a-f]{6}$/i), surface: z.string().regex(/^#[0-9a-f]{6}$/i), text: z.string().regex(/^#[0-9a-f]{6}$/i), accent: z.string().regex(/^#[0-9a-f]{6}$/i) }).strict(), typography: z.object({ display: z.string(), body: z.string() }).strict(), reveal: revealSchema.optional() }).strict();
+const showcaseInput = z.object({ assetIds: idList, frames: z.array(z.object({ assetId: z.string().uuid(), headline: z.string().trim().max(70).default(''), caption: z.string().trim().min(5).max(320), imageFit: editorialFrameFields.imageFit.unwrap().optional(), focalPoint: editorialFrameFields.focalPoint.unwrap().optional() }).strict()).max(24), title: z.string().trim().min(2).max(80), openingLine: z.string().trim().min(5).max(300), closingLine: z.string().trim().min(5).max(280), openingAssetId: z.string().uuid(), closingAssetId: z.string().uuid(), editorial: editorialSchema.optional(), writingOverrides: writingOverridesSchema.optional(), sectionWriting: sectionWritingSchema.optional(), presentation: presentationSchema.optional() }).strict();
+const themeInput = z.object({ palette: z.object({ background: z.string().regex(/^#[0-9a-f]{6}$/i), surface: z.string().regex(/^#[0-9a-f]{6}$/i), text: z.string().regex(/^#[0-9a-f]{6}$/i), accent: z.string().regex(/^#[0-9a-f]{6}$/i) }).strict(), typography: z.object({ display: z.string(), body: z.string() }).strict(), reveal: revealSchema.optional(), presentation: presentationSchema.optional(), usageTerms: z.string().trim().max(1000).optional() }).strict();
 const pinboardInput = z.object({
   title: z.string().trim().min(2).max(120),
+  description: z.string().trim().max(240).optional(),
   useStandardBoard: z.boolean().default(false),
   allowClientLayouts: z.boolean().default(false),
   selectedLayoutId: z.enum(['balanced', 'moments', 'colour-flow']),
@@ -205,7 +207,10 @@ export async function v3Showcase(req, res) {
     if (!assetIds.has(input.data.openingAssetId) || !assetIds.has(input.data.closingAssetId)) return res.status(400).json({ success: false, message: 'Choose photographs from this delivery for the opening and closing.' });
     if (delivery.format === 'photo-story' && input.data.frames.some(frame => frame.caption.length > 150)) return res.status(400).json({ success: false, message: 'Photo Story captions must fit within 150 characters.' });
     const previous = delivery.creativeDirection;
-    if (input.data.sectionWriting && (delivery.format === 'editorial' || new Set(input.data.sectionWriting.map(section => section.id)).size !== input.data.sectionWriting.length || input.data.sectionWriting.some(section => !previous.sections?.some(saved => saved.id === section.id)))) return res.status(400).json({ success: false, message: 'Edit headings only for sections in this delivery.' });
+    const structureError = sectionIssues(input.data.sectionWriting, delivery.format, input.data.assetIds);
+    if (structureError) return res.status(400).json({ success: false, message: structureError });
+    if (input.data.presentation) { const problem = presentationIssues(input.data.presentation, delivery.format, input.data.assetIds); if (problem) return res.status(400).json({ success: false, message: problem }); const { format, ...settings } = input.data.presentation; delivery.formatConfig = { ...delivery.formatConfig, [PRESENTATION_KEYS[format]]: settings }; delivery.markModified('formatConfig'); }
+    if (input.data.sectionWriting && (delivery.format === 'editorial' || new Set(input.data.sectionWriting.map(section => section.id)).size !== input.data.sectionWriting.length || !['canvas', 'chapters', 'event-coverage', 'campaign'].includes(delivery.format) && input.data.sectionWriting.some(section => !previous.sections?.some(saved => saved.id === section.id)))) return res.status(400).json({ success: false, message: 'Edit headings only for sections in this delivery.' });
     const groupedWriting = input.data.sectionWriting?.some(section => section.assetIds);
     if (groupedWriting) {
       const groupedIds = input.data.sectionWriting.flatMap(section => section.assetIds || []);
@@ -217,7 +222,7 @@ export async function v3Showcase(req, res) {
     if (!sections.length) sections.push({ id: 'showcase', title: 'The photographs', subtitle: '', layout: 'grid', assetIds: [] });
     sections[0].assetIds.push(...input.data.assetIds.filter(id => !assigned.has(id)));
     if (groupedWriting) sections.splice(0, sections.length, ...input.data.sectionWriting.map(writing => ({ ...previous.sections.find(section => section.id === writing.id), ...writing })));
-    for (const section of sections) { const writing = input.data.sectionWriting?.find(item => item.id === section.id); if (writing) { section.title = writing.title; section.subtitle = writing.subtitle; } }
+    for (const section of sections) { const writing = input.data.sectionWriting?.find(item => item.id === section.id); if (writing) { section.title = writing.title; section.subtitle = writing.subtitle; if (writing.body !== undefined) section.body = writing.body; if (writing.layout) section.layout = writing.layout; if (writing.coverAssetId) section.coverAssetId = writing.coverAssetId; } }
     const editorial = delivery.format === 'editorial' ? input.data.editorial || reconcileSavedEditorial(previous.editorial, input.data.assetIds, input.data.frames) : undefined;
     if (input.data.writingOverrides) previous.writingOverrides = input.data.writingOverrides;
     delivery.creativeDirection = { ...previous, title: input.data.title, openingLine: input.data.openingLine, closingLine: input.data.closingLine, frames: input.data.assetIds.map(id => { const frame = input.data.frames.find(frame => frame.assetId === id), savedFrame = previous.frames?.find(item => item.assetId === id); return { assetId: id, headline: frame.headline, caption: frame.caption, textAnimation: delivery.format === 'photo-story' ? 'typewriter' : 'word_fade_up', ...(delivery.format === 'editorial' ? { imageFit: frame.imageFit || savedFrame?.imageFit || 'contain', focalPoint: frame.focalPoint || savedFrame?.focalPoint || '50% 50%' } : {}) }; }), assetOrder: input.data.assetIds, sections: editorial?.sections || sections, ...(editorial ? { editorial } : {}) };
@@ -362,6 +367,8 @@ export async function v3Theme(req, res) {
     if (weak.length) return res.status(400).json({ success: false, code: 'V3_THEME_CONTRAST', field: 'palette.text', message: `Text is hard to read on the ${weak.join(' and ')}. Change the text colour or use Fix text contrast.` });
     const delivery = await owned(req);
     if (input.data.reveal && delivery?.format !== 'photo-reveal') return res.status(400).json({ success: false, message: 'Reveal settings are only available for Photo Reveal.' });
+    if (input.data.presentation && input.data.presentation.format !== delivery?.format) return res.status(400).json({ success: false, message: 'These presentation settings belong to another format.' });
+    if (input.data.usageTerms !== undefined && delivery?.format !== 'campaign') return res.status(400).json({ success: false, message: 'Usage terms belong to Campaign Delivery.' });
     if (delivery?.kind === 'pinboard') {
       if (!editable(delivery) || !delivery.pinboard) return res.status(409).json({ success: false, message: 'Analyse this GridBoard before choosing its design.' });
       delivery.pinboard = { ...delivery.pinboard, palette: input.data.palette, typography: input.data.typography };
@@ -369,6 +376,8 @@ export async function v3Theme(req, res) {
       return res.json({ success: true, data: delivery });
     }
     if (!editable(delivery) || !delivery.creativeDirection) return res.status(409).json({ success: false, message: 'Finish the showcase first.' });
+    if (input.data.presentation) { const problem = presentationIssues(input.data.presentation, delivery.format, delivery.curatedAssetIds || []); if (problem) return res.status(400).json({ success: false, message: problem }); const { format, ...settings } = input.data.presentation; delivery.formatConfig = { ...delivery.formatConfig, [PRESENTATION_KEYS[format]]: settings }; delivery.markModified('formatConfig'); }
+    if (input.data.usageTerms !== undefined) { if (delivery.format !== 'campaign') return res.status(400).json({ success: false, message: 'Usage terms belong to Campaign Delivery.' }); delivery.formatConfig = { ...delivery.formatConfig, usageTerms: input.data.usageTerms }; delivery.markModified('formatConfig'); }
     delivery.creativeDirection = { ...delivery.creativeDirection, palette: input.data.palette, typography: input.data.typography, ...(input.data.reveal ? { reveal: input.data.reveal } : {}) };
     invalidateApproval(delivery); saveV3(delivery, { step: 'design' }); delivery.markModified('creativeDirection'); await delivery.save();
     res.json({ success: true, data: delivery });
