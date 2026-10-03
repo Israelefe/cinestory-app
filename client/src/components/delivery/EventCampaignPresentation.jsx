@@ -1,0 +1,40 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { Clipboard, Download, FileText } from 'lucide-react';
+import { toast } from 'react-toastify';
+import { Photo } from '../PublicDesign.jsx';
+import ClientGallery from './ClientGallery.jsx';
+import { useClosingGallery } from '../../utils/useClosingGallery.js';
+import { presentationSections, presentationSettings, numberLabel } from '../../utils/deliveryPresentation.js';
+import { Arrival, PhotoCard, PresentationEnding, PresentationShell, usePresentation } from './PresentationShell.jsx';
+import './EventCampaignPresentation.css';
+
+function useActiveScene(sections, identity) {
+  const [active, setActive] = useState(sections[0]?.id);
+  useEffect(() => { setActive(sections[0]?.id); if (!window.IntersectionObserver) return; const observer = new IntersectionObserver(entries => { const visible = entries.filter(entry => entry.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top); if (visible[0]) setActive(visible[0].target.dataset.scene); }, { rootMargin: '-10% 0px -55% 0px', threshold: 0 }); sections.forEach(section => { const node = document.getElementById(`presentation-${section.id}`); if (node) observer.observe(node); }); return () => observer.disconnect(); }, [identity, sections.map(section => section.id).join('|')]);
+  return active;
+}
+function originalName(photo) { return photo.originalFilename || `Photograph ${photo.assetId}`; }
+async function copyName(photo) { try { await navigator.clipboard.writeText(originalName(photo)); toast.success('Filename copied.'); } catch { toast.info('Select the filename to copy it.'); } }
+function downloadFileList(photos, settings) {
+  const labels = new Map(settings.assetLabels.map(label => [label.assetId, label]));
+  const lines = photos.map(photo => { const label = labels.get(photo.assetId); return [originalName(photo), label?.label, label?.role, photo.width && photo.height ? `${photo.width} × ${photo.height} px` : '', settings.fileSets.filter(set => set.assetIds.includes(photo.assetId)).map(set => set.title).join(', ')].filter(Boolean).join(' | '); });
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' }), url = URL.createObjectURL(blob), link = document.createElement('a'); link.href = url; link.download = 'photograph-file-list.txt'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function ScrollCollection({ delivery, galleryProps, campaign, demo }) {
+  const context = usePresentation(delivery, galleryProps, demo), [gallery, setGallery] = useState(null);
+  const ids = context.photos.map(photo => photo.assetId), sections = useMemo(() => presentationSections(delivery, ids), [delivery, ids.join('|')]), settings = presentationSettings(delivery, ids);
+  const { galleryUnlocked, closingRef } = useClosingGallery(context.identity), active = useActiveScene(sections, context.identity);
+  const highlights = settings.highlightAssetIds.map(id => context.photos.find(photo => photo.assetId === id)).filter(Boolean);
+  const labels = new Map((settings.assetLabels || []).map(label => [label.assetId, label]));
+  const openPhoto = photo => setGallery(photo.assetId), openGallery = () => { if (galleryUnlocked) setGallery('all'); };
+  const date = settings.eventDate ? new Intl.DateTimeFormat('en-NG', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${settings.eventDate}T12:00:00Z`)) : '';
+  return <PresentationShell delivery={delivery} format={campaign ? 'Campaign Delivery' : 'Event Coverage'} theme={context.theme} onGallery={galleryUnlocked ? openGallery : undefined} className={campaign ? 'pv-campaign' : 'pv-event'}><main className="pv-main">
+    <Arrival className="pv-scroll-opening"><div className="pv-intro"><span className="pv-eyebrow">{campaign ? 'THE CAMPAIGN COLLECTION' : 'THE EVENT COLLECTION'}</span><h1>{delivery.title}</h1><p>{delivery.creativeDirection?.openingLine}</p><div className="pv-intro-meta"><span>{context.photos.length} showcase photographs</span><span>{context.all.length} files in the full collection</span><span>{sections.length} {campaign ? 'sets' : 'scenes'}</span>{date && <span>{date}</span>}{settings.venue && <span>{settings.venue}</span>}</div>{!campaign && <a className="pv-primary" href={highlights.length ? "#presentation-highlights" : `#presentation-${sections[0]?.id}`}>{highlights.length ? "View the highlights" : "View the photographs"}</a>}</div>{context.opening && <button onClick={() => openPhoto(context.opening)} aria-label="Open cover photograph" className="pv-opening-photo"><Photo url={context.opening.url} thumbnailUrl={context.opening.thumbnailUrl} alt={context.opening.alt} eager /></button>}</Arrival>
+    {highlights.length > 0 && <section className="pv-highlights" id="presentation-highlights"><div className="pv-section-heading"><span>01</span><h2>Highlights</h2></div><div className="pv-highlight-photos">{highlights.map((photo, index) => <Arrival key={photo.assetId} index={index}><PhotoCard photo={photo} index={context.photos.indexOf(photo)} onOpen={openPhoto} /></Arrival>)}</div></section>}
+    <nav className="pv-rail pv-scene-rail" aria-label={campaign ? 'Campaign sets' : 'Event scenes'}>{sections.map((section, index) => <a key={section.id} href={`#presentation-${section.id}`} aria-current={active === section.id ? 'location' : undefined}>{numberLabel(index + 1)}<span>{section.title}</span></a>)}</nav>
+    {sections.map((section, index) => <section className={`pv-scene layout-${section.layout}`} key={section.id} data-scene={section.id} id={`presentation-${section.id}`}><Arrival className="pv-section-heading"><span>{numberLabel(index + 1)}</span><div><h2>{section.title}</h2>{(campaign || settings.showSceneNotes) && section.body && <p>{section.body}</p>}</div></Arrival><div className="pv-scene-photos">{[section.coverAssetId, ...section.assetIds.filter(id => id !== section.coverAssetId)].filter(Boolean).map((id, at) => { const photo = context.photos.find(item => item.assetId === id), label = labels.get(id); return <Arrival key={id} index={at}><PhotoCard photo={photo} index={context.photos.indexOf(photo)} onOpen={openPhoto} />{campaign && <div className="pv-file-label">{label?.label && <strong>{label.label}</strong>}{label?.role && label.role !== 'other' && <span className="pv-eyebrow">{label.role.replace('-', ' ')}</span>}<span className="pv-filename">{originalName(photo)}</span>{photo.width > 0 && photo.height > 0 && <span>{photo.width} × {photo.height} px</span>}<button onClick={() => copyName(photo)} aria-label={`Copy filename ${originalName(photo)}`}><Clipboard size={16} />Copy filename</button></div>}</Arrival>; })}</div></section>)}
+    <PresentationEnding delivery={delivery} photo={context.closing} closingRef={closingRef} unlocked={galleryUnlocked} onGallery={openGallery}>{campaign && <div className="pv-handoff"><div><FileText size={20} /><h3>Usage terms</h3><p>{delivery.formatConfig?.usageTerms || 'Ask the studio about usage terms.'}</p></div>{settings.fileSets.length > 0 && <div><h3>File sets</h3><ul>{settings.fileSets.map(set => <li key={set.id}><strong>{set.title}</strong><span>{set.assetIds.length} photographs</span></li>)}</ul></div>}{galleryUnlocked && (delivery.access?.allowDownloadAll !== false || delivery.access?.allowIndividualDownloads !== false) && <button onClick={() => downloadFileList(context.all, settings)}><Download size={18} />Save file list</button>}</div>}</PresentationEnding>
+  </main>{gallery && <ClientGallery photos={context.all} title={delivery.title} delivery={delivery} initialIndex={gallery === 'all' ? null : context.all.findIndex(photo => photo.assetId === gallery)} singlePhoto={!galleryUnlocked} onClose={() => setGallery(null)} {...context.galleryProps} />}</PresentationShell>;
+}
+export function EventCoverageViewer({ delivery = {}, demo = false, ...props }) { return <ScrollCollection delivery={delivery} demo={demo} {...props} campaign={false} />; }
+export function CampaignDeliveryViewer({ delivery = {}, demo = false, ...props }) { return <ScrollCollection delivery={delivery} demo={demo} {...props} campaign />; }
