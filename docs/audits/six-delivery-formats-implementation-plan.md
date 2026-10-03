@@ -6,9 +6,31 @@ This document is the proposed implementation specification for the six remaining
 
 ### How to use this document
 
-Implement sections 3–11 in the order in section 12. All requirements in those sections belong to the proposed main scope unless explicitly marked deferred. Do not substitute a generic gallery for a format's presentation. Do not implement a feature only in its demo. Every saved option must affect the creator preview and published client view identically.
+Implement the genuinely new work and identified extensions in sections 3–11 in the order in section 12. Section 0 takes precedence: existing completed behavior is a preservation requirement, not another implementation task. Do not substitute a generic gallery for a format's presentation. Do not implement a feature only in its demo. Every saved option must affect the creator preview and published client view identically.
 
 The workspace contains unrelated edits, including billing and Photo Swap work. Record the initial status, preserve those edits, and stage only files or hunks owned by this implementation. Do not commit another agent's work.
+
+## 0. Completed work excluded from rebuilding — checked 3 October 2026
+
+Compared this plan with the current source and earlier commits. This is a scope correction, not a claim that every existing feature was retested live. In the remaining sections, a description of an existing feature specifies the behavior that must survive the redesign. It does not authorize rebuilding that feature.
+
+| Area | Already implemented: preserve and reuse | Actual remaining work |
+| --- | --- | --- |
+| Caption/headline alignment | Shared shoot-type, purpose and format policy; regeneration, bounded repair, manual protection, suggestions and Undo (`3b2d8b6`; `deliveryWriting.js`, `deliveryWritingChanges.js`) | Associations/validation for new section bodies and Album spread notes; Canvas grouping; copy for changed sample records. No rewriting the existing caption system. |
+| Selected fonts | Shared heading/body/UI font mapping and propagation through all current viewers and gallery (`c0068a9`; `deliveryTypography.js`, `DeliveryTypography.css`) | Apply those existing variables to redesigned elements. Fix any local CSS override; no second font standardization. |
+| Shared gallery | Designed grid/lightbox, numbering, captions, favourites, downloads, swipe, keyboard, modal focus, grid scroll/focus return and neighbour preloading (`141bc71`, `c0068a9`, `7a3f103`; `ClientGallery.jsx`) | Preserve the gallery. Connect new format labels/groups where needed; image-retention changes only if a specific missing behavior is demonstrated. No gallery redesign in this phase. |
+| Full-gallery completion | Chapters all-room endings; Album all displayed spreads plus last page; Event/Campaign observed closing/handoff; Canvas/GridBoard immediate access (`7a3f103`) | Preserve policy and existing hook. Album alone needs viewed-state readiness/visibility for new tall spreads and sticky completion while revisiting. Do not rebuild the gates for the other formats. |
+| Single-photo early viewing | `ClientGallery.singlePhoto` restricts early enlargement to the clicked asset (`7a3f103`) | Retain existing callbacks/guards when moving components; no second restricted-gallery implementation. |
+| GridBoard collection/features | Three validated full-set arrangements, moment editing, colour filters, Similar Shot, scoped links, slideshow setup, speeds, navigation and Status cards already exist | Reorganize controls and improve the specific lightbox/preview gaps. Do not reimplement analysis, filtering, Status export or arrangement generation. |
+| Image loading | Reveal has decoded-image caching, retained image and stale-request protection (`8955ab5`); shared gallery preloads neighbours; GridBoard slideshow caches/preloads and advances only when the requested image is loaded (`b769aee`) | Add missing readiness to Album/Canvas focus and other redesigned presentation surfaces. Keep established loaders. GridBoard lightbox may gain neighbour readiness; its slideshow is not rebuilt. |
+| Music | Smooth looping is shared; GridBoard already has slideshow-only music, fades, pause/resume and failure handling; Album uses the loop helper (`b769aee`; `smoothSoundtrackLoop.js`) | Preserve audio behavior while layouts change. No new loop engine, audio steps, voice or Hannah regeneration. |
+| Motion | Shared gallery and GridBoard already have reveals, transitions, tactile controls and reduced-motion treatment | Tune redesigned format surfaces. Do not replace working gallery/slideshow motion to match arbitrary new timings. |
+| Colour/branding | Creator/server text-contrast validation, GridBoard readable/photo-led palettes, shared brand mark and studio initials, and earlier Story/Reveal contrast fixes exist | Fix residual hardcoded colours on the six remaining format surfaces, including Album paper. Reuse helpers; no palette-selection or branding-system rebuild. |
+| Demo/preview rendering | Demo and client already use the same viewer components; creation uses those viewers and the shared branding decision | Correct mismatched demo record shapes/counts and GridBoard controls hidden in preview. Renderer extraction is a code move, not creation of a new parity system. |
+| Creation/access/publishing | Upload recovery, draft media merge, preview sizing/dialog focus, PIN/expiry handling, approval revisions and publish recovery already have implementations and earlier fixes | Persist/validate new presentation settings within existing flow. Do not rebuild the wizard, upload pipeline, access gate or publishing. |
+| Download choices | Access toggles and enforcement exist; however current individual endpoints allow either individual or bulk permission while the shared gallery checks the individual flag separately | This discrepancy remains an identified correction. Keep its scope explicit and test all permission combinations; do not describe the whole access system as unfinished. |
+
+Before editing an existing subsystem, identify the specific remaining gap in this table. Prefer a small extension or integration. If current code already meets a requirement, preserve it and perform only appropriate regression checks. Do not extract or rewrite completed systems merely to make the file organization uniform.
 
 ## 1. Decisions to preserve
 
@@ -56,6 +78,8 @@ Visual checks confirmed very small supporting labels, captions over photos in se
 
 Use shared delivery tokens; keep each format's composition distinct.
 
+These sizes guide the new format layouts. Existing compliant gallery/control styles do not need to be replaced. The font-selection and propagation system already exists; this section does not add it again.
+
 | Element | Required treatment |
 | --- | --- |
 | Outer padding | 16px at 320–639px; 24px at 640–767px; 32px at 768–1023px; 48px above that |
@@ -88,6 +112,8 @@ Keep the shared gallery's existing standard chrome unless its contrast needs fix
 
 Normal motion must feel deliberate and responsive:
 
+The timings below apply to new or redesigned format surfaces. Existing shared-gallery and GridBoard slideshow motion is already implemented and stays intact unless an identified local defect needs fixing.
+
 - Buttons: 160–200ms feedback; hover lift 2px; active scale 0.98.
 - Section arrival: opacity 0→1, translateY 16→0, 450ms, easing `[0.22, 1, 0.36, 1]`; viewport once, amount 0.15.
 - Photo/card stagger: 45ms per visible item, capped at 225ms. Do not multiply delay by total collection index.
@@ -101,20 +127,22 @@ Reduced motion disables parallax, photo drift, repeated zoom and travel effects.
 
 ### 3.4 Image readiness and mobile loading
 
-Reuse or extract the recent Reveal preloading approach rather than inventing another incompatible loader. Introduce a shared helper with a small decoded-image cache:
+Reveal, shared-gallery neighbour preloading and GridBoard slideshow readiness already work as described in section 0. Preserve those implementations. Reuse their patterns for missing readiness on the new format surfaces; introduce a small helper for those surfaces only if it avoids duplication. Do not require migration of the already working loaders. The following describes the target behavior, with code changes only where a gap exists:
 
 1. Load the current display-sized image first. Retain its thumbnail while it decodes.
-2. Preload the next two presentation images and previous one; Canvas/GridBoard preload only immediate focus/lightbox neighbours. Cap background concurrency at two.
+2. For new page/focus loading, preload the next two presentation images and previous one; Canvas/GridBoard lightboxes preload only immediate neighbours. Cap new background concurrency at two. Preserve GridBoard's existing slideshow preload behavior.
 3. Use responsive display derivatives for browsing. Reserve original files for explicit downloads.
 4. On Save-Data or a slow connection preload only the next image. Abort or disregard obsolete requests after photo, format or delivery changes.
 5. Keep the current photo visible while the requested next image loads. Show a quiet loading indicator after 300ms. Never show the new caption against the previous photo.
-6. Pause timed slideshow advancement while the next photo is unready. Resume only when the displayed asset matches the requested asset.
+6. Preserve GridBoard's existing slideshow advancement guard: its timer runs only when the displayed asset matches the requested visit/asset. Do not implement this guard a second time.
 7. On failure keep the current view and offer Retry. A failed asset must not silently count as viewed. Give an explicit Continue without this photo recovery so a broken file cannot trap the client; record that exception in local presentation state.
 8. Lazy-load below-the-fold media and reserve aspect ratio. Do not fetch all 500 originals or preload every full-resolution image.
 
 ## 4. Shared architecture, creation and writing contract
 
 ### 4.1 Renderer ownership
+
+Shared demo/client rendering already exists. The extraction below moves existing components/helpers so the production code no longer depends on the demo page. It must preserve their behavior and registry interface; do not build a parallel viewer or preview runtime.
 
 Extract production Canvas, Chapters and Album viewers from `pages/FormatDemo.jsx` into `components/delivery/CanvasViewer.jsx`, `ChaptersViewer.jsx` and `AlbumViewer.jsx`, each with its own stylesheet. Move common photo normalization, theme and motion helpers into delivery utilities. Production viewers must not depend on demo fixtures or use a sample person's name as fallback.
 
@@ -159,6 +187,8 @@ All asset references must belong to the owned delivery and permitted presentatio
 For old deliveries, normalize structure at read time into safe defaults. Preserve old text and asset order. Missing optional settings use the defaults in each format section. Malformed references are discarded with a non-crashing fallback. Never populate an empty real delivery with demo photos.
 
 ### 4.3 Active V3 editor
+
+Extend the existing creation flow. Its upload recovery, preview branding/sizing, access, approval and publishing fixes are completed work. Keep GridBoard's existing layout, group, font, colour, music and access controls; reorganizing their placement does not mean replacing their logic.
 
 Add `DeliveryStructureEditor.jsx` for Canvas/Chapters/Event/Campaign and `AlbumEditor.jsx` for spreads. Mount structure editing in Showcase and presentation controls in Design. Support keyboard/touch move buttons as well as any drag interaction.
 
@@ -211,7 +241,7 @@ A spacious photo wall that invites free exploration. The wall must still feel li
 8. Selecting a tile opens a large image with its caption beneath and previous/next within the showcase; preserve the opening tile's scroll position and focus on return. Use shared gallery/lightbox infrastructure where it supports this without adding completion gating.
 9. Closing note is short, with `Open full gallery`; no forced ending or unlock message.
 
-New features in scope: group notes, direct group navigation, persistent scroll/focus return, spatial/ordered arrangement choice. Defaults: spatial arrangement, group notes shown. Creator must choose group covers and adjust grouping. Motion: bounded group stagger, modal shared transition, optional fine-pointer depth; no continuously moving wall.
+Existing group notes/navigation, pointer depth and Canvas dialog focus handling are preserved, then adapted to the new composition. New work: generated/editable grouping that matches the V3 creation flow, spatial/ordered arrangement choice, readable caption placement and missing neighbour readiness in the focus view. Defaults: spatial arrangement, group notes shown. Creator must choose group covers and adjust grouping. Motion: bounded group stagger and existing focus transition adapted to the new layout; no continuously moving wall.
 
 Acceptance: 8, 12 and 18-photo layouts retain Canvas identity; no covered caption or unreachable tile; one group works; real delivery with no client name has neutral copy; gallery is available before exploring.
 
@@ -230,6 +260,8 @@ Choose a chapter, see its complete photographs, return or move to another chapte
 7. Completion remains reaching each room's footer. Opening a cover or starting animation does not mark it viewed. After all chapters have been explored, show the full-gallery action in directory/header/footer. Keep individual-photo enlargement restricted before completion.
 8. Offer `Continue with an unviewed chapter` when returning to a partly explored directory. It chooses the first unviewed chapter in saved order; it does not force a linear order.
 9. Save room scroll position per chapter within the current presentation. Back restores directory position. Transition focus to room heading on entry and return to originating cover on exit.
+
+Chapter choice, Viewed indicators, footer-based exploration tracking, gallery unlocking and restricted early enlargement already exist. Preserve their logic; new work is adaptive complete rooms, separate body text, new creator controls and room/directory position restoration.
 
 Creator: edit title, subtitle, body, cover, photo membership/order and room layout; default directory `covers`, captions shown. Remove active silent-format narration controls; retain legacy compatibility only where it cannot activate forbidden audio.
 
@@ -255,7 +287,7 @@ A composed album with varied, editable spreads, readable paper typography and re
 10. Closing uses supplied closing photo/note, `View full gallery` and `Read again`. If pages remain unseen, show `You have N pages left` plus `Go to the next unread page`; do not expose the full gallery yet.
 11. Music begins from the Open album interaction, follows current smooth-loop handling, has visible sound control, survives page changes and pauses/fades on close. Playback failure must not stop album reading. Preserve the current server music requirement.
 
-New features: spread editor, page overview, next-unread-page action, stable local resume. Resume storage contains only delivery identity/revision and page/visited IDs; no PIN, private URLs or client text. Changed spread membership invalidates saved completion. `Read again` resets the reading run deliberately.
+Existing cover, page counters, Previous/Next, keyboard navigation, swipe, music loop and all-spreads gate remain. Extend the existing swipe handler to distinguish vertical scrolling, and the existing gate to wait for photo readiness/visibility; do not replace them wholesale. New features: spread editor, page overview, next-unread-page action, stable local resume and a dedicated Read again action. Resume storage contains only delivery identity/revision and page/visited IDs; no PIN, private URLs or client text. Changed spread membership invalidates saved completion. `Read again` resets the reading run deliberately.
 
 Acceptance: 6/9/16 showcase photos each appear exactly once in body spreads; covers do not substitute for body coverage; mobile stacked pages remain readable; seeking to end cannot unlock; slow images cannot falsely complete; soundtrack does not restart every page.
 
@@ -277,7 +309,7 @@ A useful record of the event, with highlights and meaningful scenes. Clients sho
 
 Creator: edit scenes/notes/covers/order/layout, choose highlights, optionally supply event date and venue. Defaults: notes shown, highlight count up to four unless changed. Metadata fields are optional and omitted when absent.
 
-New features: active scene rail, highlight selection, optional factual event details, return to exact scene/photo. No face recognition or invented programme schedule.
+Existing scene groups/anchors, highlight display, singleton enlargement and closing-based gallery gate remain. New features: active scene tracking, creator-selected highlights, optional factual event details and return to exact scene/photo. Rework the layout and remove the documented fallback/filter mismatch; do not regenerate the whole section-writing system. No face recognition or invented programme schedule.
 
 Acceptance: conference, church gathering, owambe and memorial contexts use appropriate language; scene anchors survive reorder; 10/24 showcases render completely; gallery contains all uploads; supplied metadata survives save/reopen; sticky controls do not cover scene headings.
 
@@ -298,6 +330,8 @@ Show the campaign clearly, then make the supplied final files easy for the team 
 9. Provide an optional `File list` download containing label/filename, dimensions, role and set title for currently accessible files. Produce this from the authorized public record only; include no storage identifiers, access tokens or private administrative fields. Do not call it a licence or legal agreement.
 
 Creator: set names and writing, lead/supporting membership, highlights, labels, roles and file sets; edit usage terms before final approval. Final preview includes the saved terms. No extra file type uploads or automatic exports are part of this phase.
+
+Generated Campaign sections, existing usage-terms entry/storage, handoff gate and singleton enlargement already exist. Reuse them. New work adds editable file metadata/set membership, truthful file presentation and carrying the saved terms into the final review. Do not add a second usage-terms store or rebuild rights generation; rights remain supplied text.
 
 Motion: image/set arrivals and quiet active-navigation indicator. File tools should respond immediately; no animated scanner, spinning stamp or marketing badge.
 
@@ -322,7 +356,7 @@ A beautiful complete gallery with useful tools that stay secondary to the photos
 11. Creation preview and demo show the same buttons and layout as the client. Preview handlers simulate actions without contacting real recipients or downloading client originals. Do not hide buttons with `preview` if the client would see them; show a short preview message on activation.
 12. Deep-linked photos/moments respect existing PIN, expiry and scoped sharing. On close, restore board position and active filter. Broken group IDs safely fall back to all accessible photos.
 
-New features: combined Find photos sheet, editable introduction, compact actions menu, improved lightbox accessibility and preview parity. Existing three layout choices remain a creator decision. Do not enable client layout switching merely because a legacy flag exists.
+New features: combined Find photos sheet, editable introduction and compact actions menu. Targeted extensions: lightbox focus trapping/return and neighbour readiness, plus visibility/safe simulation of actions currently hidden in creation preview. Existing filters, three layouts, Similar Shot, music, slideshow loading/timing/replay and Status-card service are preserved. Existing three layout choices remain a creator decision. Do not enable client layout switching merely because a legacy flag exists.
 
 Acceptance: 1/8/100/500 photos remain reachable, layouts contain every asset once, filters reset safely, preview controls match public controls, music only plays during slideshow, no overflow at 320px or clipping at 834px landscape.
 
@@ -330,7 +364,7 @@ Acceptance: 1/8/100/500 photos remain reachable, layouts contain every asset onc
 
 ### 11.1 Demos
 
-Build demo records in `constants/deliveryDemoFixtures.js` with `schemaVersion:3`, stable UUID asset IDs, valid showcased counts, saved section/spread settings, opening/closing IDs, palette, typography, branding and access flags. Route every demo through the same registry/viewer as published delivery. No separate demo-only scene renderer, animation, caption branch or hidden feature.
+Demo/client viewer sharing is already implemented. Build production-shaped demo records in `constants/deliveryDemoFixtures.js` with `schemaVersion:3`, stable UUID asset IDs, valid showcased counts, saved section/spread settings, opening/closing IDs, palette, typography, branding and access flags. Keep using the same existing registry/viewer; the work is correcting data/settings parity, not introducing shared rendering. No separate demo-only scene renderer, animation, caption branch or hidden feature. Do not redo the already completed Photo Story/Reveal/Editorial demo copy or Hannah narration.
 
 Current Courage/Folake/Adeyemi samples have too few distinct photos for their production bounds. Do not duplicate derivatives under new IDs or lower production limits to make them pass. Use these concrete available asset sets for the main compliant samples:
 
@@ -349,7 +383,9 @@ Demo actions may use demo-local handlers and public sample files. Creator simula
 
 Reuse `ClientGallery.jsx`; preserve typography, favourites, downloads, swipe, focus handling and `singlePhoto`. Canvas/GridBoard never receive completion gates. Album/Chapters/Event/Campaign must guard both the visible controls and the callback that opens the full gallery.
 
-Full-gallery counts and assets are based on all accessible uploads, not only the showcase. Return from gallery restores presentation state, soundtrack state and focus. Do not reset chapter progress or album page. Preload lightbox neighbours with the shared decoding helper.
+These gallery features and completion guards already exist. Preserve them when moving the presentation components. Do not schedule a gallery redesign, a second gate implementation or a second focus/scroll-return system. Only new format integrations and documented permission/readiness gaps are implementation work here.
+
+Full-gallery counts and assets are based on all accessible uploads, not only the showcase. Return from gallery preserves existing presentation state, soundtrack state and focus. Do not reset chapter progress or album page. Keep existing gallery neighbour preloading; any additional decoding/retention change requires a demonstrated gap rather than a blanket loader replacement.
 
 Completion is a presentation rule, not an authorization boundary. Server PIN/expiry/grant/download enforcement remains independent. Do not treat a local `completed` flag as permission to access private files.
 
@@ -364,15 +400,15 @@ Test all four combinations and parent-versus-grant restrictions. This is a share
 | Step | Work | Main files |
 | --- | --- | --- |
 | 1 | Record baseline; separate production renderers from demos; preserve behavior | `FormatDemo.jsx`, `viewerRegistry.jsx`, new Canvas/Chapters/Album viewer modules; `EventCampaignViewers.jsx` helper imports |
-| 2 | Shared type/contrast/motion/loading utilities and reusable shell | `deliveryTypography.js`, `DeliveryTypography.css`, `DeliveryBrandMark.jsx`, new delivery theme/image utilities; shared header rules |
+| 2 | Reuse completed type/contrast/motion/brand/loading helpers; fix only local gaps on the new format surfaces | Existing utilities and shared components as dependencies; new scoped helpers only where needed; no mandatory edits to completed helpers |
 | 3 | Strict data schemas, legacy normalization, save/approve round-trip | `server/src/controllers/deliveryV3.controller.js`, `server/src/constants/deliveryV3.js`, new format presentation constants; `Delivery.js` only if required |
 | 4 | Preserve completed caption alignment; extend existing blocks for new section/spread fields and Canvas grouping | `deliveryV3AI.service.js`, `deliveryWritingBlocks.js`, `deliveryWritingChanges.js`, `DeliveryWritingReview.jsx`; retain existing `deliveryWriting.js` policy |
 | 5 | Structure editors and complete live preview payload | `CreateDeliveryV3.jsx/.css`, new `DeliveryStructureEditor.jsx`, `AlbumEditor.jsx`; `ClientDeliveryPreview.jsx`, `PhonePresentation.jsx` only if needed for parity |
 | 6 | Canvas, then Chapters, then Album redesigns | Dedicated viewers/styles; do not continue adding unrelated global overrides to `format-demos.css` |
 | 7 | Event and Campaign redesigns plus saved metadata/file sets | `EventCampaignViewers.jsx/.css`, creator controls and schemas |
-| 8 | GridBoard tool hierarchy and preview parity | `PinboardViewer.jsx/.css`, `CreatePinboardV3.jsx/.css`, `pinboardInput`; preserve `gridboardPalette.js`, slideshow and status service behavior |
+| 8 | GridBoard tool hierarchy, description save, lightbox gaps and preview control visibility | `PinboardViewer.jsx/.css`, `CreatePinboardV3.jsx/.css`, `pinboardInput`; preserve existing filters, palette, arrangements, slideshow, music and status service behavior |
 | 9 | Valid unified demo records and copy | New `deliveryDemoFixtures.js`, `FormatDemo.jsx`, `PinboardDemo.jsx`, existing event/campaign assets |
-| 10 | Gallery/permission consistency and regressions | `ClientGallery.jsx/.css`, public download handlers in `delivery.controller.js`, existing grant/access utilities |
+| 10 | Existing gallery integration checks and targeted download-permission discrepancy correction | Public download handlers and affected viewer conditions; `ClientGallery` remains the existing dependency, not a redesign; preserve grant/access utilities |
 | 11 | Responsive, slow-network and workflow verification; scoped commits | Existing tests below plus targeted new behavioral cases |
 
 Keep changes reviewable in separate commits for foundation, each format, demos and shared permission correction. Push only implementation-owned changes under the user's standing instruction. Do not deploy or rewrite production deliveries without authorization.
