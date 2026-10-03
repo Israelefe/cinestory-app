@@ -1,18 +1,15 @@
 import React from 'react';
 import StoryViewer from '../../pages/StoryViewer.jsx';
-import { EditorialDemo, RevealDemo } from '../../pages/FormatDemo.jsx';
-import CanvasViewer from './CanvasViewer.jsx';
-import ChaptersViewer from './ChaptersViewer.jsx';
-import AlbumViewer from './AlbumViewer.jsx';
+import { AlbumDemo, CanvasDemo, ChaptersDemo, EditorialDemo, RevealDemo } from '../../pages/FormatDemo.jsx';
 import { CampaignDeliveryViewer, EventCoverageViewer } from './EventCampaignViewers.jsx';
 
 const VIEWERS = {
   'photo-story': StoryViewer,
   editorial: EditorialDemo,
   'photo-reveal': RevealDemo,
-  canvas: CanvasViewer,
-  chapters: ChaptersViewer,
-  album: AlbumViewer,
+  canvas: CanvasDemo,
+  chapters: ChaptersDemo,
+  album: AlbumDemo,
   'event-coverage': EventCoverageViewer,
   campaign: CampaignDeliveryViewer
 };

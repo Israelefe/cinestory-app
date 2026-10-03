@@ -8,14 +8,14 @@ import { v3Showcase, v3Theme, v3Pinboard } from '../src/controllers/deliveryV3.c
 import { getPhotoDownload, streamPhotoDownload, trackPhotoDownload, getGalleryDownload } from '../src/controllers/delivery.controller.js';
 import { presentationSchema, presentationIssues, sectionWritingSchema, sectionIssues, scopedPresentation } from '../src/constants/deliveryPresentation.js';
 import { presentationSettings, presentationSections, albumSpreads, suggestedSpreads, numberLabel } from '../src/constants/deliveryPresentationCore.js';
-import { planPhotoWritingChange, applyWritingReview, undoWritingChange } from '../../client/src/utils/deliveryWritingChanges.js';
 import { CANVAS_DEMO, CHAPTERS_DEMO, ALBUM_DEMO, EVENT_DEMO, CAMPAIGN_DEMO, GRIDBOARD_DEMO } from '../../client/src/constants/deliveryDemoFixtures.js';
 const fixtures=[CANVAS_DEMO,CHAPTERS_DEMO,ALBUM_DEMO,EVENT_DEMO,CAMPAIGN_DEMO];
 const response=()=>({statusCode:200,status(value){this.statusCode=value;return this;},json(value){this.body=value;return this;},cookie(){},setHeader(){},write(){return true;},end(){this.ended=true;}});
 function draft(record){return {...structuredClone(record),_id:'507f1f77bcf86cd799439011',status:'review',collectionAnalysis:{status:'ready',images:record.assets.map(asset=>({assetId:asset.assetId}))},v3:{...record.v3,approvedRevision:1},markModified(){},async save(){this.saved=true;}};}
 function owned(t,document){t.mock.method(Delivery,'findOne',query=>{assert.equal(query.userId,'owner');return document;});}
 test('paired browser/server presentation rules remain identical and numbering handles double digits',()=>{assert.equal(readFileSync(new URL('../src/constants/deliveryPresentationCore.js',import.meta.url),'utf8'),readFileSync(new URL('../../client/src/utils/deliveryPresentation.js',import.meta.url),'utf8'));assert.equal(numberLabel(12),'12');});
-for(const record of fixtures) test(`${record.format} demo follows persisted schemas, membership and bounds`,()=>{
+// Saved settings from the withdrawn redesign remain readable; these are compatibility fixtures.
+for(const record of fixtures) test(`${record.format} saved settings follow persisted schemas, membership and bounds`,()=>{
  const selected=record.curatedAssetIds,settings=presentationSchema.parse({format:record.format,...presentationSettings(record)});
  assert.equal(presentationIssues(settings,record.format,selected),'');
  if(record.format!=='album'){const sections=sectionWritingSchema.parse(presentationSections(record));assert.equal(sectionIssues(sections,record.format,selected),'');}
@@ -52,11 +52,6 @@ test('new section introductions and spreads save through Showcase without losing
   await v3Showcase({params:{id:document._id},user:{id:'owner'},body:{assetIds:record.curatedAssetIds,frames:record.creativeDirection.frames.map(({assetId,headline,caption})=>({assetId,headline,caption})),title:record.title,openingLine:record.creativeDirection.openingLine,closingLine:record.creativeDirection.closingLine,openingAssetId:record.v3.openingAssetId,closingAssetId:record.v3.closingAssetId,presentation:{format:record.format,...presentationSettings(record)},...(record.format==='chapters'?{sectionWriting:presentationSections(record)}:{})}},res);
   assert.equal(res.statusCode,200,JSON.stringify(res.body));assert.ok(document.saved);assert.deepEqual(presentationSettings(document),presentationSettings(record));
  }
-});
-test('Album photo replacement reviews only its changed spread and preserves manual notes with Undo',()=>{
- const record=ALBUM_DEMO,state={format:'album',selected:record.curatedAssetIds,headlines:{},captions:{},openingLine:'Open your album.',closingLine:'The full collection.',openingAssetId:record.v3.openingAssetId,closingAssetId:record.v3.closingAssetId,sections:[],editorial:{sections:[]},presentation:presentationSettings(record)};
- const foreign=CANVAS_DEMO.assets[0].assetId,plan=planPhotoWritingChange(state,{mode:'replace',assetId:foreign,index:0});assert.equal(plan.blocks.length,2);assert.ok(plan.blocks.every(block=>block.key.startsWith('spread:spread-1:')));
- const review=applyWritingReview(plan.next,plan.blocks,plan.blocks.map(block=>({key:block.key,text:'A revised birthday note.'})),new Set(['spread:spread-1:note']));assert.equal(review.suggestions.length,1);assert.equal(review.next.presentation.spreads[0].note,state.presentation.spreads[0].note);assert.deepEqual(undoWritingChange(review.next,state,review.next).presentation,state.presentation);
 });
 test('restricted links remove all hidden presentation references without mutating stored settings',()=>{const visible=new Set([ALBUM_DEMO.assets[1].assetId]);const before=JSON.stringify(ALBUM_DEMO.formatConfig);const scoped=scopedPresentation(ALBUM_DEMO.formatConfig,visible);assert.deepEqual(scoped.album.spreads.flatMap(spread=>spread.assetIds),[...visible]);assert.equal(scoped.album.spreads[0].layout,'single');assert.equal(JSON.stringify(ALBUM_DEMO.formatConfig),before);});
 test('GridBoard description saves and round-trips without dropping any arrangement assets',async t=>{

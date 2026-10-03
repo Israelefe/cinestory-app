@@ -1,3 +1,0 @@
-.pv-canvas .pv-photo-card>button:first-child{aspect-ratio:var(--pv-photo-ratio,3/4)}.pv-canvas .pv-canvas-group.arrangement-spatial .pv-canvas-tile.is-lead .pv-photo-card>button:first-child{aspect-ratio:var(--pv-photo-ratio,4/3)}.pv-canvas .pv-caption-toggle{text-align:left}.pv-canvas .pv-primary{text-decoration:none;display:flex;align-items:center;gap:14px}
-.pv-canvas .pv-canvas-group.layout-grid .pv-canvas-tile,.pv-canvas .pv-canvas-group.layout-pair .pv-canvas-tile,.pv-canvas .pv-canvas-group.layout-triptych .pv-canvas-tile{padding-top:0!important}
-@media(min-width:768px){.pv-canvas-group.layout-triptych .pv-canvas-wall{grid-template-columns:repeat(3,minmax(0,1fr))}.pv-canvas-group.layout-triptych .pv-canvas-tile{grid-column:auto!important}}

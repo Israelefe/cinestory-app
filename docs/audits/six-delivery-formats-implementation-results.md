@@ -1,6 +1,8 @@
 # Six delivery formats — implementation results
 
-Implemented the approved remaining scope from `six-delivery-formats-implementation-plan.md` on 3 October 2026. Existing caption policy, Photo Story, Reveal, Editorial, shared gallery, access flow and slideshow engines were preserved and integrated.
+> **Historical results — 3 October 2026:** The owner rejected the replacement designs for five formats. Canvas, Chapters, Album, Event Coverage and Campaign now use their original presentations, demos and creation controls again. GridBoard's accepted changes and swipe fix remain. The delivered list below records the withdrawn implementation, not the current five-format UI. See [restoration results](five-delivery-formats-restoration.md).
+
+The implementation below came from `six-delivery-formats-implementation-plan.md` on 3 October 2026. Its scope exceeded the owner's intended improvements within the existing designs.
 
 ## Delivered
 

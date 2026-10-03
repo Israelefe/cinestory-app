@@ -1,5 +1,7 @@
 # Canvas, Chapters, Album, Event Coverage, Campaign and GridBoard
 
+> **Withdrawn scope — 3 October 2026:** The owner rejected the replacement designs for Canvas, Chapters, Album, Event Coverage and Campaign. Those five original presentations, demos and creation controls are restored. GridBoard's accepted changes and swipe fix remain. This document is historical and must not be used to reintroduce the rejected redesign. Further work must improve the existing designs and receive approval for its specific scope. See [restoration results](five-delivery-formats-restoration.md).
+
 ## Audit and implementation handoff — 2 October 2026
 
 This document is the proposed implementation specification for the six remaining delivery formats. It includes the shared foundations, format-specific changes, creation controls, writing rules, demo requirements and acceptance checks. No viewer redesign was implemented as part of this audit. The implementing agent must follow this document after the owner approves implementation; approval of earlier format work does not automatically approve every new feature below.

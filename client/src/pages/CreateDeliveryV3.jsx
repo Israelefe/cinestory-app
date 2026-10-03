@@ -26,8 +26,6 @@ import { revealSettings } from '../utils/photoReveal.js';
 import { editorialFromDelivery, reconcileEditorial } from '../utils/editorial.js';
 import DeliveryWritingReview from '../components/delivery/DeliveryWritingReview.jsx';
 import { initialWritingOverrides, planPhotoWritingChange, applyWritingReview, setWritingText, undoWritingChange } from '../utils/deliveryWritingChanges.js';
-import { presentationSections, presentationSettings, reconcilePresentation, PRESENTATION_KEYS, SECTION_LAYOUTS } from '../utils/deliveryPresentation.js';
-import { AlbumEditor, DeliveryStructureEditor, PresentationDesignControls } from '../components/delivery/PresentationEditor.jsx';
 import './CreateDeliveryV3.css';
 
 const BOUNDS = { 'photo-story': [5, 10], editorial: [5, 14], 'photo-reveal': [5, 12], canvas: [8, 18], chapters: [8, 20], album: [6, 16], 'event-coverage': [10, 24], campaign: [6, 16] };
@@ -148,8 +146,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const [reveal, setReveal] = useState(() => revealSettings(initialDelivery));
   const [frameSettings, setFrameSettings] = useState(() => Object.fromEntries((initialDelivery?.creativeDirection?.frames || []).map(frame => [frame.assetId, { imageFit: frame.imageFit || 'contain', focalPoint: frame.focalPoint || '50% 50%' }])));
   const [captionUndo, setCaptionUndo] = useState({});
-  const [sections, setSections] = useState(() => SECTION_LAYOUTS[initialDelivery?.format] ? presentationSections(initialDelivery) : initialDelivery?.creativeDirection?.sections || []);
-  const [presentation, setPresentation] = useState(() => presentationSettings(initialDelivery));
+  const [sections, setSections] = useState(initialDelivery?.creativeDirection?.sections || []);
   const [writingSuggestions, setWritingSuggestions] = useState([]);
   const [photoUndo, setPhotoUndo] = useState(null);
   const [writingReviewError, setWritingReviewError] = useState('');
@@ -185,7 +182,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const previewBranding = creationPreviewBranding(user, entitlements);
   const editorialFrames = useMemo(() => selected.map(assetId => ({ assetId, headline: headlines[assetId] || '', caption: captions[assetId] || '', imageFit: frameSettings[assetId]?.imageFit || 'contain', focalPoint: frameSettings[assetId]?.focalPoint || '50% 50%' })), [selected, headlines, captions, frameSettings]);
   const publication = useMemo(() => reconcileEditorial(editorial, selected, editorialFrames), [editorial, selected, editorialFrames]);
-  writingState.current = { format, selected, headlines, captions, openingLine, closingLine, openingAssetId, closingAssetId, editorial: publication, sections, presentation };
+  writingState.current = { format, selected, headlines, captions, openingLine, closingLine, openingAssetId, closingAssetId, editorial: publication, sections };
   const designPreviewDelivery = useMemo(() => {
     if (!draft) return null;
     const savedFrames = new Map((draft.creativeDirection?.frames || []).map(frame => [frame.assetId, frame]));
@@ -200,8 +197,6 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     return {
       ...draft,
       branding: previewBranding,
-      access,
-      formatConfig: { ...draft.formatConfig, ...(presentation ? { [PRESENTATION_KEYS[format]]: reconcilePresentation(presentation, selected, draft.assets, frames) } : {}), ...(format === 'campaign' ? { usageTerms: access.usageTerms } : {}) },
       curatedAssetIds: selected,
       creativeDirection: {
         ...draft.creativeDirection,
@@ -218,7 +213,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
       },
       v3: { ...draft.v3, openingAssetId, closingAssetId }
     };
-  }, [draft, previewBranding.type, previewBranding.name, previewBranding.logoUrl, selected, headlines, captions, title, openingLine, closingLine, format, palette, typography, openingAssetId, closingAssetId, publication, frameSettings, sections, reveal, presentation, access]);
+  }, [draft, previewBranding.type, previewBranding.name, previewBranding.logoUrl, selected, headlines, captions, title, openingLine, closingLine, format, palette, typography, openingAssetId, closingAssetId, publication, frameSettings, sections, reveal]);
   const bounds = BOUNDS[format] || [5, 10];
   const recommendedFormat = DELIVERY_FORMATS.find(item => item.value === recommendation?.format);
   const assets = draft?.assets || [];
@@ -232,17 +227,6 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const statusProgress = Math.max(0, Math.round(((currentIndex + 1) / visibleSteps.length) * 100));
   const selectedFormat = DELIVERY_FORMATS.find(item => item.value === format);
 
-  const presentationDirty = !!draft && !!presentation && (JSON.stringify(presentation) !== JSON.stringify(presentationSettings(draft)) || JSON.stringify(sections) !== JSON.stringify(SECTION_LAYOUTS[format] ? presentationSections(draft) : draft.creativeDirection?.sections || []) || format === 'campaign' && access.usageTerms !== (draft.formatConfig?.usageTerms || ''));
-  useEffect(() => {
-    if (!draft || !presentation) return;
-    const changed = JSON.stringify(presentation) !== JSON.stringify(presentationSettings(draft)) || JSON.stringify(sections) !== JSON.stringify(SECTION_LAYOUTS[format] ? presentationSections(draft) : draft.creativeDirection?.sections || []) || format === 'campaign' && access.usageTerms !== (draft.formatConfig?.usageTerms || '');
-    if (!changed) return;
-    const leave = event => { const anchor = event.target.closest('a[href]'); if (!anchor || anchor.target === '_blank' || event.ctrlKey || event.metaKey) return; const target = new URL(anchor.href, window.location.href); if (target.pathname === location.pathname && target.search === location.search) return; if (!window.confirm('You have unsaved presentation changes. Leave this page?')) { event.preventDefault(); event.stopPropagation(); } };
-    document.addEventListener('click', leave, true);
-    const warn = event => { event.preventDefault(); event.returnValue = ''; };
-    window.addEventListener('beforeunload', warn);
-    return () => { window.removeEventListener('beforeunload', warn); document.removeEventListener('click', leave, true); };
-  }, [draft, presentation, sections, format, access.usageTerms]);
   async function refresh() {
     if (!draft?._id) return null;
     const response = await api.get('/v1/deliveries/' + draft._id);
@@ -264,8 +248,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     setReveal(revealSettings(next));
     setFrameSettings(Object.fromEntries((next.creativeDirection?.frames || []).map(frame => [frame.assetId, { imageFit: frame.imageFit || 'contain', focalPoint: frame.focalPoint || '50% 50%' }])));
     setCaptionUndo({});
-    setSections(SECTION_LAYOUTS[next.format] ? presentationSections(next) : next.creativeDirection?.sections || []);
-    setPresentation(presentationSettings(next));
+    setSections(next.creativeDirection?.sections || []);
     writingOverrides.current = initialWritingOverrides(next);
     setWritingSuggestions([]); setPhotoUndo(null); setWritingReviewError('');
     setPalette(next.creativeDirection?.palette || defaultPalette);
@@ -449,7 +432,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     setSelected(next.selected); setHeadlines(next.headlines); setCaptions(next.captions);
     setOpeningAssetId(next.openingAssetId); setClosingAssetId(next.closingAssetId);
     setOpeningLine(next.openingLine); setClosingLine(next.closingLine);
-    setEditorial(next.editorial); setSections(next.sections); if (next.presentation !== undefined) setPresentation(next.presentation);
+    setEditorial(next.editorial); setSections(next.sections);
   }
   function markManual(key) {
     writingOverrides.current.add(key);
@@ -461,12 +444,12 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     for (const section of next.sections) for (const field of ['title', 'body']) if (section[field] !== current.sections.find(item => item.id === section.id)?.[field]) markManual(`section:${section.id}:${field}`);
     setEditorial(next);
   }
-  async function changePhotoOrder(order, activeId, nextEditorial, nextSections, nextPresentation) {
+  async function changePhotoOrder(order, activeId, nextEditorial) {
     if (busy || captionPending.current) return;
-    const before = writingState.current, change = { mode: 'order', order, editorial: nextEditorial, sections: nextSections, presentation: nextPresentation };
+    const before = writingState.current, change = { mode: 'order', order, editorial: nextEditorial };
     const version = ++photoRequestVersion.current;
     const controller = new AbortController(); captionRequest.current = controller;
-    retryWritingReview.current = () => changePhotoOrder(order, activeId, nextEditorial, nextSections, nextPresentation);
+    retryWritingReview.current = () => changePhotoOrder(order, activeId, nextEditorial);
     captionPending.current = true; setBusy('writing-review'); setWritingReviewError('');
     try {
       const plan = planPhotoWritingChange(before, change), reviewed = await reviewPhotoBlocks(plan.blocks, controller.signal);
@@ -478,27 +461,6 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
       if (activeId) setActivePhotoIndex(Math.max(0, order.indexOf(activeId)));
     } catch (failure) { if (!controller.signal.aborted) setWritingReviewError(message(failure).text + ' Your previous photo order and text have been kept.'); }
     finally { if (version === photoRequestVersion.current) { captionPending.current = false; setBusy(''); } }
-  }
-  function editStructure(next) {
-    const current = writingState.current.sections;
-    const membershipChanged = JSON.stringify(next.map(section => [section.id, section.assetIds])) !== JSON.stringify(current.map(section => [section.id, section.assetIds]));
-    if (membershipChanged) { void changePhotoOrder(selected, activeShowcaseId, undefined, next); return; }
-    for (const section of next) for (const field of ['title', 'body']) if (section[field] !== current.find(item => item.id === section.id)?.[field]) markManual('section:' + section.id + ':' + field);
-    setSections(next);
-  }
-  function editSpreads(next) {
-    const membershipChanged = JSON.stringify(next.spreads.map(spread => [spread.id, spread.assetIds])) !== JSON.stringify(presentation.spreads.map(spread => [spread.id, spread.assetIds]));
-    if (membershipChanged) { void changePhotoOrder(selected, activeShowcaseId, undefined, undefined, next); return; }
-    for (const spread of next.spreads) for (const field of ['heading', 'note']) if (spread[field] !== presentation.spreads.find(item => item.id === spread.id)?.[field]) markManual('spread:' + spread.id + ':' + field);
-    setPresentation(next);
-  }
-  async function suggestPresentationWriting(blocks) {
-    if (busy || captionPending.current) return;
-    await action('writing-review', async () => {
-      const reviewed = await reviewPhotoBlocks(blocks);
-      const result = applyWritingReview(writingState.current, blocks, reviewed, new Set([...writingOverrides.current, ...blocks.map(block => block.key)]));
-      setWritingSuggestions(current => [...current.filter(item => !blocks.some(block => block.key === item.key)), ...result.suggestions]);
-    });
   }
   function moveSelected(index, offset) {
     if (index + offset < 0 || index + offset >= selected.length) return;
@@ -552,8 +514,8 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   }
   function showcasePayload() {
     if (format === 'editorial' && publication.credits.some(credit => !credit.role.trim() || !credit.name.trim())) throw new Error('Add a role and a name for each credit, or remove the empty credit.');
-    const validKeys = new Set(['openingLine', 'closingLine', 'editorial.introduction', ...selected.flatMap(id => [`frame:${id}:headline`, `frame:${id}:caption`]), ...(presentation?.spreads || []).flatMap(spread => [`spread:${spread.id}:heading`, `spread:${spread.id}:note`]), ...(format === 'editorial' ? publication.sections : sections).flatMap(section => [`section:${section.id}:title`, `section:${section.id}:body`])]);
-    return { assetIds: selected, frames: selected.map(assetId => ({ assetId, headline: (headlines[assetId] || '').trim(), caption: (captions[assetId] || '').trim(), ...(format === 'editorial' ? frameSettings[assetId] || { imageFit: 'contain', focalPoint: '50% 50%' } : {}) })), title: title.trim(), openingLine: openingLine.trim(), closingLine: closingLine.trim(), openingAssetId, closingAssetId, writingOverrides: [...writingOverrides.current].filter(key => validKeys.has(key)), ...(format === 'editorial' ? { editorial: publication } : { ...(sections.length ? { sectionWriting: sections.map(section => ({ id: section.id, title: section.title || '', subtitle: section.subtitle || '', assetIds: section.assetIds, ...(SECTION_LAYOUTS[format] ? { body: section.body ?? section.subtitle ?? '', coverAssetId: section.coverAssetId || section.assetIds[0], layout: section.layout || SECTION_LAYOUTS[format][0] } : {}) })) } : {}), ...(presentation ? { presentation: { format, ...reconcilePresentation(presentation, selected, assets, editorialFrames) } } : {}) }) };
+    const validKeys = new Set(['openingLine', 'closingLine', 'editorial.introduction', ...selected.flatMap(id => [`frame:${id}:headline`, `frame:${id}:caption`]), ...(format === 'editorial' ? publication.sections : sections).flatMap(section => [`section:${section.id}:title`, `section:${section.id}:body`])]);
+    return { assetIds: selected, frames: selected.map(assetId => ({ assetId, headline: (headlines[assetId] || '').trim(), caption: (captions[assetId] || '').trim(), ...(format === 'editorial' ? frameSettings[assetId] || { imageFit: 'contain', focalPoint: '50% 50%' } : {}) })), title: title.trim(), openingLine: openingLine.trim(), closingLine: closingLine.trim(), openingAssetId, closingAssetId, writingOverrides: [...writingOverrides.current].filter(key => validKeys.has(key)), ...(format === 'editorial' ? { editorial: publication } : { sectionWriting: sections.map(section => ({ id: section.id, title: section.title || '', subtitle: section.subtitle || '', assetIds: section.assetIds })) }) };
   }
   async function regenerateEditorialBlock(block, ids, previousText) {
     if (busy || captionPending.current || !ids.length) return null;
@@ -596,8 +558,8 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     if (captionPending.current || busy || writingSuggestions.length) return;
     if (!themeStatus.valid) { setError({ text: themeStatus.message, fix: 'contrast' }); return; }
     await action('approve', async () => {
-      if (format === 'editorial' || presentation) await api.patch('/v1/deliveries/' + draft._id + '/v3/showcase', showcasePayload());
-      await api.patch('/v1/deliveries/' + draft._id + '/v3/theme', { palette, typography, ...(format === 'photo-reveal' ? { reveal } : {}), ...(presentation ? { presentation: { format, ...reconcilePresentation(presentation, selected, assets, editorialFrames) } } : {}), ...(format === 'campaign' ? { usageTerms: access.usageTerms } : {}) });
+      if (format === 'editorial') await api.patch('/v1/deliveries/' + draft._id + '/v3/showcase', showcasePayload());
+      await api.patch('/v1/deliveries/' + draft._id + '/v3/theme', { palette, typography, ...(format === 'photo-reveal' ? { reveal } : {}) });
       await api.post('/v1/deliveries/' + draft._id + '/v3/approve');
       const next = await refresh(); syncShowcase(next); setStage('access');
     });
@@ -771,8 +733,6 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
               </article>
             </div>
           </div>
-          <>{presentation && <p className="pe-save-status" role="status">{presentationDirty ? 'Unsaved presentation changes · saved when you continue' : 'Presentation saved'}</p>}<DeliveryStructureEditor format={format} sections={sections} assets={assets} onChange={editStructure} onRegenerate={suggestPresentationWriting} busy={!!busy} /></>
-          {format === 'album' && presentation && <AlbumEditor value={presentation} assets={assets} onChange={editSpreads} onRegenerate={suggestPresentationWriting} busy={!!busy} />}
           {format === 'editorial' && <EditorialEditor value={publication} onChange={editEditorial} assets={assets} frames={editorialFrames} onRegenerate={regenerateEditorialBlock} busy={!!busy} openingLine={openingLine} closingLine={closingLine} onOpeningChange={text => { markManual('openingLine'); setOpeningLine(text); }} onClosingChange={text => { markManual('closingLine'); setClosingLine(text); }} openingAssetId={openingAssetId} closingAssetId={closingAssetId} />}
           <DeliveryWritingReview suggestions={writingSuggestions} undo={!!photoUndo} pending={busy === 'writing-review'} error={writingReviewError} onRetry={() => retryWritingReview.current?.()} onUse={item => { commitWritingState(setWritingText(writingState.current, item.key, item.text)); markManual(item.key); }} onKeep={item => markManual(item.key)} onUndo={() => { commitWritingState(undoWritingChange(writingState.current, photoUndo.before, photoUndo.after)); for (const key of photoUndo.overrides) writingOverrides.current.add(key); setPhotoUndo(null); setWritingSuggestions([]); }} />
           <div className="v3-showcase-section-heading"><div><span>02 / THE SHOWCASE PHOTOS</span><h2>Review each photo and its caption.</h2></div><p>Drag-free ordering: use the arrows to change the sequence.</p></div>
@@ -885,7 +845,6 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
               <div className="v3-type-controls"><div className="v3-panel-heading"><span>02</span><div><h2>Typography</h2><p>Choose a pair that suits the delivery.</p></div></div>
                 {['display', 'body'].map(role => <label className="v3-font" key={role}>{role === 'display' ? 'Headings and titles' : 'Captions and supporting text'}<select value={typography[role]} onChange={event => setTypography(current => ({ ...current, [role]: event.target.value }))}>{FONTS.map(font => <option key={font}>{font}</option>)}</select></label>)}
               </div>
-              <>{presentation && <p className="pe-save-status" role="status">{presentationDirty ? 'Unsaved presentation changes · saved when you approve' : 'Presentation saved'}</p>}<PresentationDesignControls format={format} value={presentation} assets={selected.map(id => assetById.get(id)).filter(Boolean)} onChange={setPresentation} usageTerms={access.usageTerms} onUsageChange={text => setAccess(current => ({ ...current, usageTerms: text }))} busy={!!busy} /></>
               {format === 'editorial' && <EditorialDesignControls value={publication} onChange={setEditorial} />}
               {format === 'photo-reveal' && <RevealDesignControls value={reveal} onChange={setReveal} disabled={!!busy} />}
             </div>
