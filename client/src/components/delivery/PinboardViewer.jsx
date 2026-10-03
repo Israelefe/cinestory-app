@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ArrowDownToLine, Check, ChevronLeft, ChevronRight, Download, ExternalLink, Image, MessageCircle, Pause, Play, RotateCcw, Shirt, SkipBack, SkipForward, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowDownToLine, MoreHorizontal, Search, Check, ChevronLeft, ChevronRight, Download, ExternalLink, Image, MessageCircle, Pause, Play, RotateCcw, Shirt, SkipBack, SkipForward, Volume2, VolumeX, X } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { API_BASE_URL } from '../../config/env.js';
 import api from '../../services/api.js';
 import { resolvedGridboardPalette } from '../../utils/gridboardPalette.js';
 import { useSmoothSoundtrackLoop } from '../../utils/smoothSoundtrackLoop.js';
+import { useDialogFocus } from '../useDialogFocus.js';
+import { ImageWaiting, useReadyPhotos } from './PresentationShell.jsx';
 import DeliveryBrandMark from './DeliveryBrandMark.jsx';
 import { deliveryFontStyles } from '../../utils/deliveryTypography.js';
 import './PinboardViewer.css';
@@ -119,10 +121,16 @@ function SlideshowFrame({ slide, seconds, paused, direction, reducedMotion }) {
 
 export default function PinboardViewer({ delivery, preview = false, demo = false, galleryProps = {} }) {
   const location = useLocation();
+  const [findOpen, setFindOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const findRef = useRef(null), moreRef = useRef(null), lightboxRef = useRef(null);
+  useDialogFocus(findOpen, findRef, () => setFindOpen(false));
+  useDialogFocus(moreOpen, moreRef, () => setMoreOpen(false));
   const [activeMoment, setActiveMoment] = useState('');
   const [activeColour, setActiveColour] = useState('');
   const [activeLayoutId, setActiveLayoutId] = useState(delivery?.pinboard?.selectedLayoutId || 'balanced');
   const [activePhoto, setActivePhoto] = useState('');
+  useDialogFocus(!!activePhoto, lightboxRef, () => closePhoto());
   const [showSlideshowSetup, setShowSlideshowSetup] = useState(false);
   const [slideshowOpening, setSlideshowOpening] = useState('');
   const [slideshow, setSlideshow] = useState(null);
@@ -137,6 +145,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   const [statusCard, setStatusCard] = useState(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const photoReturn = useRef(null);
   const [photoDirection, setPhotoDirection] = useState(1);
   const touchStart = useRef(null);
   const boardRef = useRef(null);
@@ -350,7 +359,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   }, [location.search, assetById, moments]);
 
   useEffect(() => {
-    if (!activePhoto) return undefined;
+    if (!activePhoto || showSlideshowSetup || statusOpen || findOpen || moreOpen) return undefined;
     const onKey = event => {
       if (event.key === 'Escape') setActivePhoto('');
       if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
@@ -360,8 +369,19 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [activePhoto, visible]);
+  }, [activePhoto, visible, showSlideshowSetup, statusOpen, findOpen, moreOpen]);
 
+  function openPhoto(assetId) {
+    photoReturn.current = { moment: activeMoment, colour: activeColour, layout: activeLayoutId, assetId, scroll: window.scrollY };
+    setActivePhoto(assetId);
+  }
+  function closePhoto() {
+    const previous = photoReturn.current;
+    setActivePhoto('');
+    if (!previous) return;
+    setActiveMoment(previous.moment); setActiveColour(previous.colour); setActiveLayoutId(previous.layout);
+    requestAnimationFrame(() => { window.scrollTo({ top: previous.scroll, behavior: 'auto' }); document.getElementById('pb-photo-' + previous.assetId)?.querySelector('.pb-tile-open')?.focus({ preventScroll: true }); });
+  }
   function navigatePhoto(direction) {
     const current = visible.findIndex(asset => asset.assetId === activePhoto);
     const next = visible[current + direction];
@@ -506,7 +526,8 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
     return url.toString();
   }
   function openWhatsApp(kind, id, label) {
-    if (preview || (!demo && !delivery?.publicId)) return;
+    if (preview) { setMessage('Sharing is available after you publish this delivery.'); return; }
+    if (!demo && !delivery?.publicId) return;
     const link = demo ? new URL(`/demo/gridboard?${kind}=${encodeURIComponent(id)}`, window.location.origin).toString() : privateLink(kind, id);
     const text = `${label}\n${link}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
@@ -543,6 +564,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
     } catch (error) { if (error?.name !== 'AbortError') setMessage('Sharing did not open. Save the card and add it from your photos.'); }
   }
   async function createStatusCard() {
+    if (preview) { setMessage('Your client can save a Status card after this delivery is published.'); return; }
     if (statusSelection.length < 1 || statusSelection.length > 4) return;
     setBusy(true); setMessage('');
     if (demo) {
@@ -617,8 +639,13 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
     const ids = new Set(group.assetIds.map(String));
     return { ...group, photos: ordered.filter(asset => ids.has(String(asset.assetId))) };
   }).filter(group => group.photos.length);
-  const canDownload = !preview && (delivery?.access?.allowIndividualDownloads || delivery?.access?.allowDownloadAll);
+  const menuPhoto = typeof moreOpen === 'string' ? assetById.get(moreOpen) : null;
+  const canDownload = delivery?.access?.allowIndividualDownloads || delivery?.access?.allowDownloadAll;
+  const canDownloadPhoto = !!delivery?.access?.allowIndividualDownloads;
+  const lightboxReady = useReadyPhotos(modalAsset ? [{ ...modalAsset, url: photoUrl(modalAsset, true) }] : [], [visible[modalIndex + 1], visible[modalIndex - 1]].filter(Boolean).map(asset => ({ ...asset, url: photoUrl(asset, true) })));
+  const shownPhoto = lightboxReady.photos[0];
   function downloadPhoto(asset, index) {
+    if (preview) { setMessage('Photo downloads are available after you publish this delivery.'); return; }
     if (demo) {
       const anchor = document.createElement('a');
       anchor.href = photoUrl(asset, true);
@@ -639,15 +666,15 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
     <div className="pb-wrap">
       <header className={'pb-header' + ((delivery?.branding?.name || 'Veylo').length > 32 ? ' has-long-brand' : '')}>
         <div className="pb-brand"><span className="pb-brand-mark"><DeliveryBrandMark branding={delivery?.branding} /></span><span><small>{delivery?.branding?.type === 'studio' ? 'Photographed by' : 'GRIDBOARD'}</small><strong>{delivery?.branding?.name || 'Veylo'}</strong></span></div>
-        {!preview && <div className="pb-header-actions">{delivery.access?.allowDownloadAll && <button type="button" aria-label="Download all photos" onClick={() => demo ? setMessage('Download all is available on published galleries.') : galleryProps.onDownloadAll?.()}><ArrowDownToLine size={17} /> Download all</button>}{canDownload && <button type="button" aria-label="Make a WhatsApp Status card" className="pb-status-open" onClick={() => { setStatusSelection([]); setStatusPage(0); setStatusCard(null); setMessage(''); setStatusOpen(true); }}><MessageCircle size={17} /> Make a Status card</button>}</div>}
+        <div className="pb-header-actions"><button type="button" aria-label="More gallery actions" aria-haspopup="dialog" onClick={() => setMoreOpen(true)}><MoreHorizontal size={20} /><span>More</span></button></div>
       </header>
       <section className="pb-intro">
         <span className="pb-kicker">GRIDBOARD DELIVERY</span>
         <h1>{board.title || delivery?.title || `${delivery?.clientName || 'Your'}'s photographs`}</h1>
         <p>{board.description || (preview ? 'Every finished photograph from this shoot.' : `Made for ${delivery?.clientName || 'you'}. Explore the whole set or find a moment below.`)}</p>
-        <div className="pb-intro-meta"><span>{assets.length} photographs</span><i aria-hidden="true" />{!preview && <span>{delivery?.viewer?.label || 'Private gallery'}</span>}</div>
+        <div className="pb-intro-meta"><span>{assets.length} photographs</span><i aria-hidden="true" />{<span>{delivery?.viewer?.label || 'Private gallery'}</span>}</div>
       </section>
-      {(moments.length > 0 || colourGroups.length > 0) && <nav className="pb-find-tools" aria-label="Explore the photographs">
+      <AnimatePresence>{findOpen && <motion.div initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : .2 }} className="pb-find-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setFindOpen(false); }}><section className="pb-find-sheet" ref={findRef} role="dialog" aria-modal="true" aria-label="Find photos"><header><h2>Find photos</h2><button type="button" onClick={() => setFindOpen(false)} aria-label="Close find photos"><X size={20} /></button></header><label>Arrangement<select value={activeLayoutId} onChange={event => setActiveLayoutId(event.target.value)}>{(board.layouts || []).map(layout => <option value={layout.id} key={layout.id}>{layout.title}</option>)}</select></label><nav className="pb-find-tools" aria-label="Explore the photographs">
         {!!moments.length && <section className="pb-moments" aria-label="Find a moment">
           <div className="pb-moments-head"><span>FIND A MOMENT</span>{(activeMoment || activeColour) && <button type="button" onClick={() => { setActiveMoment(''); setActiveColour(''); }}>Show all photos</button>}</div>
           <div className="pb-moment-list">{moments.map((moment, momentIndex) => {
@@ -663,32 +690,34 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
           <div className="pb-moments-head"><span>OUTFITS AND BACKGROUNDS</span>{(activeMoment || activeColour) && !moments.length && <button type="button" onClick={() => { setActiveMoment(''); setActiveColour(''); }}>Show all photos</button>}</div>
           <div className="pb-colour-list">{colourGroups.map(group => <button key={group.key} type="button" className={activeColour === group.key ? 'is-active' : ''} onClick={() => { setActiveColour(current => current === group.key ? '' : group.key); setActiveMoment(''); }} aria-pressed={activeColour === group.key} aria-label={`Show ${group.assetIds.length} photos with ${colorGroupLabel(group).toLowerCase()}`}><span className="pb-colour-kind">{group.area === 'outfit' ? <Shirt size={13} /> : <Image size={13} />}</span><strong>{colorGroupLabel(group)}</strong><span className="pb-colour-count">{group.assetIds.length}</span></button>)}</div>
         </section>}
-      </nav>}
-      <div className="pb-board-top"><div><span>{activeMoment ? moments.find(moment => moment.id === activeMoment)?.title : selectedColourGroup ? colorGroupLabel(selectedColourGroup) : 'All photos'}</span><span>{visible.length} PHOTOS</span></div><div className="pb-board-controls">
-        <button type="button" onClick={() => setShowSlideshowSetup(true)} aria-haspopup="dialog"><Play size={15} /> Slideshow</button>
+      </nav><footer><button type="button" onClick={() => { setActiveMoment(''); setActiveColour(''); }}>Show all photographs</button><button type="button" onClick={() => setFindOpen(false)}>View photographs</button></footer></section></motion.div>}</AnimatePresence>
+      <AnimatePresence>{moreOpen && <motion.div initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : .2 }} className="pb-find-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setMoreOpen(false); }}><section className="pb-find-sheet pb-more-sheet" ref={moreRef} role="dialog" aria-modal="true" aria-label="More gallery actions"><header><h2>{menuPhoto ? 'Photograph options' : 'Your gallery'}</h2><button type="button" onClick={() => setMoreOpen(false)} aria-label="Close gallery actions"><X size={20} /></button></header>{menuPhoto && <><button type="button" onClick={() => { setMoreOpen(false); openPhoto(menuPhoto.assetId); }}><Image size={18} />View photograph</button>{canDownloadPhoto && <button type="button" onClick={() => downloadPhoto(menuPhoto, visible.indexOf(menuPhoto))}><Download size={18} />Download photo</button>}<button type="button" onClick={() => openWhatsApp('photo', menuPhoto.assetId, delivery.title || 'Your photograph')}><MessageCircle size={18} />Share photograph</button></>}{!menuPhoto && delivery.access?.allowDownloadAll && <button type="button" aria-label="Download all photos" onClick={() => { setMoreOpen(false); if (preview) setMessage('Download all is available after you publish this delivery.'); else if (demo) setMessage('These are sample files. Open a photograph to download a sample.'); else galleryProps.onDownloadAll?.(); }}><ArrowDownToLine size={18} />Download all</button>}{!menuPhoto && canDownload && <button type="button" aria-label="Make a WhatsApp Status card" onClick={() => { setMoreOpen(false); setStatusSelection([]); setStatusPage(0); setStatusCard(null); setMessage(''); setStatusOpen(true); }}><MessageCircle size={18} />Make a Status card</button>}{!menuPhoto && <button type="button" onClick={() => openWhatsApp('', '', delivery.title || 'Your photographs')}><MessageCircle size={18} />Share gallery link</button>}</section></motion.div>}</AnimatePresence>
+      <div className="pb-board-top"><div><span>{activeMoment ? moments.find(moment => moment.id === activeMoment)?.title : selectedColourGroup ? colorGroupLabel(selectedColourGroup) : 'All photos'}</span><span>{visible.length} PHOTOS</span>{(activeMoment || activeColour) && <button type="button" className="pb-filter-clear" onClick={() => { setActiveMoment(''); setActiveColour(''); }}>Clear filter<X size={15} /></button>}</div><div className="pb-board-controls">
+        <button type="button" onClick={() => setFindOpen(true)} aria-haspopup="dialog"><Search size={16} />Find photos</button><button type="button" onClick={() => setShowSlideshowSetup(true)} aria-haspopup="dialog"><Play size={15} /> Slideshow</button>
       </div></div>
       <section className="pb-board" ref={boardRef} key={`${activeMoment || 'all'}-${activeColour || 'all'}-${activeLayoutId}`} aria-label="Photographs" aria-live="polite">
         {masonryColumns.map((column, columnIndex) => <div className="pb-board-column" key={columnIndex}>{column.map(({ asset, index, ratio }) => <article className={'pb-tile' + (board.animation === 'none' ? '' : ' is-revealing')} id={`pb-photo-${asset.assetId}`} key={asset.assetId} style={{ '--pb-tile-ratio': ratio, '--pb-tile-color': assetColors(asset)[0] || palette.surface, '--pb-reveal-delay': board.animation === 'staggered' ? `${(index % 5) * 65}ms` : '0ms' }}>
-          <button type="button" className="pb-tile-open" onClick={() => setActivePhoto(asset.assetId)} aria-label={`Open photograph ${index + 1}`}><img loading={index < 6 ? 'eager' : 'lazy'} src={photoUrl(asset)} alt={asset.alt || `Finished photograph ${index + 1}`} onLoad={event => event.currentTarget.classList.add('is-loaded')} /><span className="pb-tile-view">View photo</span></button>
-          {!preview && <div className="pb-tile-tools"><button type="button" onClick={() => openWhatsApp('photo', asset.assetId, `${delivery?.title || 'Photo gallery'} · Photograph ${index + 1}`)} aria-label="Share this photo on WhatsApp"><MessageCircle size={16} /></button>{canDownload && <button type="button" onClick={() => downloadPhoto(asset, index)} aria-label="Download this photo"><Download size={16} /></button>}</div>}
+          <button type="button" className="pb-tile-open" onClick={() => openPhoto(asset.assetId)} aria-label={`Open photograph ${index + 1}`}><img loading={index < 6 ? 'eager' : 'lazy'} src={photoUrl(asset)} alt={asset.alt || `Finished photograph ${index + 1}`} onLoad={event => event.currentTarget.classList.add('is-loaded')} /><span className="pb-tile-view">View photo</span></button><div className="pb-tile-footer"><span>{String(index + 1).padStart(2, '0')}</span><button type="button" aria-label={`Options for photograph ${index + 1}`} aria-haspopup="dialog" onClick={() => setMoreOpen(asset.assetId)}><MoreHorizontal size={18} /></button></div>
+
         </article>)}</div>)}
       </section>
       <footer className="pb-footer"><span>That’s the whole gallery.</span><span>{assets.length} photographs</span></footer>
     </div>
 
-    {modalAsset && <div className="pb-lightbox" role="dialog" aria-modal="true" aria-label="Photograph" onMouseDown={event => { if (event.target === event.currentTarget) setActivePhoto(''); }}>
+    {modalAsset && <div ref={lightboxRef} className="pb-lightbox" role="dialog" aria-modal="true" aria-label="Photograph" onMouseDown={event => { if (event.target === event.currentTarget) setActivePhoto(''); }}>
       <button type="button" className="pb-lightbox-close" onClick={() => setActivePhoto('')} aria-label="Close photograph"><X size={23} /></button>
       <button type="button" className="pb-lightbox-nav is-left" onClick={() => navigatePhoto(-1)} disabled={modalIndex <= 0} aria-label="Previous photograph"><ChevronLeft size={26} /></button>
       <figure onTouchStart={onPhotoTouchStart} onTouchMove={onPhotoTouchMove} onTouchEnd={onPhotoTouchEnd}>
         <div className="pb-lightbox-photo" style={{ backgroundColor: modalTone }}>
-          <img className="pb-lightbox-photo-ambient" src={photoUrl(modalAsset, true)} alt="" aria-hidden="true" draggable="false" />
-          <img key={modalAsset.assetId} className={'pb-lightbox-photo-main ' + (photoDirection > 0 ? 'is-next' : 'is-previous')} src={photoUrl(modalAsset, true)} alt={modalAsset.alt || 'Finished photograph'} draggable="false" />
+          <img className="pb-lightbox-photo-ambient" src={shownPhoto?.url || photoUrl(modalAsset)} alt="" aria-hidden="true" draggable="false" />
+          <img key={shownPhoto?.assetId || modalAsset.assetId} className={'pb-lightbox-photo-main ' + (photoDirection > 0 ? 'is-next' : 'is-previous')} src={shownPhoto?.url || photoUrl(modalAsset)} alt={shownPhoto?.alt || modalAsset.alt || 'Finished photograph'} draggable="false" />
         </div>
+        <ImageWaiting state={lightboxReady} />
         <figcaption>Photograph {modalIndex + 1} of {visible.length}{visible.length > 1 && <span className="pb-swipe-hint"> · Swipe to browse</span>}</figcaption>
-        {!!similarShots.length && <aside className="pb-similar-shot"><div className="pb-similar-head"><strong>Similar Shot</strong><button type="button" className="pb-similar-play" onClick={() => setShowSlideshowSetup(true)} aria-haspopup="dialog"><span className="pb-similar-play-icon" aria-hidden="true"><Play size={12} fill="currentColor" /></span><span>Play these photos</span></button></div><div className="pb-similar-list">{similarShots.map(asset => <button type="button" key={asset.assetId} onClick={() => showRelatedPhoto(asset)} aria-label={`Open a similar shot: ${asset.alt || 'photo'}`}><img src={photoUrl(asset)} alt="" loading="lazy" /></button>)}</div></aside>}
+        {!!similarShots.length && <details className="pb-similar-shot"><summary>Similar photos</summary><div className="pb-similar-head"><strong>Similar photos</strong><button type="button" className="pb-similar-play" onClick={() => setShowSlideshowSetup(true)} aria-haspopup="dialog"><span className="pb-similar-play-icon" aria-hidden="true"><Play size={12} fill="currentColor" /></span><span>Play these photos</span></button></div><div className="pb-similar-list">{similarShots.map(asset => <button type="button" key={asset.assetId} onClick={() => showRelatedPhoto(asset)} aria-label={`Open a similar shot: ${asset.alt || 'photo'}`}><img src={photoUrl(asset)} alt="" loading="lazy" /></button>)}</div></details>}
       </figure>
       <button type="button" className="pb-lightbox-nav is-right" onClick={() => navigatePhoto(1)} disabled={modalIndex >= visible.length - 1} aria-label="Next photograph"><ChevronRight size={26} /></button>
-      <div className="pb-lightbox-actions">{!preview && <button type="button" onClick={() => openWhatsApp('photo', modalAsset.assetId, delivery?.title || 'Photo gallery')}><MessageCircle size={17} /> Share on WhatsApp</button>}{canDownload && <button type="button" onClick={() => downloadPhoto(modalAsset, modalIndex)}><Download size={17} /> Download photo</button>}</div>
+      <div className="pb-lightbox-actions">{<button type="button" disabled={!lightboxReady.ready} onClick={() => openWhatsApp('photo', modalAsset.assetId, delivery?.title || 'Photo gallery')}><MessageCircle size={17} /> Share on WhatsApp</button>}{canDownloadPhoto && <button type="button" disabled={!lightboxReady.ready} onClick={() => downloadPhoto(modalAsset, modalIndex)}><Download size={17} /> Download photo</button>}</div>
     </div>}
 
     {soundtrackUrl && <audio ref={musicRef} crossOrigin="anonymous" src={soundtrackUrl} preload="none" loop onError={() => { setMusicMuted(true); if (slideshow) setSlideshowMessage('Music could not load. The slideshow will keep playing without it.'); }} />}
@@ -701,7 +730,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
           <h2 id="pb-slideshow-setup-title">Choose the photos to play.</h2>
           <p>Play the whole board or follow one part of the shoot. Music starts with the slideshow if your photographer added it.</p>
           <fieldset className="pb-slideshow-options" disabled={!!slideshowOpening} aria-busy={!!slideshowOpening}>
-            {similarSlideAssets.length > 1 && <section className="pb-slide-choice-section"><h3>FROM THIS PHOTO</h3><SlideshowChoice title="Similar Shot" detail={`${similarSlideAssets.length} photographs with a similar look`} cover={modalAsset} onClick={() => void startSlideshow(similarSlideAssets, 'Similar Shot')} /></section>}
+            {similarSlideAssets.length > 1 && <section className="pb-slide-choice-section"><h3>FROM THIS PHOTO</h3><SlideshowChoice title="Similar photos" detail={`${similarSlideAssets.length} photographs with a similar look`} cover={modalAsset} onClick={() => void startSlideshow(similarSlideAssets, 'Similar photos')} /></section>}
             {currentSelectionName && <section className="pb-slide-choice-section"><h3>YOUR CURRENT VIEW</h3><SlideshowChoice title={currentSelectionName} detail={`${visible.length} photographs`} cover={visible[0]} onClick={() => void startSlideshow(visible, currentSelectionName)} /></section>}
             <section className="pb-slide-choice-section"><h3>THE COMPLETE BOARD</h3><SlideshowChoice title="Every photograph" detail={`${ordered.length} photographs`} cover={ordered[0]} onClick={() => void startSlideshow(ordered, 'Every photograph')} /></section>
             {!!momentSlides.length && <section className="pb-slide-choice-section"><h3>FIND A MOMENT</h3><div className="pb-slide-choice-grid">{momentSlides.map(moment => <SlideshowChoice key={moment.id} title={moment.title} detail={`${moment.photos.length} photographs`} cover={moment.photos[0]} onClick={() => void startSlideshow(moment.photos, moment.title)} />)}</div></section>}
