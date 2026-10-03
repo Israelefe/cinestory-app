@@ -15,7 +15,10 @@ export function writingBlockLimit(block, format) {
 }
 
 export function validWritingBlock(block, format) {
-  if (block.text.length > writingBlockLimit(block, format)) return false;
+  // Older Canvas records may have 180-character body notes. Accept them as
+  // review input; generated group notes still use the existing 120 limit.
+  const inputLimit = format === 'canvas' && block.kind === 'section-body' ? 180 : writingBlockLimit(block, format);
+  if (block.text.length > inputLimit) return false;
   if (block.kind === 'opening') return block.key === 'openingLine';
   if (block.kind === 'closing') return block.key === 'closingLine';
   if (block.kind === 'introduction') return format === 'editorial' && block.key === 'editorial.introduction';

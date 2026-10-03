@@ -1105,7 +1105,7 @@ async function publicPayload(delivery, grant = null) {
     delete board.model;
   }
   if (grant) {
-    object.formatConfig = scopedPresentation(object.formatConfig, visibleAssets);
+    object.formatConfig = scopedPresentation(object.formatConfig, visibleAssets, object.creativeDirection?.sections);
     if (object.creativeDirection) {
       object.creativeDirection = { ...object.creativeDirection };
       if (Array.isArray(object.creativeDirection.frames)) object.creativeDirection.frames = object.creativeDirection.frames.filter(frame => visibleAssets.has(frame.assetId));

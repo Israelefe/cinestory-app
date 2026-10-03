@@ -47,8 +47,8 @@ export const DELIVERY_FORMATS = [
     roman: 'IV',
     name: 'Canvas',
     verb: 'Wander',
-    line: 'A spatial composition where related photographs live together.',
-    description: 'Veylo arranges the shoot as an interactive visual field. Hero images, details, outfits, locations, and expressions form natural clusters that the client can move through freely.',
+    line: 'A scrolling photo board with connected photographs and groups.',
+    description: 'Framed photographs follow a broken line down the board. Keep a photo on its own, group related images at a checkpoint, and let the client scroll, jump to a group, or open a photograph.',
     bestFor: 'Fashion, weddings, events, portraits, and branding shoots.',
     clientMindset: 'Explore the shoot freely.',
     photos: ['demo-courage-1', 'demo-courage-3', 'demo-courage-5']

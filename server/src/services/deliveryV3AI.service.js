@@ -456,7 +456,27 @@ export async function directV3Pinboard(delivery, insights) {
   };
 }
 
-async function groupV3Sections(delivery, rows, selected) {
+export async function groupV3Sections(delivery, rows, selected) {
+  if (delivery.format === 'canvas') {
+    const system = 'Return JSON {"sections":[{"title":"...","subtitle":"...","assetIds":["..."]}]}. Suggest zero to five useful photo groups for a connected scrolling Canvas. Each group needs at least two related photographs. Leave photographs that do not belong together OUT of sections: they will have individual checkpoints. Use only supplied asset IDs, once at most. Group by visible people together, location, activity or photographic relationship supported by observations. Do not invent a chronology, chapter narrative, personal feelings or event details. The shoot purpose comes first; outfit descriptions should not dominate personal milestone copy. Titles: 2 to 60 characters. Optional notes: up to 120 characters. An empty sections array is valid when individual photos work better. ' + deliveryWritingPolicy(delivery);
+    const prompt = 'Authoritative context: ' + narrativeContext(delivery) + '\nPhoto observations: ' + JSON.stringify(rows);
+    const deadline = Date.now() + 45000;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const result = await request(system, prompt + (attempt ? '\nRepair invalid memberships or wording. Do not force unrelated photographs into groups.' : ''), { maxTokens: 1500, deadline });
+        const sections = result?.sections;
+        if (!Array.isArray(sections) || sections.length > 5) continue;
+        const grouped = sections.flatMap(section => Array.isArray(section?.assetIds) ? section.assetIds : []);
+        if (new Set(grouped).size !== grouped.length || grouped.some(id => !selected.includes(id))) continue;
+        if (sections.some(section => !Array.isArray(section.assetIds) || section.assetIds.length < 2 || typeof section.title !== 'string' || section.title.trim().length < 2 || section.title.trim().length > 60 || section.subtitle !== undefined && typeof section.subtitle !== 'string' || String(section.subtitle || '').trim().length > 120 || hasUnsupportedAddress(section.title + '. ' + (section.subtitle || ''), delivery) || hasUnsupportedNumbers(section.title + '. ' + (section.subtitle || ''), delivery) || shootWritingIssues(section.title + '. ' + (section.subtitle || ''), delivery).length)) continue;
+        return sections.map((section, index) => ({ id: 'section-' + (index + 1), title: section.title.trim(), subtitle: String(section.subtitle || '').trim(), layout: 'cluster', assetIds: section.assetIds }));
+      } catch (error) {
+        if (attempt === 2 || Date.now() >= deadline) break;
+      }
+    }
+    // Grouping is optional. All photographs still receive individual checkpoints.
+    return [];
+  }
   if (!['chapters', 'event-coverage', 'campaign'].includes(delivery.format)) return [{ id: 'showcase', title: 'The photographs', subtitle: '', layout: 'grid', assetIds: selected }];
   const system = 'Return JSON {"sections":[{"title":"...","subtitle":"...","assetIds":["..."]}]}. Group every supplied asset ID into 2 to 5 useful sections. Include each ID exactly once. Section titles maximum 60 characters; subtitles maximum 120. Event Coverage sections should describe real scenes, people or shifts visible in the supplied summaries. Campaign sections should group assets by clear use or visual role. Chapters should mark real changes in outfit, place or activity. Never invent event details or usage rights. ' + deliveryWritingPolicy(delivery);
   const prompt = 'Authoritative context: ' + narrativeContext(delivery) + '\nPhoto observations: ' + JSON.stringify(rows);

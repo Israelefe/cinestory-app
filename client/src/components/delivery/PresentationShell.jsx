@@ -40,11 +40,11 @@ export function PhotoCard({ photo, index, onOpen, caption = true, eager = false,
   return <figure className={`pv-photo-card ${className}`} style={photo.width > 0 && photo.height > 0 ? { '--pv-photo-ratio': `${photo.width} / ${photo.height}` } : undefined}><button type="button" onClick={() => onOpen?.(photo)} aria-label={`Open photograph ${index + 1}`}><Photo url={photo.url} thumbnailUrl={photo.thumbnailUrl} srcSet={photo.srcSet} alt={photo.alt || photo.caption || 'Finished photograph'} eager={eager} sizes="(max-width: 640px) 92vw, (max-width: 1024px) 46vw, 38vw" /><span className="pv-photo-number">{String(index + 1).padStart(2, '0')}</span></button>{caption && photo.caption && <figcaption className={compactCaption && !expanded ? 'pv-caption-compact' : ''}>{photo.caption}</figcaption>}{compactCaption && photo.caption?.length > 80 && <button className="pv-caption-toggle" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Read less' : 'Read more'}</button>}</figure>;
 }
 
-// New album/focus surfaces only. Existing Reveal/gallery/GridBoard slideshow loaders stay intact.
+// Cache image readiness; return the requesting surface's current photo metadata.
 const readyImages = new Map();
 function loadImage(photo) {
   const key = `${photo.url}|${photo.srcSet || ''}`;
-  if (readyImages.has(key)) return readyImages.get(key);
+  if (readyImages.has(key)) return readyImages.get(key).then(() => photo);
   const promise = new Promise((resolve, reject) => {
     const image = new window.Image();
     const timeout = window.setTimeout(() => { readyImages.delete(key); reject(new Error('The photograph is taking too long to load.')); }, 15000);
@@ -60,21 +60,21 @@ function loadImage(photo) {
 export function useReadyPhotos(requested, neighbours = []) {
   const [state, setState] = useState({ photos: [], loadedKey: '', ready: false, error: '', showLoading: false });
   const [retry, setRetry] = useState(0);
-  const key = requested.map(photo => `${photo.assetId}:${photo.url}`).join('|');
-  const neighbourKey = neighbours.map(photo => photo?.url).join('|');
+  const key = requested.map(photo => `${photo.assetId}:${photo.url}:${photo.srcSet || ''}`).join('|');
+  const neighbourKey = neighbours.map(photo => `${photo?.url}:${photo?.srcSet || ''}`).join('|');
   const version = useRef(0);
   useEffect(() => {
     const token = ++version.current;
     setState(current => ({ ...current, ready: false, error: '', showLoading: false }));
     const timer = setTimeout(() => { if (token === version.current) setState(current => ({ ...current, showLoading: true })); }, 300);
-    Promise.all(requested.map(loadImage)).then(photos => { if (token === version.current) setState({ photos, loadedKey: key, ready: true, error: '', showLoading: false }); }).catch(error => { if (token === version.current) setState(current => ({ ...current, error: error.message, showLoading: false })); });
+    Promise.all(requested.map(loadImage)).then(photos => { clearTimeout(timer); if (token === version.current) setState({ photos, loadedKey: key, ready: true, error: '', showLoading: false }); }).catch(error => { clearTimeout(timer); if (token === version.current) setState(current => ({ ...current, error: error.message, showLoading: false })); });
     return () => { clearTimeout(timer); version.current += 1; };
   }, [key, retry]);
   useEffect(() => {
     if (!state.ready) return;
     let cancelled = false;
     const limited = neighbours.filter(Boolean).slice(0, navigator.connection?.saveData || /2g/.test(navigator.connection?.effectiveType || '') ? 1 : 3);
-    const preload = async () => { for (let index = 0; index < limited.length && !cancelled; index += 2) await Promise.allSettled(limited.slice(index, index + 2).map(loadImage)); };
+    const preload = async () => { for (let index = 0; index < limited.length && !cancelled; index += 2) await Promise.allSettled(limited.slice(index, index + 2).map(photo => loadImage(photo))); };
     void preload();
     return () => { cancelled = true; };
   }, [state.ready, neighbourKey]);

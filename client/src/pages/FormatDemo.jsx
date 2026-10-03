@@ -10,6 +10,7 @@ import { EVENT_COVERAGE_DEMO_PHOTOS } from '../constants/eventCoverageDemo.js';
 import { getDeliveryCapabilities } from '../constants/deliveryCapabilities.js';
 import { useSmoothSoundtrackLoop } from '../utils/smoothSoundtrackLoop.js';
 import { deliveryFontStyles } from '../utils/deliveryTypography.js';
+import CanvasBoard from '../components/delivery/CanvasBoard.jsx';
 import EditorialViewer from '../components/delivery/EditorialViewer.jsx';
 import RevealViewer from '../components/delivery/RevealViewer.jsx';
 import { PHOTO_REVEAL_DEMO } from '../constants/photoRevealDemo.js';
@@ -419,127 +420,8 @@ export const canvasCaptions = [
   'One last portrait for the road ahead.'
 ];
 
-export function CanvasFocus({ photos, index, onSelect, onClose, reduced, clientName, frames }) {
-  const panel = useRef(null);
-  useDialogFocus(true, panel, onClose);
-  useEffect(() => {
-    const onKey = event => {
-      if (event.key === 'ArrowLeft' && index > 0) onSelect(index - 1);
-      if (event.key === 'ArrowRight' && index < photos.length - 1) onSelect(index + 1);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [index, onSelect, photos.length]);
-
-  const activePhoto = photos[index];
-  const frame = frames?.get(activePhoto?.assetId) || {};
-  const caption = frame.caption || frame.headline || (frames?.size ? `Photograph ${index + 1} from this collection.` : canvasCaptions[index % canvasCaptions.length]);
-
-  return <motion.div className="fd-canvas-focus" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onPointerDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-    <motion.section ref={panel} role="dialog" aria-modal="true" aria-label={`Photograph ${index + 1} of ${clientName || "Courage's graduation portraits"}`} tabIndex={-1} initial={reduced ? false : { opacity: 0, scale: .975 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: .985 }} transition={{ type: 'spring', damping: 28, stiffness: 240 }}>
-      <button className="fd-canvas-focus-close" type="button" onClick={onClose} aria-label="Return to canvas"><X size={19} /></button>
-      <div className="fd-canvas-focus-neighbours" aria-hidden="true">
-        {index > 0 && <motion.div initial={reduced ? false : { opacity: 0, x: -30 }} animate={{ opacity: .2, x: 0 }}><Photo name={photos[index - 1].name} url={photos[index - 1].url} alt="" /></motion.div>}
-        {index < photos.length - 1 && <motion.div initial={reduced ? false : { opacity: 0, x: 30 }} animate={{ opacity: .2, x: 0 }}><Photo name={photos[index + 1].name} url={photos[index + 1].url} alt="" /></motion.div>}
-      </div>
-      <motion.figure layoutId={`canvas-photo-${index}`} {...formatFrameAttributes(frame)} style={formatFrameStyle(frame)} transition={{ type: 'spring', damping: 29, stiffness: 210 }}><motion.div className="fd-canvas-focus-photo" animate={frameMotionValues(frame, reduced)} transition={frameMotionTransition(frame, index, reduced)}><Photo name={activePhoto.name} url={activePhoto.url} alt={activePhoto.alt} style={frame.focalPoint ? { objectPosition: frame.focalPoint } : undefined} eager sizes="(max-width: 767px) 96vw, 66vw" /></motion.div></motion.figure>
-      <motion.div className="fd-canvas-focus-copy" {...formatFrameAttributes(frame)} style={formatFrameStyle(frame)} key={index} initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: reduced ? 0 : .25 }}><span>{(clientName || 'COURAGE').toUpperCase()} / PORTRAIT {String(index + 1).padStart(2, '0')}</span><p>{caption}</p><div><button type="button" onClick={() => onSelect(index - 1)} disabled={index === 0}><ChevronLeft size={17} />Previous</button><button type="button" onClick={() => onSelect(index + 1)} disabled={index === photos.length - 1}>Next<ChevronRight size={17} /></button></div></motion.div>
-    </motion.section>
-  </motion.div>;
-}
-
-export function CanvasDemo({ delivery, galleryProps, audioState, toggleAudio, onNarrationNavigate }) {
-  const [gallery, setGallery] = useState(false);
-  const [selected, setSelected] = useState(null);
-  const [activeCluster, setActiveCluster] = useState(null);
-  const wall = useRef(null);
-  const touchStart = useRef(null);
-  const reduced = useReducedMotion();
-
-  const photos = normalizeDeliveryPhotos(delivery, couragePhotos);
-  // The canvas is the format's complete visual field. Keep every approved
-  // photograph in the wall; the shared gallery remains available for the
-  // original-size view and downloads.
-  const wallPhotos = photos;
-  const frames = useMemo(() => new Map((delivery?.creativeDirection?.frames || []).map(f => [f.assetId, f])), [delivery]);
-
-  const client = delivery ? (delivery.clientName ? `${delivery.clientName} / Canvas` : delivery.title) : 'Courage / Graduation';
-  const clientName = delivery?.clientName || 'Courage';
-
-  const clusters = useMemo(() => {
-    if (delivery?.creativeDirection?.sections?.length) {
-      return delivery.creativeDirection.sections.map((sec, idx) => ({
-        name: sec.title,
-        note: sec.subtitle || 'A distinct visual movement within the collection.',
-        photos: sec.assetIds.map(id => wallPhotos.findIndex(p => p.assetId === id)).filter(i => i >= 0)
-      })).filter(c => c.photos.length > 0);
-    }
-    const chunk = Math.ceil(wallPhotos.length / 3) || 1;
-    return [
-      { name: 'Portraits', note: delivery?.creativeDirection?.openingLine || 'The presence and character brought into the session.', photos: Array.from({ length: Math.min(chunk, wallPhotos.length) }, (_, i) => i) },
-      { name: 'Key Moments', note: 'The photographs that hold what this shoot means.', photos: Array.from({ length: Math.min(chunk, Math.max(0, wallPhotos.length - chunk)) }, (_, i) => i + chunk) },
-      { name: 'Celebration', note: delivery?.creativeDirection?.closingLine || 'The natural frames that came after all the work.', photos: Array.from({ length: Math.max(0, wallPhotos.length - chunk * 2) }, (_, i) => i + chunk * 2) }
-    ].filter(item => item.photos.length > 0);
-  }, [delivery, wallPhotos]);
-
-  const cluster = activeCluster === null ? null : clusters[activeCluster];
-
-  const moveDepth = event => {
-    if (reduced || event.pointerType !== 'mouse' || !wall.current) return;
-    const bounds = wall.current.getBoundingClientRect();
-    const x = ((event.clientX - bounds.left) / bounds.width - .5) * 13;
-    const y = ((event.clientY - bounds.top) / bounds.height - .5) * 10;
-    wall.current.querySelectorAll('.fd-wall-depth').forEach((node, index) => {
-      const depth = .35 + index % 3 * .22;
-      node.style.transform = `translate3d(${x * depth}px, ${y * depth}px, 0)`;
-    });
-  };
-  const resetDepth = () => wall.current?.querySelectorAll('.fd-wall-depth').forEach(node => { node.style.transform = 'translate3d(0,0,0)'; });
-  const selectPhoto = index => {
-    setSelected(index);
-    onNarrationNavigate?.(wallPhotos[index]?.assetId);
-  };
-  const moveCluster = direction => {
-    if (activeCluster === null) setActiveCluster(direction > 0 ? 0 : clusters.length - 1);
-    else setActiveCluster(value => Math.max(0, Math.min(clusters.length - 1, value + direction)));
-  };
-
-  const themeStyles = getFormatThemeStyles(delivery, {
-    bg: '#d8cbb8',
-    surface: '#eee5d8',
-    text: '#19130f',
-    accent: '#764831'
-  });
-
-  return <div className="fd-page fd-canvas" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} data-pace={themeStyles['--fd-pace']} style={themeStyles}>
-    <DemoHeader format="Canvas" client={client} sectionId="canvas" onGallery={() => setGallery(true)} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
-    <V3Bookend delivery={delivery} kind="opening" onGallery={() => setGallery(true)} />
-    <main className="fd-wall-shell">
-      <header className="fd-wall-intro"><div><span>{clientName.toUpperCase()} · CANVAS</span><strong>{cluster ? cluster.name : 'The complete canvas'}</strong></div><AnimatePresence mode="wait"><motion.p key={cluster?.name || 'overview'} initial={reduced ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .35 }}>{cluster ? cluster.note : 'Every finished portrait is here. Choose a group, or open any photograph.'}</motion.p></AnimatePresence>{activeCluster !== null && <button type="button" onClick={() => setActiveCluster(null)}><Grid2X2 size={15} />See the whole canvas</button>}</header>
-      <section className="fd-wall-stage" onPointerMove={moveDepth} onPointerLeave={resetDepth} onTouchStart={event => { touchStart.current = event.changedTouches[0].clientX; }} onTouchEnd={event => { if (touchStart.current === null) return; const distance = event.changedTouches[0].clientX - touchStart.current; touchStart.current = null; if (Math.abs(distance) > 48) moveCluster(distance < 0 ? 1 : -1); }}>
-        <div ref={wall} className={'fd-wall' + (activeCluster === null ? ' is-overview' : ' is-focus') + (wallPhotos.length > 6 ? ' has-many' : '')}>
-          <div className="fd-wall-grid" aria-hidden="true" />
-          <div className="fd-wall-glow" aria-hidden="true"><i /><i /></div>
-          <svg className="fd-wall-paths" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M 17 30 C 28 8, 45 12, 54 34 S 75 60, 91 28" /><path d="M 12 72 C 31 58, 38 88, 56 75 S 77 72, 91 84" /></svg>
-          <motion.div className="fd-wall-title" initial={reduced ? false : { opacity: 0, y: 20 }} animate={{ opacity: activeCluster === null ? 1 : .18, y: 0 }}><span>A SPATIAL PORTRAIT STUDY</span><strong>{clientName},<br />all in view.</strong></motion.div>
-          {wallPhotos.map((photo, index) => {
-            const clusterIndex = clusters.findIndex(item => item.photos.includes(index));
-            const place = clusterIndex >= 0 ? clusters[clusterIndex].photos.indexOf(index) : 0;
-            const inCluster = activeCluster === clusterIndex;
-            const dimmed = activeCluster !== null && !inCluster;
-            const cardClass = wallPhotos.length > 6 ? 'is-card-extra' : `is-card-${index + 1}`;
-            const frame = frames.get(photo.assetId) || {};
-            return <motion.button layout layoutId={`canvas-photo-${index}`} type="button" key={photo.url || photo.name} {...formatFrameAttributes(frame)} className={`fd-wall-card ${cardClass}${inCluster ? ` is-in-cluster is-place-${place + 1}` : ''}${dimmed ? ' is-dimmed' : ''}`} style={formatFrameStyle(frame)} onClick={() => selectPhoto(index)} initial={reduced ? false : { opacity: 0, scale: .86, ...canvasEntrances[index % canvasEntrances.length] }} animate={{ opacity: dimmed ? .16 : 1, scale: dimmed ? .88 : 1, x: 0, y: 0, rotate: 0 }} whileHover={reduced ? undefined : { scale: 1.025, y: -6 }} transition={{ layout: { type: 'spring', damping: 28, stiffness: 190 }, opacity: { duration: reduced ? 0 : .35 }, delay: reduced ? 0 : index * .055 }} aria-label={`Open photograph ${index + 1}`}><div className="fd-wall-depth"><motion.span animate={frameMotionValues(frame, reduced)} transition={frameMotionTransition(frame, index, reduced)}><Photo name={photo.name} url={photo.url} alt={photo.alt || photo.caption} style={frame.focalPoint ? { objectPosition: frame.focalPoint } : undefined} eager={index < 3} sizes="(max-width: 640px) 45vw, (max-width: 1024px) 34vw, 25vw" /></motion.span><i>{String(index + 1).padStart(2, '0')}</i><small className="fd-wall-caption">{photo.caption}</small></div></motion.button>;
-          })}
-          <AnimatePresence>{cluster && <motion.div className="fd-wall-focus-label" key={cluster.name} initial={reduced ? false : { opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ delay: reduced ? 0 : .28 }}><span>0{activeCluster + 1} / 0{clusters.length}</span><strong>{cluster.name}</strong><p>{cluster.note}</p></motion.div>}</AnimatePresence>
-        </div>
-      </section>
-      <footer className="fd-wall-controls"><span>Choose a group</span><nav aria-label="Canvas groups">{clusters.map((item, index) => <button type="button" key={item.name} className={activeCluster === index ? 'is-active' : ''} onClick={() => setActiveCluster(index)}><i>0{index + 1}</i><strong>{item.name}</strong></button>)}</nav><div className="fd-wall-arrows"><button type="button" onClick={() => moveCluster(-1)} disabled={activeCluster === 0} aria-label="Previous group"><ChevronLeft size={18} /></button><button type="button" onClick={() => moveCluster(1)} disabled={activeCluster === clusters.length - 1} aria-label="Next group"><ChevronRight size={18} /></button></div></footer>
-    </main>
-    <V3Bookend delivery={delivery} kind="closing" onGallery={() => setGallery(true)} />
-    <AnimatePresence>{selected !== null && <CanvasFocus photos={wallPhotos} index={selected} onSelect={selectPhoto} onClose={() => setSelected(null)} reduced={reduced} clientName={clientName} frames={frames} />}</AnimatePresence>
-    <AnimatePresence>{gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} onClose={() => setGallery(false)} delivery={delivery} fontStyles={themeStyles} {...galleryProps} />}</AnimatePresence>
-  </div>;
+export function CanvasDemo(props) {
+  return <CanvasBoard {...props} />;
 }
 
 export const chapters = [

@@ -25,10 +25,12 @@ import RevealDesignControls from '../components/delivery/RevealDesignControls.js
 import { revealSettings } from '../utils/photoReveal.js';
 import { editorialFromDelivery, reconcileEditorial } from '../utils/editorial.js';
 import DeliveryWritingReview from '../components/delivery/DeliveryWritingReview.jsx';
+import CanvasEditor from '../components/delivery/CanvasEditor.jsx';
+import { canvasSettings, canvasCheckpoints, canvasIssues } from '../utils/canvas.js';
 import { initialWritingOverrides, planPhotoWritingChange, applyWritingReview, setWritingText, undoWritingChange } from '../utils/deliveryWritingChanges.js';
 import './CreateDeliveryV3.css';
 
-const BOUNDS = { 'photo-story': [5, 10], editorial: [5, 14], 'photo-reveal': [5, 12], canvas: [8, 18], chapters: [8, 20], album: [6, 16], 'event-coverage': [10, 24], campaign: [6, 16] };
+const BOUNDS = { 'photo-story': [5, 10], editorial: [5, 14], 'photo-reveal': [5, 12], canvas: [6, 18], chapters: [8, 20], album: [6, 16], 'event-coverage': [10, 24], campaign: [6, 16] };
 const MUSIC = new Set(['photo-story', 'photo-reveal', 'album']);
 const STEPS = [{ id: 'details', label: 'Shoot' }, { id: 'format', label: 'Format' }, { id: 'upload', label: 'Photos' }, { id: 'preparing', label: 'Preparing' }, { id: 'showcase', label: 'Showcase' }, { id: 'narration', label: 'Narration' }, { id: 'music', label: 'Music' }, { id: 'design', label: 'Design' }, { id: 'access', label: 'Publish' }];
 const DEFAULT_ACCESS = { allowIndividualDownloads: true, allowDownloadAll: true, allowLikes: true, expiresAt: '', usageTerms: '' };
@@ -133,7 +135,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const captionPending = useRef(false);
   const captionRequest = useRef(null);
   useEffect(() => () => captionRequest.current?.abort(), []);
-  const [selected, setSelected] = useState(initialDelivery?.curatedAssetIds || []);
+  const [selected, setSelected] = useState(initialDelivery?.format === 'canvas' ? canvasCheckpoints(initialDelivery).flatMap(point => point.assetIds) : initialDelivery?.curatedAssetIds || []);
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [captions, setCaptions] = useState(Object.fromEntries((initialDelivery?.creativeDirection?.frames || []).map(frame => [frame.assetId, frame.caption])));
   const [headlines, setHeadlines] = useState(Object.fromEntries((initialDelivery?.creativeDirection?.frames || []).map(frame => [frame.assetId, frame.headline || ''])));
@@ -146,7 +148,10 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const [reveal, setReveal] = useState(() => revealSettings(initialDelivery));
   const [frameSettings, setFrameSettings] = useState(() => Object.fromEntries((initialDelivery?.creativeDirection?.frames || []).map(frame => [frame.assetId, { imageFit: frame.imageFit || 'contain', focalPoint: frame.focalPoint || '50% 50%' }])));
   const [captionUndo, setCaptionUndo] = useState({});
-  const [sections, setSections] = useState(initialDelivery?.creativeDirection?.sections || []);
+  const [sections, setSections] = useState(initialDelivery?.format === 'canvas' ? (initialDelivery?.creativeDirection?.sections || []).filter(section => section.id !== 'showcase') : initialDelivery?.creativeDirection?.sections || []);
+  const [canvas, setCanvas] = useState(() => canvasSettings(initialDelivery));
+  const [canvasAddTarget, setCanvasAddTarget] = useState('');
+  const [canvasPreview, setCanvasPreview] = useState(false);
   const [writingSuggestions, setWritingSuggestions] = useState([]);
   const [photoUndo, setPhotoUndo] = useState(null);
   const [writingReviewError, setWritingReviewError] = useState('');
@@ -182,7 +187,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const previewBranding = creationPreviewBranding(user, entitlements);
   const editorialFrames = useMemo(() => selected.map(assetId => ({ assetId, headline: headlines[assetId] || '', caption: captions[assetId] || '', imageFit: frameSettings[assetId]?.imageFit || 'contain', focalPoint: frameSettings[assetId]?.focalPoint || '50% 50%' })), [selected, headlines, captions, frameSettings]);
   const publication = useMemo(() => reconcileEditorial(editorial, selected, editorialFrames), [editorial, selected, editorialFrames]);
-  writingState.current = { format, selected, headlines, captions, openingLine, closingLine, openingAssetId, closingAssetId, editorial: publication, sections };
+  writingState.current = { format, selected, headlines, captions, openingLine, closingLine, openingAssetId, closingAssetId, editorial: publication, sections, canvas };
   const designPreviewDelivery = useMemo(() => {
     if (!draft) return null;
     const savedFrames = new Map((draft.creativeDirection?.frames || []).map(frame => [frame.assetId, frame]));
@@ -197,6 +202,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     return {
       ...draft,
       branding: previewBranding,
+      formatConfig: { ...draft.formatConfig, ...(format === 'canvas' ? { canvas } : {}) },
       curatedAssetIds: selected,
       creativeDirection: {
         ...draft.creativeDirection,
@@ -213,7 +219,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
       },
       v3: { ...draft.v3, openingAssetId, closingAssetId }
     };
-  }, [draft, previewBranding.type, previewBranding.name, previewBranding.logoUrl, selected, headlines, captions, title, openingLine, closingLine, format, palette, typography, openingAssetId, closingAssetId, publication, frameSettings, sections, reveal]);
+  }, [draft, previewBranding.type, previewBranding.name, previewBranding.logoUrl, selected, headlines, captions, title, openingLine, closingLine, format, palette, typography, openingAssetId, closingAssetId, publication, frameSettings, sections, reveal, canvas]);
   const bounds = BOUNDS[format] || [5, 10];
   const recommendedFormat = DELIVERY_FORMATS.find(item => item.value === recommendation?.format);
   const assets = draft?.assets || [];
@@ -236,7 +242,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     return next;
   }
   function syncShowcase(next) {
-    setSelected(next.curatedAssetIds || []);
+    setSelected(next.format === 'canvas' ? canvasCheckpoints(next).flatMap(point => point.assetIds) : next.curatedAssetIds || []);
     setCaptions(Object.fromEntries((next.creativeDirection?.frames || []).map(frame => [frame.assetId, frame.caption])));
     setHeadlines(Object.fromEntries((next.creativeDirection?.frames || []).map(frame => [frame.assetId, frame.headline || ''])));
     setTitle(next.creativeDirection?.title || '');
@@ -248,7 +254,8 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     setReveal(revealSettings(next));
     setFrameSettings(Object.fromEntries((next.creativeDirection?.frames || []).map(frame => [frame.assetId, { imageFit: frame.imageFit || 'contain', focalPoint: frame.focalPoint || '50% 50%' }])));
     setCaptionUndo({});
-    setSections(next.creativeDirection?.sections || []);
+    setSections(next.format === 'canvas' ? (next.creativeDirection?.sections || []).filter(section => section.id !== 'showcase') : next.creativeDirection?.sections || []);
+    setCanvas(canvasSettings(next)); setCanvasAddTarget('');
     writingOverrides.current = initialWritingOverrides(next);
     setWritingSuggestions([]); setPhotoUndo(null); setWritingReviewError('');
     setPalette(next.creativeDirection?.palette || defaultPalette);
@@ -395,7 +402,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     if (captionPending.current || busy) throw new Error('Wait for the current wording check to finish.');
     if (['replace', 'add'].includes(photoPicker.mode) && selected.includes(id)) throw new Error('Choose a photo that is not already in the showcase.');
     if (photoPicker.mode === 'add' && selected.length >= bounds[1]) throw new Error('The showcase already has its maximum number of photos.');
-    const before = writingState.current, change = { mode: photoPicker.mode, assetId: id, index: photoPicker.index };
+    const before = writingState.current, change = { mode: photoPicker.mode, assetId: id, index: photoPicker.index, groupId: format === 'canvas' ? canvasAddTarget : undefined };
     const version = ++photoRequestVersion.current;
     const release = () => { if (version === photoRequestVersion.current) { captionPending.current = false; setBusy(''); } };
     signal.addEventListener('abort', release, { once: true });
@@ -419,7 +426,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
       commitWritingState(result.next);
       setWritingSuggestions(current => [...current.filter(item => !plan.blocks.some(block => block.key === item.key)), ...result.suggestions]);
       setPhotoUndo({ before, after: result.next, overrides: new Set(writingOverrides.current) });
-      if (frame) { writingOverrides.current.delete(`frame:${id}:headline`); writingOverrides.current.delete(`frame:${id}:caption`); setActivePhotoIndex(change.mode === 'replace' ? change.index : result.next.selected.length - 1); }
+      if (frame) { writingOverrides.current.delete(`frame:${id}:headline`); writingOverrides.current.delete(`frame:${id}:caption`); setActivePhotoIndex(format === 'canvas' ? Math.max(0, result.next.selected.indexOf(id)) : change.mode === 'replace' ? change.index : result.next.selected.length - 1); }
     } catch (failure) { throw new Error(message(failure).text); }
     finally { signal.removeEventListener('abort', release); release(); }
   }
@@ -432,7 +439,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     setSelected(next.selected); setHeadlines(next.headlines); setCaptions(next.captions);
     setOpeningAssetId(next.openingAssetId); setClosingAssetId(next.closingAssetId);
     setOpeningLine(next.openingLine); setClosingLine(next.closingLine);
-    setEditorial(next.editorial); setSections(next.sections);
+    setEditorial(next.editorial); setSections(next.sections); if (next.canvas) setCanvas(next.canvas);
   }
   function markManual(key) {
     writingOverrides.current.add(key);
@@ -444,19 +451,19 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     for (const section of next.sections) for (const field of ['title', 'body']) if (section[field] !== current.sections.find(item => item.id === section.id)?.[field]) markManual(`section:${section.id}:${field}`);
     setEditorial(next);
   }
-  async function changePhotoOrder(order, activeId, nextEditorial) {
+  async function changePhotoOrder(order, activeId, nextEditorial, nextCanvas, nextSections, manual = []) {
     if (busy || captionPending.current) return;
-    const before = writingState.current, change = { mode: 'order', order, editorial: nextEditorial };
+    const before = writingState.current, change = { mode: 'order', order, editorial: nextEditorial, canvas: nextCanvas, sections: nextSections };
     const version = ++photoRequestVersion.current;
     const controller = new AbortController(); captionRequest.current = controller;
-    retryWritingReview.current = () => changePhotoOrder(order, activeId, nextEditorial);
+    retryWritingReview.current = () => changePhotoOrder(order, activeId, nextEditorial, nextCanvas, nextSections, manual);
     captionPending.current = true; setBusy('writing-review'); setWritingReviewError('');
     try {
       const plan = planPhotoWritingChange(before, change), reviewed = await reviewPhotoBlocks(plan.blocks, controller.signal);
       if (controller.signal.aborted || version !== photoRequestVersion.current) return;
       const latest = planPhotoWritingChange(writingState.current, change);
-      const result = applyWritingReview(latest.next, plan.blocks, reviewed, writingOverrides.current);
-      commitWritingState(result.next); setPhotoUndo({ before, after: result.next, overrides: new Set(writingOverrides.current) });
+      const result = applyWritingReview(latest.next, plan.blocks, reviewed, new Set([...writingOverrides.current, ...manual]));
+      manual.forEach(markManual); commitWritingState(result.next); setPhotoUndo({ before, after: result.next, overrides: new Set(writingOverrides.current) });
       setWritingSuggestions(current => [...current.filter(item => !plan.blocks.some(block => block.key === item.key)), ...result.suggestions]);
       if (activeId) setActivePhotoIndex(Math.max(0, order.indexOf(activeId)));
     } catch (failure) { if (!controller.signal.aborted) setWritingReviewError(message(failure).text + ' Your previous photo order and text have been kept.'); }
@@ -464,6 +471,23 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   }
   function moveSelected(index, offset) {
     if (index + offset < 0 || index + offset >= selected.length) return;
+    if (format === 'canvas') {
+      const points = canvasCheckpoints({ formatConfig: { canvas }, creativeDirection: { sections } }, selected);
+      const at = points.findIndex(point => point.assetIds.includes(selected[index]));
+      const adjacent = points.findIndex(point => point.assetIds.includes(selected[index + offset]));
+      let nextSections = sections;
+      if (at === adjacent) nextSections = sections.map(section => {
+        if (section.id !== points[at].sectionId) return section;
+        const ids = [...section.assetIds], position = ids.indexOf(selected[index]);
+        [ids[position], ids[position + offset]] = [ids[position + offset], ids[position]];
+        return { ...section, assetIds: ids };
+      });
+      else [points[at], points[adjacent]] = [points[adjacent], points[at]];
+      const checkpoints = points.map(point => point.type === 'group' ? { id: point.id, type: 'group', sectionId: point.sectionId } : { id: point.id, type: 'photo', assetId: point.assetId });
+      const order = points.flatMap(point => point.type === 'group' ? nextSections.find(section => section.id === point.sectionId).assetIds : [point.assetId]);
+      changePhotoOrder(order, selected[index], undefined, { ...canvas, checkpoints }, nextSections);
+      return;
+    }
     const next = [...selected]; [next[index], next[index + offset]] = [next[index + offset], next[index]];
     changePhotoOrder(next, selected[index]);
   }
@@ -486,6 +510,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   async function saveShowcase() {
     if (captionPending.current || busy) return;
     if (writingSuggestions.length) { setError('Review the suggested wording: use the new text or keep your current text before continuing.'); document.querySelector('.delivery-writing-review')?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' }); return; }
+    if (format === 'canvas') { const problem = canvasIssues(canvas.checkpoints, sections, selected); if (problem) { setError(problem); return; } if (sections.some(section => section.title.trim().length < 2)) { setError('Give each Canvas group a name with at least two characters.'); return; } }
     if (selected.length < bounds[0] || selected.length > bounds[1]) { setError(`Choose between ${bounds[0]} and ${bounds[1]} showcase photos before continuing.`); return; }
     if (title.trim().length < 2) { setError('Give this delivery a title with at least two characters.'); return; }
     if (openingLine.trim().length < 5) { setError('Write an opening message with at least five characters.'); return; }
@@ -515,7 +540,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   function showcasePayload() {
     if (format === 'editorial' && publication.credits.some(credit => !credit.role.trim() || !credit.name.trim())) throw new Error('Add a role and a name for each credit, or remove the empty credit.');
     const validKeys = new Set(['openingLine', 'closingLine', 'editorial.introduction', ...selected.flatMap(id => [`frame:${id}:headline`, `frame:${id}:caption`]), ...(format === 'editorial' ? publication.sections : sections).flatMap(section => [`section:${section.id}:title`, `section:${section.id}:body`])]);
-    return { assetIds: selected, frames: selected.map(assetId => ({ assetId, headline: (headlines[assetId] || '').trim(), caption: (captions[assetId] || '').trim(), ...(format === 'editorial' ? frameSettings[assetId] || { imageFit: 'contain', focalPoint: '50% 50%' } : {}) })), title: title.trim(), openingLine: openingLine.trim(), closingLine: closingLine.trim(), openingAssetId, closingAssetId, writingOverrides: [...writingOverrides.current].filter(key => validKeys.has(key)), ...(format === 'editorial' ? { editorial: publication } : { sectionWriting: sections.map(section => ({ id: section.id, title: section.title || '', subtitle: section.subtitle || '', assetIds: section.assetIds })) }) };
+    return { ...(format === 'canvas' ? { presentation: { format: 'canvas', ...canvas } } : {}), assetIds: selected, frames: selected.map(assetId => ({ assetId, headline: (headlines[assetId] || '').trim(), caption: (captions[assetId] || '').trim(), ...(format === 'editorial' ? frameSettings[assetId] || { imageFit: 'contain', focalPoint: '50% 50%' } : {}) })), title: title.trim(), openingLine: openingLine.trim(), closingLine: closingLine.trim(), openingAssetId, closingAssetId, writingOverrides: [...writingOverrides.current].filter(key => validKeys.has(key)), ...(format === 'editorial' ? { editorial: publication } : { sectionWriting: sections.map(section => ({ id: section.id, title: section.title || '', subtitle: section.subtitle || '', ...(format === 'canvas' && section.body !== undefined ? { body: section.body } : {}), assetIds: section.assetIds })) }) };
   }
   async function regenerateEditorialBlock(block, ids, previousText) {
     if (busy || captionPending.current || !ids.length) return null;
@@ -734,8 +759,9 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
             </div>
           </div>
           {format === 'editorial' && <EditorialEditor value={publication} onChange={editEditorial} assets={assets} frames={editorialFrames} onRegenerate={regenerateEditorialBlock} busy={!!busy} openingLine={openingLine} closingLine={closingLine} onOpeningChange={text => { markManual('openingLine'); setOpeningLine(text); }} onClosingChange={text => { markManual('closingLine'); setClosingLine(text); }} openingAssetId={openingAssetId} closingAssetId={closingAssetId} />}
+          {format === 'canvas' && <><CanvasEditor value={canvas} sections={sections} selected={selected} assets={assets} busy={!!busy} addTarget={canvasAddTarget} onAddTarget={setCanvasAddTarget} onPreview={() => setCanvasPreview(value => !value)} onChange={(next, options = {}) => changePhotoOrder(next.selected, activeShowcaseId, undefined, next.canvas, next.sections, options.manual || [])} onTextChange={(settings, sectionId, field, text) => { if (settings) setCanvas(settings); else { markManual(`section:${sectionId}:${field === 'subtitle' ? 'body' : 'title'}`); setSections(current => current.map(section => section.id === sectionId ? { ...section, [field]: text, ...(field === 'subtitle' && section.body !== undefined ? { body: text } : {}) } : section)); } }} />{canvasPreview && <div className="cv-creator-preview"><button type="button" onClick={() => setCanvasPreview(false)}>Close Canvas preview</button><div className="v3-design-preview"><ClientPreviewPhoneFrame delivery={designPreviewDelivery} narrationEnabled={false} access={access} isolate /></div></div>}</>}
           <DeliveryWritingReview suggestions={writingSuggestions} undo={!!photoUndo} pending={busy === 'writing-review'} error={writingReviewError} onRetry={() => retryWritingReview.current?.()} onUse={item => { commitWritingState(setWritingText(writingState.current, item.key, item.text)); markManual(item.key); }} onKeep={item => markManual(item.key)} onUndo={() => { commitWritingState(undoWritingChange(writingState.current, photoUndo.before, photoUndo.after)); for (const key of photoUndo.overrides) writingOverrides.current.add(key); setPhotoUndo(null); setWritingSuggestions([]); }} />
-          <div className="v3-showcase-section-heading"><div><span>02 / THE SHOWCASE PHOTOS</span><h2>Review each photo and its caption.</h2></div><p>Drag-free ordering: use the arrows to change the sequence.</p></div>
+          <div className="v3-showcase-section-heading"><div><span>02 / THE SHOWCASE PHOTOS</span><h2>Review each photo and its caption.</h2></div><p>{format === 'canvas' ? 'Arrows move a photo within its group. At a group boundary, they move the whole checkpoint.' : 'Drag-free ordering: use the arrows to change the sequence.'}</p></div>
           <div className="v3-showcase-editor">
             <div className="v3-showcase-nav" aria-label="Showcase photographs">
               {selected.map((id, index) => <button type="button" key={id} className={activeShowcaseIndex === index ? 'is-active' : ''} aria-current={activeShowcaseIndex === index ? 'true' : undefined} onClick={() => setActivePhotoIndex(index)} aria-label={'Edit showcase photo ' + (index + 1)}>
