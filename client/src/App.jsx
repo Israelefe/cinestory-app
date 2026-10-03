@@ -62,7 +62,7 @@ function RoutePosition() {
   const location = useLocation();
   const navigationType = useNavigationType();
   const { pathname, hash, key } = location;
-  useEffect(() => {
+  useLayoutEffect(() => {
     const previous = window.history.scrollRestoration;
     window.history.scrollRestoration = 'manual';
     return () => { window.history.scrollRestoration = previous; };
@@ -81,15 +81,17 @@ function RoutePosition() {
       if (stopped) return;
       if (hash) {
         const target = document.getElementById(hash.slice(1));
-        if (target) { target.scrollIntoView({ block: 'start', behavior: 'auto' }); stopped = true; return; }
-        if (performance.now() >= deadline) { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); stopped = true; return; }
+        if (target) { target.scrollIntoView({ block: 'start', behavior: 'instant' }); stopped = true; return; }
+        if (performance.now() >= deadline) { window.scrollTo({ top: 0, left: 0, behavior: 'instant' }); stopped = true; return; }
         frame = window.requestAnimationFrame(restore);
         return;
       }
-      if (!saved) { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); stopped = true; return; }
+      // 'auto' inherits CSS smooth scrolling, leaving the old position visible
+      // long enough for it to be saved again during a StrictMode remount.
+      if (!saved) { window.scrollTo({ top: 0, left: 0, behavior: 'instant' }); stopped = true; return; }
       const maxTop = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight) - window.innerHeight;
-      if (maxTop + 2 >= saved.top) { window.scrollTo({ top: saved.top, left: saved.left, behavior: 'auto' }); stopped = true; return; }
-      if (performance.now() >= deadline) { window.scrollTo({ top: Math.max(0, maxTop), left: saved.left, behavior: 'auto' }); stopped = true; return; }
+      if (maxTop + 2 >= saved.top) { window.scrollTo({ top: saved.top, left: saved.left, behavior: 'instant' }); stopped = true; return; }
+      if (performance.now() >= deadline) { window.scrollTo({ top: Math.max(0, maxTop), left: saved.left, behavior: 'instant' }); stopped = true; return; }
       frame = window.requestAnimationFrame(restore);
     };
     restore();
