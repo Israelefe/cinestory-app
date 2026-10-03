@@ -10,13 +10,17 @@
  */
 import { handleApiProxy } from './apiProxy.js';
 import { handleDeliveryShell } from './deliveryShell.js';
-import { handlePortfolioShell, PORTFOLIO_PATH } from './portfolioShell.js';
+import { handlePortfolioShell, handlePortfolioSitemap, PORTFOLIO_PATH } from './portfolioShell.js';
 
 const DELIVERY_PATH = /^\/d\/([^/]+)\/?$/;
 
 export default {
   async fetch(request, env, ctx) {
     const { pathname } = new URL(request.url);
+    if (pathname === '/robots.txt') return new Response(`User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /portfolio/manage\nDisallow: /portfolio/enquiries\nSitemap: ${String(env.VEYLO_WEB_ORIGIN || 'https://veylo.com.ng').replace(/\/$/, '')}/portfolio-sitemap.xml\n`, { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+    if (pathname === '/portfolio-sitemap.xml') return handlePortfolioSitemap(request, env);
+    const sitemap = pathname.match(/^\/portfolio-sitemap-(\d{1,6})\.xml$/);
+    if (sitemap) return handlePortfolioSitemap(request, env, Number(sitemap[1]));
 
     if (pathname === '/api' || pathname.startsWith('/api/')) {
       return handleApiProxy(request, env);

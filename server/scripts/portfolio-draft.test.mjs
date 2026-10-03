@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import { after, before, beforeEach, test } from 'node:test';
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
@@ -17,6 +18,11 @@ import PortfolioCleanup from '../src/models/PortfolioCleanup.js';
 import { preparePortfolioMedia, preparePortfolioSet } from '../src/services/portfolioMedia.service.js';
 import { cloudinary } from '../src/services/cloudinary.service.js';
 import AnalyticsEvent from '../src/models/AnalyticsEvent.js';
+import PortfolioEnquiry from '../src/models/PortfolioEnquiry.js';
+import { submitPortfolioEnquiry, listPortfolioEnquiries, updatePortfolioEnquiry } from '../src/controllers/portfolioEnquiry.controller.js';
+import { processPortfolioEnquiryNotifications } from '../src/services/portfolioEnquiry.service.js';
+import { getPortfolioSitemap } from '../src/controllers/portfolioV2.controller.js';
+import { normalizePortfolioContent } from '../src/shared/portfolioContent.mjs';
 import { getPortfolioActivity, recordPortfolioEngagement, directMyPortfolio } from '../src/controllers/portfolioV2.controller.js';
 import { normalizeSnapshot, portfolioId } from '../src/utils/portfolio.js';
 import { resolveEntitlements } from '../src/services/entitlement.service.js';
@@ -88,9 +94,9 @@ async function invoke(handler, body = {}, params = {}, user = owner, query = {})
 function body(overrides = {}) { return { expectedDraftRevision: 0, handle: 'amara-studio', studioName: 'Amara Studio', bio: 'Finished portraits and celebrations in Lagos.', headline: 'Portraits by Amara', heroPublicId: ids[0], items: ids.map(publicId => ({ publicId, category: 'Portraits' })), direction: {}, ...overrides }; }
 async function save(overrides = {}, user = owner) { const current = await Portfolio.findOne({ userId: user._id }); return invoke(updateMyPortfolio, body({ expectedDraftRevision: current?.draftRevision || 0, ...overrides }), {}, user); }
 async function publish(user = owner) { const current = await Portfolio.findOne({ userId: user._id }); return invoke(publishMyPortfolio, { expectedDraftRevision: current?.draftRevision || 0, publicationConfirmed: true }, {}, user); }
-before(async () => { process.env.DELIVERY_PIPELINE_ENABLED = 'true'; mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 } }); await mongoose.connect(mongo.getUri()); await Promise.all([Portfolio.init(), PortfolioHandle.init(), PortfolioMedia.init(), PortfolioJob.init()]); });
+before(async () => { process.env.DELIVERY_PIPELINE_ENABLED = 'true'; mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 } }); await mongoose.connect(mongo.getUri()); await Promise.all([Portfolio.init(), PortfolioHandle.init(), PortfolioMedia.init(), PortfolioJob.init(), PortfolioEnquiry.init()]); });
 beforeEach(async () => {
-  await Promise.all([Portfolio.deleteMany({}), PortfolioHandle.deleteMany({}), PortfolioJob.deleteMany({}), PortfolioMedia.deleteMany({}), PortfolioCleanup.deleteMany({}), AnalyticsEvent.deleteMany({}), StorageAsset.deleteMany({}), Subscription.deleteMany({}), User.deleteMany({}), Delivery.deleteMany({})]);
+  await Promise.all([Portfolio.deleteMany({}), PortfolioEnquiry.deleteMany({}), PortfolioHandle.deleteMany({}), PortfolioJob.deleteMany({}), PortfolioMedia.deleteMany({}), PortfolioCleanup.deleteMany({}), AnalyticsEvent.deleteMany({}), StorageAsset.deleteMany({}), Subscription.deleteMany({}), User.deleteMany({}), Delivery.deleteMany({})]);
   owner = await User.create({ name: 'Amara', email: 'amara@example.com', plan: 'pro', accountStatus: 'active', studio: { name: 'Amara Studio' } });
   await Subscription.create({ userId: owner._id, status: 'active', paidThrough: new Date(Date.now() + 30 * 86400000) });
   await StorageAsset.insertMany(ids.map(publicId => ({ userId: owner._id, publicId, format: 'jpg', width: 1200, height: 1800 })));
@@ -98,6 +104,120 @@ beforeEach(async () => {
 });
 after(async () => { await new Promise(resolve => setTimeout(resolve, 100)); await mongoose.disconnect(); await mongo?.stop(); });
 test('opening a new portfolio does not create a database record', async () => { const res = await invoke(getMyPortfolio); assert.equal(res.code, 200); assert.equal(res.body.draftRevision, 0); assert.equal(await Portfolio.countDocuments(), 0); });
+
+function expandedContent() {
+  return normalizePortfolioContent({ profile: { specialties: 'Wedding and portrait photography', about: 'I photograph people in Lagos and across Nigeria.' }, contact: { formEnabled: true, email: 'studio@example.com' }, services: [{ id: 'service-one', title: 'Studio portraits', description: 'A portrait session in our Lagos studio.', priceMode: 'starting', price: 75000 }], testimonials: [{ id: 'review-one', quote: 'We loved our photographs.', attribution: 'Ada', permission: true }], faqs: [{ id: 'question-one', question: 'Do you travel?', answer: 'Contact us with your location.' }] }, ['Portraits']);
+}
+const enquiryInput = () => ({ requestId: crypto.randomUUID(), name: 'Ada Okoye', replyMethod: 'whatsapp', replyTo: '08012345678', shootType: 'Studio portraits', message: 'I would like to ask about a birthday portrait session.', permission: true, serviceId: 'service-one' });
+test('expanded studio content and project details remain private until publication', async () => {
+  await save(); await publish();
+  const content = expandedContent(); content.galleryArrangement = 'columns';
+  assert.equal((await save({ content, projects: [{ id: 'project-one', title: 'Ada’s portraits', coverId: portfolioId(ids[0]), photoIds: ids.map(portfolioId), brief: 'Birthday portraits for Ada.', narrative: [{ id: 'narrative-one', title: 'The session', text: 'Studio portraits in Lagos.' }] }] })).code, 200);
+  let page = await invoke(getPublicPortfolio, {}, { handle: 'amara-studio' });
+  assert.equal(page.body.data.content.services.length, 0);
+  assert.equal((await publish()).code, 200);
+  page = await invoke(getPublicPortfolio, {}, { handle: 'amara-studio' });
+  assert.equal(page.body.data.content.services[0].price, 75000);
+  assert.equal(page.body.data.content.galleryArrangement, 'columns');
+  assert.equal(page.body.data.projects[0].brief, 'Birthday portraits for Ada.');
+  const categoryId = page.body.data.content.categoryDetails[0].id;
+  assert.equal((await invoke(getPortfolioShareMeta, {}, { handle: 'amara-studio' }, owner, { category: categoryId })).code, 200);
+  assert.equal((await invoke(getPortfolioShareMeta, {}, { handle: 'amara-studio' }, owner, { service: 'unknown-one' })).code, 404);
+});
+test('content bounds, references, consent and price ranges are enforced', async () => {
+  const content = expandedContent();
+  assert.equal((await save({ content: { ...content, services: Array.from({ length: 7 }, (_, index) => ({ ...content.services[0], id: `service-${index}` })) } })).code, 400);
+  assert.equal((await save({ content: { ...content, services: [{ ...content.services[0], projectIds: ['unknown-project'] }] } })).code, 400);
+  content.testimonials[0].permission = false;
+  assert.equal((await save({ content })).code, 200); assert.equal((await publish()).code, 400);
+  content.testimonials[0].permission = true; content.services[0].priceMode = 'range'; content.services[0].priceMax = 20000;
+  assert.equal((await save({ content })).code, 200); assert.equal((await publish()).code, 400);
+});
+test('hidden business sections and showcase-only contacts are absent from public responses', async () => {
+  const content = expandedContent(); content.sections.find(item => item.id === 'services').visible = false; content.sections.find(item => item.id === 'about').visible = false; content.contact.showcaseOnly = true;
+  await save({ content, whatsapp: '08012345678' }); assert.equal((await publish()).code, 200);
+  const page = await invoke(getPublicPortfolio, {}, { handle: 'amara-studio' });
+  assert.deepEqual(page.body.data.content.services, []); assert.equal(page.body.data.content.profile.about, ''); assert.equal(page.body.data.content.contact.email, ''); assert.equal(page.body.data.whatsapp, '');
+  assert.equal((await invoke(submitPortfolioEnquiry, enquiryInput(), { handle: 'amara-studio' })).code, 404);
+  const mine = await invoke(getMyPortfolio); assert.equal(mine.body.data.content.services.length, 1);
+});
+test('an older editor omitting expanded fields preserves saved content and project notes', async () => {
+  await save({ content: expandedContent(), projects: [{ id: 'project-one', title: 'Portraits', photoIds: ids.map(portfolioId), coverId: portfolioId(ids[0]), brief: 'A birthday session.' }] });
+  const result = await save({ bio: 'An introduction edited in an older tab.', projects: [{ id: 'project-one', title: 'Portraits', photoIds: ids.map(portfolioId), coverId: portfolioId(ids[0]) }] });
+  assert.equal(result.code, 200); assert.equal(result.body.data.content.services.length, 1); assert.equal(result.body.data.projects[0].brief, 'A birthday session.');
+});
+test('two profile images use their own allowance and retain media ownership and consent checks', async () => {
+  const profileIds = ['studio/profile-portrait', 'studio/profile-logo'];
+  await StorageAsset.insertMany(profileIds.map(publicId => ({ userId: owner._id, publicId, format: 'png', bytes: 10000 })));
+  await PortfolioMedia.insertMany(profileIds.map(publicId => ({ publicId, variants: Object.fromEntries(['400', '800', '1600', 'og'].map(key => [key, `https://res.cloudinary.com/test/${key}.webp`])) })));
+  const content = expandedContent(); content.profile.portraitId = portfolioId(profileIds[0]); content.profile.logoId = portfolioId(profileIds[1]);
+  assert.equal((await save({ content, profileMedia: profileIds.map(publicId => ({ publicId })) })).code, 200);
+  const savedRevision = (await Portfolio.findOne()).draftRevision;
+  assert.equal((await save({ content, profileMedia: profileIds.map(publicId => ({ publicId })) })).body.draftRevision, savedRevision);
+  assert.equal((await publish()).code, 200);
+  let page = await invoke(getPublicPortfolio, {}, { handle: 'amara-studio' });
+  assert.equal(page.body.data.items.length, 4); assert.equal(page.body.data.profileMedia.length, 2); assert.equal(page.body.data.profileMedia[0].publicId, undefined);
+  const changed = expandedContent(); changed.profile.logoId = portfolioId(profileIds[1]);
+  assert.equal((await save({ content: changed, profileMedia: profileIds.map(publicId => ({ publicId })), direction: { showBio: false } })).code, 200); await publish();
+  assert.equal((await invoke(getPortfolioMedia, {}, { handle: 'amara-studio', itemId: portfolioId(profileIds[0]) }, owner, { v: 'invalid' })).code, 404);
+  assert.equal((await save({ content: changed, profileMedia: [{ publicId: 'another-studio/logo' }] })).code, 400);
+  const foreign = expandedContent(); foreign.profile.logoId = portfolioId('another-studio/logo');
+  assert.equal((await save({ content: foreign, profileMedia: [{ publicId: 'another-studio/logo' }] })).code, 403);
+  await StorageAsset.updateOne({ publicId: profileIds[1] }, { bytes: 6 * 1024 * 1024 });
+  assert.equal((await save({ content: changed, profileMedia: profileIds.map(publicId => ({ publicId })) })).code, 400);
+  await removePortfolioReferences(owner._id, [profileIds[1]]);
+  assert.equal((await Portfolio.findOne()).content.profile.logoId, '');
+});
+test('enquiries are saved idempotently, validate contact details and enforce owner-only access', async () => {
+  await save({ content: expandedContent() }); await publish();
+  const input = enquiryInput();
+  const results = await Promise.all([invoke(submitPortfolioEnquiry, input, { handle: 'amara-studio' }), invoke(submitPortfolioEnquiry, input, { handle: 'amara-studio' })]);
+  assert.deepEqual(results.map(result => result.code), [202, 202]); assert.equal(await PortfolioEnquiry.countDocuments(), 1);
+  assert.equal((await invoke(submitPortfolioEnquiry, { ...input, message: 'Different details for the same submission.' }, { handle: 'amara-studio' })).code, 409);
+  assert.equal((await invoke(submitPortfolioEnquiry, { ...enquiryInput(), replyMethod: 'email', replyTo: 'invalid@example' }, { handle: 'amara-studio' })).code, 400);
+  const mine = await invoke(listPortfolioEnquiries); assert.equal(mine.body.total, 1); assert.equal(mine.body.data[0].replyTo, '2348012345678'); assert.equal(mine.body.data[0].fingerprint, undefined);
+  const other = await User.create({ name: 'Other', email: 'other@example.com', accountStatus: 'active', planOverride: { plan: 'pro' } });
+  assert.equal((await invoke(listPortfolioEnquiries, {}, {}, other)).body.total, 0);
+  const id = String(mine.body.data[0]._id);
+  assert.equal((await invoke(updatePortfolioEnquiry, { status: 'replied' }, { id }, other)).code, 404);
+  assert.equal((await invoke(updatePortfolioEnquiry, { status: 'replied' }, { id })).code, 200);
+  assert.equal((await invoke(listPortfolioEnquiries, {}, {}, owner, { status: 'replied' })).body.total, 1);
+});
+test('enquiry notification failure preserves messages and retries without visitor details in analytics', async () => {
+  await save({ content: expandedContent() }); await publish();
+  await invoke(submitPortfolioEnquiry, enquiryInput(), { handle: 'amara-studio' });
+  const now = new Date(Date.now() + 1000);
+  await processPortfolioEnquiryNotifications({ now, notify: async () => { throw new Error('Provider offline'); } });
+  let row = await PortfolioEnquiry.findOne(); assert.equal(row.notification.status, 'pending'); assert.ok(row.message);
+  await processPortfolioEnquiryNotifications({ now: new Date(now.getTime() + 3600000), notify: async input => { assert.equal(input.message, undefined); return { sent: true }; } });
+  row = await PortfolioEnquiry.findOne(); assert.equal(row.notification.status, 'sent');
+  const analytics = JSON.stringify(await AnalyticsEvent.find().lean()); assert.ok(!analytics.includes('Ada Okoye')); assert.ok(!analytics.includes('08012345678'));
+  await invoke(unpublishMyPortfolio, { expectedDraftRevision: 1 });
+  assert.equal((await invoke(submitPortfolioEnquiry, enquiryInput(), { handle: 'amara-studio' })).code, 404);
+  assert.equal((await invoke(listPortfolioEnquiries)).body.total, 1);
+});
+test('unfinished email leases are retried instead of marking an enquiry as notified', async () => {
+  await save({ content: expandedContent() }); await publish(); await invoke(submitPortfolioEnquiry, enquiryInput(), { handle: 'amara-studio' });
+  await processPortfolioEnquiryNotifications({ now: new Date(Date.now() + 1000), notify: async () => ({ duplicate: true, status: 'sending' }) });
+  assert.equal((await PortfolioEnquiry.findOne()).notification.status, 'pending');
+});
+test('portfolio sitemaps include only published accessible work and omit private drafts and expired accounts', async () => {
+  await save({ content: expandedContent(), projects: [{ id: 'project-one', title: 'Portraits', photoIds: ids.map(portfolioId), coverId: portfolioId(ids[0]) }] }); await publish();
+  let map = await invoke(getPortfolioSitemap, {}, {}, owner, { page: '0' }); assert.equal(map.code, 200); assert.ok(map.body.urls.some(item => item.loc.includes('/projects/project-one'))); assert.ok(map.body.urls.some(item => item.loc.includes('?category=')));
+  await save({ projects: [{ id: 'private-project', title: 'Private', photoIds: ids.map(portfolioId), coverId: portfolioId(ids[0]) }] });
+  map = await invoke(getPortfolioSitemap, {}, {}, owner, { page: '0' }); assert.ok(!map.body.urls.some(item => item.loc.includes('private-project')));
+  await Subscription.updateMany({}, { paidThrough: new Date(Date.now() - 1000) });
+  assert.deepEqual((await invoke(getPortfolioSitemap, {}, {}, owner, { page: '0' })).body.urls, []);
+});
+test('anonymous activity rejects arbitrary category text and suppresses short-window repeats and bots', async () => {
+  await save({ content: expandedContent() }); await publish();
+  assert.equal((await invoke(recordPortfolioEngagement, { action: 'filter.used', category: 'private@example.com' }, { handle: 'amara-studio' })).code, 400);
+  const cookies = { veylo_portfolio_client: 'a'.repeat(40) };
+  const request = { params: { handle: 'amara-studio' }, query: {}, cookies, headers: { 'user-agent': 'A visitor browser' } };
+  await getPublicPortfolio(request, response()); await new Promise(resolve => setTimeout(resolve, 40)); await getPublicPortfolio(request, response());
+  await getPublicPortfolio({ ...request, cookies: {}, headers: { 'user-agent': 'ExampleCrawlerBot' } }, response());
+  await new Promise(resolve => setTimeout(resolve, 40)); assert.equal(await AnalyticsEvent.countDocuments({ name: 'portfolio.viewed' }), 1);
+});
 test('incomplete drafts save, but cannot publish', async () => { const saved = await save({ bio: '', items: [], heroPublicId: '', handle: '' }); assert.equal(saved.code, 200); assert.equal((await publish()).code, 400); });
 test('saved edits stay private until explicitly published; publish retries are idempotent', async () => {
   await Portfolio.create({ userId: owner._id, handle: 'amara-studio', status: 'published', studioName: 'Amara Studio', bio: 'The original bio.', items: ids.map(publicId => ({ publicId })), heroPublicId: ids[0], publishedAt: new Date() });

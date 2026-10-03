@@ -41,6 +41,7 @@ const AccountSettings = lazyWithRecovery(() => import('./pages/AccountSettings.j
 const BillingPage = lazyWithRecovery(() => import('./pages/BillingPage.jsx'), 'billing');
 const ImageLibrary = lazyWithRecovery(() => import('./pages/ImageLibrary.jsx'), 'image-library');
 const ManagePortfolio = lazyWithRecovery(() => import('./pages/ManagePortfolio.jsx'), 'manage-portfolio');
+const PortfolioEnquiries = lazyWithRecovery(() => import('./pages/PortfolioEnquiries.jsx'), 'portfolio-enquiries');
 const PublicStudioPortfolio = lazyWithRecovery(() => import('./pages/PublicStudioPortfolio.jsx'), 'studio-portfolio');
 const DeliveryFormats = lazyWithRecovery(() => import('./pages/DeliveryFormats.jsx'), 'formats');
 const GridboardDelivery = lazyWithRecovery(() => import('./pages/GridboardDelivery.jsx'), 'gridboard-delivery');
@@ -102,6 +103,8 @@ function RoutePosition() {
     if (pathname === '/billing') names[pathname] = 'Plan and billing';
     if (pathname === '/library') names[pathname] = 'Personal image library';
     if (pathname === '/portfolio/manage') names[pathname] = 'Manage portfolio';
+    if (pathname === '/portfolio/enquiries') names[pathname] = 'Enquiry inbox';
+    if (publicPortfolioHandle(pathname)) return;
     const label = names[pathname] || (pathname.startsWith('/for/') ? `For ${pathname.split('/').pop().replaceAll('-', ' ')}` : 'Photo delivery');
     document.title = `Veylo — ${label}`;
   }, [pathname]);
@@ -145,8 +148,9 @@ function DeliveryChrome({ user }) {
   const hideAssistant = pathname === '/create'
     || pathname === '/portfolio'
     || pathname === '/portfolio/manage'
+    || pathname === '/portfolio/enquiries'
     || Boolean(publicPortfolioHandle(pathname));
-  return <><CookiePreferences />{!hideAssistant && <VeyloAssistant user={user} />}</>;
+  return <><CookiePreferences compactPortfolio={Boolean(publicPortfolioHandle(pathname))} />{!hideAssistant && <VeyloAssistant user={user} />}</>;
 }
 
 function VerificationRoute({ user, loading, children }) {
@@ -155,9 +159,9 @@ function VerificationRoute({ user, loading, children }) {
   return children;
 }
 
-const focusedRoutes = new Set(['/signup', '/signin', '/verify-email', '/forgot-password', '/reset-password', '/onboarding', '/dashboard', '/create', '/sharing', '/settings', '/billing', '/library', '/portfolio/manage']);
+const focusedRoutes = new Set(['/signup', '/signin', '/verify-email', '/forgot-password', '/reset-password', '/onboarding', '/dashboard', '/create', '/sharing', '/settings', '/billing', '/library', '/portfolio/manage', '/portfolio/enquiries']);
 const authRoutes = new Set(['/signup', '/signin', '/verify-email', '/forgot-password', '/reset-password']);
-const productRoutes = new Set(['/dashboard', '/create', '/sharing', '/settings', '/billing', '/library', '/portfolio/manage']);
+const productRoutes = new Set(['/dashboard', '/create', '/sharing', '/settings', '/billing', '/library', '/portfolio/manage', '/portfolio/enquiries']);
 
 function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountDeleted, onPlanChanged }) {
   const { pathname } = useLocation();
@@ -184,6 +188,7 @@ function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountD
       <Route path="/settings" element={<ProtectedRoute user={user} loading={authLoading}><AccountSettings user={user} onUserUpdated={onAuthenticated} onAccountDeleted={onAccountDeleted} /></ProtectedRoute>} />
       <Route path="/billing" element={<ProtectedRoute user={user} loading={authLoading}><BillingPage onPlanChanged={onPlanChanged} /></ProtectedRoute>} />
       <Route path="/library" element={<ProtectedRoute user={user} loading={authLoading}><ImageLibrary /></ProtectedRoute>} />
+      <Route path="/portfolio/enquiries" element={<ProtectedRoute user={user} loading={authLoading}><PortfolioEnquiries /></ProtectedRoute>} />
       <Route path="/portfolio/manage" element={<ProtectedRoute user={user} loading={authLoading}><ManagePortfolio /></ProtectedRoute>} />
       <Route path="/contact" element={<ContactSupport />} /><Route path="/changelog" element={<Changelog />} /><Route path="/about" element={<AboutUs />} /><Route path="/for/:slug" element={<NichePage />} /><Route path="/client-experience" element={<ClientExperience />} />
       <Route path="/privacy" element={<PrivacyPolicy />} /><Route path="/terms" element={<TermsOfService />} /><Route path="/fair-use" element={<FairUsePolicy />} /><Route path="/refund-policy" element={<RefundPolicy />} /><Route path="*" element={<NotFound />} />

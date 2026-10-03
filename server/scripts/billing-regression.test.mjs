@@ -4,6 +4,9 @@ import crypto from 'node:crypto';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import User from '../src/models/User.js';
+import Portfolio from '../src/models/Portfolio.js';
+import PortfolioMedia from '../src/models/PortfolioMedia.js';
+import PortfolioEnquiry from '../src/models/PortfolioEnquiry.js';
 import Subscription from '../src/models/Subscription.js';
 import Payment from '../src/models/Payment.js';
 import Refund from '../src/models/Refund.js';
@@ -148,6 +151,9 @@ test('deleting a published delivery preserves its original usage date', async ()
 
 test('account deletion stops provider billing and retains a restricted financial ledger', async () => {
   const { payment, subscription } = await paid();
+  const portfolio = await Portfolio.create({ userId: owner._id, handle: 'amara-studio', profileMedia: [{ id: 'profile-one', publicId: 'studio/profile-one' }], content: { profile: { portraitId: 'profile-one' } } });
+  await PortfolioMedia.create({ publicId: 'studio/profile-one' });
+  await PortfolioEnquiry.create({ userId: owner._id, portfolioId: portfolio._id, requestId: crypto.randomUUID(), fingerprint: 'test-fingerprint', name: 'Ada', replyMethod: 'email', replyTo: 'ada@example.test', shootType: 'Portraits', message: 'I would like a portrait session.' });
   await recordPaidUsage(owner._id, 'delivery', 'historical-deleted-delivery');
   const result = await deleteUserAccount({ userId: owner._id });
   assert.equal(result.deleted.financialRecordsRetained, true);
@@ -159,6 +165,8 @@ test('account deletion stops provider billing and retains a restricted financial
   assert.ok(schedule.providerCanceledAt);
   assert.equal(schedule.emailTokenEncrypted, undefined);
   assert.equal(await EmailDelivery.countDocuments({ userId: owner._id }), 0);
+  assert.equal(await PortfolioEnquiry.countDocuments({ userId: owner._id }), 0);
+  assert.equal(await PortfolioMedia.countDocuments({ publicId: 'studio/profile-one' }), 0);
   assert.ok((await PaidUsage.findOne({ userId: owner._id })).retainUntil);
 });
 

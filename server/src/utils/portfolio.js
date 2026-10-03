@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 import { z } from 'zod';
+import { normalizePortfolioContent, normalizeProjectDetails } from '../shared/portfolioContent.mjs';
+import { portfolioContentSchema, projectDetailsSchema, contentErrors } from './portfolioContent.js';
 export const portfolioId = publicId => `p-${crypto.createHash('sha256').update(String(publicId)).digest('hex').slice(0, 24)}`;
 export const directionDefaults = Object.freeze({
   template: 'editorial',
@@ -46,6 +48,7 @@ const itemSchema = z.object({
 const categoryName = value => value.trim().replace(/\s+/g, ' ');
 const categoryKey = value => categoryName(value).toLocaleLowerCase('en');
 export const hasPortfolioCategory = value => Boolean(categoryKey(value || '')) && categoryKey(value || '') !== 'selected work';
+export const allPortfolioMedia = snapshot => [...new Map([...(snapshot.items || []), ...(snapshot.profileMedia || [])].map(item => [item.publicId, item])).values()];
 export function visiblePortfolioPhotoIds(snapshot) {
   return new Set([
     ...snapshot.items.filter(item => item.featured || (snapshot.direction.showCategories && hasPortfolioCategory(item.category))).map(item => item.id),
@@ -68,6 +71,7 @@ export const draftSchema = z.object({
   items: z.array(itemSchema).max(50).default([]),
   categories: z.array(categorySchema).max(100).default([]).refine(names => new Set(names.map(categoryKey)).size === names.length, 'Each category needs a different name.').refine(names => !names.some(name => categoryKey(name) === 'selected work'), 'Selected work is reserved for photographs without a category.'),
   projects: z.array(z.object({
+    ...projectDetailsSchema,
     id: z.string().regex(/^[A-Za-z0-9_-]{8,80}$/),
     title: z.string().trim().max(100),
     description: z.string().trim().max(400).default(''),
@@ -75,6 +79,8 @@ export const draftSchema = z.object({
     coverId: z.string().max(80).default(''),
     photoIds: z.array(z.string().max(80)).max(50)
   }).strict()).max(50).default([]),
+  profileMedia: z.array(itemSchema).max(2).default([]),
+  content: portfolioContentSchema,
   direction: directionSchema.default({})
 }).strict();
 export function normalizeWhatsApp(value) {
@@ -125,6 +131,7 @@ export function normalizeSnapshot(value = {}) {
     categories: [...names.values()],
     items,
     projects: (plain.projects || []).map(project => ({
+      ...normalizeProjectDetails(project),
       id: project.id,
       title: project.title,
       description: project.description || '',
@@ -132,6 +139,8 @@ export function normalizeSnapshot(value = {}) {
       coverId: project.coverId || project.photoIds[0] || '',
       photoIds: [...project.photoIds]
     })),
+    profileMedia: (plain.profileMedia || []).map((item, sortOrder) => ({ id: portfolioId(item.publicId), publicId: item.publicId, title: item.title || '', alt: item.alt || '', width: item.width || undefined, height: item.height || undefined, sortOrder, featured: true, category: 'Selected work', crop: 'fit', focalX: 50, focalY: 50 })),
+    content: normalizePortfolioContent(plain.content?.toObject?.() || plain.content || {}, [...names.values()]),
     direction: {
       ...directionDefaults,
       ...(plain.direction?.toObject?.() || plain.direction || {})
@@ -142,6 +151,7 @@ export function snapshotErrors(snapshot, {
   publish = false, existingHandle = ''
 } = {}) {
   const errors = [];
+  errors.push(...contentErrors(snapshot, publish));
   const ids = new Set(snapshot.items.map(item => item.id));
   if (snapshot.categories.length > 100) errors.push('Use no more than 100 categories.');
   if (new Set(snapshot.items.map(item => item.publicId)).size !== snapshot.items.length) errors.push('Each photograph can only be added once.');
@@ -152,6 +162,7 @@ export function snapshotErrors(snapshot, {
     if (publish && (!project.title.trim() || !project.photoIds.length)) errors.push('Give each project a title and at least one photograph.');
   }
   const visible = visiblePortfolioPhotoIds(snapshot);
+  if (publish && snapshot.content.share.coverId && !visible.has(snapshot.content.share.coverId)) errors.push('Choose a sharing cover that appears in your public work.');
   if (publish && snapshot.heroPublicId && !snapshot.items.some(item => item.publicId === snapshot.heroPublicId && visible.has(item.id))) errors.push('Choose a public cover photograph.');
   if (publish) {
     const keepingLegacy = snapshot.handle === existingHandle && publicHandleSchema.safeParse(snapshot.handle).success;
@@ -169,6 +180,9 @@ export function snapshotErrors(snapshot, {
 export function removeSnapshotPhotos(value, removedIds) {
   const next = normalizeSnapshot(value);
   next.items = next.items.filter(item => !removedIds.has(item.publicId));
+  next.profileMedia = next.profileMedia.filter(item => !removedIds.has(item.publicId));
+  const mediaIds = new Set(next.profileMedia.map(item => item.id));
+  for (const key of ['portraitId', 'logoId']) if (!mediaIds.has(next.content.profile[key])) next.content.profile[key] = '';
   const ids = new Set(next.items.map(item => item.id));
   next.projects = next.projects.map(project => {
     const photoIds = project.photoIds.filter(id => ids.has(id));
@@ -178,6 +192,12 @@ export function removeSnapshotPhotos(value, removedIds) {
       coverId: photoIds.includes(project.coverId) ? project.coverId : photoIds[0] || ''
     };
   }).filter(project => project.photoIds.length);
+  const projectIds = new Set(next.projects.map(project => project.id));
+  next.projects.forEach(project => { project.relatedIds = project.relatedIds.filter(id => projectIds.has(id)); });
+  next.content.services.forEach(service => { service.projectIds = service.projectIds.filter(id => projectIds.has(id)); });
+  next.content.testimonials.forEach(review => { if (!projectIds.has(review.projectId)) review.projectId = ''; });
+  next.content.categoryDetails.forEach(detail => { if (!ids.has(detail.coverId)) detail.coverId = ''; });
+  if (!ids.has(next.content.share.coverId)) next.content.share.coverId = '';
   const visible = visiblePortfolioPhotoIds(next);
   if (!next.items.some(item => item.publicId === next.heroPublicId && visible.has(item.id))) next.heroPublicId = next.items.find(item => visible.has(item.id))?.publicId || '';
   return next;

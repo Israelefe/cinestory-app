@@ -7,7 +7,9 @@ export default function PortfolioPhotoPicker({
   items,
   onAdd,
   onClose,
-  triggerRef
+  triggerRef,
+  maxPhotos = 50,
+  title = 'Add photographs'
 }) {
   const ref = useRef(null);
   const requestRef = useRef(0);
@@ -85,7 +87,7 @@ export default function PortfolioPhotoPicker({
   return <div className="v-pedit-picker" onMouseDown={event => {
     if (event.target === event.currentTarget) onClose();
   }}><section ref={ref} role="dialog" aria-modal="true" aria-labelledby="portfolio-picker-title" tabIndex={-1}>
-    <header><div><p>YOUR FINISHED WORK</p><h2 id="portfolio-picker-title">Add photographs</h2><span>Only the photographs you choose will appear in your public portfolio.</span></div><button onClick={onClose} aria-label="Close photograph picker"><X size={20} /></button></header>
+    <header><div><p>YOUR FINISHED WORK</p><h2 id="portfolio-picker-title">{title}</h2><span>Add to your private draft. Publish when you are ready to show them.</span></div><button onClick={onClose} aria-label="Close photograph picker"><X size={20} /></button></header>
     <div className="v-pedit-picker-filters"><nav aria-label="Photo source">{[['deliveries', 'Deliveries'], ['library', 'Library']].map(([value, label]) => <button key={value} aria-pressed={kind === value} onClick={() => {
             setKind(value);
             setDelivery(null);
@@ -97,15 +99,15 @@ export default function PortfolioPhotoPicker({
     <div className="v-pedit-picker-scroll"><div className="v-pedit-source-grid">{rows.map(row => kind === 'deliveries' && !delivery ? <button key={row.sourceId} onClick={() => {
             setDelivery(row);
             setQuery('');
-          }}>{row.thumbnailUrl && <img src={mediaUrl(row.thumbnailUrl)} alt="" loading="lazy" />}<strong>{row.title}</strong><small>{row.photoCount} photographs</small></button> : <button key={row.publicId} disabled={known.has(row.publicId) || !selected.some(item => item.publicId === row.publicId) && items.length + selected.length >= 50} aria-pressed={selected.some(item => item.publicId === row.publicId)} onClick={() => setSelected(previous => previous.some(item => item.publicId === row.publicId) ? previous.filter(item => item.publicId !== row.publicId) : [...previous, {
+          }}>{row.thumbnailUrl && <img src={mediaUrl(row.thumbnailUrl)} alt="" loading="lazy" />}<strong>{row.title}</strong><small>{row.photoCount} photographs</small></button> : <button key={row.publicId} aria-label={`Select ${row.filename || 'finished photograph'}`} disabled={known.has(row.publicId) || !selected.some(item => item.publicId === row.publicId) && items.length + selected.length >= maxPhotos} aria-pressed={selected.some(item => item.publicId === row.publicId)} onClick={() => setSelected(previous => previous.some(item => item.publicId === row.publicId) ? previous.filter(item => item.publicId !== row.publicId) : [...previous, {
             ...row,
             title: '',
             thumbnailUrl: mediaUrl(row.thumbnailUrl),
             url: mediaUrl(row.thumbnailUrl)
           }])}><img src={mediaUrl(row.thumbnailUrl)} alt={row.filename || 'Finished photograph'} loading="lazy" /><span className="v-pedit-source-check">{known.has(row.publicId) || selected.some(item => item.publicId === row.publicId) ? <Check size={16} /> : ''}</span><small>{known.has(row.publicId) ? 'Already in your portfolio' : row.filename || 'Finished photograph'}</small></button>)}</div>{!rows.length && !loading && !error && <div className="v-pedit-empty"><ImageIcon size={28} /><h3>No work here yet</h3><p>{kind === 'deliveries' && !query ? 'Publish a finished delivery, or choose photographs from your library.' : 'Try a different search or photo source.'}</p></div>}{error && <div className="v-pedit-notice" role="alert"><p>{error}</p><button onClick={() => setRetry(value => value + 1)}>Try again</button></div>}{loading && <p role="status" className="v-pedit-loading">Loading finished work…</p>}{cursor && <button className="v-pedit-more" disabled={loading} onClick={more}>Load more</button>}</div>
-    <footer><span>{selected.length} chosen · {50 - items.length - selected.length} spaces left</span><div><button onClick={onClose}>Cancel</button><button className="v-pedit-primary" disabled={!selected.length} onClick={() => {
+    <footer><span>{selected.length} chosen · {maxPhotos - items.length - selected.length} spaces left</span><div><button onClick={onClose}>Cancel</button><button className="v-pedit-primary" disabled={!selected.length} onClick={() => {
             onAdd(selected);
             onClose();
-          }}>Add selected photographs</button></div></footer>
+          }}>{maxPhotos === 1 ? 'Use selected image' : 'Add selected photographs'}</button></div></footer>
   </section></div>;
 }

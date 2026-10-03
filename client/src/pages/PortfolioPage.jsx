@@ -12,7 +12,6 @@ import {
   Smartphone,
   Type
 } from 'lucide-react';
-import PortfolioShowcase from '../components/PortfolioShowcase.jsx';
 import { Action, Eyebrow, Page, Photo, Reveal } from '../components/PublicDesign.jsx';
 
 const directionChoices = [
@@ -66,7 +65,7 @@ export default function PortfolioPage({ user }) {
           <p className="v-lead">
             Put your strongest weddings, portraits, celebrations, and campaigns in one public place. When a potential client asks to see your work, you have one address ready to send.
           </p>
-          <div className="v-portfolio-hero-actions"><Action to={user ? '/portfolio/manage' : '/signup'}>{user ? 'Create or edit your portfolio' : 'Create your account'}</Action><a href="#portfolio-showcase">Explore the sample</a></div>
+          <div className="v-portfolio-hero-actions"><Action to={user ? '/portfolio/manage' : '/signup'}>{user ? 'Create or edit your portfolio' : 'Create your account'}</Action></div>
           <div className="v-portfolio-handle">
             <Camera size={17} aria-hidden="true" />
             <strong>veylo.com.ng/@yourstudio</strong>
@@ -75,7 +74,6 @@ export default function PortfolioPage({ user }) {
         </div>
       </header>
 
-      <section id="portfolio-showcase" className="v-wrap"><PortfolioShowcase /></section>
 
       <section className="v-section v-portfolio-direction">
         <div className="v-wrap v-portfolio-direction-grid">
@@ -132,7 +130,7 @@ export default function PortfolioPage({ user }) {
               <Eyebrow number="02">From delivery to portfolio</Eyebrow>
               <h2 className="v-heading">Your finished work is already here.<br /><em>Choose what the public sees.</em></h2>
             </div>
-            <p className="v-copy">No second upload and no empty page builder. Start with work you have already delivered, then review every choice before publishing.</p>
+            <p className="v-copy">Start with photographs from your deliveries or library. Add your introduction, services, client feedback and answers to common questions, then review the page before publishing.</p>
           </Reveal>
 
           <div className="v-portfolio-steps">
@@ -173,12 +171,12 @@ export default function PortfolioPage({ user }) {
               {
                 icon: MessageSquare,
                 title: 'One tap to ask about a shoot',
-                copy: 'A visitor can move from admiring your work to starting a WhatsApp conversation without filling a long contact form.'
+                copy: 'Visitors can ask about a specific project or service through WhatsApp, email or an optional short form. Form enquiries arrive in your private studio inbox.'
               },
               {
                 icon: ShieldCheck,
                 title: 'You decide what becomes public',
-                copy: 'Private client deliveries stay private. A photograph only appears in your portfolio when you choose to add it.'
+                copy: 'Select the photographs and details you have permission to share. Your edits stay in a private draft until you publish them.'
               }
             ].map(({ icon: Icon, title, copy }, index) => (
               <motion.article

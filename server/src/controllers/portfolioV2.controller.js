@@ -9,11 +9,13 @@ import Delivery from '../models/Delivery.js';
 import StorageAsset from '../models/StorageAsset.js';
 import User from '../models/User.js';
 import AnalyticsEvent from '../models/AnalyticsEvent.js';
+import PortfolioEnquiry from '../models/PortfolioEnquiry.js';
+import { sectionVisible, PROJECT_FIELDS, repairPortfolioReferences } from '../shared/portfolioContent.mjs';
 import { resolveEntitlements } from '../services/entitlement.service.js';
 import { recordAnalyticsEventAsync } from '../services/analytics.service.js';
 import { isRuntimeFeatureEnabled } from '../services/runtimeConfig.service.js';
 import { preparePortfolioSet, streamPortfolioMedia } from '../services/portfolioMedia.service.js';
-import { normalizeSnapshot, snapshotErrors, draftSchema, handleSchema, publicHandleSchema, RESERVED, portfolioId, normalizeInstagram, normalizeWhatsApp, visiblePortfolioPhotoIds } from '../utils/portfolio.js';
+import { normalizeSnapshot, snapshotErrors, draftSchema, handleSchema, publicHandleSchema, RESERVED, portfolioId, normalizeInstagram, normalizeWhatsApp, visiblePortfolioPhotoIds, allPortfolioMedia } from '../utils/portfolio.js';
 import { PORTFOLIO_HANDLE_CHANGE_COOLDOWN_MS, PORTFOLIO_HANDLE_REDIRECT_MS, PORTFOLIO_HANDLE_RESERVATION_MS, STUDIO_NAME_CHANGE_COOLDOWN_MS, isoDate, nextChangeAt } from '../constants/profilePolicy.js';
 import { tokenDigest } from '../utils/auth.js';
 import { CREATIVE_DIRECTOR_PROVIDER, CREATIVE_DIRECTOR_PROMPT_VERSION } from '../services/alibabaCreativeDirector.service.js';
@@ -40,7 +42,7 @@ function policy(user, portfolio) {
     handleNextChangeAt: isoDate(nextChangeAt(portfolio?.handleChangedAt, PORTFOLIO_HANDLE_CHANGE_COOLDOWN_MS))
   };
 }
-async function owner(req, editing = false) {
+export async function owner(req, editing = false) {
   const user = await User.findById(req.user.id);
   if (!user || user.accountStatus !== 'active') throw Object.assign(new Error('Please sign in to continue.'), {
     status: 401
@@ -71,7 +73,7 @@ export async function availableAssets(userId, ids, priorIds = []) {
     publicId: {
       $in: ids
     }
-  }).select('publicId width height').lean()]);
+  }).select('publicId width height bytes format').lean()]);
   const prior = new Set(priorIds);
   const wanted = new Set(ids);
   const map = new Map(stored.map(asset => [asset.publicId, asset]));
@@ -84,7 +86,7 @@ function output(value, studioName, {
 } = {}) {
   const next = normalizeSnapshot(value);
   const visible = visiblePortfolioPhotoIds(next);
-  const items = (publicPage ? next.items.filter(item => visible.has(item.id)) : next.items).map(item => {
+  const renderMedia = item => {
     const root = publicPage ? `/api/v1/portfolios/public/${encodeURIComponent(handle)}/media/${item.id}` : `/api/v1/portfolios/mine/media/${item.id}`;
     const {
       publicId,
@@ -99,8 +101,18 @@ function output(value, studioName, {
       thumbnailUrl: `${root}?v=400`,
       srcSet: [400, 800, 1600].map(width => `${root}?v=${width} ${width}w`).join(', ')
     };
-  });
+  };
+  const items = (publicPage ? next.items.filter(item => visible.has(item.id)) : next.items).map(renderMedia);
+  const profileIds = new Set([next.content.profile.logoId, ...(next.direction.showBio && sectionVisible(next.content, 'about') ? [next.content.profile.portraitId] : [])]);
+  const profileMedia = (publicPage ? next.profileMedia.filter(item => profileIds.has(item.id)) : next.profileMedia).map(renderMedia);
   const heroId = portfolioId(next.heroPublicId);
+  const content = structuredClone(next.content);
+  if (publicPage) {
+    for (const key of ['services', 'testimonials', 'process', 'faqs']) if (!sectionVisible(content, key)) content[key] = [];
+    if (!next.direction.showBio || !sectionVisible(content, 'about')) for (const key of ['about', 'serviceAreas', 'travel', 'portraitId']) content.profile[key] = '';
+    if (!next.direction.showCategories) content.categoryDetails = [];
+    if (!next.direction.showContact || content.contact.showcaseOnly) content.contact = { ...content.contact, email: '', formEnabled: false, responseNote: '' };
+  }
   const {
     heroPublicId,
     ...safe
@@ -113,6 +125,9 @@ function output(value, studioName, {
     studioName,
     heroId,
     items,
+    profileMedia,
+    content,
+    ...(publicPage && (!next.direction.showContact || content.contact.showcaseOnly) ? { whatsapp: '', instagram: '' } : {}),
     publishedAt: value.publishedAt || null
   };
 }
@@ -269,20 +284,33 @@ export async function updateMyPortfolio(req, res) {
       expectedDraftRevision,
       ...input
     } = parsed.data;
-    const next = normalizeSnapshot({
+    const priorSnapshot = normalizeSnapshot(current?.draft || current || {});
+    // Older open editor tabs do not know the new fields. Omission must not erase them.
+    const legacyContent = !Object.hasOwn(req.body, 'content');
+    if (legacyContent) input.content = priorSnapshot.content;
+    if (!Object.hasOwn(req.body, 'profileMedia')) input.profileMedia = priorSnapshot.profileMedia;
+    input.projects = input.projects.map(project => {
+      const prior = priorSnapshot.projects.find(item => item.id === project.id);
+      const submitted = req.body.projects?.find(item => item.id === project.id);
+      return !prior ? project : { ...project, ...Object.fromEntries([...PROJECT_FIELDS, 'narrative', 'relatedIds'].filter(key => !Object.hasOwn(submitted || {}, key)).map(key => [key, prior[key]])) };
+    });
+    let next = normalizeSnapshot({
       ...input,
       studioName: user.studio?.name || user.name
     });
+    if (legacyContent) next = repairPortfolioReferences(next);
     const errors = snapshotErrors(next);
     if (errors.length) return fail(res, 400, 'INVALID_DRAFT', errors[0]);
-    const prior = normalizeSnapshot(current?.draft || current || {}).items.map(item => item.publicId);
-    const owned = await availableAssets(user._id, next.items.map(item => item.publicId), prior);
-    if (next.items.some(item => !owned.has(item.publicId))) return fail(res, 403, 'ASSET_UNAVAILABLE', 'A selected photograph is no longer available to this account. Remove it and try again.');
+    const prior = allPortfolioMedia(normalizeSnapshot(current?.draft || current || {})).map(item => item.publicId);
+    const owned = await availableAssets(user._id, allPortfolioMedia(next).map(item => item.publicId), prior);
+    if (allPortfolioMedia(next).some(item => !owned.has(item.publicId))) return fail(res, 403, 'ASSET_UNAVAILABLE', 'A selected photograph is no longer available to this account. Remove it and try again.');
+    if (next.profileMedia.some(item => owned.get(item.publicId)?.bytes > 5 * 1024 * 1024)) return fail(res, 400, 'PROFILE_IMAGE_TOO_LARGE', 'Choose a portrait or logo no larger than 5 MB.');
     next.items = next.items.map(item => ({
       ...item,
       width: owned.get(item.publicId).width,
       height: owned.get(item.publicId).height
     }));
+    next.profileMedia = next.profileMedia.map(item => ({ ...item, width: owned.get(item.publicId).width, height: owned.get(item.publicId).height }));
     if (current && JSON.stringify(normalizeSnapshot(current.draft || current)) === JSON.stringify(next)) return res.json(envelope(current, user, access));
     let saved;
     if (!current) {
@@ -383,10 +411,12 @@ export async function publishMyPortfolio(req, res) {
     if (errors.length) return fail(res, 400, 'PUBLISH_NOT_READY', errors[0], {
       errors
     });
-    const approved = new Set(normalizeSnapshot(portfolio).items.map(item => item.publicId));
-    if (draft.items.some(item => !approved.has(item.publicId)) && !parsed.data.publicationConfirmed) return fail(res, 400, 'PUBLICATION_CONFIRMATION_REQUIRED', 'Confirm that you have permission to show these photographs publicly.');
-    const owned = await availableAssets(user._id, draft.items.map(item => item.publicId), draft.items.map(item => item.publicId));
-    if (draft.items.some(item => !owned.has(item.publicId))) return fail(res, 403, 'ASSET_UNAVAILABLE', 'A selected photograph was deleted. Review your work before publishing.');
+    const approved = new Set(allPortfolioMedia(normalizeSnapshot(portfolio)).map(item => item.publicId));
+    const media = allPortfolioMedia(draft);
+    if (media.some(item => !approved.has(item.publicId)) && !parsed.data.publicationConfirmed) return fail(res, 400, 'PUBLICATION_CONFIRMATION_REQUIRED', 'Confirm that you have permission to show these photographs publicly.');
+    const owned = await availableAssets(user._id, media.map(item => item.publicId), media.map(item => item.publicId));
+    if (media.some(item => !owned.has(item.publicId))) return fail(res, 403, 'ASSET_UNAVAILABLE', 'A selected photograph was deleted. Review your work before publishing.');
+    if (draft.profileMedia.some(item => owned.get(item.publicId)?.bytes > 5 * 1024 * 1024)) return fail(res, 400, 'PROFILE_IMAGE_TOO_LARGE', 'Choose a portrait or logo no larger than 5 MB.');
     if (draft.projects.length && !(await isRuntimeFeatureEnabled('portfolioRedesign', process.env.PORTFOLIO_REDESIGN_ENABLED !== 'false'))) return fail(res, 503, 'PORTFOLIO_REDESIGN_DISABLED', 'Project publishing is temporarily unavailable. Your draft is saved.');
     if (portfolio.handle !== draft.handle && portfolio.publishedAt) {
       const cooldown = nextChangeAt(portfolio.handleChangedAt, PORTFOLIO_HANDLE_CHANGE_COOLDOWN_MS);
@@ -396,14 +426,15 @@ export async function publishMyPortfolio(req, res) {
     }
     if (portfolio.previousHandles?.some(entry => entry.handle === draft.handle && new Date(entry.reservedUntil) > new Date())) return fail(res, 409, 'PORTFOLIO_HANDLE_RESERVED', 'That previous address is still reserved. Choose another address.');
     // No live content changes until every selected display variant is ready.
-    const prepared = await preparePortfolioSet(draft.items);
+    const prepared = await preparePortfolioSet(media);
     draft.items = draft.items.map(item => ({
       ...item,
       width: item.width || prepared.get(item.publicId)?.width,
       height: item.height || prepared.get(item.publicId)?.height
     }));
-    const remaining = await availableAssets(user._id, draft.items.map(item => item.publicId), draft.items.map(item => item.publicId));
-    if (draft.items.some(item => !remaining.has(item.publicId))) return fail(res, 409, 'ASSET_UNAVAILABLE', 'A photograph was deleted while preparing your portfolio. Review your draft.');
+    draft.profileMedia = draft.profileMedia.map(item => ({ ...item, width: item.width || prepared.get(item.publicId)?.width, height: item.height || prepared.get(item.publicId)?.height }));
+    const remaining = await availableAssets(user._id, media.map(item => item.publicId), media.map(item => item.publicId));
+    if (media.some(item => !remaining.has(item.publicId))) return fail(res, 409, 'ASSET_UNAVAILABLE', 'A photograph was deleted while preparing your portfolio. Review your draft.');
     await PortfolioHandle.init();
     let saved;
     await mongoose.connection.transaction(async session => {
@@ -464,7 +495,7 @@ export async function publishMyPortfolio(req, res) {
           ...draft,
           draft,
           previousHandles,
-          schemaVersion: 2,
+          schemaVersion: 3,
           status: 'published',
           publishedRevision: parsed.data.expectedDraftRevision,
           publishedAt: now,
@@ -581,6 +612,17 @@ function visitor(req, res) {
   }
   return tokenDigest(id);
 }
+async function recordVisitorAction(req, res, input) {
+  const agent = req.get?.('user-agent') || req.headers?.['user-agent'] || '';
+  if (/bot|crawler|spider|facebookexternalhit|preview|WhatsApp|Slackbot/i.test(agent)) return;
+  const sessionDigest = visitor(req, res);
+  const context = Object.fromEntries(['portfolioId', 'projectId', 'category', 'serviceId'].filter(key => input.metadata?.[key] !== undefined).map(key => [`metadata.${key}`, input.metadata[key]]));
+  try {
+    // Best-effort short-window suppression for reloads and double taps.
+    if (await AnalyticsEvent.exists({ name: input.name, sessionDigest, ...context, occurredAt: { $gte: new Date(Date.now() - 15000) } })) return;
+    recordAnalyticsEventAsync({ ...input, sessionDigest });
+  } catch { /* Reporting cannot prevent a visitor opening the work. */ }
+}
 export async function getPublicPortfolio(req, res) {
   try {
     const resolved = await resolvePublicPortfolio(req.params.handle);
@@ -593,24 +635,24 @@ export async function getPublicPortfolio(req, res) {
       publicPage: true
     });
     if (req.params.projectId && !data.projects.some(project => project.id === req.params.projectId)) return fail(res, 404, 'PROJECT_NOT_FOUND', 'Project not found.');
-    recordAnalyticsEventAsync({
+    if (req.query?.category && (!data.direction.showCategories || !data.content.categoryDetails.some(detail => detail.id === req.query.category && (data.items.some(item => item.category === detail.name) || data.projects.some(project => project.category === detail.name))))) return fail(res, 404, 'CATEGORY_NOT_FOUND', 'Category not found.');
+    if (req.query?.service && (!sectionVisible(data.content, 'services') || !data.content.services.some(service => service.id === req.query.service))) return fail(res, 404, 'SERVICE_NOT_FOUND', 'Service not found.');
+    await recordVisitorAction(req, res, {
       name: 'portfolio.viewed',
       source: 'server',
       actorType: 'anonymous',
       userId: user._id,
-      sessionDigest: visitor(req, res),
       status: 'viewed',
       metadata: {
         portfolioId: String(portfolio._id),
         handle: portfolio.handle
       }
     });
-    if (req.params.projectId) recordAnalyticsEventAsync({
+    if (req.params.projectId) await recordVisitorAction(req, res, {
       name: 'portfolio.project.opened',
       source: 'server',
       actorType: 'anonymous',
       userId: user._id,
-      sessionDigest: visitor(req, res),
       status: 'viewed',
       metadata: {
         portfolioId: String(portfolio._id),
@@ -649,8 +691,9 @@ export async function getPortfolioMedia(req, res) {
       if (!portfolio) return res.status(404).end();
     }
     const snapshot = normalizeSnapshot(publicPage ? portfolio : portfolio.draft || portfolio);
-    const item = snapshot.items.find(item => item.id === req.params.itemId);
-    const visible = item && visiblePortfolioPhotoIds(snapshot).has(item.id);
+    const item = allPortfolioMedia(snapshot).find(item => item.id === req.params.itemId);
+    const profileVisible = item && (snapshot.content.profile.logoId === item.id || snapshot.direction.showBio && sectionVisible(snapshot.content, 'about') && snapshot.content.profile.portraitId === item.id);
+    const visible = item && (visiblePortfolioPhotoIds(snapshot).has(item.id) || profileVisible);
     if (!item || publicPage && !visible) return res.status(404).end();
     const owned = await availableAssets(user._id, [item.publicId], [item.publicId]);
     if (!owned.has(item.publicId)) return res.status(404).end();
@@ -683,48 +726,80 @@ export async function getPortfolioShareMeta(req, res) {
     const project = req.params.projectId ? snapshot.projects.find(project => project.id === req.params.projectId) : null;
     if (req.params.projectId && !project) return fail(res, 404, 'PROJECT_NOT_FOUND', 'Project not found.');
     const studioName = user.studio?.name || user.name;
-    const coverId = project?.coverId || portfolioId(snapshot.heroPublicId);
+    const category = req.query?.category ? snapshot.content.categoryDetails.find(detail => detail.id === req.query.category && snapshot.direction.showCategories && (snapshot.items.some(item => item.category === detail.name) || snapshot.projects.some(project => project.category === detail.name))) : null;
+    const service = req.query?.service ? snapshot.content.services.find(service => service.id === req.query.service && sectionVisible(snapshot.content, 'services')) : null;
+    if (req.query?.category && !category || req.query?.service && !service) return fail(res, 404, 'SECTION_NOT_FOUND', 'That portfolio section is unavailable.');
+    const visible = visiblePortfolioPhotoIds(snapshot);
+    const coverId = project?.coverId || category?.coverId || (category ? snapshot.items.find(item => item.category === category.name)?.id : '') || (visible.has(snapshot.content.share.coverId) ? snapshot.content.share.coverId : '') || portfolioId(snapshot.heroPublicId);
     const webOrigin = String(process.env.CLIENT_URL || 'https://veylo.com.ng').split(',')[0].replace(/\/$/, '');
-    const path = `/@${portfolio.handle}${project ? `/projects/${project.id}` : ''}`;
+    const query = new URLSearchParams({ ...(category ? { category: category.id } : {}), ...(service ? { service: service.id } : {}) }).toString();
+    const path = `/@${portfolio.handle}${project ? `/projects/${project.id}` : ''}${query ? `?${query}` : ''}`;
     res.set('Cache-Control', 'no-store').json({
       success: true,
       data: {
-        title: project ? `${project.title} — ${studioName}` : `${studioName} — Portfolio`,
-        description: project?.description || snapshot.introLine || snapshot.bio,
+        title: project ? `${project.title} — ${studioName}` : category ? `${category.name} — ${studioName}` : service ? `${service.title} — ${studioName}` : snapshot.content.share.title || `${studioName} — Portfolio`,
+        description: project?.description || category?.description || service?.description || snapshot.content.share.description || snapshot.introLine || snapshot.bio,
         image: `${webOrigin}/api/v1/portfolios/public/${portfolio.handle}/media/${coverId}?v=og`,
         canonical: `${webOrigin}${path}`,
-        redirectedFrom: resolved.redirectedFrom
+        redirectedFrom: resolved.redirectedFrom,
+        portfolio: output(portfolio, studioName, { publicPage: true }), projectId: project?.id || '', categoryId: category?.id || '', serviceId: service?.id || ''
       }
     });
   } catch (error) {
     report(res, error, 'We could not open that portfolio.');
   }
 }
+export async function getPortfolioSitemap(req, res) {
+  try {
+    res.set('Cache-Control', 'no-store');
+    const total = await Portfolio.countDocuments({ status: 'published' });
+    if (req.query.page === undefined) return res.json({ success: true, pages: Math.ceil(total / 100) });
+    const page = Number(req.query.page);
+    if (!Number.isInteger(page) || page < 0 || page >= Math.max(1, Math.ceil(total / 100))) return fail(res, 404, 'SITEMAP_NOT_FOUND', 'Sitemap not found.');
+    const rows = await Portfolio.find({ status: 'published' }).sort({ _id: 1 }).skip(page * 100).limit(100).lean();
+    const origin = String(process.env.CLIENT_URL || 'https://veylo.com.ng').split(',')[0].replace(/\/$/, '');
+    const urls = [];
+    for (const row of rows) {
+      const user = await User.findById(row.userId);
+      if (!user || user.accountStatus !== 'active' || (await resolveEntitlements(user, { includeUsage: false })).features.portfolioMode !== 'public') continue;
+      const snapshot = normalizeSnapshot(row), base = `${origin}/@${row.handle}`;
+      const add = path => urls.push({ loc: path, lastmod: row.publishedAt?.toISOString() });
+      add(base);
+      for (const project of snapshot.projects) add(`${base}/projects/${encodeURIComponent(project.id)}`);
+      if (snapshot.direction.showCategories) for (const category of snapshot.content.categoryDetails) if (snapshot.items.some(item => item.category === category.name) || snapshot.projects.some(project => project.category === category.name)) add(`${base}?category=${encodeURIComponent(category.id)}`);
+    }
+    return res.json({ success: true, urls });
+  } catch { return fail(res, 503, 'SITEMAP_UNAVAILABLE', 'The portfolio sitemap is temporarily unavailable.'); }
+}
 export async function recordPortfolioEngagement(req, res) {
   try {
     const resolved = await resolvePublicPortfolio(req.params.handle);
     if (!resolved) return fail(res, 404, 'PORTFOLIO_NOT_FOUND', 'Portfolio not found.');
     const parsed = z.object({
-      action: z.enum(['photo.opened', 'project.opened', 'filter.used', 'instagram.clicked', 'whatsapp.clicked', 'enquiry.clicked']),
+      action: z.enum(['photo.opened', 'project.opened', 'filter.used', 'instagram.clicked', 'whatsapp.clicked', 'email.clicked', 'enquiry.clicked', 'service.opened', 'share.clicked']),
       itemIndex: z.number().int().min(0).max(49).optional(),
       projectId: z.string().max(80).optional(),
-      category: z.string().trim().max(50).optional()
+      category: z.string().trim().max(50).optional(),
+      serviceId: z.string().max(80).optional()
     }).strict().safeParse(req.body);
     if (!parsed.success) return fail(res, 400, 'INVALID_ACTION', 'That portfolio action is not valid.');
-    if (parsed.data.projectId && !resolved.portfolio.projects?.some(project => project.id === parsed.data.projectId)) return fail(res, 400, 'INVALID_PROJECT', 'That project is unavailable.');
-    recordAnalyticsEventAsync({
+    const snapshot = normalizeSnapshot(resolved.portfolio);
+    if (parsed.data.projectId && !snapshot.projects.some(project => project.id === parsed.data.projectId)) return fail(res, 400, 'INVALID_PROJECT', 'That project is unavailable.');
+    if (parsed.data.serviceId && (!sectionVisible(snapshot.content, 'services') || !snapshot.content.services.some(service => service.id === parsed.data.serviceId))) return fail(res, 400, 'INVALID_SERVICE', 'That service is unavailable.');
+    if (parsed.data.category && !['Main gallery', 'Selected work', ...snapshot.categories].includes(parsed.data.category)) return fail(res, 400, 'INVALID_CATEGORY', 'That category is unavailable.');
+    await recordVisitorAction(req, res, {
       name: `portfolio.${parsed.data.action}`,
       source: 'server',
       actorType: 'anonymous',
       userId: resolved.user._id,
-      sessionDigest: visitor(req, res),
       status: 'completed',
       metadata: {
         portfolioId: String(resolved.portfolio._id),
         handle: resolved.portfolio.handle,
         itemIndex: parsed.data.itemIndex,
         projectId: parsed.data.projectId,
-        category: parsed.data.category
+        category: parsed.data.category,
+        serviceId: parsed.data.serviceId
       }
     });
     res.status(202).json({
@@ -759,8 +834,9 @@ export async function getPortfolioActivity(req, res) {
           $gte: new Date(Date.now() - 30 * 86400000)
         },
         name: {
-          $in: ['portfolio.viewed', 'portfolio.project.opened', 'portfolio.whatsapp.clicked', 'portfolio.instagram.clicked']
+          $in: ['portfolio.viewed', 'portfolio.project.opened', 'portfolio.whatsapp.clicked', 'portfolio.instagram.clicked', 'portfolio.email.clicked', 'portfolio.filter.used', 'portfolio.service.opened']
         },
+        $nor: [{ name: 'portfolio.filter.used', 'metadata.category': 'Main gallery' }],
         $or: [{
           'metadata.portfolioId': String(portfolio._id)
         }, {
@@ -781,6 +857,7 @@ export async function getPortfolioActivity(req, res) {
       }
     }]);
     const counts = Object.fromEntries(events.map(event => [event._id, event.count]));
+    const enquiries = await PortfolioEnquiry.countDocuments({ userId: user._id, createdAt: { $gte: new Date(Date.now() - 30 * 86400000) } });
     res.json({
       success: true,
       data: {
@@ -788,7 +865,9 @@ export async function getPortfolioActivity(req, res) {
         views: counts['portfolio.viewed'] || 0,
         uniqueVisitors: events.find(event => event._id === 'portfolio.viewed')?.visitors.filter(Boolean).length || 0,
         projectOpens: counts['portfolio.project.opened'] || 0,
-        contactClicks: (counts['portfolio.whatsapp.clicked'] || 0) + (counts['portfolio.instagram.clicked'] || 0)
+        contactClicks: (counts['portfolio.whatsapp.clicked'] || 0) + (counts['portfolio.instagram.clicked'] || 0) + (counts['portfolio.email.clicked'] || 0),
+        whatsappClicks: counts['portfolio.whatsapp.clicked'] || 0, instagramClicks: counts['portfolio.instagram.clicked'] || 0, emailClicks: counts['portfolio.email.clicked'] || 0,
+        categoryOpens: counts['portfolio.filter.used'] || 0, serviceOpens: counts['portfolio.service.opened'] || 0, enquiries
       }
     });
   } catch (error) {

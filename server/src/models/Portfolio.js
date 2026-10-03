@@ -1,5 +1,6 @@
 import { preservePaidUsageOnDelete } from './paidUsageEvidence.js';
 import mongoose from 'mongoose';
+import { portfolioContentSchema, projectDetailsFields } from './portfolioContentSchema.js';
 
 const itemSchema = new mongoose.Schema({
   id: String,
@@ -12,7 +13,7 @@ const itemSchema = new mongoose.Schema({
   crop: { type: String, enum: ['fit', 'fill'], default: 'fit' }
 }, { _id: false });
 
-const projectSchema = new mongoose.Schema({ id: { type: String, required: true }, title: { type: String, maxlength: 100 }, description: { type: String, maxlength: 400, default: '' }, category: { type: String, maxlength: 50 }, coverId: String, photoIds: [String] }, { _id: false });
+const projectSchema = new mongoose.Schema({ id: { type: String, required: true }, title: { type: String, maxlength: 100 }, description: { type: String, maxlength: 400, default: '' }, category: { type: String, maxlength: 50 }, coverId: String, photoIds: [String], ...projectDetailsFields }, { _id: false });
 
 const previousHandleSchema = new mongoose.Schema({
   handle: { type: String, required: true, lowercase: true, trim: true, maxlength: 40 },
@@ -32,12 +33,14 @@ const portfolioSchema = new mongoose.Schema({
   introLine: { type: String, trim: true, maxlength: 240, default: '' },
   location: { type: String, trim: true, maxlength: 120, default: '' },
   contactLabel: { type: String, trim: true, maxlength: 50, default: 'Ask about a shoot' },
-  instagram: { type: String, trim: true, maxlength: 80, default: '' },
+  instagram: { type: String, trim: true, maxlength: 100, default: '' },
   whatsapp: { type: String, trim: true, maxlength: 30, default: '' },
   heroPublicId: { type: String, trim: true, maxlength: 500, default: '' },
   items: { type: [itemSchema], default: [] },
   categories: { type: [String], default: [] },
   projects: { type: [projectSchema], default: [] },
+  profileMedia: { type: [itemSchema], default: [] },
+  content: { type: portfolioContentSchema, default: () => ({}) },
   schemaVersion: { type: Number, default: 2 },
   mediaNotice: { type: String, default: '' },
   direction: {
@@ -54,7 +57,7 @@ const portfolioSchema = new mongoose.Schema({
     showPhotoTitles: { type: Boolean, default: true },
     showContact: { type: Boolean, default: true }
   },
-  draft: { type: new mongoose.Schema({ handle: String, studioName: String, bio: String, headline: String, introLine: String, location: String, contactLabel: String, instagram: String, whatsapp: String, heroPublicId: String, categories: [String], items: [itemSchema], projects: [projectSchema], direction: mongoose.Schema.Types.Mixed }, { _id: false }), default: null },
+  draft: { type: new mongoose.Schema({ handle: String, studioName: String, bio: String, headline: String, introLine: String, location: String, contactLabel: String, instagram: String, whatsapp: String, heroPublicId: String, categories: [String], items: [itemSchema], projects: [projectSchema], profileMedia: [itemSchema], content: { type: portfolioContentSchema, default: () => ({}) }, direction: mongoose.Schema.Types.Mixed }, { _id: false }), default: null },
   draftRevision: { type: Number, default: 0, min: 0 },
   publishedRevision: { type: Number, default: 0, min: 0 },
   publishedAt: Date

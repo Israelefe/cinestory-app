@@ -117,6 +117,8 @@ export const publicAccessLimit = limiter({
   identifier: 'public-access'
 });
 
+export const portfolioEnquiryLimit = limiter({ windowMs: 60 * 60 * 1000, limit: 5, keyGenerator: req => `portfolio-enquiry:${clientIp(req)}`, identifier: 'portfolio-enquiry', message: 'Several enquiries have been sent from this connection. Please wait before sending another, or contact the photographer directly.' });
+
 export const clientDeliveryEmailLimit = limiter({
   windowMs: 60 * 60 * 1000,
   limit: 100,

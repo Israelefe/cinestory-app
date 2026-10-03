@@ -96,6 +96,7 @@ export function defaultRuntimeConfig() {
     retention: { proRetentionDays: 30, orphanUploadHours: 2, workerIntervalHours: 6, analyticsRetentionDays: 365 },
     rateLimits: normalizedRateLimits(),
     emailTemplates: [
+      { id: 'portfolio-enquiry', label: 'Portfolio enquiry notification', enabled: true },
       { id: 'verification', label: 'Email verification', enabled: true },
       { id: 'password-reset', label: 'Password reset', enabled: true },
       { id: 'welcome', label: 'Welcome', enabled: true },

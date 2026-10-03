@@ -48,3 +48,5 @@
 @media (prefers-reduced-motion: reduce) {
   .v-cookie-banner.v-cookie-compact .v-cookie-actions button { transition: none; transform: none; }
 }
+
+.v-cookie-banner.v-cookie-portfolio{position:relative;inset:auto;transform:none;width:100%;max-width:none;box-sizing:border-box;margin:0;border-radius:0;padding:14px 20px;box-shadow:none;z-index:20}.v-cookie-portfolio p{font-size:11px;line-height:1.6}.v-cookie-portfolio strong{font-size:12px}@media(min-width:768px){.v-cookie-banner.v-cookie-portfolio{padding:12px 32px}}

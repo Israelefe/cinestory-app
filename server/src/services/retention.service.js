@@ -1,6 +1,7 @@
 import PortfolioHandle from '../models/PortfolioHandle.js';
 import PortfolioMedia from '../models/PortfolioMedia.js';
 import PortfolioJob from '../models/PortfolioJob.js';
+import PortfolioEnquiry from '../models/PortfolioEnquiry.js';
 import { withBillingLock } from './billingLock.service.js';
 import { resolveEntitlements } from './entitlement.service.js';
 import { processPortfolioRemovals } from './portfolioLifecycle.service.js';
@@ -129,10 +130,10 @@ export async function purgeExpiredProData(now = new Date()) {
       await withBillingLock(user._id, async () => {
       const currentOwner = await User.findById(user._id);
       if (!currentOwner || !currentOwner.proRetentionUntil || currentOwner.proRetentionUntil > now || (await resolveEntitlements(currentOwner, { includeUsage: false, now })).plan !== 'free') return;
-      const portfolios = await Portfolio.find({ userId: user._id }).select('_id items.publicId draft.items.publicId').lean();
+      const portfolios = await Portfolio.find({ userId: user._id }).select('_id items.publicId draft.items.publicId profileMedia.publicId draft.profileMedia.publicId').lean();
       await PortfolioHandle.deleteMany({ portfolioId: { $in: portfolios.map(item => item._id) } });
       await PortfolioJob.deleteMany({ userId: user._id });
-      await PortfolioMedia.deleteMany({ $or: [{ publicId: { $in: portfolios.flatMap(item => [...(item.items || []), ...(item.draft?.items || [])].map(photo => photo.publicId)) } }, { publicId: { $regex: `^veylo/users/${user._id}/` } }] });
+      await PortfolioMedia.deleteMany({ $or: [{ publicId: { $in: portfolios.flatMap(item => [...(item.items || []), ...(item.draft?.items || []), ...(item.profileMedia || []), ...(item.draft?.profileMedia || [])].map(photo => photo.publicId)) } }, { publicId: { $regex: `^veylo/users/${user._id}/` } }] });
       const assets = await StorageAsset.find({ userId: user._id }).select('publicId').lean();
       for (const asset of assets) await removeStorageAsset(asset.publicId).catch(error => {
         recordAnalyticsEventAsync({ name: 'storage.delete.failed', source: 'system', actorType: 'system', userId: user._id, status: 'failed', errorCode: error.code || 'RETENTION_LIBRARY_DELETE_FAILED', metadata: { surface: 'retention', publicId: String(asset.publicId).slice(0, 180) } });
@@ -141,6 +142,7 @@ export async function purgeExpiredProData(now = new Date()) {
       await Promise.all([
         StorageAsset.deleteMany({ userId: user._id }),
         Portfolio.deleteMany({ userId: user._id }),
+        PortfolioEnquiry.deleteMany({ userId: user._id }),
         User.updateOne({ _id: user._id }, { $set: { storageUsedBytes: 0 }, $unset: { proRetentionUntil: 1 } })
       ]);
       });

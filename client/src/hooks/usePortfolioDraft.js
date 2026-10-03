@@ -104,8 +104,8 @@ export function usePortfolioDraft() {
         }));
         if (JSON.stringify(editablePortfolio(current.form)) === snapshot) setForm(next);else setForm(value => ({
           ...value,
-          items: value.items.map(item => {
-            const saved = next.items.find(photo => photo.publicId === item.publicId);
+          ...Object.fromEntries(['items', 'profileMedia'].map(key => [key, value[key].map(item => {
+            const saved = next[key].find(photo => photo.publicId === item.publicId);
             return saved ? {
               ...item,
               id: saved.id,
@@ -115,7 +115,7 @@ export function usePortfolioDraft() {
               width: saved.width,
               height: saved.height
             } : item;
-          })
+          })]))
         }));
         setSaveState('saved');
         if (JSON.stringify(editablePortfolio(current.form)) === current.saved) {
@@ -188,8 +188,8 @@ export function usePortfolioDraft() {
   }, [flush]);
   function restoreRecovery() {
     const next = normalizePortfolio(recovery.form);
-    next.items = next.items.map(item => {
-      const saved = ref.current.form.items.find(photo => photo.publicId === item.publicId);
+    for (const key of ['items', 'profileMedia']) next[key] = next[key].map(item => {
+      const saved = ref.current.form[key].find(photo => photo.publicId === item.publicId);
       const url = saved?.url || mediaUrl(`/api/v1/portfolios/mine/source-media?publicId=${encodeURIComponent(item.publicId)}`);
       return {
         ...item,

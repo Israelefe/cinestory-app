@@ -8,6 +8,7 @@ import { preparePortfolioSet } from './portfolioMedia.service.js';
 import { processPortfolioRemovals } from './portfolioLifecycle.service.js';
 import { recordAnalyticsEventAsync } from './analytics.service.js';
 import { recordWorkerHeartbeat } from './workerHeartbeat.service.js';
+import { processPortfolioEnquiryNotifications } from './portfolioEnquiry.service.js';
 let busy = false;
 let timer;
 async function work(job) {
@@ -145,6 +146,7 @@ async function tick() {
       stage: 'polling'
     });
     await processPortfolioRemovals();
+    await processPortfolioEnquiryNotifications();
     const stale = new Date(Date.now() - 5 * 60 * 1000);
     await PortfolioJob.updateMany({
       status: 'running',

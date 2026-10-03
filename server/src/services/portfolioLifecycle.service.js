@@ -5,7 +5,7 @@ import PortfolioMedia from '../models/PortfolioMedia.js';
 import PortfolioCleanup from '../models/PortfolioCleanup.js';
 import Delivery from '../models/Delivery.js';
 import StorageAsset from '../models/StorageAsset.js';
-import { normalizeSnapshot, removeSnapshotPhotos, visiblePortfolioPhotoIds } from '../utils/portfolio.js';
+import { normalizeSnapshot, removeSnapshotPhotos, visiblePortfolioPhotoIds, allPortfolioMedia } from '../utils/portfolio.js';
 
 // Persist before deleting the source, so a process restart cannot lose cleanup.
 export async function schedulePortfolioRemoval(userId, publicIds) {
@@ -62,7 +62,7 @@ export async function removePortfolioReferences(userId, publicIds) {
     if (!portfolio) return;
     const live = normalizeSnapshot(portfolio);
     const draft = normalizeSnapshot(portfolio.draft || portfolio);
-    if (![...live.items, ...draft.items].some(item => removed.has(item.publicId))) return;
+    if (![...allPortfolioMedia(live), ...allPortfolioMedia(draft)].some(item => removed.has(item.publicId))) return;
     const nextLive = removeSnapshotPhotos(live, removed);
     const nextDraft = removeSnapshotPhotos(draft, removed);
     const visible = visiblePortfolioPhotoIds(nextLive);
@@ -75,6 +75,8 @@ export async function removePortfolioReferences(userId, publicIds) {
         items: nextLive.items,
         projects: nextLive.projects,
         heroPublicId: nextLive.heroPublicId,
+        profileMedia: nextLive.profileMedia,
+        content: nextLive.content,
         draft: nextDraft,
         status: portfolio.status === 'published' && (visible.size < 4 || !nextLive.heroPublicId) ? 'draft' : portfolio.status,
         mediaNotice: 'Deleted source photographs were removed from this portfolio. Check your cover and projects before publishing.'

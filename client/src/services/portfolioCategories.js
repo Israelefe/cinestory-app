@@ -1,4 +1,5 @@
 export const UNGROUPED = 'Selected work';
+import { normalizePortfolioContent, categoryIdentity } from './portfolioContent.mjs';
 export const categoryName = value => String(value || '').trim().replace(/\s+/g, ' ');
 export const categoryKey = value => categoryName(value).toLocaleLowerCase('en');
 export const hasPortfolioCategory = value => Boolean(categoryKey(value)) && categoryKey(value) !== categoryKey(UNGROUPED);
@@ -21,6 +22,7 @@ export function changeCategory(portfolio, previous, name, photoIds) {
   return {
     ...portfolio,
     categories,
+    ...(portfolio.content ? { content: normalizePortfolioContent({ ...portfolio.content, categoryDetails: portfolio.content.categoryDetails.filter(detail => !matches(detail.name)).concat(nextName ? [{ ...(portfolio.content.categoryDetails.find(detail => matches(detail.name)) || { id: categoryIdentity(nextName), description: '', coverId: '' }), name: nextName, coverId: '' }] : []) }, categories) } : {}),
     items: portfolio.items.map(item => ({ ...item, category: photoIds?.includes(item.id) ? nextName || UNGROUPED : matches(item.category) ? UNGROUPED : item.category })),
     projects: portfolio.projects.map(project => ({ ...project, category: matches(project.category) ? nextName || UNGROUPED : project.category }))
   };

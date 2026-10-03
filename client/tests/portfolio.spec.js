@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { portfolioDesigns } from '../src/components/portfolioDesigns.js';
 import { hasPortfolioCategory } from '../src/services/portfolioCategories.js';
+import { normalizePortfolioContent } from '../src/services/portfolioContent.mjs';
 const account = { _id: '507f1f77bcf86cd799439012', name: 'Amara', email: 'amara@example.com', emailVerified: true, onboardingComplete: true, accountStatus: 'active', plan: 'pro', studio: { name: 'Amara Studio' } };
 const photographs = ['/veylo/pv-marvis.jpeg', '/veylo/pv-white-suit.jpeg', '/veylo/wedding/wedding-1.jpg', '/veylo/wedding/wedding-2.jpg'].map((url, index) => ({ id: `photo-${index}`, publicId: `studio/photo-${index}`, title: `Portrait ${index + 1}`, alt: `Finished portrait ${index + 1}`, category: index < 2 ? 'Portraits' : 'Weddings', featured: true, crop: 'fit', focalX: 50, focalY: 50, width: 1200, height: 1800, url, thumbnailUrl: url }));
 function initial() { return { handle: 'amara-studio', studioName: 'Amara Studio', bio: 'Wedding and portrait photography in Lagos.', headline: 'People, as they are.', introLine: 'Photographs for families and celebrations.', location: 'Lagos, Nigeria', contactLabel: 'Ask about a shoot', whatsapp: '08012345678', instagram: 'https://instagram.com/amara.studio/', heroPublicId: photographs[0].publicId, items: structuredClone(photographs), projects: [], direction: {} }; }
@@ -14,7 +15,7 @@ async function captureDesign(page, filename) {
   await page.screenshot({ path: `../.visual-review/portfolio-designs/${filename}.png`, fullPage: true });
 }
 async function setup(page, options = {}) {
-  const state = { draft: initial(), revision: 1, publishedRevision: 1, status: 'published', saves: [], publishes: [], fail: false, conflict: false, ...options };
+  const state = { draft: initial(), revision: 1, publishedRevision: 1, status: 'published', saves: [], publishes: [], enquiries: [], inbox: [], fail: false, conflict: false, ...options };
   await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 3, necessary: true, analytics: false, marketing: false })));
   const envelope = () => ({ success: true, data: state.draft, access: 'public', status: state.status, draftRevision: state.revision, publishedRevision: state.publishedRevision, hasUnpublishedChanges: state.revision > state.publishedRevision, live: state.status === 'published' ? { handle: 'amara-studio' } : null, accountId: account._id, redesignEnabled: true, latestJob: state.job });
   await page.route('**/api/v1/**', async route => {
@@ -28,7 +29,7 @@ async function setup(page, options = {}) {
         if (state.fail) return reply({ message: 'You are offline. Try again.' }, 503);
         if (state.conflict || payload.expectedDraftRevision !== state.revision) { state.conflict = false; state.revision += 1; return reply({ message: 'This draft changed in another window.', current: envelope() }, 409); }
         const { expectedDraftRevision, ...content } = payload;
-        state.draft = { ...content, items: content.items.map(item => ({ ...item, ...Object.fromEntries(['url', 'thumbnailUrl', 'width', 'height'].map(key => [key, state.draft.items.find(photo => photo.id === item.id)?.[key] || photographs.find(photo => photo.id === item.id)?.[key]])) })) };
+        state.draft = { ...content, profileMedia: (content.profileMedia || []).map(item => ({ ...item, ...Object.fromEntries(['url', 'thumbnailUrl', 'width', 'height'].map(key => [key, state.draft.profileMedia?.find(photo => photo.id === item.id)?.[key] || (item.id === 'photo-added' ? photographs[0][key] : photographs.find(photo => photo.id === item.id)?.[key])])) })), items: content.items.map(item => ({ ...item, ...Object.fromEntries(['url', 'thumbnailUrl', 'width', 'height'].map(key => [key, state.draft.items.find(photo => photo.id === item.id)?.[key] || photographs.find(photo => photo.id === item.id)?.[key]])) })) };
         state.revision += 1;
       }
       return reply(envelope());
@@ -38,6 +39,9 @@ async function setup(page, options = {}) {
     if (path.endsWith('/mine/jobs/job-one/review')) { state.job.reviewDecision = route.request().postDataJSON().decision; return reply({ success: true }); }
     if (path.includes('/handles/')) return reply({ success: true, available: true });
     if (path.endsWith('/mine/activity')) return reply({ success: true, data: { views: 18, uniqueVisitors: 12, projectOpens: 4, contactClicks: 2 } });
+    if (path.endsWith('/public/amara-studio/enquiries')) { state.enquiries.push(route.request().postDataJSON()); if (state.enquiryFail) return reply({ message: 'Could not save. Try again.' }, 503); return reply({ success: true }, 202); }
+    if (path.endsWith('/mine/enquiries')) { const rows = state.inbox.filter(row => !url.searchParams.get('status') || row.status === url.searchParams.get('status')); return reply({ success: true, data: rows, total: rows.length, counts: { new: state.inbox.filter(row => row.status === 'new').length } }); }
+    if (path.includes('/mine/enquiries/')) { const row = state.inbox.find(row => path.endsWith(row._id)); row.status = route.request().postDataJSON().status; return reply({ success: true }); }
     if (path.endsWith('/portfolios/sources')) {
       const data = url.searchParams.get('kind') === 'deliveries' ? [{ sourceId: 'delivery-one', title: 'Ada birthday', photoCount: 1 }] : [{ ...photographs[0], id: 'photo-added', publicId: 'studio/added-photo', filename: 'DSC_1088.jpg', title: '' }];
       return reply({ success: true, data, nextCursor: null });
@@ -83,7 +87,20 @@ test('pointer dragging reorders photographs and Escape cancels a keyboard drag',
   const order = state.draft.items.map(item => item.id); await page.getByRole('button', { name: 'Drag photograph 1 to reorder', exact: true }).focus(); await page.keyboard.press('Space'); await page.keyboard.press('ArrowRight'); await page.keyboard.press('Escape'); expect(state.draft.items.map(item => item.id)).toEqual(order);
 });
 test('removal repairs project selections and can be undone before publishing', async ({ page }) => {
-  const draft = initial(); draft.projects = [{ id: 'project-one', title: 'Portraits', photoIds: ['photo-0', 'photo-1'], coverId: 'photo-0' }]; await setup(page, { draft }); await page.goto('/portfolio/manage'); await page.getByRole('button', { name: 'Select photograph 1', exact: true }).click(); await page.getByRole('button', { name: 'Remove selected' }).click(); await page.getByRole('dialog', { name: 'Remove from your draft?' }).getByRole('button', { name: 'Remove', exact: true }).click(); await expect(page.locator('.v-pedit-photo')).toHaveCount(3); await page.getByRole('button', { name: 'Undo', exact: true }).click(); await expect(page.locator('.v-pedit-photo')).toHaveCount(4);
+  const draft = initial();
+  draft.categories = ['Portraits', 'Weddings'];
+  draft.content = normalizePortfolioContent({ categoryDetails: [{ name: 'Portraits', coverId: 'photo-0' }], share: { coverId: 'photo-0' } }, draft.categories);
+  draft.projects = [{ id: 'project-one', title: 'Portraits', photoIds: ['photo-0', 'photo-1'], coverId: 'photo-0' }];
+  const state = await setup(page, { draft }); await page.goto('/portfolio/manage');
+  await page.getByRole('button', { name: 'Select photograph 1', exact: true }).click(); await page.getByRole('button', { name: 'Remove selected' }).click();
+  await page.getByRole('dialog', { name: 'Remove from your draft?' }).getByRole('button', { name: 'Remove', exact: true }).click();
+  await expect(page.locator('.v-pedit-photo')).toHaveCount(3);
+  await expect.poll(() => state.draft.content.share.coverId).toBe('');
+  expect(state.draft.content.categoryDetails[0].coverId).toBe('');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click(); await expect(page.locator('.v-pedit-photo')).toHaveCount(4);
+  await expect.poll(() => state.draft.content.share.coverId).toBe('photo-0');
+  expect(state.draft.content.categoryDetails[0].coverId).toBe('photo-0');
+  expect(state.draft.projects[0].coverId).toBe('photo-0');
 });
 test('editor and exact-width previews fit phones, tablets and desktops', async ({ page }) => {
   test.setTimeout(90000); await setup(page);
@@ -312,41 +329,17 @@ test('category editor and membership controls fit small phones and tablets', asy
   }
 });
 
-test('public Portfolio examples use all four real designs and support browsing without leaving the sample', async ({ page }) => {
-  test.setTimeout(90000); await setup(page); await page.emulateMedia({ reducedMotion: 'reduce' });
+test('portfolio marketing removes the sample section and keeps its editor action', async ({ page }) => {
+  await setup(page); await page.emulateMedia({ reducedMotion: 'reduce' });
   for (const width of [320, 390, 768, 834, 1440]) {
     await page.setViewportSize({ width, height: 900 }); await page.goto('/portfolio');
-    const designs = page.getByRole('group', { name: 'Sample portfolio design' });
-    for (const design of portfolioDesigns) {
-      await designs.getByRole('button', { name: new RegExp('^' + design.name) }).click();
-      await expect(page.locator('.v-portfolio-canvas')).toHaveAttribute('data-design', design.id);
-      await uniquePhotographs(page, 8);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-      expect(await page.locator('.v-portfolio-canvas').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
-    }
-    await page.getByRole('navigation', { name: 'Sample screen size' }).getByRole('button', { name: 'Phone', exact: true }).click();
-    await expect(page.locator('.v-portfolio-showcase-screen')).toHaveCSS('width', '390px');
+    await expect(page.getByText('See how your portfolio can look.', { exact: true })).toHaveCount(0);
+    await expect(page.locator('#portfolio-showcase, a[href="#portfolio-showcase"], .v-portfolio-canvas')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Create or edit your portfolio', exact: true })).toHaveAttribute('href', '/portfolio/manage');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
-  await page.locator('.vpc-project-card').click();
-  await expect(page).toHaveURL(/\/portfolio$/);
-  await expect(page.locator('.vpc-hero h1')).toHaveText('Folake & Tunde');
-  await uniquePhotographs(page, 3);
-  await page.getByRole('button', { name: 'Back to portfolio', exact: true }).click();
-  await page.locator('.vpc-categories').getByRole('button', { name: 'Weddings', exact: true }).click();
-  await expect(page.locator('.vpc-work-group')).toHaveCount(1);
-  await expect(page.locator('.vpc-group-heading')).toHaveCount(0);
-  await expect(page.locator('.vpc-hero h1')).toHaveText('Weddings');
-  await expect(page.locator('.vpc-cover')).toHaveCount(0);
-  await page.locator('.vpc-gallery button').first().click();
-  const viewer = page.getByRole('dialog', { name: 'Photograph viewer' });
-  await expect(viewer).toBeVisible();
-  await expect(viewer.locator('figcaption')).toContainText('1 / 3');
-  await page.keyboard.press('Escape');
-  await expect(page).toHaveURL(/\/portfolio$/);
 });
-
-test('main photographs come first and categories do not repeat the welcome or force their photographs into the main gallery', async ({ page }) => {
+test('early category browsing does not repeat the welcome or force their photographs into the main gallery', async ({ page }) => {
   test.setTimeout(60000);
   const draft = initial(); draft.items[0].category = 'Selected work'; draft.items[1].category = '';
   draft.headline = 'Welcome to Veylo Media';
@@ -363,9 +356,9 @@ test('main photographs come first and categories do not repeat the welcome or fo
     await expect(page.locator('.vpc-hero h1')).toHaveText(draft.headline);
     expect(await page.locator('.vpc-main').innerText()).toMatch(/Welcome to Veylo Media/);
     expect((await page.locator('.vpc-main').innerText()).match(/Welcome to Veylo Media/g)).toHaveLength(1);
-    expect(await page.locator('.vpc-work').evaluate(node => node.compareDocumentPosition(document.querySelector('.vpc-category-browser')) & Node.DOCUMENT_POSITION_FOLLOWING)).toBeTruthy();
-    await expect(page.locator('.vpc-hero')).not.toContainText(draft.location);
-    await expect(page.locator('.vpc-contact')).toContainText(draft.location);
+    expect(await page.locator('.vpc-work').evaluate(node => node.compareDocumentPosition(document.querySelector('.vpc-category-browser')) & Node.DOCUMENT_POSITION_PRECEDING)).toBeTruthy();
+    await expect(page.locator('.vpc-hero')).toContainText(draft.location);
+    await expect(page.locator('.vpc-contact')).not.toContainText(draft.location);
     await page.locator('.vpc-cover button').click();
     const viewer = page.getByRole('dialog', { name: 'Photograph viewer' });
     await expect(viewer.locator('figcaption')).toContainText('1 / 4 · Main gallery');
@@ -407,12 +400,93 @@ test('matching introduction and bio are shown once while a distinct studio bio r
   const draft = initial(); draft.bio = draft.introLine;
   const state = await setup(page, { draft }); await page.goto('/@amara-studio');
   await expect(page.getByText(draft.introLine, { exact: true })).toHaveCount(1);
-  await expect(page.locator('.vpc-contact-bio')).toHaveCount(0);
+  await expect(page.locator('.vpc-profile > div > p:not(.vpc-eyebrow)')).toHaveCount(0);
   state.draft.bio = 'Based in Lagos, photographing weddings across Nigeria since 2018.';
   await page.reload();
-  await expect(page.locator('.vpc-contact-bio')).toHaveText(state.draft.bio);
+  await expect(page.locator('.vpc-profile > div > p:not(.vpc-eyebrow)')).toHaveText(state.draft.bio);
   state.draft.direction.showBio = false;
   await page.reload();
-  await expect(page.locator('.vpc-contact-bio')).toHaveCount(0);
+  await expect(page.locator('.vpc-profile > div > p:not(.vpc-eyebrow)')).toHaveCount(0);
   await expect(page.getByText(draft.introLine, { exact: true })).toHaveCount(1);
+});
+
+function detailedDraft() {
+  const draft = initial();
+  draft.content = normalizePortfolioContent({ profile: { specialties: 'Portrait and wedding photography', about: 'I photograph families, weddings and portraits in Lagos.', serviceAreas: 'Lagos and Ogun', travel: 'Ask about travel when you enquire.' }, contact: { email: 'hello@amara.example.com', formEnabled: true, responseNote: 'Tell us what you have in mind.' }, services: [{ id: 'service-one', title: 'Studio portraits', description: 'A portrait session at our Lagos studio.', coverage: 'One hour', deliverables: 'Finished photographs', priceMode: 'starting', price: 75000, projectIds: ['project-one'] }], testimonials: [{ id: 'review-one', quote: 'We loved the photographs from our session.', attribution: 'Ada', context: 'Birthday portraits', projectId: 'project-one', permission: true }], process: [{ id: 'process-one', title: 'Tell us about your shoot', description: 'Send an enquiry with your plans and preferred date.' }], faqs: [{ id: 'question-one', question: 'Can we shoot outside Lagos?', answer: 'Send us your location and we will discuss travel.' }], mobileEnquiry: true }, ['Portraits', 'Weddings']);
+  draft.projects = [{ id: 'project-one', title: 'Ada’s birthday portraits', description: 'A studio session in Lagos.', category: 'Portraits', coverId: 'photo-1', photoIds: ['photo-0', 'photo-1'], shootType: '30th birthday', location: 'Lagos', brief: 'Studio portraits to mark Ada’s birthday.', narrative: [{ id: 'narrative-one', title: 'The session', text: 'Two looks, photographed in our studio.' }] }];
+  return draft;
+}
+test('detailed content and enquiry forms fit all four designs on phones, tablets and desktops', async ({ page }) => {
+  test.setTimeout(120000); const state = await setup(page, { draft: detailedDraft() }); await page.emulateMedia({ reducedMotion: 'reduce' });
+  for (const template of ['editorial', 'cinema', 'gallery', 'folio']) {
+    state.draft.direction = { template };
+    for (const width of [320, 390, 640, 768, 834, 1024, 1440]) {
+      await page.setViewportSize({ width, height: 900 }); await page.goto('/@amara-studio');
+      await expect(page.getByRole('heading', { name: 'Services', exact: true })).toBeVisible();
+      await expect(page.locator('.vpc-service-price')).toContainText('75,000');
+      await expect(page.getByRole('heading', { name: 'What clients say' })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${template} ${width}`).toBe(true);
+      expect(await page.locator('.vpc-enquiry-form').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+      if ([390, 834, 1440].includes(width)) await captureDesign(page, `${template}-expanded-${width}`);
+    }
+  }
+});
+test('category links survive reload, rename and Back and provide contact context', async ({ page }) => {
+  const state = await setup(page, { draft: detailedDraft() }); await page.goto('/@amara-studio');
+  await page.getByRole('button', { name: 'Weddings', exact: true }).click(); await expect(page).toHaveURL(/category=c-/); const url = page.url();
+  const id = new URL(url).searchParams.get('category'); const href = await page.locator('.vpc-contact-actions a[href*="wa.me"]').getAttribute('href'); expect(decodeURIComponent(href)).toContain('Weddings'); expect(decodeURIComponent(href)).toContain(`category=${id}`);
+  await page.reload(); await expect(page.locator('.vpc-hero h1')).toHaveText('Weddings');
+  state.draft.content.categoryDetails.find(item => item.id === id).name = 'Wedding celebrations'; state.draft.items.forEach(item => { if (item.category === 'Weddings') item.category = 'Wedding celebrations'; });
+  await page.reload(); await expect(page.locator('.vpc-hero h1')).toHaveText('Wedding celebrations');
+  await page.getByRole('button', { name: 'Back to main gallery', exact: true }).click(); await expect(page).not.toHaveURL(/category=/); await page.goBack(); await expect(page.locator('.vpc-hero h1')).toHaveText('Wedding celebrations');
+});
+test('enquiry retries keep details and submission identity, with project and service context', async ({ page }) => {
+  const state = await setup(page, { draft: detailedDraft(), enquiryFail: true }); await page.goto('/@amara-studio/projects/project-one');
+  await expect(page).toHaveTitle('Ada’s birthday portraits — Amara Studio'); await expect(page.getByRole('heading', { name: 'The brief' })).toBeVisible();
+  await page.getByRole('button', { name: 'Ask about Studio portraits', exact: true }).click();
+  const form = page.locator('.vpc-enquiry-form');
+  await form.getByLabel('Your name', { exact: true }).fill('Ada Okoye'); await form.getByLabel('WhatsApp number', { exact: true }).fill('08012345678'); await form.getByLabel('What are you planning?', { exact: true }).fill('Birthday portraits'); await form.getByLabel('Anything else we should know?', { exact: true }).fill('I would like portraits for my birthday next month.'); await form.getByRole('checkbox').check(); await form.getByRole('button', { name: 'Send enquiry', exact: true }).click();
+  await expect(form.getByRole('alert')).toBeVisible(); await expect(form.getByLabel('Your name', { exact: true })).toHaveValue('Ada Okoye');
+  state.enquiryFail = false; await form.getByRole('button', { name: 'Send enquiry', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Your enquiry has been received.' })).toBeVisible(); expect(state.enquiries).toHaveLength(2); expect(state.enquiries[0].requestId).toBe(state.enquiries[1].requestId); expect(state.enquiries[1].projectId).toBe('project-one'); expect(state.enquiries[1].serviceId).toBe('service-one'); expect(state.enquiries[1].date).toBe('');
+});
+test('inbox status changes stay separate from portfolio editing', async ({ page }) => {
+  const state = await setup(page, { inbox: [{ _id: 'enquiry-one', name: 'Ada', replyMethod: 'whatsapp', replyTo: '2348012345678', shootType: 'Birthday portraits', message: 'Please tell me about your portrait sessions.', status: 'new', createdAt: '2026-10-03T12:00:00Z' }] });
+  await page.goto('/portfolio/enquiries'); await expect(page.getByRole('heading', { name: 'Enquiry inbox' })).toBeVisible(); await expect(page.getByRole('link', { name: 'Reply to 2348012345678' })).toHaveAttribute('href', 'https://wa.me/2348012345678'); await page.getByLabel('Status for Ada').selectOption('replied'); await expect.poll(() => state.inbox[0].status).toBe('replied'); await page.getByRole('button', { name: 'Replied', exact: true }).click(); await expect(page.getByRole('heading', { name: 'Ada', exact: true })).toBeVisible(); expect(state.saves).toHaveLength(0);
+});
+test('services, feedback and publishing fields autosave and hide intentionally', async ({ page }) => {
+  const state = await setup(page); await page.goto('/portfolio/manage'); await page.getByRole('button', { name: 'Services', exact: true }).click(); await page.getByRole('button', { name: 'Add service', exact: true }).click(); await page.getByLabel('Service title 1', { exact: true }).fill('Studio portraits'); await page.getByLabel('Service description 1', { exact: true }).fill('Portraits in our Lagos studio.');
+  await expect.poll(() => state.draft.content?.services[0]?.title).toBe('Studio portraits');
+  await page.getByRole('button', { name: 'Client feedback', exact: true }).click(); await page.getByRole('button', { name: 'Add testimonial', exact: true }).click(); await page.getByLabel('Client quote 1', { exact: true }).fill('We loved the photographs.'); await page.getByLabel('Approved client attribution 1', { exact: true }).fill('Ada'); await page.getByRole('checkbox', { name: 'I have permission to publish this quote and attribution.' }).check(); await expect.poll(() => state.draft.content?.testimonials[0]?.permission).toBe(true);
+  await page.getByRole('button', { name: 'Publishing', exact: true }).click(); await page.getByLabel('Public email address', { exact: true }).fill('hello@example.com'); await expect.poll(() => state.draft.content?.contact.email).toBe('hello@example.com');
+  await page.getByRole('checkbox', { name: 'Services', exact: true }).uncheck(); await expect.poll(() => state.draft.content.sections.find(item => item.id === 'services').visible).toBe(false);
+  await page.getByRole('button', { name: 'Design', exact: true }).click(); await page.getByLabel('Gallery arrangement', { exact: true }).selectOption('columns'); await expect.poll(() => state.draft.content.galleryArrangement).toBe('columns');
+});
+test('first-visit storage disclosure stays in flow and the mobile enquiry shortcut leaves content reachable', async ({ page }) => {
+  const draft = detailedDraft(); await setup(page, { draft });
+  await page.addInitScript(() => localStorage.removeItem('veylo_cookie_preferences_v1'));
+  for (const width of [320, 768, 834]) {
+    await page.setViewportSize({ width, height: 720 }); await page.goto('/@amara-studio');
+    const notice = page.getByRole('complementary', { name: 'Cookies and browser storage notice' }); await expect(notice).toBeVisible(); await expect(notice).toHaveCSS('position', 'relative');
+    const header = await page.locator('.vpc-header').boundingBox(), banner = await notice.boundingBox(); expect(header.y).toBeGreaterThanOrEqual(banner.y + banner.height);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    if (width === 320) { await page.locator('.vpc-mobile-enquiry a').click(); await expect(page.locator('.vpc-enquiry-form')).toBeVisible(); }
+  }
+});
+test('public image failures offer a retry without opening the viewer', async ({ page }) => {
+  await setup(page); let fail = true;
+  await page.route('**/veylo/pv-marvis.jpeg*', route => fail ? route.abort() : route.continue());
+  await page.goto('/@amara-studio'); await expect(page.getByRole('button', { name: 'Retry photograph', exact: true })).toBeVisible(); fail = false; await page.getByRole('button', { name: 'Retry photograph', exact: true }).click(); await expect(page.locator('.vpc-cover img')).toBeVisible(); await expect(page.getByRole('dialog', { name: 'Photograph viewer' })).not.toBeVisible();
+});
+test('profile selections keep their own allowance and shared media survives removing one role', async ({ page }) => {
+  const state = await setup(page); await page.setViewportSize({ width: 390, height: 720 }); await page.goto('/portfolio/manage'); await page.getByRole('button', { name: 'Studio', exact: true }).click();
+  const choose = page.getByRole('button', { name: 'Choose image', exact: true });
+  await choose.first().click(); let picker = page.getByRole('dialog', { name: 'Choose a portrait' }); await picker.getByRole('button', { name: 'Library', exact: true }).click(); await picker.getByRole('button', { name: 'Select DSC_1088.jpg', exact: true }).click(); await picker.getByRole('button', { name: 'Use selected image', exact: true }).click();
+  await expect.poll(() => state.draft.profileMedia?.length).toBe(1); expect(state.draft.content.profile.portraitId).toBe('photo-added'); expect(state.draft.items).toHaveLength(4);
+  await choose.nth(1).click(); picker = page.getByRole('dialog', { name: 'Choose a logo' }); await picker.getByRole('button', { name: 'Library', exact: true }).click(); await picker.getByRole('button', { name: 'Select DSC_1088.jpg', exact: true }).click(); await picker.getByRole('button', { name: 'Use selected image', exact: true }).click(); await expect.poll(() => state.draft.content.profile.logoId).toBe('photo-added'); expect(state.draft.profileMedia).toHaveLength(1);
+  await page.getByRole('button', { name: 'Remove image', exact: true }).first().click(); await expect.poll(() => state.draft.content.profile.portraitId).toBe(''); expect(state.draft.profileMedia).toHaveLength(1); expect(state.draft.content.profile.logoId).toBe('photo-added');
+});
+test('short landscape screens keep the viewer and project editor actions reachable', async ({ page }) => {
+  await setup(page, { draft: detailedDraft() }); await page.setViewportSize({ width: 834, height: 390 }); await page.goto('/@amara-studio'); await page.locator('.vpc-cover button').click(); const viewer = page.getByRole('dialog', { name: 'Photograph viewer' }); await expect(viewer.getByRole('button', { name: 'Close photograph', exact: true })).toBeVisible(); expect(await viewer.evaluate(node => node.scrollHeight <= innerHeight)).toBe(true); await page.keyboard.press('Escape');
+  await page.goto('/portfolio/manage'); await page.getByRole('button', { name: 'Projects', exact: true }).click(); await page.locator('.v-pedit-project-card').first().click(); const sheet = page.getByRole('dialog', { name: 'Project details', exact: true }); await sheet.getByRole('button', { name: 'Done', exact: true }).click(); await expect(sheet).toHaveCount(0); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

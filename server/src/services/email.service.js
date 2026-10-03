@@ -156,6 +156,11 @@ export function sendVerificationEmail({ to, name, code }) {
   });
 }
 
+export function sendPortfolioEnquiryEmail({ to, userId, enquiryId }) {
+  const url = `${appUrl()}/portfolio/enquiries`;
+  return sendOnce({ eventKey: `portfolio-enquiry:${enquiryId}`, kind: 'portfolio-enquiry', to, userId, subject: 'A new enquiry from your portfolio', text: `Someone has sent an enquiry through your portfolio. Open your private inbox to read it and reply: ${url}`, html: shell(`<h1 style="margin:0 0 18px;font-size:28px;font-weight:500">A new portfolio enquiry.</h1>${paragraph('Someone has asked about a shoot through your portfolio. Their details are saved in your private inbox.')}${button('Open your enquiry inbox', url)}`, { preheader: 'Read and reply to your new portfolio enquiry.' }) });
+}
+
 export async function retryBillingEmails() {
   const now = new Date();
   const records = await EmailDelivery.find({ eventKey: /^billing:/, messageEncrypted: { $exists: true }, $or: [{ status: 'pending' }, { status: 'failed', retryAfter: { $lte: now } }, { status: 'sending', leaseUntil: { $lte: now } }] }).sort({ createdAt: 1 }).limit(20).select('+messageEncrypted');

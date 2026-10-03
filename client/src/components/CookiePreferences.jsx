@@ -19,7 +19,7 @@ export function openCookieSettings() {
   window.dispatchEvent(new Event(OPEN_EVENT));
 }
 
-export default function CookiePreferences() {
+export default function CookiePreferences({ compactPortfolio = false }) {
   const [acknowledged, setAcknowledged] = useState(hasSavedChoice);
   const [open, setOpen] = useState(false);
   const dialogRef = useRef(null);
@@ -42,11 +42,11 @@ export default function CookiePreferences() {
   }
 
   return <>
-    {!acknowledged && <aside className="v-cookie-banner v-cookie-compact" aria-label="Cookies and browser storage notice">
+    {!acknowledged && <aside className={`v-cookie-banner v-cookie-compact ${compactPortfolio ? 'v-cookie-portfolio' : ''}`} aria-label="Cookies and browser storage notice">
       <span><ShieldCheck size={20} /></span>
       <div>
-        <strong>How Veylo uses browser storage</strong>
-        <p>Veylo uses necessary cookies and first-party service analytics to sign you in, protect account actions, measure visits, and improve the platform. We do not use advertising cookies or sell visitor data.</p>
+        <strong>{compactPortfolio ? 'Browser storage notice' : 'How Veylo uses browser storage'}</strong>
+        <p>{compactPortfolio ? 'Veylo uses necessary browser storage and first-party service analytics. No advertising cookies.' : 'Veylo uses necessary cookies and first-party service analytics to sign you in, protect account actions, measure visits, and improve the platform. We do not use advertising cookies or sell visitor data.'}</p>
       </div>
       <div className="v-cookie-actions">
         <button type="button" onClick={() => setOpen(true)}>View details</button>

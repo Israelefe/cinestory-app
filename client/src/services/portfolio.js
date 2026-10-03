@@ -1,5 +1,6 @@
 import { API_BASE_URL } from '../config/env.js';
 import { portfolioCategories } from './portfolioCategories.js';
+import { normalizePortfolioContent, normalizeProjectDetails } from './portfolioContent.mjs';
 export const directionDefaults = {
   template: 'editorial',
   background: 'ink',
@@ -21,6 +22,8 @@ export function mediaUrl(url) {
 export function normalizePortfolio(value = {}) {
   return {
     categories: portfolioCategories(value),
+    content: normalizePortfolioContent(value.content || {}, portfolioCategories(value)),
+    profileMedia: (value.profileMedia || []).map(item => ({ ...item, id: item.id || item.publicId, alt: item.alt || '', title: item.title || '', category: 'Selected work', featured: true, crop: 'fit', focalX: 50, focalY: 50, url: mediaUrl(item.url), thumbnailUrl: mediaUrl(item.thumbnailUrl), srcSet: item.srcSet?.replace(/\/api\//g, `${API_BASE_URL.replace(/\/$/, '')}/`) })),
     ...Object.fromEntries(textFields.map(key => [key, value[key] || (key === 'contactLabel' ? 'Ask about a shoot' : '')])),
     items: (value.items || []).map(item => ({
       ...item,
@@ -38,6 +41,7 @@ export function normalizePortfolio(value = {}) {
     })),
     projects: (value.projects || []).map(project => ({
       ...project,
+      ...normalizeProjectDetails(project),
       description: project.description || '',
       category: project.category || 'Selected work',
       photoIds: [...(project.photoIds || [])]
@@ -52,9 +56,11 @@ export function normalizePortfolio(value = {}) {
 export function editablePortfolio(value) {
   return {
     categories: portfolioCategories(value),
+    content: normalizePortfolioContent(value.content || {}, portfolioCategories(value)),
+    profileMedia: (value.profileMedia || []).map(item => Object.fromEntries(['id', 'publicId', 'title', 'category', 'alt', 'featured', 'crop', 'focalX', 'focalY'].map(key => [key, item[key]]))),
     ...Object.fromEntries(textFields.map(key => [key, value[key] || ''])),
     items: value.items.map(item => Object.fromEntries(['id', 'publicId', 'title', 'category', 'alt', 'featured', 'crop', 'focalX', 'focalY'].map(key => [key, item[key]]))),
-    projects: value.projects.map(project => Object.fromEntries(['id', 'title', 'description', 'category', 'coverId', 'photoIds'].map(key => [key, project[key]]))),
+    projects: value.projects.map(project => ({ ...Object.fromEntries(['id', 'title', 'description', 'category', 'coverId', 'photoIds'].map(key => [key, project[key]])), ...normalizeProjectDetails(project) })),
     direction: value.direction
   };
 }
@@ -76,6 +82,7 @@ export function contactErrors(form) {
   const errors = {};
   if (form.whatsapp && !/^[1-9]\d{7,14}$/.test(whatsappNumber(form.whatsapp))) errors.whatsapp = 'Use a valid number, such as 08012345678 or +2348012345678.';
   if (form.instagram && !/^[A-Za-z0-9_](?:[A-Za-z0-9_.]{0,28}[A-Za-z0-9_])?$/.test(instagramName(form.instagram))) errors.instagram = 'Use an Instagram username or profile link.';
+  if (form.content?.contact.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.content.contact.email)) errors.email = 'Enter a valid public email address.';
   return errors;
 }
 function luminance(hex) {

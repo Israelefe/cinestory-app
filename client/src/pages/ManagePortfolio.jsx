@@ -15,6 +15,9 @@ import PortfolioCategories, { PortfolioCategoryField } from '../components/Portf
 import { portfolioCategories, hasPortfolioCategory } from '../services/portfolioCategories.js';
 import { portfolioDesigns, findPortfolioDesign } from '../components/portfolioDesigns.js';
 import PortfolioCanvas from './PortfolioCanvas.jsx';
+import { PortfolioStudioExtras, PortfolioCollectionEditor, PortfolioPublishing, PortfolioProjectExtras } from '../components/PortfolioContentEditor.jsx';
+import { contentReadiness, repairPortfolioReferences } from '../services/portfolioContent.mjs';
+import { APP_URL } from '../config/env.js';
 import './ManagePortfolio.css';
 const sensors = [PointerSensor.configure({
   activationConstraints: event => event.pointerType === 'touch' ? [new PointerActivationConstraints.Delay({
@@ -24,7 +27,7 @@ const sensors = [PointerSensor.configure({
     value: 5
   })]
 }), KeyboardSensor];
-const tabs = ['Work', 'Categories', 'Projects', 'Studio', 'Design'];
+const tabs = ['Work', 'Categories', 'Projects', 'Studio', 'Services', 'Client feedback', 'FAQs', 'Design', 'Publishing'];
 function Sheet({
   title,
   children,
@@ -131,7 +134,7 @@ export default function ManagePortfolio() {
   const categories = portfolioCategories(form);
   const errors = contactErrors(form);
   const visibleIds = new Set([...form.items.filter(item => item.featured || (form.direction.showCategories && hasPortfolioCategory(item.category))).map(item => item.id), ...form.projects.flatMap(item => item.photoIds)]);
-  const readiness = [!form.studioName.trim() && 'Set your studio name in account settings.', (form.handle !== profile?.persistedHandle && (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(form.handle) || form.handle.length < 3 || form.handle.length > 40)) && 'Choose a portfolio address with 3–40 letters, numbers or single hyphens.', !form.bio.trim() && 'Write a short studio introduction.', visibleIds.size < 4 && 'Choose at least four public photographs.', !form.items.some(item => item.publicId === form.heroPublicId && visibleIds.has(item.id)) && 'Choose a public cover photograph.', ...Object.values(errors), ...form.projects.flatMap(item => [!item.title.trim() && 'Give each project a title.', !item.photoIds.length && 'Add photographs to each project.'])].filter(Boolean);
+  const readiness = [!form.studioName.trim() && 'Set your studio name in account settings.', (form.handle !== profile?.persistedHandle && (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(form.handle) || form.handle.length < 3 || form.handle.length > 40)) && 'Choose a portfolio address with 3–40 letters, numbers or single hyphens.', !form.bio.trim() && 'Write a short studio introduction.', visibleIds.size < 4 && 'Choose at least four public photographs.', !form.items.some(item => item.publicId === form.heroPublicId && visibleIds.has(item.id)) && 'Choose a public cover photograph.', ...Object.values(errors), ...contentReadiness(form.content), form.content.share.coverId && !visibleIds.has(form.content.share.coverId) && 'Choose a sharing cover that appears in your public work.', ...form.projects.flatMap(item => [!item.title.trim() && 'Give each project a title.', !item.photoIds.length && 'Add photographs to each project.'])].filter(Boolean);
   const canEdit = profile?.access === 'public';
   useEffect(() => {
     if (profile?.latestJob) setJob(profile.latestJob);
@@ -226,12 +229,12 @@ export default function ManagePortfolio() {
           coverId: photoIds.includes(item.coverId) ? item.coverId : photoIds[0] || ''
         };
       });
-      return {
+      return repairPortfolioReferences({
         ...current,
         items,
         projects,
         heroPublicId: removed.some(item => item.publicId === current.heroPublicId) ? items.find(item => item.featured)?.publicId || '' : current.heroPublicId
-      };
+      });
     });
     setSelected([]);
     setDetail(null);
@@ -252,9 +255,20 @@ export default function ManagePortfolio() {
         return before ? {
           ...item,
           photoIds: [...new Set([...before.photoIds, ...item.photoIds])],
-          coverId: item.coverId || before.coverId
+          coverId: undo.removed.some(photo => photo.id === before.coverId) && item.coverId === (before.photoIds.find(id => !undo.removed.some(photo => photo.id === id)) || '') ? before.coverId : item.coverId || before.coverId
         } : item;
       }),
+      content: {
+        ...current.content,
+        categoryDetails: current.content.categoryDetails.map(detail => {
+          const before = undo.prior.content.categoryDetails.find(old => old.id === detail.id);
+          return !detail.coverId && before && undo.removed.some(photo => photo.id === before.coverId && photo.category === detail.name) ? { ...detail, coverId: before.coverId } : detail;
+        }),
+        share: {
+          ...current.content.share,
+          coverId: !current.content.share.coverId && undo.removed.some(photo => photo.id === undo.prior.content.share.coverId) ? undo.prior.content.share.coverId : current.content.share.coverId
+        }
+      },
       heroPublicId: current.heroPublicId === undo.autoHero ? undo.prior.heroPublicId : current.heroPublicId
     }));
     setUndo(null);
@@ -384,12 +398,18 @@ export default function ManagePortfolio() {
     {draft.saveError && !draft.conflict && <div className="v-pedit-notice" role="alert"><p>{draft.saveError}</p><button onClick={() => void draft.flush().catch(() => {})}>Retry save</button></div>}
     {(actionError || notice || profile.mediaNotice) && <div className="v-pedit-notice" role={actionError ? 'alert' : 'status'}><p>{actionError || notice || profile.mediaNotice}</p>{aiUndo.current && <button onClick={undoDirection}>Undo suggestions</button>}</div>}
     <section className="v-pedit-publication"><div><span className={`v-pedit-dot ${profile.status === 'published' ? 'live' : ''}`} /><strong>{profile.status === 'published' ? 'Published' : 'Private'}</strong><span>{profile.hasUnpublishedChanges || draft.dirty ? 'Changes are waiting to be published.' : profile.status === 'published' ? 'Your latest published version is live.' : 'Only you can see this draft.'}</span></div>{profile.status === 'published' && <div><a href={`/@${profile.live?.handle || form.handle}`} target="_blank" rel="noreferrer">Open public portfolio<ExternalLink size={15} /></a><button onClick={() => setConfirmation('unpublish')} disabled={busy}>Make private</button></div>}</section>
-    {activity && <div className="v-pedit-activity" aria-label="Portfolio activity over the last 30 days">{[['views', 'Visits'], ['uniqueVisitors', 'Visitors'], ['projectOpens', 'Project opens'], ['contactClicks', 'Contact clicks']].map(([key, label]) => <div key={key}><strong>{activity[key] || 0}</strong><span>{label}</span></div>)}<small>Last 30 days · Enquiry links are clicks, not confirmed bookings.</small></div>}
+    {activity && <div className="v-pedit-activity" aria-label="Portfolio activity over the last 30 days">{[['views', 'Visits'], ['uniqueVisitors', 'Visitors'], ['projectOpens', 'Project opens'], ['contactClicks', 'Contact clicks'], ['enquiries', 'Submitted enquiries']].map(([key, label]) => <div key={key}><strong>{activity[key] || 0}</strong><span>{label}</span></div>)}<small>Last 30 days · Enquiry links are clicks, not confirmed bookings.</small></div>}
+    {activity && <details className="v-pedit-activity-details"><summary>Browse and contact activity</summary><dl>{[['categoryOpens', 'Category selections'], ['serviceOpens', 'Service enquiry clicks'], ['whatsappClicks', 'WhatsApp clicks'], ['instagramClicks', 'Instagram clicks'], ['emailClicks', 'Email clicks']].map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{activity[key] || 0}</dd></div>)}</dl><p>Counts cover the last 30 days. Common crawlers and repeats within 15 seconds are excluded where identified. A contact click does not confirm a message or booking.</p></details>}
     <nav className="v-pedit-tabs" aria-label="Portfolio editor">{tabs.map(name => <button key={name} aria-pressed={tab === name} onClick={() => {
         setTab(name);
         setSelected([]);
       }}>{name}{name === 'Work' && <span>{form.items.length}/50</span>}</button>)}</nav>
     <fieldset className="v-pedit-content" disabled={!canEdit || busy}>
+      {tab === 'Services' && <PortfolioCollectionEditor form={form} setForm={setForm} Field={Field} kind="services" />}
+      {tab === 'Client feedback' && <PortfolioCollectionEditor form={form} setForm={setForm} Field={Field} kind="testimonials" />}
+      {tab === 'FAQs' && <PortfolioCollectionEditor form={form} setForm={setForm} Field={Field} kind="faqs" />}
+      {tab === 'Publishing' && <PortfolioPublishing form={form} setForm={setForm} Field={Field} />}
+      {tab === 'Studio' && <PortfolioStudioExtras form={form} setForm={setForm} Field={Field} />}
       {tab === 'Categories' && <PortfolioCategories form={form} setForm={setForm} Sheet={Sheet} />}
       {tab === 'Work' && <><div className="v-pedit-section-head"><div><h2>Choose the work clients see</h2><p>Drag to reorder, or use the arrows. Add a caption only when it helps.</p><button onClick={() => setTab('Categories')}>Manage categories</button></div><button ref={addRef} onClick={() => setPicker(true)} disabled={form.items.length >= 50}><Plus size={17} />Add photographs</button></div>{selected.length > 0 && <div className="v-pedit-bulk"><span>{selected.length} selected</span><select value={bulkCategory} onChange={event => setBulkCategory(event.target.value)} aria-label="Category for selected photographs"><option value="">Choose a category</option><option value="Selected work">No category</option>{categories.map(name => <option key={name} value={name}>{name}</option>)}</select><button disabled={!bulkCategory} onClick={() => {
             setForm(current => ({
@@ -424,14 +444,14 @@ export default function ManagePortfolio() {
             const cover = form.items.find(photo => photo.id === item.coverId);
             return <button key={item.id} className="v-pedit-project-card" onClick={() => setProjectId(item.id)}>{cover ? <img src={cover.thumbnailUrl || cover.url} alt="" loading="lazy" /> : <div><ImageIcon size={28} /></div>}<strong>{item.title || 'Untitled project'}</strong><span>{item.photoIds.length} photographs<ChevronRight size={16} /></span></button>;
           })}</div>{!form.projects.length && <div className="v-pedit-empty"><h3>Projects are optional</h3><p>Give a wedding, portrait session or lookbook its own page and share that link with a new client.</p></div>}</>}
-      {tab === 'Studio' && <div className="v-pedit-form-grid"><section><h2>Your studio</h2><Field label="Studio name" value={form.studioName} onChange={() => {}} readOnly hint="This name is shared with your studio account." /><Link to="/settings">Change your studio name in settings</Link><Field label="Portfolio address" value={form.handle} onChange={value => update('handle', value.toLowerCase())} maxLength={40} hint={`veylo.com/@${form.handle || 'your-studio'}${availability ? availability.available ? ' · Address available' : ' · This address is unavailable' : ''}`} /><Field label="About your studio" value={form.bio} onChange={value => update('bio', value)} multiline maxLength={600} rows={5} hint="Tell clients what you photograph and where you work." /><Field label="Location" value={form.location} onChange={value => update('location', value)} maxLength={80} placeholder="Lagos, Nigeria" /></section><section><h2>Contact and introduction</h2><Field label="Headline" value={form.headline} onChange={value => update('headline', value)} maxLength={100} placeholder="Wedding and portrait photography" /><Field label="Opening line" value={form.introLine} onChange={value => update('introLine', value)} maxLength={180} /><Field label="WhatsApp number" value={form.whatsapp} onChange={value => update('whatsapp', value)} maxLength={30} inputMode="tel" placeholder="08012345678" error={errors.whatsapp} /><Field label="Instagram" value={form.instagram} onChange={value => update('instagram', value)} maxLength={100} placeholder="@yourstudio or your profile link" error={errors.instagram} /><Field label="Contact button" value={form.contactLabel} onChange={value => update('contactLabel', value)} maxLength={40} hint="This opens WhatsApp or Instagram. It does not send a booking request." /></section></div>}
+      {tab === 'Studio' && <div className="v-pedit-form-grid"><section><h2>Your studio</h2><Field label="Studio name" value={form.studioName} onChange={() => {}} readOnly hint="This name is shared with your studio account." /><Link to="/settings">Change your studio name in settings</Link><Field label="Portfolio address" value={form.handle} onChange={value => update('handle', value.toLowerCase())} maxLength={40} hint={`${APP_URL.replace(/\/$/, '')}/@${form.handle || 'your-studio'}${availability ? availability.available ? ' · Address available' : ' · This address is unavailable' : ''}`} /><Field label="About your studio" value={form.bio} onChange={value => update('bio', value)} multiline maxLength={600} rows={5} hint="Tell clients what you photograph and where you work." /><Field label="Location" value={form.location} onChange={value => update('location', value)} maxLength={120} placeholder="Lagos, Nigeria" /></section><section><h2>Contact and introduction</h2><Field label="Headline" value={form.headline} onChange={value => update('headline', value)} maxLength={100} placeholder="Wedding and portrait photography" /><Field label="Opening line" value={form.introLine} onChange={value => update('introLine', value)} maxLength={240} /><Field label="WhatsApp number" value={form.whatsapp} onChange={value => update('whatsapp', value)} maxLength={30} inputMode="tel" placeholder="08012345678" error={errors.whatsapp} /><Field label="Instagram" value={form.instagram} onChange={value => update('instagram', value)} maxLength={100} placeholder="@yourstudio or your profile link" error={errors.instagram} /><Field label="Contact button" value={form.contactLabel} onChange={value => update('contactLabel', value)} maxLength={50} hint="This label is used for WhatsApp. It does not send a booking request." /></section></div>}
       {tab === 'Design' && <><PortfolioDesignPicker form={form} onChange={design => setForm(current => ({ ...current, direction: { ...current.direction, ...design.defaults, template: design.id } }))} onPreview={id => { setPreviewDesign(id); setPreview(true); }} /><div className="v-pedit-form-grid"><section><h2>Fine-tune this design</h2>{[['background', 'Background', [['ink', 'Ink'], ['warm-black', 'Warm black'], ['ivory', 'Ivory']]], ['typeStyle', 'Headings', [['editorial', 'Editorial'], ['modern', 'Modern'], ['classic', 'Classic']]], ['rhythm', 'Spacing', [['measured', 'Measured'], ['quiet', 'More space'], ['bold', 'Less space']]], ['motion', 'Motion', [['expressive', 'Expressive'], ['subtle', 'Subtle'], ['still', 'Still']]]].map(([key, label, options]) => <label className="v-pedit-field" key={key}><span>{label}</span><select value={form.direction[key]} onChange={event => update('direction', {
                 ...form.direction,
                 [key]: event.target.value
               })}>{options.map(([value, name]) => <option key={value} value={value}>{name}</option>)}</select></label>)}<Field label="Accent colour" type="color" value={form.direction.accent} onChange={value => update('direction', {
               ...form.direction,
               accent: value
-            })} hint="Text contrast is adjusted automatically." /><p className="v-pedit-design-hint">Expressive adds longer reveals and photo transitions. Subtle keeps movement short. Still removes animation. Your visitors’ reduced-motion setting is always respected.</p></section><section><h2>What visitors see</h2>{[['showBio', 'Studio introduction'], ['showLocation', 'Location'], ['showCategories', 'Category filters'], ['showPhotoTitles', 'Photo captions'], ['showContact', 'Contact links']].map(([key, label]) => <label className="v-pedit-toggle" key={key}><input type="checkbox" checked={form.direction[key]} onChange={event => update('direction', {
+            })} hint="Text contrast is adjusted automatically." /><p className="v-pedit-design-hint">Expressive adds longer reveals and photo transitions. Subtle keeps movement short. Still removes animation. Your visitors’ reduced-motion setting is always respected.</p></section><section><h2>What visitors see</h2><label className="v-pedit-field"><span>Gallery arrangement</span><select aria-label="Gallery arrangement" value={form.content.galleryArrangement} onChange={event => setForm(current => ({ ...current, content: { ...current.content, galleryArrangement: event.target.value } }))}><option value="design">Design default</option><option value="grid">Even grid</option><option value="columns">Columns</option></select><small>Cinema keeps its horizontal photo strips.</small></label>{[['showBio', 'Studio introduction'], ['showLocation', 'Location'], ['showCategories', 'Category filters'], ['showPhotoTitles', 'Photo captions'], ['showContact', 'Contact links']].map(([key, label]) => <label className="v-pedit-toggle" key={key}><input type="checkbox" checked={form.direction[key]} onChange={event => update('direction', {
                 ...form.direction,
                 [key]: event.target.checked
               })} />{label}</label>)}<div className="v-pedit-ai"><h3>Get a second look</h3><p>Receive suggestions for your introduction and photo order. Your photographs stay unchanged, and nothing is published automatically.</p><button onClick={direct} disabled={form.items.length < 4 || ['queued', 'running'].includes(job?.status)}>Suggest an arrangement</button>{job && <p role="status">{['queued', 'running'].includes(job.status) ? `Working on your saved draft${job.progress ? ` · ${Math.round(job.progress)}%` : '…'}` : job.status === 'review' ? 'Your suggestions are ready to review.' : job.status === 'failed' ? 'The suggestions could not be completed. You can try again.' : job.status === 'cancelled' ? 'The job was cancelled. Your draft is unchanged.' : ''}</p>}{['queued', 'running'].includes(job?.status) && <button onClick={() => run(async () => {
@@ -444,6 +464,7 @@ export default function ManagePortfolio() {
                       return photo ? <figure key={id}><img src={photo.thumbnailUrl || photo.url} alt={photo.alt || photo.title || `Photograph ${index + 1}`} loading="lazy" /><figcaption>{job.result.direction.heroPublicId === id ? 'Cover' : index + 1}</figcaption></figure> : null;
                     })}</div></div><p>Check these changes before adding them to your draft.</p><button onClick={() => review(true)}>Use these suggestions</button><button onClick={() => review(false)}>Dismiss</button></>}</div></section></div></>}
     </fieldset>
+    <Link to="/portfolio/enquiries">Open your enquiry inbox</Link>
     {undo && <div className="v-pedit-undo" role="status"><span>{undo.removed.length} photograph{undo.removed.length === 1 ? '' : 's'} removed from this draft.</span><button onClick={undoRemoval}>Undo</button></div>}
     {picker && <PortfolioPhotoPicker items={form.items} triggerRef={addRef} onClose={() => setPicker(false)} onAdd={items => setForm(current => {
       const added = items.filter(item => !current.items.some(photo => photo.publicId === item.publicId)).slice(0, 50 - current.items.length).map(item => ({
@@ -489,7 +510,7 @@ export default function ManagePortfolio() {
         description
       })} maxLength={400} multiline rows={3} /><PortfolioCategoryField categories={categories} value={project.category} onChange={category => patchProject({
         category
-      })} /><p>Choose only the photographs you have permission to show publicly.</p><div className="v-pedit-project-photos">{form.items.map(item => <button key={item.id} aria-pressed={project.photoIds.includes(item.id)} onClick={() => {
+      })} /><PortfolioProjectExtras project={project} projects={form.projects} patchProject={patchProject} Field={Field} /><p>Choose only the photographs you have permission to show publicly.</p><div className="v-pedit-project-photos">{form.items.map(item => <button key={item.id} aria-pressed={project.photoIds.includes(item.id)} onClick={() => {
           const photoIds = project.photoIds.includes(item.id) ? project.photoIds.filter(id => id !== item.id) : [...project.photoIds, item.id];
           patchProject({
             photoIds,
@@ -511,7 +532,7 @@ export default function ManagePortfolio() {
       if (!busy) setConfirmation(null);
     }}>{confirmation === 'publish' ? <><p>Visitors will see this saved version of your selected work, projects, studio details and contact links.</p>{profile.live?.handle && profile.live.handle !== form.handle && <p>Your address will change. The previous address redirects for 90 days. Address changes have a 90-day cooldown.</p>}{readiness.length ? <ul className="v-pedit-readiness">{readiness.map(message => <li key={message}>{message}</li>)}</ul> : <p>{visibleIds.size} unique photographs are ready to publish.</p>}<label className="v-pedit-toggle"><input type="checkbox" checked={permission} onChange={event => setPermission(event.target.checked)} />I have permission to show these photographs publicly.</label><div className="v-pedit-sheet-actions"><button onClick={() => setConfirmation(null)} disabled={busy}>Keep editing</button><button className="v-pedit-primary" onClick={publish} disabled={busy || !permission || readiness.length > 0}>{busy ? 'Preparing and publishing…' : 'Publish now'}</button></div></> : confirmation === 'unpublish' ? <><p>Your public portfolio and project links will close. Your private draft will stay saved.</p><div className="v-pedit-sheet-actions"><button onClick={() => setConfirmation(null)} disabled={busy}>Keep published</button><button onClick={unpublish} disabled={busy}>Make private</button></div></> : <><p>{confirmation === 'project-remove' ? 'This removes the project from your draft. Its photographs stay in your portfolio.' : 'This removes the selected photographs from your work and projects. The original files stay in your library or delivery.'} Publish later to update what visitors see.</p><div className="v-pedit-sheet-actions"><button onClick={() => setConfirmation(null)}>Keep it</button><button onClick={() => {
             if (confirmation === 'project-remove') {
-              setForm(current => ({
+              setForm(current => repairPortfolioReferences({
                 ...current,
                 projects: current.projects.filter(item => item.id !== projectId)
               }));
