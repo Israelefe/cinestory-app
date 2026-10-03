@@ -88,7 +88,9 @@ for (const format of ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'cha
     await page.goto('/d/access-test?phoneView=1');
     await expect(page.getByRole('button', { name: 'Downloads locked' })).toHaveCount(0);
     if (format === 'gridboard') {
+      await page.getByRole('button', { name: 'More gallery actions' }).click();
       await expect(page.getByRole('button', { name: 'Download all photos', exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Close gallery actions' }).click();
       await page.locator('.pb-tile-open').first().click();
       await expect(page.getByRole('button', { name: 'Download photo', exact: true })).toBeVisible();
       await expect.poll(() => page.locator('.pb-lightbox-photo-main').evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
@@ -192,6 +194,7 @@ for (const width of [320, 768, 834, 1440]) test(`long GridBoard text wraps witho
   await mock(page, delivery);
   await page.goto('/d/access-test?phoneView=1');
   await expect(page.locator('.pb-intro h1')).toBeVisible();
+  await page.getByRole('button', { name: 'Find photos', exact: true }).click();
   for (const selector of ['.pb-intro h1', '.pb-intro > p', '.pb-header', '.pb-moment-chip-wrap']) {
     expect(await page.locator(selector).evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
   }

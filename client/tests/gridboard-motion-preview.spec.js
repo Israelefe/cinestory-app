@@ -121,7 +121,7 @@ test('slideshow movement pauses, keeps photo timing, completes gently, and repla
   await page.goto('/demo/gridboard');
   await page.getByRole('button', { name: 'Slideshow', exact: true }).click();
   await page.getByLabel('Time per photo').selectOption('4');
-  await page.locator('.pb-slideshow-choice').filter({ hasText: 'Birthday portraits' }).click();
+  await page.locator('.pb-slideshow-choice').filter({ hasText: 'Green outfits' }).click();
   await expect(page.locator('.pb-slideshow-main-photo')).toHaveCount(1);
   await expect(page.locator('.pb-slideshow > footer')).toContainText('Photograph 1 of 2');
   await expect(page.locator('.pb-slideshow-main-photo')).toHaveCSS('animation-duration', '4s');
@@ -195,7 +195,7 @@ test('slideshow opens on a loaded photograph and fits phones, tablets and the de
     const client = width > 1024 ? page.frameLocator('.v-phone-screen iframe') : page;
     await client.getByRole('button', { name: 'Slideshow', exact: true }).click();
     await client.locator('.pb-slideshow-choice').filter({ hasText: 'Every photograph' }).click();
-    await expect(client.locator('.pb-slideshow')).toHaveCount(0);
+    await expect(client.locator('.pb-slideshow')).toHaveCount(1);
     await expect(client.locator('.pb-slideshow-main-photo')).toBeVisible();
     await expect(client.locator('.pb-slide-loading')).toHaveCount(0);
     await client.getByRole('button', { name: 'Pause slideshow' }).click();
@@ -217,7 +217,9 @@ test('small photo groups fill the available right column instead of forcing the 
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/demo/gridboard');
     const client = width > 1024 ? page.frameLocator('.v-phone-screen iframe') : page;
-    await client.locator('#pb-moment-birthday > button').first().click();
+    await client.getByRole('button', { name: 'Find photos', exact: true }).click();
+    await client.getByRole('button', { name: /Show 2 photos with green outfits/i }).click();
+    await client.getByRole('button', { name: 'View photographs', exact: true }).click();
     await expect(client.locator('.pb-tile')).toHaveCount(2);
     await expect(client.locator('.pb-board-column').nth(0).locator('.pb-tile')).toHaveCount(1);
     await expect(client.locator('.pb-board-column').nth(1).locator('.pb-tile')).toHaveCount(1);

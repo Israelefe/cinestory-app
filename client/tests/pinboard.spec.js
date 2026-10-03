@@ -80,7 +80,9 @@ test('published GridBoard shows every photo, moment navigation, and fits phone, 
     await expect(client.locator('.pb-tile')).toHaveCount(16);
     await expect(page.locator('.v-phone-device')).toHaveCount(width > 1024 ? 1 : 0);
     await expect(client.locator('.pb-board-column')).toHaveCount(width === 834 ? 3 : 2);
+    await client.getByRole('button', { name: 'Find photos', exact: true }).click();
     await expect(client.getByRole('navigation', { name: 'Explore the photographs' }).getByRole('region', { name: 'Find a moment' })).toBeVisible();
+    await client.getByRole('button', { name: 'View photographs', exact: true }).click();
     if (width === 320) {
       await page.evaluate(() => {
         const opened = [];
@@ -117,7 +119,9 @@ test('published GridBoard shows every photo, moment navigation, and fits phone, 
       await expect(page.locator('.pb-lightbox figcaption')).toContainText('Photograph 1 of 16');
     }
     if (width === 320) await page.getByRole('button', { name: 'Close photograph' }).click();
+    await client.getByRole('button', { name: 'Find photos', exact: true }).click();
     await client.locator('.pb-moment-chip-wrap > button:first-of-type').click();
+    await client.getByRole('button', { name: 'View photographs', exact: true }).click();
     await expect(client.locator('.pb-tile')).toHaveCount(8);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   }
@@ -127,10 +131,12 @@ test('GridBoard demo opens in the shared desktop phone mockup', async ({ page })
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/demo/gridboard');
   const client = page.frameLocator('.v-phone-screen iframe');
-  await expect(client.getByRole('heading', { name: 'A Veylo sample board' })).toBeVisible();
-  await expect(client.locator('.pb-tile')).toHaveCount(8);
+  await expect(client.getByRole('heading', { name: "Lora's birthday photographs" })).toBeVisible();
+  await expect(client.locator('.pb-tile')).toHaveCount(6);
+  await client.getByRole('button', { name: 'More gallery actions' }).click();
   await expect(client.getByRole('button', { name: 'Download all photos' })).toBeVisible();
   await expect(client.getByRole('button', { name: 'Make a WhatsApp Status card' })).toBeVisible();
+  await client.getByRole('button', { name: 'Close gallery actions' }).click();
   await expect(client.getByText('Private gallery')).toBeVisible();
   await expect(page.locator('.v-phone-device')).toHaveCount(1);
   const board = await client.locator('.pb-board').evaluate(element => ({ width: element.getBoundingClientRect().width, viewport: innerWidth, overflow: document.documentElement.scrollWidth - innerWidth }));

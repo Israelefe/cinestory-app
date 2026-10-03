@@ -44,17 +44,18 @@ for (const width of [320, 834]) for (const format of ['photo-story', 'editorial'
   await expect(page.getByRole('button', { name: galleryName, exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Download all/ })).toHaveCount(0);
   if (format === 'editorial') await expectSinglePhoto(page, page.locator('.ed-cover .ed-image-button'));
-  if (format === 'event-coverage' || format === 'campaign') await expectSinglePhoto(page, page.locator(format === 'campaign' ? '.vec-campaign-sets article>button' : '.vec-event-highlight-grid>button').first());
+  if (format === 'event-coverage' || format === 'campaign') await expectSinglePhoto(page, page.locator(format === 'campaign' ? '.pv-scene-photos .pv-photo-card>button' : '.pv-opening-photo').first());
   if (format === 'album') {
     await page.getByRole('button', { name: 'Open album', exact: true }).click();
-    await page.getByRole('button', { name: /^Open album page \d+$/ }).last().click();
-    await expect(page.locator('.fd-album-spread.is-finale')).toBeVisible();
+    await page.getByRole('button', { name: 'Pages', exact: true }).click();
+    await page.locator('.pv-overview>button').last().click();
+    await expect(page.locator('.pv-album-page')).toBeVisible();
     await expect(page.getByRole('button', { name: galleryName, exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'View full gallery', exact: true })).toHaveCount(0);
   }
   if (format === 'chapters') {
-    await page.locator('.fd-chapter-directory-board>button').first().click();
-    await expectSinglePhoto(page, page.locator('.fd-chapter-room-photos>button').first());
+    await page.locator('.pv-chapter-cover').first().click();
+    await expectSinglePhoto(page, page.locator('.pv-room-photos .pv-photo-card>button').first());
     await expect(page.getByRole('button', { name: galleryName, exact: true })).toHaveCount(0);
   }
   await openPresentationGallery(page, format);
@@ -82,7 +83,7 @@ for (const format of ['photo-story', 'editorial', 'album', 'chapters', 'event-co
   await page.goto('/__phone-preview');
   await expect(page.getByText('Waiting for the preview.', { exact: true })).toBeVisible();
   await page.evaluate(delivery => window.postMessage({ type: 'veylo:phone-preview-data', payload: { delivery, access: delivery.access } }, location.origin), delivery);
-  const root = { 'photo-story': '.v-story-cover', editorial: '.ed-cover', album: '.fd-album-cover', chapters: '.fd-chapter-directory-board', 'event-coverage': '.vec-event-hero', campaign: '.vec-campaign-hero' }[format];
+  const root = { 'photo-story': '.v-story-cover', editorial: '.ed-cover', album: '.pv-album-page', chapters: '.pv-chapter-directory', 'event-coverage': '.pv-scroll-opening', campaign: '.pv-scroll-opening' }[format];
   await expect(page.locator(root)).toBeVisible();
   await expect(page.getByRole('button', { name: format === 'photo-story' ? 'Open gallery' : 'Open full gallery', exact: true })).toHaveCount(0);
   await openPresentationGallery(page, format);
@@ -93,7 +94,9 @@ test('GridBoard keeps browsing and downloads available immediately', async ({ pa
   await page.setViewportSize({ width: 390, height: 844 }); await setup(page, fixture('canvas'));
   await page.goto('/demo/gridboard?phoneView=1');
   await expect(page.locator('.pb-tile-open').first()).toBeVisible();
+  await page.getByRole('button', { name: 'More gallery actions' }).click();
   await expect(page.getByRole('button', { name: 'Download all photos', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close gallery actions' }).click();
   await page.locator('.pb-tile-open').first().click();
   await expect(page.locator('.pb-lightbox-photo-main')).toBeVisible();
 });
@@ -101,6 +104,6 @@ test('GridBoard keeps browsing and downloads available immediately', async ({ pa
 test('Canvas keeps its full gallery available on arrival', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await setup(page, fixture('canvas'));
   await page.goto('/d/gallery-completion?phoneView=1');
-  await page.getByRole('button', { name: 'Open full gallery', exact: true }).click();
+  await page.getByRole('button', { name: 'Open full gallery', exact: true }).first().click();
   await expect(page.locator('.client-gallery-grid>figure')).toHaveCount(5);
 });
