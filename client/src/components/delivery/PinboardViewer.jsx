@@ -147,7 +147,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   const [message, setMessage] = useState('');
   const photoReturn = useRef(null);
   const [photoDirection, setPhotoDirection] = useState(1);
-  const touchStart = useRef(null);
+  const photoGesture = useRef(null);
   const boardRef = useRef(null);
   const musicRef = useRef(null);
   const preloadedPhotos = useRef(new Map());
@@ -491,30 +491,41 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
     setActiveMoment(''); setActiveColour(''); setActivePhoto(asset.assetId); setPhotoDirection(1);
   }
 
-  function onPhotoTouchStart(event) {
-    const touch = event.touches[0];
-    touchStart.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+  function onPhotoPointerStart(event) {
+    if (!event.isPrimary || event.button !== 0) return;
+    photoGesture.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    // Keep the gesture on this stable surface when a decoded photo replaces the img.
+    event.currentTarget.setPointerCapture(event.pointerId);
+    if (event.pointerType === 'mouse') event.preventDefault();
   }
 
-  function onPhotoTouchMove(event) {
-    if (!touchStart.current || board.animation === 'none' || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const touch = event.touches[0];
-    if (!touch) return;
-    const dx = touch.clientX - touchStart.current.x;
-    const dy = touch.clientY - touchStart.current.y;
+  function onPhotoPointerMove(event) {
+    const start = photoGesture.current;
+    if (!start || start.pointerId !== event.pointerId || board.animation === 'none' || reducedMotion) return;
+    const dx = event.clientX - start.x;
+    const dy = event.clientY - start.y;
     if (Math.abs(dx) <= Math.abs(dy) || Math.abs(dx) < 8) return;
     const image = event.currentTarget.querySelector('.pb-lightbox-photo-main');
-    if (image) image.style.transform = `translate3d(${Math.max(-120, Math.min(120, dx * .7))}px, 0, 0) scale(.98)`;
+    if (image) {
+      image.getAnimations().forEach(animation => animation.cancel());
+      image.style.transform = `translate3d(${Math.max(-120, Math.min(120, dx * .7))}px, 0, 0) scale(.98)`;
+    }
   }
 
-  function onPhotoTouchEnd(event) {
-    if (!touchStart.current) return;
+  function clearPhotoGesture(event) {
+    if (photoGesture.current?.pointerId !== event.pointerId) return;
     const image = event.currentTarget.querySelector('.pb-lightbox-photo-main');
     if (image) image.style.transform = '';
-    const touch = event.changedTouches[0];
-    const dx = touch.clientX - touchStart.current.x;
-    const dy = touch.clientY - touchStart.current.y;
-    touchStart.current = null;
+    photoGesture.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
+  function onPhotoPointerEnd(event) {
+    const start = photoGesture.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+    const dx = event.clientX - start.x;
+    const dy = event.clientY - start.y;
+    clearPhotoGesture(event);
     if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.25) navigatePhoto(dx < 0 ? 1 : -1);
   }
 
@@ -707,8 +718,8 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
     {modalAsset && <div ref={lightboxRef} className="pb-lightbox" role="dialog" aria-modal="true" aria-label="Photograph" onMouseDown={event => { if (event.target === event.currentTarget) setActivePhoto(''); }}>
       <button type="button" className="pb-lightbox-close" onClick={() => setActivePhoto('')} aria-label="Close photograph"><X size={23} /></button>
       <button type="button" className="pb-lightbox-nav is-left" onClick={() => navigatePhoto(-1)} disabled={modalIndex <= 0} aria-label="Previous photograph"><ChevronLeft size={26} /></button>
-      <figure onTouchStart={onPhotoTouchStart} onTouchMove={onPhotoTouchMove} onTouchEnd={onPhotoTouchEnd}>
-        <div className="pb-lightbox-photo" style={{ backgroundColor: modalTone }}>
+      <figure>
+        <div className="pb-lightbox-photo" style={{ backgroundColor: modalTone }} onPointerDown={onPhotoPointerStart} onPointerMove={onPhotoPointerMove} onPointerUp={onPhotoPointerEnd} onPointerCancel={clearPhotoGesture} onLostPointerCapture={clearPhotoGesture}>
           <img className="pb-lightbox-photo-ambient" src={shownPhoto?.url || photoUrl(modalAsset)} alt="" aria-hidden="true" draggable="false" />
           <img key={shownPhoto?.assetId || modalAsset.assetId} className={'pb-lightbox-photo-main ' + (photoDirection > 0 ? 'is-next' : 'is-previous')} src={shownPhoto?.url || photoUrl(modalAsset)} alt={shownPhoto?.alt || modalAsset.alt || 'Finished photograph'} draggable="false" />
         </div>

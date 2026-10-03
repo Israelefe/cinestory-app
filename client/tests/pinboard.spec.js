@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { swipeGridBoardPhoto } from './helpers/gridboardGesture.js';
 
 const user = { _id: '507f1f77bcf86cd799439012', name: 'Amara', email: 'amara@example.com', emailVerified: true, onboardingComplete: true, plan: 'free' };
 const draftId = '507f1f77bcf86cd799439011';
@@ -97,25 +98,9 @@ test('published GridBoard shows every photo, moment navigation, and fits phone, 
       const target = new URL(await page.evaluate(() => new URL(window.__pinboardOpenedLinks[0]).searchParams.get('text').split('\n').at(-1)));
       expect(target.searchParams.get('share')).toBe('grant_token_012345678901234567890123456789');
       expect(target.searchParams.get('photo')).toBe('photo-1');
-      await page.locator('.pb-lightbox figure').evaluate(figure => {
-        const fire = (type, x) => {
-          const event = new Event(type, { bubbles: true });
-          Object.defineProperty(event, type === 'touchstart' ? 'touches' : 'changedTouches', { value: [{ clientX: x, clientY: 230 }] });
-          figure.dispatchEvent(event);
-        };
-        fire('touchstart', 260);
-        fire('touchend', 70);
-      });
+      await swipeGridBoardPhoto(page, -100);
       await expect(page.locator('.pb-lightbox figcaption')).toContainText('Photograph 2 of 16');
-      await page.locator('.pb-lightbox figure').evaluate(figure => {
-        const fire = (type, x) => {
-          const event = new Event(type, { bubbles: true });
-          Object.defineProperty(event, type === 'touchstart' ? 'touches' : 'changedTouches', { value: [{ clientX: x, clientY: 230 }] });
-          figure.dispatchEvent(event);
-        };
-        fire('touchstart', 70);
-        fire('touchend', 260);
-      });
+      await swipeGridBoardPhoto(page, 100);
       await expect(page.locator('.pb-lightbox figcaption')).toContainText('Photograph 1 of 16');
     }
     if (width === 320) await page.getByRole('button', { name: 'Close photograph' }).click();
