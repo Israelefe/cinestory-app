@@ -168,7 +168,11 @@ Persist edits on save/continue, show Saved/Unsaved status and prevent silent nav
 
 For GridBoard, extend `pinboardInput`, save payload and Design controls with `description`, trimmed, maximum 240 characters. Keep the three validated layouts and complete-collection invariant. Do not reintroduce the removed purpose questionnaire.
 
-### 4.4 Writing generation and repair
+### 4.4 Preserve completed writing alignment; support new text fields
+
+The shared caption/headline alignment, shoot-type and purpose rules, automatic photo-change regeneration, automatic repair, manual-edit protection and Undo were completed in earlier work. They are existing behavior to preserve and regression-test, not a second caption-system rebuild. Do not change the established frame-caption voice, generation pipeline or limits merely because a viewer is redesigned.
+
+The new writing work in this plan is limited to supporting newly introduced chapter/scene introductions and Album spread headings/notes, adding meaningful Canvas grouping, and authoring copy for the updated demo records. Reuse the existing generation and repair mechanisms for those fields; extend their validated field associations and limits only where the new UI requires it. The instructions below describe the policy and behavior to retain as well as those narrow extensions.
 
 The existing shoot-type/purpose policy remains authoritative. Use photographer context first, visual observations second, and format writing rules third. A recipient is not automatically the person photographed. Never identify a person, relationship, venue, speaker, date, fabric, product material or usage right from pixels.
 
@@ -183,7 +187,7 @@ The existing shoot-type/purpose policy remains authoritative. Use photographer c
 
 Keep opening 140 and closing 160 for these Showcase formats. Keep current saved frame captions valid. A frame headline may remain in the record even when a layout does not display it. Do not force heading+caption+section note onto every image.
 
-Update `deliveryWriting.js`, `deliveryWritingBlocks.js`, `deliveryV3AI.service.js`, creator limits and server validation together. Replace hardcoded non-Editorial body limits with per-format lookup. Add Canvas grouping; build Album spread suggestions from aspect ratios and approved order with a deterministic valid fallback. Do not make image grouping invent chronology.
+Extend the existing writing-block definitions, creator limits and server validation together only for the new section/spread fields. Reuse the current policy in `deliveryWriting.js` and generation/repair service in `deliveryV3AI.service.js`; do not replace them. Replace hardcoded non-Editorial section-body limits with per-format lookup for these longer introductions. Add Canvas grouping; build Album spread suggestions from aspect ratios and approved order with a deterministic valid fallback. Do not make image grouping invent chronology.
 
 Personal shoots: refer to the person and reason for the session; visual details are secondary. Event: describe actual scenes without birthday wishes or invented speakers/venues. Campaign: visible product details are useful but material, durability, brand claims and rights require supplied facts. Memorial: respectful, restrained language. No automatic clothing commentary just because the image analysis detected an outfit.
 
@@ -362,7 +366,7 @@ Test all four combinations and parent-versus-grant restrictions. This is a share
 | 1 | Record baseline; separate production renderers from demos; preserve behavior | `FormatDemo.jsx`, `viewerRegistry.jsx`, new Canvas/Chapters/Album viewer modules; `EventCampaignViewers.jsx` helper imports |
 | 2 | Shared type/contrast/motion/loading utilities and reusable shell | `deliveryTypography.js`, `DeliveryTypography.css`, `DeliveryBrandMark.jsx`, new delivery theme/image utilities; shared header rules |
 | 3 | Strict data schemas, legacy normalization, save/approve round-trip | `server/src/controllers/deliveryV3.controller.js`, `server/src/constants/deliveryV3.js`, new format presentation constants; `Delivery.js` only if required |
-| 4 | Format-aware generation, grouping, block limits and protected repair | `deliveryV3AI.service.js`, `deliveryWriting.js`, `deliveryWritingBlocks.js`, `deliveryWritingChanges.js`, `DeliveryWritingReview.jsx` |
+| 4 | Preserve completed caption alignment; extend existing blocks for new section/spread fields and Canvas grouping | `deliveryV3AI.service.js`, `deliveryWritingBlocks.js`, `deliveryWritingChanges.js`, `DeliveryWritingReview.jsx`; retain existing `deliveryWriting.js` policy |
 | 5 | Structure editors and complete live preview payload | `CreateDeliveryV3.jsx/.css`, new `DeliveryStructureEditor.jsx`, `AlbumEditor.jsx`; `ClientDeliveryPreview.jsx`, `PhonePresentation.jsx` only if needed for parity |
 | 6 | Canvas, then Chapters, then Album redesigns | Dedicated viewers/styles; do not continue adding unrelated global overrides to `format-demos.css` |
 | 7 | Event and Campaign redesigns plus saved metadata/file sets | `EventCampaignViewers.jsx/.css`, creator controls and schemas |
@@ -414,4 +418,3 @@ Run the client production build in a clean checkout containing the intended chan
 ## 14. Deferred ideas — do not add to the main implementation
 
 Automatic campaign crops/exports, PDFs or print-album ordering, new narration/music for silent formats, facial search, comments/proofing, real-time client collaboration and client-controlled board layout switching need separate product and backend decisions. They are not prerequisites for making these six formats substantially better.
-
