@@ -5,7 +5,7 @@ import PortfolioMedia from '../models/PortfolioMedia.js';
 import PortfolioCleanup from '../models/PortfolioCleanup.js';
 import Delivery from '../models/Delivery.js';
 import StorageAsset from '../models/StorageAsset.js';
-import { normalizeSnapshot, removeSnapshotPhotos } from '../utils/portfolio.js';
+import { normalizeSnapshot, removeSnapshotPhotos, visiblePortfolioPhotoIds } from '../utils/portfolio.js';
 
 // Persist before deleting the source, so a process restart cannot lose cleanup.
 export async function schedulePortfolioRemoval(userId, publicIds) {
@@ -65,7 +65,7 @@ export async function removePortfolioReferences(userId, publicIds) {
     if (![...live.items, ...draft.items].some(item => removed.has(item.publicId))) return;
     const nextLive = removeSnapshotPhotos(live, removed);
     const nextDraft = removeSnapshotPhotos(draft, removed);
-    const visible = new Set([...nextLive.items.filter(item => item.featured).map(item => item.id), ...nextLive.projects.flatMap(project => project.photoIds)]);
+    const visible = visiblePortfolioPhotoIds(nextLive);
     const result = await Portfolio.updateOne({
       _id: portfolio._id,
       draftRevision: portfolio.draftRevision || 0,

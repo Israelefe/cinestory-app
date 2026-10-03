@@ -44,6 +44,7 @@ export default function PortfolioCanvas({ portfolio, preview = false, projectId 
   const [activePhoto, setActivePhoto] = useState(-1);
   const [viewerPhotos, setViewerPhotos] = useState([]);
   const dialogRef = useRef(null), canvasRef = useRef(null), triggerRef = useRef(null), touchRef = useRef(null), historyRef = useRef(false);
+  const categoryBrowserRef = useRef(null), categoryNavigationRef = useRef(null);
   const direction = { ...directionDefaults, ...(portfolio.direction || {}) };
   const template = findPortfolioDesign(direction.template).id;
   const still = reduced || direction.motion === 'still';
@@ -66,13 +67,25 @@ export default function PortfolioCanvas({ portfolio, preview = false, projectId 
   const pageUrl = typeof window === 'undefined' ? path : `${window.location.origin}${path}`;
   const enquiry = `Hello ${portfolio.studioName}, I would like to ask about a shoot.${activeProject ? ` I was looking at ${activeProject.title}.` : ''} ${pageUrl}`;
   const whatsappHref = `https://wa.me/${whatsapp}?text=${encodeURIComponent(enquiry)}`;
-  const headline = activeProject?.title || portfolio.headline || portfolio.studioName || 'Your photographs';
-  const eyebrow = activeProject ? '' : portfolio.location && direction.showLocation ? portfolio.location : '';
-  const viewerCollection = activeProject?.title || (selectedCategory ? portfolioCategoryLabel(selectedCategory, categories) : '');
+  const headline = activeProject?.title || selectedCategory || portfolio.headline || portfolio.studioName || 'Your photographs';
+  const studioLocation = direction.showLocation ? portfolio.location : '';
+  const viewerCollection = activeProject?.title || selectedCategory || 'Main gallery';
   const viewerCaption = viewerPhotos[activePhoto]?.title || (viewerPhotos[activePhoto]?.category ? portfolioCategoryLabel(viewerPhotos[activePhoto].category, categories) : '');
 
   useEffect(() => { setCategory(null); setActivePhoto(-1); }, [projectId, previewProject, portfolio.handle, template]);
   useEffect(() => { if (category !== null && !categories.includes(category)) setCategory(null); }, [categories, category]);
+  useEffect(() => {
+    const navigation = categoryNavigationRef.current;
+    if (!navigation) return;
+    categoryNavigationRef.current = null;
+    if (selectedCategory || navigation.top) {
+      scrollToTarget(canvasRef.current);
+      canvasRef.current?.querySelector('h1')?.focus({ preventScroll: true });
+    } else {
+      scrollToTarget(categoryBrowserRef.current);
+      [...(categoryBrowserRef.current?.querySelectorAll('button') || [])].find(button => button.dataset.category === navigation.name)?.focus({ preventScroll: true });
+    }
+  }, [selectedCategory]);
   useEffect(() => {
     const dialog = dialogRef.current;
     if (activePhoto >= 0 && !dialog?.open) dialog?.showModal();
@@ -106,15 +119,27 @@ export default function PortfolioCanvas({ portfolio, preview = false, projectId 
     else target.scrollIntoView({ behavior: still ? 'instant' : 'smooth', block: 'start' });
   }
   function contact(event, route) { if (preview) event.preventDefault(); else onContact?.(route, activeProject?.id); }
+  function chooseCategory(name) {
+    categoryNavigationRef.current = { name };
+    setCategory(name);
+    onFilter?.(name);
+  }
+  function returnToMain(event, top = false) {
+    event?.preventDefault();
+    categoryNavigationRef.current = { name: selectedCategory, top };
+    setCategory(null);
+    onFilter?.('Main gallery');
+  }
   const reveal = (index = 0, kind = 'photo') => still ? { initial: false, animate: { opacity: 1, y: 0, scale: 1 }, transition: { duration: 0 } } : {
     initial: { opacity: 0, y: expressive ? template === 'gallery' ? 14 : 30 : 10, ...(expressive && template === 'cinema' && kind === 'photo' ? { scale: 1.025 } : {}) },
     whileInView: { opacity: 1, y: 0, scale: 1 }, viewport: { once: true, amount: .08 },
     transition: { duration: expressive ? .7 : .35, delay: Math.min(index % 3 * .07, .14), ease: [.22, 1, .36, 1] }
   };
-  const heading = <motion.div {...reveal(0, 'text')} className="vpc-hero-heading">{eyebrow && <p className="vpc-eyebrow">{eyebrow}</p>}<h1>{headline}</h1></motion.div>;
-  const introduction = activeProject ? activeProject.description : portfolio.introLine || (direction.showBio ? portfolio.bio : '');
+  const heading = <motion.div {...reveal(0, 'text')} className="vpc-hero-heading"><h1 tabIndex={-1}>{headline}</h1></motion.div>;
   const comparableCopy = value => String(value || '').toLowerCase().replace(/[\s\p{P}]+/gu, '');
-  const studioBio = !activeProject && direction.showBio && portfolio.introLine && comparableCopy(portfolio.bio) !== comparableCopy(portfolio.introLine) ? portfolio.bio : '';
+  const openingText = activeProject ? activeProject.description : selectedCategory ? '' : portfolio.introLine || (direction.showBio ? portfolio.bio : '');
+  const introduction = comparableCopy(openingText) !== comparableCopy(headline) ? openingText : '';
+  const studioBio = !activeProject && !selectedCategory && direction.showBio && portfolio.introLine && ![headline, introduction].some(copy => comparableCopy(copy) === comparableCopy(portfolio.bio)) ? portfolio.bio : '';
   const openingCopy = introduction && <motion.div {...reveal(1, 'text')} className="vpc-hero-copy"><p className="vpc-intro">{introduction}</p></motion.div>;
   const openingCover = openingPhoto && <motion.figure key={itemId(openingPhoto)} {...(template === 'cinema' ? { initial: still ? false : { opacity: 0 }, animate: { opacity: 1 }, exit: still ? undefined : { opacity: 0 }, transition: { duration: still ? 0 : expressive ? .6 : .25 } } : reveal())} className={`vpc-cover crop-${openingPhoto.crop || 'fit'}`}><button type="button" onClick={event => openPhoto(openingPhoto, event)} aria-label={`View ${openingPhoto.title || 'cover photograph'}`}><Photograph item={openingPhoto} studioName={portfolio.studioName} eager full={template === 'cinema'} /></button>{direction.showPhotoTitles && openingPhoto.title && <figcaption><span>{openingPhoto.title}</span></figcaption>}</motion.figure>;
   const projectsSection = projectCards.length > 0 && <section id={projectsId} className="vpc-projects"><motion.header {...reveal(0, 'text')} className="vpc-work-head"><h2>Projects</h2></motion.header><div className="vpc-project-grid">{projectCards.map(({ project, image }, index) => {
@@ -123,23 +148,24 @@ export default function PortfolioCanvas({ portfolio, preview = false, projectId 
       {preview ? <button onClick={() => { setPreviewProject(project.id); scrollToTarget(canvasRef.current); }} className="vpc-project-card">{contents}</button> : <Link onClick={() => onProjectOpen?.(project.id)} to={`/@${portfolio.handle}/projects/${project.id}`} className="vpc-project-card">{contents}</Link>}
     </motion.article>;
   })}</div></section>;
+  const otherCategories = categories.filter(name => name !== selectedCategory);
+  const categoriesSection = otherCategories.length > 0 && <motion.section ref={categoryBrowserRef} {...reveal(0, 'text')} className="vpc-category-browser"><h2>{selectedCategory ? 'Other categories' : 'Categories'}</h2><nav className="vpc-categories" aria-label="Choose a category">{otherCategories.map(name => <button key={name} data-category={name} onClick={() => chooseCategory(name)}><span>{name}</span><ArrowUpRight size={18} /></button>)}</nav></motion.section>;
 
-  return <div ref={canvasRef} id={topId} data-design={template} data-motion={still ? 'still' : direction.motion} className={`v-portfolio-canvas design-${template} is-${direction.background} type-${direction.typeStyle} rhythm-${direction.rhythm} layout-${direction.layout} ${activeProject ? 'is-project' : ''} ${!openingPhoto ? 'has-no-cover' : ''}`} style={{ '--portfolio-accent': colors.accent, '--portfolio-accent-text': colors.accentText, '--portfolio-button-text': colors.buttonText }}>
-    <header className="vpc-header"><a href={`#${topId}`} onClick={event => scrollTo(event, topId)} className="vpc-brand">{portfolio.studioName || 'Your studio'}</a><nav className="vpc-header-right" aria-label="Studio navigation"><a href={`#${workId}`} onClick={event => scrollTo(event, workId)}>Work</a>{canContact && <a href={`#${contactId}`} onClick={event => scrollTo(event, contactId)}>Contact<ArrowUpRight size={13} /></a>}</nav></header>
+  return <div ref={canvasRef} id={topId} data-design={template} data-motion={still ? 'still' : direction.motion} className={`v-portfolio-canvas design-${template} is-${direction.background} type-${direction.typeStyle} rhythm-${direction.rhythm} layout-${direction.layout} ${activeProject ? 'is-project' : ''} ${selectedCategory ? 'is-category' : ''} ${!openingPhoto ? 'has-no-cover' : ''}`} style={{ '--portfolio-accent': colors.accent, '--portfolio-accent-text': colors.accentText, '--portfolio-button-text': colors.buttonText }}>
+    <header className="vpc-header"><a href={`#${topId}`} onClick={event => selectedCategory ? returnToMain(event, true) : scrollTo(event, topId)} className="vpc-brand">{portfolio.studioName || 'Your studio'}</a><nav className="vpc-header-right" aria-label="Studio navigation"><a href={`#${workId}`} onClick={event => selectedCategory ? returnToMain(event, true) : scrollTo(event, workId)}>Work</a>{canContact && <a href={`#${contactId}`} onClick={event => scrollTo(event, contactId)}>Contact<ArrowUpRight size={13} /></a>}</nav></header>
     <main className="vpc-main">
       {activeProject && (preview ? <button className="vpc-back" onClick={() => setPreviewProject('')}><ArrowLeft size={16} />Back to portfolio</button> : <Link className="vpc-back" to={`/@${portfolio.handle}`}><ArrowLeft size={16} />Back to portfolio</Link>)}
-      {categories.length > 0 && <nav className="vpc-categories" aria-label="Choose a category">{categories.map(name => <button key={name} aria-pressed={selectedCategory === name} className={selectedCategory === name ? 'is-active' : ''} onClick={() => { setCategory(name); onFilter?.(portfolioCategoryLabel(name, categories)); }}>{portfolioCategoryLabel(name, categories)}</button>)}</nav>}
-      <section key={`${template}-${activeProject?.id || 'home'}`} className="vpc-hero">
-        {template === 'cinema' ? <><div className="vpc-cinema-stage">{openingCover}{heading}</div>{openingCopy}</> : template === 'folio' ? <><div className="vpc-folio-opening">{heading}<div className={`vpc-folio-covers ${!companion ? 'is-single' : ''}`}>{openingCover}{companion && <motion.figure key={itemId(companion)} {...reveal(1)} className={`vpc-companion crop-${companion.crop || 'fit'}`}><button type="button" onClick={event => openPhoto(companion, event)} aria-label={`View ${companion.title || 'second cover photograph'}`}><Photograph item={companion} studioName={portfolio.studioName} /></button></motion.figure>}</div></div>{openingCopy && <div className="vpc-opening-bottom">{openingCopy}</div>}</> : <>{heading}{openingCover}{openingCopy}</>}
+      <section key={`${template}-${activeProject?.id || selectedCategory || 'home'}`} className="vpc-hero">
+        {selectedCategory ? <><button className="vpc-back" onClick={returnToMain}><ArrowLeft size={16} />Back to main gallery</button>{heading}</> : template === 'cinema' ? <><div className="vpc-cinema-stage">{openingCover}{heading}</div>{openingCopy}</> : template === 'folio' ? <><div className="vpc-folio-opening"><div className={`vpc-folio-covers ${!companion ? 'is-single' : ''}`}>{openingCover}{companion && <motion.figure key={itemId(companion)} {...reveal(1)} className={`vpc-companion crop-${companion.crop || 'fit'}`}><button type="button" onClick={event => openPhoto(companion, event)} aria-label={`View ${companion.title || 'second cover photograph'}`}><Photograph item={companion} studioName={portfolio.studioName} /></button></motion.figure>}</div>{heading}</div>{openingCopy && <div className="vpc-opening-bottom">{openingCopy}</div>}</> : <>{openingCover}{heading}{openingCopy}</>}
 
       </section>
-      {template === 'folio' && projectsSection}
-      <section id={workId} className="vpc-work" aria-label={selectedCategory ? portfolioCategoryLabel(selectedCategory, categories) : 'Photographs'}>
-        <div key={`${template}-${selectedCategory}`} className="vpc-work-groups">{groups.map(group => <section key={group.name} className={`vpc-work-group ${group.photos.length === 2 ? 'has-pair' : ''}`}>{template === 'cinema' ? <PhotoRail key={`${template}-${selectedCategory}`} photos={group.photos} studioName={portfolio.studioName} onOpen={(photo, event) => openPhoto(photo, event)} still={still} label={group.name ? portfolioCategoryLabel(group.name, categories) : 'Photographs'} /> : <motion.div className="vpc-gallery" initial={still ? false : { opacity: .35 }} animate={{ opacity: 1 }} transition={{ duration: still ? 0 : .25 }}>{group.photos.map((photo, index) => <motion.figure {...reveal(index)} key={itemId(photo)} className={`vpc-photo photo-${index % 6} crop-${photo.crop || 'fit'}`}><button type="button" onClick={event => openPhoto(photo, event)} aria-label={`View ${photo.title || `photograph ${index + 1}`}`}><Photograph item={photo} studioName={portfolio.studioName} /></button>{direction.showPhotoTitles && photo.title && <figcaption><span>{photo.title}</span></figcaption>}</motion.figure>)}</motion.div>}</section>)}{!visible.length && !projectCards.length && <p className="vpc-empty">{preview ? 'Your photographs will appear here.' : 'There are no photographs in this category.'}</p>}</div>
+      <section id={workId} className="vpc-work" aria-label={selectedCategory || 'Main gallery'}>
+        <div key={`${template}-${selectedCategory}`} className="vpc-work-groups">{groups.map(group => <section key={group.name} className={`vpc-work-group ${group.photos.length === 2 ? 'has-pair' : ''}`}>{template === 'cinema' ? <PhotoRail key={`${template}-${selectedCategory}`} photos={group.photos} studioName={portfolio.studioName} onOpen={(photo, event) => openPhoto(photo, event)} still={still} label={group.name || 'Main gallery'} /> : <motion.div className="vpc-gallery" initial={still ? false : { opacity: .35 }} animate={{ opacity: 1 }} transition={{ duration: still ? 0 : .25 }}>{group.photos.map((photo, index) => <motion.figure {...reveal(index)} key={itemId(photo)} className={`vpc-photo photo-${index % 6} crop-${photo.crop || 'fit'}`}><button type="button" onClick={event => openPhoto(photo, event)} aria-label={`View ${photo.title || `photograph ${index + 1}`}`}><Photograph item={photo} studioName={portfolio.studioName} /></button>{direction.showPhotoTitles && photo.title && <figcaption><span>{photo.title}</span></figcaption>}</motion.figure>)}</motion.div>}</section>)}{!visible.length && !projectCards.length && <p className="vpc-empty">{preview ? 'Your photographs will appear here.' : 'There are no photographs in this category.'}</p>}</div>
       </section>
-      {template !== 'folio' && projectsSection}
-      {canContact && <motion.section {...reveal(0, 'text')} id={contactId} className="vpc-contact"><div><p className="vpc-eyebrow">For bookings and enquiries</p><h2>Let’s talk about<br />your next shoot.</h2>{studioBio && <p className="vpc-contact-bio">{studioBio}</p>}</div><div className="vpc-contact-actions">{whatsapp && <a href={preview ? '#' : whatsappHref} onClick={event => contact(event, 'whatsapp')} target={preview ? undefined : '_blank'} rel="noopener noreferrer"><MessageCircle size={18} />{portfolio.contactLabel || 'Ask about a shoot'}<ArrowUpRight size={18} /></a>}{instagramValid && <a className="vpc-social" href={preview ? '#' : `https://instagram.com/${instagramValid}`} onClick={event => contact(event, 'instagram')} target={preview ? undefined : '_blank'} rel="noopener noreferrer"><Instagram size={18} />@{instagramValid}</a>}</div></motion.section>}
-      {!canContact && studioBio && <motion.section {...reveal(0, 'text')} className="vpc-about"><h2>About the studio</h2><p>{studioBio}</p></motion.section>}
+      {projectsSection}
+      {categoriesSection}
+      {canContact && <motion.section {...reveal(0, 'text')} id={contactId} className="vpc-contact"><div><p className="vpc-eyebrow">For bookings and enquiries</p><h2>Let’s talk about<br />your next shoot.</h2>{studioBio && <p className="vpc-contact-bio">{studioBio}</p>}{studioLocation && <p className="vpc-studio-location">{studioLocation}</p>}</div><div className="vpc-contact-actions">{whatsapp && <a href={preview ? '#' : whatsappHref} onClick={event => contact(event, 'whatsapp')} target={preview ? undefined : '_blank'} rel="noopener noreferrer"><MessageCircle size={18} />{portfolio.contactLabel || 'Ask about a shoot'}<ArrowUpRight size={18} /></a>}{instagramValid && <a className="vpc-social" href={preview ? '#' : `https://instagram.com/${instagramValid}`} onClick={event => contact(event, 'instagram')} target={preview ? undefined : '_blank'} rel="noopener noreferrer"><Instagram size={18} />@{instagramValid}</a>}</div></motion.section>}
+      {!canContact && (studioBio || studioLocation) && <motion.section {...reveal(0, 'text')} className="vpc-about"><h2>About the studio</h2>{studioBio && <p>{studioBio}</p>}{studioLocation && <p className="vpc-studio-location">{studioLocation}</p>}</motion.section>}
     </main>
     <footer className="vpc-footer"><span>{portfolio.studioName || 'Your studio'}</span><a href={preview ? '#' : '/'} onClick={preview ? event => event.preventDefault() : undefined}>Portfolio by Veylo</a></footer>
     <dialog ref={dialogRef} className="vpc-lightbox" onCancel={event => { event.preventDefault(); closePhoto(); }} onClose={() => setActivePhoto(-1)} onClick={event => { if (event.target === event.currentTarget) closePhoto(); }} onKeyDown={event => {

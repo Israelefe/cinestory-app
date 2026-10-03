@@ -1,6 +1,7 @@
 export const UNGROUPED = 'Selected work';
 export const categoryName = value => String(value || '').trim().replace(/\s+/g, ' ');
 export const categoryKey = value => categoryName(value).toLocaleLowerCase('en');
+export const hasPortfolioCategory = value => Boolean(categoryKey(value)) && categoryKey(value) !== categoryKey(UNGROUPED);
 
 export function portfolioCategories(portfolio) {
   const names = new Map();

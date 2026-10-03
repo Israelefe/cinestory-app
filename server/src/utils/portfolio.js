@@ -45,6 +45,13 @@ const itemSchema = z.object({
 }).strict();
 const categoryName = value => value.trim().replace(/\s+/g, ' ');
 const categoryKey = value => categoryName(value).toLocaleLowerCase('en');
+export const hasPortfolioCategory = value => Boolean(categoryKey(value || '')) && categoryKey(value || '') !== 'selected work';
+export function visiblePortfolioPhotoIds(snapshot) {
+  return new Set([
+    ...snapshot.items.filter(item => item.featured || (snapshot.direction.showCategories && hasPortfolioCategory(item.category))).map(item => item.id),
+    ...snapshot.projects.flatMap(project => project.photoIds)
+  ]);
+}
 const categorySchema = z.string().transform(categoryName).pipe(z.string().min(1).max(50));
 export const draftSchema = z.object({
   expectedDraftRevision: z.number().int().min(0),
@@ -144,7 +151,7 @@ export function snapshotErrors(snapshot, {
     if (project.coverId && !project.photoIds.includes(project.coverId)) errors.push('Choose a project cover from its photographs.');
     if (publish && (!project.title.trim() || !project.photoIds.length)) errors.push('Give each project a title and at least one photograph.');
   }
-  const visible = new Set([...snapshot.items.filter(item => item.featured).map(item => item.id), ...snapshot.projects.flatMap(project => project.photoIds)]);
+  const visible = visiblePortfolioPhotoIds(snapshot);
   if (publish && snapshot.heroPublicId && !snapshot.items.some(item => item.publicId === snapshot.heroPublicId && visible.has(item.id))) errors.push('Choose a public cover photograph.');
   if (publish) {
     const keepingLegacy = snapshot.handle === existingHandle && publicHandleSchema.safeParse(snapshot.handle).success;
@@ -171,7 +178,7 @@ export function removeSnapshotPhotos(value, removedIds) {
       coverId: photoIds.includes(project.coverId) ? project.coverId : photoIds[0] || ''
     };
   }).filter(project => project.photoIds.length);
-  const visible = new Set([...next.items.filter(item => item.featured).map(item => item.id), ...next.projects.flatMap(project => project.photoIds)]);
+  const visible = visiblePortfolioPhotoIds(next);
   if (!next.items.some(item => item.publicId === next.heroPublicId && visible.has(item.id))) next.heroPublicId = next.items.find(item => visible.has(item.id))?.publicId || '';
   return next;
 }

@@ -12,7 +12,7 @@ import { useDialogFocus } from '../components/useDialogFocus.js';
 import PortfolioPhotoPicker from '../components/PortfolioPhotoPicker.jsx';
 import PortfolioDesignPicker from '../components/PortfolioDesignPicker.jsx';
 import PortfolioCategories, { PortfolioCategoryField } from '../components/PortfolioCategories.jsx';
-import { portfolioCategories } from '../services/portfolioCategories.js';
+import { portfolioCategories, hasPortfolioCategory } from '../services/portfolioCategories.js';
 import { portfolioDesigns, findPortfolioDesign } from '../components/portfolioDesigns.js';
 import PortfolioCanvas from './PortfolioCanvas.jsx';
 import './ManagePortfolio.css';
@@ -57,7 +57,7 @@ function PhotoTile({
     index,
     transition: reduced ? null : undefined
   });
-  return <article ref={ref} className={`v-pedit-photo ${isDragging ? 'is-dragging' : ''} ${selected ? 'is-selected' : ''}`}><button className="v-pedit-photo-image" onClick={onEdit} aria-label={`Edit photograph ${index + 1}`}><img src={photo.thumbnailUrl || photo.url} alt={photo.alt || photo.title || `Photograph ${index + 1}`} loading="lazy" />{cover && <span>Cover</span>}{!photo.featured && <span>Projects only</span>}</button><div className="v-pedit-photo-info"><button className="v-pedit-checkbox" aria-label={`Select photograph ${index + 1}`} aria-pressed={selected} onClick={onSelect}>{selected && <Check size={15} />}</button><button onClick={onEdit}><strong>{photo.title || `Photograph ${index + 1}`}</strong><small>{photo.category}</small></button><button ref={handleRef} aria-label={`Drag photograph ${index + 1} to reorder`} className="v-pedit-grip"><GripVertical size={18} /></button></div><div className="v-pedit-photo-order"><button onClick={() => onMove(index - 1)} disabled={index === 0} aria-label={`Move photograph ${index + 1} earlier`}><ArrowUp size={14} /></button><button onClick={() => onMove(index + 1)} disabled={index === count - 1} aria-label={`Move photograph ${index + 1} later`}><ArrowDown size={14} /></button></div></article>;
+  return <article ref={ref} className={`v-pedit-photo ${isDragging ? 'is-dragging' : ''} ${selected ? 'is-selected' : ''}`}><button className="v-pedit-photo-image" onClick={onEdit} aria-label={`Edit photograph ${index + 1}`}><img src={photo.thumbnailUrl || photo.url} alt={photo.alt || photo.title || `Photograph ${index + 1}`} loading="lazy" />{cover && <span>Cover</span>}{!photo.featured && <span>Off main gallery</span>}</button><div className="v-pedit-photo-info"><button className="v-pedit-checkbox" aria-label={`Select photograph ${index + 1}`} aria-pressed={selected} onClick={onSelect}>{selected && <Check size={15} />}</button><button onClick={onEdit}><strong>{photo.title || `Photograph ${index + 1}`}</strong><small>{photo.category}</small></button><button ref={handleRef} aria-label={`Drag photograph ${index + 1} to reorder`} className="v-pedit-grip"><GripVertical size={18} /></button></div><div className="v-pedit-photo-order"><button onClick={() => onMove(index - 1)} disabled={index === 0} aria-label={`Move photograph ${index + 1} earlier`}><ArrowUp size={14} /></button><button onClick={() => onMove(index + 1)} disabled={index === count - 1} aria-label={`Move photograph ${index + 1} later`}><ArrowDown size={14} /></button></div></article>;
 }
 function Field({
   label,
@@ -130,7 +130,7 @@ export default function ManagePortfolio() {
   const project = form.projects.find(item => item.id === projectId);
   const categories = portfolioCategories(form);
   const errors = contactErrors(form);
-  const visibleIds = new Set([...form.items.filter(item => item.featured).map(item => item.id), ...form.projects.flatMap(item => item.photoIds)]);
+  const visibleIds = new Set([...form.items.filter(item => item.featured || (form.direction.showCategories && hasPortfolioCategory(item.category))).map(item => item.id), ...form.projects.flatMap(item => item.photoIds)]);
   const readiness = [!form.studioName.trim() && 'Set your studio name in account settings.', (form.handle !== profile?.persistedHandle && (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(form.handle) || form.handle.length < 3 || form.handle.length > 40)) && 'Choose a portfolio address with 3–40 letters, numbers or single hyphens.', !form.bio.trim() && 'Write a short studio introduction.', visibleIds.size < 4 && 'Choose at least four public photographs.', !form.items.some(item => item.publicId === form.heroPublicId && visibleIds.has(item.id)) && 'Choose a public cover photograph.', ...Object.values(errors), ...form.projects.flatMap(item => [!item.title.trim() && 'Give each project a title.', !item.photoIds.length && 'Add photographs to each project.'])].filter(Boolean);
   const canEdit = profile?.access === 'public';
   useEffect(() => {
@@ -184,13 +184,14 @@ export default function ManagePortfolio() {
     }));
   }
   function patchPhoto(id, changes) {
-    setForm(current => ({
-      ...current,
-      items: current.items.map(item => item.id === id ? {
+    setForm(current => {
+      const items = current.items.map(item => item.id === id ? {
         ...item,
         ...changes
-      } : item)
-    }));
+      } : item);
+      const removedCover = changes.featured === false && current.items.some(item => item.id === id && item.publicId === current.heroPublicId);
+      return { ...current, items, heroPublicId: removedCover ? items.find(item => item.featured)?.publicId || '' : current.heroPublicId };
+    });
   }
   function patchProject(changes) {
     setForm(current => ({
@@ -472,13 +473,13 @@ export default function ManagePortfolio() {
         alt: value
       })} maxLength={180} hint="Describe what is in the photograph for people using a screen reader." /><label className="v-pedit-toggle"><input type="checkbox" checked={photo.featured} onChange={event => patchPhoto(photo.id, {
           featured: event.target.checked
-        })} />Show in selected work</label><label className="v-pedit-field"><span>Image fit</span><select value={photo.crop} onChange={event => patchPhoto(photo.id, {
+        })} />Show in main gallery</label><small className="v-pcategories-note">Category membership is separate. Turn this off to keep the photograph out of your main gallery.</small><label className="v-pedit-field"><span>Image fit</span><select value={photo.crop} onChange={event => patchPhoto(photo.id, {
           crop: event.target.value
         })}><option value="fit">Show the whole photograph</option><option value="fill">Fill the frame</option></select></label>{photo.crop === 'fill' && <><Field label="Horizontal focus" type="range" min="0" max="100" value={photo.focalX} onChange={value => patchPhoto(photo.id, {
           focalX: Number(value)
         })} /><Field label="Vertical focus" type="range" min="0" max="100" value={photo.focalY} onChange={value => patchPhoto(photo.id, {
           focalY: Number(value)
-        })} /></>}<div className="v-pedit-sheet-actions"><button disabled={!visibleIds.has(photo.id)} onClick={() => update('heroPublicId', photo.publicId)}>{photo.publicId === form.heroPublicId ? 'Cover photograph' : 'Use as cover'}</button><button onClick={() => {
+        })} /></>}<div className="v-pedit-sheet-actions"><button disabled={!photo.featured} onClick={() => update('heroPublicId', photo.publicId)}>{photo.publicId === form.heroPublicId ? 'Cover photograph' : 'Use as cover'}</button><button onClick={() => {
           setSelected([photo.id]);
           setConfirmation('remove');
         }}><Trash2 size={16} />Remove photograph</button><button className="v-pedit-primary" onClick={() => setDetail(null)}>Done</button></div></Sheet>}

@@ -134,6 +134,35 @@ test('source deletion repairs live and draft projects, cover and publication sta
   await save({ projects: [{ id: 'project-one', title: 'Portraits', photoIds: ids.map(portfolioId), coverId: portfolioId(ids[0]) }] }); await publish(); await removePortfolioReferences(owner._id, [ids[0]]); const stored = await Portfolio.findOne(); assert.equal(stored.items.length, 3); assert.equal(stored.draft.items.length, 3); assert.equal(stored.heroPublicId, ids[1]); assert.equal(stored.projects[0].coverId, portfolioId(ids[1])); assert.equal(stored.status, 'draft'); assert.equal((await invoke(getPublicPortfolio, {}, { handle: 'amara-studio' })).code, 404);
 });
 test('making a portfolio private closes old media URLs', async () => { await save(); await publish(); assert.equal((await invoke(unpublishMyPortfolio, { expectedDraftRevision: 1 })).code, 200); assert.equal((await invoke(getPortfolioMedia, {}, { handle: 'amara-studio', itemId: portfolioId(ids[0]) }, owner, { v: '400' })).code, 404); });
+test('category-only photographs publish separately while unplaced photographs and unpublished changes stay private', async () => {
+  const categoryId = 'studio/category-only', hiddenId = 'studio/hidden-photo';
+  await StorageAsset.insertMany([categoryId, hiddenId].map(publicId => ({ userId: owner._id, publicId, format: 'jpg' })));
+  await PortfolioMedia.insertMany([categoryId, hiddenId].map(publicId => ({ publicId, variants: Object.fromEntries(['400', '800', '1600', 'og'].map(key => [key, `https://res.cloudinary.com/test/${key}.webp`])) })));
+  await save({ items: [...body().items, { publicId: categoryId, category: 'Weddings', featured: false }, { publicId: hiddenId, featured: false }], categories: ['Portraits', 'Weddings'] });
+  assert.equal((await publish()).code, 200);
+  let page = await invoke(getPublicPortfolio, {}, { handle: 'amara-studio' });
+  assert.equal(page.body.data.items.length, 5);
+  assert.equal(page.body.data.items.find(item => item.id === portfolioId(categoryId)).featured, false);
+  assert.ok(!page.body.data.items.some(item => item.id === portfolioId(hiddenId)));
+  // An invalid variant stops before the media fetch, after its visibility gate.
+  assert.equal((await invoke(getPortfolioMedia, {}, { handle: 'amara-studio', itemId: portfolioId(categoryId) }, owner, { v: 'invalid' })).code, 400);
+  assert.equal((await invoke(getPortfolioMedia, {}, { handle: 'amara-studio', itemId: portfolioId(hiddenId) }, owner, { v: 'invalid' })).code, 404);
+  await save({ items: [...body().items, { publicId: categoryId, category: 'Weddings', featured: false }, { publicId: hiddenId, featured: false }], direction: { showCategories: false } });
+  assert.equal((await invoke(getPortfolioMedia, {}, { handle: 'amara-studio', itemId: portfolioId(categoryId) }, owner, { v: 'invalid' })).code, 400);
+  assert.equal((await publish()).code, 200);
+  page = await invoke(getPublicPortfolio, {}, { handle: 'amara-studio' });
+  assert.equal(page.body.data.items.length, 4);
+  assert.equal((await invoke(getPortfolioMedia, {}, { handle: 'amara-studio', itemId: portfolioId(categoryId) }, owner, { v: 'invalid' })).code, 404);
+});
+test('category-only photographs count towards publication and source deletion repairs their public availability', async () => {
+  await save({ items: ids.map((publicId, index) => ({ publicId, category: index < 2 ? 'Portraits' : 'Weddings', featured: index < 2 })) });
+  assert.equal((await publish()).code, 200);
+  await removePortfolioReferences(owner._id, [ids[3]]);
+  const stored = await Portfolio.findOne();
+  assert.equal(stored.items.length, 3);
+  assert.equal(stored.status, 'draft');
+  assert.equal((await invoke(getPublicPortfolio, {}, { handle: 'amara-studio' })).code, 404);
+});
 test('archiving a delivery keeps explicitly selected portfolio photographs', async () => { await StorageAsset.deleteMany({}); await Delivery.create({ userId: owner._id, status: 'published', title: 'Portraits', brief: 'Finished portraits', assets: ids.map((publicId, index) => ({ assetId: `photo-${index}`, publicId, resourceType: 'image' })) }); assert.equal((await save()).code, 200); await Delivery.updateOne({}, { status: 'archived' }); assert.equal((await publish()).code, 200); });
 test('photo sources paginate and do not expose another studio’s deliveries', async () => { await Delivery.create({ userId: owner._id, status: 'published', title: 'Birthday', brief: 'Birthday portraits', assets: Array.from({ length: 26 }, (_, index) => ({ assetId: `photo-${index}`, publicId: `studio/birthday-${index}`, resourceType: 'image', originalFilename: `birthday-${index}.jpg` })) }); const groups = await invoke(getPortfolioSources, {}, {}, owner, { kind: 'deliveries' }); const sourceId = groups.body.data[0].sourceId; const first = await invoke(getPortfolioSources, {}, {}, owner, { kind: 'delivery', sourceId }); assert.equal(first.body.data.length, 24); assert.equal(first.body.nextCursor, '24'); assert.equal(first.body.data[0].title, ''); const next = await invoke(getPortfolioSources, {}, {}, owner, { kind: 'delivery', sourceId, cursor: '24' }); assert.equal(next.body.data.length, 2); const other = await User.create({ name: 'Other', email: 'other@example.com', plan: 'pro', accountStatus: 'active', planOverride: { plan: 'pro' } }); assert.equal((await invoke(getPortfolioSources, {}, {}, other, { kind: 'delivery', sourceId })).code, 404); });
 test('public metadata uses the current account studio name and project cover', async () => { await save(); await publish(); await User.updateOne({ _id: owner._id }, { 'studio.name': 'Amara Portrait Studio' }); const publicPage = await invoke(getPublicPortfolio, {}, { handle: 'amara-studio' }); assert.equal(publicPage.body.data.studioName, 'Amara Portrait Studio'); const meta = await invoke(getPortfolioShareMeta, {}, { handle: 'amara-studio' }); assert.match(meta.body.data.title, /Amara Portrait Studio/); assert.match(meta.body.data.image, /media\/p-.*v=og/); });

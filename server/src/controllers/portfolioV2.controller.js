@@ -13,7 +13,7 @@ import { resolveEntitlements } from '../services/entitlement.service.js';
 import { recordAnalyticsEventAsync } from '../services/analytics.service.js';
 import { isRuntimeFeatureEnabled } from '../services/runtimeConfig.service.js';
 import { preparePortfolioSet, streamPortfolioMedia } from '../services/portfolioMedia.service.js';
-import { normalizeSnapshot, snapshotErrors, draftSchema, handleSchema, publicHandleSchema, RESERVED, portfolioId, normalizeInstagram, normalizeWhatsApp } from '../utils/portfolio.js';
+import { normalizeSnapshot, snapshotErrors, draftSchema, handleSchema, publicHandleSchema, RESERVED, portfolioId, normalizeInstagram, normalizeWhatsApp, visiblePortfolioPhotoIds } from '../utils/portfolio.js';
 import { PORTFOLIO_HANDLE_CHANGE_COOLDOWN_MS, PORTFOLIO_HANDLE_REDIRECT_MS, PORTFOLIO_HANDLE_RESERVATION_MS, STUDIO_NAME_CHANGE_COOLDOWN_MS, isoDate, nextChangeAt } from '../constants/profilePolicy.js';
 import { tokenDigest } from '../utils/auth.js';
 import { CREATIVE_DIRECTOR_PROVIDER, CREATIVE_DIRECTOR_PROMPT_VERSION } from '../services/alibabaCreativeDirector.service.js';
@@ -83,7 +83,7 @@ function output(value, studioName, {
   handle = value.handle
 } = {}) {
   const next = normalizeSnapshot(value);
-  const visible = new Set([...next.items.filter(item => item.featured).map(item => item.id), ...next.projects.flatMap(project => project.photoIds)]);
+  const visible = visiblePortfolioPhotoIds(next);
   const items = (publicPage ? next.items.filter(item => visible.has(item.id)) : next.items).map(item => {
     const root = publicPage ? `/api/v1/portfolios/public/${encodeURIComponent(handle)}/media/${item.id}` : `/api/v1/portfolios/mine/media/${item.id}`;
     const {
@@ -650,7 +650,7 @@ export async function getPortfolioMedia(req, res) {
     }
     const snapshot = normalizeSnapshot(publicPage ? portfolio : portfolio.draft || portfolio);
     const item = snapshot.items.find(item => item.id === req.params.itemId);
-    const visible = item && (item.featured || snapshot.projects.some(project => project.photoIds.includes(item.id)));
+    const visible = item && visiblePortfolioPhotoIds(snapshot).has(item.id);
     if (!item || publicPage && !visible) return res.status(404).end();
     const owned = await availableAssets(user._id, [item.publicId], [item.publicId]);
     if (!owned.has(item.publicId)) return res.status(404).end();

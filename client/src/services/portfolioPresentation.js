@@ -1,25 +1,20 @@
 import { categoryKey, portfolioCategories, UNGROUPED } from './portfolioCategories.js';
 export const photoId = item => item.id || item.publicId;
 
-// A category is a separate collection, including its opening photographs.
-// Keep the full collection for the viewer while rendering each photograph once.
+// The main gallery is the photographer's selection. Categories are optional
+// collections and never add or remove photographs from that selection.
 export function portfolioPresentation({ portfolio, photos, cover, template, category = null, activeProject = false }) {
   const items = portfolio.items || [];
   const projects = activeProject ? [] : (portfolio.projects || []);
-  const membership = value => categoryKey(value || UNGROUPED);
-  // An explicitly chosen public cover may otherwise be marked projects-only.
-  const collection = cover && !photos.some(photo => photoId(photo) === photoId(cover)) ? [cover, ...photos] : photos;
-  const hasWork = name => collection.some(photo => membership(photo.category) === categoryKey(name)) || projects.some(project => membership(project.category) === categoryKey(name));
+  const membership = value => categoryKey(value) || categoryKey(UNGROUPED);
+  const hasWork = name => items.some(photo => membership(photo.category) === categoryKey(name)) || projects.some(project => membership(project.category) === categoryKey(name));
   const categories = !activeProject && portfolio.direction?.showCategories !== false ? portfolioCategories(portfolio).filter(hasWork) : [];
-  if (categories.length > 0 && hasWork(UNGROUPED)) categories.push(UNGROUPED);
-  const selectedCategory = categories.find(name => categoryKey(name) === categoryKey(category))
-    || categories.find(name => categoryKey(name) === membership(cover?.category))
-    || categories[0] || null;
-  const visible = selectedCategory === null ? collection : collection.filter(photo => membership(photo.category) === categoryKey(selectedCategory));
+  const selectedCategory = categories.find(name => categoryKey(name) === categoryKey(category)) || null;
+  const visible = selectedCategory === null ? photos : items.filter(photo => membership(photo.category) === categoryKey(selectedCategory));
   const openingPhoto = visible.find(photo => photoId(photo) === photoId(cover || {})) || visible[0];
-  const opening = openingPhoto ? [openingPhoto] : [];
+  const opening = selectedCategory === null && openingPhoto ? [openingPhoto] : [];
   // Small collections need a photograph beneath their opening, too.
-  const companion = !activeProject && template === 'folio' && visible.length > 2 ? visible.find(photo => photoId(photo) !== photoId(openingPhoto)) : null;
+  const companion = !activeProject && selectedCategory === null && template === 'folio' && visible.length > 2 ? visible.find(photo => photoId(photo) !== photoId(openingPhoto)) : null;
   if (companion) opening.push(companion);
   const reserved = new Set(opening.map(photoId));
   const work = visible.filter(photo => !reserved.has(photoId(photo)));
@@ -29,7 +24,8 @@ export function portfolioPresentation({ portfolio, photos, cover, template, cate
   const projectCards = projects.filter(project => selectedCategory === null || membership(project.category) === categoryKey(selectedCategory)).map(project => {
     const projectPhotos = project.photoIds.map(id => items.find(item => photoId(item) === id)).filter(Boolean);
     const candidate = projectPhotos.find(photo => photoId(photo) === project.coverId) || projectPhotos[0];
-    const image = candidate && !reserved.has(photoId(candidate)) && (selectedCategory === null || membership(candidate.category) === categoryKey(selectedCategory)) ? candidate : null;
+    // Project links must not pull an excluded photograph into the main gallery.
+    const image = candidate && candidate.featured !== false && !reserved.has(photoId(candidate)) && (selectedCategory === null || membership(candidate.category) === categoryKey(selectedCategory)) ? candidate : null;
     if (image) reserved.add(photoId(image));
     return { project, image };
   });
@@ -38,7 +34,5 @@ export function portfolioPresentation({ portfolio, photos, cover, template, cate
 }
 
 export function portfolioCategoryLabel(name, categories = []) {
-  return categoryKey(name) === categoryKey(UNGROUPED)
-    ? categories.some(category => categoryKey(category) === 'other work') ? 'Uncategorised' : 'Other work'
-    : name;
+  return categoryKey(name) === categoryKey(UNGROUPED) ? '' : name;
 }
