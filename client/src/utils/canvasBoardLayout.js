@@ -1,3 +1,12 @@
+// Deterministic print poses keep the demo, creator preview and delivery identical.
+export function canvasPrintPose(index, phone, ordered, landscape = false) {
+  if (ordered) return { tilt: 0, drift: 0, x: 0, y: 18, turn: 0 };
+  const angles = [-2.6, 2.2, -1.8, 1.7, -2.1, 2.8];
+  const directions = [[-26, 24], [22, 28], [28, -16], [-20, 28], [18, 26], [-22, 18]];
+  const [x, y] = directions[index % directions.length];
+  return { tilt: angles[index % angles.length] * (phone ? .48 : landscape ? .7 : 1), drift: phone ? 4 : index % 2 ? 6 : 10, x: x * (phone ? .5 : 1), y, turn: index % 2 ? 3 : -3 };
+}
+
 // Coordinates belong to the responsive viewer, never to the saved delivery.
 export function canvasBoardLayout({ width, points, photos, introHeight, closingHeight, measure, ordered = false }) {
   const phone = width < 620, tablet = !phone && width < 1000, scale = width / 1200;
@@ -20,13 +29,13 @@ export function canvasBoardLayout({ width, points, photos, introHeight, closingH
       point.assetIds.forEach((id, place) => {
         const right = group && !ordered && (place + (index % 4 === 3 ? 1 : 0)) % 2 === 1;
         const w = width * (group ? ordered ? .65 : right ? .528 : .506 : index === 0 ? .672 : .597);
-        const left = width * (right ? .389 : group ? .083 : .078);
+        const left = width * (right ? .37 : .1);
         const height = frameHeight(id, w);
         localFrames.push({ id, x: left, y: top, width: w, height, right });
         top += height + 84;
       });
     } else if (wide) {
-      const columns = tablet ? 2 : 3, gap = width * .035;
+      const columns = tablet ? 2 : 3, gap = width * .055;
       const cell = (regionWidth - gap * (columns - 1)) / columns;
       let top = headingHeight + 42;
       for (let start = 0; start < point.assetIds.length; start += columns) {
@@ -46,8 +55,10 @@ export function canvasBoardLayout({ width, points, photos, introHeight, closingH
         let bottom = top;
         point.assetIds.slice(start, start + 2).forEach((id, col) => {
           const secondMotif = index % 4 === 3;
-          const w = ordered ? regionWidth * .43 : width * (col === 0 ? secondMotif ? .2208 : .1792 : secondMotif ? .1625 : .2042);
-          const fx = col === 0 ? 0 : ordered ? regionWidth * .55 : width * (secondMotif ? .3 : .2042);
+          const firstPhoto = photos.get(point.assetIds[start]), secondPhoto = photos.get(point.assetIds[start + 1]);
+          const wideFirst = firstPhoto?.width > firstPhoto?.height && !(secondPhoto?.width > secondPhoto?.height);
+          const w = ordered ? regionWidth * .43 : width * (col === 0 ? wideFirst ? .24 : secondMotif ? .235 : .2 : wideFirst ? .165 : secondMotif ? .175 : .18);
+          const fx = col === 0 ? 0 : ordered ? regionWidth * .55 : width * (wideFirst ? .27 : secondMotif ? .29 : .23);
           const fy = top + (ordered ? 0 : col * (tablet ? 125 : secondMotif ? 145 : 160) * scale);
           const height = frameHeight(id, w);
           localFrames.push({ id, x: fx, y: fy, width: w, height, right: col === 1 });
@@ -62,13 +73,18 @@ export function canvasBoardLayout({ width, points, photos, introHeight, closingH
     p.frames = localFrames;
     p.height = Math.max(headingHeight, ...localFrames.map(f => f.y + f.height));
     p.marker = group
-      ? { x: phone ? width * (index % 4 === 3 ? .905 : .044) : x - 34, y: y + Math.min(headingHeight / 2, 32) }
-      : { x: phone ? width * .044 : x - 26, y: y + 25 };
+      ? { x: phone ? width * (index % 4 === 3 ? .905 : .03) : x - 34, y: y + Math.min(headingHeight / 2, 32) }
+      : { x: phone ? width * .03 : x - 26, y: y + 25 };
     if (group) obstacles.push({ x: x + p.headingX, y, width: headingWidth, height: headingHeight });
     for (const f of localFrames) {
       const global = { ...f, x: x + f.x, y: y + f.y, pointId: point.id };
-      global.anchor = { x: global.right ? global.x + global.width + 14 : global.x - (phone ? 14 : 18), y: global.y + 25 };
-      frames.push(global); obstacles.push(global);
+      global.pose = canvasPrintPose(points.slice(0, index).reduce((total, p) => total + p.assetIds.length, 0) + localFrames.indexOf(f), phone, ordered, photos.get(f.id)?.width > photos.get(f.id)?.height);
+      global.anchor = { x: global.right ? global.x + global.width + (phone ? 20 : 26) : global.x - (phone ? 20 : 26), y: global.y + 25 };
+      // Reserve the rotated print corners, hover lift and scroll movement in routes.
+      const angle = Math.abs(global.pose.tilt) * Math.PI / 180;
+      const expandX = Math.max(0, (global.height * Math.sin(angle) + global.width * Math.cos(angle) - global.width) / 2) + 2;
+      const expandY = Math.max(0, (global.width * Math.sin(angle) + global.height * Math.cos(angle) - global.height) / 2) + global.pose.drift + (ordered ? 0 : 7);
+      frames.push(global); obstacles.push({ ...global, x: global.x - expandX, y: global.y - expandY, width: global.width + expandX * 2, height: global.height + expandY * 2 });
     }
     placements.push(p); return p;
   };
@@ -88,16 +104,16 @@ export function canvasBoardLayout({ width, points, photos, introHeight, closingH
     }
     const leftGroup = points[at].type === 'group', first = at === 0;
     const leftX = leftGroup ? inset : width * (first ? .0583 : .1375);
-    const leftWidth = leftGroup ? width * .405 : width * (ordered ? .2583 : first ? .2583 : at % 4 === 0 ? .24 : .1833);
+    const leftWidth = leftGroup ? width * .405 : width * (ordered ? .2583 : first ? .275 : at % 4 === 0 ? .24 : .215);
     const left = add(points[at], at, leftX, cursor, leftWidth);
     lastLeftBottom = left.y + left.height;
     let bottom = lastLeftBottom;
     const next = points[at + 1];
     if (next && !(next.type === 'group' && next.assetIds.length > 4)) {
       const rightGroup = next.type === 'group';
-      const rightX = width * (rightGroup ? first ? .525 : .4917 : .67);
+      const rightX = width * (rightGroup ? first ? .51 : .475 : .67);
       const rightY = first ? Math.max(120 * scale, 75) : cursor + 50 * scale;
-      const right = add(next, at + 1, rightX, rightY, rightGroup ? width * (first ? .445 : .4783) : width * .235);
+      const right = add(next, at + 1, rightX, rightY, rightGroup ? width * (first ? .46 : .495) : width * .235);
       bottom = Math.max(bottom, right.y + right.height); at++;
     }
     cursor = bottom + Math.max(80, 94 * scale); at++;
@@ -143,7 +159,7 @@ function rounded(points) {
   if(clean.length<2)return '';
   let d=`M ${clean[0].x} ${clean[0].y}`;
   for(let i=1;i<clean.length-1;i++){
-    const a=clean[i-1],b=clean[i],c=clean[i+1], l1=Math.hypot(b.x-a.x,b.y-a.y),l2=Math.hypot(c.x-b.x,c.y-b.y),r=Math.min(12,l1/2,l2/2);
+    const a=clean[i-1],b=clean[i],c=clean[i+1], l1=Math.hypot(b.x-a.x,b.y-a.y),l2=Math.hypot(c.x-b.x,c.y-b.y),r=Math.min(22,l1/2,l2/2);
     d+=` L ${b.x+(a.x-b.x)*r/l1} ${b.y+(a.y-b.y)*r/l1} Q ${b.x} ${b.y} ${b.x+(c.x-b.x)*r/l2} ${b.y+(c.y-b.y)*r/l2}`;
   }
   return d+` L ${clean.at(-1).x} ${clean.at(-1).y}`;
@@ -165,6 +181,7 @@ export function canvasBoardPaths(layout, points, width) {
     if(point.type==='group')point.assetIds.forEach((id,place)=>{
       const previous=place&&layout.phone?byId.get(point.assetIds[place-1]).anchor:p.marker;
       connect(`${point.id}-${id}`,point.id,point.id,previous,byId.get(id).anchor);
+      const branch = paths.at(-1); if (branch?.id === `${point.id}-${id}`) branch.assetId = id;
     });
     const next=layout.points[index+1];if(!next)return;
     const start=layout.phone&&point.type==='group'?byId.get(point.assetIds.at(-1)).anchor:p.marker;

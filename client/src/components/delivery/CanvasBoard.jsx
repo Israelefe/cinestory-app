@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion, useScroll, useSpring, useTransform } from 'framer-motion';
 import { ArrowDown, ChevronLeft, ChevronRight, Images, List, RefreshCw, X } from 'lucide-react';
 import { Photo } from '../PublicDesign.jsx';
 import { useDialogFocus } from '../useDialogFocus.js';
@@ -7,13 +7,42 @@ import ClientGallery from './ClientGallery.jsx';
 import { DemoHeader, getFormatThemeStyles } from './formatShared.jsx';
 import { usePresentation, useReadyPhotos, ImageWaiting } from './PresentationShell.jsx';
 import { canvasCheckpoints } from '../../utils/canvas.js';
-import { canvasBoardLayout, canvasBoardPaths } from '../../utils/canvasBoardLayout.js';
+import { canvasBoardLayout, canvasBoardPaths, canvasPrintPose } from '../../utils/canvasBoardLayout.js';
 import { photoStoryChrome } from '../../utils/photoStoryChrome.js';
 import { CANVAS_DEMO_DELIVERY } from '../../constants/canvasDemo.js';
 import './CanvasBoard.css';
 
 const number = value => String(value).padStart(2, '0');
 const arrival = reduced => ({ initial: reduced ? false : { opacity: 0, y: 22 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, amount: .12 }, transition: { duration: reduced ? 0 : .55, ease: [.22, 1, .36, 1] } });
+
+function CanvasPrint({ photo, id, index, place, frame, pose, reduced, ordered, open, measureRef, onArrival }) {
+  // Measurements arrive after mounting; give the first arrival its direction too.
+  pose = pose || canvasPrintPose(index, window.innerWidth < 668, ordered, photo.width > photo.height);
+  const target = useRef(null);
+  const { scrollYProgress } = useScroll({ target, offset: ['start end', 'end start'] });
+  const offset = useTransform(scrollYProgress, progress => reduced || ordered ? 0 : (.5 - progress) * 2 * (pose?.drift || 0));
+  const drift = useSpring(offset, { stiffness: 180, damping: 35, restDelta: .05 });
+  const delay = reduced ? 0 : Math.min(place, 3) * .12;
+  return <motion.figure ref={target} className={`cv-frame ${photo.width > photo.height ? 'is-landscape' : ''}`}
+    initial={reduced ? false : { opacity: 0, x: pose?.x || 0, y: pose?.y || 22 }}
+    whileInView={{ opacity: 1, x: 0, y: 0 }} viewport={{ once: true, amount: .12 }} onViewportEnter={() => onArrival(id)}
+    transition={{ duration: reduced ? 0 : .72, delay, ease: [.22, 1, .36, 1] }}
+    style={{ left: frame?.x, top: frame?.y, width: frame?.width, '--cv-ratio': photo.width && photo.height ? `${photo.width} / ${photo.height}` : '3 / 4', '--cv-tilt': `${pose?.tilt || 0}deg` }}>
+    <motion.div className="cv-frame-drift" style={{ y: reduced || ordered ? 0 : drift }}>{index % 3 === 0 && <span className="cv-frame-alignment" aria-hidden="true" />}
+      <motion.div layoutId={`canvas-photo-${id}`} className="cv-frame-surface"
+        initial={reduced || ordered ? false : { rotate: (pose?.tilt || 0) + (pose?.turn || 0) }} whileInView={{ rotate: reduced ? 0 : pose?.tilt || 0 }} viewport={{ once: true, amount: .12 }}
+        whileHover={reduced ? undefined : { rotate: (pose?.tilt || 0) * .45, y: -7, transition: { duration: .25, ease: [.22, 1, .36, 1] } }}
+        whileTap={reduced ? undefined : { scale: .985, y: -2, transition: { duration: .15 } }}
+        transition={{ duration: reduced ? 0 : .82, delay, ease: [.22, 1, .36, 1], layout: { duration: reduced ? 0 : .48, ease: [.22, 1, .36, 1] } }}>
+        <button type="button" className="fd-wall-card cv-photo-open" onClick={event => open(photo, event)} aria-label={`Open photograph ${index + 1}`}>
+          <Photo url={photo.url} thumbnailUrl={photo.thumbnailUrl} srcSet={photo.srcSet} alt={photo.alt} eager={index < 2} draggable={false} style={{ objectPosition: photo.focalPoint || '50% 50%' }} sizes="(max-width: 640px) 70vw, (max-width: 1024px) 32vw, 420px" onError={event => { event.currentTarget.closest('.cv-frame').classList.add('has-error'); }} />
+          <span className="cv-photo-number" aria-hidden="true">{number(index + 1)}</span>
+        </button><button type="button" className="cv-frame-retry" onClick={event => { const frame = event.currentTarget.closest('.cv-frame'), image = frame.querySelector('img'); frame.classList.remove('has-error'); image.src = photo.url; image.srcset = photo.srcSet || ''; }}><RefreshCw size={16} />Retry photo</button>
+      </motion.div>
+    </motion.div>
+    <figcaption ref={measureRef} className="cv-frame-label"><span className="cv-frame-index">{number(index + 1)}</span>{photo.headline && <strong>{photo.headline}</strong>}</figcaption>
+  </motion.figure>;
+}
 
 function BoardPhoto({ photo, eager, ...props }) {
   const [failed, setFailed] = useState(false), [attempt, setAttempt] = useState(0);
@@ -60,15 +89,22 @@ function CanvasFocus({ all, selection, setSelection, onClose, triggerRef, reduce
     <motion.section ref={panel} role="dialog" aria-modal="true" aria-label="Canvas photograph" tabIndex={-1} initial={reduced ? false : { y: 14, scale: .98 }} animate={{ y: 0, scale: 1 }} exit={reduced ? undefined : { y: 10, scale: .98 }}>
       <header className="cv-focus-header"><div><span>{selection.scope ? selection.title || 'Photo group' : 'The whole canvas'}</span><small aria-live="polite">{number(index + 1)} / {number(photos.length)}{!state.ready && ' · Loading'}</small></div>{selection.scope && <button type="button" onClick={() => setSelection(current => ({ ...current, scope: null }))}>Browse all {all.length} photos</button>}<button className="fd-canvas-focus-close" type="button" onClick={onClose} aria-label="Return to canvas"><X size={20} /></button></header>
       <div className="cv-focus-layout"><div className="cv-focus-image" onPointerDown={pointerStart} onPointerUp={pointerEnd} onPointerCancel={() => { gesture.current = null; }} onLostPointerCapture={() => { gesture.current = null; }}>
-        {shown && <motion.figure layoutId={`canvas-photo-${shown.assetId}`} transition={{ duration: reduced ? 0 : .3 }}><Photo key={shown.assetId} url={state.photos.length ? shown.url : shown.thumbnailUrl || shown.url} srcSet={state.photos.length ? shown.srcSet : undefined} alt={shown.alt} eager draggable={false} sizes="(max-width: 640px) 94vw, (max-width: 1024px) 80vw, 1100px" /></motion.figure>}
+        {shown && <motion.figure layoutId={`canvas-photo-${shown.assetId}`} transition={{ duration: reduced ? 0 : .48, ease: [.22, 1, .36, 1] }}><Photo key={shown.assetId} url={state.photos.length ? shown.url : shown.thumbnailUrl || shown.url} srcSet={state.photos.length ? shown.srcSet : undefined} alt={shown.alt} eager draggable={false} sizes="(max-width: 640px) 94vw, (max-width: 1024px) 80vw, 1100px" /></motion.figure>}
         <ImageWaiting state={state} onSkip={index < photos.length - 1 ? () => next(1) : undefined} skipLabel="Next photo" />
-      </div><div className="fd-canvas-focus-copy cv-focus-copy"><div>{shown && <><span>PHOTOGRAPH {number(shownIndex + 1)}</span>{shown.headline && <h2>{shown.headline}</h2>}<p>{shown.caption}</p></>}</div><nav aria-label="Photograph navigation"><button type="button" disabled={index === 0} onClick={() => next(-1)}><ChevronLeft size={18} />Previous</button><button type="button" disabled={index === photos.length - 1} onClick={() => next(1)}>Next<ChevronRight size={18} /></button></nav></div></div>
+      </div><div className="fd-canvas-focus-copy cv-focus-copy"><motion.div key={shown?.assetId} initial={reduced ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .38, delay: .16, ease: [.22, 1, .36, 1] }}>{shown && <><span>PHOTOGRAPH {number(shownIndex + 1)}</span>{shown.headline && <h2>{shown.headline}</h2>}<p>{shown.caption}</p></>}</motion.div><nav aria-label="Photograph navigation"><button type="button" disabled={index === 0} onClick={() => next(-1)}><ChevronLeft size={18} />Previous</button><button type="button" disabled={index === photos.length - 1} onClick={() => next(1)}>Next<ChevronRight size={18} /></button></nav></div></div>
     </motion.section>
   </motion.div>;
 }
 
 export default function CanvasBoard({ delivery: supplied, galleryProps, audioState, toggleAudio, onNarrationNavigate }) {
-  const delivery = supplied || CANVAS_DEMO_DELIVERY, reduced = useReducedMotion();
+  const delivery = supplied || CANVAS_DEMO_DELIVERY, initialReduced = useReducedMotion();
+  const [reduced, setReduced] = useState(initialReduced);
+  useEffect(() => {
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReduced(preference.matches);
+    update(); preference.addEventListener('change', update);
+    return () => preference.removeEventListener('change', update);
+  }, []);
   const pathPrefix = useId(), context = usePresentation(delivery, galleryProps, !supplied);
   const { photos, all } = context;
   const points = useMemo(() => canvasCheckpoints(delivery, photos.map(photo => photo.assetId)), [delivery, photos]);
@@ -77,6 +113,7 @@ export default function CanvasBoard({ delivery: supplied, galleryProps, audioSta
   const [composition, setComposition] = useState(null), [active, setActive] = useState(points[0]?.id), [visited, setVisited] = useState(new Set());
   const [selection, setSelection] = useState(null), [gallery, setGallery] = useState(false), [directory, setDirectory] = useState(false), [jumped, setJumped] = useState(null);
   const [boardVisible, setBoardVisible] = useState(false);
+  const [arrivedPhotos, setArrivedPhotos] = useState(new Set());
   const settings = delivery.formatConfig?.canvas || {};
   const requestedTheme = getFormatThemeStyles(delivery, { bg: '#0c1b16', surface: '#eee5d8', text: '#efe6d6', accent: '#c8ac8c' });
   const ink = photoStoryChrome(requestedTheme['--fd-bg'], requestedTheme['--fd-text'], requestedTheme['--fd-accent']);
@@ -85,7 +122,7 @@ export default function CanvasBoard({ delivery: supplied, galleryProps, audioSta
   const signature = points.map(point => `${point.id}:${point.assetIds.join(',')}`).join('|');
   const copySignature = JSON.stringify([points.map(point => [point.title, point.note]), photos.map(photo => [photo.headline, photo.width, photo.height]), delivery.creativeDirection?.typography, delivery.creativeDirection?.title, delivery.creativeDirection?.openingLine, delivery.creativeDirection?.closingLine, delivery.v3?.openingAssetId, delivery.v3?.closingAssetId]);
   const metric = key => node => { if (node) metrics.current.set(key, node); else metrics.current.delete(key); };
-  useEffect(() => { setSelection(null); setVisited(new Set()); setActive(current => points.some(point => point.id === current) ? current : points[0]?.id); }, [signature]);
+  useEffect(() => { setSelection(null); setVisited(new Set()); setArrivedPhotos(current => new Set([...current].filter(id => byId.has(id)))); setActive(current => points.some(point => point.id === current) ? current : points[0]?.id); }, [signature]);
   useLayoutEffect(() => {
     if (!board.current) return;
     let frame, disposed = false;
@@ -117,9 +154,10 @@ export default function CanvasBoard({ delivery: supplied, galleryProps, audioSta
   }, [signature]);
   useEffect(() => { if (!jumped) return; const timer = setTimeout(() => setJumped(null), 1600); return () => clearTimeout(timer); }, [jumped]);
   const jump = id => { setDirectory(false); setJumped(id); setActive(id); nodes.current.get(id)?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' }); };
-  const open = (photo, event) => { trigger.current = event.currentTarget; setSelection({ id: photo.assetId, scope: null, title: '' }); onNarrationNavigate?.(photo.assetId); };
-  const groupOpen = (point, event) => { trigger.current = event.currentTarget; setSelection({ id: point.assetIds[0], scope: point.assetIds, title: point.title }); onNarrationNavigate?.(point.assetIds[0]); };
+  const open = (photo, event) => { window.scrollTo({ top: window.scrollY, left: window.scrollX, behavior: 'instant' }); trigger.current = event.currentTarget; setSelection({ id: photo.assetId, scope: null, title: '' }); onNarrationNavigate?.(photo.assetId); };
+  const groupOpen = (point, event) => { window.scrollTo({ top: window.scrollY, left: window.scrollX, behavior: 'instant' }); trigger.current = event.currentTarget; setSelection({ id: point.assetIds[0], scope: point.assetIds, title: point.title }); onNarrationNavigate?.(point.assetIds[0]); };
   const paths = composition?.paths || [];
+  const markArrived = id => setArrivedPhotos(current => current.has(id) ? current : new Set([...current, id]));
   const bookendPosition = kind => composition ? { left: composition[kind].x, top: composition[kind].y, width: composition[kind].width } : undefined;
   return <div className="fd-page fd-canvas cv-board" style={theme} data-arrangement={settings.arrangement || 'spatial'}>
     <DemoHeader format="Canvas" client={delivery.clientName || delivery.title} sectionId="canvas" delivery={supplied} onGallery={() => setGallery(true)} audioState={audioState} toggleAudio={toggleAudio} />
@@ -128,19 +166,16 @@ export default function CanvasBoard({ delivery: supplied, galleryProps, audioSta
       <LayoutGroup id={`canvas-${delivery.publicId || delivery._id || 'demo'}`}><div className="cv-path-board" ref={board} style={{ height: composition?.height || 1800 }}>
         <Bookend delivery={delivery} kind="opening" photos={all} reduced={reduced} edgeId={order[0]} position={bookendPosition('intro')} measureRef={metric('opening')} />
         <div className="cv-board-count"><span>{number(photos.length)} PHOTOGRAPHS</span><span>{number(points.length)} CHECKPOINTS</span></div>
-        <svg className="fd-wall-paths cv-paths" aria-hidden="true"><defs>{paths.map((path, index) => <mask key={path.id} id={`${pathPrefix}-line-${index}`} maskUnits="userSpaceOnUse" x="0" y="0" width="100%" height="100%"><motion.path d={path.d} stroke="white" strokeWidth="5" fill="none" pathLength={1} style={{ strokeDasharray: 'var(--cv-line-length, 0) 1', strokeDashoffset: 0 }} initial={false} animate={{ '--cv-line-length': reduced || visited.has(path.next) || visited.has(path.pointId) ? 1 : 0 }} transition={{ duration: reduced ? 0 : .7, ease: 'easeOut' }} /></mask>)}</defs>{paths.map((path, index) => <path key={path.id} d={path.d} mask={`url(#${pathPrefix}-line-${index})`} />)}</svg>
+        <svg className="fd-wall-paths cv-paths" aria-hidden="true"><defs>{paths.map((path, index) => <mask key={path.id} id={`${pathPrefix}-line-${index}`} maskUnits="userSpaceOnUse" x="0" y="0" width="100%" height="100%"><motion.path d={path.d} stroke="white" strokeWidth="5" fill="none" pathLength={1} style={{ strokeDasharray: 'var(--cv-line-length, 0) 1', strokeDashoffset: 0 }} initial={false} animate={{ '--cv-line-length': reduced || (path.assetId ? arrivedPhotos.has(path.assetId) : visited.has(path.next) || visited.has(path.pointId)) ? 1 : 0 }} transition={{ duration: reduced ? 0 : .7, delay: path.assetId ? .18 : 0, ease: 'easeOut' }} /></mask>)}</defs>{paths.map((path, index) => <path key={path.id} d={path.d} mask={`url(#${pathPrefix}-line-${index})`} />)}</svg>
         {points.map((point, at) => {
           const placement = composition?.points[at];
           return <section key={point.id} id={`cv-${point.id}`} data-point={point.id} data-type={point.type} ref={node => { if (node) nodes.current.set(point.id, node); else nodes.current.delete(point.id); }} style={placement ? { left: placement.x, top: placement.y, width: placement.width, height: placement.height } : { visibility: 'hidden' }} className={`cv-checkpoint ${point.type === 'group' ? 'is-group' : 'is-single'} ${active === point.id ? 'is-current' : ''} ${jumped === point.id ? 'is-jumped' : ''}`}>
-            <button type="button" className="cv-point-marker" style={placement ? { left: placement.marker.x - placement.x, top: placement.marker.y - placement.y } : undefined} aria-label={`Checkpoint ${at + 1}`} onClick={() => jump(point.id)}><span>{number(at + 1)}</span></button>
+            <button type="button" className="cv-point-marker" style={placement ? { left: placement.marker.x - placement.x, top: placement.marker.y - placement.y } : undefined} aria-label={`Checkpoint ${at + 1}`} onClick={() => jump(point.id)}><motion.span initial={false} animate={{ opacity: visited.has(point.id) ? 1 : .75, scale: visited.has(point.id) ? 1 : .94 }} transition={{ duration: reduced ? 0 : .35, ease: [.22, 1, .36, 1] }}>{number(at + 1)}</motion.span></button>
             <div className="cv-checkpoint-content">{point.type === 'group' && <motion.header ref={metric(`heading:${point.id}`)} className="cv-group-heading" style={placement ? { left: placement.headingX, top: placement.headingY, width: placement.headingWidth } : undefined} {...arrival(reduced)}><button type="button" onClick={event => groupOpen(point, event)} aria-label={`Open ${point.title || 'photo group'}`}><span>GROUP / {point.assetIds.length} PHOTOS</span><h3>{point.title}<ChevronRight size={18} /></h3>{settings.showGroupNotes !== false && point.note && <p>{point.note}</p>}</button></motion.header>}
               <div className="cv-photo-composition">{point.assetIds.map((id, place) => {
                 const photo = byId.get(id), index = order.indexOf(id), frame = placement?.frames[place]; if (!photo) return null;
                 const global = composition?.frames.find(item => item.id === id);
-                return <React.Fragment key={id}>{point.type === 'group' && global && <span className="cv-photo-anchor" aria-hidden="true" style={{ left: global.anchor.x - placement.x, top: global.anchor.y - placement.y }} />}<motion.figure className={`cv-frame ${photo.width > photo.height ? 'is-landscape' : ''}`} {...arrival(reduced)} style={{ left: frame?.x, top: frame?.y, width: frame?.width, '--cv-ratio': photo.width && photo.height ? `${photo.width} / ${photo.height}` : '3 / 4', '--cv-tilt': `${(index % 3 - 1) * .85}deg` }}>
-                  <motion.div layoutId={`canvas-photo-${id}`} className="cv-frame-surface"><button type="button" className="fd-wall-card cv-photo-open" onClick={event => open(photo, event)} aria-label={`Open photograph ${index + 1}`}><Photo url={photo.url} thumbnailUrl={photo.thumbnailUrl} srcSet={photo.srcSet} alt={photo.alt} eager={index < 2} style={{ objectPosition: photo.focalPoint || '50% 50%' }} sizes="(max-width: 640px) 70vw, (max-width: 1024px) 32vw, 420px" onError={event => { event.currentTarget.closest('.cv-frame').classList.add('has-error'); }} /><span className="cv-photo-number" aria-hidden="true">{number(index + 1)}</span></button><button type="button" className="cv-frame-retry" onClick={event => { const frame = event.currentTarget.closest('.cv-frame'), image = frame.querySelector('img'); frame.classList.remove('has-error'); image.src = photo.url; image.srcset = photo.srcSet || ''; }}><RefreshCw size={16} />Retry photo</button></motion.div>
-                  <figcaption ref={metric(`label:${id}`)} className="cv-frame-label"><span className="cv-frame-index">{number(index + 1)}</span>{photo.headline && <strong>{photo.headline}</strong>}</figcaption>
-                </motion.figure></React.Fragment>;
+                return <React.Fragment key={id}>{point.type === 'group' && global && <span className="cv-photo-anchor" aria-hidden="true" style={{ left: global.anchor.x - placement.x, top: global.anchor.y - placement.y }} />}<CanvasPrint photo={photo} id={id} index={index} place={place} frame={frame} pose={global?.pose} reduced={reduced} ordered={settings.arrangement === 'ordered'} open={open} measureRef={metric(`label:${id}`)} onArrival={markArrived} /></React.Fragment>;
               })}</div>
             </div>
           </section>;

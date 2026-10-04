@@ -35,6 +35,14 @@ Touch swipes, mouse drags, arrow keys, Previous/Next and Escape work in focus. P
 
 Scroll arrivals, connection reveals, frame-to-focus transitions and press/hover feedback respect reduced motion. There is no continuous zoom across wall photographs. Navigation stays visible while long focus text scrolls independently. Theme text, numbered stamps, borders and lines remain readable against the selected background, including white. Finished photographs are not recoloured or cropped on the board. The Courage demo uses the approved deep green background; real deliveries use their saved palette.
 
+### Print composition and motion refinements
+
+Staggered frames use deterministic opposing print angles (up to 2.8 degrees on larger screens, gentler on phones), larger lead prints and different diagonal group compositions. A landscape-led pair reserves more width for its wide photograph. Aligned frames retain straight prints and disable scroll depth. The selected order, groups, notes, palette and font roles are unchanged; these refinements need no extra creation settings or saved fields.
+
+Prints arrive from different short directions and settle into their angle; visible group members stagger by 120ms. Captions remain upright below each print. Only the print moves with scrolling, by at most 10px on larger screens or 4px on phones, with a damped spring. Movement stops at rest. Hover lifts a print and eases its angle; occasional alignment marks and small caption rules sit outside the photographs. Path routing reserves the rotated corners, hover lift and scroll depth. Softer path bends retain the existing broken-line pattern and numbering. Group branches reveal as their own photographs enter view rather than all appearing together.
+
+The existing shared-layout transition now gives the print 480ms to open and return, with the caption arriving after it. Photo navigation, retained decoded images, background preloading, retries and return position use the same existing behaviour. Reduced motion immediately removes the print depth, angles and arrival movement.
+
 ## Verification
 
 Browser coverage includes 6, 8, 12 and 18 photographs; individual, grouped and mixed checkpoints; portrait and landscape assets; 320, 768, 834 and 1440px widths; short and landscape viewports; real touch scroll and swipe; mouse drag; keyboard and return focus; group jumps; delayed decode, retained-image swipes and retry; creator grouping, manual copy, Undo, save payload and live preview. Geometry checks verify that every photo and group retains a connection and that frames, captions, headings and bookends stay inside the board without overlap. Separate bookend selections, long group copy and resizing an open delivery are covered. A normal-motion check verifies that connections stay dashed and avoid photo frames. Demo/preview parity and updates to open preview copy are covered.

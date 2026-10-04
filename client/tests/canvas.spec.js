@@ -78,10 +78,48 @@ test('normal-motion connections reveal in place, stay dashed, and avoid photo fr
   await page.getByRole('button',{name:'Explore the canvas',exact:true}).click();
   const mask=page.locator('.cv-paths mask path').first();await expect.poll(()=>mask.evaluate(el=>Number(getComputedStyle(el).getPropertyValue('--cv-line-length')))).toBe(1);
   await expect(page.locator('.cv-paths>path').first()).toHaveCSS('stroke-dasharray','4px, 7px');await expect(mask).toHaveCSS('animation-name','none');
-  expect(await page.locator('.cv-paths').evaluate(svg=>{
+  // Finish each arrival before checking the whole board's resting geometry.
+  // Offscreen prints still have their entry offsets, and their lines are hidden.
+  for(const frame of await page.locator('.cv-frame').all()){await frame.scrollIntoViewIfNeeded();await expect.poll(()=>frame.evaluate(el=>getComputedStyle(el).opacity)).toBe('1');}
+  await expect.poll(()=>page.locator('.cv-paths').evaluate(svg=>{
     const bounds=svg.getBoundingClientRect(),photos=[...document.querySelectorAll('.cv-frame-surface')].map(node=>node.getBoundingClientRect());
     return [...svg.querySelectorAll(':scope>path')].every(path=>{for(let at=0;at<=80;at++){const point=path.getPointAtLength(path.getTotalLength()*at/80),x=point.x+bounds.left,y=point.y+bounds.top;if(photos.some(rect=>x>rect.left&&x<rect.right&&y>rect.top&&y<rect.bottom))return false;}return true;});
   })).toBe(true);
+});
+
+test('staggered Canvas keeps captions upright, reveals group members separately and retains normal-motion navigation',async({page})=>{
+  await page.setViewportSize({width:1440,height:600});await page.emulateMedia({reducedMotion:'no-preference'});await init(page);const data=record();
+  data.creativeDirection.sections[0].assetIds=data.curatedAssetIds.slice(1,5);data.formatConfig.canvas.checkpoints=data.formatConfig.canvas.checkpoints.filter(p=>p.type==='group'||!data.curatedAssetIds.slice(3,5).includes(p.assetId));await preview(page,data);
+  await page.getByRole('button',{name:'Explore the canvas',exact:true}).click();
+  await expect.poll(()=>page.locator('.cv-frame').first().evaluate(el=>getComputedStyle(el).opacity)).toBe('1');
+  const poses=await page.locator('.cv-frame').evaluateAll(frames=>frames.map(el=>({tilt:parseFloat(el.style.getPropertyValue('--cv-tilt')),caption:getComputedStyle(el.querySelector('figcaption')).transform})));
+  expect(poses.some(p=>p.tilt>=2)).toBe(true);expect(poses.some(p=>p.tilt<=-2)).toBe(true);expect(poses.every(p=>p.caption==='none')).toBe(true);
+  await expect.poll(()=>page.locator('.cv-frame-surface').first().evaluate(el=>Math.abs(new DOMMatrixReadOnly(getComputedStyle(el).transform).b))).toBeGreaterThan(.02);
+  const branchMasks=page.locator('.cv-paths mask path');
+  await expect.poll(()=>branchMasks.nth(1).evaluate(el=>Number(getComputedStyle(el).getPropertyValue('--cv-line-length')))).toBe(1);
+  // The last member sits below the fold; its branch waits for that print.
+  expect(await branchMasks.nth(4).evaluate(el=>Number(getComputedStyle(el).getPropertyValue('--cv-line-length')))).toBe(0);
+  await page.locator('.cv-checkpoint.is-group .cv-frame').last().scrollIntoViewIfNeeded();
+  await expect.poll(()=>branchMasks.nth(4).evaluate(el=>Number(getComputedStyle(el).getPropertyValue('--cv-line-length')))).toBe(1);
+  await page.locator('.cv-checkpoint.is-group .cv-frame').nth(1).scrollIntoViewIfNeeded();
+  await expect.poll(()=>branchMasks.nth(2).evaluate(el=>Number(getComputedStyle(el).getPropertyValue('--cv-line-length')))).toBe(1);
+  await page.getByRole('button',{name:'Open photograph 3',exact:true}).click();const before=await page.evaluate(()=>scrollY);
+  const dialog=page.getByRole('dialog');await expect(dialog.locator('h2')).toHaveText('Portrait 3');await expect.poll(()=>dialog.locator('.cv-focus-header small').textContent()).not.toContain('Loading');
+  await swipe(page,dialog.locator('.cv-focus-image'),-110);await expect(dialog.locator('h2')).toHaveText('Portrait 4');await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);expect(await page.evaluate(()=>scrollY)).toBe(before);
+  data.creativeDirection.sections[0].assetIds.reverse();
+  await page.evaluate(delivery=>window.postMessage({type:'veylo:phone-preview-data',payload:{delivery}},location.origin),data);
+  // Reordering a live preview keeps connections for prints already explored.
+  await expect.poll(()=>branchMasks.evaluateAll(masks=>masks.slice(1,5).filter(el=>Number(getComputedStyle(el).getPropertyValue('--cv-line-length'))===1).length)).toBe(4);
+  await page.emulateMedia({reducedMotion:'reduce'});await expect(page.locator('.cv-frame-drift').first()).toHaveCSS('transform','none');
+  await expect(page.locator('.cv-frame-surface').first()).toHaveCSS('transform','none');
+});
+
+test('aligned Canvas keeps straight prints without scroll depth in the same creator preview',async({page})=>{
+  await page.setViewportSize({width:834,height:1194});await page.emulateMedia({reducedMotion:'no-preference'});await init(page);const data=record();data.formatConfig.canvas.arrangement='ordered';await preview(page,data);
+  await page.getByRole('button',{name:'Explore the canvas',exact:true}).click();
+  await expect(page.locator('.cv-frame-drift').first()).toHaveCSS('transform','none');
+  expect(await page.locator('.cv-frame').evaluateAll(frames=>frames.every(el=>parseFloat(el.style.getPropertyValue('--cv-tilt'))===0))).toBe(true);
+  await page.locator('.cv-bookend.is-closing').scrollIntoViewIfNeeded();await expect(page.locator('.cv-paths>path')).toHaveCount(6);
 });
 
 test('Canvas respects separate bookend choices and reflows long group copy when resized',async({page})=>{
