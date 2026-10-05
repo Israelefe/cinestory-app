@@ -107,6 +107,33 @@ test('normal-motion touch scrolling moves prints gently, keeps captions steady a
   } finally {await context.close();}
 });
 
+for(const width of [390,834,1440]) test(`Canvas shuffles and staggers photographs on forward and backward scroll at ${width}px`,async({page})=>{
+  await page.setViewportSize({width,height:900});await page.emulateMedia({reducedMotion:'reduce'});await init(page);
+  // Exercise the real demo URL, including the desktop phone iframe.
+  await page.goto('/demo/canvas');
+  let view=page;
+  if(width>1024){await expect(page.locator('.v-phone-screen iframe')).toBeVisible();view=await (await page.locator('.v-phone-screen iframe').elementHandle()).contentFrame();}
+  const group=view.locator('.cv-checkpoint.is-group').last(),print=group.locator('.cv-frame').first(),shuffle=print.locator('.cv-frame-shuffle');
+  await expect(print).toBeAttached();
+  const start=await print.evaluate(el=>{const r=el.getBoundingClientRect();const top=Math.max(0,scrollY+r.top+r.height/2-innerHeight*.87);scrollTo({top,behavior:'instant'});return top;});
+  await expect.poll(()=>print.evaluate(el=>getComputedStyle(el).opacity)).toBe('1');
+  await page.waitForTimeout(350);
+  const read=()=>shuffle.evaluate(el=>{const m=new DOMMatrixReadOnly(getComputedStyle(el).transform);return {x:m.e,turn:m.b};});
+  await expect.poll(async()=>Math.abs((await read()).turn)).toBeGreaterThan(.04);
+  const before=await read();
+  expect(await group.locator('.cv-frame-shuffle').evaluateAll(nodes=>getComputedStyle(nodes[0]).transform!==getComputedStyle(nodes[1]).transform)).toBe(true);
+  await view.evaluate(()=>scrollBy({top:innerHeight*.47,behavior:'instant'}));
+  await expect.poll(async()=>Math.abs((await read()).turn)).toBeLessThan(.01);
+  expect(Math.abs((await read()).x-before.x)).toBeGreaterThan(10);
+  await expect(print.locator('figcaption')).toHaveCSS('transform','none');
+  await view.evaluate(top=>scrollTo({top,behavior:'instant'}),start);
+  await expect.poll(async()=>Math.abs((await read()).turn-before.turn)).toBeLessThan(.008);
+  await view.getByRole('button',{name:'Pause photo motion',exact:true}).click();
+  const paused=await read();await view.evaluate(()=>scrollBy({top:180,behavior:'instant'}));
+  await page.waitForTimeout(300);expect(await read()).toEqual(paused);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBe(0);
+});
+
 for(const width of [390,834,1440]) test(`Canvas photographs visibly animate, pause and resume at ${width}px`,async({page})=>{
   await page.setViewportSize({width,height:900});await page.emulateMedia({reducedMotion:'reduce'});await init(page);
   await page.goto('/demo/canvas?phoneView=1');
@@ -148,6 +175,7 @@ test('existing Canvas deliveries gain image motion while explicit still photos r
   await expect(page.locator('.cv-board')).toHaveAttribute('data-photo-motion','still');
   await expect(image).toHaveCSS('animation-name','none');
   await expect(print.locator('.cv-photo-image-scroll')).toHaveCSS('transform','none');
+  await expect(print.locator('.cv-frame-shuffle')).toHaveCSS('transform','none');
   await expect(page.getByRole('button',{name:'Pause photo motion',exact:true})).toHaveCount(0);
   delete data.formatConfig.canvas.photoMotion;delete data.v3;data.schemaVersion=2;
   await page.evaluate(delivery=>window.postMessage({type:'veylo:phone-preview-data',payload:{delivery}},location.origin),data);

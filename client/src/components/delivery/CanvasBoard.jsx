@@ -25,18 +25,31 @@ function useCanvasScrollMotion(board, composition, enabled, frameDrift) {
     const visible = new Set(), prints = new Map();
     const geometry = new Map(composition.frames.map(frame => [frame.id, frame]));
     let scheduled = 0, top = 0, viewport = innerHeight, disposed = false;
-    board.current.querySelectorAll('.cv-frame').forEach(node => {
-      prints.set(node, { frame: geometry.get(node.dataset.photo), surface: node.querySelector('.cv-frame-drift'), image: node.querySelector('.cv-photo-image-scroll'), aperture: node.querySelector('.cv-photo-open') });
+    board.current.querySelectorAll('.cv-frame').forEach((node, index) => {
+      prints.set(node, { index, frame: geometry.get(node.dataset.photo), surface: node.querySelector('.cv-frame-drift'), shuffle: node.querySelector('.cv-frame-shuffle'), image: node.querySelector('.cv-photo-image-scroll'), aperture: node.querySelector('.cv-photo-open') });
     });
     const paint = () => {
       scheduled = 0;
       if (disposed || document.hidden) return;
       const scroll = window.scrollY;
       visible.forEach(node => {
-        const { frame, surface, image } = prints.get(node);
+        const { index, frame, surface, shuffle, image } = prints.get(node);
         if (!frame || !surface) return;
-        const progress = Math.max(-1, Math.min(1, (top + frame.y + frame.height / 2 - scroll - viewport / 2) / ((viewport + frame.height) / 2)));
+        const center = top + frame.y + frame.height / 2 - scroll;
+        const progress = Math.max(-1, Math.min(1, (center - viewport / 2) / ((viewport + frame.height) / 2)));
         if (frameDrift) surface.style.transform = `translate3d(0, ${(progress * frame.pose.drift).toFixed(2)}px, 0)`;
+        if (shuffle && frameDrift && node.dataset.imageMotion !== 'still') {
+          // Neighbouring prints unfold from a loose stack at different scroll
+          // positions. Their saved places and captions never move in the layout.
+          const entering = Math.max(0, Math.min(1, (center - viewport * .58 + index % 3 * 22) / (viewport * .42)));
+          const direction = frame.right ? -1 : 1;
+          const reach = Math.min(frame.width * .17, frame.pose.phone ? 32 : 64);
+          const x = direction * reach * entering;
+          const y = -(28 + index % 3 * 8) * entering;
+          const turn = direction * entering * 8;
+          const scale = 1 - entering * .075;
+          shuffle.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0) rotate(${turn.toFixed(2)}deg) scale(${scale.toFixed(4)})`;
+        }
         if (image && node.dataset.imageMotion !== 'still') {
           const pan = progress * 4;
           const zoom = 1.1 + (1 - progress) * .05;
@@ -138,7 +151,7 @@ function CanvasPrint({ photo, id, index, place, frame, pose, reduced, ordered, t
     whileInView={{ opacity: 1, x: 0, y: 0 }} viewport={{ once: true, amount: .12 }}
     transition={{ duration: reduced ? 0 : stationary ? .6 : .72, delay, ease: [.22, 1, .36, 1] }}
     style={{ left: frame?.x, top: frame?.y, width: frame?.width, '--cv-ratio': photo.width && photo.height ? `${photo.width} / ${photo.height}` : '3 / 4', '--cv-tilt': `${pose?.tilt || 0}deg` }}>
-    <div className="cv-frame-drift">{surface}</div>
+    <div className="cv-frame-drift"><div className="cv-frame-shuffle">{surface}</div></div>
     <figcaption ref={measureRef} className="cv-frame-label"><span className="cv-frame-index">{number(index + 1)}</span>{photo.headline && <strong>{photo.headline}</strong>}</figcaption>
   </motion.figure>;
 }
