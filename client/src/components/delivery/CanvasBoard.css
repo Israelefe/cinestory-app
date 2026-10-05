@@ -59,11 +59,12 @@
 .cv-board[data-photo-motion="paused"] .cv-photo-image-motion,.cv-board[data-photo-motion="still"] .cv-photo-image-motion,.cv-path-board[data-page-hidden="true"] .cv-photo-image-motion{animation-play-state:paused;will-change:auto}
 .cv-frame[data-image-motion="still"] .cv-photo-image-scroll{transform:none!important}
 .cv-board[data-arrangement="ordered"] .cv-frame-drift{transform:none!important}
-@keyframes cv-photo-push{from{transform:translate3d(0,0,0) scale(1.01)}to{transform:translate3d(0,-1%,0) scale(1.14)}}
-@keyframes cv-photo-pull{from{transform:translate3d(0,-1%,0) scale(1.14)}to{transform:translate3d(0,0,0) scale(1.01)}}
-@keyframes cv-photo-pan-left{from{transform:translate3d(4.5%,0,0) scale(1.12)}to{transform:translate3d(-4.5%,0,0) scale(1.12)}}
-@keyframes cv-photo-pan-right{from{transform:translate3d(-4.5%,0,0) scale(1.12)}to{transform:translate3d(4.5%,0,0) scale(1.12)}}
-@keyframes cv-photo-float{from{transform:translate3d(0,1.5%,0) scale(1.04)}to{transform:translate3d(0,-1.5%,0) scale(1.14)}}
+/* Keep a fixed crop for edge-to-edge pans; the scale itself never animates. */
+@keyframes cv-photo-push{from{transform:translate3d(0,0,0) scale(1.1)}to{transform:translate3d(0,-1%,0) scale(1.1)}}
+@keyframes cv-photo-pull{from{transform:translate3d(0,-1%,0) scale(1.1)}to{transform:translate3d(0,0,0) scale(1.1)}}
+@keyframes cv-photo-pan-left{from{transform:translate3d(4.5%,0,0) scale(1.1)}to{transform:translate3d(-4.5%,0,0) scale(1.1)}}
+@keyframes cv-photo-pan-right{from{transform:translate3d(-4.5%,0,0) scale(1.1)}to{transform:translate3d(4.5%,0,0) scale(1.1)}}
+@keyframes cv-photo-float{from{transform:translate3d(0,1.5%,0) scale(1.1)}to{transform:translate3d(0,-1.5%,0) scale(1.1)}}
 .cv-photo-number{position:absolute;right:10px;bottom:10px;display:grid;place-items:center;width:27px;height:27px;border-radius:50%;background:var(--fd-bg);color:var(--fd-text);border:1px solid color-mix(in srgb,var(--fd-text) 30%,transparent);font:500 9px/1 var(--delivery-font-ui);font-variant-numeric:tabular-nums}
 .cv-frame-label{margin:18px 3px 0;color:var(--fd-text);line-height:1.5;overflow-wrap:anywhere}
 .cv-frame-label:has(strong):before{content:"";display:block;width:20px;height:1px;background:var(--cv-line);opacity:.65;margin-bottom:9px}

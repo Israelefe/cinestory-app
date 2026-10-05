@@ -167,8 +167,9 @@ for(const width of [390,834,1440]) test(`Canvas photographs visibly animate, pau
   const print=page.locator('.cv-frame').first(),image=print.locator('.cv-photo-image-motion');
   await print.scrollIntoViewIfNeeded();
   await expect(image).toHaveCSS('animation-play-state','running');
-  const initial=await image.evaluate(el=>new DOMMatrixReadOnly(getComputedStyle(el).transform).a);
-  await expect.poll(()=>image.evaluate(el=>new DOMMatrixReadOnly(getComputedStyle(el).transform).a)).toBeGreaterThan(initial+.008);
+  const initial=await image.evaluate(el=>{const matrix=new DOMMatrixReadOnly(getComputedStyle(el).transform);return {scale:matrix.a,offset:matrix.f};});
+  await expect.poll(()=>image.evaluate(el=>new DOMMatrixReadOnly(getComputedStyle(el).transform).a)).toBeCloseTo(initial.scale,2);
+  await expect.poll(()=>image.evaluate((el,offset)=>Math.abs(new DOMMatrixReadOnly(getComputedStyle(el).transform).f-offset),initial.offset)).toBeGreaterThan(.5);
   const scrollImage=print.locator('.cv-photo-image-scroll');
   await expect(scrollImage).toHaveCSS('transform','none');
   await page.evaluate(()=>scrollBy({top:180,behavior:'instant'}));
