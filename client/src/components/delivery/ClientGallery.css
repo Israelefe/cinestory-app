@@ -44,6 +44,7 @@
 .client-gallery-lightbox-frame{position:absolute;inset:0;z-index:1;display:grid;place-items:center;min-width:0;min-height:0;width:100%;height:100%;touch-action:pan-y;cursor:grab;overflow:hidden}
 .client-gallery-lightbox-frame:active{cursor:grabbing}
 .client-gallery-lightbox-main{position:absolute;inset:0;display:block;min-width:0;min-height:0;max-width:100%;max-height:100%;width:100%;height:100%;object-fit:contain;user-select:none;pointer-events:none;filter:drop-shadow(0 6px 18px #0004)}
+.client-gallery-photo-error{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;background:#111115;color:#ffffffa6;text-align:center;font-size:13px;line-height:1.6}.client-gallery-photo-error svg{color:#ff9b8e}
 .client-gallery-lightbox-caption{flex:none;max-width:720px;max-height:min(24dvh,160px);overflow-y:auto;overscroll-behavior:contain;margin:0 auto;padding:0 8px;font-family:var(--gallery-body,'Outfit',sans-serif);font-size:clamp(14px,3.6vw,18px);font-weight:400;line-height:1.6;color:#ffffffcf;text-align:center;overflow-wrap:anywhere}
 .client-gallery-lightbox-actions{flex:none;display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px}
 .client-gallery-back span,.client-gallery-download-one span{display:none}

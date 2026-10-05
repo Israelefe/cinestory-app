@@ -116,7 +116,7 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
   const downloadAll = () => { if (canDownloadAll && !galleryProps.busy) galleryProps.onDownloadAll(); };
 
   return <div className="fd-page vec-viewer vec-campaign" data-photo-motion-paused={pausePhotos} data-composition={styles['--fd-composition']} data-accent-placement={styles['--fd-accent-placement']} data-pace={styles['--fd-pace']} style={styles}>
-    <DemoHeader format="Campaign Delivery" client={title} sectionId="campaign" onGallery={galleryUnlocked ? openGallery : undefined} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
+    <DemoHeader format="Campaign Delivery" client={title} sectionId="campaign" delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     <main>
       <section className="vec-campaign-hero">
         <div className="vec-campaign-number">01 <span>/ THE CAMPAIGN</span></div>
@@ -126,7 +126,7 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
         </motion.div>
         <motion.figure {...formatFrameAttributes(heroPhoto)} style={formatFrameStyle(heroPhoto)} initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .9, delay: .12, ease: [.22, 1, .36, 1] }}>
           <div className="vec-campaign-hero-image" style={heroDimensions ? { aspectRatio: `${heroDimensions.width} / ${heroDimensions.height}` } : undefined}><PhotoMotion photo={heroPhoto} paused={pausePhotos}><Photo name={heroPhoto?.name} url={heroPhoto?.url} srcSet={heroPhoto?.srcSet} alt={heroPhoto?.alt || 'Campaign lead photograph'} style={heroPhoto?.focalPoint ? { objectPosition: heroPhoto.focalPoint } : undefined} eager sizes="(max-width: 767px) 92vw, 48vw" /></PhotoMotion></div>
-          <figcaption><span>{heroPhoto?.headline || 'Lead photograph'}</span><span>{String(galleryPhotos.length).padStart(2, '0')} photographs</span></figcaption>
+          <figcaption><span>{heroPhoto?.headline || 'Lead photograph'}</span></figcaption>
         </motion.figure>
       </section>
 
@@ -136,13 +136,9 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
         <div><Camera size={19} aria-hidden="true" /><p><strong>{delivery?.branding?.name || 'Veylo Studio'}</strong><span>photographed by</span></p></div>
       </section>
 
-      <section className="vec-campaign-tools" aria-label="Campaign navigation and actions">
+      <section className="vec-campaign-tools" aria-label="Campaign set navigation">
         <div className="vec-campaign-tools-head">
           <div><span>THE COLLECTION</span><strong>Find your photo set</strong></div>
-          <div className="vec-campaign-tools-actions">
-            {galleryUnlocked && <button type="button" onClick={openGallery}><Images size={16} aria-hidden="true" />Full gallery</button>}
-            {canDownloadAll && <button type="button" onClick={downloadAll} disabled={Boolean(galleryProps.busy)} aria-busy={galleryProps.busy === 'all'}><Download size={16} aria-hidden="true" />{galleryProps.busy === 'all' ? 'Preparing…' : 'Download all'}</button>}
-          </div>
         </div>
         <nav ref={navigationRef} className="vec-campaign-set-nav" aria-label="Campaign asset sets">
           {visibleSets.map(set => <a key={set.id} href={`#${anchorId(set)}`} aria-current={activeSet === set.id ? 'location' : undefined} onClick={event => { event.preventDefault(); setActiveSet(set.id); document.getElementById(anchorId(set))?.scrollIntoView({ behavior: 'smooth' }); }}><span>{String(sets.findIndex(item => item.id === set.id) + 1).padStart(2, '0')}</span>{set.title}</a>)}
@@ -166,7 +162,7 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
         </div>
         <div className="vec-campaign-set-list">{visibleSets.map((set, setIndex) => <motion.article id={anchorId(set)} data-set-id={set.id} data-layout={set.layout || 'grid'} key={set.id} style={set.accent ? { '--section-accent': set.accent } : undefined} {...reveal}>
           <button className="vec-campaign-set-lead" type="button" {...formatFrameAttributes(set.photos[0])} style={formatFrameStyle(set.photos[0])} onClick={() => openPhoto(set.photos[0])} aria-label={`Open ${set.title}`}><PhotoMotion photo={set.photos[0]} index={setIndex} paused={pausePhotos}><Photo name={set.photos[0].name} url={set.photos[0].url} srcSet={set.photos[0].srcSet} alt={set.photos[0].alt || ''} style={set.photos[0].focalPoint ? { objectPosition: set.photos[0].focalPoint } : undefined} sizes="(max-width: 767px) 92vw, 46vw" /></PhotoMotion><span>{String(sets.findIndex(item => item.id === set.id) + 1).padStart(2, '0')}</span><small>View photograph<ArrowUpRight size={16} aria-hidden="true" /></small></button>
-          <div className="vec-campaign-set-copy" {...formatFrameAttributes(set.photos[0])} style={formatFrameStyle(set.photos[0])}>{set.label && <small className="vec-set-label">{set.label}</small>}<h3>{set.title}</h3>{set.copy && <p>{set.copy}</p>}{set.photos[0].caption && <p className="vec-photo-caption">{set.photos[0].caption}</p>}<span>{set.photos.length} {set.photos.length === 1 ? 'photograph' : 'photographs'}</span><button className="vec-campaign-set-open" type="button" onClick={() => openPhoto(set.photos[0])}>Open lead photograph<ArrowUpRight size={16} aria-hidden="true" /></button></div>
+          <div className="vec-campaign-set-copy" {...formatFrameAttributes(set.photos[0])} style={formatFrameStyle(set.photos[0])}>{set.label && <small className="vec-set-label">{set.label}</small>}<h3>{set.title}</h3>{set.copy && <p>{set.copy}</p>}{set.photos[0].caption && <p className="vec-photo-caption">{set.photos[0].caption}</p>}<span>{set.photos.length} {set.photos.length === 1 ? 'photograph' : 'photographs'}</span></div>
           {set.photos.length > 1 && <div className="vec-campaign-set-support" aria-label={`${set.title} supporting photographs`}>
             {set.photos.slice(1).map((photo, index) => <PhotoCard key={photo.assetId || photo.name || index} photo={photo} index={index} paused={pausePhotos} onOpen={openPhoto} label={`Open ${set.title} supporting photograph ${index + 1}`} sizes="(max-width: 640px) 92vw, (max-width: 1024px) 44vw, 30vw" />)}
           </div>}
@@ -174,11 +170,11 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
       </section>
 
       <section ref={closingRef} className="vec-campaign-handoff">
-        <motion.div {...reveal}><span>03 / YOUR FILES</span><h2>Ready for the team.</h2><p>All {galleryPhotos.length} finished photographs are in the complete gallery. Open it to browse the collection and see the available download options.</p>{canDownloadAll && <button type="button" onClick={downloadAll} disabled={Boolean(galleryProps.busy)} aria-busy={galleryProps.busy === 'all'}>{galleryProps.busy === 'all' ? 'Starting downloads...' : 'Download all photos'}<Download size={17} aria-hidden="true" /></button>}</motion.div>
+        <motion.div {...reveal}><span>03 / YOUR FILES</span><h2>Ready for the team.</h2><p>Browse every photograph in the complete gallery, with the campaign sets kept in order.</p><button type="button" onClick={openGallery} disabled={!galleryUnlocked}>Open the full gallery<Images size={17} aria-hidden="true" /></button>{canDownloadAll && <button type="button" onClick={downloadAll} disabled={Boolean(galleryProps.busy)} aria-busy={galleryProps.busy === 'all'}>{galleryProps.busy === 'all' ? 'Starting downloads...' : 'Download all photos'}<Download size={17} aria-hidden="true" /></button>}</motion.div>
         <motion.aside {...reveal}><FileCheck2 size={23} aria-hidden="true" /><span>USAGE TERMS</span><p>{usage}</p></motion.aside>
       </section>
 
-      <footer className="vec-campaign-close">{closingPhoto && <img className="vec-v3-bookend-photo" src={closingPhoto.url} alt="" loading="lazy" />}<motion.div {...reveal}><span>04 / COMPLETE COLLECTION</span><h2>{delivery?.creativeDirection?.closingLine || 'Every photograph, together.'}</h2><button type="button" disabled={!galleryUnlocked} onClick={openGallery}>Open the full gallery<Images size={18} aria-hidden="true" /></button></motion.div></footer>
+      <footer className="vec-campaign-close">{closingPhoto && <img className="vec-v3-bookend-photo" src={closingPhoto.url} alt="" loading="lazy" />}<motion.div {...reveal}><span>04 / COMPLETE COLLECTION</span><h2>{delivery?.creativeDirection?.closingLine || 'Every photograph, together.'}</h2></motion.div></footer>
     </main>
     <AnimatePresence>{gallery && <DemoGallery photos={galleryPhotos} title={title} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} fontStyles={styles} {...galleryProps} singlePhoto={!galleryUnlocked} />}</AnimatePresence>
   </div>;

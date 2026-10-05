@@ -14,6 +14,20 @@ import './DeliveryTypography.css';
 const photoKey = (photo, index) => photo?.assetId || photo?.id || photo?.name || index;
 const imageUrl = (photo, width = 1440) => photo?.url || (typeof photo === 'string' && (photo.startsWith('http') || photo.startsWith('/')) ? photo : `/veylo/web/${photo?.name || photo}-${width}.webp`);
 
+function LightboxPhoto({ photo, sourceUrl, alt }) {
+  const [source, setSource] = useState('responsive');
+  const [failed, setFailed] = useState(false);
+  const fallback = photo?.thumbnailUrl;
+  const handleError = () => {
+    if (source === 'responsive' && photo?.srcSet) setSource('delivery');
+    else if (source !== 'thumbnail' && fallback && fallback !== photo?.url) setSource('thumbnail');
+    else setFailed(true);
+  };
+
+  if (failed) return <div className="client-gallery-photo-error" role="img" aria-label={`${alt}. Photo could not be loaded.`}><ImageIcon size={24} /><span>This photo could not be loaded. Please try again.</span></div>;
+  return <img className="client-gallery-lightbox-main" src={source === 'thumbnail' ? fallback : photo?.url || sourceUrl} srcSet={source === 'responsive' ? photo?.srcSet : undefined} sizes="(max-width: 640px) 94vw, (max-width: 1024px) 86vw, 1080px" alt={alt} draggable="false" onError={handleError} />;
+}
+
 export default function ClientGallery({ photos: collectionPhotos = [], singlePhoto = false, title = 'Your photographs', eyebrow = 'The complete collection', onClose, initialIndex = null, liked, onLike, onDownload, onDownloadAll, busy, downloading = null, allDownloading = false, downloadNotice = '', downloadProgress = null, delivery, demoId, fontStyles }) {
   const photos = useMemo(() => singlePhoto ? collectionPhotos.slice(initialIndex, initialIndex + 1) : collectionPhotos, [collectionPhotos, singlePhoto, initialIndex]);
   const originalIndex = index => singlePhoto ? initialIndex : index;
@@ -166,7 +180,7 @@ export default function ClientGallery({ photos: collectionPhotos = [], singlePho
       <AnimatePresence>{selected !== null && activePhoto && <motion.div className="client-gallery-lightbox" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .15 }}>
         <div className="client-gallery-lightbox-photo" style={{ backgroundColor: photoTone }}>
           <img className="client-gallery-lightbox-ambient" src={activeImageUrl} alt="" aria-hidden="true" draggable="false" />
-          <AnimatePresence mode="sync" custom={swipeDirection}><motion.div className="client-gallery-lightbox-frame" layoutId={reduced ? undefined : layoutId(activeKey)} key={activeKey} style={{ borderRadius: 6 }} drag="x" dragConstraints={{ left: 0, right: 0 }} dragElastic={.2} dragMomentum={false} onDragEnd={finishPhotoSwipe} initial={reduced ? false : { opacity: 0, x: swipeDirection * 36 }} animate={{ opacity: 1, x: 0 }} variants={{ departing: direction => ({ opacity: 0, x: -direction * 36 }) }} exit="departing" transition={sceneTransition}><img className="client-gallery-lightbox-main" src={activeImageUrl} srcSet={activePhoto.srcSet} sizes="(max-width: 640px) 94vw, (max-width: 1024px) 86vw, 1080px" alt={activePhoto.alt || activePhoto.caption || `Photograph ${selected + 1}`} draggable="false" /></motion.div></AnimatePresence>
+          <AnimatePresence mode="sync" custom={swipeDirection}><motion.div className="client-gallery-lightbox-frame" layoutId={reduced ? undefined : layoutId(activeKey)} key={activeKey} style={{ borderRadius: 6 }} drag="x" dragConstraints={{ left: 0, right: 0 }} dragElastic={.2} dragMomentum={false} onDragEnd={finishPhotoSwipe} initial={reduced ? false : { opacity: 0, x: swipeDirection * 36 }} animate={{ opacity: 1, x: 0 }} variants={{ departing: direction => ({ opacity: 0, x: -direction * 36 }) }} exit="departing" transition={sceneTransition}><LightboxPhoto key={activeKey} photo={activePhoto} sourceUrl={activeImageUrl} alt={activePhoto.alt || activePhoto.caption || `Photograph ${selected + 1}`} /></motion.div></AnimatePresence>
         </div>
         {activePhoto.caption && <p className="client-gallery-lightbox-caption">{activePhoto.caption}</p>}
         <div className="client-gallery-lightbox-actions">
