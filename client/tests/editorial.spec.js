@@ -139,10 +139,77 @@ test('single landscape photographs keep their aspect ratio and portrait spreads 
 test('the closing gallery returns to the last page', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await setup(page, fixture()); await page.goto('/d/editorial-test');
   const button = page.getByRole('button', { name: 'View full gallery', exact: true });
-  await button.scrollIntoViewIfNeeded(); await expect(button).toBeEnabled(); await button.click();
-  const position = await page.evaluate(() => scrollY);
+  await button.scrollIntoViewIfNeeded(); await expect(button).toBeEnabled();
+  // Capture the reading position at opening, before the dialog locks body scrolling.
+  await button.evaluate(element => element.addEventListener('click', () => { window.editorialGalleryReadingPosition = scrollY; }, { once: true }));
+  await button.click();
+  const position = await page.evaluate(() => window.editorialGalleryReadingPosition);
   await page.getByRole('button', { name: 'Close gallery' }).click(); await expect(button).toBeFocused();
   await expect.poll(async () => Math.abs((await page.evaluate(() => scrollY)) - position)).toBeLessThan(3);
+});
+
+const translateY = locator => locator.evaluate(element => new DOMMatrixReadOnly(getComputedStyle(element).transform).m42);
+const rotation = locator => locator.evaluate(element => {
+  const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform);
+  return Math.atan2(matrix.b, matrix.a) * 180 / Math.PI;
+});
+
+test('photo motion runs with the device preference set to reduce and readers can pause, reload and resume', async ({ page }) => {
+  await page.setViewportSize({ width: 834, height: 1000 }); await setup(page, fixture()); await page.goto('/d/editorial-test');
+  const publication = page.locator('.ed-publication');
+  const depth = page.locator('.ed-cover .ed-photo-depth');
+  const frame = page.locator('.ed-cover .ed-photo-frame');
+  await expect(page.locator('.ed-cover .ed-photo')).toHaveCSS('opacity', '1');
+  expect(Math.abs(await rotation(frame))).toBeGreaterThan(1);
+  const before = await translateY(depth);
+  await page.evaluate(() => scrollTo({ top: 250, behavior: 'instant' }));
+  await expect.poll(async () => Math.abs((await translateY(depth)) - before)).toBeGreaterThan(.2);
+  await page.getByRole('button', { name: 'Open contents' }).click();
+  await page.getByRole('button', { name: 'Pause photo motion' }).click();
+  await expect(publication).toHaveAttribute('data-motion-paused', 'true');
+  await expect(page.getByRole('button', { name: 'Resume photo motion' })).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Escape');
+  await expect.poll(() => translateY(depth)).toBe(0);
+  await page.evaluate(() => scrollTo({ top: 400, behavior: 'instant' }));
+  expect(await translateY(depth)).toBe(0);
+  await page.reload();
+  await expect(publication).toHaveAttribute('data-motion-paused', 'true');
+  await expect(page.locator('.ed-cover .ed-photo')).toHaveAttribute('data-photo-motion', 'paused');
+  expect(Math.abs(await rotation(frame))).toBeGreaterThan(1);
+  await page.getByRole('button', { name: 'Open contents' }).click();
+  await page.getByRole('button', { name: 'Resume photo motion' }).click();
+  await expect(publication).toHaveAttribute('data-motion-paused', 'false');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.ed-cover .ed-photo')).toHaveAttribute('data-photo-motion', 'active');
+  await page.locator('.ed-cover .ed-image-button').click();
+  expect(await rotation(page.locator('.client-gallery-lightbox-main'))).toBeCloseTo(0, 3);
+});
+
+test('photographer-selected still photos retain their slant while their motion stays stopped', async ({ page }) => {
+  await page.setViewportSize({ width: 834, height: 1000 });
+  const delivery = fixture(); delivery.creativeDirection.frames[0].motion = 'still';
+  await setup(page, delivery); await page.goto('/d/editorial-test');
+  const photo = page.locator('.ed-cover .ed-photo');
+  await expect(photo).toHaveAttribute('data-photo-motion', 'still');
+  const angle = await rotation(photo.locator('.ed-photo-frame'));
+  await photo.locator('.ed-image-button').hover();
+  expect(await rotation(photo.locator('.ed-photo-frame'))).toBeCloseTo(angle, 3);
+  await page.evaluate(() => scrollTo({ top: 250, behavior: 'instant' }));
+  expect(await translateY(photo.locator('.ed-photo-depth'))).toBe(0);
+  await expect(page.locator('.ed-section .ed-photo').first()).toHaveAttribute('data-photo-motion', 'active');
+});
+
+for (const [shootType, drawing] of [['Birthday portraits', 'curve'], ['Traditional wedding', 'botanical'], ['Fashion lookbook', 'geometry']]) test(`${drawing} illustrations suit the shoot and remain decorative`, async ({ page }) => {
+  await page.setViewportSize({ width: 834, height: 1000 });
+  const delivery = fixture(); delivery.shootType = shootType;
+  await setup(page, delivery); await page.goto('/d/editorial-test');
+  const artwork = page.locator('.ed-cover-illustration');
+  await expect(artwork).toHaveAttribute('data-drawing', drawing);
+  await expect(artwork).toHaveAttribute('aria-hidden', 'true');
+  await expect(artwork).toHaveAttribute('focusable', 'false');
+  await artwork.scrollIntoViewIfNeeded();
+  await expect(artwork.locator('path').first()).toHaveCSS('opacity', '0.85');
+  await expect(page.locator('.ed-photo figcaption p')).toHaveText(delivery.creativeDirection.frames.map(frame => frame.caption));
 });
 
 test('normal motion reveals photographs and loads the next image before it enters view', async ({ page }) => {
