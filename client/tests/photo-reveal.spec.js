@@ -38,12 +38,15 @@ for (const width of [320, 390, 768, 834, 1024, 1440]) test(`Reveal shows complet
   test.setTimeout(60000); // Full-motion transitions also run inside the desktop phone preview.
   await page.setViewportSize({ width, height: width === 320 ? 568 : 1000 }); const d = fixture();
   await setup(page, d); await page.goto('/d/reveal-test'); const view = viewAt(page, width);
-  await expect(view.locator('.rv-opening h1')).toHaveText(d.creativeDirection.title); await begin(view);
+  await expect(view.locator('.rv-opening h1')).toHaveText(d.creativeDirection.title);
+  await expect(view.locator('.rv-introduction strong')).toHaveText('A tap reveals the next photo.');
+  if (width === 320 || width === 834) await view.locator('.rv-viewer').screenshot({ path: `../.visual-review/photo-reveal-introduction-${width}.png` });
+  await begin(view);
   await expect(view.locator('.rv-caption p')).toHaveText(d.creativeDirection.frames[0].caption);
   expect(await view.locator('.rv-caption p').evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(14);
   await expect.poll(() => view.locator('html').evaluate(el => el.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
   await expect.poll(() => view.locator('html').evaluate(el => el.scrollHeight - innerHeight)).toBeLessThanOrEqual(1);
-  await expect(view.locator('.rv-tap-hint')).toHaveText('Tap the photo to reveal the next one.');
+  await expect(view.locator('.rv-tap-hint')).toHaveCount(0);
   expect(await view.locator('.rv-photo-frame').evaluate(el => el.getBoundingClientRect().height)).toBeGreaterThan(width === 320 ? 220 : 440);
   await view.getByRole('button', { name: 'Revisit photos', exact: true }).click(); await expect(view.getByRole('button', { name: 'Revisit photograph 1' })).toBeVisible();
   await expect.poll(() => view.locator('html').evaluate(el => el.scrollHeight - innerHeight)).toBeLessThanOrEqual(1);
@@ -190,11 +193,80 @@ test.describe('tap to reveal', () => {
     await target.tap();
     await expect(page.locator('.rv-position')).toHaveAttribute('aria-label', 'Photograph 2 of 5');
     await expect(page.locator('.rv-photo').last()).toHaveAttribute('data-asset-id', PHOTO_REVEAL_DEMO.assets[1].assetId);
-    await expect.poll(() => page.locator('.rv-curtain').last().locator('i').first().evaluate(el => Math.abs(el.getBoundingClientRect().x - el.parentElement.getBoundingClientRect().x))).toBeGreaterThan(40);
+    await expect.poll(() => page.locator('.rv-reveal-veil .rv-veil-panel').first().evaluate(el => Math.abs(el.getBoundingClientRect().x - el.parentElement.getBoundingClientRect().x))).toBeGreaterThan(40);
     await page.screenshot({ path: `../.visual-review/photo-reveal-${route.startsWith('/demo') ? 'demo' : 'client'}.png` });
+    await expect(target).toBeEnabled();
     await target.focus();
     await page.keyboard.press('Space');
     await expect(page.locator('.rv-position')).toHaveAttribute('aria-label', 'Photograph 3 of 5');
     await expect.poll(() => page.locator('html').evaluate(el => el.scrollHeight - innerHeight)).toBeLessThanOrEqual(1);
   });
+});
+
+test('each tap covers the current photo before unveiling the next, with visible motion between taps', async ({ page }) => {
+  const d = fixture(); await setup(page, d); await page.goto('/d/reveal-test'); await begin(page);
+  const viewer = page.locator('.rv-viewer');
+  await expect(viewer).toHaveAttribute('data-reveal-stage', 'idle');
+  await expect.poll(() => page.locator('.rv-veil-panel').first().evaluate(el => Math.abs(new DOMMatrixReadOnly(getComputedStyle(el).transform).m41))).toBeGreaterThan(100);
+  await expect.poll(() => page.locator('.rv-photo-frame').evaluate(el => Math.abs(new DOMMatrixReadOnly(getComputedStyle(el).transform).m42))).toBeGreaterThan(3);
+  await viewer.evaluate(element => {
+    window.revealStages = [];
+    const observer = new MutationObserver(() => {
+      window.revealStages.push({ stage: element.dataset.revealStage, assetId: element.querySelector('.rv-photo:last-of-type')?.dataset.assetId, time: performance.now() });
+      if (element.dataset.revealStage === 'idle') observer.disconnect();
+    });
+    observer.observe(element, { attributes: true, attributeFilter: ['data-reveal-stage'] });
+  });
+  await page.getByRole('button', { name: 'Reveal next photo', exact: true }).click();
+  await expect(page.locator('.rv-photo').last()).toHaveAttribute('data-asset-id', d.assets[1].assetId);
+  await expect(viewer).toHaveAttribute('data-reveal-stage', 'idle');
+  const stages = await page.evaluate(() => window.revealStages);
+  expect(stages.map(({ stage, assetId }) => ({ stage, assetId }))).toEqual([
+    { stage: 'covering', assetId: d.assets[0].assetId },
+    { stage: 'uncovering', assetId: d.assets[1].assetId },
+    { stage: 'idle', assetId: d.assets[1].assetId }
+  ]);
+  expect(stages[1].time - stages[0].time).toBeGreaterThan(300);
+  await expect(page.getByRole('button', { name: 'Reveal next photo', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Pause photo movement', exact: true }).click();
+  await expect(page.locator('.rv-photo-frame')).toHaveAttribute('data-moving', 'false');
+  await page.getByRole('button', { name: 'Resume photo movement', exact: true }).click();
+  await expect(page.locator('.rv-photo-frame')).toHaveAttribute('data-moving', 'true');
+});
+
+for (const width of [320, 834]) test(`long reveal captions use Photo Story's reading dialog without shrinking the photo at ${width}px`, async ({ page }) => {
+  const d = fixture();
+  d.creativeDirection.frames[0].caption = 'Sharon, these photographs are yours to keep. '.repeat(35);
+  await page.setViewportSize({ width, height: width === 320 ? 568 : 1000 });
+  await setup(page, d); await page.goto('/d/reveal-test'); await begin(page);
+  await expect(page.locator('.rv-viewer')).toHaveAttribute('data-reveal-stage', 'idle');
+  const button = page.getByRole('button', { name: 'Read full caption', exact: true });
+  await expect(button).toBeVisible();
+  await expect.poll(() => page.locator('html').evaluate(el => el.scrollHeight - innerHeight)).toBeLessThanOrEqual(1);
+  expect(await page.locator('.rv-photo-frame').evaluate(el => el.getBoundingClientRect().height)).toBeGreaterThan(width === 320 ? 200 : 500);
+  await button.click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.locator('p')).toHaveText(d.creativeDirection.frames[0].caption.trim());
+  await expect(page.locator('.rv-photo-frame')).toHaveAttribute('data-moving', 'false');
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('.rv-position')).toHaveAttribute('aria-label', 'Photograph 1 of 5');
+  expect(await dialog.evaluate(el => el.getBoundingClientRect().bottom <= innerHeight)).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(button).toBeFocused();
+  await expect(page.locator('.rv-photo-frame')).toHaveAttribute('data-moving', 'true');
+  await page.getByRole('button', { name: 'Reveal next photo', exact: true }).click();
+  await expect(page.locator('.rv-caption h2')).toHaveText(d.creativeDirection.frames[1].headline);
+  await expect(page.getByRole('button', { name: 'Read full caption', exact: true })).toHaveCount(0);
+});
+
+test('photographer-selected still photos retain the reveal animation without ambient movement', async ({ page }) => {
+  const d = fixture(); d.creativeDirection.reveal.movement = false;
+  await setup(page, d); await page.goto('/d/reveal-test'); await begin(page);
+  await expect(page.locator('.rv-photo-frame')).toHaveAttribute('data-moving', 'false');
+  await expect(page.locator('.rv-viewer')).toHaveAttribute('data-reveal-stage', 'idle');
+  await page.getByRole('button', { name: 'Reveal next photo', exact: true }).click();
+  await expect(page.locator('.rv-viewer')).toHaveAttribute('data-reveal-stage', 'covering');
+  await expect(page.locator('.rv-position')).toHaveAttribute('aria-label', 'Photograph 2 of 5');
+  await expect(page.locator('.rv-photo-frame')).toHaveAttribute('data-moving', 'false');
 });
