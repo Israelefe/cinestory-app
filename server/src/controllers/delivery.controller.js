@@ -1326,6 +1326,20 @@ export async function getPhotoDownload(req, res) {
   } catch (error) { res.status(500).json({ success: false, message: 'We could not prepare that download.' }); }
 }
 
+export async function getPhotoOriginal(req, res) {
+  try {
+    const delivery = await publicDelivery(req.params.publicId);
+    const grant = delivery ? await shareGrant(req, delivery) : null;
+    if (!delivery || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
+    const individualAllowed = grant ? grant.allowIndividualDownloads : delivery.access?.allowIndividualDownloads;
+    if (!individualAllowed) return res.status(403).json({ success: false, message: 'Full-size photographs are not available for this link.' });
+    const asset = grantAssets(delivery, grant).find(item => item.assetId === req.params.assetId);
+    if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json({ success: true, data: { url: signedImageUrl(asset.publicId, { original: true }) } });
+  } catch (error) { res.status(500).json({ success: false, message: 'We could not open the full-size photograph.' }); }
+}
+
 export async function streamPhotoDownload(req, res) {
   try {
     const delivery = await publicDelivery(req.params.publicId);

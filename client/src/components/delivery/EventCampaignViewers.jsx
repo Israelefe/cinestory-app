@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useAnimationControls, useInView } from 'framer-motion';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
-import { ArrowRight, BriefcaseBusiness, CalendarRange, Download, FileCheck2, Images, Maximize2, Pause, Play, Users } from 'lucide-react';
+import { ArrowRight, BriefcaseBusiness, CalendarRange, Download, FileCheck2, Images, Maximize2, Pause, Play } from 'lucide-react';
 import { Photo } from '../PublicDesign.jsx';
 import {
   DemoGallery,
@@ -124,6 +124,10 @@ function campaignAnchorId(section, index) {
   return `campaign-set-${slug || index + 1}`;
 }
 
+function eventPhotoIdentity(photo) {
+  return photo?.assetId != null ? `asset:${photo.assetId}` : photo?.name ? `name:${photo.name}` : '';
+}
+
 function OpeningPhoto({ photo, alt }) {
   return <Photo name={photo?.name} url={photo?.url} srcSet={photo?.srcSet} alt={photo?.alt || alt} style={photo?.focalPoint ? { objectPosition: photo.focalPoint } : undefined} eager sizes="100vw" />;
 }
@@ -147,7 +151,8 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
   const { galleryUnlocked, closingRef } = useClosingGallery(`${delivery?.publicId || delivery?._id || 'event-demo'}:${photos.map(photo => photo.assetId || photo.name).join('|')}`);
   const openingPhoto = delivery?.schemaVersion === 3 ? galleryPhotos.find(photo => photo.assetId === delivery.v3?.openingAssetId) || photos[0] : photos[0];
   const hasPhotoMotion = [openingPhoto, ...photos].some(photo => photo && photo.motion !== 'still');
-  const closingPhoto = delivery?.schemaVersion === 3 ? galleryPhotos.find(photo => photo.assetId === delivery.v3?.closingAssetId) : null;
+  const closingPhotoCandidate = delivery?.schemaVersion === 3 ? galleryPhotos.find(photo => photo.assetId === delivery.v3?.closingAssetId) : null;
+  const closingPhoto = eventPhotoIdentity(closingPhotoCandidate) !== eventPhotoIdentity(openingPhoto) ? closingPhotoCandidate : null;
   const sections = useMemo(() => resolveSections(delivery, photos, [
     { title: 'Arrivals and check-in', copy: 'The room takes shape as people arrive, find their bearings, and start the first conversations.', label: 'OPENING SCENE', delivery: 'WELCOME' },
     { title: 'The main programme', copy: 'A shared point of focus: the speaker, the audience, and the room listening together.', label: 'PROGRAMME', delivery: 'KEY MOMENTS' },
@@ -159,6 +164,13 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
   const studio = delivery?.branding?.name || 'Veylo Studio';
   const opening = delivery?.creativeDirection?.openingLine || delivery?.brief || 'The people, the programme, and the moments in between.';
   const styles = getFormatThemeStyles(delivery, { bg: '#070709', surface: '#0c0c10', text: '#f4efe8', accent: '#ff9b8e', fontDisplay: "'Outfit', sans-serif" });
+  const openingIdentity = eventPhotoIdentity(openingPhoto);
+  const sceneSource = useMemo(() => sections
+    .map(section => ({
+      ...section,
+      photos: section.photos.filter(photo => !openingIdentity || eventPhotoIdentity(photo) !== openingIdentity)
+    }))
+    .filter(section => section.photos.length), [sections, openingIdentity]);
   const filterOptions = [
     ['all', 'All moments'],
     ['people', 'People'],
@@ -166,10 +178,10 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
     ['networking', 'Networking'],
     ['details', 'Details']
   ];
-  const scenePhotos = useMemo(() => sections.flatMap(section => section.photos), [sections]);
+  const scenePhotos = useMemo(() => sceneSource.flatMap(section => section.photos), [sceneSource]);
   const hasEventTypes = scenePhotos.some(photo => photo.eventType);
   const availableFilters = filterOptions.filter(([value]) => value === 'all' || scenePhotos.some(photo => photo.eventType === value));
-  const visibleSections = useMemo(() => sections
+  const visibleSections = useMemo(() => sceneSource
     .map((section, index) => ({
       ...section,
       sceneIndex: index,
@@ -178,9 +190,8 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
         ? section.photos
         : section.photos.filter(photo => photo.eventType === activeFilter)
     }))
-    .filter(section => section.photos.length), [sections, hasEventTypes, activeFilter]);
+    .filter(section => section.photos.length), [sceneSource, hasEventTypes, activeFilter]);
   const visiblePhotoCount = visibleSections.reduce((count, section) => count + section.photos.length, 0);
-  const highlights = photos.slice(0, 4);
 
   useEffect(() => {
     const update = () => setPageVisible(!document.hidden);
@@ -243,13 +254,16 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
   };
 
   const openPhoto = photo => {
-    setGalleryIndex(Math.max(0, galleryPhotos.findIndex(item => item.assetId ? item.assetId === photo.assetId : item.name === photo.name)));
+    const identity = eventPhotoIdentity(photo);
+    const index = galleryPhotos.findIndex(item => identity && eventPhotoIdentity(item) === identity);
+    if (index < 0 && !galleryUnlocked) return;
+    setGalleryIndex(index >= 0 ? index : null);
     setGallery(true);
     onNarrationNavigate?.(photo.assetId);
   };
 
   return <div ref={viewerRef} className="fd-page vec-viewer vec-event" data-composition={styles['--fd-composition']} data-accent-placement={styles['--fd-accent-placement']} data-pace={styles['--fd-pace']} data-motion-paused={motionPaused} style={styles}>
-    <DemoHeader format="Event Coverage" client={title} sectionId="event-coverage" onGallery={galleryUnlocked ? openGallery : undefined} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
+    <DemoHeader format="Event Coverage" client={title} sectionId="event-coverage" delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     <main>
       <section className="vec-event-hero">
         <motion.figure {...formatFrameAttributes(openingPhoto)} style={formatFrameStyle(openingPhoto)} initial={reduced ? false : { opacity: 0, scale: 1.035 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: reduced ? 0 : 1.05, ease: [.22, 1, .36, 1] }}>
@@ -260,65 +274,43 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
           <span><CalendarRange size={14} /> EVENT COVERAGE</span>
           <h1>{title}</h1>
           <p>{opening}</p>
-          <button type="button" onClick={() => document.getElementById('event-scenes')?.scrollIntoView({ behavior: 'smooth' })}>Browse the scenes<ArrowRight size={17} /></button>
         </motion.div>
       </section>
 
-      <section className="vec-event-summary" aria-label="Event summary">
-        <motion.div {...eventReveal}><Images size={19} /><strong>{galleryPhotos.length}</strong><span>finished photographs</span></motion.div>
-        <motion.div {...eventReveal} transition={{ ...eventReveal.transition, delay: .08 }}><Users size={19} /><strong>{sections.length}</strong><span>event scenes</span></motion.div>
-        <motion.div {...eventReveal} transition={{ ...eventReveal.transition, delay: .16 }}><CalendarRange size={19} /><strong>{delivery?.shootType?.replace(/-/g, ' ') || (delivery ? 'Event' : 'Conference')}</strong><span>coverage type</span></motion.div>
-      </section>
-
       <section ref={toolsRef} className="vec-event-tools" aria-label="Event navigation and actions">
-        <div className="vec-event-tools-head">
-          <div><span>EXPLORE THE EVENT</span><strong>{galleryUnlocked ? 'Your full gallery is ready.' : 'Choose a scene to start browsing.'}</strong></div>
+        {(hasPhotoMotion || galleryUnlocked) && <div className="vec-event-tools-head">
           <div className="vec-event-tools-actions">
             {hasPhotoMotion && <button type="button" className="vec-event-motion-toggle" onClick={() => setMotionPaused(value => !value)} aria-label={motionPaused ? 'Resume photo motion' : 'Pause photo motion'} aria-pressed={motionPaused}>{motionPaused ? <Play size={15} /> : <Pause size={15} />}<span>{motionPaused ? 'Resume motion' : 'Pause motion'}</span></button>}
-            {galleryUnlocked && <button type="button" onClick={openGallery}><Images size={15} />Full gallery</button>}
+            {galleryUnlocked && <button type="button" onClick={openGallery}><Images size={15} />Open gallery</button>}
             {galleryUnlocked && galleryProps?.onDownloadAll && delivery?.access?.allowDownloadAll !== false && <button type="button" onClick={() => { if (galleryUnlocked) galleryProps.onDownloadAll(); }} disabled={Boolean(galleryProps.busy)}><Download size={15} />{galleryProps.busy === 'all' ? 'Preparing…' : 'Download all'}</button>}
           </div>
-        </div>
+        </div>}
         <nav className="vec-event-scene-nav" aria-label="Event scenes">
           {visibleSections.map(section => <a key={section.anchorId} href={`#${section.anchorId}`} onClick={event => browseScene(event, section.anchorId)} aria-current={activeScene === section.anchorId ? 'location' : undefined}><span>{String(section.sceneIndex + 1).padStart(2, '0')}</span>{section.title}</a>)}
         </nav>
       </section>
 
-      <section className="vec-event-highlights" aria-label="Event highlights">
-        <motion.header {...eventReveal}><span>A FEW HIGHLIGHTS</span><h2>A first look at the day.</h2><p>Tap a photograph to take a closer look.</p></motion.header>
-        <div className="vec-event-highlight-grid">
-          {highlights.map((photo, index) => <motion.button type="button" key={photo.assetId || photo.name || index} {...eventReveal} transition={{ ...eventReveal.transition, delay: index * .07 }} {...formatFrameAttributes(photo)} style={formatFrameStyle(photo)} onClick={() => openPhoto(photo)} aria-label={`Open highlight ${index + 1}`}>
-            <EventPhotoMotion photo={photo} index={index} paused={pausePhotos}><Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || `Event highlight ${index + 1}`} style={photo.focalPoint ? { objectPosition: photo.focalPoint } : undefined} sizes="(max-width: 639px) 82vw, (max-width: 1023px) 46vw, 23vw" /></EventPhotoMotion>
-            <span className="vec-photo-open" aria-hidden="true"><Maximize2 size={16} /></span>
-            <span className="vec-highlight-caption">{photo.caption || `Highlight ${String(index + 1).padStart(2, '0')}`}</span>
-          </motion.button>)}
-        </div>
-      </section>
-
-      <section className="vec-event-manifesto" aria-label="Event coverage approach">
-        <motion.div {...eventReveal}><span>PEOPLE / PROGRAMME / DETAILS</span><h2>See the day from every side.</h2></motion.div>
-        <motion.p {...eventReveal}>Browse the scenes below. Open any photograph for a closer look, then find the full gallery at the end.</motion.p>
-      </section>
-
       <section id="event-scenes" className="vec-event-scenes">
-        <motion.header {...eventReveal}><span>SCENE BY SCENE</span><h2>Find your part of the day.</h2></motion.header>
+        <motion.header {...eventReveal}><span>THE COVERAGE</span><h2>From the first arrival to the last photograph.</h2></motion.header>
         {hasEventTypes && <div className="vec-event-filter-bar"><div className="vec-event-filters" role="group" aria-label="Filter event photographs">
           {availableFilters.map(([value, label]) => <motion.button type="button" key={value} className={activeFilter === value ? 'is-active' : ''} onClick={() => setActiveFilter(value)} aria-pressed={activeFilter === value} whileTap={{ scale: .96 }}>{activeFilter === value && <motion.span className="vec-event-filter-selection" layoutId="event-filter-selection" transition={{ type: 'spring', damping: 25, stiffness: 280 }} />}<span>{label}</span></motion.button>)}
         </div><p className="vec-event-filter-status" role="status" aria-live="polite">{visiblePhotoCount} {visiblePhotoCount === 1 ? 'photograph' : 'photographs'} across {visibleSections.length} {visibleSections.length === 1 ? 'scene' : 'scenes'}</p></div>}
         {!visibleSections.length && <div className="vec-event-empty"><p>No photographs in this view.</p><button type="button" onClick={() => setActiveFilter('all')}>Show all moments<ArrowRight size={16} /></button></div>}
         {visibleSections.map(section => <article id={section.anchorId} tabIndex={-1} aria-labelledby={`${section.anchorId}-title`} data-layout={section.layout || 'grid'} key={section.anchorId} style={section.accent ? { '--section-accent': section.accent } : undefined}>
-          <motion.div className="vec-scene-copy" {...eventReveal}><span>{String(section.sceneIndex + 1).padStart(2, '0')}</span><div>{section.label && <small>{section.label}</small>}<h3 id={`${section.anchorId}-title`}>{section.title}</h3>{section.copy && <p>{section.copy}</p>}</div><b>{section.photos.length} {section.photos.length === 1 ? 'photo' : 'photos'}</b></motion.div>
+          <motion.div className="vec-scene-copy" {...eventReveal}><span>{String(section.sceneIndex + 1).padStart(2, '0')}</span><div><h3 id={`${section.anchorId}-title`}>{section.title}</h3></div><b>{section.photos.length} {section.photos.length === 1 ? 'photo' : 'photos'}</b></motion.div>
           <div className={`vec-scene-grid is-count-${Math.min(section.photos.length, 4)}`}>
-            {section.photos.map((photo, index) => <motion.button type="button" key={`${activeFilter}:${photo.assetId || photo.name || index}`} {...eventReveal} transition={{ ...eventReveal.transition, delay: Math.min(index % 4, 3) * .06 }} {...formatFrameAttributes(photo)} style={formatFrameStyle(photo)} onClick={() => openPhoto(photo)} aria-label={`Open ${section.title} photograph ${index + 1}`}>
-              <EventPhotoMotion photo={photo} index={index} paused={pausePhotos} className="vec-scene-image"><Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || photo.caption || ''} style={photo.focalPoint ? { objectPosition: photo.focalPoint } : undefined} sizes="(max-width: 639px) 92vw, (max-width: 1023px) 46vw, 46vw" /></EventPhotoMotion>
-              <span className="vec-photo-open" aria-hidden="true"><Maximize2 size={16} /></span>
-              {photo.caption && <small className="vec-photo-caption">{photo.caption}</small>}
-            </motion.button>)}
+            {section.photos.map((photo, index) => <motion.figure key={`${activeFilter}:${photo.assetId || photo.name || index}`} {...eventReveal} transition={{ ...eventReveal.transition, delay: Math.min(index % 4, 3) * .06 }}>
+              <button type="button" {...formatFrameAttributes(photo)} style={formatFrameStyle(photo)} onClick={() => openPhoto(photo)} aria-label={`Open ${section.title} photograph ${index + 1}`}>
+                <EventPhotoMotion photo={photo} index={index} paused={pausePhotos} className="vec-scene-image"><Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || photo.caption || ''} style={photo.focalPoint ? { objectPosition: photo.focalPoint } : undefined} sizes="(max-width: 639px) 92vw, (max-width: 1023px) 46vw, 46vw" /></EventPhotoMotion>
+                <span className="vec-photo-open" aria-hidden="true"><Maximize2 size={16} /></span>
+              </button>
+              {photo.caption && <figcaption className="vec-photo-caption">{photo.caption}</figcaption>}
+            </motion.figure>)}
           </div>
         </article>)}
       </section>
 
-      <footer ref={closingRef} className="vec-event-close">{closingPhoto && <img className="vec-v3-bookend-photo" src={closingPhoto.url} alt="" loading="lazy" />}<motion.div {...eventReveal}><span>{studio}</span><h2>{delivery?.creativeDirection?.closingLine || 'The whole day, in one place.'}</h2><p>All {galleryPhotos.length} finished photographs, ready to browse.</p><button type="button" disabled={!galleryUnlocked} onClick={openGallery}>Open all {galleryPhotos.length} photographs<Images size={18} /></button></motion.div></footer>
+      <footer ref={closingRef} className="vec-event-close">{closingPhoto && <img className="vec-v3-bookend-photo" src={closingPhoto.url} alt="" loading="lazy" />}<motion.div {...eventReveal}><span>{studio}</span><h2>{delivery?.creativeDirection?.closingLine || 'The whole day, in one place.'}</h2></motion.div></footer>
     </main>
     <AnimatePresence>{gallery && <DemoGallery photos={galleryPhotos} title={title} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} fontStyles={styles} {...galleryProps} singlePhoto={!galleryUnlocked} />}</AnimatePresence>
   </div>;

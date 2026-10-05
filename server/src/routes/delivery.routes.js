@@ -5,7 +5,7 @@ import { aiGenerationLimit, clientDeliveryEmailLimit, mediaSignatureLimit, publi
 import {
   addLibraryAssets, archiveDelivery, assistDeliveryBrief, confirmDeliveryUpload, confirmSoundtrackUpload,
   createDelivery, createShareGrant, deleteDelivery, deleteDeliveryAsset, deleteSoundtrack, emailClientDelivery,
-  getDelivery, getDeliveryJob, getDeliveryQr, getDeliveryShareMeta, getGalleryDownload, getPhotoDownload,
+  getDelivery, getDeliveryJob, getDeliveryQr, getDeliveryShareMeta, getGalleryDownload, getPhotoDownload, getPhotoOriginal,
   getPublicDelivery, getPublicSoundtrack, getPinboardStatusCard, listDeliveries, listDeliverySoundtracks, listNarrationVoices,
   listShareGrants, publishDelivery, queueAnalysis, queueDirection, queueNarration, queueRevision,
   restoreDelivery, retryDeliveryJob, recoverDeliveryUpload, revokeShareGrant, selectCuratedSoundtrack, signDeliveryUpload,
@@ -21,6 +21,7 @@ router.get('/public/:publicId/soundtrack', publicMediaLimit, getPublicSoundtrack
 router.post('/public/:publicId/pinboard/status-card', publicMediaLimit, getPinboardStatusCard);
 router.post('/public/:publicId/unlock', publicAccessLimit, unlockDelivery);
 router.post('/public/:publicId/photos/:assetId/like', publicMediaLimit, togglePhotoLike);
+router.get('/public/:publicId/photos/:assetId/original', publicMediaLimit, getPhotoOriginal);
 router.get('/public/:publicId/photos/:assetId/download', publicMediaLimit, getPhotoDownload);
 router.get('/public/:publicId/photos/:assetId/file', publicMediaLimit, streamPhotoDownload);
 router.post('/public/:publicId/photos/:assetId/downloaded', publicMediaLimit, trackPhotoDownload);

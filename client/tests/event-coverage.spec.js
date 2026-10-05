@@ -7,10 +7,11 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/v1/**', route => route.fulfill({ json: { success: true, data: {} } }));
 });
 
-async function published(page, { motion = 'still', duplicateIds = false, longCopy = false, sceneLayouts = false } = {}) {
+async function published(page, { motion = 'still', duplicateIds = false, longCopy = false, sceneLayouts = false, allowIndividualDownloads = true } = {}) {
   const delivery = structuredClone(EVENT_DEMO);
   delivery.publicId = 'event-ui';
   delivery.status = 'published';
+  delivery.access.allowIndividualDownloads = allowIndividualDownloads;
   delivery.creativeDirection.typography = { display: 'Cormorant Garamond', body: 'Manrope' };
   delivery.creativeDirection.frames.forEach((frame, index) => {
     frame.eventType = EVENT_COVERAGE_DEMO_PHOTOS[index].eventType;
@@ -35,17 +36,17 @@ for (const width of [320, 390, 640, 768, 834, 1024, 1440]) {
     page.on('pageerror', error => errors.push(error.message));
     await page.goto('/demo/event-coverage?phoneView=1');
     await expect(page.locator('.vec-event-hero h1')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Browse the scenes' })).toBeInViewport();
+    await expect(page.locator('.vec-event-hero-copy p')).toBeVisible();
     await expect.poll(() => page.locator('.vec-event-hero-copy').evaluate(element => getComputedStyle(element).opacity)).toBe('1');
     if (width === 320 || width === 834 || width === 1440) await page.screenshot({ path: `../.visual-review/event-coverage-hero-${width}.png` });
-    const highlights = page.locator('.vec-event-highlight-grid');
-    await highlights.scrollIntoViewIfNeeded();
-    await expect.poll(() => highlights.locator('button').first().evaluate(element => getComputedStyle(element).opacity)).toBe('1');
+    const scenes = page.locator('.vec-scene-grid').first();
+    await scenes.scrollIntoViewIfNeeded();
+    await expect.poll(() => scenes.locator('figure').first().evaluate(element => getComputedStyle(element).opacity)).toBe('1');
     if (width >= 640 && width < 1024) {
-      expect(await highlights.evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(2);
+      expect(await scenes.evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(2);
     }
-    await expect(highlights.locator('.vec-highlight-caption').first()).toHaveCSS('font-size', '13px');
-    if (width === 320 || width === 834 || width === 1440) await page.screenshot({ path: `../.visual-review/event-coverage-highlights-${width}.png` });
+    await expect(scenes.locator('figure > figcaption').first()).toHaveCSS('font-size', '13px');
+    if (width === 320 || width === 834 || width === 1440) await page.screenshot({ path: `../.visual-review/event-coverage-scenes-${width}.png` });
     const sceneLink = page.locator('.vec-event-scene-nav a').nth(2);
     const anchor = await sceneLink.getAttribute('href');
     await sceneLink.click();
@@ -76,7 +77,7 @@ for (const width of [320, 834]) {
     await link.click();
     await expect(link).toHaveAttribute('aria-current', 'location');
     await expect(page.locator('.vec-scene-copy > span')).toHaveText('03');
-    await expect(page.getByRole('button', { name: 'Open full gallery', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Open gallery', exact: true })).toHaveCount(0);
     const photo = page.locator('.vec-scene-grid button').first();
     await photo.click();
     await expect(page.locator('.client-gallery-lightbox-main')).toHaveAttribute('src', delivery.assets[2].url);
@@ -86,17 +87,67 @@ for (const width of [320, 834]) {
     await page.getByRole('button', { name: 'All moments', exact: true }).click();
     await expect(page.locator('.vec-event-scenes article')).toHaveCount(4);
     await page.locator('.vec-event-close').scrollIntoViewIfNeeded();
-    await page.getByRole('button', { name: 'Open full gallery', exact: true }).click();
+    await page.getByRole('button', { name: 'Open gallery', exact: true }).click();
     await expect(page.locator('.client-gallery-grid > figure')).toHaveCount(16);
   });
 }
+
+for (const width of [320, 834]) test(`event photos appear once, keep captions below, and open their full-size file at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 1000 });
+  const delivery = await published(page);
+
+  await expect(page.locator('.vec-event-summary, .vec-event-highlights, .vec-event-manifesto')).toHaveCount(0);
+  await expect(page.locator('.vec-scene-grid figure')).toHaveCount(delivery.assets.length - 1);
+  const firstFigure = page.locator('.vec-scene-grid figure').first();
+  await firstFigure.scrollIntoViewIfNeeded();
+  const thumbnailUrl = await firstFigure.locator('button img').getAttribute('src');
+  await expect(firstFigure.locator('figcaption')).toBeVisible();
+  expect(await firstFigure.locator('figcaption').evaluate(element => element.previousElementSibling?.tagName)).toBe('BUTTON');
+  const scenePhoto = firstFigure.locator('button');
+  await scenePhoto.click();
+  await expect(page.locator('.client-gallery-lightbox-main')).toHaveAttribute('src', thumbnailUrl);
+  await expect(page.getByRole('combobox', { name: 'Photo group' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open full-size photograph in a new tab' })).toBeVisible();
+  await expect(page.locator('.client-gallery-overlay')).toHaveCSS('opacity', '1');
+  const actionBounds = await page.locator('.client-gallery-lightbox-actions').boundingBox();
+  expect(actionBounds.x).toBeGreaterThanOrEqual(0);
+  expect(actionBounds.x + actionBounds.width).toBeLessThanOrEqual(width);
+  if (width === 834) await page.screenshot({ path: '../.visual-review/event-coverage-lightbox-834.png' });
+
+  const opened = [];
+  await page.evaluate(() => {
+    window.__openedOriginals = [];
+    window.open = () => ({
+      opener: window,
+      document: { title: '', body: { style: {}, textContent: '' } },
+      location: { replace: url => window.__openedOriginals.push(url) },
+      close: () => {}
+    });
+  });
+  await page.route('**/photos/*/original', async route => {
+    await route.fulfill({ json: { success: true, data: { url: 'https://images.example.test/full-resolution.webp' } } });
+  });
+  await page.getByRole('button', { name: 'Open full-size photograph in a new tab' }).click();
+  await expect.poll(() => page.evaluate(() => window.__openedOriginals)).toEqual(['https://images.example.test/full-resolution.webp']);
+});
+
+test('event gallery hides the full-size action when individual downloads are disabled', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 900 });
+  await published(page, { allowIndividualDownloads: false });
+  const scenePhoto = page.locator('.vec-scene-grid button').first();
+  await scenePhoto.scrollIntoViewIfNeeded();
+  await scenePhoto.click();
+  await expect(page.locator('.client-gallery-lightbox-main')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open full-size photograph in a new tab' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Download photograph' })).toHaveCount(0);
+});
 
 for (const reducedMotion of ['no-preference', 'reduce']) {
   test(`event photo motion can pause and resume with ${reducedMotion}`, async ({ page }) => {
     await page.setViewportSize({ width: 834, height: 1000 });
     await page.emulateMedia({ reducedMotion });
     await published(page, { motion: 'slow-push' });
-    const photograph = page.locator('.vec-event-highlight-grid button').first().locator('.vec-frame-motion');
+    const photograph = page.locator('.vec-scene-grid button').first().locator('.vec-frame-motion');
     await photograph.scrollIntoViewIfNeeded();
     const transform = () => photograph.evaluate(element => getComputedStyle(element).transform);
     const before = await transform();
@@ -118,7 +169,7 @@ test('selected still photographs stay still and long copy fits a short phone', a
   await expect(page.getByRole('button', { name: 'Pause photo motion', exact: true })).toHaveCount(0);
   const copy = page.locator('.vec-event-hero-copy');
   expect(await copy.evaluate(element => element.scrollHeight <= element.parentElement.clientHeight)).toBe(true);
-  await page.getByRole('button', { name: 'Browse the scenes', exact: true }).click();
+  await page.locator('.vec-event-scene-nav a').first().click();
   const still = page.locator('.vec-scene-grid button').first().locator('.vec-frame-motion');
   await still.scrollIntoViewIfNeeded();
   await still.hover();
@@ -134,13 +185,13 @@ for (const width of [320, 640, 768, 834, 1440]) {
   test(`event saved scene layouts remain spacious at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });
     await published(page, { sceneLayouts: true });
-    await expect(page.locator('.vec-scene-copy p').first()).toHaveText('The welcome and check-in before the programme.');
+    await expect(page.locator('.vec-scene-copy p')).toHaveCount(0);
     for (const layout of ['pair', 'triptych', 'cluster']) {
       const scene = page.locator(`.vec-event-scenes article[data-layout="${layout}"]`);
       await scene.locator('.vec-scene-grid').scrollIntoViewIfNeeded();
       const columns = await scene.locator('.vec-scene-grid').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length);
       expect(columns).toBe(width < 640 ? 1 : width < 1024 || layout === 'pair' ? 2 : 3);
-      expect(await scene.locator('button').first().evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThan(250);
+      expect(await scene.locator('.vec-scene-grid > figure > button').first().evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThan(250);
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
   });
