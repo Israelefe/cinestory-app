@@ -295,20 +295,31 @@ export async function v3Pinboard(req, res) {
 }
 
 const photoswapInput = z.object({
-  backgroundMode: z.enum(['auto', 'dark']).default('auto'),
-  typography: z.object({ display: z.string(), body: z.string() }).strict()
-}).strict();
+  backgroundMode: z.enum(['auto', 'dark']).optional(),
+  typography: z.object({ display: z.string(), body: z.string() }).strict().optional(),
+  assetOrder: z.array(z.string().uuid()).max(500).optional()
+}).strict().refine(input => Boolean(input.backgroundMode || input.typography || input.assetOrder), { message: 'Choose a Photo Swap setting to save.' });
 
 export async function v3Photoswap(req, res) {
   try {
     const input = photoswapInput.safeParse(req.body); if (!input.success) return bad(res, input);
     const delivery = await owned(req);
     if (!editable(delivery) || delivery.kind !== 'photoswap' || !delivery.assets.length) return res.status(409).json({ success: false, code: 'PHOTOSWAP_PHOTOS_REQUIRED', message: 'Add photographs before styling this Photo Swap.' });
-    if (!V3_FONT_CHOICES.has(input.data.typography.display) || !V3_FONT_CHOICES.has(input.data.typography.body)) return res.status(400).json({ success: false, code: 'V3_FONT_NOT_ALLOWED', field: 'typography', message: 'Choose a display and body font from the list.' });
-    const ids = delivery.assets.map(asset => asset.assetId);
-    delivery.photoswap = { ...delivery.photoswap, backgroundMode: input.data.backgroundMode, typography: input.data.typography };
+    if (input.data.typography && (!V3_FONT_CHOICES.has(input.data.typography.display) || !V3_FONT_CHOICES.has(input.data.typography.body))) return res.status(400).json({ success: false, code: 'V3_FONT_NOT_ALLOWED', field: 'typography', message: 'Choose a display and body font from the list.' });
+    const existingIds = [...delivery.assets].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).map(asset => asset.assetId);
+    const ids = input.data.assetOrder || existingIds;
+    if (ids.length !== existingIds.length || new Set(ids).size !== existingIds.length || ids.some(id => !existingIds.includes(id))) return res.status(400).json({ success: false, code: 'PHOTOSWAP_ORDER_INVALID', field: 'assetOrder', message: 'Keep every photograph in the delivery order, once each.' });
+    const positions = new Map(ids.map((id, index) => [id, index]));
+    delivery.assets.forEach(asset => { asset.sortOrder = positions.get(asset.assetId); });
+    delivery.photoswap = {
+      ...delivery.photoswap,
+      ...(input.data.backgroundMode ? { backgroundMode: input.data.backgroundMode } : {}),
+      ...(input.data.typography ? { typography: input.data.typography } : {})
+    };
     delivery.galleryAssetIds = ids;
+    delivery.galleryOrder = ids;
     delivery.presentationOrder = ids;
+    delivery.markModified('assets');
     invalidateApproval(delivery); saveV3(delivery, { step: 'photoswap' });
     delivery.markModified('photoswap'); await delivery.save();
     res.json({ success: true, data: delivery });

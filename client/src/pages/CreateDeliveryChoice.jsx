@@ -21,7 +21,7 @@ const showcaseFormats = [
 const types = [
   { id: 'showcase', title: 'Showcase Delivery', line: 'Lead with a designed experience, then open the full gallery.', detail: 'Choose from Photo Story, Editorial Page, Photo Reveal, Canvas, Chapters, Album, Event Coverage, and Campaign Delivery.', icon: Clapperboard, action: 'Create a Showcase' },
   { id: 'pinboard', title: 'GridBoard Delivery', line: 'Put the finished gallery first in a board clients can browse freely.', detail: 'Veylo studies the photos, suggests three arrangements and useful moment groups, and keeps every uploaded photo in the board.', icon: Grid2X2, action: 'Create a GridBoard' },
-  { id: 'photoswap', title: 'Photo Swap Delivery', line: 'One photo at a time. The client swipes through the full set like a stack of prints.', detail: 'Upload your finished photos, pick a background style, and publish. No AI direction — the order is yours.', icon: Layers3, action: 'Create a Photo Swap' }
+  { id: 'photoswap', title: 'Photo Swap Delivery', line: 'A full-screen stack your client can swipe through one photo at a time.', detail: 'Upload finished photos, set their order, choose the background, and publish a private link.', icon: Layers3, action: 'Create a Photo Swap' }
 ];
 
 export default function CreateDeliveryChoice() {
@@ -57,7 +57,7 @@ export default function CreateDeliveryChoice() {
           <div className="v-create-choice-copy"><p className="v-create-choice-line">{type.line}</p><p>{type.detail}</p>
             <Link className="v-create-choice-cta" to={'/create?type=' + type.id}>{type.action}<ArrowRight size={17} /></Link>
             {type.id === 'pinboard' && <Link className="v-create-choice-demo" to="/demo/gridboard">See a GridBoard example</Link>}
-            {type.id === 'photoswap' && <Link className="v-create-choice-demo" to="/demo/photoswap">Swipe through the demo</Link>}
+            {type.id === 'photoswap' && <><Link className="v-create-choice-demo" to="/photoswap">See how Photo Swap works</Link><Link className="v-create-choice-demo" to="/demo/photoswap">Try the live demo</Link></>}
           </div>
         </motion.article>;
       })}

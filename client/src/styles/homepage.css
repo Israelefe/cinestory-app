@@ -148,3 +148,49 @@
   .v-home-refined .v-hero-after .v-actions { display: grid; grid-template-columns: minmax(0, 1fr); }
   .v-home-refined .v-hero-after .v-button { width: 100%; justify-content: space-between; }
 }
+
+.v-home-refined .v-home-photoswap-art { grid-area: art; }
+.v-home-photoswap-art {
+  position: relative;
+  display: grid;
+  min-height: 230px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #ffffff14;
+  background: radial-gradient(ellipse at 50% 45%, #ff806f2a, transparent 62%), #0a0a0d;
+}
+.v-home-photoswap-art > span {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: clamp(95px, 22%, 142px);
+  height: 74%;
+  overflow: hidden;
+  border: 1px solid #ffffff45;
+  border-radius: 7px;
+  background: #171519;
+  box-shadow: 0 18px 42px #0009;
+  transition: transform .35s cubic-bezier(.22,1,.36,1);
+}
+.v-home-photoswap-art > span img { width: 100%; height: 100%; object-fit: cover; }
+.v-home-photoswap-art > .is-back { filter: brightness(.57); transform: translate(-37%,-46%) rotate(-9deg) scale(.91); }
+.v-home-photoswap-art > .is-middle { filter: brightness(.78); transform: translate(-60%,-49%) rotate(7deg) scale(.96); }
+.v-home-photoswap-art > .is-front { transform: translate(-50%,-50%) rotate(-1deg); }
+.v-home-photoswap-card:hover .v-home-photoswap-art > .is-back { transform: translate(-41%,-47%) rotate(-12deg) scale(.91); }
+.v-home-photoswap-card:hover .v-home-photoswap-art > .is-middle { transform: translate(-57%,-50%) rotate(9deg) scale(.96); }
+.v-home-photoswap-art > small {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #ffb1a6;
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: .13em;
+}
+.v-home-photoswap-art > small svg { flex: 0 0 auto; }
+@media (max-width: 700px) {
+  .v-home-photoswap-art { min-height: 235px; }
+}

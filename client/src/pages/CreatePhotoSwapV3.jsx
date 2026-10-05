@@ -1,7 +1,32 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
-import { ArrowLeft, ArrowRight, BadgeCheck, Check, CircleHelp, Clock3, Copy, Download, Eye, Image, Layers3, LoaderCircle, LockKeyhole, MessageCircle, Music2, Pause, Play, RefreshCw, Trash2, Upload, X } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  BadgeCheck,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  Copy,
+  Eye,
+  GripVertical,
+  Image,
+  Layers3,
+  LoaderCircle,
+  LockKeyhole,
+  MessageCircle,
+  Music2,
+  MoveDown,
+  MoveUp,
+  Pause,
+  Play,
+  RefreshCw,
+  Trash2,
+  Upload,
+  X
+} from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { API_BASE_URL } from '../config/env.js';
@@ -15,18 +40,37 @@ import { recoverPublishedDelivery } from '../utils/deliveryPublishV3.js';
 import { ClientPreviewPhoneFrame } from '../components/delivery/PhonePresentation.jsx';
 import './CreatePhotoSwapV3.css';
 
-const FONTS = ['Playfair Display', 'Outfit', 'Plus Jakarta Sans', 'Cormorant Garamond', 'DM Sans', 'Libre Baskerville', 'Manrope'];
+const FONTS = ['Cormorant Garamond', 'Playfair Display', 'Libre Baskerville', 'Outfit', 'Plus Jakarta Sans', 'DM Sans', 'Manrope'];
+const PHOTO_PAGE_SIZE = 36;
 const DEFAULT_ACCESS = { allowIndividualDownloads: true, allowDownloadAll: true, allowLikes: false, expiresAt: '' };
-const STEPS = [{ id: 'details', label: 'Details' }, { id: 'photos', label: 'Photos' }, { id: 'style', label: 'Style' }, { id: 'access', label: 'Access' }, { id: 'publish', label: 'Publish' }];
-function mediaUrl(value) { return typeof value === 'string' && value.startsWith('/api/') ? `${API_BASE_URL.replace(/\/$/, '')}${value.slice(4)}` : value; }
+const STEPS = [
+  { id: 'details', label: 'Details' },
+  { id: 'photos', label: 'Photos' },
+  { id: 'style', label: 'Style' },
+  { id: 'access', label: 'Access' },
+  { id: 'publish', label: 'Publish' }
+];
+
+function mediaUrl(value) {
+  return typeof value === 'string' && value.startsWith('/api/')
+    ? API_BASE_URL.replace(/\/$/, '') + value.slice(4)
+    : value;
+}
 
 function errorText(error) {
   if (error?.response?.status === 401) return 'Your session expired. Sign in again to continue.';
   if (error?.response?.status === 403 && error?.response?.data?.code === 'MONTHLY_DELIVERY_LIMIT_REACHED') return error.response.data.message;
   return apiMessage(error, error?.message || 'This step could not finish. Check your connection and try again.');
 }
-function quotaMessage(data) { return `You have published all ${data?.limits?.deliveriesPerMonth || 3} Free deliveries this month. Start another next month, or move to Pro.`; }
-function reachedQuota(data) { return data?.plan === 'free' && data?.usage?.deliveriesRemaining === 0; }
+
+function quotaMessage(data) {
+  return 'You have published all ' + (data?.limits?.deliveriesPerMonth || 3) + ' Free deliveries this month. Start another next month, or move to Pro.';
+}
+
+function reachedQuota(data) {
+  return data?.plan === 'free' && data?.usage?.deliveriesRemaining === 0;
+}
+
 function initialStage(delivery) {
   if (delivery?.status === 'published') return 'published';
   const step = delivery?.v3?.step;
@@ -36,16 +80,33 @@ function initialStage(delivery) {
 }
 
 function Toggle({ checked, onChange, children }) {
-  return <label className="pb-toggle"><input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} /><span aria-hidden="true" /><span>{children}</span></label>;
+  return (
+    <label className="ps-toggle">
+      <input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} />
+      <span className="ps-toggle-track" aria-hidden="true"><i /></span>
+      <span className="ps-toggle-copy">{children}</span>
+    </label>
+  );
+}
+
+function SectionHeading({ number, title, children }) {
+  return (
+    <div className="ps-form-heading">
+      <span>{number}</span>
+      <div><h2 id="ps-step-title">{title}</h2>{children && <p>{children}</p>}</div>
+    </div>
+  );
 }
 
 export default function CreatePhotoSwapV3({ user, initialDelivery }) {
   const navigate = useNavigate();
-  const reduced = useVeyloReducedMotion();
+  const veyloMotion = useVeyloReducedMotion();
   const [draft, setDraft] = useState(initialDelivery || null);
   const [stage, setStage] = useState(() => initialStage(initialDelivery));
   const [clientName, setClientName] = useState(initialDelivery?.clientName || '');
   const [title, setTitle] = useState(initialDelivery?.title || '');
+  const [shootType, setShootType] = useState(initialDelivery?.shootType || '');
+  const [clientMessage, setClientMessage] = useState(initialDelivery?.brief === 'Photo Swap delivery' ? '' : initialDelivery?.brief || '');
   const [entitlements, setEntitlements] = useState(null);
   const [billingLoading, setBillingLoading] = useState(true);
   const [busy, setBusy] = useState('');
@@ -59,6 +120,9 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
   const [musicCategory, setMusicCategory] = useState('all');
   const [musicSearch, setMusicSearch] = useState('');
   const [musicTab, setMusicTab] = useState('library');
+  const [photoOrder, setPhotoOrder] = useState(() => (initialDelivery?.assets || []).slice().sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).map(asset => asset.assetId));
+  const [photoPage, setPhotoPage] = useState(0);
+  const [draggedPhotoId, setDraggedPhotoId] = useState('');
   const soundtrackPreviewRef = useRef(null);
   const [access, setAccess] = useState({ ...DEFAULT_ACCESS, ...initialDelivery?.access, expiresAt: localDeliveryExpiry(initialDelivery?.access?.expiresAt) });
   const [pin, setPin] = useState('');
@@ -67,9 +131,28 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
   const previewDialog = useRef(null);
   const previewTrigger = useRef(null);
   useDialogFocus(showDesktopPreview, previewDialog, () => setShowDesktopPreview(false), previewTrigger);
-  function openPreview(event) { previewTrigger.current = event.currentTarget; setShowDesktopPreview(true); }
-  const [published, setPublished] = useState(initialDelivery?.status === 'published' ? { publicId: initialDelivery.publicId, url: `${window.location.origin}/d/${initialDelivery.publicId}` } : null);
-  const assets = draft?.assets || [];
+  const [published, setPublished] = useState(initialDelivery?.status === 'published'
+    ? { publicId: initialDelivery.publicId, url: window.location.origin + '/d/' + initialDelivery.publicId }
+    : null);
+
+  const assets = useMemo(
+    () => [...(draft?.assets || [])].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)),
+    [draft?.assets]
+  );
+  const assetIdentity = assets.map(asset => asset.assetId).join('|');
+  useEffect(() => {
+    const available = new Set(assets.map(asset => asset.assetId));
+    setPhotoOrder(current => {
+      const kept = current.filter(id => available.has(id));
+      return [...kept, ...assets.map(asset => asset.assetId).filter(id => !kept.includes(id))];
+    });
+  }, [assetIdentity]);
+
+  const assetsById = useMemo(() => new Map(assets.map(asset => [asset.assetId, asset])), [assets]);
+  const orderedAssets = useMemo(
+    () => photoOrder.map(id => assetsById.get(id)).filter(Boolean),
+    [photoOrder, assetsById]
+  );
   const maxPhotos = entitlements?.limits?.photosPerDelivery || (user?.plan === 'pro' || user?.plan === 'studio' ? 500 : 100);
   const quotaReached = reachedQuota(entitlements);
   const previewBranding = creationPreviewBranding(user, entitlements);
@@ -81,42 +164,69 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
     const rank = track => /afrobeats?/i.test([track.genre, track.category, track.title, ...(track.tags || [])].join(' ')) ? 0 : /amapiano/i.test([track.genre, track.category, track.title, ...(track.tags || [])].join(' ')) ? 1 : 2;
     return rank(first) - rank(second);
   });
-  const activeStep = ['published', 'publish'].includes(stage) ? 'publish' : stage;
-  const currentIndex = STEPS.findIndex(item => item.id === activeStep);
+  const currentStep = Math.max(0, STEPS.findIndex(item => item.id === (stage === 'published' ? 'publish' : stage)));
+  const currentPhotosPageCount = Math.max(1, Math.ceil(orderedAssets.length / PHOTO_PAGE_SIZE));
+  const safePhotoPage = Math.min(photoPage, currentPhotosPageCount - 1);
+  const visibleAssets = orderedAssets.slice(safePhotoPage * PHOTO_PAGE_SIZE, (safePhotoPage + 1) * PHOTO_PAGE_SIZE);
   const previewDelivery = useMemo(() => ({
-    ...(draft || {}), kind: 'photoswap', title: title || `${clientName || 'Client'}'s photos`, clientName, assets,
+    ...(draft || {}),
+    kind: 'photoswap',
+    title: title || (clientName || 'Client') + '\'s photographs',
+    clientName,
+    shootType,
+    brief: clientMessage,
+    assets: orderedAssets,
     branding: previewBranding,
     photoswap: { backgroundMode, typography }
-  }), [draft, title, clientName, assets, backgroundMode, typography, previewBranding.type, previewBranding.name, previewBranding.logoUrl]);
+  }), [draft, title, clientName, shootType, clientMessage, orderedAssets, previewBranding.type, previewBranding.name, previewBranding.logoUrl, backgroundMode, typography]);
 
   async function refresh() {
     if (!draft?._id) return null;
     const { data } = await api.get('/v1/deliveries/' + draft._id);
-    const next = data.data; setDraft(next);
-    return next;
+    setDraft(data.data);
+    return data.data;
   }
+
   async function action(label, task) {
-    setBusy(label); setError('');
-    try { return await task(); } catch (failure) {
+    setBusy(label);
+    setError('');
+    try {
+      return await task();
+    } catch (failure) {
       if (label === 'publish') {
-        const result = await recoverPublishedDelivery(draft?._id);
-        if (result) { setPublished(result); setStage('published'); return result; }
+        const recovered = await recoverPublishedDelivery(draft?._id);
+        if (recovered) {
+          setPublished(recovered);
+          setStage('published');
+          return recovered;
+        }
       }
-      setError(errorText(failure)); return null;
-    } finally { setBusy(''); }
+      setError(errorText(failure));
+      return null;
+    } finally {
+      setBusy('');
+    }
   }
 
   useEffect(() => {
     let active = true;
-    api.get('/v1/billing/status').then(({ data }) => { if (active) setEntitlements(data.data); }).catch(failure => { if (active) setError(errorText(failure)); }).finally(() => { if (active) setBillingLoading(false); });
+    api.get('/v1/billing/status')
+      .then(({ data }) => { if (active) setEntitlements(data.data); })
+      .catch(failure => { if (active) setError(errorText(failure)); })
+      .finally(() => { if (active) setBillingLoading(false); });
     return () => { active = false; };
   }, []);
-  useEffect(() => { window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' }); }, [stage, reduced]);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [stage]);
 
   useEffect(() => {
     if (stage !== 'style' || !draft?._id || soundtracks !== null) return undefined;
     let active = true;
-    api.get('/v1/deliveries/soundtracks').then(({ data }) => { if (active) setSoundtracks(Array.isArray(data.data) ? data.data : []); }).catch(failure => { if (active) { setError(errorText(failure)); setSoundtracks([]); } });
+    api.get('/v1/deliveries/soundtracks')
+      .then(({ data }) => { if (active) setSoundtracks(Array.isArray(data.data) ? data.data : []); })
+      .catch(failure => { if (active) { setError(errorText(failure)); setSoundtracks([]); } });
     return () => { active = false; };
   }, [stage, draft?._id, soundtracks]);
 
@@ -131,135 +241,598 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
   async function previewSoundtrack(track) {
     const audio = soundtrackPreviewRef.current;
     if (!audio) return;
-    if (previewingTrackId === track.id) { audio.pause(); audio.currentTime = 0; setPreviewingTrackId(''); return; }
-    audio.pause(); audio.src = mediaUrl(track.previewUrl); audio.load();
-    try { await audio.play(); setPreviewingTrackId(track.id); }
-    catch { setError('This music preview could not start. Check your connection and try again.'); setPreviewingTrackId(''); }
+    if (previewingTrackId === track.id) {
+      audio.pause();
+      audio.currentTime = 0;
+      setPreviewingTrackId('');
+      return;
+    }
+    audio.pause();
+    audio.src = mediaUrl(track.previewUrl);
+    audio.load();
+    try {
+      await audio.play();
+      setPreviewingTrackId(track.id);
+    } catch {
+      setError('This music preview could not start. Check your connection and try again.');
+      setPreviewingTrackId('');
+    }
   }
 
   async function chooseSoundtrack(trackId) {
-    soundtrackPreviewRef.current?.pause(); setPreviewingTrackId('');
+    soundtrackPreviewRef.current?.pause();
+    setPreviewingTrackId('');
     await action('soundtrack', async () => {
-      await api.post(`/v1/deliveries/${draft._id}/soundtrack/select`, { trackId });
+      await api.post('/v1/deliveries/' + draft._id + '/soundtrack/select', { trackId });
       await refresh();
     });
   }
 
   async function clearSoundtrack() {
-    soundtrackPreviewRef.current?.pause(); setPreviewingTrackId('');
-    await action('soundtrack', async () => { await api.delete(`/v1/deliveries/${draft._id}/soundtrack`); await refresh(); });
+    soundtrackPreviewRef.current?.pause();
+    setPreviewingTrackId('');
+    await action('soundtrack', async () => {
+      await api.delete('/v1/deliveries/' + draft._id + '/soundtrack');
+      await refresh();
+    });
   }
+
   async function customSoundtrack(file) {
     if (!file) return;
-    if (!['audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/ogg', 'audio/aac'].includes(file.type)) { setError('Choose an MP3, WAV, M4A, OGG or AAC audio file.'); return; }
+    if (!['audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/ogg', 'audio/aac'].includes(file.type)) {
+      setError('Choose an MP3, WAV, M4A, OGG or AAC audio file.');
+      return;
+    }
     await action('soundtrack', async () => {
       await uploadDeliverySoundtrack(draft._id, file, file.name.replace(/\.[^.]+$/, ''));
-      await refresh(); setMusicTab('library');
+      await refresh();
+      setMusicTab('library');
       toast.success('Your track is selected.');
     });
   }
 
   async function continueDetails(event) {
     event?.preventDefault();
-    if (!draft && quotaReached) { setError(quotaMessage(entitlements)); return; }
-    if (clientName.trim().length < 2) { setError('Enter the client name before continuing.'); return; }
-    if (title.trim().length < 2) { setError('Give this Photo Swap a title before continuing.'); return; }
+    if (!draft && quotaReached) {
+      setError(quotaMessage(entitlements));
+      return;
+    }
+    if (clientName.trim().length < 2) {
+      setError('Enter the client name before continuing.');
+      return;
+    }
+    if (title.trim().length < 2) {
+      setError('Give this Photo Swap a title before continuing.');
+      return;
+    }
     await action('details', async () => {
-      const body = { kind: 'photoswap', clientName: clientName.trim(), title: title.trim(), shootType: '', purpose: '', originalPurpose: '', clarificationAnswers: [] };
-      if (draft?._id) await api.patch(`/v1/deliveries/${draft._id}/v3/details`, body);
-      else {
-        const { data } = await api.post('/v1/deliveries/v3', body); setDraft(data.data); navigate('/create?draft=' + data.data._id, { replace: true });
+      const body = {
+        kind: 'photoswap',
+        clientName: clientName.trim(),
+        title: title.trim(),
+        shootType: shootType.trim(),
+        purpose: clientMessage.trim(),
+        originalPurpose: clientMessage.trim(),
+        clarificationAnswers: []
+      };
+      if (draft?._id) {
+        await api.patch('/v1/deliveries/' + draft._id + '/v3/details', body);
+        await refresh();
+      } else {
+        const { data } = await api.post('/v1/deliveries/v3', body);
+        setDraft(data.data);
+        navigate('/create?draft=' + data.data._id, { replace: true });
       }
       setStage('photos');
     });
   }
+
   async function uploadFiles(list) {
-    const files = Array.from(list || []); if (!files.length) return;
+    const files = Array.from(list || []);
+    if (!files.length) return;
     const invalid = files.find(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 50 * 1024 * 1024);
-    if (invalid) { setError('Use JPEG, PNG, or WebP photographs no larger than 50 MB each.'); return; }
-    if (assets.length + files.length > maxPhotos) { setError(`${entitlements?.planName || 'Your plan'} allows up to ${maxPhotos} photos in one delivery.`); return; }
+    if (invalid) {
+      setError('Use JPEG, PNG, or WebP photographs no larger than 50 MB each.');
+      return;
+    }
+    if (assets.length + files.length > maxPhotos) {
+      setError((entitlements?.planName || 'Your plan') + ' allows up to ' + maxPhotos + ' photos in one delivery.');
+      return;
+    }
     await action('upload', async () => {
-      setUploadPercent(0); setFailedFiles([]);
+      setUploadPercent(0);
+      setFailedFiles([]);
       const result = await uploadDeliveryPhotosV3(draft._id, files, percent => setUploadPercent(percent));
-      setFailedFiles(result.errors.map(item => item.file)); await refresh();
-      if (result.errors.length) setError(`${result.errors.length} photo${result.errors.length === 1 ? '' : 's'} did not upload. Retry those files.`);
+      setFailedFiles(result.errors.map(item => item.file));
+      await refresh();
+      setPhotoPage(0);
+      if (result.errors.length) {
+        setError(result.errors.length + ' photo' + (result.errors.length === 1 ? '' : 's') + ' did not upload. Retry those files.');
+      }
     });
   }
+
   async function deletePhoto(assetId) {
-    await action('delete', async () => { await api.delete(`/v1/deliveries/${draft._id}/assets/${assetId}`); await refresh(); });
+    await action('delete', async () => {
+      await api.delete('/v1/deliveries/' + draft._id + '/assets/' + assetId);
+      await refresh();
+    });
+  }
+
+  function movePhoto(fromId, toId) {
+    if (!fromId || !toId || fromId === toId) return;
+    const next = photoOrder.slice();
+    const fromIndex = next.indexOf(fromId);
+    const toIndex = next.indexOf(toId);
+    if (fromIndex < 0 || toIndex < 0) return;
+    next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, fromId);
+    setPhotoOrder(next);
+    setPhotoPage(Math.floor(toIndex / PHOTO_PAGE_SIZE));
+  }
+
+  function moveBy(assetId, amount) {
+    const index = photoOrder.indexOf(assetId);
+    const nextIndex = Math.max(0, Math.min(photoOrder.length - 1, index + amount));
+    if (nextIndex === index) return;
+    movePhoto(assetId, photoOrder[nextIndex]);
+  }
+
+  async function saveOrder() {
+    if (!orderedAssets.length) {
+      setError('Add at least one finished photograph first.');
+      return;
+    }
+    await action('order', async () => {
+      const { data } = await api.patch('/v1/deliveries/' + draft._id + '/v3/photoswap', { assetOrder: photoOrder });
+      setDraft(current => mergeDeliveryDraft(current, data.data));
+      setStage('style');
+    });
   }
 
   async function saveStyle() {
-    if (!assets.length) { setError('Add at least one finished photograph first.'); return; }
+    if (!orderedAssets.length) {
+      setError('Add at least one finished photograph first.');
+      return;
+    }
     await action('style', async () => {
-      const body = { backgroundMode, typography };
-      const { data } = await api.patch(`/v1/deliveries/${draft._id}/v3/photoswap`, body);
-      setDraft(current => mergeDeliveryDraft(current, data.data)); setStage('access');
+      const { data } = await api.patch('/v1/deliveries/' + draft._id + '/v3/photoswap', {
+        backgroundMode,
+        typography,
+        assetOrder: photoOrder
+      });
+      setDraft(current => mergeDeliveryDraft(current, data.data));
+      setStage('access');
     });
   }
 
   async function approve() {
-    if (pin && pin.length !== 6) { setError('A PIN needs six digits. Finish entering it or clear the field.'); return; }
-    if (access.expiresAt && new Date(access.expiresAt) <= new Date()) { setError('Choose a future expiry date, or clear the field for a link that does not expire.'); return; }
+    if (pin && pin.length !== 6) {
+      setError('A PIN needs six digits. Finish entering it or clear the field.');
+      return;
+    }
+    if (access.expiresAt && new Date(access.expiresAt) <= new Date()) {
+      setError('Choose a future expiry date, or clear the field for a link that does not expire.');
+      return;
+    }
     await action('approve', async () => {
       const body = { ...access, expiresAt: access.expiresAt ? new Date(access.expiresAt).toISOString() : '' };
-      if (pin) body.pin = pin; else if (removePin) body.pin = '';
-      await api.patch(`/v1/deliveries/${draft._id}/v3/access`, body);
-      await api.post(`/v1/deliveries/${draft._id}/v3/approve`); await refresh(); setPin(''); setRemovePin(false); setStage('publish');
+      if (pin) body.pin = pin;
+      else if (removePin) body.pin = '';
+      await api.patch('/v1/deliveries/' + draft._id + '/v3/access', body);
+      await api.post('/v1/deliveries/' + draft._id + '/v3/approve');
+      await refresh();
+      setPin('');
+      setRemovePin(false);
+      setStage('publish');
     });
   }
+
   async function publish() {
     await action('publish', async () => {
-      const { data: status } = await api.get('/v1/billing/status'); setEntitlements(status.data);
+      const { data: status } = await api.get('/v1/billing/status');
+      setEntitlements(status.data);
       if (!status.data) throw new Error('We could not check your plan. Try publishing again.');
-      if (reachedQuota(status.data)) { setError(quotaMessage(status.data)); return; }
-      const { data } = await api.post(`/v1/deliveries/${draft._id}/v3/publish`);
-      setPublished(data.data); setStage('published');
+      if (reachedQuota(status.data)) {
+        setError(quotaMessage(status.data));
+        return;
+      }
+      const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/publish');
+      setPublished(data.data);
+      setStage('published');
     });
   }
+
   async function copyLink() {
-    try { await navigator.clipboard.writeText(published?.url || `${window.location.origin}/d/${published?.publicId}`); toast.success('Private link copied.'); }
-    catch { setError('The link could not be copied. Select and copy it below.'); }
+    const value = published?.url || window.location.origin + '/d/' + published?.publicId;
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success('Private link copied.');
+    } catch {
+      setError('The link could not be copied. Select and copy it below.');
+    }
   }
 
-  const steps = STEPS.map((item, index) => ({ ...item, number: String(index + 1).padStart(2, '0'), done: index < currentIndex }));
-  const content = <>
-    <div className="pb-create-top"><Link to="/dashboard" aria-label="Back to dashboard">Veylo <span>·</span> Create delivery</Link><div className="pb-create-top-actions"><span>PHOTO SWAP</span>{['style', 'access', 'publish'].includes(stage) && <button type="button" onClick={openPreview}><Eye size={14} /> View client preview</button>}</div></div>
-    <nav className="pb-create-steps" aria-label="Creation progress">{steps.map((item, index) => <div key={item.id} className={(activeStep === item.id ? 'is-active ' : '') + (item.done ? 'is-done' : '')}><span>{item.done ? <Check size={14} /> : item.number}</span><strong>{item.label}</strong>{index < steps.length - 1 && <i />}</div>)}</nav>
-    {quotaReached && !draft && <div className="pb-create-quota"><Clock3 size={17} />{quotaMessage(entitlements)} <Link to="/billing">View Pro</Link></div>}
-    <AnimatePresence initial={false} mode="wait">
-      <motion.section key={stage} className="pb-create-stage" initial={reduced ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={reduced ? undefined : { opacity: 0, y: -8 }} transition={{ duration: .22 }}>
-        {!!error && <div className="pb-create-error" role="alert"><CircleHelp size={18} /><span>{error}</span><button type="button" onClick={() => setError('')} aria-label="Dismiss error"><X size={15} /></button></div>}
+  function showPreview(event) {
+    previewTrigger.current = event.currentTarget;
+    setShowDesktopPreview(true);
+  }
 
-        {stage === 'details' && <div className="pb-create-form-card"><span className="pb-create-eyebrow">01 / DELIVERY DETAILS</span><h1>Start your Photo Swap.</h1><p>Give it a client name and a title. The client swipes through one photo at a time.</p><form onSubmit={continueDetails}><label>Client name<input value={clientName} onChange={event => setClientName(event.target.value)} autoComplete="name" maxLength={100} placeholder="e.g. Lora Ade" /></label><label>Title<input value={title} onChange={event => setTitle(event.target.value)} maxLength={120} placeholder="e.g. Lora's 25th birthday" /></label><div className="pb-create-note"><Layers3 size={18} /><span>Photo Swap shows one photo at a time. The client swipes through the set like a stack of prints. No AI direction — you control the order.</span></div><div className="pb-create-actions"><Link to="/create" className="pb-create-back"><ArrowLeft size={17} /> Choose a delivery type</Link><button type="submit" disabled={busy === 'details' || billingLoading || !draft && quotaReached}>{busy === 'details' ? <LoaderCircle className="pb-spin" size={17} /> : null}Continue to photos<ArrowRight size={17} /></button></div></form></div>}
+  const getPageAssetIndex = assetId => orderedAssets.findIndex(asset => asset.assetId === assetId);
+  const pageTitle = {
+    details: 'Give this set a name.',
+    photos: 'Choose the order.',
+    style: 'Set the mood.',
+    access: 'Choose how clients open it.',
+    publish: 'Review before you send it.'
+  }[stage] || '';
 
-        {stage === 'photos' && <div className="pb-create-content"><div className="pb-create-title"><span className="pb-create-eyebrow">02 / FINISHED PHOTOS</span><h1>Add the photographs.</h1><p>Upload the finished set. The client sees them in this order — drag to rearrange later if needed.</p></div><div className="pb-upload-row"><div><strong>{assets.length} / {maxPhotos}</strong><span>{entitlements?.planName || (maxPhotos > 100 ? 'Pro' : 'Free')} photo limit · JPEG, PNG, or WebP · Up to 50 MB each</span></div><label className="pb-upload-button"><Upload size={18} />Add photos<input type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={!!busy} onChange={event => { void uploadFiles(event.target.files); event.target.value = ''; }} /></label></div>{busy === 'upload' && <div className="pb-upload-progress" role="status"><span style={{ width: `${uploadPercent}%` }} /><strong>Uploading photos · {uploadPercent}%</strong></div>}{failedFiles.length > 0 && <div className="pb-upload-retry"><p>{failedFiles.length} photo{failedFiles.length > 1 ? 's' : ''} still need uploading.</p><button type="button" onClick={() => void uploadFiles(failedFiles)} disabled={!!busy}><RefreshCw size={15} />Retry failed photos</button></div>}<div className="pb-upload-grid">{assets.map((asset, index) => <article key={asset.assetId}><img src={asset.thumbnailUrl || asset.url} alt={asset.originalFilename || `Uploaded photo ${index + 1}`} loading={index < 12 ? 'eager' : 'lazy'} /><span>{String(index + 1).padStart(2, '0')}</span><button type="button" onClick={() => void deletePhoto(asset.assetId)} disabled={!!busy} aria-label={`Remove photo ${index + 1}`}><Trash2 size={15} /></button></article>)}{!assets.length && <div className="pb-upload-empty"><Image size={28} /><strong>Start with the finished photos.</strong><span>Upload the final set your client will swipe through.</span></div>}</div><div className="pb-create-actions"><button type="button" className="pb-create-back" onClick={() => setStage('details')}><ArrowLeft size={17} />Back to details</button><button type="button" onClick={() => { if (!assets.length) { setError('Add at least one finished photograph first.'); return; } setStage('style'); }} disabled={!assets.length || !!busy}>Choose a style<ArrowRight size={17} /></button></div></div>}
+  if (stage === 'published') {
+    const publishedUrl = published?.url || window.location.origin + '/d/' + (published?.publicId || draft?.publicId || '');
+    return (
+      <main className="ps-create-shell">
+        <div className="ps-create-top"><Link to="/dashboard" className="ps-create-brand">veylo<span>.</span></Link><span>PHOTO SWAP</span></div>
+        <section className="ps-published">
+          <div className="ps-published-check"><BadgeCheck size={28} /></div>
+          <p className="ps-create-kicker">DELIVERY PUBLISHED</p>
+          <h1>Your Photo Swap is ready.</h1>
+          <p className="ps-published-copy">Send the private link to {clientName || 'your client'} on WhatsApp or wherever you usually share finished work.</p>
+          <label className="ps-published-link">PRIVATE LINK<input readOnly value={publishedUrl} onFocus={event => event.target.select()} /></label>
+          <div className="ps-published-actions">
+            <button type="button" className="ps-create-primary" onClick={() => void copyLink()}><Copy size={16} /> Copy private link</button>
+            <a href={publishedUrl} target="_blank" rel="noreferrer"><Eye size={16} /> Open client view</a>
+            <Link to="/dashboard">Back to dashboard <ArrowRight size={16} /></Link>
+          </div>
+          <p className="ps-published-note"><MessageCircle size={16} /> The client can swipe through every photo in the order you chose.</p>
+        </section>
+      </main>
+    );
+  }
 
-        {['style', 'access', 'publish'].includes(stage) && <div className="pb-create-workspace"><div className="pb-create-editor">
-          {stage === 'style' && <><div className="pb-create-title"><span className="pb-create-eyebrow">03 / STYLE</span><h1>Set the look.</h1><p>Choose how the background behaves and pick fonts for the end screen.</p></div><section className="pb-design-section"><div className="pb-section-heading"><div><span>BACKGROUND</span><p>The background sits behind each photo card.</p></div></div><div className="pb-layout-options">{[{ id: 'auto', title: 'Photo colour', desc: 'A soft glow drawn from the current photo\'s dominant colour.' }, { id: 'dark', title: 'Solid dark', desc: 'A consistent dark background behind every card.' }].map(option => <button type="button" key={option.id} className={backgroundMode === option.id ? 'is-selected' : ''} onClick={() => setBackgroundMode(option.id)} aria-pressed={backgroundMode === option.id}><strong>{option.title}</strong><small>{option.desc}</small>{backgroundMode === option.id && <Check size={17} />}</button>)}</div></section><section className="pb-design-section"><div className="pb-section-heading"><div><span>TYPOGRAPHY</span><p>These fonts appear on the end screen and any branding.</p></div></div><div className="pb-font-row"><label>Display font<select value={typography.display} onChange={event => setTypography(current => ({ ...current, display: event.target.value }))}>{FONTS.map(font => <option key={font}>{font}</option>)}</select></label><label>Body font<select value={typography.body} onChange={event => setTypography(current => ({ ...current, body: event.target.value }))}>{FONTS.map(font => <option key={font}>{font}</option>)}</select></label></div></section><section className="pb-design-section pb-soundtrack-editor">
-              <div className="pb-section-heading"><div><span>SOUNDTRACK · OPTIONAL</span><p>Music plays in the background while the client swipes through the photos.</p></div>{draft?.soundtrack && <button type="button" onClick={() => void clearSoundtrack()} disabled={busy === 'soundtrack'}>Remove music</button>}</div>
-              {draft?.soundtrack && <div className="pb-soundtrack-selected"><Music2 size={17} /><span><small>SELECTED SOUNDTRACK</small><strong>{draft.soundtrack.title}</strong></span><Check size={16} /></div>}
-              <div className="pb-music-tabs" role="tablist" aria-label="Music source"><button type="button" role="tab" aria-selected={musicTab === 'library'} className={musicTab === 'library' ? 'is-active' : ''} onClick={() => setMusicTab('library')}><Music2 size={16} />Music library</button><button type="button" role="tab" aria-selected={musicTab === 'own'} className={musicTab === 'own' ? 'is-active' : ''} onClick={() => setMusicTab('own')}><Upload size={16} />Upload your own</button></div>
-              {musicTab === 'library' ? <>
-                <label className="pb-music-search">Find a track<input value={musicSearch} onChange={event => setMusicSearch(event.target.value)} placeholder="Search title, mood, genre or artist" /></label>
-                <div className="pb-music-categories" role="group" aria-label="Filter music by style">{musicCategories.map(category => <button type="button" key={category} aria-pressed={musicCategory === category} className={musicCategory === category ? 'is-active' : ''} onClick={() => setMusicCategory(category)}>{category === 'all' ? 'All music' : category.split(/[\s-]+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}</button>)}</div>
-                <div className="pb-soundtrack-list" aria-label="Soundtrack library">{soundtracks === null ? <p className="pb-soundtrack-empty">Loading soundtrack choices…</p> : filteredSoundtracks.length ? filteredSoundtracks.map(track => { const selected = draft?.soundtrack?.catalogId === track.id; return <article key={track.id} className={selected ? 'is-selected' : ''}><div><strong>{track.title}</strong><small>{[track.creator, track.mood, track.genre, track.durationSec ? Math.round(track.durationSec / 60) + ' min' : ''].filter(Boolean).join(' · ')}</small></div><div><button type="button" className="pb-track-preview" onClick={() => void previewSoundtrack(track)} aria-label={(previewingTrackId === track.id ? 'Stop ' : 'Preview ') + track.title}><span>{previewingTrackId === track.id ? <Pause size={14} /> : <Play size={14} />}</span>{previewingTrackId === track.id ? 'Stop' : 'Preview'}</button><button type="button" className="pb-track-select" onClick={() => void chooseSoundtrack(track.id)} disabled={selected || busy === 'soundtrack'}>{selected ? <><Check size={14} />Selected</> : 'Use this track'}</button></div></article>; }) : <p className="pb-soundtrack-empty">{soundtracks.length ? 'No tracks match this search. Try another style.' : 'Music choices are unavailable. You can still upload your own track.'}</p>}</div>
-              </> : <div className="pb-own-music"><Upload size={23} /><h3>Use a track you own.</h3><p>Choose audio you have permission to use in this client delivery.</p><label><Upload size={16} />{busy === 'soundtrack' ? 'Uploading your track…' : 'Choose an audio file'}<input type="file" accept="audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/ogg,audio/aac" disabled={!!busy} onChange={event => { void customSoundtrack(event.target.files?.[0]); event.target.value = ''; }} /></label><small>MP3, WAV, M4A, OGG or AAC.</small></div>}
-              <audio ref={soundtrackPreviewRef} className="pb-sr-only" preload="none" onEnded={() => setPreviewingTrackId('')} onError={() => { if (previewingTrackId) { setError('This music preview could not load. Check your connection and try again.'); setPreviewingTrackId(''); } }} />
-            </section><div className="pb-create-actions"><button type="button" className="pb-create-back" onClick={() => setStage('photos')}><ArrowLeft size={17} />Back to photos</button><button type="button" onClick={() => void saveStyle()} disabled={!!busy || !assets.length}>{busy === 'style' ? <LoaderCircle className="pb-spin" size={17} /> : null}Save style and set access<ArrowRight size={17} /></button></div></>}
-
-          {stage === 'access' && <><div className="pb-create-title"><span className="pb-create-eyebrow">04 / CLIENT ACCESS</span><h1>Set up the private link.</h1><p>Choose how your client opens and downloads the finished photos.</p></div><section className="pb-access-card"><label className="pb-create-field">Six-digit PIN <span className="pb-field-help">Optional</span><input inputMode="numeric" autoComplete="new-password" maxLength={6} value={pin} onChange={event => { const value = event.target.value.replace(/\D/g, '').slice(0, 6); setPin(value); if (value) setRemovePin(false); }} placeholder={draft?.hasPin ? 'PIN already set · enter a new one to change' : 'Leave blank for no PIN'} /></label>{draft?.hasPin && <Toggle checked={removePin} onChange={value => { setRemovePin(value); if (value) setPin(''); }}>Remove the current PIN</Toggle>}<label className="pb-create-field">Link expiry <span className="pb-field-help">Optional</span><input type="datetime-local" value={access.expiresAt} onChange={event => setAccess(current => ({ ...current, expiresAt: event.target.value }))} /></label><div className="pb-access-toggles"><Toggle checked={access.allowIndividualDownloads} onChange={value => setAccess(current => ({ ...current, allowIndividualDownloads: value }))}>Allow individual photo downloads</Toggle><Toggle checked={access.allowDownloadAll} onChange={value => setAccess(current => ({ ...current, allowDownloadAll: value }))}>Allow the complete gallery download</Toggle></div><div className="pb-create-note"><LockKeyhole size={17} /><span>PIN and expiry rules also apply to shared photo links. Original files are never changed.</span></div></section><div className="pb-create-actions"><button type="button" className="pb-create-back" onClick={() => setStage('style')}><ArrowLeft size={17} />Back to style</button><button type="button" onClick={() => void approve()} disabled={!!busy}>{busy === 'approve' ? <LoaderCircle className="pb-spin" size={17} /> : <Check size={17} />}Approve preview<ArrowRight size={17} /></button></div></>}
-
-          {stage === 'publish' && <><div className="pb-create-title"><span className="pb-create-eyebrow">05 / READY TO PUBLISH</span><h1>Send the Photo Swap when you are ready.</h1><p>Review the client view on the right. Publishing makes the private link available to your client.</p></div><div className="pb-publish-summary"><div><span>DELIVERY</span><strong>{title || `${clientName}'s photos`}</strong></div><div><span>PHOTOS</span><strong>{assets.length} finished photos</strong></div><div><span>BACKGROUND</span><strong>{backgroundMode === 'auto' ? 'Photo colour glow' : 'Solid dark'}</strong></div><div><span>LINK</span><strong>{access.expiresAt ? `Expires ${new Date(access.expiresAt).toLocaleString()}` : 'Does not expire'}</strong></div></div><div className="pb-create-actions"><button type="button" className="pb-create-back" onClick={() => setStage('access')}><ArrowLeft size={17} />Back to access</button><button type="button" onClick={() => void publish()} disabled={!!busy || billingLoading || quotaReached}>{busy === 'publish' ? <LoaderCircle className="pb-spin" size={17} /> : <Check size={17} />}Publish Photo Swap</button></div></>}
-
-
+  return (
+    <main className="ps-create-shell">
+      <div className="ps-create-top">
+        <Link to="/dashboard" className="ps-create-brand" aria-label="Back to dashboard">veylo<span>.</span></Link>
+        <div className="ps-create-top-meta">
+          <span>NEW DELIVERY</span>
+          <i />
+          <strong>PHOTO SWAP</strong>
         </div>
-        {['style', 'access', 'publish'].includes(stage) && <aside className="pb-create-preview"><div className="pb-preview-label"><span>CLIENT VIEW</span><button type="button" onClick={openPreview}><Eye size={14} /> Open larger preview</button></div><ClientPreviewPhoneFrame delivery={previewDelivery} access={access} accessPin="" /></aside>}
-        </div>}
-         {stage === 'published' && <div className="pb-published-card"><div className="pb-published-mark"><BadgeCheck size={27} /></div><span className="pb-create-eyebrow">DELIVERY PUBLISHED</span><h1>Your Photo Swap is ready.</h1><p>Send this private link to {clientName || 'your client'} when you are ready.</p><label>Private link<input readOnly value={published?.url || `${window.location.origin}/d/${published?.publicId || draft?.publicId}`} /></label><div className="pb-published-actions"><button type="button" onClick={() => void copyLink()}><Copy size={16} />Copy private link</button><a href={published?.url || `/d/${published?.publicId || draft?.publicId}`} target="_blank" rel="noreferrer"><Eye size={16} />Open client view</a><Link to="/dashboard">Back to dashboard<ArrowRight size={16} /></Link></div><div className="pb-create-note"><MessageCircle size={17} /><span>For WhatsApp, paste the private link into your chat with the client. They will swipe through the set after opening it.</span></div></div>}
-      </motion.section>
-    </AnimatePresence>
-  </>;
+        {['style', 'access', 'publish'].includes(stage) && (
+          <button type="button" className="ps-top-preview" onClick={showPreview}><Eye size={15} /> Preview</button>
+        )}
+      </div>
 
-  return <main className="pb-create-shell"><div className="pb-create-container">{content}</div>{showDesktopPreview && <div ref={previewDialog} className="pb-full-preview" tabIndex={-1} role="dialog" aria-modal="true" aria-label="Photo Swap client preview"><div className="pb-full-preview-bar"><span>PHOTO SWAP CLIENT VIEW</span><button type="button" autoFocus onClick={() => setShowDesktopPreview(false)}><X size={18} />Close preview</button></div><div className="pb-full-preview-scroll"><ClientPreviewPhoneFrame delivery={previewDelivery} access={access} accessPin="" /></div></div>}</main>;
+      <div className="ps-create-wrap">
+        <header className="ps-create-intro">
+          <div>
+            <p className="ps-create-kicker">PHOTO SWAP <span>·</span> {String(currentStep + 1).padStart(2, '0')} / 05</p>
+            <h1>{pageTitle}</h1>
+          </div>
+          <p className="ps-create-subtitle">A full-screen photo stack your client can swipe through at their own pace.</p>
+        </header>
+
+        <nav className="ps-step-nav" aria-label="Photo Swap setup">
+          {STEPS.map((item, index) => {
+            const done = index < currentStep;
+            return (
+              <button
+                type="button"
+                key={item.id}
+                className={(index === currentStep ? 'is-current ' : '') + (done ? 'is-done' : '')}
+                onClick={() => { if (done && !busy) setStage(item.id); }}
+                disabled={!done && index !== currentStep}
+                aria-current={index === currentStep ? 'step' : undefined}
+              >
+                <span>{done ? <Check size={13} /> : String(index + 1).padStart(2, '0')}</span>
+                <strong>{item.label}</strong>
+              </button>
+            );
+          })}
+        </nav>
+
+        {quotaReached && !draft && (
+          <div className="ps-quota-note"><Clock3 size={17} /><span>{quotaMessage(entitlements)}</span><Link to="/billing">View Pro</Link></div>
+        )}
+
+        {!!error && (
+          <div className="ps-create-error" role="alert">
+            <span>{error}</span>
+            <button type="button" onClick={() => setError('')} aria-label="Dismiss message"><X size={17} /></button>
+          </div>
+        )}
+
+        <div className="ps-create-layout">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.section
+              key={stage}
+              className="ps-step-panel"
+              initial={veyloMotion ? false : { opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+              aria-labelledby="ps-step-title"
+            >
+              {stage === 'details' && (
+                <form className="ps-step-card" onSubmit={continueDetails}>
+                  <SectionHeading number="01" title="Start with the shoot." >
+                    Add enough detail for your client to recognise the delivery.
+                  </SectionHeading>
+                  <div className="ps-fields">
+                    <label>Client name
+                      <input value={clientName} onChange={event => setClientName(event.target.value)} autoComplete="name" maxLength={100} placeholder="e.g. Lora Ade" />
+                    </label>
+                    <label>Delivery title
+                      <input value={title} onChange={event => setTitle(event.target.value)} maxLength={120} placeholder="e.g. Lora’s 25th birthday" />
+                    </label>
+                    <label>Shoot type <span>Optional</span>
+                      <input list="ps-shoot-types" value={shootType} onChange={event => setShootType(event.target.value)} maxLength={80} placeholder="Choose or enter a type" />
+                      <datalist id="ps-shoot-types">
+                        <option value="Traditional wedding" />
+                        <option value="Birthday" />
+                        <option value="Bridal shower" />
+                        <option value="Owambe" />
+                        <option value="Studio portrait" />
+                        <option value="Lookbook" />
+                        <option value="Commercial" />
+                      </datalist>
+                    </label>
+                    <label>Message for the client <span>Optional</span>
+                      <textarea value={clientMessage} onChange={event => setClientMessage(event.target.value)} maxLength={280} rows={3} placeholder="Add a short note to appear on the opening screen." />
+                      <small>{clientMessage.length} / 280</small>
+                    </label>
+                  </div>
+                  <div className="ps-step-note"><Layers3 size={18} /><p>Every finished photo stays in the delivery. You choose the order your client swipes through.</p></div>
+                  <div className="ps-step-actions">
+                    <Link to="/create" className="ps-back-link"><ArrowLeft size={16} /> Choose a delivery type</Link>
+                    <button type="submit" className="ps-create-primary" disabled={busy === 'details' || billingLoading || (!draft && quotaReached)}>
+                      {busy === 'details' ? <LoaderCircle className="ps-spin" size={17} /> : null}
+                      Continue to photos <ArrowRight size={17} />
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {stage === 'photos' && (
+                <div className="ps-step-card ps-photo-step">
+                  <SectionHeading number="02" title="Set the viewing order.">
+                    The first photo opens the delivery. Your client swipes through the rest in this order.
+                  </SectionHeading>
+                  <div className="ps-upload-bar">
+                    <div><strong>{orderedAssets.length}<i> / </i>{maxPhotos}</strong><span>{entitlements?.planName || (maxPhotos > 100 ? 'Pro' : 'Free')} photo limit · JPEG, PNG, WebP · 50 MB max each</span></div>
+                    <label className="ps-upload-button">
+                      <Upload size={17} /> Add photos
+                      <input type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={!!busy} onChange={event => { void uploadFiles(event.target.files); event.target.value = ''; }} />
+                    </label>
+                  </div>
+                  {busy === 'upload' && (
+                    <div className="ps-upload-progress" role="status">
+                      <span style={{ width: uploadPercent + '%' }} />
+                      <strong>Uploading photos · {uploadPercent}%</strong>
+                    </div>
+                  )}
+                  {failedFiles.length > 0 && (
+                    <div className="ps-retry-row">
+                      <p>{failedFiles.length} photo{failedFiles.length === 1 ? '' : 's'} still need uploading.</p>
+                      <button type="button" onClick={() => void uploadFiles(failedFiles)} disabled={!!busy}><RefreshCw size={15} /> Retry upload</button>
+                    </div>
+                  )}
+                  {orderedAssets.length ? (
+                    <>
+                      <div className="ps-photo-grid">
+                        {visibleAssets.map((asset, localIndex) => {
+                          const index = getPageAssetIndex(asset.assetId);
+                          return (
+                            <article
+                              key={asset.assetId}
+                              className={draggedPhotoId === asset.assetId ? 'ps-photo-tile is-dragging' : 'ps-photo-tile'}
+                              draggable={!busy}
+                              onDragStart={() => setDraggedPhotoId(asset.assetId)}
+                              onDragOver={event => event.preventDefault()}
+                              onDrop={event => { event.preventDefault(); movePhoto(draggedPhotoId, asset.assetId); setDraggedPhotoId(''); }}
+                              onDragEnd={() => setDraggedPhotoId('')}
+                            >
+                              <div className="ps-photo-thumb">
+                                <img src={mediaUrl(asset.thumbnailUrl || asset.url)} alt={asset.originalFilename || 'Uploaded finished photograph'} loading={localIndex < 8 ? 'eager' : 'lazy'} decoding="async" />
+                                <span className="ps-photo-index">{String(index + 1).padStart(2, '0')}</span>
+                                <span className="ps-photo-grip" aria-hidden="true"><GripVertical size={16} /></span>
+                              </div>
+                              <div className="ps-photo-tile-actions">
+                                <button type="button" onClick={() => moveBy(asset.assetId, -1)} disabled={index === 0 || !!busy} aria-label={'Move photo ' + (index + 1) + ' earlier'} title="Move earlier"><MoveUp size={15} /></button>
+                                <button type="button" onClick={() => moveBy(asset.assetId, 1)} disabled={index === orderedAssets.length - 1 || !!busy} aria-label={'Move photo ' + (index + 1) + ' later'} title="Move later"><MoveDown size={15} /></button>
+                                <button type="button" onClick={() => void deletePhoto(asset.assetId)} disabled={!!busy} aria-label={'Remove photo ' + (index + 1)} title="Remove photo"><Trash2 size={15} /></button>
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+                      {currentPhotosPageCount > 1 && (
+                        <div className="ps-photo-pagination">
+                          <button type="button" onClick={() => setPhotoPage(Math.max(0, safePhotoPage - 1))} disabled={safePhotoPage === 0}><ChevronLeft size={16} /> Previous</button>
+                          <span>Showing {safePhotoPage * PHOTO_PAGE_SIZE + 1}–{Math.min((safePhotoPage + 1) * PHOTO_PAGE_SIZE, orderedAssets.length)} of {orderedAssets.length}</span>
+                          <button type="button" onClick={() => setPhotoPage(Math.min(currentPhotosPageCount - 1, safePhotoPage + 1))} disabled={safePhotoPage >= currentPhotosPageCount - 1}>Next <ChevronRight size={16} /></button>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="ps-photo-empty"><Image size={27} /><strong>Start with the finished photos.</strong><span>Upload the final set you want your client to swipe through.</span></div>
+                  )}
+                  <div className="ps-step-actions">
+                    <button type="button" className="ps-back-link" onClick={() => setStage('details')}><ArrowLeft size={16} /> Back to details</button>
+                    <button type="button" className="ps-create-primary" onClick={() => void saveOrder()} disabled={!orderedAssets.length || !!busy}>
+                      {busy === 'order' ? <LoaderCircle className="ps-spin" size={17} /> : null}
+                      Save order <ArrowRight size={17} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {stage === 'style' && (
+                <div className="ps-step-card ps-style-step">
+                  <SectionHeading number="03" title="Choose how the stack feels.">
+                    Keep the controls quiet and let the photographs carry the experience.
+                  </SectionHeading>
+                  <section className="ps-form-section">
+                    <div className="ps-form-section-heading"><strong>BACKGROUND</strong><span>Behind the photo stack</span></div>
+                    <div className="ps-background-options">
+                      <button type="button" className={backgroundMode === 'auto' ? 'is-selected' : ''} onClick={() => setBackgroundMode('auto')} aria-pressed={backgroundMode === 'auto'}>
+                        <span className="ps-background-swatch is-glow"><i /><b /></span><strong>Photo colour</strong><small>A soft glow follows each photo.</small>
+                      </button>
+                      <button type="button" className={backgroundMode === 'dark' ? 'is-selected' : ''} onClick={() => setBackgroundMode('dark')} aria-pressed={backgroundMode === 'dark'}>
+                        <span className="ps-background-swatch is-dark"><i /><b /></span><strong>Solid dark</strong><small>A steady, clean backdrop.</small>
+                      </button>
+                    </div>
+                  </section>
+                  <section className="ps-form-section">
+                    <div className="ps-form-section-heading"><strong>TYPE</strong><span>Used on the cover and finish screen</span></div>
+                    <div className="ps-font-selects">
+                      <label>Display
+                        <select value={typography.display} onChange={event => setTypography(current => ({ ...current, display: event.target.value }))}>
+                          {FONTS.map(font => <option key={font} value={font}>{font}</option>)}
+                        </select>
+                      </label>
+                      <label>Body
+                        <select value={typography.body} onChange={event => setTypography(current => ({ ...current, body: event.target.value }))}>
+                          {FONTS.map(font => <option key={font} value={font}>{font}</option>)}
+                        </select>
+                      </label>
+                    </div>
+                  </section>
+                  <section className="ps-form-section ps-music-section">
+                    <div className="ps-form-section-heading">
+                      <div><strong>SOUNDTRACK <i>OPTIONAL</i></strong><span>It starts when the client opens the photos.</span></div>
+                      {draft?.soundtrack && <button type="button" className="ps-text-button" onClick={() => void clearSoundtrack()} disabled={busy === 'soundtrack'}>Remove track</button>}
+                    </div>
+                    {draft?.soundtrack && (
+                      <div className="ps-selected-track"><Music2 size={17} /><span><small>SELECTED</small><strong>{draft.soundtrack.title}</strong></span><Check size={16} /></div>
+                    )}
+                    <div className="ps-music-tabs" role="tablist" aria-label="Choose a soundtrack source">
+                      <button type="button" role="tab" aria-selected={musicTab === 'library'} className={musicTab === 'library' ? 'is-active' : ''} onClick={() => setMusicTab('library')}>Music library</button>
+                      <button type="button" role="tab" aria-selected={musicTab === 'own'} className={musicTab === 'own' ? 'is-active' : ''} onClick={() => setMusicTab('own')}>Upload a track</button>
+                    </div>
+                    {musicTab === 'library' ? (
+                      <>
+                        <label className="ps-music-search">Search the library<input value={musicSearch} onChange={event => setMusicSearch(event.target.value)} placeholder="Title, mood, genre or artist" /></label>
+                        <div className="ps-music-categories" aria-label="Filter music">
+                          {musicCategories.slice(0, 7).map(category => (
+                            <button type="button" key={category} onClick={() => setMusicCategory(category)} aria-pressed={musicCategory === category}>
+                              {category === 'all' ? 'All music' : category.split(/[\s-]+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="ps-track-list">
+                          {soundtracks === null ? <p className="ps-music-empty">Loading soundtrack choices…</p>
+                            : filteredSoundtracks.length ? filteredSoundtracks.map(track => {
+                              const selected = draft?.soundtrack?.catalogId === track.id;
+                              const playing = previewingTrackId === track.id;
+                              return (
+                                <article key={track.id} className={selected ? 'is-selected' : ''}>
+                                  <button type="button" className="ps-track-play" onClick={() => void previewSoundtrack(track)} aria-label={(playing ? 'Stop preview: ' : 'Preview ') + track.title}>
+                                    {playing ? <Pause size={14} /> : <Play size={14} />}
+                                  </button>
+                                  <span className="ps-track-copy"><strong>{track.title}</strong><small>{[track.creator, track.mood, track.genre, track.durationSec ? Math.round(track.durationSec / 60) + ' min' : ''].filter(Boolean).join(' · ')}</small></span>
+                                  <button type="button" className="ps-track-select" onClick={() => void chooseSoundtrack(track.id)} disabled={selected || busy === 'soundtrack'}>
+                                    {selected ? <><Check size={14} /> Selected</> : 'Use track'}
+                                  </button>
+                                </article>
+                              );
+                            }) : <p className="ps-music-empty">{soundtracks?.length ? 'No tracks match. Try another search.' : 'Music choices are unavailable. You can upload a track instead.'}</p>}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="ps-upload-track">
+                        <Music2 size={21} />
+                        <div><strong>Use music you have permission to share.</strong><span>MP3, WAV, M4A, OGG or AAC.</span></div>
+                        <label className="ps-upload-button">
+                          {busy === 'soundtrack' ? 'Uploading…' : 'Choose audio'}
+                          <input type="file" accept="audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/ogg,audio/aac" disabled={!!busy} onChange={event => { void customSoundtrack(event.target.files?.[0]); event.target.value = ''; }} />
+                        </label>
+                      </div>
+                    )}
+                    <audio ref={soundtrackPreviewRef} className="ps-sr-only" preload="none" onEnded={() => setPreviewingTrackId('')} onError={() => { if (previewingTrackId) { setError('This music preview could not load. Check your connection and try again.'); setPreviewingTrackId(''); } }} />
+                  </section>
+                  <div className="ps-step-actions">
+                    <button type="button" className="ps-back-link" onClick={() => setStage('photos')}><ArrowLeft size={16} /> Back to photos</button>
+                    <button type="button" className="ps-create-primary" onClick={() => void saveStyle()} disabled={!!busy || !orderedAssets.length}>
+                      {busy === 'style' ? <LoaderCircle className="ps-spin" size={17} /> : null}
+                      Save style <ArrowRight size={17} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {stage === 'access' && (
+                <div className="ps-step-card">
+                  <SectionHeading number="04" title="Set up the private link.">
+                    Choose who can open the delivery and what they can download.
+                  </SectionHeading>
+                  <div className="ps-access-panel">
+                    <label className="ps-field-label">Six-digit PIN <span>OPTIONAL</span>
+                      <input inputMode="numeric" autoComplete="new-password" maxLength={6} value={pin} onChange={event => { const value = event.target.value.replace(/\D/g, '').slice(0, 6); setPin(value); if (value) setRemovePin(false); }} placeholder={draft?.hasPin ? 'PIN already set · enter a new one to change' : 'Leave blank for no PIN'} />
+                    </label>
+                    {draft?.hasPin && <Toggle checked={removePin} onChange={value => { setRemovePin(value); if (value) setPin(''); }}>Remove the current PIN</Toggle>}
+                    <label className="ps-field-label">Link expiry <span>OPTIONAL</span>
+                      <input type="datetime-local" value={access.expiresAt} onChange={event => setAccess(current => ({ ...current, expiresAt: event.target.value }))} />
+                    </label>
+                    <div className="ps-download-settings">
+                      <p>DOWNLOADS</p>
+                      <Toggle checked={access.allowIndividualDownloads} onChange={value => setAccess(current => ({ ...current, allowIndividualDownloads: value }))}>Allow individual photo downloads</Toggle>
+                      <Toggle checked={access.allowDownloadAll} onChange={value => setAccess(current => ({ ...current, allowDownloadAll: value }))}>Allow a complete gallery download</Toggle>
+                    </div>
+                    <div className="ps-access-note"><LockKeyhole size={17} /><span>The PIN and expiry apply to the private link. Your original files stay unchanged.</span></div>
+                  </div>
+                  <div className="ps-step-actions">
+                    <button type="button" className="ps-back-link" onClick={() => setStage('style')}><ArrowLeft size={16} /> Back to style</button>
+                    <button type="button" className="ps-create-primary" onClick={() => void approve()} disabled={!!busy}>
+                      {busy === 'approve' ? <LoaderCircle className="ps-spin" size={17} /> : <Check size={17} />}
+                      Approve preview <ArrowRight size={17} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {stage === 'publish' && (
+                <div className="ps-step-card">
+                  <SectionHeading number="05" title="Ready when you are.">
+                    Check the details, then publish the private link for your client.
+                  </SectionHeading>
+                  <div className="ps-publish-details">
+                    <div><span>DELIVERY</span><strong>{title || (clientName || 'Client') + '\'s photos'}</strong></div>
+                    <div><span>PHOTOGRAPHS</span><strong>{orderedAssets.length} finished photos</strong></div>
+                    <div><span>BACKGROUND</span><strong>{backgroundMode === 'auto' ? 'Photo colour' : 'Solid dark'}</strong></div>
+                    <div><span>SOUNDTRACK</span><strong>{draft?.soundtrack?.title || 'No soundtrack'}</strong></div>
+                    <div><span>LINK</span><strong>{access.expiresAt ? 'Expires ' + new Date(access.expiresAt).toLocaleString() : 'No expiry'}</strong></div>
+                  </div>
+                  <div className="ps-publish-note"><Eye size={17} /><span>The preview beside this panel uses the same swipe experience your client will see.</span></div>
+                  <div className="ps-step-actions">
+                    <button type="button" className="ps-back-link" onClick={() => setStage('access')}><ArrowLeft size={16} /> Back to access</button>
+                    <button type="button" className="ps-create-primary" onClick={() => void publish()} disabled={!!busy || billingLoading || quotaReached}>
+                      {busy === 'publish' ? <LoaderCircle className="ps-spin" size={17} /> : <Check size={17} />}
+                      Publish Photo Swap
+                    </button>
+                  </div>
+                </div>
+              )}
+            </motion.section>
+          </AnimatePresence>
+
+          <aside className="ps-preview-column">
+            <div className="ps-preview-heading">
+              <span>CLIENT PREVIEW</span>
+              <button type="button" onClick={showPreview} ref={previewTrigger}><Eye size={14} /> Open larger</button>
+            </div>
+            <ClientPreviewPhoneFrame delivery={previewDelivery} access={access} accessPin="" />
+            <p className="ps-preview-caption">The client starts on the cover, then swipes through your photo order.</p>
+          </aside>
+        </div>
+      </div>
+
+      {showDesktopPreview && (
+        <div ref={previewDialog} className="ps-preview-modal" tabIndex={-1} role="dialog" aria-modal="true" aria-label="Photo Swap client preview">
+          <div className="ps-preview-modal-bar"><span>CLIENT VIEW <i>·</i> PHOTO SWAP</span><button type="button" onClick={() => setShowDesktopPreview(false)}><X size={17} /> Close preview</button></div>
+          <div className="ps-preview-modal-body"><ClientPreviewPhoneFrame delivery={previewDelivery} access={access} accessPin="" /></div>
+        </div>
+      )}
+    </main>
+  );
 }

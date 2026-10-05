@@ -1,753 +1,1042 @@
-/* ─── Photo Swap Viewer Styles — Veylo Editorial Aesthetic ─── */
+.ps-viewer,
+.ps-viewer * {
+  box-sizing: border-box;
+}
 
 .ps-viewer {
+  --ps-paper: #f6f0ea;
+  --ps-muted: #a8a09a;
+  --ps-line: rgba(255, 255, 255, .13);
   position: relative;
+  isolation: isolate;
   width: 100%;
   height: 100dvh;
+  min-height: 560px;
   overflow: hidden;
-  background-color: #070709;
-  color: #fffaf6;
-  font-family: var(--delivery-font-caption, 'Outfit', system-ui, sans-serif);
-  user-select: none;
-  -webkit-user-select: none;
-  isolation: isolate;
+  color: var(--ps-paper);
+  background: #08080b;
+  font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
 }
 
-/* ─── Ambient Dynamic Background ─────────────────────────── */
+.ps-viewer button {
+  font: inherit;
+  color: inherit;
+}
 
-.ps-bg {
+.ps-viewer button:focus-visible {
+  outline: 2px solid #ff9b8e;
+  outline-offset: 4px;
+}
+
+.ps-atmosphere {
   position: absolute;
-  inset: 0;
-  z-index: 0;
+  z-index: -1;
+  inset: -18%;
   pointer-events: none;
-  transition: background-image 0.7s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.7s ease;
+  background: radial-gradient(ellipse at 50% 43%, color-mix(in srgb, var(--ps-photo-glow) 31%, transparent), transparent 52%);
+  transition: background .65s ease;
 }
-
-/* ─── State 1: Cinematic Cover Screen ─────────────────────── */
 
 .ps-cover {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
+  position: relative;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: max(24px, calc(env(safe-area-inset-top) + 16px)) max(20px, calc(env(safe-area-inset-right) + 16px)) max(32px, calc(env(safe-area-inset-bottom) + 20px)) max(20px, calc(env(safe-area-inset-left) + 16px));
+  width: 100%;
+  height: 100%;
+  min-height: 560px;
+  padding: max(26px, env(safe-area-inset-top)) clamp(20px, 6vw, 82px) max(22px, env(safe-area-inset-bottom));
+  overflow: hidden;
+  background: #09090c;
 }
 
-.ps-cover-backdrop {
+.ps-cover-image,
+.ps-cover-image::after {
   position: absolute;
   inset: 0;
-  z-index: -1;
-  overflow: hidden;
 }
 
-.ps-cover-backdrop img {
+.ps-cover-image {
+  z-index: 0;
+  overflow: hidden;
+  background: #09090c;
+}
+
+.ps-cover-image img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center 30%;
-  transform: scale(1.04);
-  filter: brightness(0.72) contrast(1.05);
+  object-position: center 38%;
+  opacity: .57;
+  filter: saturate(.82);
+  transform: scale(1.025);
 }
 
-.ps-cover-shade {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(7, 7, 9, 0.55) 0%,
-    rgba(7, 7, 9, 0.15) 30%,
-    rgba(7, 7, 9, 0.65) 60%,
-    rgba(7, 7, 9, 0.94) 84%,
-    #070709 100%
-  );
+.ps-cover-image::after {
+  content: '';
+  background:
+    linear-gradient(90deg, rgba(6, 6, 8, .78), rgba(6, 6, 8, .27) 65%, rgba(6, 6, 8, .38)),
+    linear-gradient(0deg, #08080b 0%, rgba(8, 8, 11, .88) 14%, rgba(8, 8, 11, .12) 65%, rgba(8, 8, 11, .52) 100%);
 }
 
-.ps-cover-header {
+.ps-cover-header,
+.ps-studio,
+.ps-cover-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  position: relative;
-  z-index: 2;
 }
 
-.ps-cover-studio {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.ps-cover-header,
+.ps-cover-content,
+.ps-cover-foot {
+  z-index: 1;
 }
 
-.ps-cover-mark {
+.ps-studio {
+  justify-content: flex-start;
+  min-width: 0;
+}
+
+.ps-studio > span:last-child,
+.ps-header-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ps-studio strong,
+.ps-header-copy strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: .01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ps-studio small,
+.ps-header-copy small {
+  overflow: hidden;
+  color: rgba(246, 240, 234, .62);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .15em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ps-brand-mark {
+  display: grid;
+  flex: 0 0 42px;
   width: 42px;
   height: 42px;
-  border-radius: 999px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(12, 12, 16, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  display: grid;
   place-items: center;
+  border: 1px solid rgba(255, 255, 255, .28);
+  border-radius: 50%;
+  background: rgba(13, 12, 15, .5);
+  backdrop-filter: blur(12px);
 }
 
-.ps-cover-meta {
+.ps-brand-mark img,
+.ps-brand-mark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ps-cover-count {
+  color: rgba(246, 240, 234, .75);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .16em;
+  white-space: nowrap;
+}
+
+.ps-cover-content {
+  position: relative;
+  width: min(100%, 760px);
+  margin: auto 0 8vh;
+  padding-top: 72px;
+}
+
+.ps-eyebrow {
   display: flex;
-  flex-direction: column;
-}
-
-.ps-cover-meta strong {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: #fffaf6;
-  letter-spacing: -0.01em;
-}
-
-.ps-cover-meta span {
-  font-size: 0.6875rem;
-  letter-spacing: 0.12em;
-  color: rgba(255, 255, 255, 0.65);
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 20px;
+  color: #ffb1a6;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .2em;
   text-transform: uppercase;
 }
 
-.ps-icon-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 38px;
-  padding: 0 14px;
-  border-radius: 20px;
-  background: rgba(12, 12, 16, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 0.75rem;
+.ps-eyebrow > span {
+  width: 20px;
+  height: 1px;
+  background: #ff806e;
+}
+
+.ps-cover-content h1 {
+  max-width: 790px;
+  margin: 0;
+  font-family: var(--delivery-font-heading, 'Cormorant Garamond', Georgia, serif);
+  font-size: clamp(45px, 8vw, 96px);
   font-weight: 500;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  cursor: pointer;
-  transition: background 0.18s, border-color 0.18s;
+  line-height: .98;
+  letter-spacing: -.045em;
+  text-wrap: balance;
 }
 
-.ps-icon-pill:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.28);
+.ps-cover-note {
+  max-width: 520px;
+  margin: 22px 0 0;
+  color: rgba(246, 240, 234, .86);
+  font-size: 15px;
+  line-height: 1.65;
 }
 
-.ps-cover-body {
-  max-width: 540px;
-  margin: 0 auto 0 0;
-  position: relative;
-  z-index: 2;
+.ps-cover-description {
+  max-width: 450px;
+  margin: 18px 0 0;
+  color: rgba(246, 240, 234, .67);
+  font-size: 14px;
+  line-height: 1.7;
 }
 
-.ps-cover-kicker {
-  display: inline-block;
-  font-size: 0.6875rem;
-  font-weight: 650;
-  letter-spacing: 0.18em;
-  color: #ff9b8e;
-  margin-bottom: 12px;
-}
-
-.ps-cover-title {
-  font-family: var(--delivery-font-heading, 'Playfair Display', Georgia, serif);
-  font-size: clamp(34px, 7.5vw, 54px);
-  font-weight: 450;
-  line-height: 1.05;
-  letter-spacing: -0.03em;
-  color: #fffaf6;
-  margin: 0 0 16px;
-}
-
-.ps-cover-summary {
-  font-size: 0.9375rem;
-  line-height: 1.6;
-  color: rgba(255, 250, 246, 0.82);
-  margin: 0 0 28px;
-  max-width: 440px;
-}
-
-.ps-cover-actions {
+.ps-cover-actions,
+.ps-finish-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-}
-
-.ps-cover-start {
-  min-height: 52px;
-  padding: 0 28px;
-  font-size: 0.9375rem;
-}
-
-.ps-cover-hint {
-  display: inline-flex;
   align-items: center;
-  gap: 7px;
-  margin-top: 18px;
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.65);
+  gap: 12px;
+  margin-top: 30px;
 }
 
-/* ─── State 2: Interactive Card Stage ─────────────────────── */
+.ps-primary-button,
+.ps-secondary-button,
+.ps-cover-gallery,
+.ps-restart-button {
+  display: inline-flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  padding: 0 20px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: transform .2s ease, background .2s ease, border-color .2s ease, color .2s ease;
+}
+
+.ps-primary-button {
+  color: #171012 !important;
+  background: #f6eee8;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, .2);
+}
+
+.ps-primary-button:hover {
+  transform: translateY(-2px);
+  background: white;
+}
+
+.ps-primary-button:active,
+.ps-secondary-button:active,
+.ps-cover-gallery:active,
+.ps-restart-button:active,
+.ps-glass-button:active,
+.ps-dock-button:active {
+  transform: scale(.96);
+}
+
+.ps-cover-gallery,
+.ps-secondary-button,
+.ps-restart-button {
+  color: var(--ps-paper) !important;
+  border-color: rgba(255, 255, 255, .2);
+  background: rgba(13, 12, 15, .5);
+  backdrop-filter: blur(14px);
+}
+
+.ps-cover-gallery:hover,
+.ps-secondary-button:hover,
+.ps-restart-button:hover {
+  border-color: rgba(255, 155, 142, .65);
+  background: rgba(28, 22, 24, .78);
+}
+
+.ps-soundtrack-cue {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 19px 0 0;
+  color: rgba(246, 240, 234, .7);
+  font-size: 11px;
+}
+
+.ps-soundtrack-cue svg {
+  color: #ff9b8e;
+}
+
+.ps-cover-foot {
+  color: rgba(246, 240, 234, .43);
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: .17em;
+}
 
 .ps-stage {
   position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   width: 100%;
   height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  overflow: hidden;
-  z-index: 10;
-}
-
-/* ─── Top Navigation Bar ──────────────────────────────────── */
-
-.ps-top-nav {
-  position: relative;
-  z-index: 30;
-  padding: max(14px, calc(env(safe-area-inset-top) + 10px)) max(18px, calc(env(safe-area-inset-right) + 12px)) 8px max(18px, calc(env(safe-area-inset-left) + 12px));
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.ps-progress-bar {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  width: 100%;
-  height: 3px;
-}
-
-.ps-progress-bar span {
-  flex: 1;
-  height: 3px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.16);
-  transition: background-color 0.28s ease, transform 0.28s ease;
-}
-
-.ps-progress-bar span.is-done {
-  background: rgba(255, 255, 255, 0.85);
-}
-
-.ps-progress-bar span.is-current {
-  background: #ff5a47;
-  transform: scaleY(1.3);
-}
-
-.ps-top-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-}
-
-.ps-top-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.ps-brand-mark-sm {
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(12, 12, 16, 0.8);
-  flex: none;
-  display: grid;
-  place-items: center;
-}
-
-.ps-top-title {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.ps-top-title strong {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: #fffaf6;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 220px;
-}
-
-.ps-top-title small {
-  font-size: 0.6875rem;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.ps-top-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: none;
-}
-
-.ps-icon-btn {
-  width: 38px;
-  height: 38px;
-  border-radius: 999px;
-  background: rgba(12, 12, 16, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: rgba(255, 255, 255, 0.85);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  transition: background 0.18s, border-color 0.18s, transform 0.18s;
-}
-
-.ps-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.25);
-  transform: translateY(-1px);
-}
-
-.ps-icon-btn:active {
-  transform: scale(0.94);
-}
-
-/* ─── Tap Zones for Effortless Browsing ───────────────────── */
-
-.ps-tap-zone {
-  position: absolute;
-  top: 70px;
-  bottom: 80px;
-  width: 26%;
-  z-index: 15;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  outline: none;
-}
-
-.ps-tap-prev {
-  left: 0;
-}
-
-.ps-tap-next {
-  right: 0;
-}
-
-/* ─── Physical Print Stack Area ───────────────────────────── */
-
-.ps-stack-area {
-  flex: 1;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   min-height: 0;
-  padding: 10px 18px;
-  z-index: 12;
+  padding: max(16px, env(safe-area-inset-top)) clamp(14px, 4vw, 48px) max(12px, env(safe-area-inset-bottom));
 }
 
-.ps-card-stack {
+.ps-header {
   position: relative;
-  width: min(88vw, 420px);
-  height: min(68vh, 600px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  perspective: 1100px;
-}
-
-/* Fine-Art Print Card */
-.ps-print-card {
-  position: absolute;
-  inset: 0;
-  border-radius: 16px;
-  overflow: hidden;
-  background: #0d0d10;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow:
-    0 32px 85px rgba(0, 0, 0, 0.72),
-    0 12px 32px rgba(0, 0, 0, 0.5),
-    0 2px 6px rgba(0, 0, 0, 0.35);
-  cursor: grab;
-  touch-action: pan-y;
-  will-change: transform;
-}
-
-.ps-print-card:active {
-  cursor: grabbing;
-}
-
-.ps-print-card img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  pointer-events: none;
-  display: block;
-}
-
-.ps-print-glare {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.08) 0%,
-    rgba(255, 255, 255, 0.02) 40%,
-    transparent 65%
-  );
-  border-radius: inherit;
-}
-
-.ps-print-top {
   z-index: 5;
 }
 
-.ps-print-second {
-  z-index: 4;
-  cursor: default;
-  pointer-events: none;
-}
-
-.ps-print-third {
-  z-index: 3;
-  cursor: default;
-  pointer-events: none;
-}
-
-/* First-time swipe hint */
-.ps-swipe-hint {
-  position: absolute;
-  top: 14px;
-  z-index: 25;
-  pointer-events: none;
-  background: rgba(7, 7, 9, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  padding: 6px 14px;
-  border-radius: 20px;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
-}
-
-.ps-swipe-hint span {
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: #ff9b8e;
-  letter-spacing: 0.02em;
-}
-
-/* ─── State 3: Editorial Finale Screen ─────────────────────── */
-
-.ps-finale-card {
-  position: relative;
-  z-index: 10;
-  width: min(90vw, 420px);
-  padding: 32px 24px;
-  border-radius: 20px;
-  background: rgba(14, 14, 18, 0.94);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  text-align: center;
+.ps-progress {
   display: flex;
-  flex-direction: column;
+  gap: 4px;
+  width: min(100%, 1080px);
+  margin: 0 auto 17px;
+}
+
+.ps-progress-segment {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, .21);
+}
+
+.ps-progress-segment i {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  background: #ff8c7b;
+  box-shadow: 0 0 9px rgba(255, 117, 99, .4);
+}
+
+.ps-header-row {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: min(100%, 1080px);
+  margin: 0 auto;
+}
+
+.ps-header-studio,
+.ps-header-actions {
+  display: flex;
   align-items: center;
 }
 
-.ps-finale-fan {
+.ps-header-studio {
+  gap: 11px;
+  min-width: 0;
+}
+
+.ps-brand-mark-small {
+  flex-basis: 38px;
+  width: 38px;
+  height: 38px;
+}
+
+.ps-header-copy {
+  max-width: min(45vw, 430px);
+}
+
+.ps-header-copy strong {
+  font-size: 12px;
+}
+
+.ps-header-copy small {
+  font-size: 9px;
+  letter-spacing: .04em;
+  text-transform: none;
+}
+
+.ps-header-actions {
+  flex: 0 0 auto;
+  gap: 9px;
+}
+
+.ps-photo-position {
+  margin-right: 5px;
+  color: rgba(246, 240, 234, .75);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+  letter-spacing: .12em;
+}
+
+.ps-glass-button {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  place-items: center;
+  border: 1px solid var(--ps-line);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .07);
+  cursor: pointer;
+  transition: transform .2s ease, background .2s ease, border-color .2s ease;
+  backdrop-filter: blur(16px);
+}
+
+.ps-glass-button:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 155, 142, .55);
+  background: rgba(255, 255, 255, .13);
+}
+
+.ps-deck-region {
   position: relative;
-  width: 140px;
-  height: 90px;
-  margin-bottom: 20px;
+  display: grid;
+  min-height: 0;
+  place-items: center;
+  padding: 18px 0 22px;
 }
 
-.ps-fan-item {
+.ps-deck {
+  position: relative;
+  width: min(82vw, 460px);
+  height: min(64dvh, 660px);
+  min-height: min(390px, calc(100dvh - 230px));
+  max-height: 660px;
+  perspective: 1200px;
+  transform: translateZ(0);
+}
+
+.ps-photo-card {
   position: absolute;
-  width: 72px;
-  height: 90px;
-  border-radius: 8px;
+  inset: 0;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, .26);
+  border-radius: 18px;
+  background: #111114;
+  box-shadow: 0 32px 90px rgba(0, 0, 0, .64), 0 4px 16px rgba(0, 0, 0, .34);
+  transform-origin: 50% 60%;
+  will-change: transform, opacity;
 }
 
-.ps-fan-item img {
+.ps-card-back,
+.ps-card-middle {
+  pointer-events: none;
+}
+
+.ps-card-back img,
+.ps-card-middle img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.ps-fan-item.is-1 {
-  left: 8px;
-  top: 4px;
-  transform: rotate(-10deg);
-  z-index: 1;
+.ps-card-back {
+  top: 10px;
+  right: -9px;
+  bottom: -10px;
+  left: 9px;
+  border-color: rgba(255, 255, 255, .1);
+  filter: brightness(.54);
 }
 
-.ps-fan-item.is-2 {
-  left: 34px;
-  top: 0;
-  transform: rotate(0deg);
+.ps-card-middle {
+  top: 5px;
+  right: -4px;
+  bottom: -5px;
+  left: 4px;
+  border-color: rgba(255, 255, 255, .18);
+  filter: brightness(.75);
+}
+
+.ps-card-front {
   z-index: 2;
+  display: grid;
+  place-items: center;
+  cursor: grab;
+  touch-action: pan-y;
+  user-select: none;
 }
 
-.ps-fan-item.is-3 {
-  right: 8px;
-  top: 4px;
-  transform: rotate(10deg);
-  z-index: 1;
+.ps-card-front:active {
+  cursor: grabbing;
 }
 
-.ps-finale-kicker {
-  font-size: 0.6875rem;
-  letter-spacing: 0.18em;
-  font-weight: 650;
-  color: #ff9b8e;
-  margin-bottom: 10px;
-  text-transform: uppercase;
-}
-
-.ps-finale-title {
-  font-family: var(--delivery-font-heading, 'Playfair Display', Georgia, serif);
-  font-size: clamp(22px, 5vw, 28px);
-  font-weight: 450;
-  line-height: 1.15;
-  color: #fffaf6;
-  margin: 0 0 12px;
-}
-
-.ps-finale-copy {
-  font-size: 0.875rem;
-  line-height: 1.55;
-  color: rgba(255, 250, 246, 0.75);
-  margin: 0 0 24px;
-  max-width: 320px;
-}
-
-.ps-finale-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.ps-card-front img {
+  display: block;
   width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #101013;
+  pointer-events: none;
+  -webkit-user-drag: none;
 }
 
-.ps-finale-notice {
-  font-size: 0.75rem;
-  color: #ff9b8e;
-  margin-top: 14px;
+.ps-card-number {
+  position: absolute;
+  right: 13px;
+  bottom: 12px;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, .3);
+  border-radius: 50%;
+  color: rgba(255, 255, 255, .86);
+  background: rgba(5, 5, 8, .58);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  backdrop-filter: blur(12px);
 }
 
-.ps-demo-badge {
-  font-size: 0.6875rem;
-  letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.45);
-  margin-top: 14px;
+.ps-gesture-hint {
+  position: absolute;
+  z-index: 4;
+  top: 4px;
+  left: 50%;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, .13);
+  border-radius: 99px;
+  color: rgba(255, 255, 255, .81);
+  background: rgba(9, 9, 12, .55);
+  font-size: 10px;
+  letter-spacing: .03em;
+  transform: translateX(-50%);
+  backdrop-filter: blur(12px);
 }
 
-/* ─── Floating Glass Control Dock ─────────────────────────── */
-
-.ps-bottom-bar {
+.ps-control-area {
   position: relative;
-  z-index: 30;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 8px 18px max(18px, calc(env(safe-area-inset-bottom) + 12px));
+  z-index: 5;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding-top: 4px;
 }
 
 .ps-dock {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: rgba(12, 12, 16, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-}
-
-.ps-dock-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 999px;
-  background: transparent;
-  border: 0;
-  color: rgba(255, 255, 255, 0.85);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  transition: background 0.18s, color 0.18s, transform 0.15s;
-}
-
-.ps-dock-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
-  transform: translateY(-1px);
-}
-
-.ps-dock-btn:active:not(:disabled) {
-  transform: scale(0.93);
-}
-
-.ps-dock-btn:disabled {
-  opacity: 0.28;
-  cursor: not-allowed;
-}
-
-.ps-dock-counter {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  padding: 0 8px;
-  font-variant-numeric: tabular-nums;
-  font-size: 0.8125rem;
-  color: #fff;
-}
-
-.ps-dock-counter b {
-  font-weight: 600;
-  font-size: 0.875rem;
-}
-
-.ps-dock-counter span {
-  opacity: 0.4;
-  font-size: 0.75rem;
-}
-
-.ps-dock-counter small {
-  opacity: 0.65;
-  font-size: 0.75rem;
-}
-
-.ps-dock-sep {
-  width: 1px;
-  height: 18px;
-  background: rgba(255, 255, 255, 0.14);
-  margin: 0 4px;
-}
-
-/* ─── Button Styles ───────────────────────────────────────── */
-
-.ps-btn {
-  font-family: var(--delivery-font-ui, 'Outfit', sans-serif);
-  display: inline-flex;
+  display: flex;
+  min-height: 62px;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 13px 22px;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  font-weight: 650;
-  cursor: pointer;
-  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-  text-decoration: none;
-  border: 0;
+  gap: clamp(5px, 1vw, 12px);
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, .17);
+  border-radius: 999px;
+  background: rgba(19, 18, 22, .76);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, .36), inset 0 1px 0 rgba(255, 255, 255, .08);
+  backdrop-filter: blur(22px);
 }
 
-.ps-btn-primary {
-  background: #f6eee8;
-  color: #0b0b0e;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
-}
-
-.ps-btn-primary:hover {
-  background: #ffffff;
-  transform: translateY(-1px);
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.4);
-}
-
-.ps-btn-primary:active {
-  transform: scale(0.97);
-}
-
-.ps-btn-secondary {
-  background: rgba(255, 255, 255, 0.08);
-  color: #f6eee8;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-
-.ps-btn-secondary:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.28);
-  transform: translateY(-1px);
-}
-
-.ps-btn-secondary:active:not(:disabled) {
-  transform: scale(0.97);
-}
-
-.ps-btn-secondary:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.ps-btn-outline {
+.ps-dock-button {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  color: #f4eee8;
   background: transparent;
-  color: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  transition: transform .18s ease, background .18s ease, border-color .18s ease, opacity .18s ease;
 }
 
-.ps-btn-outline:hover {
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.25);
-  background: rgba(255, 255, 255, 0.05);
+.ps-dock-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, .12);
+  background: rgba(255, 255, 255, .12);
 }
 
-/* ─── Breakpoints & Responsiveness ────────────────────────── */
+.ps-dock-button:disabled {
+  cursor: default;
+  opacity: .35;
+}
 
-/* Tablet (641px - 1024px) */
-@media (min-width: 641px) and (max-width: 1024px) {
-  .ps-card-stack {
-    width: min(72vw, 440px);
-    height: min(65vh, 620px);
+.ps-dock-action {
+  color: #ffb2a7;
+}
+
+.ps-dock-count {
+  display: flex;
+  min-width: 64px;
+  align-items: baseline;
+  justify-content: center;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ps-dock-count strong {
+  color: #fff8f2;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.ps-dock-count i,
+.ps-dock-count span {
+  color: #a59c97;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.ps-control-hint {
+  margin: 0;
+  color: rgba(246, 240, 234, .48);
+  font-size: 9px;
+  letter-spacing: .035em;
+}
+
+.ps-finish-card {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(22px, 4vw, 38px);
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, .19);
+  border-radius: 18px;
+  text-align: center;
+  background: radial-gradient(ellipse at 50% 5%, rgba(255, 120, 101, .14), transparent 56%), rgba(15, 14, 17, .95);
+  box-shadow: 0 32px 90px rgba(0, 0, 0, .65);
+}
+
+.ps-finish-fan {
+  position: relative;
+  width: 160px;
+  height: 128px;
+  margin: 0 auto 25px;
+}
+
+.ps-fan-card {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  width: 88px;
+  height: 116px;
+  overflow: hidden;
+  border: 2px solid rgba(255, 255, 255, .84);
+  border-radius: 8px;
+  background: #19181a;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, .43);
+}
+
+.ps-fan-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ps-fan-card-0 {
+  transform: translateX(-76%) rotate(-13deg);
+}
+
+.ps-fan-card-1 {
+  z-index: 1;
+  transform: translateX(-50%) rotate(1deg);
+}
+
+.ps-fan-card-2 {
+  transform: translateX(-24%) rotate(13deg);
+}
+
+.ps-finish-card .ps-eyebrow {
+  margin-bottom: 12px;
+  justify-content: center;
+  font-size: 9px;
+}
+
+.ps-finish-card h2 {
+  max-width: 390px;
+  margin: 0;
+  font-family: var(--delivery-font-heading, 'Cormorant Garamond', Georgia, serif);
+  font-size: clamp(30px, 5vw, 47px);
+  font-weight: 500;
+  line-height: 1.02;
+  letter-spacing: -.035em;
+}
+
+.ps-finish-copy {
+  max-width: 350px;
+  margin: 13px 0 0;
+  color: #aaa19b;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.ps-finish-actions {
+  width: 100%;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.ps-finish-actions > button {
+  min-height: 44px;
+  padding-inline: 13px;
+  font-size: 11px;
+}
+
+.ps-finish-actions .ps-restart-button {
+  min-height: 38px;
+  border-color: transparent;
+  background: transparent;
+  color: #beb5b0 !important;
+}
+
+.ps-download-note,
+.ps-demo-note {
+  margin: 13px 0 0;
+  color: #ffb1a6;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.ps-demo-note {
+  color: #aaa19b;
+}
+
+.ps-empty {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.ps-empty-card {
+  display: grid;
+  justify-items: center;
+  width: min(100%, 420px);
+  padding: 42px 30px;
+  border: 1px solid var(--ps-line);
+  border-radius: 14px;
+  text-align: center;
+  background: #101014;
+}
+
+.ps-empty-mark {
+  width: 48px;
+  height: 48px;
+  overflow: hidden;
+  border: 1px solid var(--ps-line);
+  border-radius: 50%;
+}
+
+.ps-empty-mark img,
+.ps-empty-mark svg {
+  width: 100%;
+  height: 100%;
+}
+
+.ps-empty-card > p {
+  margin: 22px 0 8px;
+  color: #ff9b8e;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .17em;
+}
+
+.ps-empty-card h1 {
+  margin: 0;
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 33px;
+  font-weight: 500;
+}
+
+.ps-empty-card > span {
+  margin-top: 9px;
+  color: var(--ps-muted);
+  font-size: 12px;
+}
+
+.ps-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+.ps-viewer.is-preview {
+  width: 100%;
+  height: min(760px, 78dvh);
+  min-height: 520px;
+}
+
+.ps-viewer.is-preview .ps-deck {
+  width: min(76vw, 340px);
+  height: min(54dvh, 510px);
+  min-height: 330px;
+}
+
+.ps-viewer.is-preview .ps-stage {
+  padding: 12px 13px 10px;
+}
+
+.ps-viewer.is-preview .ps-brand-mark-small {
+  width: 30px;
+  height: 30px;
+  flex-basis: 30px;
+}
+
+.ps-viewer.is-preview .ps-header-copy {
+  max-width: 190px;
+}
+
+.ps-viewer.is-preview .ps-glass-button {
+  width: 34px;
+  height: 34px;
+  flex-basis: 34px;
+}
+
+.ps-viewer.is-preview .ps-dock {
+  min-height: 50px;
+}
+
+.ps-viewer.is-preview .ps-dock-button {
+  width: 36px;
+  height: 36px;
+  flex-basis: 36px;
+}
+
+.ps-viewer.is-preview .ps-control-hint {
+  display: none;
+}
+
+@media (min-width: 900px) {
+  .ps-deck {
+    width: min(42vw, 470px);
+  }
+
+  .ps-header-copy {
+    max-width: 480px;
+  }
+}
+
+@media (max-width: 640px) {
+  .ps-viewer {
+    min-height: 520px;
   }
 
   .ps-cover {
-    padding: 36px 40px;
+    min-height: 520px;
+    padding-inline: 20px;
   }
 
-  .ps-cover-body {
-    max-width: 580px;
+  .ps-cover-content {
+    margin-bottom: 5vh;
+    padding-top: 42px;
+  }
+
+  .ps-cover-content h1 {
+    max-width: 540px;
+    font-size: clamp(43px, 12vw, 66px);
+  }
+
+  .ps-cover-description {
+    max-width: 360px;
+    font-size: 13px;
+  }
+
+  .ps-cover-actions {
+    display: grid;
+    width: min(100%, 360px);
+    margin-top: 24px;
+  }
+
+  .ps-cover-actions button {
+    width: 100%;
+  }
+
+  .ps-cover-foot {
+    font-size: 7px;
+    letter-spacing: .12em;
+  }
+
+  .ps-stage {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .ps-progress {
+    gap: 3px;
+    margin-bottom: 12px;
+  }
+
+  .ps-header-row {
+    gap: 9px;
+  }
+
+  .ps-header-studio {
+    gap: 8px;
+  }
+
+  .ps-brand-mark-small {
+    width: 34px;
+    height: 34px;
+    flex-basis: 34px;
+  }
+
+  .ps-header-copy {
+    max-width: 37vw;
+  }
+
+  .ps-header-copy strong {
+    font-size: 11px;
+  }
+
+  .ps-header-copy small {
+    font-size: 8px;
+  }
+
+  .ps-header-actions {
+    gap: 6px;
+  }
+
+  .ps-photo-position {
+    margin-right: 1px;
+    font-size: 9px;
+    letter-spacing: .08em;
+  }
+
+  .ps-glass-button {
+    width: 37px;
+    height: 37px;
+    flex-basis: 37px;
+  }
+
+  .ps-deck-region {
+    padding-block: 12px 16px;
+  }
+
+  .ps-deck {
+    width: min(82vw, 420px);
+    height: min(61dvh, 570px);
+    min-height: min(390px, calc(100dvh - 212px));
+  }
+
+  .ps-photo-card {
+    border-radius: 15px;
+  }
+
+  .ps-dock {
+    min-height: 58px;
+    gap: 4px;
+    padding: 6px 7px;
+  }
+
+  .ps-dock-button {
+    width: 42px;
+    height: 42px;
+    flex-basis: 42px;
+  }
+
+  .ps-dock-count {
+    min-width: 54px;
+  }
+
+  .ps-control-hint {
+    font-size: 8px;
+  }
+
+  .ps-finish-card {
+    padding: 20px 16px;
+  }
+
+  .ps-finish-fan {
+    width: 140px;
+    height: 110px;
+    margin-bottom: 20px;
+  }
+
+  .ps-fan-card {
+    width: 76px;
+    height: 100px;
   }
 }
 
-/* Laptops & Desktop (1025px+) */
-@media (min-width: 1025px) {
-  .ps-card-stack {
-    width: 440px;
-    height: 620px;
+@media (max-width: 380px) {
+  .ps-cover-count {
+    font-size: 8px;
+    letter-spacing: .1em;
   }
 
-  .ps-cover {
-    padding: 44px 60px;
+  .ps-header-copy {
+    max-width: 31vw;
   }
 
-  .ps-cover-body {
-    max-width: 600px;
+  .ps-photo-position {
+    font-size: 8px;
   }
 
-  .ps-tap-zone {
-    width: 32%;
+  .ps-glass-button {
+    width: 34px;
+    height: 34px;
+    flex-basis: 34px;
   }
 
-  .ps-tap-prev {
-    cursor: w-resize;
+  .ps-dock {
+    gap: 1px;
+    padding-inline: 5px;
   }
 
-  .ps-tap-next {
-    cursor: e-resize;
+  .ps-dock-button {
+    width: 39px;
+    height: 40px;
+    flex-basis: 39px;
+  }
+
+  .ps-dock-count {
+    min-width: 48px;
+  }
+
+  .ps-finish-actions > button {
+    min-height: 40px;
+    padding-inline: 10px;
+    font-size: 10px;
   }
 }
 
-/* Reduced motion preference */
+@media (max-height: 650px) and (min-width: 641px) {
+  .ps-viewer {
+    min-height: 480px;
+  }
+
+  .ps-stage {
+    padding-top: 10px;
+    padding-bottom: 8px;
+  }
+
+  .ps-deck {
+    height: min(58dvh, 480px);
+    min-height: 330px;
+  }
+
+  .ps-control-hint {
+    display: none;
+  }
+}
