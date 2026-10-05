@@ -44,7 +44,7 @@
 .cv-board[data-touch="true"] .cv-group-heading button:active{transform:none;opacity:.8}
 .cv-photo-open img{display:block;width:100%;height:100%;object-fit:contain;filter:none!important}
 .cv-photo-image-scroll,.cv-photo-image-motion{position:absolute;inset:0;display:block}
-.cv-photo-image-motion{animation-timing-function:ease-in-out;animation-iteration-count:infinite;animation-direction:alternate;animation-play-state:paused}
+.cv-photo-image-motion{animation-timing-function:linear;animation-iteration-count:infinite;animation-direction:alternate;animation-play-state:paused}
 .cv-frame[data-image-motion="slow-push"] .cv-photo-image-motion{animation-name:cv-photo-push}
 .cv-frame[data-image-motion="slow-pull"] .cv-photo-image-motion{animation-name:cv-photo-pull}
 .cv-frame[data-image-motion="pan-left"] .cv-photo-image-motion{animation-name:cv-photo-pan-left}
@@ -54,11 +54,11 @@
 .cv-board[data-photo-motion="paused"] .cv-photo-image-motion,.cv-board[data-photo-motion="still"] .cv-photo-image-motion,.cv-path-board[data-page-hidden="true"] .cv-photo-image-motion{animation-play-state:paused;will-change:auto}
 .cv-frame[data-image-motion="still"] .cv-photo-image-scroll{transform:none!important}
 .cv-board[data-arrangement="ordered"] .cv-frame-drift{transform:none!important}
-@keyframes cv-photo-push{from{transform:translate3d(0,0,0) scale(1.01)}to{transform:translate3d(0,-.4%,0) scale(1.1)}}
-@keyframes cv-photo-pull{from{transform:translate3d(0,-.4%,0) scale(1.1)}to{transform:translate3d(0,0,0) scale(1.01)}}
-@keyframes cv-photo-pan-left{from{transform:translate3d(2.5%,0,0) scale(1.08)}to{transform:translate3d(-2.5%,0,0) scale(1.08)}}
-@keyframes cv-photo-pan-right{from{transform:translate3d(-2.5%,0,0) scale(1.08)}to{transform:translate3d(2.5%,0,0) scale(1.08)}}
-@keyframes cv-photo-float{from{transform:translate3d(0,.8%,0) scale(1.025)}to{transform:translate3d(0,-.8%,0) scale(1.09)}}
+@keyframes cv-photo-push{from{transform:translate3d(0,0,0) scale(1.01)}to{transform:translate3d(0,-1%,0) scale(1.14)}}
+@keyframes cv-photo-pull{from{transform:translate3d(0,-1%,0) scale(1.14)}to{transform:translate3d(0,0,0) scale(1.01)}}
+@keyframes cv-photo-pan-left{from{transform:translate3d(4.5%,0,0) scale(1.12)}to{transform:translate3d(-4.5%,0,0) scale(1.12)}}
+@keyframes cv-photo-pan-right{from{transform:translate3d(-4.5%,0,0) scale(1.12)}to{transform:translate3d(4.5%,0,0) scale(1.12)}}
+@keyframes cv-photo-float{from{transform:translate3d(0,1.5%,0) scale(1.04)}to{transform:translate3d(0,-1.5%,0) scale(1.14)}}
 .cv-photo-number{position:absolute;right:10px;bottom:10px;display:grid;place-items:center;width:27px;height:27px;border-radius:50%;background:var(--fd-bg);color:var(--fd-text);border:1px solid color-mix(in srgb,var(--fd-text) 30%,transparent);font:500 9px/1 var(--delivery-font-ui);font-variant-numeric:tabular-nums}
 .cv-frame-label{margin:18px 3px 0;color:var(--fd-text);line-height:1.5;overflow-wrap:anywhere}
 .cv-frame-label:has(strong):before{content:"";display:block;width:20px;height:1px;background:var(--cv-line);opacity:.65;margin-bottom:9px}

@@ -115,9 +115,13 @@ for(const width of [390,834,1440]) test(`Canvas photographs visibly animate, pau
   await expect(image).toHaveCSS('animation-play-state','running');
   const initial=await image.evaluate(el=>new DOMMatrixReadOnly(getComputedStyle(el).transform).a);
   await expect.poll(()=>image.evaluate(el=>new DOMMatrixReadOnly(getComputedStyle(el).transform).a)).toBeGreaterThan(initial+.008);
-  const scrollTransform=await print.locator('.cv-photo-image-scroll').evaluate(el=>getComputedStyle(el).transform);
-  await page.mouse.wheel(0,120);
-  await expect.poll(()=>print.locator('.cv-photo-image-scroll').evaluate(el=>getComputedStyle(el).transform)).not.toBe(scrollTransform);
+  const scrollImage=print.locator('.cv-photo-image-scroll');
+  const beforeScroll=await scrollImage.evaluate(el=>{
+    const matrix=new DOMMatrixReadOnly(getComputedStyle(el).transform);return {zoom:matrix.a,pan:matrix.f};
+  });
+  await page.mouse.wheel(0,180);
+  await expect.poll(()=>scrollImage.evaluate(el=>new DOMMatrixReadOnly(getComputedStyle(el).transform).a)).toBeGreaterThan(beforeScroll.zoom+.009);
+  await expect.poll(()=>scrollImage.evaluate((el,previous)=>Math.abs(new DOMMatrixReadOnly(getComputedStyle(el).transform).f-previous),beforeScroll.pan),{message:'Scrolling must visibly pan the photograph, not just change a transform string'}).toBeGreaterThan(2);
   await page.getByRole('button',{name:'Pause photo motion',exact:true}).click();
   await print.scrollIntoViewIfNeeded();
   await expect(image).toHaveCSS('animation-play-state','paused');

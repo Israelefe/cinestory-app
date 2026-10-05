@@ -37,7 +37,11 @@ function useCanvasScrollMotion(board, composition, enabled, frameDrift) {
         if (!frame || !surface) return;
         const progress = Math.max(-1, Math.min(1, (top + frame.y + frame.height / 2 - scroll - viewport / 2) / ((viewport + frame.height) / 2)));
         if (frameDrift) surface.style.transform = `translate3d(0, ${(progress * frame.pose.drift).toFixed(2)}px, 0)`;
-        if (image && node.dataset.imageMotion !== 'still') image.style.transform = `translate3d(0, ${progress.toFixed(2)}%, 0) scale(1.03)`;
+        if (image && node.dataset.imageMotion !== 'still') {
+          const pan = progress * 4;
+          const zoom = 1.1 + (1 - progress) * .05;
+          image.style.transform = `translate3d(0, ${pan.toFixed(2)}%, 0) scale(${zoom.toFixed(4)})`;
+        }
       });
     };
     const schedule = () => { if (!scheduled && !disposed && !document.hidden) scheduled = requestAnimationFrame(paint); };
@@ -124,7 +128,7 @@ function CanvasPrint({ photo, id, index, place, frame, pose, reduced, ordered, t
       whileTap={interactive ? { scale: .985, y: -2, transition: { duration: .15 } } : undefined}
       transition={{ duration: reduced || stationary ? 0 : .82, delay: stationary ? 0 : delay, ease: [.22, 1, .36, 1] }}>
       <button type="button" className="fd-wall-card cv-photo-open" onClick={event => open(photo, event)} aria-label={`Open photograph ${index + 1}`}>
-        <span className="cv-photo-image-scroll"><span className="cv-photo-image-motion" style={{ transformOrigin: imageMotion.startsWith('pan-') || imageMotion === 'float' ? '50% 50%' : photo.focalPoint || '50% 35%', animationDuration: `${7 + index % 3}s` }}><Photo url={photo.url} thumbnailUrl={photo.thumbnailUrl} srcSet={photo.srcSet} alt={photo.alt} eager={index < 2} draggable={false} style={{ objectPosition: photo.focalPoint || '50% 50%' }} sizes="(max-width: 640px) 72vw, (max-width: 1024px) 35vw, 460px" onError={event => { event.currentTarget.closest('.cv-frame').classList.add('has-error'); }} /></span></span>
+        <span className="cv-photo-image-scroll"><span className="cv-photo-image-motion" style={{ transformOrigin: imageMotion.startsWith('pan-') || imageMotion === 'float' ? '50% 50%' : photo.focalPoint || '50% 35%', animationDuration: `${4.5 + index % 3}s`, animationDelay: `${-.6 - index % 3 * .4}s` }}><Photo url={photo.url} thumbnailUrl={photo.thumbnailUrl} srcSet={photo.srcSet} alt={photo.alt} eager={index < 2} draggable={false} style={{ objectPosition: photo.focalPoint || '50% 50%' }} sizes="(max-width: 640px) 72vw, (max-width: 1024px) 35vw, 460px" onError={event => { event.currentTarget.closest('.cv-frame').classList.add('has-error'); }} /></span></span>
         <span className="cv-photo-number" aria-hidden="true">{number(index + 1)}</span>
       </button><button type="button" className="cv-frame-retry" onClick={event => { const frame = event.currentTarget.closest('.cv-frame'), image = frame.querySelector('img'); frame.classList.remove('has-error'); image.src = photo.url; image.srcset = photo.srcSet || ''; }}><RefreshCw size={16} />Retry photo</button>
     </motion.div>
