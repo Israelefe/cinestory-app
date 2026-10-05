@@ -17,8 +17,11 @@ import RevealViewer from '../components/delivery/RevealViewer.jsx';
 import { PHOTO_REVEAL_DEMO } from '../constants/photoRevealDemo.js';
 import { EDITORIAL_DEMO_DELIVERY } from '../constants/editorialDemo.js';
 import { useClosingGallery } from '../utils/useClosingGallery.js';
+import AlbumSpread, { AlbumPageTurn } from '../components/delivery/AlbumSpread.jsx';
+import { albumSpreads as normalizeAlbumSpreads } from '../utils/deliveryPresentation.js';
 import '../styles/format-demos.css';
 import '../components/delivery/DeliveryTypography.css';
+import '../components/delivery/AlbumViewer.css';
 
 const soundtrackRamps = new WeakMap();
 function fadeSoundtrack(element, target, duration = 900, onComplete) {
@@ -604,27 +607,7 @@ export const albumSpreads = [
   }
 ];
 
-export function AlbumSpread({ spread, index, reduced, onGallery, onViewed }) {
-  useEffect(() => { const frame = requestAnimationFrame(() => onViewed?.(index)); return () => cancelAnimationFrame(frame); }, [index, onViewed]);
-  const frameAttrs = formatFrameAttributes(spread.frame);
-  const frameStyle = formatFrameStyle(spread.frame);
-  if (spread.id === 'opening') return <section className="fd-album-spread is-opening" data-layout={spread.layout || 'spread'} {...frameAttrs} style={frameStyle}>
-    <figure><motion.div animate={frameMotionValues(spread.frame || {}, reduced)} transition={frameMotionTransition(spread.frame || {}, index, reduced)}><Photo name={spread.photo1.name} url={spread.photo1.url} alt={spread.photo1.alt} eager sizes="(max-width: 767px) 100vw, 50vw" /></motion.div></figure>
-    <article><span>{spread.label}</span><h1>{spread.title}</h1><p>{spread.copy}</p><small>{spread.footer}</small></article>
-    <i className="fd-album-spine" aria-hidden="true" />
-  </section>;
-
-  if (spread.id === 'together') return <section className="fd-album-spread is-wide" data-layout={spread.layout || 'spread'} {...frameAttrs} style={frameStyle}>
-    <motion.figure animate={frameMotionValues(spread.frame || {}, reduced)} transition={frameMotionTransition(spread.frame || {}, index, reduced)}><Photo name={spread.photo1.name} url={spread.photo1.url} alt={spread.photo1.alt} eager sizes="100vw" /></motion.figure>
-    <div><span>{spread.label}</span><h1>{spread.title}</h1><p>{spread.copy}</p></div>
-  </section>;
-
-  return <section className="fd-album-spread is-finale" data-layout={spread.layout || 'spread'} {...frameAttrs} style={frameStyle}>
-    <figure className="is-family"><motion.div animate={frameMotionValues(spread.frame || {}, reduced)} transition={frameMotionTransition(spread.frame || {}, index, reduced)}><Photo name={spread.photo1.name} url={spread.photo1.url} alt={spread.photo1.alt} eager sizes="(max-width: 767px) 100vw, 50vw" /></motion.div></figure>
-    <article>{spread.photo2 && <figure className="is-mother"><motion.div animate={frameMotionValues(spread.frame || {}, reduced)} transition={frameMotionTransition(spread.frame || {}, index, reduced)}><Photo name={spread.photo2.name} url={spread.photo2.url} alt={spread.photo2.alt || 'Photograph from this album'} eager sizes="(max-width: 767px) 100vw, 34vw" /></motion.div></figure>}<div><span>{spread.label}</span><h1>{spread.title}</h1><p>{spread.copy}</p>{onGallery ? <button type="button" onClick={onGallery}>View full gallery<Images size={17} /></button> : <p>View the earlier pages to open your full gallery.</p>}</div></article>
-    <i className="fd-album-spine" aria-hidden="true" />
-  </section>;
-}
+export { AlbumSpread };
 
 export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onNarrationNavigate }) {
   const [readSpreads, setReadSpreads] = useState([]);
@@ -632,6 +615,9 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
   const [started, setStarted] = useState(false);
   const [page, setPage] = useState(0);
   const [direction, setDirection] = useState(1);
+  const [turn, setTurn] = useState(null);
+  const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const turning = useRef(false);
   const [gallery, setGallery] = useState(false);
   const [muted, setMuted] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
@@ -640,16 +626,15 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
   const audio = useRef(null);
   const reduced = useVeyloReducedMotion();
 
-  const photos = normalizeDeliveryPhotos(delivery, albumPhotos);
+  const photos = useMemo(() => normalizeDeliveryPhotos(delivery, albumPhotos), [delivery]);
   const v3BookendPhotos = delivery?.schemaVersion === 3 ? normalizeDeliveryPhotos(delivery, photos, true) : [];
   const v3OpeningPhoto = v3BookendPhotos.find(photo => photo.assetId === delivery?.v3?.openingAssetId) || photos[0];
-  const v3ClosingPhoto = v3BookendPhotos.find(photo => photo.assetId === delivery?.v3?.closingAssetId);
   const frames = useMemo(() => new Map((delivery?.creativeDirection?.frames || []).map(f => [f.assetId, f])), [delivery]);
 
   const client = delivery ? (delivery.clientName ? `${delivery.clientName} / Album` : delivery.title) : 'The Adeyemi Family';
-  const clientName = delivery?.clientName || 'The Adeyemi Family';
-  const studioName = delivery?.branding?.name ? `${delivery.branding.name.toUpperCase()} PRESENTS` : 'VEYLO MEDIA PRESENTS';
-  const albumTitle = delivery?.creativeDirection?.title || 'Family Album';
+  const clientName = delivery?.clientName || delivery?.title || 'The Adeyemi Family';
+  const studioName = delivery?.branding?.name || 'Veylo';
+  const albumTitle = delivery?.creativeDirection?.title || (delivery ? 'Photo Album' : 'Family Album');
   const demoOnly = !delivery;
   const audioTrack = delivery?.soundtrack?.url || (demoOnly ? '/audio/soundtrack-1.mp3' : '');
   useSmoothSoundtrackLoop(audio, audioTrack);
@@ -666,106 +651,70 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
 
   const spreadsData = useMemo(() => {
     if (delivery && photos.length) {
-      const approvedSections = delivery.schemaVersion === 3 ? [] : (delivery.creativeDirection?.sections || []).filter(section => (section.assetIds || []).some(assetId => photos.some(photo => photo.assetId === assetId)));
-      if (approvedSections.length) {
-        return approvedSections.map((section, index) => {
-          const sectionPhotos = (section.assetIds || []).map(assetId => photos.find(photo => photo.assetId === assetId)).filter(Boolean);
-          const first = sectionPhotos[0] || photos[index] || photos[0];
-          const second = sectionPhotos[1];
-          const frame = frames.get(first?.assetId) || {};
-          const last = index === approvedSections.length - 1;
-          return {
-            id: index === 0 ? 'opening' : last ? 'finale' : 'together',
-            label: section.label || `SPREAD ${String(index + 1).padStart(2, '0')}`,
-            title: frame.headline || section.title || delivery.creativeDirection?.title || 'Selected photographs',
-            copy: frame.caption || section.subtitle || delivery.creativeDirection?.openingLine || '',
-            footer: index === 0 ? `${clientName.toUpperCase()} Â· ${new Date().getFullYear()}` : undefined,
-            photo1: first,
-            photo2: last ? (second || sectionPhotos[sectionPhotos.length - 1]) : undefined,
-            layout: section.layout || 'spread',
-            frame
-          };
-        });
-      }
-      const list = [];
-      const photo1 = delivery.schemaVersion === 3 ? photos[0] : photos[1] || photos[0];
-      const f1 = frames.get(photo1.assetId) || {};
-      list.push({
-        id: 'opening',
-        label: 'THE OPENING PORTRAIT',
-        title: f1.headline || delivery.creativeDirection?.title || 'Selected photographs',
-        copy: f1.caption || delivery.creativeDirection?.openingLine || 'The opening photographs from this delivery.',
-        footer: `${clientName.toUpperCase()} · ${new Date().getFullYear()}`,
-        photo1,
-        frame: f1
+      // Use the saved album arrangements and repair older records without hiding photos.
+      const legacySections = delivery.schemaVersion === 3 ? [] : delivery.creativeDirection?.sections || [];
+      const source = delivery.formatConfig?.album?.spreads?.length ? delivery : {
+        ...delivery,
+        formatConfig: { ...delivery.formatConfig, album: { spreads: legacySections.map(section => ({
+          ...section, heading: section.title, note: section.subtitle,
+          layout: section.assetIds?.length === 2 ? 'pair' : section.assetIds?.length === 3 ? 'triptych' : 'single'
+        })) } }
+      };
+      const byId = new Map(photos.map(photo => [String(photo.assetId), photo]));
+      return normalizeAlbumSpreads(source, photos.map(photo => String(photo.assetId))).map((spread, index) => {
+        const arranged = spread.assetIds.map(id => byId.get(String(id))).filter(Boolean);
+        const frame = frames.get(arranged[0]?.assetId) || {};
+        return {
+          ...spread, photos: arranged, photo1: arranged[0], photo2: arranged[1],
+          label: index === 0 ? 'THE FIRST PHOTOGRAPHS' : '',
+          title: spread.heading || (index === 0 ? delivery.creativeDirection?.title : '') || '',
+          copy: spread.note || (index === 0 ? delivery.creativeDirection?.openingLine : '') || '',
+          footer: clientName, frame
+        };
       });
-
-      for (let i = delivery.schemaVersion === 3 ? 1 : 2; i < photos.length - (delivery.schemaVersion === 3 ? 1 : 2); i++) {
-        const p = photos[i];
-        const f = frames.get(p.assetId) || {};
-        list.push({
-          id: 'together',
-          label: `SPREAD ${String(i).padStart(2, '0')}`,
-          title: f.headline || '',
-          copy: f.caption || '',
-          photo1: p,
-          frame: f
-        });
-      }
-
-      const finaleP1 = photos[delivery.schemaVersion === 3 ? photos.length - 1 : photos.length - 2] || photos[0];
-      const finaleP2 = delivery.schemaVersion === 3 ? v3ClosingPhoto || photos[photos.length - 1] : photos[photos.length - 1];
-      const fFinal = frames.get(finaleP1.assetId) || {};
-      list.push({
-        id: 'finale',
-        label: 'SAVED FOR THE END',
-        title: fFinal.headline || `${clientName}, these photographs are ready to keep.`,
-        copy: delivery.creativeDirection?.closingLine || '',
-        photo1: finaleP1,
-        photo2: finaleP2,
-        frame: fFinal
-      });
-
-      return list;
     }
     return [
-      { id: 'opening', label: 'THE OPENING PORTRAIT', title: 'The people who make home feel like home.', copy: 'Everyone arrived in white, with coral beads carrying the colour through every frame. This portrait belonged at the beginning.', footer: 'THE ADEYEMI FAMILY · 2026', photo1: albumPhotos[1] },
-      { id: 'together', label: 'WHEN EVERYONE RELAXED', title: 'Then the formal pose gave way to this.', copy: 'The photograph where every smile felt easy.', photo1: albumPhotos[2] },
-      { id: 'finale', label: 'ONE TO LEAVE OPEN', title: 'Adeyemis, these are the photographs you will keep coming back to.', copy: 'Your complete family gallery is ready whenever you want to see every finished portrait.', photo1: albumPhotos[3], photo2: albumPhotos[4] }
+      { id: 'opening', label: 'THE ADEYEMI FAMILY', title: 'Together, at home.', copy: 'White outfits, coral beads, and everyone in one frame. A family portrait to keep.', footer: 'Family portraits · 2026', photo1: albumPhotos[1], layout: 'single' },
+      { id: 'together', label: 'A FAMILIAR SMILE', title: 'A little less posing.', copy: 'The smiles came easily once everyone settled in.', photo1: albumPhotos[2], layout: 'single' },
+      { id: 'finale', label: 'THE LAST PAGES', title: 'One more look.', copy: 'The photographs from a lovely day together. Your complete family gallery follows.', photo1: albumPhotos[3], photo2: albumPhotos[4], layout: 'pair' }
     ];
-  }, [delivery, photos, frames, clientName, v3ClosingPhoto]);
+  }, [delivery, photos, frames, clientName]);
 
-  const galleryUnlocked = started && page === spreadsData.length - 1 && spreadsData.every((_, index) => readSpreads.includes(index));
+  const galleryUnlocked = started && !turn && page === spreadsData.length - 1 && spreadsData.every((_, index) => readSpreads.includes(index));
   const openGallery = () => { if (galleryUnlocked) setGallery(true); };
-  const albumIdentity = `${delivery?.publicId || delivery?._id || 'album-demo'}:${spreadsData.map(spread => `${spread.id}:${spread.photo1?.assetId || spread.photo1?.name}:${spread.photo2?.assetId || spread.photo2?.name}`).join('|')}`;
-  useEffect(() => { setReadSpreads([]); setGallery(false); setStarted(false); setPage(0); }, [albumIdentity]);
+  const albumIdentity = `${delivery?.publicId || delivery?._id || 'album-demo'}:${spreadsData.map(spread => [spread.id, spread.layout, ...(spread.photos || [spread.photo1, spread.photo2]).filter(Boolean).map(photo => photo.assetId || photo.name)].join(':')).join('|')}`;
+  useEffect(() => { setReadSpreads([]); setGallery(false); setSelectedPhoto(null); setStarted(false); setPage(0); setTurn(null); turning.current = false; }, [albumIdentity]);
   const openAlbum = () => {
     setReadSpreads([]);
     setStarted(true);
     setPage(0);
-    onNarrationNavigate?.([spreadsData[0]?.photo1?.assetId, spreadsData[0]?.photo2?.assetId].filter(Boolean));
+    setDirection(1);
+    onNarrationNavigate?.((spreadsData[0]?.photos || [spreadsData[0]?.photo1, spreadsData[0]?.photo2]).filter(Boolean).map(photo => photo.assetId).filter(Boolean));
     if (audio.current && !muted) {
       audio.current.volume = .32;
       playSoundtrack();
     }
   };
-  const next = () => {
-    if (page >= spreadsData.length - 1) return;
-    setDirection(1);
-    const nextPage = page + 1;
+  const goToPage = nextPage => {
+    if (turning.current || nextPage === page || nextPage < 0 || nextPage >= spreadsData.length) return;
+    const nextDirection = nextPage > page ? 1 : -1;
+    turning.current = true;
+    setDirection(nextDirection);
+    setTurn({ from: { spread: spreadsData[page], index: page }, to: { spread: spreadsData[nextPage], index: nextPage }, direction: nextDirection });
     setPage(nextPage);
-    onNarrationNavigate?.([spreadsData[nextPage]?.photo1?.assetId, spreadsData[nextPage]?.photo2?.assetId].filter(Boolean));
+    const spread = spreadsData[nextPage];
+    onNarrationNavigate?.((spread.photos || [spread.photo1, spread.photo2]).filter(Boolean).map(photo => photo.assetId).filter(Boolean));
   };
+  const finishTurn = () => { turning.current = false; setTurn(null); };
+  const next = () => goToPage(page + 1);
   const previous = () => {
+    if (turning.current) return;
     if (page === 0) {
       setStarted(false);
       audio.current?.pause();
       return;
     }
-    setDirection(-1);
-    const previousPage = page - 1;
-    setPage(previousPage);
-    onNarrationNavigate?.([spreadsData[previousPage]?.photo1?.assetId, spreadsData[previousPage]?.photo2?.assetId].filter(Boolean));
+    goToPage(page - 1);
   };
   const toggleSound = () => {
     if (audioFailed) {
@@ -784,13 +733,13 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
   useEffect(() => {
     const player = audio.current;
     if (!player) return;
-    if (gallery) player.pause();
+    if (gallery || selectedPhoto !== null) player.pause();
     else if (started && !muted) playSoundtrack();
-  }, [gallery, started, muted]);
+  }, [gallery, selectedPhoto, started, muted]);
 
   useEffect(() => {
     const player = audio.current;
-    if (!player || !started || gallery || muted) return undefined;
+    if (!player || !started || gallery || selectedPhoto !== null || muted) return undefined;
     if (page < spreadsData.length - 1) {
       if (player.paused) playSoundtrack();
       fadeSoundtrack(player, .32, 420);
@@ -800,11 +749,13 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
       if (audio.current === player && page >= spreadsData.length - 1 && !gallery) player.pause();
     }), 250);
     return () => window.clearTimeout(timer);
-  }, [gallery, muted, page, spreadsData.length, started]);
+  }, [gallery, selectedPhoto, muted, page, spreadsData.length, started]);
 
   useEffect(() => {
     const onKey = event => {
-      if (!started || gallery) return;
+      if (!started || gallery || selectedPhoto !== null || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (event.target.closest('input,textarea,select,[contenteditable="true"]')) return;
+      if (event.key === ' ' && event.target.closest('button,a')) return;
       if (event.key === 'ArrowRight' || event.key === ' ') { event.preventDefault(); next(); }
       if (event.key === 'ArrowLeft') { event.preventDefault(); previous(); }
     };
@@ -815,25 +766,55 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
   useEffect(() => () => audio.current?.pause(), []);
 
   const themeStyles = getFormatThemeStyles(delivery, {
-    bg: '#061426',
-    surface: '#eadcc7',
-    text: '#f5f7fb',
-    accent: '#ef8969'
+    bg: '#09090c',
+    surface: '#f0e8da',
+    text: '#f2eee8',
+    accent: '#d4b38b'
   });
+  const paperChoice = delivery?.formatConfig?.album?.paperTone || 'theme';
+  const surfaceHex = /^#[0-9a-f]{6}$/i.test(themeStyles['--fd-surface']) ? themeStyles['--fd-surface'].slice(1) : 'f0e8da';
+  const surfaceLuminance = .2126 * parseInt(surfaceHex.slice(0, 2), 16) + .7152 * parseInt(surfaceHex.slice(2, 4), 16) + .0722 * parseInt(surfaceHex.slice(4, 6), 16);
+  const paperTone = paperChoice === 'theme' ? surfaceLuminance < 140 ? 'dark' : 'light' : paperChoice;
+  const allPhotos = normalizeDeliveryPhotos(delivery, photos, true);
+  const openPhoto = photo => {
+    if (turning.current) return;
+    const index = allPhotos.findIndex(item => photo.assetId ? item.assetId === photo.assetId : item.name === photo.name);
+    if (index >= 0) setSelectedPhoto(index);
+  };
 
-  return <div className="fd-page fd-album" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} data-pace={themeStyles['--fd-pace']} style={themeStyles}>
-    {audioTrack && <audio ref={audio} crossOrigin="anonymous" src={audioTrack} loop preload="auto" muted={muted} onWaiting={() => setAudioLoading(true)} onStalled={() => setAudioLoading(true)} onPlaying={() => { setAudioLoading(false); setAudioFailed(false); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioLoading(false); setAudioFailed(true); }} />}
+  return <div className={`fd-page fd-album ${audioTrack ? 'has-music' : ''}`} data-paper-tone={paperTone} style={{ ...themeStyles, '--album-paper': paperChoice === 'theme' ? themeStyles['--fd-surface'] : paperTone === 'dark' ? '#1c1c20' : '#f0e8da' }}>
+    {audioTrack && <audio ref={audio} crossOrigin="anonymous" src={audioTrack} loop preload="none" muted={muted} onWaiting={() => setAudioLoading(true)} onStalled={() => setAudioLoading(true)} onPlaying={() => { setAudioLoading(false); setAudioFailed(false); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioLoading(false); setAudioFailed(true); }} />}
     <DemoHeader format="Album" client={client} sectionId="album" onGallery={galleryUnlocked ? openGallery : undefined} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} hideSoundtrack />
     {!started ? <main className="fd-album-cover">
-      <motion.figure initial={reduced ? false : { scale: 1.01 }} animate={{ scale: reduced ? 1 : 1.035 }} transition={{ duration: reduced ? 0 : 10, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={v3OpeningPhoto.name} url={v3OpeningPhoto.url} alt={`${clientName} cover photograph`} eager sizes="100vw" /></motion.figure>
-      <div className="fd-album-cover-shade" />
-      <motion.section initial={reduced ? false : { y: 24 }} animate={{ y: 0 }} transition={{ duration: reduced ? 0 : .8, delay: reduced ? 0 : .18 }}><span>{studioName}</span><h1>{clientName}<br /><em>{albumTitle}</em></h1><p>{delivery?.schemaVersion === 3 ? delivery.creativeDirection?.openingLine : photos.length + ' finished portraits, arranged one page at a time.'}</p><button type="button" onClick={openAlbum}>Open album<BookOpen size={18} /></button></motion.section>
-      <div className="fd-album-cover-folio"><span>{delivery?.shootType?.toUpperCase() || 'FAMILY PORTRAITS'}</span><b>{new Date().getFullYear()}</b></div>
-    </main> : <main className="fd-album-reader" aria-live="polite" onTouchStart={event => { touchStart.current = event.changedTouches[0].clientX; }} onTouchEnd={event => { if (touchStart.current === null) return; const distance = event.changedTouches[0].clientX - touchStart.current; touchStart.current = null; if (Math.abs(distance) > 45) distance < 0 ? next() : previous(); }}>
-      <div className="fd-album-reader-head"><span>{clientName.toUpperCase()}</span><div><i>{String(page + 1).padStart(2, '0')}</i><b>/</b><i>{String(spreadsData.length).padStart(2, '0')}</i></div><span>{albumTitle.toUpperCase()} · {new Date().getFullYear()}</span></div>
-      <div className="fd-album-stage"><AnimatePresence mode="wait" custom={direction}><motion.div data-spread-index={page} key={spreadsData[page].id + page} custom={direction} initial={reduced ? false : { opacity: .58, x: direction > 0 ? 38 : -38, clipPath: direction > 0 ? 'inset(0 0 0 7%)' : 'inset(0 7% 0 0)' }} animate={{ opacity: 1, x: 0, clipPath: 'inset(0 0 0 0%)' }} exit={reduced ? undefined : { opacity: 0, x: direction > 0 ? -26 : 26, clipPath: direction > 0 ? 'inset(0 7% 0 0)' : 'inset(0 0 0 7%)' }} transition={{ duration: reduced ? 0 : .68, ease: [0.22, 1, 0.36, 1] }}><AlbumSpread spread={spreadsData[page]} index={page} reduced={reduced} onViewed={markSpreadViewed} onGallery={galleryUnlocked ? openGallery : undefined} /></motion.div></AnimatePresence></div>
+      <motion.figure className="album-cover-book" initial={reduced ? false : { opacity: 0, y: 20, rotate: -2 }} animate={{ opacity: 1, y: 0, rotate: -1 }} transition={{ duration: .9, ease: [.22, 1, .36, 1] }}>
+        <div className="album-cover-binding" aria-hidden="true" />
+        <div className="album-cover-stamp"><span>PHOTO ALBUM</span><b>{clientName}</b></div>
+        <div className="album-cover-photo"><Photo name={v3OpeningPhoto?.name} url={v3OpeningPhoto?.url} thumbnailUrl={v3OpeningPhoto?.thumbnailUrl} srcSet={v3OpeningPhoto?.srcSet} alt={`${clientName} cover photograph`} eager sizes="(max-width: 767px) 68vw, 360px" /></div>
+        <figcaption>{delivery?.shootType || (delivery ? 'Finished photographs' : 'Family portraits')}</figcaption>
+      </motion.figure>
+      <div className="fd-album-cover-shade" aria-hidden="true" />
+      <motion.section initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .7, delay: .12 }}>
+        <span className="album-eyebrow">{delivery?.branding?.name ? `PHOTOGRAPHED BY ${studioName}` : 'YOUR PHOTO ALBUM'}</span>
+        <h1>{clientName}</h1><h2>{albumTitle}</h2>
+        <p>{delivery?.creativeDirection?.openingLine || `${photos.length} finished photographs. Take your time with each page.`}</p>
+        <button type="button" onClick={openAlbum}>Open album<BookOpen size={18} /></button>
+        <small>{spreadsData.length} {spreadsData.length === 1 ? 'page' : 'pages'}<span aria-hidden="true"> / </span>{photos.length} {photos.length === 1 ? 'photograph' : 'photographs'}</small>
+      </motion.section>
+    </main> : <motion.main className="fd-album-reader" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: .3 }}>
+      <div className="fd-album-reader-head"><span>{clientName}</span><div aria-live="polite" aria-atomic="true"><span className="album-mobile-only">Page</span><span className="album-desktop-only">Spread</span> {page + 1} of {spreadsData.length}</div><span>{delivery?.shootType || (delivery ? 'Photo album' : 'Family portraits')}</span></div>
+      <div className="fd-album-stage" onTouchStart={event => { const touch = event.touches[0]; touchStart.current = event.touches.length === 1 ? { x: touch.clientX, y: touch.clientY } : null; }} onTouchCancel={() => { touchStart.current = null; }} onTouchEnd={event => {
+        const start = touchStart.current; touchStart.current = null;
+        if (!start || event.touches.length) return;
+        const touch = event.changedTouches[0], dx = touch.clientX - start.x, dy = touch.clientY - start.y;
+        if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.5) dx < 0 ? next() : previous();
+      }}>
+        <motion.div className="album-open-book" data-spread-index={page} key={spreadsData[page].id + page} initial={reduced ? false : { opacity: .65, rotateY: direction * 7, y: 6 }} animate={{ opacity: 1, rotateY: 0, y: 0 }} transition={{ duration: .55, ease: [.22, 1, .36, 1] }}>
+          <AlbumSpread spread={spreadsData[page]} index={page} onViewed={markSpreadViewed} onPhoto={openPhoto} isLast={page === spreadsData.length - 1} onGallery={galleryUnlocked ? openGallery : undefined} />
+          {turn && <AlbumPageTurn {...turn} onComplete={finishTurn} />}
+        </motion.div>
+      </div>
       <footer className="fd-album-controls">
-        <button type="button" onClick={previous}>
+        <button type="button" onClick={previous} disabled={Boolean(turn)}>
           <ChevronLeft size={18} />
           <span>{page === 0 ? 'Back to cover' : 'Previous page'}</span>
         </button>
@@ -844,10 +825,9 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
                 type="button"
                 key={spread.id + index}
                 className={page === index ? 'is-active' : ''}
-                onClick={() => {
-                  setDirection(index > page ? 1 : -1);
-                  setPage(index);
-                }}
+                onClick={() => goToPage(index)}
+                disabled={Boolean(turn)}
+                aria-current={page === index ? 'page' : undefined}
                 aria-label={`Open album page ${index + 1}`}
               >
                 <i />
@@ -857,13 +837,14 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
             <span className="fd-album-counter">Spread {page + 1} of {spreadsData.length}</span>
           )}
         </div>
-        <button type="button" onClick={next} disabled={page === spreadsData.length - 1}>
+        <button type="button" onClick={next} disabled={Boolean(turn) || page === spreadsData.length - 1}>
           <span>Next page</span>
           <ChevronRight size={18} />
         </button>
       </footer>
-    </main>}
-    {started && audioTrack && <button className={`fd-album-sound ${audioLoading ? 'is-loading' : ''} ${audioFailed ? 'is-error' : ''}`} type="button" onClick={toggleSound} aria-label={audioLoading ? 'Stop loading album soundtrack' : audioFailed ? 'Try album soundtrack again' : muted ? 'Turn album soundtrack on' : 'Mute album soundtrack'} aria-busy={audioLoading}>{audioLoading ? <LoaderCircle className="v-spin" size={17} /> : muted || audioFailed ? <VolumeX size={17} /> : <Volume2 size={17} />}<span aria-live="polite">{audioLoading ? 'Loading music…' : audioFailed ? 'Try music again' : muted ? 'Sound off' : 'Sound on'}</span></button>}
+    </motion.main>}
+    {started && !gallery && selectedPhoto === null && audioTrack && <button className={`fd-album-sound ${audioLoading ? 'is-loading' : ''} ${audioFailed ? 'is-error' : ''}`} type="button" onClick={toggleSound} aria-label={audioLoading ? 'Stop loading album soundtrack' : audioFailed ? 'Try album soundtrack again' : muted ? 'Turn album soundtrack on' : 'Mute album soundtrack'} aria-busy={audioLoading}>{audioLoading ? <LoaderCircle className="v-spin" size={17} /> : muted || audioFailed ? <VolumeX size={17} /> : <Volume2 size={17} />}<span aria-live="polite">{audioLoading ? 'Loading music…' : audioFailed ? 'Try music again' : muted ? 'Sound off' : 'Sound on'}</span></button>}
+    <AnimatePresence>{selectedPhoto !== null && <ClientGallery photos={allPhotos} initialIndex={selectedPhoto} singlePhoto title={clientName} delivery={delivery} fontStyles={themeStyles} {...galleryProps} onClose={() => setSelectedPhoto(null)} />}</AnimatePresence>
     <AnimatePresence>{galleryUnlocked && gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} onClose={() => setGallery(false)} delivery={delivery} fontStyles={themeStyles} {...galleryProps} />}</AnimatePresence>
   </div>;
 }
