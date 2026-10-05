@@ -790,6 +790,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const turning = useRef(false);
   const [gallery, setGallery] = useState(false);
+  const [demoLiked, setDemoLiked] = useState(() => new Set());
   const [muted, setMuted] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
   const [audioFailed, setAudioFailed] = useState(false);
@@ -968,6 +969,28 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
   const surfaceLuminance = .2126 * parseInt(surfaceHex.slice(0, 2), 16) + .7152 * parseInt(surfaceHex.slice(2, 4), 16) + .0722 * parseInt(surfaceHex.slice(4, 6), 16);
   const paperTone = paperChoice === 'theme' ? surfaceLuminance < 140 ? 'dark' : 'light' : paperChoice;
   const allPhotos = normalizeDeliveryPhotos(delivery, photos, true);
+  const downloadSamplePhoto = (photo, index) => {
+    if (!photo) return;
+    const link = document.createElement('a');
+    link.href = imageSrc(photo);
+    link.download = `${String(photo.name || `photograph-${index + 1}`).split('/').pop().replace(/[^a-z0-9_-]+/gi, '-')}.webp`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+  const demoGalleryProps = delivery ? {} : {
+    liked: demoLiked,
+    onLike: key => setDemoLiked(current => {
+      const next = new Set(current);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    }),
+    onDownload: (key, index) => {
+      const photo = allPhotos.find((item, itemIndex) => String(item.assetId || item.id || item.name || itemIndex) === String(key)) || allPhotos[index];
+      downloadSamplePhoto(photo, index);
+    },
+    onDownloadAll: () => allPhotos.forEach(downloadSamplePhoto)
+  };
   const openPhoto = photo => {
     if (turning.current) return;
     const index = allPhotos.findIndex(item => photo.assetId ? item.assetId === photo.assetId : item.name === photo.name);
@@ -1037,8 +1060,8 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
       </footer>
     </motion.main>}
     {started && !gallery && selectedPhoto === null && audioTrack && <button className={`fd-album-sound ${audioLoading ? 'is-loading' : ''} ${audioFailed ? 'is-error' : ''}`} type="button" onClick={toggleSound} aria-label={audioLoading ? 'Stop loading album soundtrack' : audioFailed ? 'Try album soundtrack again' : muted ? 'Turn album soundtrack on' : 'Mute album soundtrack'} aria-busy={audioLoading}>{audioLoading ? <LoaderCircle className="v-spin" size={17} /> : muted || audioFailed ? <VolumeX size={17} /> : <Volume2 size={17} />}<span aria-live="polite">{audioLoading ? 'Loading music…' : audioFailed ? 'Try music again' : muted ? 'Sound off' : 'Sound on'}</span></button>}
-    <AnimatePresence>{selectedPhoto !== null && <ClientGallery photos={allPhotos} initialIndex={selectedPhoto} singlePhoto title={clientName} delivery={delivery} fontStyles={themeStyles} {...galleryProps} onClose={() => setSelectedPhoto(null)} />}</AnimatePresence>
-    <AnimatePresence>{galleryUnlocked && gallery && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} onClose={() => setGallery(false)} delivery={delivery} fontStyles={themeStyles} {...galleryProps} />}</AnimatePresence>
+    <AnimatePresence>{selectedPhoto !== null && <ClientGallery photos={allPhotos} initialIndex={selectedPhoto} singlePhoto title={clientName} delivery={delivery} fontStyles={themeStyles} {...demoGalleryProps} {...galleryProps} onClose={() => setSelectedPhoto(null)} />}</AnimatePresence>
+    <AnimatePresence>{galleryUnlocked && gallery && <DemoGallery photos={allPhotos} title={client} onClose={() => setGallery(false)} delivery={delivery} fontStyles={themeStyles} {...demoGalleryProps} {...galleryProps} />}</AnimatePresence>
   </div>;
 }
 

@@ -35,6 +35,19 @@ for (const [width, height] of [[320,568], [390,844], [768,1024], [834,1194], [14
     await prepare(page);
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     await page.goto('/demo/album?phoneView=1');
+    const cover = page.locator('.album-cover-book');
+    await expect(cover).toBeInViewport({ ratio: 1 });
+    const coverHeight = await cover.evaluate(element => element.getBoundingClientRect().height);
+    if (width === 320) expect(coverHeight).toBeGreaterThanOrEqual(225);
+    if (width === 390) expect(coverHeight).toBeGreaterThanOrEqual(340);
+    const coverPhoto = page.locator('.album-cover-photo .v-photo');
+    await expect.poll(() => coverPhoto.evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
+    const visiblePhotoHeight = await coverPhoto.evaluate(image => {
+      const bounds = image.getBoundingClientRect();
+      return Math.min(bounds.width / image.naturalWidth, bounds.height / image.naturalHeight) * image.naturalHeight;
+    });
+    if (width === 320) expect(visiblePhotoHeight).toBeGreaterThan(130);
+    if (width === 390) expect(visiblePhotoHeight).toBeGreaterThan(230);
     await expect(page.getByRole('button', { name: 'Open album', exact: true })).toBeInViewport({ ratio: 1 });
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight - innerHeight)).toBeLessThanOrEqual(1);
     await page.getByRole('button', { name: 'Open album', exact: true }).click();
@@ -87,6 +100,11 @@ test('a photograph opens alone and returns focus to the same album page', async 
   const photo = page.locator('.fd-album-spread .album-photo-button').first();
   await photo.click();
   await expect(page.locator('.client-gallery-lightbox-main')).toBeVisible();
+  const like = page.getByRole('button', { name: 'Add to favourites', exact: true });
+  await expect(like).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download photograph', exact: true })).toBeVisible();
+  await like.click();
+  await expect(page.getByRole('button', { name: 'Remove from favourites', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('button', { name: 'Next photograph', exact: true })).toHaveCount(0);
   await page.keyboard.press('ArrowRight');
   await expect(page.locator('.album-open-book')).toHaveAttribute('data-spread-index', '0');
@@ -96,6 +114,22 @@ test('a photograph opens alone and returns focus to the same album page', async 
   await page.keyboard.press('ArrowRight');
   await expect(page.locator('.album-turn-leaf')).toHaveCount(0);
   await expect(page.locator('.album-open-book')).toHaveAttribute('data-spread-index', '1');
+});
+
+test('the Album demo gallery offers local favourites and sample downloads', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 }); await prepare(page);
+  await page.goto('/demo/album?phoneView=1');
+  await page.getByRole('button', { name: 'Open album', exact: true }).click();
+  const pages = page.getByRole('button', { name: /^Open album page \d+$/ });
+  for (let at = 1; at < await pages.count(); at++) await turnTo(page, at);
+  await page.getByRole('button', { name: 'View full gallery', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Download all photos', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add to favourites', exact: true })).toHaveCount(5);
+  await expect(page.getByRole('button', { name: /^Download photograph \d+$/ })).toHaveCount(5);
+  await page.getByRole('button', { name: 'Add to favourites', exact: true }).first().click();
+  await expect(page.getByRole('button', { name: /Favourites\s*1/ })).toBeVisible();
+  await page.getByRole('button', { name: /Favourites/ }).click();
+  await expect(page.locator('.client-gallery-grid>figure')).toHaveCount(1);
 });
 
 test('horizontal swipes turn pages while vertical reading gestures keep the page', async ({ page }) => {
