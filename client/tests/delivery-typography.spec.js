@@ -67,7 +67,7 @@ async function captionFor(view, format) {
   if (format === 'photo-reveal') { await view.getByRole('button', { name: 'Begin reveal', exact: true }).click(); return view.locator('.fd-reveal-caption p'); }
   if (format === 'canvas') { await view.locator('.fd-wall-card').first().click(); return view.locator('.fd-canvas-focus-copy p'); }
   if (format === 'chapters') { await view.locator('.fd-chapter-directory-board>button').first().click(); return view.locator('.fd-chapter-room-photos>button>p').first(); }
-  if (format === 'album') { await view.getByRole('button', { name: 'Open album', exact: true }).click(); return view.locator('.fd-album-spread p').first(); }
+  if (format === 'album') { await view.getByRole('button', { name: 'Open album', exact: true }).click(); return view.locator('.album-note p').first(); }
   return view.locator({ editorial: '.fd-ed-spread figcaption', 'event-coverage': '.vec-photo-caption', campaign: '.vec-photo-caption' }[format]).first();
 }
 

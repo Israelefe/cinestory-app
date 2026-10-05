@@ -17,8 +17,9 @@ import RevealViewer from '../components/delivery/RevealViewer.jsx';
 import { PHOTO_REVEAL_DEMO } from '../constants/photoRevealDemo.js';
 import { EDITORIAL_DEMO_DELIVERY } from '../constants/editorialDemo.js';
 import { useClosingGallery } from '../utils/useClosingGallery.js';
-import AlbumSpread, { AlbumPageTurn } from '../components/delivery/AlbumSpread.jsx';
+import AlbumSpread, { AlbumCaption, AlbumPageTurn } from '../components/delivery/AlbumSpread.jsx';
 import { albumSpreads as normalizeAlbumSpreads } from '../utils/deliveryPresentation.js';
+import { albumBookRatio, albumPhotoKey, albumReaderPages, albumSpreadPhotos } from '../utils/albumPresentation.js';
 import '../styles/format-demos.css';
 import '../components/delivery/DeliveryTypography.css';
 import '../styles/chapters.css';
@@ -48,7 +49,7 @@ export const editorialPhotos = Array.from({ length: 5 }, (_, index) => ({ name: 
 export const revealPhotos = Array.from({ length: 4 }, (_, index) => ({ name: `demo-sharon-${index + 1}`, alt: `Sharon's studio portrait ${index + 1}` }));
 export const couragePhotos = Array.from({ length: 6 }, (_, index) => ({ name: `demo-courage-${index + 1}`, alt: `Courage's graduation portrait ${index + 1}` }));
 export const weddingPhotos = Array.from({ length: 5 }, (_, index) => ({ name: `demo-wedding-${index + 1}`, alt: `Folake and Tunde's wedding portrait ${index + 1}` }));
-export const albumPhotos = ['demo-album-fa-source', 'demo-album-fa-2', 'demo-album-fa-3', 'demo-album-fa-4', 'demo-album-fa-5'].map((name, index) => ({ name, alt: `The Adeyemi family album portrait ${index + 1}` }));
+export const albumPhotos = ['demo-album-fa-source', 'demo-album-fa-2', 'demo-album-fa-3', 'demo-album-fa-4', 'demo-album-fa-5'].map((name, index) => ({ name, width: 960, height: index === 2 ? 640 : index === 0 ? 1286 : 1285, alt: `The Adeyemi family album portrait ${index + 1}` }));
 export const eventCoveragePhotos = EVENT_COVERAGE_DEMO_PHOTOS;
 export const campaignPhotos = [
   { name: '/veylo/demo/campaign/campaign-01-hero.webp', alt: 'Tan leather handbag and wallet on an indigo pedestal', caption: 'The campaign opens with the pieces together: warm leather, clean shape, and a confident point of view.', assetType: 'CAMPAIGN HERO', deliveryLabel: 'MASTER / WEB', campaignType: 'hero' },
@@ -697,7 +698,9 @@ export { AlbumSpread };
 
 export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onNarrationNavigate }) {
   const [readSpreads, setReadSpreads] = useState([]);
-  const markSpreadViewed = React.useCallback(index => setReadSpreads(current => current.includes(index) ? current : [...current, index]), []);
+  const [compact, setCompact] = useState(() => window.innerWidth < 768);
+  const previousCompact = useRef(compact);
+  const [noteOpen, setNoteOpen] = useState(false);
   const [started, setStarted] = useState(false);
   const [page, setPage] = useState(0);
   const [direction, setDirection] = useState(1);
@@ -735,7 +738,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
     });
   };
 
-  const spreadsData = useMemo(() => {
+  const sourceSpreads = useMemo(() => {
     if (delivery && photos.length) {
       // Use the saved album arrangements and repair older records without hiding photos.
       const legacySections = delivery.schemaVersion === 3 ? [] : delivery.creativeDirection?.sections || [];
@@ -766,10 +769,31 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
     ];
   }, [delivery, photos, frames, clientName]);
 
-  const galleryUnlocked = started && !turn && page === spreadsData.length - 1 && spreadsData.every((_, index) => readSpreads.includes(index));
+  const spreadsData = useMemo(() => albumReaderPages(sourceSpreads, compact), [sourceSpreads, compact]);
+  const activeSpread = spreadsData[page] || spreadsData[0];
+  const markSpreadViewed = React.useCallback(index => {
+    const seen = albumSpreadPhotos(spreadsData[index]).map(albumPhotoKey);
+    setReadSpreads(current => seen.every(key => current.includes(key)) ? current : [...new Set([...current, ...seen])]);
+  }, [spreadsData]);
+  useEffect(() => {
+    const query = window.matchMedia('(min-width: 768px)');
+    const resize = () => setCompact(!query.matches);
+    query.addEventListener('change', resize);
+    return () => query.removeEventListener('change', resize);
+  }, []);
+  React.useLayoutEffect(() => {
+    if (previousCompact.current === compact) return;
+    const previous = albumReaderPages(sourceSpreads, previousCompact.current)[page];
+    const key = albumPhotoKey(albumSpreadPhotos(previous)[0]);
+    const nextPage = spreadsData.findIndex(spread => albumSpreadPhotos(spread).some(photo => albumPhotoKey(photo) === key));
+    previousCompact.current = compact;
+    setPage(Math.max(0, nextPage)); setTurn(null); turning.current = false;
+  }, [compact, sourceSpreads, spreadsData, page]);
+
+  const galleryUnlocked = started && !turn && page === spreadsData.length - 1 && sourceSpreads.every(spread => albumSpreadPhotos(spread).every(photo => readSpreads.includes(albumPhotoKey(photo))));
   const openGallery = () => { if (galleryUnlocked) setGallery(true); };
-  const albumIdentity = `${delivery?.publicId || delivery?._id || 'album-demo'}:${spreadsData.map(spread => [spread.id, spread.layout, ...(spread.photos || [spread.photo1, spread.photo2]).filter(Boolean).map(photo => photo.assetId || photo.name)].join(':')).join('|')}`;
-  useEffect(() => { setReadSpreads([]); setGallery(false); setSelectedPhoto(null); setStarted(false); setPage(0); setTurn(null); turning.current = false; }, [albumIdentity]);
+  const albumIdentity = `${delivery?.publicId || delivery?._id || 'album-demo'}:${sourceSpreads.map(spread => [spread.id, spread.layout, ...albumSpreadPhotos(spread).map(albumPhotoKey)].join(':')).join('|')}`;
+  useEffect(() => { setReadSpreads([]); setGallery(false); setSelectedPhoto(null); setNoteOpen(false); setStarted(false); setPage(0); setTurn(null); turning.current = false; }, [albumIdentity]);
   const openAlbum = () => {
     setReadSpreads([]);
     setStarted(true);
@@ -819,13 +843,13 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
   useEffect(() => {
     const player = audio.current;
     if (!player) return;
-    if (gallery || selectedPhoto !== null) player.pause();
+    if (gallery || selectedPhoto !== null || noteOpen) player.pause();
     else if (started && !muted) playSoundtrack();
-  }, [gallery, selectedPhoto, started, muted]);
+  }, [gallery, selectedPhoto, noteOpen, started, muted]);
 
   useEffect(() => {
     const player = audio.current;
-    if (!player || !started || gallery || selectedPhoto !== null || muted) return undefined;
+    if (!player || !started || gallery || selectedPhoto !== null || noteOpen || muted) return undefined;
     if (page < spreadsData.length - 1) {
       if (player.paused) playSoundtrack();
       fadeSoundtrack(player, .32, 420);
@@ -835,11 +859,11 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
       if (audio.current === player && page >= spreadsData.length - 1 && !gallery) player.pause();
     }), 250);
     return () => window.clearTimeout(timer);
-  }, [gallery, selectedPhoto, muted, page, spreadsData.length, started]);
+  }, [gallery, selectedPhoto, noteOpen, muted, page, spreadsData.length, started]);
 
   useEffect(() => {
     const onKey = event => {
-      if (!started || gallery || selectedPhoto !== null || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (!started || gallery || selectedPhoto !== null || noteOpen || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
       if (event.target.closest('input,textarea,select,[contenteditable="true"]')) return;
       if (event.key === ' ' && event.target.closest('button,a')) return;
       if (event.key === 'ArrowRight' || event.key === ' ') { event.preventDefault(); next(); }
@@ -875,7 +899,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
       <motion.figure className="album-cover-book" initial={reduced ? false : { opacity: 0, y: 20, rotate: -2 }} animate={{ opacity: 1, y: 0, rotate: -1 }} transition={{ duration: .9, ease: [.22, 1, .36, 1] }}>
         <div className="album-cover-binding" aria-hidden="true" />
         <div className="album-cover-stamp"><span>PHOTO ALBUM</span><b>{clientName}</b></div>
-        <div className="album-cover-photo"><Photo name={v3OpeningPhoto?.name} url={v3OpeningPhoto?.url} thumbnailUrl={v3OpeningPhoto?.thumbnailUrl} srcSet={v3OpeningPhoto?.srcSet} alt={`${clientName} cover photograph`} eager sizes="(max-width: 767px) 68vw, 360px" /></div>
+        <div className="album-cover-photo"><Photo name={v3OpeningPhoto?.name} url={v3OpeningPhoto?.url} thumbnailUrl={v3OpeningPhoto?.thumbnailUrl} srcSet={v3OpeningPhoto?.srcSet} alt={`${clientName} cover photograph`} eager sizes="(max-width: 767px) 68vw, 360px" style={{ backgroundSize: 'contain', backgroundRepeat: 'no-repeat' }} /></div>
         <figcaption>{delivery?.shootType || (delivery ? 'Finished photographs' : 'Family portraits')}</figcaption>
       </motion.figure>
       <div className="fd-album-cover-shade" aria-hidden="true" />
@@ -894,18 +918,19 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
         const touch = event.changedTouches[0], dx = touch.clientX - start.x, dy = touch.clientY - start.y;
         if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.5) dx < 0 ? next() : previous();
       }}>
-        <motion.div className="album-open-book" data-spread-index={page} key={spreadsData[page].id + page} initial={reduced ? false : { opacity: .65, rotateY: direction * 7, y: 6 }} animate={{ opacity: 1, rotateY: 0, y: 0 }} transition={{ duration: .55, ease: [.22, 1, .36, 1] }}>
-          <AlbumSpread spread={spreadsData[page]} index={page} onViewed={markSpreadViewed} onPhoto={openPhoto} isLast={page === spreadsData.length - 1} onGallery={galleryUnlocked ? openGallery : undefined} />
-          {turn && <AlbumPageTurn {...turn} onComplete={finishTurn} />}
-        </motion.div>
+        <div className="album-open-book" data-spread-index={page} data-page-count={spreadsData.length} key={activeSpread.id + page} style={{ '--album-book-ratio': albumBookRatio(activeSpread) }}>
+          <AlbumSpread spread={activeSpread} index={page} onViewed={markSpreadViewed} onPhoto={openPhoto} isLast={page === spreadsData.length - 1} />
+          {turn && <AlbumPageTurn {...turn} compact={compact} onComplete={finishTurn} />}
+        </div>
       </div>
+      <AlbumCaption spread={activeSpread} expanded={noteOpen} onExpand={() => setNoteOpen(true)} onClose={() => setNoteOpen(false)} fontStyles={themeStyles} isLast={page === spreadsData.length - 1} onGallery={galleryUnlocked ? openGallery : undefined} />
       <footer className="fd-album-controls">
         <button type="button" onClick={previous} disabled={Boolean(turn)}>
           <ChevronLeft size={18} />
           <span>{page === 0 ? 'Back to cover' : 'Previous page'}</span>
         </button>
         <div className="fd-album-dots-wrap">
-          {spreadsData.length <= 10 ? (
+          {spreadsData.length <= (compact ? 5 : 8) ? (
             spreadsData.map((spread, index) => (
               <button
                 type="button"
@@ -920,7 +945,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
               </button>
             ))
           ) : (
-            <span className="fd-album-counter">Spread {page + 1} of {spreadsData.length}</span>
+            <span className="fd-album-counter">{compact ? 'Page' : 'Spread'} {page + 1} of {spreadsData.length}</span>
           )}
         </div>
         <button type="button" onClick={next} disabled={Boolean(turn) || page === spreadsData.length - 1}>
