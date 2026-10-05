@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useScroll, useTransform } from 'framer-motion';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
-import { ArrowDown, ArrowUpRight, List, Monitor, RotateCcw, Smartphone, X } from 'lucide-react';
+import { ArrowUpRight, List, Monitor, RotateCcw, Smartphone, X } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useDialogFocus } from '../useDialogFocus.js';
@@ -43,7 +43,7 @@ function EditorialImage({ photo, index, onOpen, eager = false, cover = false, sh
   if (!photo) return null;
   const ratio = photo.width && photo.height ? Math.max(.55, Math.min(2.2, photo.width / photo.height)) : 2 / 3;
   const fit = photo.imageFit || 'contain';
-  return <motion.figure ref={ref} className={`ed-photo ${cover ? 'is-cover' : ''}`} data-asset-id={photo.assetId} initial={reduced ? false : { opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .1 }} transition={{ duration: reduced ? 0 : .6, ease }}>
+  return <motion.figure ref={ref} className={`ed-photo ${cover ? 'is-cover' : ''}`} data-asset-id={photo.assetId} data-orientation={ratio > 1.1 ? 'landscape' : 'portrait'} initial={reduced ? false : { opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .1 }} transition={{ duration: reduced ? 0 : .6, ease }}>
     <div className="ed-image-wrap" style={{ aspectRatio: fit === 'cover' ? ratio > 1 ? 1.5 : .8 : ratio }}>
       <button type="button" className="ed-image-button" onClick={() => onOpen(photo.assetId)} aria-label={`View photograph ${index + 1}`}>
         <img className="ed-image-thumbnail" src={photo.thumbnailUrl || photo.url} alt="" aria-hidden="true" loading={eager ? 'eager' : 'lazy'} style={{ objectFit: fit, objectPosition: photo.focalPoint || '50% 50%' }} />
@@ -93,6 +93,8 @@ export default function EditorialViewer({ delivery, galleryProps = {}, demo = fa
   const showClosingPhoto = closing && closing.assetId !== cover?.assetId;
   const { galleryUnlocked, closingRef } = useClosingGallery(`${delivery.publicId || delivery._id || 'editorial-demo'}:${photos.map(photo => photo.assetId).join('|')}`);
   const title = direction.title || delivery.title || 'Your photographs';
+  const titleBreak = title.lastIndexOf(' ');
+  const titleSize = title.length > 45 ? 'long' : title.length > 24 ? 'medium' : 'short';
   const items = useMemo(() => [{ id: 'editorial-cover', title: 'Cover' }, ...sections.map(section => ({ id: `ed-${section.id}`, title: section.title || 'Selected photographs' })), ...(editorial.note || editorial.credits.length ? [{ id: 'editorial-notes', title: 'Notes and credits' }] : []), { id: 'editorial-close', title: 'The full collection' }], [editorial, sections]);
   const reveal = delay => reduced ? {} : { initial: { opacity: 0, y: 16 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, amount: .15 }, transition: { duration: .55, delay: delay || 0, ease } };
   useEffect(() => {
@@ -136,10 +138,10 @@ export default function EditorialViewer({ delivery, galleryProps = {}, demo = fa
     </header>
     <motion.div className="ed-progress" style={{ scaleX: scrollYProgress }} aria-hidden="true" />
     <main>
-      <section id="editorial-cover" className="fd-ed-cover ed-cover">
+      <section id="editorial-cover" className="fd-ed-cover ed-cover" data-title-size={titleSize}>
         <motion.div className="ed-masthead" {...reveal()}><span>A PHOTOGRAPHIC FEATURE</span>{editorial.issue && <span>{editorial.issue}</span>}</motion.div>
         <div className="ed-cover-grid">
-          <div className="ed-cover-copy"><motion.p className="ed-eyebrow" {...reveal(.06)}>{delivery.shootType || 'The finished photographs'}</motion.p><motion.h1 {...reveal(.12)}>{title}</motion.h1><motion.p className="ed-deck" {...reveal(.2)}>{direction.openingLine}</motion.p><motion.button className="ed-start" type="button" onClick={() => goTo(items[1]?.id || 'editorial-close')} {...reveal(.28)}>Explore the feature<ArrowDown size={18} /></motion.button></div>
+          <div className="ed-cover-copy"><motion.p className="ed-eyebrow" {...reveal(.06)}>{delivery.shootType || 'The finished photographs'}</motion.p><motion.h1 {...reveal(.12)}>{titleBreak > 0 ? <>{title.slice(0, titleBreak)} <em>{title.slice(titleBreak + 1)}</em></> : title}</motion.h1><motion.p className="ed-deck" {...reveal(.2)}>{direction.openingLine}</motion.p></div>
           <div className="ed-cover-art"><EditorialImage photo={cover} index={order.get(cover?.assetId) ?? 0} onOpen={openPhoto} eager cover showCaption nextPhoto={featurePhotos[0] || (showClosingPhoto ? closing : undefined)} /></div>
         </div>
         <motion.div className="ed-cover-footer" {...reveal(.25)}><span>{number(photos.length)} selected photographs</span></motion.div>
@@ -147,12 +149,14 @@ export default function EditorialViewer({ delivery, galleryProps = {}, demo = fa
       {editorial.introduction && <motion.section className="ed-introduction" {...reveal()}><span className="ed-eyebrow">ABOUT THE FEATURE</span><p>{editorial.introduction}</p></motion.section>}
       {sections.map((section, sectionIndex) => {
         const sectionPhotos = section.assetIds.map(id => byId.get(id)).filter(Boolean);
-        const layout = sectionPhotos.length === 1 ? 'hero' : section.layout === 'auto' || (section.layout === 'triptych' && sectionPhotos.length !== 3) ? sectionPhotos.length === 3 ? 'triptych' : 'pair' : section.layout;
+        const layout = sectionPhotos.length === 1 ? sectionPhotos[0].width > sectionPhotos[0].height ? 'wide' : 'hero' : section.layout === 'auto' || (section.layout === 'triptych' && sectionPhotos.length !== 3) ? sectionPhotos.length === 3 ? 'triptych' : 'pair' : section.layout;
         const pullLine = section.pullLine && [section.body, ...sectionPhotos.map(photo => photo.caption || '')].some(text => text.replace(/\s+/g, ' ').includes(section.pullLine.replace(/\s+/g, ' '))) ? section.pullLine : '';
-        return <section key={section.id} id={`ed-${section.id}`} className="fd-ed-spread ed-section" data-section-layout={layout}>
+        return <section key={section.id} id={`ed-${section.id}`} className="fd-ed-spread ed-section" data-section-layout={layout} data-flow={sectionIndex % 2 ? 'image-right' : 'image-left'}>
+          <div className="ed-section-copy">
           <motion.header className="ed-section-heading" {...reveal()}><div><span className="ed-eyebrow">{number(sectionIndex + 1)} / THE FEATURE</span><h2>{section.title || sectionPhotos[0]?.headline || 'Selected photographs'}</h2></div>{section.body && <p>{section.body}</p>}</motion.header>
           {pullLine && <motion.aside className="ed-pull-line" {...reveal(.05)}>{pullLine}</motion.aside>}
           {section.mergedCopy.map(copy => <motion.div key={copy.id} className="ed-merged-copy" {...reveal()}>{copy.title && <h3>{copy.title}</h3>}<p>{copy.body}</p></motion.div>)}
+          </div>
           {sectionPhotos.length > 0 && <div className="ed-section-grid" data-layout={layout}>{sectionPhotos.map(photo => <EditorialImage key={photo.assetId} photo={photo} index={order.get(photo.assetId) ?? 0} onOpen={openPhoto} nextPhoto={featurePhotos[featurePhotos.indexOf(photo) + 1] || (showClosingPhoto ? closing : undefined)} />)}</div>}
         </section>;
       })}

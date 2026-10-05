@@ -50,6 +50,7 @@ for (const width of [320, 390, 768, 834, 1440]) test(`Editorial has one cover, r
   const delivery = fixture(width === 834 ? 14 : 5);
   await setup(page, delivery); await page.goto('/d/editorial-test'); const view = at(page, width);
   await expect(view.locator('.ed-cover h1')).toHaveText(delivery.creativeDirection.title);
+  await expect(view.getByRole('button', { name: 'Explore the feature' })).toHaveCount(0);
   await expect(view.locator('.fd-v3-bookend')).toHaveCount(0);
   await expect(view.locator('.ed-cover')).toHaveCount(1); await expect(view.locator('.ed-closing')).toHaveCount(1);
   await expect(view.locator('.ed-section .ed-photo')).toHaveCount(delivery.assets.length - 2);
@@ -62,6 +63,17 @@ for (const width of [320, 390, 768, 834, 1440]) test(`Editorial has one cover, r
   await expect(view.locator('.ed-section-number,.ed-closing .ed-eyebrow')).toHaveCount(0);
   expect(await view.locator('.ed-section figcaption p').first().evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(14);
   await expect.poll(() => view.locator('html').evaluate(el => el.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+  const photoBounds = await view.locator('.ed-photo').evaluateAll(photos => photos.map(photo => {
+    const image = photo.querySelector('.ed-image-wrap').getBoundingClientRect();
+    const caption = photo.querySelector('figcaption').getBoundingClientRect();
+    return { left: image.left, right: image.right, width: image.width, captionGap: caption.top - image.bottom, viewport: innerWidth };
+  }));
+  for (const bounds of photoBounds) {
+    expect(bounds.left).toBeGreaterThanOrEqual(0);
+    expect(bounds.right).toBeLessThanOrEqual(bounds.viewport + 1);
+    expect(bounds.width).toBeGreaterThan(120);
+    expect(bounds.captionGap).toBeGreaterThanOrEqual(-1);
+  }
   if (width === 768 || width === 834) {
     expect(await view.locator('.ed-section-grid').first().evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length)).toBe(1);
     expect(await view.locator('.ed-section-grid').nth(1).evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length)).toBe(2);
@@ -95,6 +107,33 @@ test('opening a photograph selects its actual gallery image and returns to the a
 test('demo uses the same publication structure and offers local favourites', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await setup(page, fixture()); await page.goto('/demo/editorial'); await expect(page.locator('.ed-cover h1')).toHaveText(EDITORIAL_DEMO_DELIVERY.creativeDirection.title); await expect(page.locator('.ed-section .ed-photo')).toHaveCount(3); await expect(page.locator('.ed-photo')).toHaveCount(5); await expect(page.locator('.fd-v3-bookend')).toHaveCount(0);
   await openPresentationGallery(page, 'editorial'); await page.getByRole('button', { name: 'Add to favourites' }).first().click(); await page.getByRole('button', { name: /Favourites/ }).click(); await expect(page.locator('.client-gallery-grid>figure')).toHaveCount(1);
+});
+
+for (const width of [320, 768, 834, 1440]) test(`Editorial demo keeps the redesigned cover and photographs intact at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 1000 }); await setup(page, fixture());
+  await page.goto('/demo/editorial' + (width > 1024 ? '?publicationView=editorial' : ''));
+  await expect(page.locator('.ed-cover h1')).toHaveText(EDITORIAL_DEMO_DELIVERY.creativeDirection.title);
+  await expect(page.getByRole('button', { name: 'Explore the feature' })).toHaveCount(0);
+  await expect(page.locator('.ed-photo figcaption p')).toHaveText(EDITORIAL_DEMO_DELIVERY.creativeDirection.frames.map(frame => frame.caption));
+  expect(await page.locator('.ed-photo').evaluateAll(photos => photos.map(photo => photo.dataset.assetId))).toEqual(EDITORIAL_DEMO_DELIVERY.curatedAssetIds);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+  await openPresentationGallery(page, 'editorial');
+  await expect(page.locator('.client-gallery-grid>figure')).toHaveCount(5);
+});
+
+test('single landscape photographs keep their aspect ratio and portrait spreads alternate sides', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const delivery = fixture();
+  delivery.creativeDirection.editorial.sections = delivery.assets.map((photo, index) => ({ id: `single-${index}`, title: `Birthday portrait ${index + 1}`, body: '', pullLine: '', layout: 'auto', assetIds: [photo.assetId] }));
+  await setup(page, delivery); await page.goto('/d/editorial-test?publicationView=editorial');
+  const landscape = page.locator('.ed-section[data-section-layout="wide"]');
+  await expect(landscape).toHaveCount(1);
+  const ratio = await landscape.locator('.ed-image-wrap').evaluate(image => image.clientWidth / image.clientHeight);
+  expect(ratio).toBeCloseTo(1600 / 900, 2);
+  const first = page.locator('.ed-section').first();
+  const bounds = await first.evaluate(section => ({ photo: section.querySelector('.ed-section-grid').getBoundingClientRect().right, copy: section.querySelector('.ed-section-copy').getBoundingClientRect().left }));
+  expect(bounds.photo).toBeLessThan(bounds.copy);
+  await expect(page.locator('.ed-photo')).toHaveCount(5);
 });
 
 test('the closing gallery returns to the last page', async ({ page }) => {
