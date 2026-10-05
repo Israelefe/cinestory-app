@@ -52,6 +52,31 @@ test('Courage demo uses the same saved checkpoints as preview, with working resp
   await expect(page.locator('.cv-checkpoint').last()).toHaveClass(/is-jumped/);expect(await page.locator('.cv-checkpoint').last().evaluate(node=>Math.abs(node.getBoundingClientRect().top-32)<2)).toBe(true);
 });
 
+test('normal-motion touch scrolling keeps tilted prints stationary and compact pairs separated',async({browser})=>{
+  const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,reducedMotion:'no-preference'});
+  try {
+    const page=await context.newPage();await init(page);await page.goto('http://127.0.0.1:5178/demo/canvas?phoneView=1');
+    await expect(page.locator('.cv-board')).toHaveAttribute('data-touch','true');
+    const photo=page.locator('.cv-photo-open').first(),surface=page.locator('.cv-frame-surface').first();
+    await photo.scrollIntoViewIfNeeded();
+    await expect.poll(()=>page.locator('.cv-frame').first().evaluate(el=>getComputedStyle(el).opacity)).toBe('1');
+    await page.evaluate(()=>window.scrollTo({top:scrollY,left:0,behavior:'instant'}));
+    const transform=await surface.evaluate(el=>getComputedStyle(el).transform);
+    expect(await surface.evaluate(el=>Math.abs(new DOMMatrixReadOnly(getComputedStyle(el).transform).b))).toBeGreaterThan(.01);
+    const initial=await page.evaluate(()=>scrollY);
+    await swipe(page,photo,0,-180);
+    await expect.poll(()=>page.evaluate(()=>scrollY)).toBeGreaterThan(initial+60);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(surface).toHaveCSS('transform',transform);
+    await expect(page.locator('.cv-frame-drift').first()).toHaveCSS('transform','none');
+    const pair=page.locator('.cv-checkpoint.is-group').first().locator('.cv-frame');
+    const left=await pair.nth(0).boundingBox(),right=await pair.nth(1).boundingBox();
+    expect(left.x+left.width).toBeLessThan(right.x);
+    expect(right.y).toBeLessThan(left.y+left.height);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBe(0);
+  } finally {await context.close();}
+});
+
 test('live preview wording updates on the same image and removal of an open group stays safe',async({page})=>{
   await page.setViewportSize({width:834,height:1194});await init(page);await page.emulateMedia({reducedMotion:'reduce'});
   const data=record();await preview(page,data);await page.getByRole('button',{name:'Open Graduation portraits',exact:true}).click();

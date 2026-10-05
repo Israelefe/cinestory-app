@@ -1,10 +1,10 @@
 // Deterministic print poses keep the demo, creator preview and delivery identical.
 export function canvasPrintPose(index, phone, ordered, landscape = false) {
-  if (ordered) return { tilt: 0, drift: 0, x: 0, y: 18, turn: 0 };
+  if (ordered) return { phone, tilt: 0, drift: 0, x: 0, y: phone ? 0 : 18, turn: 0 };
   const angles = [-2.6, 2.2, -1.8, 1.7, -2.1, 2.8];
   const directions = [[-26, 24], [22, 28], [28, -16], [-20, 28], [18, 26], [-22, 18]];
   const [x, y] = directions[index % directions.length];
-  return { tilt: angles[index % angles.length] * (phone ? .48 : landscape ? .7 : 1), drift: phone ? 4 : index % 2 ? 6 : 10, x: x * (phone ? .5 : 1), y, turn: index % 2 ? 3 : -3 };
+  return { phone, tilt: angles[index % angles.length] * (phone ? .48 : landscape ? .7 : 1), drift: phone ? 0 : 6, x: phone ? 0 : x, y: phone ? 0 : y, turn: phone ? 0 : index % 2 ? 3 : -3 };
 }
 
 // Coordinates belong to the responsive viewer, never to the saved delivery.
@@ -25,14 +25,28 @@ export function canvasBoardLayout({ width, points, photos, introHeight, closingH
     const p = { id: point.id, x, y, width: regionWidth, headingWidth, headingX: phone ? width * (index % 4 === 3 ? .078 : .144) : 0, headingY: 0, frames: [], height: 0 };
     const localFrames = [];
     if (phone) {
-      let top = group ? headingHeight + 48 : 0;
-      point.assetIds.forEach((id, place) => {
-        const right = group && !ordered && (place + (index % 4 === 3 ? 1 : 0)) % 2 === 1;
-        const w = width * (group ? ordered ? .65 : right ? .528 : .506 : index === 0 ? .672 : .597);
-        const left = width * (right ? .37 : .1);
+      let top = group ? headingHeight + 40 : 0;
+      if (group && !ordered && width >= 354) {
+        for (let start = 0; start < point.assetIds.length; start += 2) {
+          const pair = point.assetIds.slice(start, start + 2);
+          let bottom = top;
+          pair.forEach((id, col) => {
+            const right = pair.length > 1 && (col + (index % 4 === 3 ? 1 : 0)) % 2 === 1;
+            const w = width * (pair.length === 1 ? .65 : right ? .36 : .42);
+            const fy = top + (col ? 100 : 0);
+            const height = frameHeight(id, w);
+            localFrames.push({ id, x: width * (pair.length === 1 ? .18 : right ? .56 : .07), y: fy, width: w, height, right });
+            bottom = Math.max(bottom, fy + height);
+          });
+          top = bottom + 50;
+        }
+      } else point.assetIds.forEach((id, place) => {
+        const right = !ordered && (group ? (place + (index % 4 === 3 ? 1 : 0)) % 2 === 1 : index % 3 === 2);
+        const w = width * (group ? ordered ? .65 : right ? .60 : .64 : index === 0 ? .72 : .64);
+        const left = width * (right ? .29 : .1);
         const height = frameHeight(id, w);
         localFrames.push({ id, x: left, y: top, width: w, height, right });
-        top += height + 84;
+        top += height + 44;
       });
     } else if (wide) {
       const columns = tablet ? 2 : 3, gap = width * .055;
@@ -42,7 +56,7 @@ export function canvasBoardLayout({ width, points, photos, introHeight, closingH
         let bottom = top;
         point.assetIds.slice(start, start + columns).forEach((id, col) => {
           const w = ordered ? cell : cell * [1, .84, .94][col];
-          const fy = top + (ordered ? 0 : [0, 75, 25][col] * scale);
+          const fy = top + (ordered ? 0 : (start % (columns * 2) ? [65, 0, 85] : [0, 80, 25])[col] * scale);
           const height = frameHeight(id, w);
           localFrames.push({ id, x: col * (cell + gap), y: fy, width: w, height, right: col === columns - 1 });
           bottom = Math.max(bottom, fy + height);
@@ -53,18 +67,20 @@ export function canvasBoardLayout({ width, points, photos, introHeight, closingH
       let top = headingHeight + (tablet ? 40 : 32);
       for (let start = 0; start < point.assetIds.length; start += 2) {
         let bottom = top;
-        point.assetIds.slice(start, start + 2).forEach((id, col) => {
+        const pair = point.assetIds.slice(start, start + 2);
+        pair.forEach((id, col) => {
           const secondMotif = index % 4 === 3;
           const firstPhoto = photos.get(point.assetIds[start]), secondPhoto = photos.get(point.assetIds[start + 1]);
           const wideFirst = firstPhoto?.width > firstPhoto?.height && !(secondPhoto?.width > secondPhoto?.height);
-          const w = ordered ? regionWidth * .43 : width * (col === 0 ? wideFirst ? .24 : secondMotif ? .235 : .2 : wideFirst ? .165 : secondMotif ? .175 : .18);
-          const fx = col === 0 ? 0 : ordered ? regionWidth * .55 : width * (wideFirst ? .27 : secondMotif ? .29 : .23);
-          const fy = top + (ordered ? 0 : col * (tablet ? 125 : secondMotif ? 145 : 160) * scale);
+          const right = !ordered && pair.length > 1 && (secondMotif ? col === 0 : col === 1);
+          const w = ordered ? regionWidth * .43 : regionWidth * (pair.length === 1 ? .68 : right ? .36 : wideFirst ? .56 : .52);
+          const fx = ordered ? col * regionWidth * .55 : pair.length === 1 ? regionWidth * .14 : right ? regionWidth * .64 : 0;
+          const fy = top + (ordered ? 0 : col * (tablet ? 105 : 130) * scale);
           const height = frameHeight(id, w);
-          localFrames.push({ id, x: fx, y: fy, width: w, height, right: col === 1 });
+          localFrames.push({ id, x: fx, y: fy, width: w, height, right: ordered ? col === 1 : right });
           bottom = Math.max(bottom, fy + height);
         });
-        top = bottom + 92 * scale;
+        top = bottom + Math.max(48, 56 * scale);
       }
     } else {
       const w = regionWidth;
@@ -74,7 +90,7 @@ export function canvasBoardLayout({ width, points, photos, introHeight, closingH
     p.height = Math.max(headingHeight, ...localFrames.map(f => f.y + f.height));
     p.marker = group
       ? { x: phone ? width * (index % 4 === 3 ? .905 : .03) : x - 34, y: y + Math.min(headingHeight / 2, 32) }
-      : { x: phone ? width * .03 : x - 26, y: y + 25 };
+      : { x: phone ? localFrames[0].x - 18 : x - 26, y: y + 25 };
     if (group) obstacles.push({ x: x + p.headingX, y, width: headingWidth, height: headingHeight });
     for (const f of localFrames) {
       const global = { ...f, x: x + f.x, y: y + f.y, pointId: point.id };
@@ -83,7 +99,7 @@ export function canvasBoardLayout({ width, points, photos, introHeight, closingH
       // Reserve the rotated print corners, hover lift and scroll movement in routes.
       const angle = Math.abs(global.pose.tilt) * Math.PI / 180;
       const expandX = Math.max(0, (global.height * Math.sin(angle) + global.width * Math.cos(angle) - global.width) / 2) + 2;
-      const expandY = Math.max(0, (global.width * Math.sin(angle) + global.height * Math.cos(angle) - global.height) / 2) + global.pose.drift + (ordered ? 0 : 7);
+      const expandY = Math.max(0, (global.width * Math.sin(angle) + global.height * Math.cos(angle) - global.height) / 2) + global.pose.drift + (ordered || phone ? 0 : 7);
       frames.push(global); obstacles.push({ ...global, x: global.x - expandX, y: global.y - expandY, width: global.width + expandX * 2, height: global.height + expandY * 2 });
     }
     placements.push(p); return p;
@@ -103,8 +119,8 @@ export function canvasBoardLayout({ width, points, photos, introHeight, closingH
       lastLeftBottom = cursor; at++; continue;
     }
     const leftGroup = points[at].type === 'group', first = at === 0;
-    const leftX = leftGroup ? inset : width * (first ? .0583 : .1375);
-    const leftWidth = leftGroup ? width * .405 : width * (ordered ? .2583 : first ? .275 : at % 4 === 0 ? .24 : .215);
+    const leftX = leftGroup ? inset : width * (first ? .0583 : at % 4 === 0 ? .075 : .13);
+    const leftWidth = leftGroup ? width * .405 : width * (ordered ? .2583 : first ? .30 : at % 4 === 0 ? .25 : .225);
     const left = add(points[at], at, leftX, cursor, leftWidth);
     lastLeftBottom = left.y + left.height;
     let bottom = lastLeftBottom;
@@ -154,13 +170,46 @@ function route(start, end, obstacles, width, height) {
   return result.reverse();
 }
 
-function rounded(points) {
+function clearPoint(p, obstacles, width, height, pad = 4) {
+  return p.x >= 4 && p.x <= width - 4 && p.y >= 4 && p.y <= height - 4 && !obstacles.some(r => p.x > r.x - pad && p.x < r.x + r.width + pad && p.y > r.y - pad && p.y < r.y + r.height + pad);
+}
+
+function sweeping(start, end, obstacles, width, height) {
+  const dx = end.x - start.x, dy = end.y - start.y, bend = Math.min(90, Math.max(28, Math.abs(dy) * .28));
+  const candidates = [
+    [{ x: start.x, y: start.y + dy * .48 }, { x: end.x, y: end.y - dy * .48 }],
+    [{ x: start.x - bend, y: start.y + dy * .32 }, { x: end.x - bend, y: end.y - dy * .32 }],
+    [{ x: start.x + bend, y: start.y + dy * .32 }, { x: end.x + bend, y: end.y - dy * .32 }],
+    [{ x: start.x + dx * .48, y: start.y }, { x: end.x - dx * .48, y: end.y }],
+  ];
+  const samples = Math.min(400, Math.max(40, Math.ceil(Math.hypot(dx, dy) / 4)));
+  for (const [a, b] of candidates) {
+    let valid = true;
+    for (let step = 0; step <= samples; step++) {
+      const t = step / samples, v = 1 - t;
+      const p = { x: v ** 3 * start.x + 3 * v * v * t * a.x + 3 * v * t * t * b.x + t ** 3 * end.x, y: v ** 3 * start.y + 3 * v * v * t * a.y + 3 * v * t * t * b.y + t ** 3 * end.y };
+      if (!clearPoint(p, obstacles, width, height)) { valid = false; break; }
+    }
+    if (valid) return `M ${start.x} ${start.y} C ${a.x} ${a.y} ${b.x} ${b.y} ${end.x} ${end.y}`;
+  }
+  return '';
+}
+
+function rounded(points, obstacles, width, height) {
   const clean = points.filter((p,i) => i===0 || i===points.length-1 || !((points[i-1].x===p.x&&points[i+1].x===p.x)||(points[i-1].y===p.y&&points[i+1].y===p.y)));
   if(clean.length<2)return '';
   let d=`M ${clean[0].x} ${clean[0].y}`;
   for(let i=1;i<clean.length-1;i++){
-    const a=clean[i-1],b=clean[i],c=clean[i+1], l1=Math.hypot(b.x-a.x,b.y-a.y),l2=Math.hypot(c.x-b.x,c.y-b.y),r=Math.min(22,l1/2,l2/2);
-    d+=` L ${b.x+(a.x-b.x)*r/l1} ${b.y+(a.y-b.y)*r/l1} Q ${b.x} ${b.y} ${b.x+(c.x-b.x)*r/l2} ${b.y+(c.y-b.y)*r/l2}`;
+    const a=clean[i-1],b=clean[i],c=clean[i+1], l1=Math.hypot(b.x-a.x,b.y-a.y),l2=Math.hypot(c.x-b.x,c.y-b.y);
+    let r=Math.min(80,l1*.48,l2*.48), from, to;
+    while (true) {
+      from = { x: b.x+(a.x-b.x)*r/l1, y: b.y+(a.y-b.y)*r/l1 };
+      to = { x: b.x+(c.x-b.x)*r/l2, y: b.y+(c.y-b.y)*r/l2 };
+      const safe = Array.from({ length: 21 }, (_, step) => { const t=step/20,v=1-t; return { x: v*v*from.x+2*v*t*b.x+t*t*to.x, y: v*v*from.y+2*v*t*b.y+t*t*to.y }; }).every(p=>clearPoint(p,obstacles,width,height));
+      if (safe || r < 3) break;
+      r *= .5;
+    }
+    d+=` L ${from.x} ${from.y} Q ${b.x} ${b.y} ${to.x} ${to.y}`;
   }
   return d+` L ${clean.at(-1).x} ${clean.at(-1).y}`;
 }
@@ -168,13 +217,15 @@ function rounded(points) {
 export function canvasBoardPaths(layout, points, width) {
   const paths=[], byId=new Map(layout.frames.map(f=>[f.id,f]));
   const connect=(id,pointId,next,start,end,waypoints=[])=>{
+    const curve = waypoints.length ? '' : sweeping(start, end, layout.obstacles, width, layout.height);
+    if (curve) { paths.push({id,pointId,next,d:curve}); return; }
     const chain=[start,...waypoints,end], vertices=[];
     for(let i=1;i<chain.length;i++){
       const part=route(chain[i-1],chain[i],layout.obstacles,width,layout.height);
       if(!part.length)return;
       vertices.push(...(vertices.length?part.slice(1):part));
     }
-    const d=rounded(vertices);if(d)paths.push({id,pointId,next,d});
+    const d=rounded(vertices,layout.obstacles,width,layout.height);if(d)paths.push({id,pointId,next,d});
   };
   layout.points.forEach((p,index)=>{
     const point=points[index];
@@ -184,9 +235,9 @@ export function canvasBoardPaths(layout, points, width) {
       const branch = paths.at(-1); if (branch?.id === `${point.id}-${id}`) branch.assetId = id;
     });
     const next=layout.points[index+1];if(!next)return;
-    const start=layout.phone&&point.type==='group'?byId.get(point.assetIds.at(-1)).anchor:p.marker;
-    const waypoints=layout.phone&&point.type==='photo'&&next.marker.x<width*.2 ? [{x:width*.935,y:p.y-24},{x:width*.935,y:next.y+(next.headingY||0)-24}] : [];
-    connect(`${point.id}-next`,point.id,next.id,start,next.marker,waypoints);
+    const last = p.frames.reduce((bottom, frame) => !bottom || frame.y+frame.height > bottom.y+bottom.height ? frame : bottom, null);
+    const start = { x: p.x+last.x+last.width*.5, y: p.y+last.y+last.height+40 };
+    connect(`${point.id}-next`,point.id,next.id,start,next.marker);
   });
   return paths;
 }

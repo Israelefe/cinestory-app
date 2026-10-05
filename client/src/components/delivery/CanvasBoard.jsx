@@ -13,33 +13,40 @@ import { CANVAS_DEMO_DELIVERY } from '../../constants/canvasDemo.js';
 import './CanvasBoard.css';
 
 const number = value => String(value).padStart(2, '0');
-const arrival = reduced => ({ initial: reduced ? false : { opacity: 0, y: 22 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, amount: .12 }, transition: { duration: reduced ? 0 : .55, ease: [.22, 1, .36, 1] } });
+const arrival = (reduced, stationary = false) => ({ initial: reduced ? false : { opacity: 0, y: stationary ? 0 : 18 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, amount: .12 }, transition: { duration: reduced ? 0 : stationary ? .35 : .55, ease: [.22, 1, .36, 1] } });
 
-function CanvasPrint({ photo, id, index, place, frame, pose, reduced, ordered, open, measureRef, onArrival }) {
+function PrintDepth({ target, amplitude, children }) {
+  const { scrollYProgress } = useScroll({ target, offset: ['start end', 'end start'] });
+  const offset = useTransform(scrollYProgress, progress => (.5 - progress) * 2 * amplitude);
+  const drift = useSpring(offset, { stiffness: 180, damping: 35, restDelta: .05 });
+  return <motion.div className="cv-frame-drift" style={{ y: drift }}>{children}</motion.div>;
+}
+
+function CanvasPrint({ photo, id, index, place, frame, pose, reduced, ordered, touch, open, measureRef, onArrival }) {
   // Measurements arrive after mounting; give the first arrival its direction too.
   pose = pose || canvasPrintPose(index, window.innerWidth < 668, ordered, photo.width > photo.height);
   const target = useRef(null);
-  const { scrollYProgress } = useScroll({ target, offset: ['start end', 'end start'] });
-  const offset = useTransform(scrollYProgress, progress => reduced || ordered ? 0 : (.5 - progress) * 2 * (pose?.drift || 0));
-  const drift = useSpring(offset, { stiffness: 180, damping: 35, restDelta: .05 });
-  const delay = reduced ? 0 : Math.min(place, 3) * .12;
-  return <motion.figure ref={target} className={`cv-frame ${photo.width > photo.height ? 'is-landscape' : ''}`}
-    initial={reduced ? false : { opacity: 0, x: pose?.x || 0, y: pose?.y || 22 }}
-    whileInView={{ opacity: 1, x: 0, y: 0 }} viewport={{ once: true, amount: .12 }} onViewportEnter={() => onArrival(id)}
-    transition={{ duration: reduced ? 0 : .72, delay, ease: [.22, 1, .36, 1] }}
-    style={{ left: frame?.x, top: frame?.y, width: frame?.width, '--cv-ratio': photo.width && photo.height ? `${photo.width} / ${photo.height}` : '3 / 4', '--cv-tilt': `${pose?.tilt || 0}deg` }}>
-    <motion.div className="cv-frame-drift" style={{ y: reduced || ordered ? 0 : drift }}>{index % 3 === 0 && <span className="cv-frame-alignment" aria-hidden="true" />}
-      <motion.div layoutId={`canvas-photo-${id}`} className="cv-frame-surface"
-        initial={reduced || ordered ? false : { rotate: (pose?.tilt || 0) + (pose?.turn || 0) }} whileInView={{ rotate: reduced ? 0 : pose?.tilt || 0 }} viewport={{ once: true, amount: .12 }}
-        whileHover={reduced ? undefined : { rotate: (pose?.tilt || 0) * .45, y: -7, transition: { duration: .25, ease: [.22, 1, .36, 1] } }}
-        whileTap={reduced ? undefined : { scale: .985, y: -2, transition: { duration: .15 } }}
-        transition={{ duration: reduced ? 0 : .82, delay, ease: [.22, 1, .36, 1], layout: { duration: reduced ? 0 : .48, ease: [.22, 1, .36, 1] } }}>
-        <button type="button" className="fd-wall-card cv-photo-open" onClick={event => open(photo, event)} aria-label={`Open photograph ${index + 1}`}>
-          <Photo url={photo.url} thumbnailUrl={photo.thumbnailUrl} srcSet={photo.srcSet} alt={photo.alt} eager={index < 2} draggable={false} style={{ objectPosition: photo.focalPoint || '50% 50%' }} sizes="(max-width: 640px) 70vw, (max-width: 1024px) 32vw, 420px" onError={event => { event.currentTarget.closest('.cv-frame').classList.add('has-error'); }} />
-          <span className="cv-photo-number" aria-hidden="true">{number(index + 1)}</span>
-        </button><button type="button" className="cv-frame-retry" onClick={event => { const frame = event.currentTarget.closest('.cv-frame'), image = frame.querySelector('img'); frame.classList.remove('has-error'); image.src = photo.url; image.srcset = photo.srcSet || ''; }}><RefreshCw size={16} />Retry photo</button>
-      </motion.div>
+  const stationary = touch || pose.phone;
+  const interactive = !reduced && !stationary;
+  const delay = reduced ? 0 : stationary ? Math.min(place, 2) * .06 : Math.min(place, 3) * .12;
+  const surface = <>{index % 3 === 0 && <span className="cv-frame-alignment" aria-hidden="true" />}
+    <motion.div layoutId={`canvas-photo-${id}`} className="cv-frame-surface" tabIndex={-1}
+      initial={reduced ? false : { rotate: pose.tilt + (stationary || ordered ? 0 : pose.turn) }} whileInView={{ rotate: reduced ? 0 : pose.tilt }} viewport={{ once: true, amount: .12 }}
+      whileHover={interactive ? { rotate: pose.tilt * .45, y: -7, transition: { duration: .25, ease: [.22, 1, .36, 1] } } : undefined}
+      whileTap={interactive ? { scale: .985, y: -2, transition: { duration: .15 } } : undefined}
+      transition={{ duration: reduced || stationary ? 0 : .82, delay: stationary ? 0 : delay, ease: [.22, 1, .36, 1], layout: { duration: reduced ? 0 : .48, ease: [.22, 1, .36, 1] } }}>
+      <button type="button" className="fd-wall-card cv-photo-open" onClick={event => open(photo, event)} aria-label={`Open photograph ${index + 1}`}>
+        <Photo url={photo.url} thumbnailUrl={photo.thumbnailUrl} srcSet={photo.srcSet} alt={photo.alt} eager={index < 2} draggable={false} style={{ objectPosition: photo.focalPoint || '50% 50%' }} sizes="(max-width: 640px) 72vw, (max-width: 1024px) 35vw, 460px" onError={event => { event.currentTarget.closest('.cv-frame').classList.add('has-error'); }} />
+        <span className="cv-photo-number" aria-hidden="true">{number(index + 1)}</span>
+      </button><button type="button" className="cv-frame-retry" onClick={event => { const frame = event.currentTarget.closest('.cv-frame'), image = frame.querySelector('img'); frame.classList.remove('has-error'); image.src = photo.url; image.srcset = photo.srcSet || ''; }}><RefreshCw size={16} />Retry photo</button>
     </motion.div>
+  </>;
+  return <motion.figure ref={target} className={`cv-frame ${photo.width > photo.height ? 'is-landscape' : ''}`}
+    initial={reduced ? false : { opacity: 0, x: stationary ? 0 : pose.x, y: stationary ? 0 : pose.y }}
+    whileInView={{ opacity: 1, x: 0, y: 0 }} viewport={{ once: true, amount: .12 }} onViewportEnter={() => onArrival(id)}
+    transition={{ duration: reduced ? 0 : stationary ? .35 : .72, delay, ease: [.22, 1, .36, 1] }}
+    style={{ left: frame?.x, top: frame?.y, width: frame?.width, '--cv-ratio': photo.width && photo.height ? `${photo.width} / ${photo.height}` : '3 / 4', '--cv-tilt': `${pose?.tilt || 0}deg` }}>
+    {interactive && !ordered && pose.drift > 0 ? <PrintDepth target={target} amplitude={pose.drift}>{surface}</PrintDepth> : <div className="cv-frame-drift">{surface}</div>}
     <figcaption ref={measureRef} className="cv-frame-label"><span className="cv-frame-index">{number(index + 1)}</span>{photo.headline && <strong>{photo.headline}</strong>}</figcaption>
   </motion.figure>;
 }
@@ -49,12 +56,12 @@ function BoardPhoto({ photo, eager, ...props }) {
   return <><Photo key={attempt} url={photo.url} thumbnailUrl={photo.thumbnailUrl} srcSet={photo.srcSet} alt={photo.alt} eager={eager} onError={() => setFailed(true)} {...props} />{failed && <span className="cv-photo-error"><span>Photo could not load.</span><button type="button" onClick={event => { event.stopPropagation(); setFailed(false); setAttempt(value => value + 1); }}><RefreshCw size={16} />Retry photo</button></span>}</>;
 }
 
-function Bookend({ delivery, kind, photos, reduced, onGallery, edgeId, position, measureRef }) {
+function Bookend({ delivery, kind, photos, reduced, touch, onGallery, edgeId, position, measureRef }) {
   const opening = kind === 'opening', photo = photos.find(photo => photo.assetId === delivery.v3?.[opening ? 'openingAssetId' : 'closingAssetId']) || (opening ? photos[0] : photos.at(-1));
   const showPhoto = photo && photo.assetId !== edgeId;
   return <section ref={measureRef} className={`cv-bookend is-${kind} ${showPhoto ? 'has-photo' : ''}`} style={position}>
     {showPhoto && <div className="cv-bookend-image"><BoardPhoto photo={photo} eager={opening} sizes="160px" style={{ aspectRatio: photo.width && photo.height ? `${photo.width} / ${photo.height}` : '3 / 4', objectPosition: photo.focalPoint || '50% 50%' }} /></div>}
-    <motion.div className="cv-bookend-copy" {...arrival(reduced)}><span>{opening ? `${delivery.clientName || 'YOUR PHOTOGRAPHS'} / CANVAS` : 'ALL YOUR PHOTOGRAPHS'}</span>{opening ? <h1>{delivery.creativeDirection?.title || delivery.title || delivery.clientName || 'Your canvas'}</h1> : <h2>Yours to keep.</h2>}<p>{delivery.creativeDirection?.[opening ? 'openingLine' : 'closingLine'] || (opening ? 'Take your time. Open any photograph for a closer look.' : 'Your finished photographs are ready to view and keep.')}</p>{!opening && <button type="button" onClick={onGallery}><Images size={18} />View full gallery</button>}</motion.div>
+    <motion.div className="cv-bookend-copy" {...arrival(reduced, touch)}><span>{opening ? `${delivery.clientName || 'YOUR PHOTOGRAPHS'} / CANVAS` : 'ALL YOUR PHOTOGRAPHS'}</span>{opening ? <h1>{delivery.creativeDirection?.title || delivery.title || delivery.clientName || 'Your canvas'}</h1> : <h2>Yours to keep.</h2>}<p>{delivery.creativeDirection?.[opening ? 'openingLine' : 'closingLine'] || (opening ? 'Take your time. Open any photograph for a closer look.' : 'Your finished photographs are ready to view and keep.')}</p>{!opening && <button type="button" onClick={onGallery}><Images size={18} />View full gallery</button>}</motion.div>
   </section>;
 }
 
@@ -99,10 +106,17 @@ function CanvasFocus({ all, selection, setSelection, onClose, triggerRef, reduce
 export default function CanvasBoard({ delivery: supplied, galleryProps, audioState, toggleAudio, onNarrationNavigate }) {
   const delivery = supplied || CANVAS_DEMO_DELIVERY, initialReduced = useReducedMotion();
   const [reduced, setReduced] = useState(initialReduced);
+  const [finePointer, setFinePointer] = useState(() => window.matchMedia('(hover: hover) and (pointer: fine)').matches);
   useEffect(() => {
     const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
     const update = () => setReduced(preference.matches);
     update(); preference.addEventListener('change', update);
+    return () => preference.removeEventListener('change', update);
+  }, []);
+  useEffect(() => {
+    const preference = window.matchMedia('(hover: hover) and (pointer: fine)');
+    const update = () => setFinePointer(preference.matches);
+    preference.addEventListener('change', update);
     return () => preference.removeEventListener('change', update);
   }, []);
   const pathPrefix = useId(), context = usePresentation(delivery, galleryProps, !supplied);
@@ -157,30 +171,31 @@ export default function CanvasBoard({ delivery: supplied, galleryProps, audioSta
   const open = (photo, event) => { window.scrollTo({ top: window.scrollY, left: window.scrollX, behavior: 'instant' }); trigger.current = event.currentTarget; setSelection({ id: photo.assetId, scope: null, title: '' }); onNarrationNavigate?.(photo.assetId); };
   const groupOpen = (point, event) => { window.scrollTo({ top: window.scrollY, left: window.scrollX, behavior: 'instant' }); trigger.current = event.currentTarget; setSelection({ id: point.assetIds[0], scope: point.assetIds, title: point.title }); onNarrationNavigate?.(point.assetIds[0]); };
   const paths = composition?.paths || [];
+  const touch = !finePointer || composition?.phone;
   const markArrived = id => setArrivedPhotos(current => current.has(id) ? current : new Set([...current, id]));
   const bookendPosition = kind => composition ? { left: composition[kind].x, top: composition[kind].y, width: composition[kind].width } : undefined;
-  return <div className="fd-page fd-canvas cv-board" style={theme} data-arrangement={settings.arrangement || 'spatial'}>
+  return <div className="fd-page fd-canvas cv-board" style={theme} data-touch={touch ? 'true' : 'false'} data-arrangement={settings.arrangement || 'spatial'}>
     <DemoHeader format="Canvas" client={delivery.clientName || delivery.title} sectionId="canvas" delivery={supplied} onGallery={() => setGallery(true)} audioState={audioState} toggleAudio={toggleAudio} />
     <main className="cv-main">
       <div className="cv-intro-bar"><span>YOUR CANVAS</span><button type="button" onClick={() => jump(points[0]?.id)}>Explore the canvas<ArrowDown size={16} /></button></div>
       <LayoutGroup id={`canvas-${delivery.publicId || delivery._id || 'demo'}`}><div className="cv-path-board" ref={board} style={{ height: composition?.height || 1800 }}>
-        <Bookend delivery={delivery} kind="opening" photos={all} reduced={reduced} edgeId={order[0]} position={bookendPosition('intro')} measureRef={metric('opening')} />
+        <Bookend delivery={delivery} kind="opening" photos={all} reduced={reduced} touch={touch} edgeId={order[0]} position={bookendPosition('intro')} measureRef={metric('opening')} />
         <div className="cv-board-count"><span>{number(photos.length)} PHOTOGRAPHS</span><span>{number(points.length)} CHECKPOINTS</span></div>
         <svg className="fd-wall-paths cv-paths" aria-hidden="true"><defs>{paths.map((path, index) => <mask key={path.id} id={`${pathPrefix}-line-${index}`} maskUnits="userSpaceOnUse" x="0" y="0" width="100%" height="100%"><motion.path d={path.d} stroke="white" strokeWidth="5" fill="none" pathLength={1} style={{ strokeDasharray: 'var(--cv-line-length, 0) 1', strokeDashoffset: 0 }} initial={false} animate={{ '--cv-line-length': reduced || (path.assetId ? arrivedPhotos.has(path.assetId) : visited.has(path.next) || visited.has(path.pointId)) ? 1 : 0 }} transition={{ duration: reduced ? 0 : .7, delay: path.assetId ? .18 : 0, ease: 'easeOut' }} /></mask>)}</defs>{paths.map((path, index) => <path key={path.id} d={path.d} mask={`url(#${pathPrefix}-line-${index})`} />)}</svg>
         {points.map((point, at) => {
           const placement = composition?.points[at];
           return <section key={point.id} id={`cv-${point.id}`} data-point={point.id} data-type={point.type} ref={node => { if (node) nodes.current.set(point.id, node); else nodes.current.delete(point.id); }} style={placement ? { left: placement.x, top: placement.y, width: placement.width, height: placement.height } : { visibility: 'hidden' }} className={`cv-checkpoint ${point.type === 'group' ? 'is-group' : 'is-single'} ${active === point.id ? 'is-current' : ''} ${jumped === point.id ? 'is-jumped' : ''}`}>
             <button type="button" className="cv-point-marker" style={placement ? { left: placement.marker.x - placement.x, top: placement.marker.y - placement.y } : undefined} aria-label={`Checkpoint ${at + 1}`} onClick={() => jump(point.id)}><motion.span initial={false} animate={{ opacity: visited.has(point.id) ? 1 : .75, scale: visited.has(point.id) ? 1 : .94 }} transition={{ duration: reduced ? 0 : .35, ease: [.22, 1, .36, 1] }}>{number(at + 1)}</motion.span></button>
-            <div className="cv-checkpoint-content">{point.type === 'group' && <motion.header ref={metric(`heading:${point.id}`)} className="cv-group-heading" style={placement ? { left: placement.headingX, top: placement.headingY, width: placement.headingWidth } : undefined} {...arrival(reduced)}><button type="button" onClick={event => groupOpen(point, event)} aria-label={`Open ${point.title || 'photo group'}`}><span>GROUP / {point.assetIds.length} PHOTOS</span><h3>{point.title}<ChevronRight size={18} /></h3>{settings.showGroupNotes !== false && point.note && <p>{point.note}</p>}</button></motion.header>}
+            <div className="cv-checkpoint-content">{point.type === 'group' && <motion.header ref={metric(`heading:${point.id}`)} className="cv-group-heading" style={placement ? { left: placement.headingX, top: placement.headingY, width: placement.headingWidth } : undefined} {...arrival(reduced, touch)}><button type="button" onClick={event => groupOpen(point, event)} aria-label={`Open ${point.title || 'photo group'}`}><span>GROUP / {point.assetIds.length} PHOTOS</span><h3>{point.title}<ChevronRight size={18} /></h3>{settings.showGroupNotes !== false && point.note && <p>{point.note}</p>}</button></motion.header>}
               <div className="cv-photo-composition">{point.assetIds.map((id, place) => {
                 const photo = byId.get(id), index = order.indexOf(id), frame = placement?.frames[place]; if (!photo) return null;
                 const global = composition?.frames.find(item => item.id === id);
-                return <React.Fragment key={id}>{point.type === 'group' && global && <span className="cv-photo-anchor" aria-hidden="true" style={{ left: global.anchor.x - placement.x, top: global.anchor.y - placement.y }} />}<CanvasPrint photo={photo} id={id} index={index} place={place} frame={frame} pose={global?.pose} reduced={reduced} ordered={settings.arrangement === 'ordered'} open={open} measureRef={metric(`label:${id}`)} onArrival={markArrived} /></React.Fragment>;
+                return <React.Fragment key={id}>{point.type === 'group' && global && <span className="cv-photo-anchor" aria-hidden="true" style={{ left: global.anchor.x - placement.x, top: global.anchor.y - placement.y }} />}<CanvasPrint photo={photo} id={id} index={index} place={place} frame={frame} pose={global?.pose} reduced={reduced} touch={touch} ordered={settings.arrangement === 'ordered'} open={open} measureRef={metric(`label:${id}`)} onArrival={markArrived} /></React.Fragment>;
               })}</div>
             </div>
           </section>;
         })}
-        <Bookend delivery={delivery} kind="closing" photos={all} reduced={reduced} edgeId={order.at(-1)} position={bookendPosition('closing')} measureRef={metric('closing')} onGallery={() => setGallery(true)} />
+        <Bookend delivery={delivery} kind="closing" photos={all} reduced={reduced} touch={touch} edgeId={order.at(-1)} position={bookendPosition('closing')} measureRef={metric('closing')} onGallery={() => setGallery(true)} />
       </div><AnimatePresence>{selection && byId.has(selection.id) && (!selection.scope || selection.scope.some(id => byId.has(id))) && <CanvasFocus all={orderedPhotos} selection={selection} setSelection={setSelection} onClose={() => setSelection(null)} triggerRef={trigger} reduced={reduced} onNavigate={onNarrationNavigate} />}</AnimatePresence></LayoutGroup>
       <footer className="cv-board-footer"><span>Photographed by {delivery.branding?.name || 'Veylo Studio'}</span><span>{photos.length} photographs on your Canvas</span></footer>
     </main>
