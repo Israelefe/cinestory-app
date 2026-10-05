@@ -1,14 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, animate, motion, useMotionValue, useMotionValueEvent, useTransform } from 'framer-motion';
+import { AnimatePresence, animate, motion, useMotionValue, useTransform } from 'framer-motion';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import {
   ArrowDownToLine,
-  Camera,
   Check,
   ChevronRight,
-  Film,
   Heart,
-  Image as ImageIcon,
   RotateCcw,
   Undo2,
   Volume2,
@@ -38,53 +35,21 @@ function dominantColor(asset) {
   return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : null;
 }
 
-/* ── Unique card aesthetic per image ── */
-const CARD_THEMES = [
-  {
-    id: 'cobalt-sapphire',
-    className: 'ps-card-theme-cobalt',
-    defaultGlow: '#173b70',
-    accentColor: '#60a5fa',
-    tagSuffix: 'EDITORIAL LOOK',
-    filmStamp: '35mm · Studio Cobalt',
-    Icon: Camera
-  },
-  {
-    id: 'amethyst-noir',
-    className: 'ps-card-theme-amethyst',
-    defaultGlow: '#2d1a40',
-    accentColor: '#c084fc',
-    tagSuffix: 'INTIMATE FRAME',
-    filmStamp: '50mm · Deep Violet',
-    Icon: Film
-  },
-  {
-    id: 'emerald-slate',
-    className: 'ps-card-theme-emerald',
-    defaultGlow: '#143328',
-    accentColor: '#34d399',
-    tagSuffix: 'COMPOSITION STUDY',
-    filmStamp: '85mm · Velvet Slate',
-    Icon: ImageIcon
-  },
-  {
-    id: 'amber-bronze',
-    className: 'ps-card-theme-amber',
-    defaultGlow: '#3d2212',
-    accentColor: '#fb923c',
-    tagSuffix: 'SIGNATURE CLOSE',
-    filmStamp: '105mm · Amber Glow',
-    Icon: Camera
-  }
+/* ── Palette variations tailored to each image ── */
+const CARD_PALETTES = [
+  { id: 'cobalt', glow: '#173b70', accent: '#60a5fa', border: 'rgba(96, 165, 250, 0.25)' },
+  { id: 'amethyst', glow: '#2b1a3d', accent: '#c084fc', border: 'rgba(192, 132, 252, 0.25)' },
+  { id: 'emerald', glow: '#163328', accent: '#34d399', border: 'rgba(52, 211, 153, 0.25)' },
+  { id: 'amber', glow: '#3d2014', accent: '#fb923c', border: 'rgba(251, 146, 60, 0.25)' }
 ];
 
-function getCardTheme(asset, index) {
-  const base = CARD_THEMES[index % CARD_THEMES.length];
-  const glow = dominantColor(asset) || base.defaultGlow;
+function getCardPalette(asset, index) {
+  const fallback = CARD_PALETTES[index % CARD_PALETTES.length];
+  const glow = dominantColor(asset) || fallback.glow;
   return {
-    ...base,
     glow,
-    tagLabel: `${String(index + 1).padStart(2, '0')} // ${base.tagSuffix}`
+    accent: fallback.accent,
+    border: fallback.border
   };
 }
 
@@ -127,31 +92,30 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
   const nextAsset = assets[currentIndex + 1];
   const secondAsset = assets[currentIndex + 2];
 
-  const currentTheme = useMemo(
-    () => (currentAsset ? getCardTheme(currentAsset, currentIndex) : CARD_THEMES[0]),
+  const currentPalette = useMemo(
+    () => (currentAsset ? getCardPalette(currentAsset, currentIndex) : CARD_PALETTES[0]),
     [currentAsset, currentIndex]
   );
-  const nextTheme = useMemo(
-    () => (nextAsset ? getCardTheme(nextAsset, currentIndex + 1) : null),
+  const nextPalette = useMemo(
+    () => (nextAsset ? getCardPalette(nextAsset, currentIndex + 1) : null),
     [nextAsset, currentIndex]
   );
-  const secondTheme = useMemo(
-    () => (secondAsset ? getCardTheme(secondAsset, currentIndex + 2) : null),
+  const secondPalette = useMemo(
+    () => (secondAsset ? getCardPalette(secondAsset, currentIndex + 2) : null),
     [secondAsset, currentIndex]
   );
 
   const soundtrackUrl = delivery?.soundtrack?.url ? mediaUrl(delivery.soundtrack.url) : '';
   const studioName = delivery?.branding?.name || 'Your photographer';
   const title = delivery?.title || (delivery?.clientName ? delivery.clientName + "'s photographs" : 'Your photographs');
-  const shootType = delivery?.shootType || 'Portraits';
   const fontStyles = useMemo(
     () => deliveryFontStyles(delivery?.photoswap?.typography),
     [delivery?.photoswap?.typography]
   );
   const stageStyle = {
     ...fontStyles,
-    '--ps-photo-glow': currentTheme.glow,
-    '--ps-accent-color': currentTheme.accentColor
+    '--ps-photo-glow': currentPalette.glow,
+    '--ps-accent-color': currentPalette.accent
   };
 
   const canLike = delivery?.access?.allowLikes !== false
@@ -417,10 +381,15 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
 
               <div className="ps-deck">
                 {/* 3rd Card in stack (Back) */}
-                {secondAsset && secondTheme && (
+                {secondAsset && secondPalette && (
                   <motion.div
-                    className={'ps-photo-card ps-card-back ' + secondTheme.className}
-                    style={{ scale: backScale, rotate: backRotate, y: backY }}
+                    className="ps-photo-card ps-card-back"
+                    style={{
+                      scale: backScale,
+                      rotate: backRotate,
+                      y: backY,
+                      borderColor: secondPalette.border
+                    }}
                     aria-hidden="true"
                   >
                     <img src={mediaUrl(photoUrl(secondAsset))} alt="" loading="lazy" decoding="async" />
@@ -428,10 +397,15 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
                 )}
 
                 {/* 2nd Card in stack (Middle) */}
-                {nextAsset && nextTheme && (
+                {nextAsset && nextPalette && (
                   <motion.div
-                    className={'ps-photo-card ps-card-middle ' + nextTheme.className}
-                    style={{ scale: middleScale, rotate: middleRotate, y: middleY }}
+                    className="ps-photo-card ps-card-middle"
+                    style={{
+                      scale: middleScale,
+                      rotate: middleRotate,
+                      y: middleY,
+                      borderColor: nextPalette.border
+                    }}
                     aria-hidden="true"
                   >
                     <img src={mediaUrl(photoUrl(nextAsset))} alt="" loading="eager" decoding="async" />
@@ -443,13 +417,13 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
                   {currentAsset && (
                     <motion.article
                       key={currentAsset.assetId}
-                      className={'ps-photo-card ps-card-front ' + currentTheme.className}
+                      className="ps-photo-card ps-card-front"
                       style={{
                         x: stackOffset,
                         rotate: cardRotation,
                         scale: cardScale,
-                        '--card-glow': currentTheme.glow,
-                        '--card-accent': currentTheme.accentColor
+                        borderColor: currentPalette.border,
+                        boxShadow: `0 28px 76px -14px color-mix(in srgb, ${currentPalette.glow} 55%, black), 0 4px 18px rgba(0, 0, 0, 0.4)`
                       }}
                       drag="x"
                       dragConstraints={{ left: 0, right: 0 }}
@@ -510,10 +484,6 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
                         draggable="false"
                       />
 
-                      {/* Unique Card Corner Frame Accents */}
-                      <span className="ps-card-corner ps-corner-tl" aria-hidden="true" />
-                      <span className="ps-card-corner ps-corner-tr" aria-hidden="true" />
-
                       {/* Tinder Swipe Stamp Badges */}
                       <motion.div
                         className="ps-card-stamp ps-stamp-next"
@@ -548,24 +518,11 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
                         )}
                       </AnimatePresence>
 
-                      {/* Top metadata pill (unique design per image) */}
-                      <div className="ps-card-topbar">
-                        <span className="ps-card-editorial-badge">
-                          <currentTheme.Icon size={11} strokeWidth={2.4} />
-                          <strong>{currentTheme.tagLabel}</strong>
-                        </span>
-                        <span className="ps-card-film-stamp">{currentTheme.filmStamp}</span>
-                      </div>
-
-                      {/* Bottom Gradient Overlay with ALWAYS VISIBLE Caption */}
+                      {/* Clean bottom gradient overlay with ONLY the actual caption and number */}
                       <div className="ps-card-overlay">
-                        <div className="ps-overlay-head">
-                          <span className="ps-overlay-shoot-badge">{shootType}</span>
-                          <span className="ps-overlay-counter">{photoNumber} of {totalNumber}</span>
-                        </div>
-                        <h2 className="ps-overlay-title">{title}</h2>
+                        <span className="ps-overlay-counter">{photoNumber} <i>/</i> {totalNumber}</span>
                         <p className="ps-overlay-caption">
-                          {currentAsset.caption || 'A finished photograph from ' + title + '.'}
+                          {currentAsset.caption || 'Photograph from Sharon’s session.'}
                         </p>
                       </div>
                     </motion.article>
