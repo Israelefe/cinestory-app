@@ -23,3 +23,14 @@ export function albumBookRatio(spread) {
   if (photos.length > 1) return Math.max(1.25, Math.min(2.2, ratio(photos[0]) * 2 + .12));
   return Math.max(.65, Math.min(2.3, ratio(photos[0]) + .1));
 }
+
+export function albumCoverRatio(photo) {
+  if (!(photo?.width > 0 && photo?.height > 0)) return .74;
+  return Math.max(.74, Math.min(1.32, (photo.width / photo.height) * .72 + .14));
+}
+
+export function albumCoverShape(photo) {
+  return photo?.width > 0 && photo?.height > 0 && photo.width / photo.height >= 1.25
+    ? 'landscape'
+    : 'portrait';
+}

@@ -54,6 +54,32 @@ for (const [width, height] of [[320,568], [390,844], [768,1024], [834,1194], [14
   });
 }
 
+for (const [width, height] of [[320,568], [390,844], [768,1024], [834,1194], [1440,900], [1024,600]]) {
+  test(`a landscape opening photo gets a wider uncropped cover at ${width} by ${height}`, async ({ page }) => {
+    const delivery = structuredClone(PHOTO_REVEAL_DEMO);
+    delivery.format = 'album'; delivery.publicId = 'album-landscape-cover'; delivery.status = 'published'; delete delivery.soundtrack;
+    delivery.assets[0].width = 1800; delivery.assets[0].height = 1200;
+    const landscapeUrl = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1200"><rect width="1800" height="1200" fill="#294c77"/></svg>')}`;
+    delivery.assets[0].url = landscapeUrl; delivery.assets[0].thumbnailUrl = landscapeUrl; delivery.assets[0].srcSet = undefined;
+    delivery.formatConfig = { album: { spreads: [{ id: 'opening', assetIds: [delivery.assets[0].assetId] }] } };
+    await page.setViewportSize({ width, height }); await prepare(page, delivery);
+    await page.goto('/d/album-landscape-cover?phoneView=1');
+    const cover = page.locator('.album-cover-book');
+    await expect(cover).toHaveClass(/is-landscape/);
+    await expect(cover).toBeInViewport({ ratio: 1 });
+    const dimensions = await cover.evaluate(element => {
+      const { width, height } = element.getBoundingClientRect();
+      return { width, height, ratio: getComputedStyle(element).getPropertyValue('--album-cover-ratio').trim() };
+    });
+    expect(dimensions.width).toBeGreaterThan(dimensions.height);
+    expect(Number(dimensions.ratio)).toBeGreaterThan(1);
+    const photo = page.locator('.album-cover-photo .v-photo');
+    expect(await photo.evaluate(image => getComputedStyle(image).objectFit)).toBe('contain');
+    await expect.poll(() => photo.evaluate(image => image.naturalWidth > image.naturalHeight)).toBe(true);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight - innerHeight)).toBeLessThanOrEqual(1);
+  });
+}
+
 test('a photograph opens alone and returns focus to the same album page', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await prepare(page);
   await page.goto('/demo/album?phoneView=1');

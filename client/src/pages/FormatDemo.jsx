@@ -19,7 +19,7 @@ import { EDITORIAL_DEMO_DELIVERY } from '../constants/editorialDemo.js';
 import { useClosingGallery } from '../utils/useClosingGallery.js';
 import AlbumSpread, { AlbumCaption, AlbumPageTurn } from '../components/delivery/AlbumSpread.jsx';
 import { albumSpreads as normalizeAlbumSpreads } from '../utils/deliveryPresentation.js';
-import { albumBookRatio, albumPhotoKey, albumReaderPages, albumSpreadPhotos } from '../utils/albumPresentation.js';
+import { albumBookRatio, albumCoverRatio, albumCoverShape, albumPhotoKey, albumReaderPages, albumSpreadPhotos } from '../utils/albumPresentation.js';
 import '../styles/format-demos.css';
 import '../components/delivery/DeliveryTypography.css';
 import '../styles/chapters.css';
@@ -955,10 +955,10 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
     {audioTrack && <audio ref={audio} crossOrigin="anonymous" src={audioTrack} loop preload="none" muted={muted} onWaiting={() => setAudioLoading(true)} onStalled={() => setAudioLoading(true)} onPlaying={() => { setAudioLoading(false); setAudioFailed(false); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioLoading(false); setAudioFailed(true); }} />}
     <DemoHeader format="Album" client={client} sectionId="album" onGallery={galleryUnlocked ? openGallery : undefined} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} hideSoundtrack />
     {!started ? <main className="fd-album-cover">
-      <motion.figure className="album-cover-book" initial={reduced ? false : { opacity: 0, y: 20, rotate: -2 }} animate={{ opacity: 1, y: 0, rotate: -1 }} transition={{ duration: .9, ease: [.22, 1, .36, 1] }}>
+      <motion.figure className={`album-cover-book${albumCoverShape(v3OpeningPhoto) === 'landscape' ? ' is-landscape' : ''}`} style={{ '--album-cover-ratio': albumCoverRatio(v3OpeningPhoto) }} initial={reduced ? false : { opacity: 0, y: 20, rotate: -2 }} animate={{ opacity: 1, y: 0, rotate: -1 }} transition={{ duration: .9, ease: [.22, 1, .36, 1] }}>
         <div className="album-cover-binding" aria-hidden="true" />
         <div className="album-cover-stamp"><span>PHOTO ALBUM</span><b>{clientName}</b></div>
-        <div className="album-cover-photo"><Photo name={v3OpeningPhoto?.name} url={v3OpeningPhoto?.url} thumbnailUrl={v3OpeningPhoto?.thumbnailUrl} srcSet={v3OpeningPhoto?.srcSet} alt={`${clientName} cover photograph`} eager sizes="(max-width: 767px) 68vw, 360px" style={{ backgroundSize: 'contain', backgroundRepeat: 'no-repeat' }} /></div>
+        <div className="album-cover-photo"><Photo name={v3OpeningPhoto?.name} url={v3OpeningPhoto?.url} thumbnailUrl={v3OpeningPhoto?.thumbnailUrl} srcSet={v3OpeningPhoto?.srcSet} width={v3OpeningPhoto?.width || undefined} height={v3OpeningPhoto?.height || undefined} alt={`${clientName} cover photograph`} eager sizes="(max-width: 767px) 88vw, 420px" style={{ backgroundSize: 'contain', backgroundRepeat: 'no-repeat' }} /></div>
         <figcaption>{delivery?.shootType || (delivery ? 'Finished photographs' : 'Family portraits')}</figcaption>
       </motion.figure>
       <div className="fd-album-cover-shade" aria-hidden="true" />
