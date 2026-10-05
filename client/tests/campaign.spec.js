@@ -50,6 +50,7 @@ test('campaign filters keep matching sets and support keyboard photo inspection'
   await photo.focus(); await photo.press('Enter');
   await expect(page.locator('.client-gallery')).toBeVisible();
   await expect(page.locator('.client-gallery-grid')).toHaveCount(0);
+  await expect.poll(() => page.locator('.client-gallery-lightbox-main').evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
   await page.getByRole('button', { name: 'Return to presentation' }).press('Escape');
   await expect(page.locator('.client-gallery')).toHaveCount(0);
   await expect(photo).toBeFocused();

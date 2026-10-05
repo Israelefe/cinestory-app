@@ -12,7 +12,13 @@ import './ClientGallery.css';
 import './DeliveryTypography.css';
 
 const photoKey = (photo, index) => photo?.assetId || photo?.id || photo?.name || index;
-const imageUrl = (photo, width = 1440) => photo?.url || (typeof photo === 'string' && (photo.startsWith('http') || photo.startsWith('/')) ? photo : `/veylo/web/${photo?.name || photo}-${width}.webp`);
+const imageUrl = (photo, width = 1440) => {
+  if (photo?.url) return photo.url;
+  const name = typeof photo === 'string' ? photo : photo?.name;
+  if (!name) return '';
+  if (name.startsWith('/') || /^https?:\/\//i.test(name)) return name;
+  return `/veylo/web/${name}-${width}.webp`;
+};
 
 function LightboxPhoto({ photo, sourceUrl, alt }) {
   const [source, setSource] = useState('responsive');
