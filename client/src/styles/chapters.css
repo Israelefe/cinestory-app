@@ -1,0 +1,546 @@
+/* Chapters uses a flowing page so covers, captions and controls always have room. */
+.fd-chapters.fd-chapters-refined {
+  --chapter-muted: color-mix(in srgb, var(--fd-text) 72%, var(--fd-bg));
+  --chapter-rule: color-mix(in srgb, var(--fd-text) 14%, transparent);
+  --chapter-padding: 20px;
+  background: radial-gradient(ellipse at 85% 0%, color-mix(in srgb, var(--fd-accent) 8%, transparent), transparent 38%), var(--fd-bg);
+}
+.fd-chapters.fd-chapters-refined :is(button, a):focus-visible {
+  outline: 2px solid var(--chapter-accent);
+  outline-offset: 5px;
+}
+.fd-chapters.fd-chapters-refined :is(h1, strong, p, .fd-chapter-cover-description, nav span) {
+  overflow-wrap: anywhere;
+}
+.fd-chapters.fd-chapters-refined h1:focus { outline: none; }
+.fd-chapters.fd-chapters-refined .fd-chapter-directory {
+  display: block;
+  width: min(100%, 1360px);
+  height: auto;
+  min-height: 100dvh;
+  margin-inline: auto;
+  padding: 112px var(--chapter-padding) 44px;
+  overflow: visible;
+  background: transparent;
+  color: var(--fd-text);
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-directory > header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  padding: 0 0 30px;
+  border-color: var(--chapter-rule);
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-intro .fd-chapter-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .11em;
+  line-height: 1.6;
+  text-transform: uppercase;
+  color: var(--chapter-accent);
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-eyebrow svg { flex: none; }
+.fd-chapters.fd-chapters-refined .fd-chapter-intro h1 {
+  max-width: 850px;
+  margin-top: 20px;
+  font-size: clamp(38px, 8vw, 84px);
+  font-weight: 500;
+  letter-spacing: -.045em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-intro .fd-chapter-invitation {
+  margin-top: 14px;
+  color: var(--chapter-muted);
+  font-size: clamp(17px, 2vw, 22px);
+  line-height: 1.5;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-directory > header > .fd-chapter-intro-detail {
+  display: block;
+  min-width: 0;
+  text-align: left;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-intro-detail > p {
+  max-width: 440px;
+  color: var(--chapter-muted);
+  font-size: 15px;
+  line-height: 1.75;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-collection-count {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  margin-top: 22px;
+  color: var(--chapter-muted);
+  font-size: 13px;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-collection-count strong {
+  margin-right: 5px;
+  color: var(--fd-text);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-directory > header .fd-chapter-collection-count > span {
+  color: var(--chapter-muted);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.6;
+  letter-spacing: 0;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-directory > header .fd-chapter-collection-count strong {
+  font-family: var(--delivery-font-ui, 'Outfit', system-ui, sans-serif);
+  font-size: 16px;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-directory-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  padding: 18px 0 20px;
+  color: var(--chapter-muted);
+  font-size: 12px;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-motion-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: max-content;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--chapter-rule);
+  border-radius: 6px;
+  color: var(--chapter-muted);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  transition: transform .2s, background .2s, color .2s;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-motion-control:hover {
+  transform: translateY(-2px);
+  background: color-mix(in srgb, var(--fd-text) 6%, transparent);
+  color: var(--fd-text);
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-motion-control:active { transform: scale(.97); }
+.fd-chapters.fd-chapters-refined .fd-chapter-directory-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 28px;
+  margin: 0;
+  padding: 0 0 8px;
+  max-height: none;
+  overflow: visible;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-directory-board > button {
+  position: relative;
+  inset: auto !important;
+  display: flex;
+  flex-direction: column;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--chapter-rule);
+  border-radius: 8px;
+  background: var(--fd-surface);
+  color: var(--fd-text);
+  box-shadow: none;
+  filter: none;
+  text-align: left;
+  will-change: auto;
+  transition: border-color .25s;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-directory-board > button:hover {
+  box-shadow: none;
+  filter: none;
+  border-color: color-mix(in srgb, var(--chapter-accent) 60%, transparent);
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-cover {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  background: var(--fd-bg);
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-directory-photo {
+  position: absolute;
+  inset: 0;
+  clip-path: none;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-directory-number {
+  top: 16px;
+  left: 16px;
+  width: 38px;
+  height: 38px;
+  border-radius: 5px;
+  border-color: #ffffff55;
+  background: #070709cf;
+  color: #fff9f4;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-directory-viewed {
+  top: 16px;
+  right: 16px;
+  gap: 6px;
+  padding: 9px 10px;
+  border-radius: 5px;
+  background: #070709cf;
+  color: #fff9f4;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-directory-copy {
+  position: static;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+  padding: 24px;
+  text-shadow: none;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-directory-copy i {
+  width: max-content;
+  max-width: 100%;
+  margin-bottom: 12px;
+  padding: 0;
+  background: transparent;
+  color: var(--chapter-accent);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .08em;
+  line-height: 1.5;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-directory-copy strong {
+  display: block;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fd-text);
+  font-size: clamp(27px, 3vw, 36px);
+  font-weight: 500;
+  line-height: 1.18;
+  letter-spacing: -.025em;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-cover-description {
+  display: block;
+  margin-top: 12px;
+  color: var(--chapter-muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-directory-copy b {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--chapter-rule);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-directory-copy b svg { color: var(--chapter-accent); }
+.fd-chapters.fd-chapters-refined .fd-chapter-directory > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-top: 36px;
+  padding: 24px 0 0;
+  border-color: var(--chapter-rule);
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-directory > footer > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 520px;
+  color: var(--chapter-muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-directory > footer svg { flex: none; }
+
+/* The chapter introduction and photographs share the page's scroll position. */
+.fd-chapters.fd-chapters-refined .fd-chapter-room {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  width: min(100%, 1360px);
+  height: auto;
+  min-height: 100dvh;
+  margin-inline: auto;
+  padding: 100px var(--chapter-padding) 44px;
+  overflow: visible;
+  background: transparent;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-room-copy {
+  padding: 0 0 28px;
+  border: 0;
+  background: transparent;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-room-copy > button:first-child {
+  gap: 10px;
+  min-height: 44px;
+  color: var(--chapter-muted);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  transition: transform .2s, color .2s;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-room-copy > button:first-child:hover {
+  transform: translateX(-3px);
+  color: var(--fd-text);
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-room-copy > button:first-child:active { transform: scale(.97); }
+.fd-chapters.fd-chapters-refined .fd-chapter-room-copy > span {
+  margin-top: 30px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.6;
+  letter-spacing: .1em;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-room-count {
+  margin-top: 12px;
+  color: var(--chapter-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-room-copy h1 {
+  max-width: 620px;
+  margin: 18px 0;
+  font-size: clamp(38px, 7vw, 62px);
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -.035em;
+  text-wrap: balance;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-room-copy > p {
+  max-width: 520px;
+  color: var(--chapter-muted);
+  font-size: 15px;
+  line-height: 1.8;
+  white-space: pre-line;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-room-copy > nav {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  max-height: 300px;
+  margin-top: 28px;
+  padding: 5px;
+  overflow-y: auto;
+  border: 0;
+  scrollbar-width: thin;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-room-copy > nav button {
+  display: grid;
+  grid-template-columns: 25px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 48px;
+  padding: 12px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--chapter-muted);
+  background: transparent;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+  transition: transform .2s, background .2s, color .2s;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-room-copy > nav button.is-active {
+  border-color: color-mix(in srgb, var(--chapter-accent) 35%, transparent);
+  color: var(--fd-text);
+  background: color-mix(in srgb, var(--chapter-accent) 8%, transparent);
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-room-copy > nav button:hover {
+  transform: translateX(2px);
+  color: var(--fd-text);
+  background: color-mix(in srgb, var(--fd-text) 6%, transparent);
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-room-copy > nav button:active { transform: scale(.98); }
+.fd-chapters.fd-chapters-refined .fd-chapter-room-copy > nav :is(i, svg) {
+  color: var(--chapter-accent);
+  font-size: 11px;
+  font-style: normal;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-room-copy > .fd-chapter-motion-control { margin-top: 22px; }
+.fd-chapters.fd-chapters-refined .fd-chapter-room-art {
+  min-width: 0;
+  min-height: 0;
+  padding: 26px 0 0;
+  overflow: visible;
+  border-top: 1px solid var(--chapter-rule);
+  background: transparent;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-photo-heading {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin-bottom: 24px;
+  color: var(--chapter-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-photo-heading > span:last-child { display: inline-flex; align-items: center; gap: 7px; }
+.fd-chapters.fd-chapters-refined .fd-chapter-room-art .fd-chapter-room-photos {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 28px;
+  width: 100%;
+  height: auto;
+  margin: 0;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-room-art .fd-chapter-room-photos > button {
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--chapter-rule);
+  border-radius: 6px;
+  background: var(--fd-surface);
+  color: var(--fd-text);
+  box-shadow: none;
+  transform: none;
+  transition: border-color .2s;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-room-photos > button:hover { border-color: var(--chapter-accent); }
+.fd-chapters.fd-chapters-refined .fd-chapter-room-photos > button::after { display: none; }
+.fd-chapters.fd-chapters-refined .fd-chapter-room-photos > button > .fd-chapter-photo-surface {
+  height: auto;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  background: var(--fd-bg);
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-photo-motion { width: 100%; height: 100%; }
+.fd-chapters.fd-chapters-refined .fd-chapter-room-photos .v-photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-room-photos > button > .fd-chapter-photo-index {
+  position: static;
+  display: flex;
+  justify-content: space-between;
+  width: auto;
+  height: auto;
+  margin: 20px 20px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--chapter-accent);
+  font-size: 11px;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-room-photos > button > p {
+  position: static;
+  margin: 10px 20px 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fd-text);
+  font-size: 15px;
+  line-height: 1.7;
+  text-align: left;
+  text-shadow: none;
+  transform: none;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-room-art > footer {
+  position: static;
+  display: block;
+  margin-top: 36px;
+  padding-top: 24px;
+  border-top: 1px solid var(--chapter-rule);
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-end-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--chapter-muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.fd-chapters.fd-chapters-refined .fd-chapter-end-note svg { flex: none; color: var(--chapter-accent); }
+.fd-chapters.fd-chapters-refined .fd-chapter-end-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
+.fd-chapters.fd-chapters-refined :is(.fd-chapter-end-actions button, .fd-chapter-directory > footer > button) {
+  display: inline-flex;
+  flex: 1 1 160px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  min-height: 48px;
+  padding: 13px 16px;
+  border: 1px solid var(--chapter-rule);
+  border-radius: 5px;
+  background: var(--fd-surface);
+  color: var(--fd-text);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  transition: transform .2s, background .2s;
+}
+.fd-chapters.fd-chapters-refined :is(.fd-chapter-end-actions .fd-chapter-next, .fd-chapter-directory > footer > button) {
+  background: var(--chapter-accent);
+  color: var(--fd-bg);
+}
+.fd-chapters.fd-chapters-refined :is(.fd-chapter-end-actions button, .fd-chapter-directory > footer > button):hover { transform: translateY(-2px); }
+.fd-chapters.fd-chapters-refined :is(.fd-chapter-end-actions button, .fd-chapter-directory > footer > button):active { transform: scale(.97); }
+
+@media (min-width: 640px) {
+  .fd-chapters.fd-chapters-refined { --chapter-padding: 28px; }
+  .fd-chapters.fd-chapters-refined .fd-chapter-room-copy > nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fd-chapters.fd-chapters-refined .fd-chapter-end-actions button { flex: 0 1 auto; min-width: 160px; }
+  .fd-chapters.fd-chapters-refined .fd-chapter-directory > footer > button { flex: 0 1 auto; }
+}
+@media (min-width: 768px) {
+  .fd-chapters.fd-chapters-refined { --chapter-padding: 36px; }
+  .fd-chapters.fd-chapters-refined .fd-chapter-directory { padding-top: 126px; padding-bottom: 64px; }
+  .fd-chapters.fd-chapters-refined .fd-chapter-directory > header { grid-template-columns: minmax(0, 1fr) minmax(230px, .65fr); align-items: end; gap: 36px; padding-bottom: 38px; }
+  .fd-chapters.fd-chapters-refined .fd-chapter-directory-board { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+  .fd-chapters.fd-chapters-refined .fd-chapter-room { padding-top: 116px; }
+  .fd-chapters.fd-chapters-refined .fd-chapter-room-art .fd-chapter-room-photos { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+  .fd-chapters.fd-chapters-refined .fd-chapter-room-art.is-single .fd-chapter-room-photos { grid-template-columns: minmax(0, 1fr); max-width: 600px; margin-inline: auto; }
+}
+@media (min-width: 1024px) {
+  .fd-chapters.fd-chapters-refined { --chapter-padding: 48px; }
+  .fd-chapters.fd-chapters-refined .fd-chapter-directory { padding-top: 142px; }
+  .fd-chapters.fd-chapters-refined .fd-chapter-directory-board { grid-template-columns: 1.12fr 1fr 1fr; gap: 28px; }
+  .fd-chapters.fd-chapters-refined .fd-chapter-directory-board > button:nth-child(3n + 2) { margin-top: 36px; }
+  .fd-chapters.fd-chapters-refined .fd-chapter-directory-board > button:nth-child(3n + 3) { margin-top: 72px; }
+  .fd-chapters.fd-chapters-refined .fd-chapter-directory-board.is-grid-layout { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .fd-chapters.fd-chapters-refined .fd-chapter-directory-board.is-grid-layout > button { margin-top: 0; }
+  .fd-chapters.fd-chapters-refined .fd-chapter-room { grid-template-columns: minmax(250px, .75fr) minmax(0, 1.7fr); align-items: start; gap: 44px; padding-top: 126px; }
+  .fd-chapters.fd-chapters-refined .fd-chapter-room-copy { position: sticky; top: 104px; }
+  .fd-chapters.fd-chapters-refined .fd-chapter-room-copy h1 { font-size: clamp(38px, 4vw, 56px); }
+  .fd-chapters.fd-chapters-refined .fd-chapter-room-copy > nav { grid-template-columns: minmax(0, 1fr); max-height: min(300px, 30dvh); }
+  .fd-chapters.fd-chapters-refined .fd-chapter-room-art { padding: 0; border: 0; }
+}
+@media (min-width: 1280px) {
+  .fd-chapters.fd-chapters-refined { --chapter-padding: 60px; }
+  .fd-chapters.fd-chapters-refined .fd-chapter-directory > header { gap: 64px; }
+  .fd-chapters.fd-chapters-refined .fd-chapter-room { gap: 56px; }
+}
+@media (min-width: 1024px) and (max-height: 760px) {
+  .fd-chapters.fd-chapters-refined .fd-chapter-room-copy { position: static; }
+}

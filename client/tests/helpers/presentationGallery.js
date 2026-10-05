@@ -42,10 +42,10 @@ export async function completePresentation(view, format) {
     await expect(view.locator('.fd-chapter-directory-board,.fd-chapter-room').first()).toBeVisible();
     const directory = view.locator('.fd-chapter-directory-board>button');
     const count = await directory.count() || await view.locator('.fd-chapter-room-copy nav button').count();
-    if (!await directory.count()) await view.locator('.fd-chapter-room-copy>button').click();
+    if (!await directory.count()) await view.locator('.fd-chapter-room-copy').getByRole('button', { name: 'All chapters', exact: true }).click();
     for (let at = 0; at < count; at++) {
       await directory.nth(at).click();
-      await expect(view.locator('.fd-chapter-room-count')).toHaveText(`0${at + 1} / 0${count}`);
+      await expect(view.locator('.fd-chapter-room-count')).toHaveText(`${String(at + 1).padStart(2, '0')} / ${String(count).padStart(2, '0')}`);
       await view.locator('.fd-chapter-room-art>footer').scrollIntoViewIfNeeded();
       await expect(view.locator('.fd-chapter-room')).toHaveAttribute('data-chapter-explored', 'true');
       await view.locator('.fd-chapter-room-art>footer').getByRole('button', { name: 'All chapters', exact: true }).click();
