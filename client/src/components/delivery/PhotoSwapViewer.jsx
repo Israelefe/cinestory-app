@@ -75,7 +75,8 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
   const soundtrackAttemptRef = useRef(null);
   const advanceLockRef = useRef(false);
   const pointerGestureRef = useRef(null);
-  const pendingArrivalRef = useRef(false);
+  const pendingArrivalRef = useRef(null);
+  const imageReadinessRef = useRef(new Map());
   const reduced = useVeyloReducedMotion();
 
   /* The active photo and its swipe animation share one horizontal position. */
@@ -91,6 +92,50 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
     () => (currentAsset ? getCardPalette(currentAsset, currentIndex) : CARD_PALETTES[0]),
     [currentAsset, currentIndex]
   );
+
+  const ensurePhotoReady = useCallback(asset => {
+    const source = mediaUrl(photoUrl(asset));
+    if (!source) return Promise.resolve(false);
+    const readinessKey = source + '\n' + (asset?.srcSet || '');
+
+    const cached = imageReadinessRef.current.get(readinessKey);
+    if (cached) return cached;
+
+    const image = new window.Image();
+    image.decoding = 'async';
+    image.fetchPriority = 'high';
+    image.sizes = '(max-width: 640px) 92vw, (max-width: 1024px) 500px, 460px';
+    if (asset?.srcSet) image.srcset = asset.srcSet;
+
+    const readiness = new Promise(resolve => {
+      let settled = false;
+      const finish = async loaded => {
+        if (settled) return;
+        settled = true;
+        if (loaded && typeof image.decode === 'function') {
+          try {
+            await image.decode();
+          } catch {
+            // A loaded image can still be displayed if explicit decoding is unavailable.
+          }
+        }
+        resolve(loaded);
+      };
+
+      image.onload = () => finish(true);
+      image.onerror = () => finish(false);
+      image.src = source;
+      if (image.complete) finish(image.naturalWidth > 0);
+    });
+
+    imageReadinessRef.current.set(readinessKey, readiness);
+    readiness.then(loaded => {
+      if (!loaded && imageReadinessRef.current.get(readinessKey) === readiness) {
+        imageReadinessRef.current.delete(readinessKey);
+      }
+    });
+    return readiness;
+  }, []);
 
   const soundtrackUrl = delivery?.soundtrack?.url ? mediaUrl(delivery.soundtrack.url) : '';
   const studioName = delivery?.branding?.name || 'Your photographer';
@@ -155,15 +200,10 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
 
   useEffect(() => {
     if (!assets.length) return undefined;
-    [1, 2].forEach(offset => {
-      const source = photoUrl(assets[currentIndex + offset]);
-      if (!source) return;
-      const image = new window.Image();
-      image.decoding = 'async';
-      image.src = mediaUrl(source);
-    });
+    const nextAsset = assets[currentIndex + 1];
+    if (nextAsset) ensurePhotoReady(nextAsset);
     return undefined;
-  }, [assets, currentIndex]);
+  }, [assets, currentIndex, ensurePhotoReady]);
 
   /* Left advances; right returns to the previous photograph. */
   const navigateAdjacent = useCallback((swipeDirection, cardWidth = window.innerWidth) => {
@@ -187,17 +227,22 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
           return;
         }
 
-        pendingArrivalRef.current = true;
-        cardOffset.set(swipeDirection < 0 ? 68 : -68);
-        setCurrentIndex(nextIndex);
+        const incomingOffset = swipeDirection < 0 ? 68 : -68;
+        ensurePhotoReady(assets[nextIndex]).then(() => {
+          if (!advanceLockRef.current) return;
+          pendingArrivalRef.current = incomingOffset;
+          setCurrentIndex(nextIndex);
+        });
       }
     });
     return true;
-  }, [assets.length, currentIndex, reduced, cardOffset]);
+  }, [assets, currentIndex, reduced, cardOffset, ensurePhotoReady]);
 
   useLayoutEffect(() => {
-    if (!pendingArrivalRef.current || isEnd) return;
-    pendingArrivalRef.current = false;
+    const incomingOffset = pendingArrivalRef.current;
+    if (incomingOffset === null || isEnd) return;
+    pendingArrivalRef.current = null;
+    cardOffset.set(incomingOffset);
     animate(cardOffset, 0, {
       type: 'spring',
       damping: 24,
@@ -275,7 +320,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
 
   const handleRestart = useCallback(() => {
     pointerGestureRef.current = null;
-    pendingArrivalRef.current = false;
+    pendingArrivalRef.current = null;
     cardOffset.set(0);
     advanceLockRef.current = false;
     setIsAdvancing(false);
@@ -522,6 +567,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
                     >
                       {/* Full-bleed Photo */}
                       <img
+                        key={currentAsset.assetId}
                         className="ps-card-photo"
                         src={mediaUrl(photoUrl(currentAsset))}
                         srcSet={currentAsset.srcSet || undefined}
