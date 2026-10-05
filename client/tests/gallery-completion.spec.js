@@ -40,11 +40,11 @@ for (const width of [320, 834]) for (const format of ['photo-story', 'editorial'
   await page.setViewportSize({ width, height: width === 320 ? 740 : 1000 });
   await setup(page, fixture(format));
   await page.goto('/d/gallery-completion?phoneView=1');
-  const galleryName = format === 'photo-story' ? 'Open gallery' : 'Open full gallery';
+  const galleryName = format === 'photo-story' || format === 'event-coverage' ? 'Open gallery' : 'Open full gallery';
   await expect(page.getByRole('button', { name: galleryName, exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Download all/ })).toHaveCount(0);
   if (format === 'editorial') await expectSinglePhoto(page, page.locator('.ed-cover .ed-image-button'));
-  if (format === 'event-coverage' || format === 'campaign') await expectSinglePhoto(page, page.locator(format === 'campaign' ? '.vec-campaign-sets article>button' : '.vec-event-highlight-grid>button').first());
+  if (format === 'event-coverage' || format === 'campaign') await expectSinglePhoto(page, page.locator(format === 'campaign' ? '.vec-campaign-sets article>button' : '.vec-scene-grid figure > button').first());
   if (format === 'album') {
     await page.getByRole('button', { name: 'Open album', exact: true }).click();
     await page.getByRole('button', { name: /^Open album page \d+$/ }).last().click();
@@ -71,7 +71,7 @@ for (const [format, route] of [['editorial', '/demo/editorial'], ['album', '/dem
   await page.setViewportSize({ width: 390, height: 844 });
   await setup(page, fixture(format));
   await page.goto(route + '?phoneView=1');
-  await expect(page.getByRole('button', { name: 'Open full gallery', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: format === 'event-coverage' ? 'Open gallery' : 'Open full gallery', exact: true })).toHaveCount(0);
   await openPresentationGallery(page, format);
   await expect(page.locator('.client-gallery-grid>figure').first()).toBeVisible();
 });
@@ -84,7 +84,7 @@ for (const format of ['photo-story', 'editorial', 'album', 'chapters', 'event-co
   await page.evaluate(delivery => window.postMessage({ type: 'veylo:phone-preview-data', payload: { delivery, access: delivery.access } }, location.origin), delivery);
   const root = { 'photo-story': '.v-story-cover', editorial: '.ed-cover', album: '.fd-album-cover', chapters: '.fd-chapter-directory-board', 'event-coverage': '.vec-event-hero', campaign: '.vec-campaign-hero' }[format];
   await expect(page.locator(root)).toBeVisible();
-  await expect(page.getByRole('button', { name: format === 'photo-story' ? 'Open gallery' : 'Open full gallery', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: format === 'photo-story' || format === 'event-coverage' ? 'Open gallery' : 'Open full gallery', exact: true })).toHaveCount(0);
   await openPresentationGallery(page, format);
   await expect(page.locator('.client-gallery-grid>figure')).toHaveCount(5);
 });

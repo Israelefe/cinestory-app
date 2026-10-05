@@ -506,6 +506,17 @@ export default function DeliveryViewer() {
     return { assetId, url: response.data?.data?.url, filename: downloadFilename(asset, index, delivery.clientName) };
   }
 
+  async function openPhotoOriginal(assetId) {
+    if (!assetId) throw new Error('Photograph not found.');
+    const response = await api.get(
+      `/v1/deliveries/public/${delivery.publicId}/photos/${encodeURIComponent(assetId)}/original`,
+      { headers: accessHeaders(delivery.publicId) }
+    );
+    const url = response.data?.data?.url;
+    if (!url) throw new Error('The full-size photograph link was empty.');
+    return url;
+  }
+
   async function recordPhotoDownload(assetId) {
     if (!assetId) return;
     await api.post(
@@ -652,6 +663,7 @@ export default function DeliveryViewer() {
     liked,
     onLike: handleLike,
     onDownload: handleDownload,
+    onOpenOriginal: openPhotoOriginal,
     onDownloadAll: handleDownloadAll,
     busy,
     downloadNotice,
