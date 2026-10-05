@@ -107,6 +107,50 @@ test('normal-motion touch scrolling moves prints gently, keeps captions steady a
   } finally {await context.close();}
 });
 
+for(const width of [390,834,1440]) test(`Canvas photographs visibly animate, pause and resume at ${width}px`,async({page})=>{
+  await page.setViewportSize({width,height:900});await page.emulateMedia({reducedMotion:'reduce'});await init(page);
+  await page.goto('/demo/canvas?phoneView=1');
+  const print=page.locator('.cv-frame').first(),image=print.locator('.cv-photo-image-motion');
+  await print.scrollIntoViewIfNeeded();
+  await expect(image).toHaveCSS('animation-play-state','running');
+  const initial=await image.evaluate(el=>new DOMMatrixReadOnly(getComputedStyle(el).transform).a);
+  await expect.poll(()=>image.evaluate(el=>new DOMMatrixReadOnly(getComputedStyle(el).transform).a)).toBeGreaterThan(initial+.008);
+  const scrollTransform=await print.locator('.cv-photo-image-scroll').evaluate(el=>getComputedStyle(el).transform);
+  await page.mouse.wheel(0,120);
+  await expect.poll(()=>print.locator('.cv-photo-image-scroll').evaluate(el=>getComputedStyle(el).transform)).not.toBe(scrollTransform);
+  await page.getByRole('button',{name:'Pause photo motion',exact:true}).click();
+  await print.scrollIntoViewIfNeeded();
+  await expect(image).toHaveCSS('animation-play-state','paused');
+  const paused=await image.evaluate(el=>getComputedStyle(el).transform);
+  await page.waitForTimeout(300);await expect(image).toHaveCSS('transform',paused);
+  await page.getByRole('button',{name:'Resume photo motion',exact:true}).click();
+  await print.scrollIntoViewIfNeeded();
+  await expect(image).toHaveCSS('animation-play-state','running');
+  await expect.poll(()=>image.evaluate(el=>getComputedStyle(el).transform)).not.toBe(paused);
+  await page.locator('.cv-bookend.is-closing').scrollIntoViewIfNeeded();
+  await expect(image).toHaveCSS('animation-play-state','paused');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBe(0);
+});
+
+test('existing Canvas deliveries gain image motion while explicit still photos remain still',async({page})=>{
+  await page.setViewportSize({width:390,height:844});await init(page);const data=record();
+  delete data.formatConfig.canvas.photoMotion;data.creativeDirection.frames.forEach(frame=>{frame.motion='still';});
+  await preview(page,data);const print=page.locator('.cv-frame').first(),image=print.locator('.cv-photo-image-motion');
+  await print.scrollIntoViewIfNeeded();await expect(image).toHaveCSS('animation-play-state','running');
+  const initial=await image.evaluate(el=>getComputedStyle(el).transform);
+  await expect.poll(()=>image.evaluate(el=>getComputedStyle(el).transform)).not.toBe(initial);
+  data.formatConfig.canvas.photoMotion='still';
+  await page.evaluate(delivery=>window.postMessage({type:'veylo:phone-preview-data',payload:{delivery}},location.origin),data);
+  await expect(page.locator('.cv-board')).toHaveAttribute('data-photo-motion','still');
+  await expect(image).toHaveCSS('animation-name','none');
+  await expect(print.locator('.cv-photo-image-scroll')).toHaveCSS('transform','none');
+  await expect(page.getByRole('button',{name:'Pause photo motion',exact:true})).toHaveCount(0);
+  delete data.formatConfig.canvas.photoMotion;delete data.v3;data.schemaVersion=2;
+  await page.evaluate(delivery=>window.postMessage({type:'veylo:phone-preview-data',payload:{delivery}},location.origin),data);
+  await expect(print).toHaveAttribute('data-image-motion','still');
+  await expect(image).toHaveCSS('animation-name','none');
+});
+
 test('live preview wording updates on the same image and removal of an open group stays safe',async({page})=>{
   await page.setViewportSize({width:834,height:1194});await init(page);await page.emulateMedia({reducedMotion:'reduce'});
   const data=record();await preview(page,data);await page.getByRole('button',{name:'Open Graduation portraits',exact:true}).click();
@@ -285,9 +329,11 @@ for(const [width,height] of [[320,740],[834,1194]]) test(`Canvas creator groups,
   for(let count=await keep.count();count>0;count--)await keep.first().click();
   await page.getByRole('button',{name:'Move later',exact:true}).click();await expect(editor.locator('.cv-editor-points>li').first().locator('strong').first()).toHaveText('Individual photograph');
   await page.getByRole('button',{name:'Undo photo change',exact:true}).click();await expect(editor.locator('.cv-editor-points>li').first().locator('strong').first()).toContainText('The first portraits');
-  await editor.getByRole('button',{name:'Preview Canvas',exact:true}).click();const previewFrame=page.frameLocator('.cv-creator-preview iframe');await expect(previewFrame.locator('.cv-board')).toBeVisible();await expect(previewFrame.locator('.cv-photo-open')).toHaveCount(7);
+  const photoMotion=width===320?'still':'gentle';await editor.getByLabel('Photo motion',{exact:true}).selectOption(photoMotion);
+  await editor.getByRole('button',{name:'Preview Canvas',exact:true}).click();const previewFrame=page.frameLocator('.cv-creator-preview iframe');await expect(previewFrame.locator('.cv-board')).toBeVisible();await expect(previewFrame.locator('.cv-photo-open')).toHaveCount(7);await expect(previewFrame.locator('.cv-board')).toHaveAttribute('data-photo-motion',photoMotion==='still'?'still':'playing');
   await page.getByRole('button',{name:'Close Canvas preview',exact:true}).click();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBe(0);
   await page.getByRole('button',{name:'Continue',exact:true}).click();await expect.poll(()=>saved?.presentation?.checkpoints?.length).toBe(5);
+  expect(saved.presentation.photoMotion).toBe(photoMotion);
   expect(saved.sectionWriting).toHaveLength(1);expect(saved.sectionWriting[0].title).toBe('The first portraits');expect(saved.sectionWriting[0].assetIds).toHaveLength(3);expect(saved.assetIds).toHaveLength(7);expect(saved.presentation.checkpoints[0].type).toBe('group');
 });

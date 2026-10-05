@@ -58,7 +58,7 @@ export function albumSpreads(delivery, ids = delivery?.curatedAssetIds || []) {
 
 export function presentationSettings(delivery, ids = delivery?.curatedAssetIds || []) {
   const key = PRESENTATION_KEYS[delivery?.format], raw = delivery?.formatConfig?.[key] || {};
-  if (key === 'canvas') return { version: 1, arrangement: raw.arrangement === 'ordered' ? 'ordered' : 'spatial', showGroupNotes: raw.showGroupNotes !== false };
+  if (key === 'canvas') return { version: 1, arrangement: raw.arrangement === 'ordered' ? 'ordered' : 'spatial', photoMotion: raw.photoMotion === 'still' ? 'still' : 'gentle', showGroupNotes: raw.showGroupNotes !== false };
   if (key === 'chapters') return { version: 1, directoryLayout: raw.directoryLayout === 'list' ? 'list' : 'covers', showPhotoCaptions: raw.showPhotoCaptions !== false };
   if (key === 'album') return { version: 1, paperTone: ['light', 'dark'].includes(raw.paperTone) ? raw.paperTone : 'theme', spreads: albumSpreads(delivery, ids) };
   if (key === 'eventCoverage') return { version: 1, highlightAssetIds: (raw.highlightAssetIds || ids.filter((_, index) => index % Math.max(1, Math.floor(ids.length / 4)) === 0).slice(0, 4)).filter(id => ids.includes(id)), showSceneNotes: raw.showSceneNotes !== false, eventDate: text(raw.eventDate, 10), venue: text(raw.venue, 120) };

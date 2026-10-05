@@ -29,7 +29,7 @@ export function canvasCheckpoints(delivery, ids = delivery?.curatedAssetIds || [
 
 export function canvasSettings(delivery, ids = delivery?.curatedAssetIds || []) {
   const raw = delivery?.formatConfig?.canvas || {};
-  return { version: 1, arrangement: raw.arrangement === 'ordered' ? 'ordered' : 'spatial', showGroupNotes: raw.showGroupNotes !== false, checkpoints: canvasCheckpoints(delivery, ids).map(point => point.type === 'group' ? { id: point.id, type: 'group', sectionId: point.sectionId } : { id: point.id, type: 'photo', assetId: point.assetId }) };
+  return { version: 1, arrangement: raw.arrangement === 'ordered' ? 'ordered' : 'spatial', photoMotion: raw.photoMotion === 'still' ? 'still' : 'gentle', showGroupNotes: raw.showGroupNotes !== false, checkpoints: canvasCheckpoints(delivery, ids).map(point => point.type === 'group' ? { id: point.id, type: 'group', sectionId: point.sectionId } : { id: point.id, type: 'photo', assetId: point.assetId }) };
 }
 
 export function reconcileCanvas(settings, sections, selected, oldId, newId, groupId) {

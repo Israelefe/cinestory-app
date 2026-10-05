@@ -111,7 +111,7 @@ export function normalizeDeliveryPhotos(delivery, fallbackPhotos, includeAll = f
   return fallbackPhotos.map(photo => ({ ...photo, caption: photo.caption || '' }));
 }
 
-export function DemoHeader({ format, client, sectionId, onGallery, light = false, delivery, audioState, toggleAudio, hideSoundtrack = false, hideFormatLabel = false, titleDetail, headerClassName = '' }) {
+export function DemoHeader({ format, client, sectionId, onGallery, light = false, delivery, audioState, toggleAudio, hideSoundtrack = false, hideFormatLabel = false, titleDetail, headerClassName = '', headerActions }) {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -162,6 +162,7 @@ export function DemoHeader({ format, client, sectionId, onGallery, light = false
     <div className="fd-header-title">{!hideFormatLabel && <span>{format}</span>}<strong>{client}</strong>{titleDetail && <small>{titleDetail}</small>}</div>
 
     <div className="fd-header-actions">
+      {headerActions}
       {audioState && toggleAudio && capabilities.music && delivery?.soundtrack?.url && !hideSoundtrack && (
         <button
           type="button"

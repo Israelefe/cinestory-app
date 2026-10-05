@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
-import { ChevronLeft, ChevronRight, Images, RefreshCw, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Images, Pause, Play, RefreshCw, X } from 'lucide-react';
 import { Photo } from '../PublicDesign.jsx';
 import { useDialogFocus } from '../useDialogFocus.js';
 import ClientGallery from './ClientGallery.jsx';
@@ -14,28 +14,30 @@ import { CANVAS_DEMO_DELIVERY } from '../../constants/canvasDemo.js';
 import './CanvasBoard.css';
 
 const number = value => String(value).padStart(2, '0');
+const photoMotions = ['slow-push', 'pan-left', 'slow-pull', 'pan-right', 'float'];
 const arrival = (reduced, stationary = false) => ({ initial: reduced ? false : { opacity: 0, y: stationary ? 0 : 18 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, amount: .12 }, transition: { duration: reduced ? 0 : stationary ? .35 : .55, ease: [.22, 1, .36, 1] } });
 
 // Cache geometry when the composition changes. Scrolling only writes transforms
 // for nearby prints; it never measures every photograph or updates React state.
-function useCanvasScrollMotion(board, composition, enabled) {
+function useCanvasScrollMotion(board, composition, enabled, frameDrift) {
   useEffect(() => {
     if (!board.current || !composition || !enabled) return;
     const visible = new Set(), prints = new Map();
     const geometry = new Map(composition.frames.map(frame => [frame.id, frame]));
     let scheduled = 0, top = 0, viewport = innerHeight, disposed = false;
     board.current.querySelectorAll('.cv-frame').forEach(node => {
-      prints.set(node, { frame: geometry.get(node.dataset.photo), surface: node.querySelector('.cv-frame-drift') });
+      prints.set(node, { frame: geometry.get(node.dataset.photo), surface: node.querySelector('.cv-frame-drift'), image: node.querySelector('.cv-photo-image-scroll'), aperture: node.querySelector('.cv-photo-open') });
     });
     const paint = () => {
       scheduled = 0;
       if (disposed || document.hidden) return;
       const scroll = window.scrollY;
       visible.forEach(node => {
-        const { frame, surface } = prints.get(node);
+        const { frame, surface, image } = prints.get(node);
         if (!frame || !surface) return;
         const progress = Math.max(-1, Math.min(1, (top + frame.y + frame.height / 2 - scroll - viewport / 2) / ((viewport + frame.height) / 2)));
-        surface.style.transform = `translate3d(0, ${(progress * frame.pose.drift).toFixed(2)}px, 0)`;
+        if (frameDrift) surface.style.transform = `translate3d(0, ${(progress * frame.pose.drift).toFixed(2)}px, 0)`;
+        if (image && node.dataset.imageMotion !== 'still') image.style.transform = `translate3d(0, ${progress.toFixed(2)}%, 0) scale(1.03)`;
       });
     };
     const schedule = () => { if (!scheduled && !disposed && !document.hidden) scheduled = requestAnimationFrame(paint); };
@@ -47,28 +49,32 @@ function useCanvasScrollMotion(board, composition, enabled) {
     };
     const observer = new IntersectionObserver(entries => {
       entries.forEach(entry => {
-        if (entry.isIntersecting) visible.add(entry.target);
-        else visible.delete(entry.target);
+        const node = entry.target.closest('.cv-frame');
+        node.dataset.photoVisible = entry.isIntersecting ? 'true' : 'false';
+        if (entry.isIntersecting) visible.add(node);
+        else visible.delete(node);
       });
       schedule();
-    }, { rootMargin: '120px 0px' });
-    prints.forEach((_, node) => observer.observe(node));
+    }, { threshold: .01 });
+    prints.forEach(({ aperture }) => observer.observe(aperture));
     const resize = new ResizeObserver(measure);
     resize.observe(board.current.parentElement);
     measure();
     window.addEventListener('scroll', schedule, { passive: true });
     window.addEventListener('resize', measure, { passive: true });
-    document.addEventListener('visibilitychange', schedule);
+    const visibility = () => { board.current?.setAttribute('data-page-hidden', document.hidden ? 'true' : 'false'); schedule(); };
+    visibility();
+    document.addEventListener('visibilitychange', visibility);
     return () => {
       disposed = true;
       cancelAnimationFrame(scheduled);
       observer.disconnect(); resize.disconnect();
       window.removeEventListener('scroll', schedule);
       window.removeEventListener('resize', measure);
-      document.removeEventListener('visibilitychange', schedule);
-      prints.forEach(({ surface }) => surface?.style.removeProperty('transform'));
+      document.removeEventListener('visibilitychange', visibility);
+      prints.forEach((_, node) => { node.dataset.photoVisible = 'false'; });
     };
-  }, [board, composition, enabled]);
+  }, [board, composition, enabled, frameDrift]);
 }
 
 function useCanvasConnections(board, composition) {
@@ -104,12 +110,13 @@ function CanvasConnection({ path }) {
   </svg>;
 }
 
-function CanvasPrint({ photo, id, index, place, frame, pose, reduced, ordered, touch, open, measureRef }) {
+function CanvasPrint({ photo, id, index, place, frame, pose, reduced, ordered, touch, open, measureRef, stillPhotos, legacyAutoStill }) {
   // Measurements arrive after mounting; give the first arrival its direction too.
   pose = pose || canvasPrintPose(index, window.innerWidth < 668, ordered, photo.width > photo.height);
   const stationary = touch || pose.phone;
   const interactive = !reduced && !stationary;
   const delay = reduced ? 0 : stationary ? Math.min(place, 2) * .06 : Math.min(place, 3) * .12;
+  const imageMotion = reduced || stillPhotos || photo.motion === 'still' && !legacyAutoStill ? 'still' : photoMotions.includes(photo.motion) ? photo.motion : photoMotions[index % photoMotions.length];
   const surface = <>{index % 3 === 0 && <span className="cv-frame-alignment" aria-hidden="true" />}
     <motion.div className="cv-frame-surface" tabIndex={-1}
       initial={reduced ? false : { rotate: pose.tilt + (stationary || ordered ? 0 : pose.turn) }} whileInView={{ rotate: reduced ? 0 : pose.tilt }} viewport={{ once: true, amount: .12 }}
@@ -117,13 +124,13 @@ function CanvasPrint({ photo, id, index, place, frame, pose, reduced, ordered, t
       whileTap={interactive ? { scale: .985, y: -2, transition: { duration: .15 } } : undefined}
       transition={{ duration: reduced || stationary ? 0 : .82, delay: stationary ? 0 : delay, ease: [.22, 1, .36, 1] }}>
       <button type="button" className="fd-wall-card cv-photo-open" onClick={event => open(photo, event)} aria-label={`Open photograph ${index + 1}`}>
-        <Photo url={photo.url} thumbnailUrl={photo.thumbnailUrl} srcSet={photo.srcSet} alt={photo.alt} eager={index < 2} draggable={false} style={{ objectPosition: photo.focalPoint || '50% 50%' }} sizes="(max-width: 640px) 72vw, (max-width: 1024px) 35vw, 460px" onError={event => { event.currentTarget.closest('.cv-frame').classList.add('has-error'); }} />
+        <span className="cv-photo-image-scroll"><span className="cv-photo-image-motion" style={{ transformOrigin: imageMotion.startsWith('pan-') || imageMotion === 'float' ? '50% 50%' : photo.focalPoint || '50% 35%', animationDuration: `${7 + index % 3}s` }}><Photo url={photo.url} thumbnailUrl={photo.thumbnailUrl} srcSet={photo.srcSet} alt={photo.alt} eager={index < 2} draggable={false} style={{ objectPosition: photo.focalPoint || '50% 50%' }} sizes="(max-width: 640px) 72vw, (max-width: 1024px) 35vw, 460px" onError={event => { event.currentTarget.closest('.cv-frame').classList.add('has-error'); }} /></span></span>
         <span className="cv-photo-number" aria-hidden="true">{number(index + 1)}</span>
       </button><button type="button" className="cv-frame-retry" onClick={event => { const frame = event.currentTarget.closest('.cv-frame'), image = frame.querySelector('img'); frame.classList.remove('has-error'); image.src = photo.url; image.srcset = photo.srcSet || ''; }}><RefreshCw size={16} />Retry photo</button>
     </motion.div>
   </>;
   return <motion.figure className={`cv-frame ${photo.width > photo.height ? 'is-landscape' : ''}`}
-    data-photo={id} initial={reduced ? false : { opacity: 0, x: stationary ? 0 : pose.x, y: stationary ? 14 : pose.y }}
+    data-photo={id} data-image-motion={imageMotion} initial={reduced ? false : { opacity: 0, x: stationary ? 0 : pose.x, y: stationary ? 14 : pose.y }}
     whileInView={{ opacity: 1, x: 0, y: 0 }} viewport={{ once: true, amount: .12 }}
     transition={{ duration: reduced ? 0 : stationary ? .6 : .72, delay, ease: [.22, 1, .36, 1] }}
     style={{ left: frame?.x, top: frame?.y, width: frame?.width, '--cv-ratio': photo.width && photo.height ? `${photo.width} / ${photo.height}` : '3 / 4', '--cv-tilt': `${pose?.tilt || 0}deg` }}>
@@ -200,8 +207,13 @@ export default function CanvasBoard({ delivery: supplied, galleryProps, audioSta
   const board = useRef(null), nodes = useRef(new Map()), metrics = useRef(new Map()), trigger = useRef(null);
   const [composition, setComposition] = useState(null);
   const [selection, setSelection] = useState(null), [gallery, setGallery] = useState(false), [jumped, setJumped] = useState(null);
+  const [motionPaused, setMotionPaused] = useState(false);
   const settings = delivery.formatConfig?.canvas || {};
-  useCanvasScrollMotion(board, composition, !reduced && settings.arrangement !== 'ordered');
+  const stillPhotos = settings.photoMotion === 'still';
+  // Earlier v3 Canvas saves forced every frame to "still" without a creator
+  // choice. Upgrade that default, or apply the creator's collection motion choice.
+  const legacyAutoStill = settings.photoMotion === 'gentle' || delivery.schemaVersion === 3 && Boolean(delivery.v3) && settings.photoMotion === undefined;
+  useCanvasScrollMotion(board, composition, !reduced && !stillPhotos && !motionPaused && !selection && !gallery, settings.arrangement !== 'ordered');
   useCanvasConnections(board, composition);
   const requestedTheme = getFormatThemeStyles(delivery, { bg: '#0c1b16', surface: '#eee5d8', text: '#efe6d6', accent: '#c8ac8c' });
   const ink = photoStoryChrome(requestedTheme['--fd-bg'], requestedTheme['--fd-text'], requestedTheme['--fd-accent']);
@@ -235,8 +247,8 @@ export default function CanvasBoard({ delivery: supplied, galleryProps, audioSta
   const paths = composition?.paths || [];
   const touch = !finePointer || composition?.phone;
   const bookendPosition = kind => composition ? { left: composition[kind].x, top: composition[kind].y, width: composition[kind].width } : undefined;
-  return <div className="fd-page fd-canvas cv-board" style={theme} data-touch={touch ? 'true' : 'false'} data-arrangement={settings.arrangement || 'spatial'}>
-    <DemoHeader format="Canvas" client={delivery.clientName || delivery.title} sectionId="canvas" delivery={supplied} audioState={audioState} toggleAudio={toggleAudio} hideFormatLabel titleDetail={`${photos.length} photographs`} headerClassName="cv-header" />
+  return <div className="fd-page fd-canvas cv-board" style={theme} data-touch={touch ? 'true' : 'false'} data-arrangement={settings.arrangement || 'spatial'} data-photo-motion={stillPhotos ? 'still' : motionPaused || selection || gallery ? 'paused' : 'playing'}>
+    <DemoHeader format="Canvas" client={delivery.clientName || delivery.title} sectionId="canvas" delivery={supplied} audioState={audioState} toggleAudio={toggleAudio} hideFormatLabel titleDetail={`${photos.length} photographs`} headerClassName="cv-header" headerActions={!stillPhotos && <button type="button" className="cv-motion-toggle" aria-label={motionPaused ? 'Resume photo motion' : 'Pause photo motion'} aria-pressed={motionPaused} onClick={() => setMotionPaused(value => !value)}>{motionPaused ? <Play size={16} /> : <Pause size={16} />}<span>{motionPaused ? 'Resume motion' : 'Pause motion'}</span></button>} />
     <main className="cv-main">
       <div className="cv-path-board" ref={board} style={{ height: composition?.height || 1800 }}>
         <Bookend delivery={delivery} kind="opening" photos={all} reduced={reduced} touch={touch} edgeId={order[0]} position={bookendPosition('intro')} measureRef={metric('opening')} />
@@ -249,7 +261,7 @@ export default function CanvasBoard({ delivery: supplied, galleryProps, audioSta
               <div className="cv-photo-composition">{point.assetIds.map((id, place) => {
                 const photo = byId.get(id), index = order.indexOf(id), frame = placement?.frames[place]; if (!photo) return null;
                 const global = composition?.frames.find(item => item.id === id);
-                return <React.Fragment key={id}>{point.type === 'group' && global && <span className="cv-photo-anchor" aria-hidden="true" style={{ left: global.anchor.x - placement.x, top: global.anchor.y - placement.y }} />}<CanvasPrint photo={photo} id={id} index={index} place={place} frame={frame} pose={global?.pose} reduced={reduced} touch={touch} ordered={settings.arrangement === 'ordered'} open={open} measureRef={metric(`label:${id}`)} /></React.Fragment>;
+                return <React.Fragment key={id}>{point.type === 'group' && global && <span className="cv-photo-anchor" aria-hidden="true" style={{ left: global.anchor.x - placement.x, top: global.anchor.y - placement.y }} />}<CanvasPrint photo={photo} id={id} index={index} place={place} frame={frame} pose={global?.pose} reduced={reduced} touch={touch} ordered={settings.arrangement === 'ordered'} open={open} measureRef={metric(`label:${id}`)} stillPhotos={stillPhotos} legacyAutoStill={legacyAutoStill} /></React.Fragment>;
               })}</div>
             </div>
           </section>;

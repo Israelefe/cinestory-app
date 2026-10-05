@@ -14,7 +14,7 @@ const ids = Array.from({ length: 19 }, (_, index) => `00000000-0000-4000-8000-${
 const selected = ids.slice(0, 6);
 const sections = [{ id: 'together', title: 'Together', subtitle: 'Two portraits together.', layout: 'pair', assetIds: selected.slice(1, 3) }];
 const checkpoints = [{ id: 'first', type: 'photo', assetId: selected[0] }, { id: 'group-point', type: 'group', sectionId: 'together' }, ...selected.slice(3).map((assetId, index) => ({ id: `single-${index}`, type: 'photo', assetId }))];
-const canvas = { version: 1, arrangement: 'spatial', showGroupNotes: true, checkpoints };
+const canvas = { version: 1, arrangement: 'spatial', photoMotion: 'gentle', showGroupNotes: true, checkpoints };
 const response = () => ({ statusCode: 200, status(value) { this.statusCode = value; return this; }, json(body) { this.body = body; return this; } });
 function draft() { return { _id: '507f1f77bcf86cd799439011', status: 'review', format: 'canvas', collectionAnalysis: {}, assets: ids.map(assetId => ({ assetId })), curatedAssetIds: selected, creativeDirection: { title: 'Courage’s graduation', openingLine: 'Your graduation portraits are ready.', closingLine: 'Your photographs are yours to keep.', sections: structuredClone(sections), frames: selected.map(assetId => ({ assetId, headline: 'Graduation portrait', caption: 'Courage, keep these from your graduation.', focalPoint: '35% 40%' })) }, formatConfig: { canvas: structuredClone(canvas) }, v3: { revision: 1, approvedRevision: 1 }, markModified() {}, async save() { this.saved = true; } }; }
 function input(record, settings = canvas, groups = sections) { return { assetIds: selected, frames: record.creativeDirection.frames.map(({ assetId, headline, caption }) => ({ assetId, headline, caption })), title: record.creativeDirection.title, openingLine: record.creativeDirection.openingLine, closingLine: record.creativeDirection.closingLine, openingAssetId: selected[0], closingAssetId: selected.at(-1), sectionWriting: structuredClone(groups), presentation: { format: 'canvas', ...structuredClone(settings) } }; }
@@ -40,6 +40,26 @@ test('malformed and legacy Canvas keep each visible photograph exactly once with
   assert.equal(new Set(canvasCheckpoints(record).map(point => point.id)).size, checkpoints.length);
   record.formatConfig.canvas.checkpoints = [null, 'bad', { id: 'missing', type: 'group', sectionId: 'unknown' }];
   assert.deepEqual(canvasCheckpoints(record).flatMap(point => point.assetIds), selected);
+});
+
+test('Canvas upgrades automatic still defaults and saves the photographer motion choice', async () => {
+  const record = draft();
+  delete record.formatConfig.canvas.photoMotion;
+  record.creativeDirection.frames.forEach(frame => { frame.motion = 'still'; });
+  const findOne = Delivery.findOne;
+  Delivery.findOne = async () => record;
+  try {
+    const res = response();
+    await v3Showcase({ params: { id: record._id }, user: { id: 'owner' }, body: input(record) }, res);
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(record.creativeDirection.frames.map(frame => frame.motion), ['slow-push', 'pan-left', 'slow-pull', 'pan-right', 'float', 'slow-push']);
+    assert.equal(canvasSettings(record).photoMotion, 'gentle');
+    const still = response();
+    await v3Showcase({ params: { id: record._id }, user: { id: 'owner' }, body: input(record, { ...canvas, photoMotion: 'still' }) }, still);
+    assert.equal(still.statusCode, 200);
+    assert.equal(canvasSettings(record).photoMotion, 'still');
+    assert.equal(presentationSchema.safeParse({ format: 'canvas', ...canvas, photoMotion: 'fast' }).success, false);
+  } finally { Delivery.findOne = findOne; }
 });
 test('checkpoint save/reload invalidates approval and keeps focal points; all-single save removes old groups', async t => {
   const record = draft(); t.mock.method(Delivery, 'findOne', query => { assert.equal(query.userId, 'owner'); return record; });

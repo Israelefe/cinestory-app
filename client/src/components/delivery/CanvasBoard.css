@@ -11,6 +11,8 @@
 .cv-board .fd-header .fd-header-brand{width:auto;min-width:0}.cv-board .fd-header .fd-header-brand-copy{min-width:0}.cv-board .fd-header .fd-header-brand-copy strong{font-size:13px;overflow-wrap:anywhere}
 .cv-board .fd-header.cv-header .fd-back{width:auto;justify-content:flex-start;font:400 12px/1.4 var(--delivery-font-ui);letter-spacing:0;text-transform:none;gap:10px}.cv-board .fd-header.cv-header .fd-back span{display:block}
 .cv-board .fd-header .fd-header-audio-btn{border-color:color-mix(in srgb,var(--fd-text) 30%,transparent);color:inherit}.cv-board .fd-header .fd-header-audio-btn.is-active{color:var(--cv-line);border-color:var(--cv-line)}
+.cv-board .cv-motion-toggle{display:inline-flex;align-items:center;gap:8px;background:transparent;border:1px solid color-mix(in srgb,var(--fd-text) 24%,transparent);border-radius:4px;padding:10px 12px;font:400 11px/1.4 var(--delivery-font-ui);white-space:nowrap}
+.cv-motion-toggle:hover{transform:translateY(-1px);background:color-mix(in srgb,var(--fd-text) 6%,transparent)}
 .cv-main{max-width:1360px;margin:0 auto;padding:0 12px 36px}
 .cv-path-board{container-type:inline-size;position:relative;width:100%;background:radial-gradient(ellipse at 18% 25%,color-mix(in srgb,var(--fd-surface) 6%,transparent),transparent 58%),radial-gradient(ellipse at 90% 65%,color-mix(in srgb,var(--fd-accent) 10%,transparent),transparent 52%),linear-gradient(135deg,color-mix(in srgb,var(--fd-bg) 96%,var(--fd-surface)),var(--fd-bg) 52%,color-mix(in srgb,var(--fd-bg) 95%,var(--fd-accent)));border:1px solid color-mix(in srgb,var(--fd-text) 22%,transparent);box-shadow:inset 0 0 90px color-mix(in srgb,var(--fd-text) 4%,transparent);isolation:isolate;touch-action:pan-y pinch-zoom}
 .cv-path-board:before{content:"";position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(color-mix(in srgb,var(--fd-text) 5%,transparent) 1px,transparent 1px),linear-gradient(90deg,color-mix(in srgb,var(--fd-text) 5%,transparent) 1px,transparent 1px);background-size:80px 80px;mask-image:linear-gradient(#000b,transparent 96%);z-index:-1}
@@ -41,6 +43,22 @@
 .cv-board[data-touch="true"] .cv-photo-open:active{opacity:.94}
 .cv-board[data-touch="true"] .cv-group-heading button:active{transform:none;opacity:.8}
 .cv-photo-open img{display:block;width:100%;height:100%;object-fit:contain;filter:none!important}
+.cv-photo-image-scroll,.cv-photo-image-motion{position:absolute;inset:0;display:block}
+.cv-photo-image-motion{animation-timing-function:ease-in-out;animation-iteration-count:infinite;animation-direction:alternate;animation-play-state:paused}
+.cv-frame[data-image-motion="slow-push"] .cv-photo-image-motion{animation-name:cv-photo-push}
+.cv-frame[data-image-motion="slow-pull"] .cv-photo-image-motion{animation-name:cv-photo-pull}
+.cv-frame[data-image-motion="pan-left"] .cv-photo-image-motion{animation-name:cv-photo-pan-left}
+.cv-frame[data-image-motion="pan-right"] .cv-photo-image-motion{animation-name:cv-photo-pan-right}
+.cv-frame[data-image-motion="float"] .cv-photo-image-motion{animation-name:cv-photo-float}
+.cv-frame[data-photo-visible="true"]:not([data-image-motion="still"]) .cv-photo-image-motion{animation-play-state:running;will-change:transform}
+.cv-board[data-photo-motion="paused"] .cv-photo-image-motion,.cv-board[data-photo-motion="still"] .cv-photo-image-motion,.cv-path-board[data-page-hidden="true"] .cv-photo-image-motion{animation-play-state:paused;will-change:auto}
+.cv-frame[data-image-motion="still"] .cv-photo-image-scroll{transform:none!important}
+.cv-board[data-arrangement="ordered"] .cv-frame-drift{transform:none!important}
+@keyframes cv-photo-push{from{transform:translate3d(0,0,0) scale(1.01)}to{transform:translate3d(0,-.4%,0) scale(1.1)}}
+@keyframes cv-photo-pull{from{transform:translate3d(0,-.4%,0) scale(1.1)}to{transform:translate3d(0,0,0) scale(1.01)}}
+@keyframes cv-photo-pan-left{from{transform:translate3d(2.5%,0,0) scale(1.08)}to{transform:translate3d(-2.5%,0,0) scale(1.08)}}
+@keyframes cv-photo-pan-right{from{transform:translate3d(-2.5%,0,0) scale(1.08)}to{transform:translate3d(2.5%,0,0) scale(1.08)}}
+@keyframes cv-photo-float{from{transform:translate3d(0,.8%,0) scale(1.025)}to{transform:translate3d(0,-.8%,0) scale(1.09)}}
 .cv-photo-number{position:absolute;right:10px;bottom:10px;display:grid;place-items:center;width:27px;height:27px;border-radius:50%;background:var(--fd-bg);color:var(--fd-text);border:1px solid color-mix(in srgb,var(--fd-text) 30%,transparent);font:500 9px/1 var(--delivery-font-ui);font-variant-numeric:tabular-nums}
 .cv-frame-label{margin:18px 3px 0;color:var(--fd-text);line-height:1.5;overflow-wrap:anywhere}
 .cv-frame-label:has(strong):before{content:"";display:block;width:20px;height:1px;background:var(--cv-line);opacity:.65;margin-bottom:9px}

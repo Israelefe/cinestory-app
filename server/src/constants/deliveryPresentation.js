@@ -9,7 +9,7 @@ export const sectionWritingSchema = z.array(z.object({ id: slug, title: z.string
 const version = z.literal(1);
 const highlights = z.array(id).max(6);
 export const presentationSchema = z.discriminatedUnion('format', [
-  z.object({ format: z.literal('canvas'), version, arrangement: z.enum(['spatial', 'ordered']), showGroupNotes: z.boolean(), checkpoints: z.array(z.discriminatedUnion('type', [z.object({ id: slug, type: z.literal('photo'), assetId: id }).strict(), z.object({ id: slug, type: z.literal('group'), sectionId: slug }).strict()])).min(1).max(18).optional() }).strict(),
+  z.object({ format: z.literal('canvas'), version, arrangement: z.enum(['spatial', 'ordered']), photoMotion: z.enum(['gentle', 'still']).optional(), showGroupNotes: z.boolean(), checkpoints: z.array(z.discriminatedUnion('type', [z.object({ id: slug, type: z.literal('photo'), assetId: id }).strict(), z.object({ id: slug, type: z.literal('group'), sectionId: slug }).strict()])).min(1).max(18).optional() }).strict(),
   z.object({ format: z.literal('chapters'), version, directoryLayout: z.enum(['covers', 'list']), showPhotoCaptions: z.boolean() }).strict(),
   z.object({ format: z.literal('album'), version, paperTone: z.enum(['theme', 'light', 'dark']), spreads: z.array(z.object({ id: slug, layout: z.enum(['single', 'pair', 'wide', 'triptych']), assetIds: ids.max(3), heading: z.string().trim().max(70), note: z.string().trim().max(180) }).strict()).min(1).max(16) }).strict(),
   z.object({ format: z.literal('event-coverage'), version, highlightAssetIds: highlights, showSceneNotes: z.boolean(), eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).or(z.literal('')).optional(), venue: z.string().trim().max(120).optional() }).strict(),
