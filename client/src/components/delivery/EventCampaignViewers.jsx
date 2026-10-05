@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useAnimationControls, useInView } from 'framer-motion';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
-import { ArrowRight, CalendarRange, Download, Images, Maximize2, Pause, Play } from 'lucide-react';
+import { CalendarRange, Download, Images, Maximize2, Pause, Play } from 'lucide-react';
+import { toast } from 'react-toastify';
 import { Photo } from '../PublicDesign.jsx';
 import {
   DemoGallery,
@@ -107,7 +108,7 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
   const toolsRef = useRef(null);
   const [gallery, setGallery] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(null);
-  const [activeFilter, setActiveFilter] = useState('all');
+  const [demoLiked, setDemoLiked] = useState(() => new Set());
   const [activeScene, setActiveScene] = useState('');
   const [motionPaused, setMotionPaused] = useState(false);
   const [pageVisible, setPageVisible] = useState(() => !document.hidden);
@@ -117,6 +118,27 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
   const openGallery = () => { if (!galleryUnlocked) return; setGalleryIndex(null); setGallery(true); };
   const photos = useMemo(() => normalizeDeliveryPhotos(delivery, eventCoveragePhotos), [delivery]);
   const galleryPhotos = useMemo(() => delivery?.schemaVersion === 3 ? normalizeDeliveryPhotos(delivery, eventCoveragePhotos, true) : photos, [delivery, photos]);
+  const demoGalleryProps = useMemo(() => ({
+    liked: demoLiked,
+    onLike: key => setDemoLiked(current => {
+      const next = new Set(current);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    }),
+    onDownload: (_key, index) => {
+      const photo = galleryPhotos[index];
+      const url = photo?.url || photo?.name;
+      if (!url) return;
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `event-coverage-${String(index + 1).padStart(2, '0')}.webp`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    },
+    onDownloadAll: () => toast.info('Open a photograph to download a sample file.')
+  }), [demoLiked, galleryPhotos]);
+  const galleryActionProps = delivery ? galleryProps : { ...demoGalleryProps, ...galleryProps };
   const { galleryUnlocked, closingRef } = useClosingGallery(`${delivery?.publicId || delivery?._id || 'event-demo'}:${photos.map(photo => photo.assetId || photo.name).join('|')}`);
   const openingPhoto = delivery?.schemaVersion === 3 ? galleryPhotos.find(photo => photo.assetId === delivery.v3?.openingAssetId) || photos[0] : photos[0];
   const hasPhotoMotion = [openingPhoto, ...photos].some(photo => photo && photo.motion !== 'still');
@@ -140,27 +162,12 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
       photos: section.photos.filter(photo => !openingIdentity || eventPhotoIdentity(photo) !== openingIdentity)
     }))
     .filter(section => section.photos.length), [sections, openingIdentity]);
-  const filterOptions = [
-    ['all', 'All moments'],
-    ['people', 'People'],
-    ['programme', 'Programme'],
-    ['networking', 'Networking'],
-    ['details', 'Details']
-  ];
-  const scenePhotos = useMemo(() => sceneSource.flatMap(section => section.photos), [sceneSource]);
-  const hasEventTypes = scenePhotos.some(photo => photo.eventType);
-  const availableFilters = filterOptions.filter(([value]) => value === 'all' || scenePhotos.some(photo => photo.eventType === value));
   const visibleSections = useMemo(() => sceneSource
     .map((section, index) => ({
       ...section,
       sceneIndex: index,
-      anchorId: sceneAnchorId(section, index),
-      photos: !hasEventTypes || activeFilter === 'all'
-        ? section.photos
-        : section.photos.filter(photo => photo.eventType === activeFilter)
-    }))
-    .filter(section => section.photos.length), [sceneSource, hasEventTypes, activeFilter]);
-  const visiblePhotoCount = visibleSections.reduce((count, section) => count + section.photos.length, 0);
+      anchorId: sceneAnchorId(section, index)
+    })), [sceneSource]);
 
   useEffect(() => {
     const update = () => setPageVisible(!document.hidden);
@@ -261,14 +268,11 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
 
       <section id="event-scenes" className="vec-event-scenes">
         <motion.header {...eventReveal}><span>THE COVERAGE</span><h2>From the first arrival to the last photograph.</h2></motion.header>
-        {hasEventTypes && <div className="vec-event-filter-bar"><div className="vec-event-filters" role="group" aria-label="Filter event photographs">
-          {availableFilters.map(([value, label]) => <motion.button type="button" key={value} className={activeFilter === value ? 'is-active' : ''} onClick={() => setActiveFilter(value)} aria-pressed={activeFilter === value} whileTap={{ scale: .96 }}>{activeFilter === value && <motion.span className="vec-event-filter-selection" layoutId="event-filter-selection" transition={{ type: 'spring', damping: 25, stiffness: 280 }} />}<span>{label}</span></motion.button>)}
-        </div><p className="vec-event-filter-status" role="status" aria-live="polite">{visiblePhotoCount} {visiblePhotoCount === 1 ? 'photograph' : 'photographs'} across {visibleSections.length} {visibleSections.length === 1 ? 'scene' : 'scenes'}</p></div>}
-        {!visibleSections.length && <div className="vec-event-empty"><p>No photographs in this view.</p><button type="button" onClick={() => setActiveFilter('all')}>Show all moments<ArrowRight size={16} /></button></div>}
+        {!visibleSections.length && <div className="vec-event-empty"><p>No other photographs in this presentation.</p></div>}
         {visibleSections.map(section => <article id={section.anchorId} tabIndex={-1} aria-labelledby={`${section.anchorId}-title`} data-layout={section.layout || 'grid'} key={section.anchorId} style={section.accent ? { '--section-accent': section.accent } : undefined}>
           <motion.div className="vec-scene-copy" {...eventReveal}><span>{String(section.sceneIndex + 1).padStart(2, '0')}</span><div><h3 id={`${section.anchorId}-title`}>{section.title}</h3></div><b>{section.photos.length} {section.photos.length === 1 ? 'photo' : 'photos'}</b></motion.div>
           <div className={`vec-scene-grid is-count-${Math.min(section.photos.length, 4)}`}>
-            {section.photos.map((photo, index) => <motion.figure key={`${activeFilter}:${photo.assetId || photo.name || index}`} {...eventReveal} transition={{ ...eventReveal.transition, delay: Math.min(index % 4, 3) * .06 }}>
+            {section.photos.map((photo, index) => <motion.figure key={`${photo.assetId || photo.name || 'photo'}:${index}`} {...eventReveal} transition={{ ...eventReveal.transition, delay: Math.min(index % 4, 3) * .06 }}>
               <button type="button" {...formatFrameAttributes(photo)} style={formatFrameStyle(photo)} onClick={() => openPhoto(photo)} aria-label={`Open ${section.title} photograph ${index + 1}`}>
                 <EventPhotoMotion photo={photo} index={index} paused={pausePhotos} className="vec-scene-image"><Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || photo.caption || ''} style={photo.focalPoint ? { objectPosition: photo.focalPoint } : undefined} sizes="(max-width: 639px) 92vw, (max-width: 1023px) 46vw, 46vw" /></EventPhotoMotion>
                 <span className="vec-photo-open" aria-hidden="true"><Maximize2 size={16} /></span>
@@ -281,7 +285,7 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
 
       <footer ref={closingRef} className="vec-event-close">{closingPhoto && <img className="vec-v3-bookend-photo" src={closingPhoto.url} alt="" loading="lazy" />}<motion.div {...eventReveal}><span>{studio}</span><h2>{delivery?.creativeDirection?.closingLine || 'The whole day, in one place.'}</h2></motion.div></footer>
     </main>
-    <AnimatePresence>{gallery && <DemoGallery photos={galleryPhotos} title={title} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} fontStyles={styles} {...galleryProps} singlePhoto={!galleryUnlocked} />}</AnimatePresence>
+    <AnimatePresence>{gallery && <DemoGallery photos={galleryPhotos} title={title} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} fontStyles={styles} {...galleryActionProps} singlePhoto={!galleryUnlocked} />}</AnimatePresence>
   </div>;
 }
 

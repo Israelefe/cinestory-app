@@ -1,6 +1,5 @@
 import { expect, test } from '@playwright/test';
 import { EVENT_DEMO } from '../src/constants/deliveryDemoFixtures.js';
-import { EVENT_COVERAGE_DEMO_PHOTOS } from '../src/constants/eventCoverageDemo.js';
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 3, necessary: true, serviceAnalytics: true })));
@@ -13,10 +12,7 @@ async function published(page, { motion = 'still', duplicateIds = false, longCop
   delivery.status = 'published';
   delivery.access.allowIndividualDownloads = allowIndividualDownloads;
   delivery.creativeDirection.typography = { display: 'Cormorant Garamond', body: 'Manrope' };
-  delivery.creativeDirection.frames.forEach((frame, index) => {
-    frame.eventType = EVENT_COVERAGE_DEMO_PHOTOS[index].eventType;
-    frame.motion = motion;
-  });
+  delivery.creativeDirection.frames.forEach(frame => { frame.motion = motion; });
   if (duplicateIds) delivery.creativeDirection.sections.forEach(section => { section.id = 'scene'; });
   if (sceneLayouts) delivery.creativeDirection.sections.forEach((section, index) => { section.layout = ['pair', 'triptych', 'cluster', 'strip'][index]; });
   if (longCopy) {
@@ -62,30 +58,29 @@ for (const width of [320, 390, 640, 768, 834, 1024, 1440]) {
 }
 
 for (const width of [320, 834]) {
-  test(`filtered scene links keep their identities and photo access at ${width}px`, async ({ page }) => {
+  test(`scene links stay unique and open photos without category filters at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });
     const delivery = await published(page, { duplicateIds: true });
     const originalAnchors = await page.locator('.vec-event-scene-nav a').evaluateAll(links => links.map(link => link.getAttribute('href')));
     expect(new Set(originalAnchors).size).toBe(4);
-    await page.getByRole('button', { name: 'Networking', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Networking', exact: true })).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.locator('.vec-event-scenes article')).toHaveCount(1);
-    await expect(page.locator('.vec-event-filter-status')).toHaveText('3 photographs across 1 scene');
-    const link = page.locator('.vec-event-scene-nav a');
+    await expect(page.locator('.vec-event-filter-bar')).toHaveCount(0);
+    for (const label of ['All moments', 'People', 'Programme', 'Networking', 'Details']) {
+      await expect(page.getByRole('button', { name: label, exact: true })).toHaveCount(0);
+    }
+    await expect(page.locator('.vec-event-scenes article')).toHaveCount(4);
+    const link = page.locator('.vec-event-scene-nav a').nth(2);
     await expect(link).toHaveAttribute('href', originalAnchors[2]);
     await expect(link.locator('span')).toHaveText('03');
     await link.click();
     await expect(link).toHaveAttribute('aria-current', 'location');
-    await expect(page.locator('.vec-scene-copy > span')).toHaveText('03');
+    await expect(page.locator(originalAnchors[2]).locator('.vec-scene-copy > span')).toHaveText('03');
     await expect(page.getByRole('button', { name: 'Open gallery', exact: true })).toHaveCount(0);
-    const photo = page.locator('.vec-scene-grid button').first();
+    const photo = page.locator('.vec-event-scenes article').nth(2).locator('.vec-scene-grid button').first();
     await photo.click();
     await expect(page.locator('.client-gallery-lightbox-main')).toHaveAttribute('src', delivery.assets[2].url);
     await expect(page.locator('.client-gallery-grid')).toHaveCount(0);
     await page.getByRole('button', { name: 'Return to presentation' }).press('Escape');
     await expect(photo).toBeFocused();
-    await page.getByRole('button', { name: 'All moments', exact: true }).click();
-    await expect(page.locator('.vec-event-scenes article')).toHaveCount(4);
     await page.locator('.vec-event-close').scrollIntoViewIfNeeded();
     await page.getByRole('button', { name: 'Open gallery', exact: true }).click();
     await expect(page.locator('.client-gallery-grid > figure')).toHaveCount(16);
@@ -140,6 +135,27 @@ test('event gallery hides the full-size action when individual downloads are dis
   await expect(page.locator('.client-gallery-lightbox-main')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open full-size photograph in a new tab' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Download photograph' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Add to favourites' })).toBeVisible();
+});
+
+test('event demo gallery has local favourites and sample download actions', async ({ page }) => {
+  await page.setViewportSize({ width: 834, height: 1000 });
+  await page.goto('/demo/event-coverage?phoneView=1');
+  const scenePhoto = page.locator('.vec-scene-grid button').first();
+  await scenePhoto.scrollIntoViewIfNeeded();
+  await scenePhoto.click();
+  const like = page.getByRole('button', { name: 'Add to favourites' });
+  await expect(like).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download photograph' })).toBeVisible();
+  await like.click();
+  await expect(page.getByRole('button', { name: 'Remove from favourites' })).toBeVisible();
+  await page.getByRole('button', { name: 'Return to presentation' }).press('Escape');
+
+  await page.locator('.vec-event-close').scrollIntoViewIfNeeded();
+  await page.getByRole('button', { name: 'Open gallery', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Remove from favourites' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download photograph 1', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download all photos' })).toBeVisible();
 });
 
 for (const reducedMotion of ['no-preference', 'reduce']) {

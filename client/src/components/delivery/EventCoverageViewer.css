@@ -142,24 +142,6 @@
 }
 .vec-event #event-scenes, .vec-event .vec-event-scenes article { scroll-margin-top: var(--event-scroll-offset); }
 .vec-event .vec-event-scenes { padding-top: 54px; }
-.vec-event .vec-event-filter-bar { max-width: 1180px; margin: 0 auto 32px; }
-.vec-event .vec-event-filters { gap: 8px; margin: 0; padding: 5px 3px 10px; overflow-x: auto; }
-.vec-event .vec-event-filters button {
-  position: relative;
-  isolation: isolate;
-  min-height: 44px;
-  padding: 10px 16px;
-  border-radius: 4px;
-  color: var(--event-muted);
-  background: transparent;
-  font-size: 12px;
-  font-weight: 550;
-}
-.vec-event .vec-event-filters button > span { position: relative; z-index: 1; }
-.vec-event .vec-event-filters button.is-active { color: var(--fd-bg); border-color: var(--fd-accent); background: transparent; }
-.vec-event .vec-event-filters button > .vec-event-filter-selection { position: absolute; z-index: 0; inset: 0; background: var(--fd-accent); border-radius: 3px; }
-.vec-event .vec-event-filters button:hover { border-color: var(--fd-accent); }
-.vec-event .vec-event-filter-status { margin-top: 10px; color: var(--event-muted); font-size: 12px; line-height: 1.5; }
 .vec-event .vec-event-scenes article { padding-block: 36px 48px; }
 .vec-event .vec-event-scenes article:focus-visible { outline: 1px solid var(--fd-accent); outline-offset: 8px; }
 .vec-event .vec-scene-copy { align-items: start; gap: 12px; margin-bottom: 22px; }
@@ -195,7 +177,6 @@
 .vec-event .vec-scene-grid button[data-frame-motion="still"]:hover .vec-scene-image .v-photo,
 .vec-event[data-motion-paused="true"] :is(.vec-event-highlight-grid, .vec-scene-grid) button:hover img { transform: none; }
 .vec-event .vec-event-empty { padding: 32px 0 48px; color: var(--event-muted); }
-.vec-event .vec-event-empty button { display: inline-flex; align-items: center; gap: 12px; min-height: 44px; margin-top: 16px; color: var(--fd-accent); }
 
 .vec-event .vec-event-close { min-height: 400px; padding: 64px var(--event-gutter); }
 .vec-event .vec-event-close > div { max-width: 850px; }
