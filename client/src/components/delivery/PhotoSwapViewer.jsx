@@ -20,21 +20,29 @@ import './DeliveryTypography.css';
 const SWIPE_VELOCITY = 560;
 const SWIPE_DISTANCE_RATIO = 0.2;
 const CARD_MOTION_VARIANTS = {
-  enter: ({ direction, reduced }) => ({
-    opacity: 0.5,
-    x: direction < 0 ? 88 : -88,
-    transition: { duration: reduced ? 0.12 : 0.18 }
-  }),
-  visible: ({ reduced }) => ({
+  enter: custom => {
+    const direction = custom?.direction ?? 1;
+    const reduced = Boolean(custom?.reduced);
+    return {
+      opacity: 0.5,
+      x: direction < 0 ? 88 : -88,
+      transition: { duration: reduced ? 0.12 : 0.18 }
+    };
+  },
+  visible: custom => ({
     opacity: 1,
     x: 0,
-    transition: { type: 'spring', damping: 24, stiffness: reduced ? 220 : 280 }
+    transition: { type: 'spring', damping: 24, stiffness: custom?.reduced ? 220 : 280 }
   }),
-  exit: ({ direction, reduced }) => ({
-    opacity: 0,
-    x: direction < 0 ? -window.innerWidth * 1.05 : window.innerWidth * 1.05,
-    transition: { duration: reduced ? 0.15 : 0.28, ease: [0.32, 0, 0.67, 0] }
-  })
+  exit: custom => {
+    const direction = custom?.direction ?? 1;
+    const reduced = Boolean(custom?.reduced);
+    return {
+      opacity: 0,
+      x: direction < 0 ? -window.innerWidth * 1.05 : window.innerWidth * 1.05,
+      transition: { duration: reduced ? 0.15 : 0.28, ease: [0.32, 0, 0.67, 0] }
+    };
+  }
 };
 
 function mediaUrl(value) {
