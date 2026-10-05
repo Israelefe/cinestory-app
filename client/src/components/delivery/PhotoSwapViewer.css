@@ -234,38 +234,6 @@
   border: 1px solid rgba(255, 255, 255, 0.14);
 }
 
-/* ── Middle and Back Cards ── */
-.ps-card-back,
-.ps-card-middle {
-  pointer-events: none;
-}
-
-.ps-card-back {
-  top: 8px;
-  right: -9px;
-  bottom: -8px;
-  left: 9px;
-  border-color: rgba(255, 255, 255, 0.07);
-  filter: brightness(0.42) saturate(0.68);
-}
-
-.ps-card-middle {
-  top: 4px;
-  right: -5px;
-  bottom: -4px;
-  left: 5px;
-  border-color: rgba(255, 255, 255, 0.1);
-  filter: brightness(0.64) saturate(0.82);
-}
-
-.ps-card-back img,
-.ps-card-middle img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
 /* ── Front Card (Active Swipeable) ── */
 .ps-card-front {
   z-index: 3;
@@ -329,14 +297,6 @@
   border-radius: 0 0 18px 18px;
 }
 
-.ps-card-front.ps-design-paper .ps-overlay-counter {
-  color: color-mix(in srgb, var(--ps-card-accent) 78%, #30241c);
-}
-
-.ps-card-front.ps-design-paper .ps-overlay-counter i {
-  color: rgba(47, 36, 28, 0.35);
-}
-
 .ps-card-front.ps-design-paper .ps-overlay-caption {
   color: #2c241e;
   text-shadow: none;
@@ -362,22 +322,6 @@
   border-radius: 4px 14px 4px 4px;
   background: rgba(8, 8, 12, 0.76);
   backdrop-filter: blur(14px);
-}
-
-.ps-card-back.ps-design-matte,
-.ps-card-middle.ps-design-matte {
-  padding: 7px;
-}
-
-.ps-card-back.ps-design-paper,
-.ps-card-middle.ps-design-paper {
-  border: 4px solid #eee4d4;
-}
-
-.ps-card-back.ps-design-editorial,
-.ps-card-middle.ps-design-editorial {
-  border-left: 3px solid var(--ps-card-accent, #ff9b8e);
-  border-radius: 22px 22px 22px 6px;
 }
 
 .ps-start-screen {
@@ -531,20 +475,6 @@
   );
   border-radius: 0 0 19px 19px;
   pointer-events: none;
-}
-
-.ps-overlay-counter {
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-}
-
-.ps-overlay-counter i {
-  margin-inline: 2px;
-  color: rgba(255, 255, 255, 0.3);
-  font-style: normal;
 }
 
 .ps-overlay-caption {

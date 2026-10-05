@@ -78,37 +78,18 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
   const pendingArrivalRef = useRef(false);
   const reduced = useVeyloReducedMotion();
 
-  /* ── 3D Card Stack Physics with Dynamic Tinder Rotation & Depth ── */
-  const stackOffset = useMotionValue(0);
-  const cardRotation = useTransform(stackOffset, [-340, 0, 340], [-17, 0, 17]);
-  const cardScale = useTransform(stackOffset, [-340, 0, 340], [0.97, 1, 0.97]);
-  const cardOpacity = useTransform(stackOffset, [-480, -80, 0, 80, 480], [0, 1, 1, 1, 0]);
-
-  /* Middle & back card responsive depth */
-  const middleScale = useTransform(stackOffset, [-320, 0, 320], [0.985, 0.94, 0.985]);
-  const middleRotate = useTransform(stackOffset, [-320, 0, 320], [0, 2.5, 0]);
-  const middleY = useTransform(stackOffset, [-320, 0, 320], [0, 6, 0]);
-
-  const backScale = useTransform(stackOffset, [-320, 0, 320], [0.93, 0.88, 0.93]);
-  const backRotate = useTransform(stackOffset, [-320, 0, 320], [0, -2.8, 0]);
-  const backY = useTransform(stackOffset, [-320, 0, 320], [0, 12, 0]);
+  /* The active photo and its swipe animation share one horizontal position. */
+  const cardOffset = useMotionValue(0);
+  const cardRotation = useTransform(cardOffset, [-340, 0, 340], [-17, 0, 17]);
+  const cardScale = useTransform(cardOffset, [-340, 0, 340], [0.97, 1, 0.97]);
+  const cardOpacity = useTransform(cardOffset, [-480, -80, 0, 80, 480], [0, 1, 1, 1, 0]);
 
   const isEnd = currentIndex >= assets.length;
   const currentAsset = isEnd ? null : assets[currentIndex];
-  const nextAsset = assets[currentIndex + 1];
-  const secondAsset = assets[currentIndex + 2];
 
   const currentPalette = useMemo(
     () => (currentAsset ? getCardPalette(currentAsset, currentIndex) : CARD_PALETTES[0]),
     [currentAsset, currentIndex]
-  );
-  const nextPalette = useMemo(
-    () => (nextAsset ? getCardPalette(nextAsset, currentIndex + 1) : null),
-    [nextAsset, currentIndex]
-  );
-  const secondPalette = useMemo(
-    () => (secondAsset ? getCardPalette(secondAsset, currentIndex + 2) : null),
-    [secondAsset, currentIndex]
   );
 
   const soundtrackUrl = delivery?.soundtrack?.url ? mediaUrl(delivery.soundtrack.url) : '';
@@ -194,7 +175,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
     advanceLockRef.current = true;
     setIsAdvancing(true);
     const exitX = (swipeDirection < 0 ? -1 : 1) * (Math.max(window.innerWidth, cardWidth) + cardWidth / 2);
-    animate(stackOffset, exitX, {
+    animate(cardOffset, exitX, {
       type: 'tween',
       duration: reduced ? 0.18 : 0.24,
       ease: [0.32, 0, 0.67, 0],
@@ -207,17 +188,17 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
         }
 
         pendingArrivalRef.current = true;
-        stackOffset.set(swipeDirection < 0 ? 68 : -68);
+        cardOffset.set(swipeDirection < 0 ? 68 : -68);
         setCurrentIndex(nextIndex);
       }
     });
     return true;
-  }, [assets.length, currentIndex, reduced, stackOffset]);
+  }, [assets.length, currentIndex, reduced, cardOffset]);
 
   useLayoutEffect(() => {
     if (!pendingArrivalRef.current || isEnd) return;
     pendingArrivalRef.current = false;
-    animate(stackOffset, 0, {
+    animate(cardOffset, 0, {
       type: 'spring',
       damping: 24,
       stiffness: reduced ? 220 : 280,
@@ -226,11 +207,11 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
         setIsAdvancing(false);
       }
     });
-  }, [currentIndex, isEnd, reduced, stackOffset]);
+  }, [currentIndex, isEnd, reduced, cardOffset]);
 
   const snapCardToCenter = useCallback(() => {
-    animate(stackOffset, 0, { type: 'spring', damping: 28, stiffness: 300 });
-  }, [stackOffset]);
+    animate(cardOffset, 0, { type: 'spring', damping: 28, stiffness: 300 });
+  }, [cardOffset]);
 
   const handleCardPointerDown = useCallback(event => {
     if (advanceLockRef.current || !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
@@ -263,8 +244,8 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
     if (gesture.axis !== 'x') return;
 
     event.preventDefault();
-    stackOffset.set(deltaX);
-  }, [stackOffset]);
+    cardOffset.set(deltaX);
+  }, [cardOffset]);
 
   const handleCardPointerUp = useCallback(event => {
     const gesture = pointerGestureRef.current;
@@ -295,11 +276,11 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
   const handleRestart = useCallback(() => {
     pointerGestureRef.current = null;
     pendingArrivalRef.current = false;
-    stackOffset.set(0);
+    cardOffset.set(0);
     advanceLockRef.current = false;
     setIsAdvancing(false);
     setCurrentIndex(0);
-  }, [stackOffset]);
+  }, [cardOffset]);
 
   const toggleSound = useCallback(() => {
     const audio = audioRef.current;
@@ -501,7 +482,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
               {demo && <p className="ps-demo-note">You’re looking at a live preview.</p>}
             </motion.section>
           ) : (
-            /* ── Tinder-Style Card Deck ── */
+            /* ── Single-photo swipe viewer ── */
             <motion.section
               key="ps-deck-active"
               className="ps-deck-region"
@@ -512,46 +493,12 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
               transition={{ duration: 0.2 }}
             >
               <div className="ps-deck">
-                {/* 3rd Card in stack (Back) */}
-                {secondAsset && secondPalette && (
-                  <motion.div
-                    className={'ps-photo-card ps-card-back ps-design-' + secondPalette.design}
-                    style={{
-                      scale: backScale,
-                      rotate: backRotate,
-                      y: backY,
-                      borderColor: secondPalette.border,
-                      '--ps-card-accent': secondPalette.accent
-                    }}
-                    aria-hidden="true"
-                  >
-                    <img src={mediaUrl(photoUrl(secondAsset))} alt="" loading="lazy" decoding="async" />
-                  </motion.div>
-                )}
-
-                {/* 2nd Card in stack (Middle) */}
-                {nextAsset && nextPalette && (
-                  <motion.div
-                    className={'ps-photo-card ps-card-middle ps-design-' + nextPalette.design}
-                    style={{
-                      scale: middleScale,
-                      rotate: middleRotate,
-                      y: middleY,
-                      borderColor: nextPalette.border,
-                      '--ps-card-accent': nextPalette.accent
-                    }}
-                    aria-hidden="true"
-                  >
-                    <img src={mediaUrl(photoUrl(nextAsset))} alt="" loading="eager" decoding="async" />
-                  </motion.div>
-                )}
-
-                {/* Active Front Card */}
+                {/* Only the active photo is rendered in the swipe stage. */}
                 {currentAsset && (
                     <motion.article
                       className={'ps-photo-card ps-card-front ps-design-' + currentPalette.design}
                       style={{
-                        x: stackOffset,
+                        x: cardOffset,
                         rotate: cardRotation,
                         scale: cardScale,
                         opacity: cardOpacity,
@@ -585,13 +532,12 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
                         draggable="false"
                       />
 
-                      {/* Clean bottom gradient overlay with ONLY the actual caption and number */}
-                      <div className="ps-card-overlay">
-                        <span className="ps-overlay-counter">{photoNumber} <i>/</i> {totalNumber}</span>
-                        {(currentAsset.caption || currentAsset.alt) && (
+                      {/* Show the caption only when the photo has one. */}
+                      {(currentAsset.caption || currentAsset.alt) && (
+                        <div className="ps-card-overlay">
                           <p className="ps-overlay-caption">{currentAsset.caption || currentAsset.alt}</p>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </motion.article>
                 )}
               </div>
