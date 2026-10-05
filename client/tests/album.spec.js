@@ -29,6 +29,24 @@ test('every photograph fits completely on a small phone without scrolling the pa
   }
 });
 
+for (const [width, height] of [[390, 844], [1440, 900]]) {
+  test(`the opening portrait fills its page without a seam at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height }); await prepare(page);
+    await page.goto('/demo/album?phoneView=1');
+    await page.getByRole('button', { name: 'Open album', exact: true }).click();
+    const photo = page.locator('.fd-album-spread.is-opening .v-photo');
+    await expect.poll(() => photo.evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
+    const geometry = await page.locator('.album-single-spread').evaluate(spread => {
+      const paper = spread.querySelector('.album-paper').getBoundingClientRect();
+      const mount = spread.querySelector('.album-mounts').getBoundingClientRect();
+      return { mountHeight: mount.height, paperHeight: paper.height };
+    });
+    expect(geometry.mountHeight / geometry.paperHeight).toBeGreaterThan(0.8);
+    expect(await photo.evaluate(image => getComputedStyle(image).objectFit)).toBe('contain');
+    await expect(page.locator('.album-single-spread>.fd-album-spine')).toHaveCSS('display', 'none');
+  });
+}
+
 for (const [width, height] of [[320,568], [390,844], [768,1024], [834,1194], [1440,900], [1024,600]]) {
   test(`album pages and controls fit at ${width} by ${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height });
