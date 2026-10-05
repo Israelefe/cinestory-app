@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, animate, motion, useMotionValue, useMotionValueEvent } from 'framer-motion';
+import { AnimatePresence, animate, motion, useMotionValue, useMotionValueEvent, useTransform } from 'framer-motion';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
-import { ArrowDownToLine, Check, Heart, RotateCcw, Volume2, VolumeX } from 'lucide-react';
+import { ArrowDownToLine, Check, Heart, Info, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import DeliveryBrandMark from './DeliveryBrandMark.jsx';
 import { API_BASE_URL } from '../../config/env.js';
 import { deliveryFontStyles } from '../../utils/deliveryTypography.js';
@@ -9,7 +9,7 @@ import { useSmoothSoundtrackLoop } from '../../utils/smoothSoundtrackLoop.js';
 import './PhotoSwapViewer.css';
 import './DeliveryTypography.css';
 
-const SWIPE_VELOCITY = 300;
+const SWIPE_VELOCITY = 280;
 
 function mediaUrl(value) {
   return typeof value === 'string' && value.startsWith('/api/')
@@ -37,14 +37,21 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
   const [muted, setMuted] = useState(false);
   const [soundBlocked, setSoundBlocked] = useState(false);
   const [localLiked, setLocalLiked] = useState(() => new Set());
+  const [showCaption, setShowCaption] = useState(false);
+  const [doubleTapHeart, setDoubleTapHeart] = useState(false);
+  const lastTapRef = useRef(0);
   const audioRef = useRef(null);
   const reduced = useVeyloReducedMotion();
+
+  /* ── Tinder-style swipe rotation: card tilts as you drag ── */
   const stackOffset = useMotionValue(0);
-  const backScale = useMotionValue(.93);
-  const backRotate = useMotionValue(3.3);
+  const cardRotation = useTransform(stackOffset, [-400, 0, 400], [-18, 0, 18]);
+  const backScale = useMotionValue(0.92);
+  const backRotate = useMotionValue(2.8);
   useMotionValueEvent(stackOffset, 'change', value => {
-    backScale.set(.93 + Math.min(1, Math.abs(value) / 360) * .045);
-    backRotate.set(3.3 - Math.min(1, Math.abs(value) / 360) * 1.1);
+    const progress = Math.min(1, Math.abs(value) / 320);
+    backScale.set(0.92 + progress * 0.06);
+    backRotate.set(2.8 - progress * 2.2);
   });
 
   const isEnd = currentIndex >= assets.length;
@@ -109,6 +116,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
   const advance = useCallback((swipeSide = -1) => {
     if (currentIndex >= assets.length) return;
     setHasInteracted(true);
+    setShowCaption(false);
     setDirection(swipeSide < 0 ? 1 : -1);
     setCurrentIndex(index => Math.min(assets.length, index + 1));
   }, [assets.length, currentIndex]);
@@ -143,6 +151,28 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
       });
     }
   }, [canLike, currentAsset, galleryProps]);
+
+  /* ── Double-tap to like (Tinder / Instagram pattern) ── */
+  const handleDoubleTap = useCallback(() => {
+    if (!currentAsset || !canLike) return;
+    const now = Date.now();
+    if (now - lastTapRef.current < 320) {
+      // Double tap detected — compute liked status inline to avoid stale closure
+      const isLiked = galleryProps?.liked instanceof Set
+        ? galleryProps.liked.has(currentAsset.assetId)
+        : Array.isArray(galleryProps?.liked)
+          ? galleryProps.liked.includes(currentAsset.assetId)
+          : localLiked.has(currentAsset.assetId);
+      if (!isLiked) {
+        toggleLike();
+      }
+      setDoubleTapHeart(true);
+      setTimeout(() => setDoubleTapHeart(false), 800);
+      lastTapRef.current = 0;
+    } else {
+      lastTapRef.current = now;
+    }
+  }, [currentAsset, canLike, toggleLike, galleryProps?.liked, localLiked]);
 
   useEffect(() => {
     const handleKey = event => {
@@ -191,11 +221,11 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
       {soundtrackUrl && <audio ref={audioRef} src={soundtrackUrl} loop preload="auto" muted={muted} />}
       <div className="ps-ambient" aria-hidden="true" />
       <main className="ps-stage" aria-label="Photo Swap">
+        {/* ── Minimal top bar ── */}
         <header className="ps-header">
           <div className="ps-header-brand">
             <span className="ps-brand-mark"><DeliveryBrandMark branding={delivery?.branding} /></span>
             <span className="ps-header-copy">
-              <small>PHOTO SWAP</small>
               <strong>{studioName}</strong>
               <span>{title}</span>
             </span>
@@ -212,109 +242,172 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
                 aria-label={muted ? 'Play soundtrack' : soundBlocked ? 'Try soundtrack again' : 'Mute soundtrack'}
                 title={muted ? 'Play soundtrack' : soundBlocked ? 'Try soundtrack again' : 'Mute soundtrack'}
               >
-                {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                {muted ? <VolumeX size={17} /> : <Volume2 size={17} />}
               </button>
             )}
           </div>
-          <div className="ps-progress-track" aria-hidden="true"><i style={{ width: (isEnd ? 100 : ((currentIndex + 1) / assets.length) * 100) + '%' }} /></div>
         </header>
 
+        {/* ── Segmented progress bar ── */}
+        <div className="ps-segments" aria-hidden="true">
+          {assets.map((_, i) => (
+            <span key={i} className={'ps-segment' + (i < currentIndex ? ' is-done' : i === currentIndex && !isEnd ? ' is-active' : '')} />
+          ))}
+        </div>
+
+        {/* ── Tinder-style card deck ── */}
         <section className="ps-deck-region" aria-label="Swipe through the photographs">
           {!isEnd && !hasInteracted && (
-            <motion.p className="ps-swipe-hint" initial={{ opacity: 0, y: 7 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .24, duration: reduced ? .12 : .28 }}>
-              Swipe either way to continue
+            <motion.p className="ps-swipe-hint" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3, duration: reduced ? 0.12 : 0.32 }}>
+              Swipe to see the next photo
             </motion.p>
           )}
           <div className="ps-deck">
+            {/* Back card (3rd in stack) */}
             {!isEnd && secondAsset && (
               <motion.div className="ps-photo-card ps-card-back" style={{ scale: backScale, rotate: backRotate }} aria-hidden="true">
                 <img src={mediaUrl(photoUrl(secondAsset))} alt="" loading="lazy" decoding="async" />
               </motion.div>
             )}
+            {/* Middle card (2nd in stack) */}
             {!isEnd && nextAsset && (
               <div className="ps-photo-card ps-card-middle" aria-hidden="true">
                 <img src={mediaUrl(photoUrl(nextAsset))} alt="" loading="eager" decoding="async" />
               </div>
             )}
+            {/* Front card — the active swipeable card */}
             <AnimatePresence initial={false} custom={direction} mode="sync">
               {!isEnd && currentAsset ? (
                 <motion.article
                   key={currentAsset.assetId}
                   className="ps-photo-card ps-card-front"
-                  style={{ x: stackOffset }}
+                  style={{ x: stackOffset, rotate: cardRotation }}
                   drag="x"
                   dragConstraints={{ left: 0, right: 0 }}
-                  dragElastic={.84}
+                  dragElastic={0.9}
                   dragMomentum={false}
                   onDragStart={requestSoundtrack}
                   onDrag={(_, info) => stackOffset.set(info.offset.x)}
                   onDragEnd={(_, info) => {
-                    animate(stackOffset, 0, { type: 'spring', damping: 25, stiffness: 280 });
-                    const threshold = Math.max(52, window.innerWidth * .18);
+                    animate(stackOffset, 0, { type: 'spring', damping: 22, stiffness: 260 });
+                    const threshold = Math.max(48, window.innerWidth * 0.16);
                     if (Math.abs(info.offset.x) >= threshold || Math.abs(info.velocity.x) >= SWIPE_VELOCITY) advance(info.offset.x < 0 ? -1 : 1);
                   }}
-                  initial={{ opacity: .7, scale: .94, x: direction > 0 ? 84 : -84, rotate: direction > 0 ? 4 : -4 }}
-                  animate={{ opacity: 1, scale: 1, x: 0, rotate: 0, transition: { type: 'spring', damping: 25, stiffness: reduced ? 230 : 280 } }}
-                  exit={{ opacity: 0, x: direction > 0 ? -window.innerWidth * .9 : window.innerWidth * .9, rotate: direction > 0 ? -10 : 10, transition: { duration: reduced ? .18 : .28, ease: [.32, 0, .67, 0] } }}
+                  onTap={handleDoubleTap}
+                  initial={{ opacity: 0.6, scale: 0.92, x: direction > 0 ? 90 : -90, rotate: direction > 0 ? 6 : -6 }}
+                  animate={{ opacity: 1, scale: 1, x: 0, rotate: 0, transition: { type: 'spring', damping: 22, stiffness: reduced ? 210 : 260 } }}
+                  exit={{ opacity: 0, x: direction > 0 ? -window.innerWidth : window.innerWidth, rotate: direction > 0 ? -14 : 14, transition: { duration: reduced ? 0.16 : 0.32, ease: [0.32, 0, 0.67, 0] } }}
                   role="group"
                   aria-roledescription="photograph"
                   aria-label={'Photo ' + (currentIndex + 1) + ' of ' + assets.length}
                 >
-                  <div className="ps-photo-image">
-                    <img src={mediaUrl(photoUrl(currentAsset))} srcSet={currentAsset.srcSet || undefined} sizes="(max-width: 640px) 88vw, (max-width: 1024px) 500px, 460px" alt={currentAsset.alt || currentAsset.caption || 'Finished photograph ' + (currentIndex + 1)} fetchPriority="high" decoding="async" draggable="false" />
-                    <span className="ps-image-index">{photoNumber}<i> / {totalNumber}</i></span>
-                  </div>
-                  <div className="ps-card-caption">
-                    <span>{shootType} <i aria-hidden="true">/</i> {photoNumber} of {totalNumber}</span>
-                    <p>{currentAsset.caption || 'A finished photograph from ' + title + '.'}</p>
+                  {/* Full-bleed photo */}
+                  <img
+                    className="ps-card-photo"
+                    src={mediaUrl(photoUrl(currentAsset))}
+                    srcSet={currentAsset.srcSet || undefined}
+                    sizes="(max-width: 640px) 92vw, (max-width: 1024px) 500px, 460px"
+                    alt={currentAsset.alt || currentAsset.caption || 'Finished photograph ' + (currentIndex + 1)}
+                    fetchPriority="high"
+                    decoding="async"
+                    draggable="false"
+                  />
+
+                  {/* Double-tap heart burst */}
+                  <AnimatePresence>
+                    {doubleTapHeart && (
+                      <motion.span
+                        className="ps-doubletap-heart"
+                        initial={{ opacity: 0, scale: 0.3 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 1.6 }}
+                        transition={{ duration: 0.4, ease: 'easeOut' }}
+                        aria-hidden="true"
+                      >
+                        <Heart size={62} fill="#ff5a47" strokeWidth={0} />
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Bottom gradient overlay with caption (Tinder style) */}
+                  <div className={'ps-card-overlay' + (showCaption ? ' is-expanded' : '')}>
+                    <div className="ps-overlay-top">
+                      <div className="ps-overlay-info">
+                        <h2>{title}</h2>
+                        <span className="ps-overlay-type">{shootType} <i aria-hidden="true">/</i> {photoNumber} of {totalNumber}</span>
+                      </div>
+                      <button type="button" className="ps-info-toggle" onClick={(e) => { e.stopPropagation(); setShowCaption(v => !v); }} aria-label={showCaption ? 'Hide caption' : 'Show caption'}>
+                        <Info size={20} />
+                      </button>
+                    </div>
+                    <AnimatePresence>
+                      {showCaption && (
+                        <motion.p
+                          className="ps-overlay-caption"
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                        >
+                          {currentAsset.caption || 'A finished photograph from ' + title + '.'}
+                        </motion.p>
+                      )}
+                    </AnimatePresence>
                   </div>
                 </motion.article>
               ) : (
+                /* ── Completion card ── */
                 <motion.section
                   key="complete"
                   className="ps-complete-card"
-                  initial={{ opacity: .65, y: 14, scale: .96 }}
+                  initial={{ opacity: 0.65, y: 14, scale: 0.96 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   transition={{ type: 'spring', damping: 25, stiffness: reduced ? 230 : 270 }}
                   aria-labelledby="ps-complete-title"
                 >
-                  <span className="ps-complete-mark"><Check size={21} strokeWidth={2.3} /></span>
-                  <p className="ps-complete-label">PHOTO SWAP COMPLETE</p>
-                  <h1 id="ps-complete-title">You’ve seen every photo.</h1>
+                  <span className="ps-complete-brand"><DeliveryBrandMark branding={delivery?.branding} /></span>
+                  <span className="ps-complete-mark"><Check size={24} strokeWidth={2.4} /></span>
+                  <p className="ps-complete-label">ALL PHOTOS VIEWED</p>
+                  <h1 id="ps-complete-title">You've seen every photo.</h1>
                   <p className="ps-complete-copy">{title} <span>·</span> {assets.length} photographs</p>
                   <button type="button" className="ps-restart-button" onClick={() => { setDirection(-1); setCurrentIndex(0); setHasInteracted(true); }}>
                     <RotateCcw size={16} /> Start again
                   </button>
-                  {demo && <p className="ps-demo-note">You’re looking at a live demo.</p>}
+                  {demo && <p className="ps-demo-note">You're looking at a live demo.</p>}
                 </motion.section>
               )}
             </AnimatePresence>
           </div>
         </section>
 
+        {/* ── Tinder-style round action buttons ── */}
         {!isEnd && currentAsset && (
           <footer className="ps-action-area">
-            <div className="ps-photo-actions" role="toolbar" aria-label="Photo actions">
-              {canLike && (
-                <button type="button" className={'ps-photo-action ps-like-button' + (liked ? ' is-liked' : '')} onClick={toggleLike} aria-pressed={Boolean(liked)} aria-label={liked ? 'Unlike this photo' : 'Like this photo'}>
-                  <span className="ps-action-icon"><Heart size={21} fill={liked ? 'currentColor' : 'none'} strokeWidth={liked ? 2.2 : 1.8} /></span>
-                  <span>{liked ? 'Liked' : 'Like'}</span>
-                </button>
-              )}
+            <div className="ps-tinder-actions" role="toolbar" aria-label="Photo actions">
               {canDownloadPhoto && (
                 <button
                   type="button"
-                  className="ps-photo-action ps-download-button"
+                  className="ps-tinder-btn ps-btn-download"
                   onClick={() => galleryProps.onDownload(currentAsset.assetId, currentIndex)}
                   disabled={galleryProps?.busy === currentAsset.assetId}
                   aria-label="Download this photo"
                 >
-                  <span className="ps-action-icon"><ArrowDownToLine size={20} /></span>
-                  <span>{galleryProps?.busy === currentAsset.assetId ? 'Saving' : 'Download'}</span>
+                  <ArrowDownToLine size={22} />
+                </button>
+              )}
+              {canLike && (
+                <button
+                  type="button"
+                  className={'ps-tinder-btn ps-btn-like' + (liked ? ' is-liked' : '')}
+                  onClick={toggleLike}
+                  aria-pressed={Boolean(liked)}
+                  aria-label={liked ? 'Unlike this photo' : 'Like this photo'}
+                >
+                  <Heart size={26} fill={liked ? 'currentColor' : 'none'} strokeWidth={liked ? 2.2 : 1.8} />
                 </button>
               )}
             </div>
-            <p className="ps-control-hint">{hasInteracted ? 'Keep swiping to see the rest.' : 'The full photograph stays in view as you swipe.'}</p>
+            <p className="ps-control-hint">{hasInteracted ? 'Swipe to see the next photo' : 'Double-tap to like · Swipe to continue'}</p>
           </footer>
         )}
       </main>

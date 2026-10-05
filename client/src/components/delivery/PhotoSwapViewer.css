@@ -1,3 +1,8 @@
+/* ═══════════════════════════════════════════════════════════
+   PhotoSwapViewer — Tinder-style card swipe UI
+   Full-bleed photos, gradient overlay, round action buttons
+   ═══════════════════════════════════════════════════════════ */
+
 .ps-viewer *,
 .ps-viewer *::before,
 .ps-viewer *::after {
@@ -7,7 +12,8 @@
 .ps-viewer {
   --ps-paper: #f6f1ec;
   --ps-muted: #a8a09b;
-  --ps-coral: #ff8e7d;
+  --ps-coral: #ff5a47;
+  --ps-coral-soft: #ff9b8e;
   position: relative;
   isolation: isolate;
   width: 100%;
@@ -15,7 +21,7 @@
   min-height: 440px;
   overflow: hidden;
   color: var(--ps-paper);
-  background: #08080b;
+  background: #06060a;
   font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
 }
 
@@ -29,39 +35,43 @@
   outline-offset: 4px;
 }
 
+/* ── Ambient glow ── */
 .ps-ambient {
   position: absolute;
   z-index: -1;
-  inset: -30%;
+  inset: -40%;
   pointer-events: none;
   background:
-    radial-gradient(ellipse at 50% 50%, color-mix(in srgb, var(--ps-photo-glow) 30%, transparent), transparent 48%),
-    radial-gradient(ellipse at 50% 105%, rgba(255, 91, 71, .1), transparent 42%);
-  filter: blur(5px);
-  transition: background .55s ease;
+    radial-gradient(ellipse at 50% 42%, color-mix(in srgb, var(--ps-photo-glow) 22%, transparent), transparent 52%),
+    radial-gradient(ellipse at 50% 110%, rgba(255, 90, 71, 0.08), transparent 40%);
+  filter: blur(6px);
+  transition: background 0.6s ease;
 }
 
+/* ── Main stage grid ── */
 .ps-stage {
   position: relative;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: clamp(8px, 1.6vh, 16px);
-  width: min(100%, 1120px);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 0;
+  width: min(100%, 540px);
   height: 100%;
   min-height: 0;
   margin: 0 auto;
-  padding: max(12px, env(safe-area-inset-top)) clamp(12px, 3.5vw, 38px) max(10px, env(safe-area-inset-bottom));
+  padding: max(10px, env(safe-area-inset-top)) clamp(10px, 3vw, 24px) max(10px, env(safe-area-inset-bottom));
 }
 
+/* ═══════════════════════════════════════
+   Header — minimal, brand + counter
+   ═══════════════════════════════════════ */
 .ps-header {
   position: relative;
   display: flex;
-  min-height: 58px;
+  min-height: 48px;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 0 2px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, .1);
+  gap: 10px;
+  padding: 0 2px 6px;
 }
 
 .ps-header-brand,
@@ -72,21 +82,21 @@
 }
 
 .ps-header-brand {
-  gap: 11px;
+  gap: 10px;
   flex: 1 1 auto;
 }
 
 .ps-brand-mark {
   display: grid;
-  width: 41px;
-  height: 41px;
-  flex: 0 0 41px;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
   overflow: hidden;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, .18);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, .06);
-  box-shadow: 0 7px 24px rgba(0, 0, 0, .24);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
 .ps-brand-mark img,
@@ -100,139 +110,146 @@
 .ps-header-copy {
   display: grid;
   min-width: 0;
-  gap: 2px;
-}
-
-.ps-header-copy small {
-  color: #ff9b8e;
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: .18em;
-  line-height: 1;
+  gap: 1px;
 }
 
 .ps-header-copy strong {
-  max-width: min(45vw, 360px);
+  max-width: min(42vw, 280px);
   overflow: hidden;
   color: #fffaf6;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .ps-header-copy > span {
-  max-width: min(45vw, 360px);
+  max-width: min(42vw, 280px);
   overflow: hidden;
-  color: rgba(247, 242, 238, .56);
+  color: rgba(247, 242, 238, 0.44);
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .ps-header-tools {
-  gap: clamp(8px, 1.5vw, 15px);
+  gap: clamp(8px, 1.5vw, 14px);
   flex: 0 0 auto;
 }
 
 .ps-progress-copy {
   display: flex;
   align-items: baseline;
-  gap: 5px;
-  color: rgba(247, 242, 238, .56);
+  gap: 4px;
+  color: rgba(247, 242, 238, 0.5);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
-  letter-spacing: .05em;
+  letter-spacing: 0.04em;
 }
 
 .ps-progress-copy strong {
   color: #fffaf6;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 750;
 }
 
 .ps-sound-button {
   display: grid;
-  width: 39px;
-  height: 39px;
-  flex: 0 0 39px;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, .13);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 50%;
   color: #f7f1ec;
-  background: rgba(255, 255, 255, .055);
+  background: rgba(255, 255, 255, 0.05);
   cursor: pointer;
-  transition: transform .18s ease, border-color .18s ease, background .18s ease;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 }
 
 .ps-sound-button:hover {
   transform: translateY(-1px);
-  border-color: rgba(255, 155, 142, .45);
-  background: rgba(255, 255, 255, .1);
+  border-color: rgba(255, 155, 142, 0.4);
+  background: rgba(255, 255, 255, 0.09);
 }
 
-.ps-progress-track {
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
-  height: 1px;
-  overflow: hidden;
-  background: transparent;
+/* ═══════════════════════════════════════
+   Segmented progress (Tinder / Stories)
+   ═══════════════════════════════════════ */
+.ps-segments {
+  display: flex;
+  gap: 3px;
+  padding: 0 2px 8px;
 }
 
-.ps-progress-track i {
-  display: block;
-  height: 100%;
-  background: linear-gradient(90deg, rgba(255, 111, 92, .3), #ff9b8e);
-  transition: width .3s ease;
+.ps-segment {
+  flex: 1 1 0;
+  height: 2.5px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.12);
+  transition: background 0.3s ease;
 }
 
+.ps-segment.is-done {
+  background: rgba(255, 155, 142, 0.7);
+}
+
+.ps-segment.is-active {
+  background: var(--ps-coral);
+  box-shadow: 0 0 6px rgba(255, 90, 71, 0.4);
+}
+
+/* ═══════════════════════════════════════
+   Card deck — Tinder layout
+   ═══════════════════════════════════════ */
 .ps-deck-region {
   position: relative;
   display: grid;
   min-height: 0;
   place-items: center;
-  padding: 20px 0 7px;
+  padding: 0 0 4px;
 }
 
 .ps-swipe-hint {
   position: absolute;
   z-index: 5;
-  top: 0;
+  top: 6px;
   left: 50%;
   margin: 0;
-  padding: 7px 12px;
-  border: 1px solid rgba(255, 255, 255, .11);
+  padding: 6px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 999px;
-  color: rgba(255, 250, 246, .74);
-  background: rgba(12, 12, 16, .72);
-  font-size: 9px;
-  letter-spacing: .045em;
+  color: rgba(255, 250, 246, 0.72);
+  background: rgba(10, 10, 14, 0.8);
+  font-size: 10px;
+  letter-spacing: 0.03em;
   white-space: nowrap;
   transform: translateX(-50%);
-  backdrop-filter: blur(14px);
+  backdrop-filter: blur(16px);
 }
 
 .ps-deck {
   position: relative;
-  width: min(84vw, 460px);
-  height: min(68dvh, 680px);
-  min-height: 290px;
+  width: min(92vw, 500px);
+  height: min(70dvh, 660px);
+  min-height: 300px;
   max-height: 700px;
   perspective: 1200px;
   transform: translateZ(0);
 }
 
+/* ── Card base ── */
 .ps-photo-card {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, .16);
-  border-radius: 25px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
   background: #111115;
-  box-shadow: 0 32px 86px rgba(0, 0, 0, .56), 0 4px 18px rgba(0, 0, 0, .25), inset 0 1px 0 rgba(255, 255, 255, .08);
-  transform-origin: 50% 62%;
+  box-shadow:
+    0 24px 72px rgba(0, 0, 0, 0.55),
+    0 2px 12px rgba(0, 0, 0, 0.2);
+  transform-origin: 50% 70%;
   will-change: transform, opacity;
 }
 
@@ -242,21 +259,21 @@
 }
 
 .ps-card-back {
-  top: 10px;
-  right: -12px;
-  bottom: -10px;
-  left: 12px;
-  border-color: rgba(255, 255, 255, .075);
-  filter: brightness(.48) saturate(.72);
+  top: 8px;
+  right: -10px;
+  bottom: -8px;
+  left: 10px;
+  border-color: rgba(255, 255, 255, 0.06);
+  filter: brightness(0.42) saturate(0.65);
 }
 
 .ps-card-middle {
-  top: 5px;
-  right: -6px;
-  bottom: -5px;
-  left: 6px;
-  border-color: rgba(255, 255, 255, .11);
-  filter: brightness(.7) saturate(.82);
+  top: 4px;
+  right: -5px;
+  bottom: -4px;
+  left: 5px;
+  border-color: rgba(255, 255, 255, 0.09);
+  filter: brightness(0.6) saturate(0.78);
 }
 
 .ps-card-back img,
@@ -267,10 +284,11 @@
   object-fit: cover;
 }
 
+/* ── Front card (active, swipeable) ── */
 .ps-card-front {
   z-index: 3;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: 1fr;
   cursor: grab;
   touch-action: pan-y;
   user-select: none;
@@ -280,182 +298,226 @@
   cursor: grabbing;
 }
 
-.ps-photo-image {
-  position: relative;
-  display: grid;
-  min-height: 0;
-  place-items: center;
-  overflow: hidden;
-  padding: clamp(8px, 1.6vw, 14px) clamp(8px, 1.6vw, 14px) 0;
-  background:
-    radial-gradient(ellipse at 50% 80%, rgba(255, 255, 255, .045), transparent 50%),
-    linear-gradient(155deg, #18171c, #0d0d11 62%);
-}
-
-.ps-photo-image > img {
+/* Full-bleed photo fills the entire card */
+.ps-card-photo {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
   pointer-events: none;
   -webkit-user-drag: none;
+  border-radius: 17px;
 }
 
-.ps-image-index {
+/* ── Double-tap heart burst ── */
+.ps-doubletap-heart {
   position: absolute;
-  top: 18px;
-  right: 18px;
-  display: inline-flex;
-  min-height: 28px;
-  align-items: center;
-  gap: 4px;
-  padding: 0 9px;
-  border: 1px solid rgba(255, 255, 255, .16);
-  border-radius: 999px;
-  color: rgba(255, 250, 246, .92);
-  background: rgba(7, 7, 9, .62);
-  font-size: 9px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 750;
-  letter-spacing: .07em;
-  backdrop-filter: blur(12px);
-}
-
-.ps-image-index i {
-  color: rgba(255, 250, 246, .54);
-  font-size: 8px;
-  font-style: normal;
-  font-weight: 550;
-}
-
-.ps-card-caption {
-  display: grid;
-  gap: 7px;
-  min-height: 100px;
-  align-content: center;
-  padding: 14px clamp(16px, 3vw, 24px) 17px;
-  border-top: 1px solid rgba(255, 255, 255, .08);
-  background:
-    radial-gradient(ellipse at 12% 0%, rgba(255, 116, 98, .09), transparent 42%),
-    linear-gradient(125deg, #17161a, #111115 72%);
+  z-index: 10;
+  top: 50%;
+  left: 50%;
+  margin: -31px 0 0 -31px;
+  color: #ff5a47;
+  filter: drop-shadow(0 6px 24px rgba(255, 90, 71, 0.5));
   pointer-events: none;
 }
 
-.ps-card-caption > span {
-  overflow: hidden;
-  color: #ffab9e;
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: .145em;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
+/* ═══════════════════════════════════════
+   Bottom gradient overlay (Tinder style)
+   Caption + info sits on the photo
+   ═══════════════════════════════════════ */
+.ps-card-overlay {
+  position: absolute;
+  z-index: 4;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  gap: 0;
+  padding: 52px 18px 16px;
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.82) 0%,
+    rgba(0, 0, 0, 0.52) 40%,
+    rgba(0, 0, 0, 0.12) 70%,
+    transparent 100%
+  );
+  border-radius: 0 0 17px 17px;
+  pointer-events: none;
 }
 
-.ps-card-caption > span i {
-  margin-inline: 4px;
-  color: rgba(255, 255, 255, .4);
+.ps-card-overlay > * {
+  pointer-events: auto;
+}
+
+.ps-overlay-top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ps-overlay-info {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.ps-overlay-info h2 {
+  margin: 0;
+  overflow: hidden;
+  color: #fff;
+  font-size: clamp(18px, 4vw, 24px);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);
+}
+
+.ps-overlay-type {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.ps-overlay-type i {
+  margin-inline: 3px;
+  color: rgba(255, 255, 255, 0.35);
   font-style: normal;
 }
 
-.ps-card-caption > p {
-  display: -webkit-box;
-  max-width: 100%;
-  margin: 0;
-  overflow: hidden;
-  color: #f5f0eb;
-  font-size: clamp(13px, 1.8vw, 16px);
-  font-weight: 500;
-  letter-spacing: -.012em;
-  line-height: 1.4;
-  text-overflow: ellipsis;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+.ps-info-toggle {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  transition: transform 0.18s ease, background 0.18s ease;
 }
 
+.ps-info-toggle:hover {
+  transform: scale(1.06);
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.ps-info-toggle:active {
+  transform: scale(0.93);
+}
+
+.ps-overlay-caption {
+  margin: 8px 0 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: clamp(12px, 1.6vw, 14px);
+  font-weight: 450;
+  letter-spacing: -0.005em;
+  line-height: 1.48;
+}
+
+/* ═══════════════════════════════════════
+   Tinder-style round action buttons
+   ═══════════════════════════════════════ */
 .ps-action-area {
   position: relative;
   z-index: 5;
   display: grid;
   justify-items: center;
-  gap: 4px;
-  padding: 0 0 1px;
+  gap: 8px;
+  padding: 10px 0 2px;
 }
 
-.ps-photo-actions {
+.ps-tinder-actions {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: clamp(28px, 8vw, 64px);
+  gap: clamp(24px, 7vw, 48px);
 }
 
-.ps-photo-action {
+.ps-tinder-btn {
   display: grid;
-  min-width: 68px;
-  justify-items: center;
-  gap: 5px;
-  padding: 0;
-  border: 0;
-  color: rgba(247, 242, 238, .7);
-  background: transparent;
-  cursor: pointer;
-  font-size: 9px !important;
-  font-weight: 650 !important;
-  transition: transform .18s ease, color .18s ease;
-}
-
-.ps-photo-action:hover:not(:disabled) {
-  transform: translateY(-2px);
-  color: #fffaf6;
-}
-
-.ps-photo-action:active {
-  transform: scale(.94);
-}
-
-.ps-photo-action:disabled {
-  cursor: wait;
-  opacity: .55;
-}
-
-.ps-action-icon {
-  display: grid;
-  width: 49px;
-  height: 49px;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, .16);
+  border: 0;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.ps-tinder-btn:hover:not(:disabled) {
+  transform: translateY(-2px) scale(1.06);
+}
+
+.ps-tinder-btn:active:not(:disabled) {
+  transform: scale(0.9);
+}
+
+.ps-tinder-btn:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+/* Download button — smaller, neutral */
+.ps-btn-download {
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
-  color: #f6f1ec;
-  background: rgba(18, 17, 21, .78);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, .25), inset 0 1px 0 rgba(255, 255, 255, .06);
-  backdrop-filter: blur(12px);
-  transition: color .2s ease, background .2s ease, border-color .2s ease, box-shadow .2s ease;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.2);
 }
 
-.ps-like-button .ps-action-icon {
-  color: #ff9b8e;
+.ps-btn-download:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.38);
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
 }
 
-.ps-like-button.is-liked .ps-action-icon {
-  border-color: rgba(255, 132, 115, .64);
-  color: #fff8f4;
-  background: linear-gradient(145deg, #f27d70, #c94c49);
-  box-shadow: 0 8px 24px rgba(209, 77, 72, .3), inset 0 1px 0 rgba(255, 255, 255, .32);
+/* Like button — larger, accent color */
+.ps-btn-like {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 90, 71, 0.35);
+  color: var(--ps-coral);
+  background: rgba(255, 90, 71, 0.08);
+  box-shadow: 0 6px 22px rgba(255, 90, 71, 0.12);
 }
 
-.ps-download-button:hover:not(:disabled) .ps-action-icon {
-  border-color: rgba(255, 255, 255, .36);
-  background: rgba(35, 33, 38, .92);
+.ps-btn-like:hover:not(:disabled) {
+  border-color: rgba(255, 90, 71, 0.55);
+  background: rgba(255, 90, 71, 0.14);
+  box-shadow: 0 8px 30px rgba(255, 90, 71, 0.22);
+}
+
+.ps-btn-like.is-liked {
+  border-color: rgba(255, 90, 71, 0.65);
+  color: #fff;
+  background: linear-gradient(145deg, #ff6b58, #e04438);
+  box-shadow: 0 8px 28px rgba(255, 90, 71, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.ps-btn-like.is-liked:hover:not(:disabled) {
+  box-shadow: 0 10px 34px rgba(255, 90, 71, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
 .ps-control-hint {
-  min-height: 12px;
+  min-height: 14px;
   margin: 0;
-  color: rgba(247, 242, 238, .4);
-  font-size: 8px;
-  letter-spacing: .035em;
+  color: rgba(247, 242, 238, 0.35);
+  font-size: 9px;
+  letter-spacing: 0.03em;
 }
 
+/* ═══════════════════════════════════════
+   Completion card
+   ═══════════════════════════════════════ */
 .ps-complete-card {
   position: absolute;
   inset: 0;
@@ -465,44 +527,64 @@
   align-items: center;
   justify-content: center;
   gap: 0;
-  padding: clamp(22px, 4vw, 40px);
+  padding: clamp(24px, 5vw, 44px);
   overflow-y: auto;
-  border: 1px solid rgba(255, 255, 255, .15);
-  border-radius: 25px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
   text-align: center;
   background:
-    radial-gradient(ellipse at 50% 14%, rgba(255, 111, 92, .19), transparent 47%),
-    linear-gradient(150deg, rgba(25, 23, 27, .98), rgba(11, 11, 14, .98));
-  box-shadow: 0 30px 82px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .055);
+    radial-gradient(ellipse at 50% 16%, rgba(255, 90, 71, 0.14), transparent 48%),
+    linear-gradient(155deg, rgba(22, 20, 24, 0.98), rgba(9, 9, 12, 0.98));
+  box-shadow: 0 28px 76px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.ps-complete-brand {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  margin-bottom: 18px;
+}
+
+.ps-complete-brand img,
+.ps-complete-brand svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .ps-complete-mark {
   display: grid;
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   place-items: center;
-  border: 1px solid rgba(255, 155, 142, .35);
-  border-radius: 16px;
+  border: 1px solid rgba(255, 155, 142, 0.32);
+  border-radius: 50%;
   color: #ffb2a6;
-  background: rgba(255, 122, 103, .1);
+  background: rgba(255, 90, 71, 0.1);
 }
 
 .ps-complete-label {
-  margin: 19px 0 9px;
-  color: #ff9b8e;
+  margin: 16px 0 8px;
+  color: var(--ps-coral-soft);
   font-size: 8px;
   font-weight: 800;
-  letter-spacing: .18em;
+  letter-spacing: 0.2em;
 }
 
 .ps-complete-card h1 {
-  max-width: 360px;
+  max-width: 340px;
   margin: 0;
   color: #fff9f5;
-  font-size: clamp(24px, 4.3vw, 35px);
+  font-size: clamp(22px, 4.2vw, 32px);
   font-weight: 600;
-  letter-spacing: -.04em;
-  line-height: 1.07;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
 }
 
 .ps-complete-copy {
@@ -510,45 +592,52 @@
   flex-wrap: wrap;
   justify-content: center;
   gap: 8px;
-  margin: 13px 0 0;
+  margin: 12px 0 0;
   color: #b4aaa4;
   font-size: 11px;
-  line-height: 1.55;
+  line-height: 1.5;
 }
 
 .ps-complete-copy span {
-  color: #ff9b8e;
+  color: var(--ps-coral-soft);
 }
 
 .ps-restart-button {
   display: inline-flex;
-  min-height: 43px;
+  min-height: 44px;
   align-items: center;
   gap: 8px;
-  margin-top: 24px;
-  padding: 0 15px;
-  border: 1px solid rgba(255, 255, 255, .16);
+  margin-top: 22px;
+  padding: 0 18px;
+  border: 2px solid rgba(255, 255, 255, 0.14);
   border-radius: 999px;
   color: #f5efea !important;
-  background: rgba(255, 255, 255, .055);
+  background: rgba(255, 255, 255, 0.05);
   cursor: pointer;
-  font-size: 10px !important;
-  font-weight: 650 !important;
-  transition: transform .18s ease, border-color .18s ease, background .18s ease;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 }
 
 .ps-restart-button:hover {
   transform: translateY(-1px);
-  border-color: rgba(255, 155, 142, .45);
-  background: rgba(255, 255, 255, .09);
+  border-color: rgba(255, 155, 142, 0.4);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ps-restart-button:active {
+  transform: scale(0.94);
 }
 
 .ps-demo-note {
   margin: 20px 0 0;
-  color: #928984;
+  color: #7d7572;
   font-size: 9px;
 }
 
+/* ═══════════════════════════════════════
+   Empty state
+   ═══════════════════════════════════════ */
 .ps-empty {
   display: grid;
   place-items: center;
@@ -558,20 +647,20 @@
 .ps-empty-card {
   display: grid;
   justify-items: center;
-  width: min(100%, 420px);
+  width: min(100%, 400px);
   padding: 38px 28px;
-  border: 1px solid rgba(255, 255, 255, .12);
-  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
   text-align: center;
-  background: rgba(18, 17, 20, .92);
+  background: rgba(16, 15, 18, 0.92);
 }
 
 .ps-empty-mark {
   width: 46px;
   height: 46px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, .15);
-  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
 }
 
 .ps-empty-mark img,
@@ -582,19 +671,19 @@
 }
 
 .ps-empty-card > p {
-  margin: 20px 0 8px;
-  color: #ff9b8e;
+  margin: 18px 0 8px;
+  color: var(--ps-coral-soft);
   font-size: 8px;
   font-weight: 800;
-  letter-spacing: .17em;
+  letter-spacing: 0.18em;
 }
 
 .ps-empty-card h1 {
   margin: 0;
-  font-size: 23px;
+  font-size: 22px;
   font-weight: 600;
-  letter-spacing: -.035em;
-  line-height: 1.12;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
 }
 
 .ps-empty-card > span {
@@ -603,6 +692,7 @@
   font-size: 11px;
 }
 
+/* Screen reader only */
 .ps-sr-only {
   position: absolute;
   width: 1px;
@@ -614,6 +704,9 @@
   clip-path: inset(50%);
 }
 
+/* ═══════════════════════════════════════
+   Preview mode (embedded in creation flow)
+   ═══════════════════════════════════════ */
 .ps-viewer.is-preview {
   width: 100%;
   height: min(760px, 78dvh);
@@ -621,19 +714,18 @@
 }
 
 .ps-viewer.is-preview .ps-stage {
-  gap: 7px;
-  padding: 10px 11px 8px;
+  gap: 0;
+  padding: 8px 10px 6px;
 }
 
 .ps-viewer.is-preview .ps-brand-mark {
-  width: 34px;
-  height: 34px;
-  flex-basis: 34px;
-  border-radius: 10px;
+  width: 30px;
+  height: 30px;
+  flex-basis: 30px;
 }
 
 .ps-viewer.is-preview .ps-header {
-  min-height: 48px;
+  min-height: 40px;
 }
 
 .ps-viewer.is-preview .ps-header-copy > span {
@@ -641,74 +733,91 @@
 }
 
 .ps-viewer.is-preview .ps-sound-button {
-  width: 34px;
-  height: 34px;
-  flex-basis: 34px;
+  width: 30px;
+  height: 30px;
+  flex-basis: 30px;
+}
+
+.ps-viewer.is-preview .ps-segments {
+  padding-bottom: 5px;
 }
 
 .ps-viewer.is-preview .ps-deck {
   width: min(74vw, 340px);
-  height: min(55dvh, 510px);
-  min-height: 280px;
+  height: min(55dvh, 500px);
+  min-height: 260px;
 }
 
-.ps-viewer.is-preview .ps-card-caption {
-  min-height: 81px;
-  padding: 11px 14px;
+.ps-viewer.is-preview .ps-tinder-btn.ps-btn-download {
+  width: 40px;
+  height: 40px;
 }
 
-.ps-viewer.is-preview .ps-card-caption > p {
-  font-size: 12px;
-}
-
-.ps-viewer.is-preview .ps-action-icon {
-  width: 42px;
-  height: 42px;
+.ps-viewer.is-preview .ps-tinder-btn.ps-btn-like {
+  width: 50px;
+  height: 50px;
 }
 
 .ps-viewer.is-preview .ps-control-hint {
   display: none;
 }
 
+.ps-viewer.is-preview .ps-overlay-info h2 {
+  font-size: 15px;
+}
+
+.ps-viewer.is-preview .ps-overlay-type {
+  font-size: 9px;
+}
+
+/* ═══════════════════════════════════════
+   Tablet (641px – 1024px)
+   ═══════════════════════════════════════ */
 @media (min-width: 641px) and (max-width: 1024px) {
   .ps-stage {
-    padding-right: clamp(22px, 5vw, 56px);
-    padding-left: clamp(22px, 5vw, 56px);
+    padding-right: clamp(20px, 4.5vw, 48px);
+    padding-left: clamp(20px, 4.5vw, 48px);
   }
 
   .ps-deck {
-    width: min(58vw, 490px);
-    height: min(69dvh, 650px);
+    width: min(60vw, 500px);
+    height: min(70dvh, 660px);
     min-height: 320px;
   }
 
   .ps-header {
-    min-height: 62px;
+    min-height: 52px;
   }
 }
 
+/* ═══════════════════════════════════════
+   Desktop (1025px+)
+   ═══════════════════════════════════════ */
 @media (min-width: 1025px) {
   .ps-deck {
-    width: min(44vw, 480px);
-    height: min(71dvh, 690px);
+    width: min(42vw, 480px);
+    height: min(72dvh, 690px);
   }
 }
 
+/* ═══════════════════════════════════════
+   Mobile (≤ 640px)
+   ═══════════════════════════════════════ */
 @media (max-width: 640px) {
   .ps-viewer {
     min-height: 420px;
   }
 
   .ps-stage {
-    gap: 6px;
-    padding-right: max(10px, env(safe-area-inset-right));
-    padding-left: max(10px, env(safe-area-inset-left));
+    gap: 0;
+    padding-right: max(8px, env(safe-area-inset-right));
+    padding-left: max(8px, env(safe-area-inset-left));
   }
 
   .ps-header {
-    min-height: 52px;
-    gap: 7px;
-    padding-bottom: 8px;
+    min-height: 44px;
+    gap: 6px;
+    padding-bottom: 5px;
   }
 
   .ps-header-brand {
@@ -716,122 +825,123 @@
   }
 
   .ps-brand-mark {
-    width: 35px;
-    height: 35px;
-    flex-basis: 35px;
-    border-radius: 10px;
-  }
-
-  .ps-header-copy {
-    gap: 2px;
-  }
-
-  .ps-header-copy small {
-    font-size: 7px;
+    width: 32px;
+    height: 32px;
+    flex-basis: 32px;
   }
 
   .ps-header-copy strong {
-    max-width: 40vw;
-    font-size: 10px;
+    max-width: 38vw;
+    font-size: 11px;
   }
 
   .ps-header-copy > span {
-    max-width: 40vw;
+    max-width: 38vw;
     font-size: 8px;
   }
 
   .ps-header-tools {
-    gap: 8px;
+    gap: 7px;
   }
 
   .ps-progress-copy {
     gap: 3px;
-    font-size: 8px;
+    font-size: 9px;
   }
 
   .ps-progress-copy strong {
-    font-size: 10px;
+    font-size: 11px;
   }
 
   .ps-sound-button {
-    width: 34px;
-    height: 34px;
-    flex-basis: 34px;
+    width: 32px;
+    height: 32px;
+    flex-basis: 32px;
+  }
+
+  .ps-segments {
+    gap: 2px;
+    padding-bottom: 6px;
+  }
+
+  .ps-segment {
+    height: 2px;
   }
 
   .ps-deck-region {
-    padding: 17px 0 5px;
+    padding: 0 0 2px;
   }
 
   .ps-deck {
-    width: min(88vw, 450px);
-    height: min(66dvh, 620px);
-    min-height: 278px;
+    width: min(92vw, 460px);
+    height: min(67dvh, 600px);
+    min-height: 270px;
   }
 
   .ps-photo-card {
-    border-radius: 20px;
+    border-radius: 16px;
+  }
+
+  .ps-card-photo {
+    border-radius: 15px;
+  }
+
+  .ps-card-overlay {
+    border-radius: 0 0 15px 15px;
+    padding: 44px 14px 13px;
   }
 
   .ps-card-back {
-    right: -8px;
-    left: 8px;
+    right: -7px;
+    left: 7px;
   }
 
   .ps-card-middle {
-    right: -4px;
-    left: 4px;
+    right: -3px;
+    left: 3px;
   }
 
-  .ps-image-index {
-    top: 14px;
-    right: 14px;
-    min-height: 25px;
-    font-size: 8px;
+  .ps-overlay-info h2 {
+    font-size: 18px;
   }
 
-  .ps-card-caption {
-    min-height: 83px;
-    gap: 6px;
-    padding: 10px 13px 12px;
+  .ps-overlay-type {
+    font-size: 10px;
   }
 
-  .ps-card-caption > span {
-    font-size: 7px;
-    letter-spacing: .12em;
-  }
-
-  .ps-card-caption > p {
+  .ps-overlay-caption {
     font-size: 12px;
-    line-height: 1.36;
-    -webkit-line-clamp: 2;
   }
 
-  .ps-photo-actions {
-    gap: 30px;
+  .ps-tinder-actions {
+    gap: 26px;
   }
 
-  .ps-photo-action {
-    min-width: 62px;
-    gap: 4px;
-    font-size: 8px !important;
+  .ps-btn-download {
+    width: 46px;
+    height: 46px;
   }
 
-  .ps-action-icon {
-    width: 43px;
-    height: 43px;
+  .ps-btn-like {
+    width: 58px;
+    height: 58px;
+  }
+
+  .ps-action-area {
+    padding: 8px 0 0;
+    gap: 5px;
   }
 
   .ps-control-hint {
-    font-size: 7px;
+    font-size: 8px;
   }
 
   .ps-complete-card {
-    border-radius: 20px;
+    border-radius: 16px;
   }
 
   .ps-complete-card h1 {
-    font-size: clamp(22px, 7vw, 30px);
+    font-size: clamp(20px, 6.5vw, 28px);
   }
 
   .ps-complete-copy {
@@ -839,22 +949,33 @@
   }
 }
 
+/* ── Very short phones ── */
 @media (max-height: 560px) and (max-width: 640px) {
   .ps-deck {
     height: min(60dvh, 380px);
-    min-height: 250px;
+    min-height: 240px;
   }
 
   .ps-header {
-    min-height: 47px;
+    min-height: 40px;
   }
 
-  .ps-action-icon {
-    width: 38px;
-    height: 38px;
+  .ps-segments {
+    padding-bottom: 3px;
   }
 
-  .ps-photo-action {
+  .ps-btn-download {
+    width: 40px;
+    height: 40px;
+  }
+
+  .ps-btn-like {
+    width: 50px;
+    height: 50px;
+  }
+
+  .ps-action-area {
+    padding-top: 4px;
     gap: 2px;
   }
 }
