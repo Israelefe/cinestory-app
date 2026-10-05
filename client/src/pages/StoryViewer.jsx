@@ -174,6 +174,7 @@ export default function StoryViewer({ demoMode = false, delivery: suppliedDelive
  const location = useLocation();
  const navigate = useNavigate();
  const demo = (demoMode || storyId === 'demo') && !suppliedDelivery;
+ const embeddedPhone = params.get('phoneView') === '1';
  const demoId = DEMO_PRESETS.some(p => p.id === params.get('preset')) ? params.get('preset') : 'ada';
  const demoDelivery = useMemo(() => demo ? photoStoryDemoDelivery(DEMO_PRESETS.find(preset => preset.id === demoId)) : null, [demo, demoId]);
  const deliveryProp = suppliedDelivery || demoDelivery;
@@ -190,7 +191,7 @@ export default function StoryViewer({ demoMode = false, delivery: suppliedDelive
   (isFromFormats ? '/formats#photo-story' : (demo ? '/#photo-story' : '/'));
 
  const handleBack = (e) => {
-  if (window.history.length > 1 && (isFromFormats || isFromNiche)) {
+  if (!embeddedPhone && window.history.length > 1 && (isFromFormats || isFromNiche)) {
    e.preventDefault();
    navigate(-1);
   }
@@ -732,7 +733,7 @@ export default function StoryViewer({ demoMode = false, delivery: suppliedDelive
    try { if (navigator.share) await navigator.share({ title: story.title || 'A Veylo Photo Story', url }); else { await navigator.clipboard.writeText(url); toast.success('Story link copied.'); } } catch (e) { if (e.name !== 'AbortError') toast.info('Copy the link from your browser’s address bar to share this story.'); }
   };
   if (loading) return <div className="v-page-loading" role="status">Opening your Photo Story…</div>;
-  if (error || !story) return <div className="v-public v-view-error"><Film size={30} /><h1>This story isn’t available.</h1><p>{error}</p><Link className="v-button" to={backDestination}>Back to Veylo<ArrowUpRight size={17} /></Link></div>;
+  if (error || !story) return <div className="v-public v-view-error"><Film size={30} /><h1>This story isn’t available.</h1><p>{error}</p>{!(demo && embeddedPhone) && <Link className="v-button" to={backDestination}>Back to Veylo<ArrowUpRight size={17} /></Link>}</div>;
   const showingFrames = started && preparedPhotos.hasShownPhoto;
   const displaySrc = demo ? '/veylo/web/demo-' + demoId + '-' + (shownIndex + 1) + '-960.webp' : mediaUrl(!showingFrames && v3OpeningAsset ? v3OpeningAsset.url : photo?.url);
   const displaySet = demo ? [480, 960, 1440].map(w => '/veylo/web/demo-' + demoId + '-' + (shownIndex + 1) + '-' + w + '.webp ' + w + 'w').join(', ') : photo?.srcSet;
@@ -774,7 +775,7 @@ export default function StoryViewer({ demoMode = false, delivery: suppliedDelive
    </div>
    <div className="v-story-progress" role="progressbar" aria-label="Photo Story progress" aria-valuemin={1} aria-valuemax={photos.length} aria-valuenow={finished ? photos.length : shownIndex + 1}>{photos.map((_, i) => <span key={i} className={finished || i < shownIndex ? 'is-done' : i === shownIndex ? 'is-current' : ''}><i ref={!finished && i === shownIndex ? progress : null} /></span>)}</div>
    <header className="v-story-top">
-    <div className="v-story-studio"><Link to={backDestination} onClick={handleBack} className="v-story-mark" aria-label={demo ? (isFromFormats ? 'Back to Photo Story on the formats page' : isFromNiche ? 'Back to the page you opened this story from' : 'Back to the Photo Story section on the homepage') : `${story.studioName || 'Studio'} home`}><DeliveryBrandMark branding={story.branding} /></Link><div><strong>{story.studioName || story.occasion}</strong><span>{story.clientName || story.title}</span></div></div>
+    <div className="v-story-studio">{demo && embeddedPhone ? <span className="v-story-mark" aria-hidden="true"><DeliveryBrandMark branding={story.branding} /></span> : <Link to={backDestination} onClick={handleBack} className="v-story-mark" aria-label={demo ? (isFromFormats ? 'Back to Photo Story on the formats page' : isFromNiche ? 'Back to the page you opened this story from' : 'Back to the Photo Story section on the homepage') : `${story.studioName || 'Studio'} home`}><DeliveryBrandMark branding={story.branding} /></Link>}<div><strong>{story.studioName || story.occasion}</strong><span>{story.clientName || story.title}</span></div></div>
     <div className="v-story-top-actions">{(story.soundtrack?.audioUrl || hasNarration || deliveryProp?.narration?.opening?.url || deliveryProp?.narration?.closing?.url) && <button type="button" onClick={() => setMuted(value => !value)} aria-label={muted ? 'Turn sound on' : 'Turn sound off'}>{muted ? <VolumeX size={17} /> : <Volume2 size={17} />}</button>}<button type="button" onClick={share} aria-label="Share story"><Share2 size={17} /></button></div>
    </header>
    <AnimatePresence>

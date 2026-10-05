@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import { ArrowLeft, ChevronLeft, ChevronRight, Pointer, Images, LoaderCircle, Pause, Play, RotateCcw, Volume2, VolumeX } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import ClientGallery from './ClientGallery.jsx';
 import DeliveryBrandMark from './DeliveryBrandMark.jsx';
@@ -56,6 +56,8 @@ function RevealVeil({ closed, style, onComplete }) {
 }
 
 export default function RevealViewer({ delivery, demo = false, galleryProps = {} }) {
+  const [searchParams] = useSearchParams();
+  const embeddedPhone = searchParams.get('phoneView') === '1';
   const reduced = useVeyloReducedMotion();
   const photos = useMemo(() => revealPhotos(delivery), [delivery]);
   const allPhotos = useMemo(() => revealPhotos(delivery, true), [delivery]);
@@ -295,7 +297,7 @@ export default function RevealViewer({ delivery, demo = false, galleryProps = {}
     <header className="rv-header">
       <div className="rv-brand"><DeliveryBrandMark branding={delivery.branding} /><div><span>{delivery.branding?.type === 'studio' ? 'Photographed by' : 'Photo Reveal'}</span><strong>{delivery.branding?.name || 'Veylo'}</strong></div></div>
       <div className="rv-header-actions">
-        {demo && <Link className="rv-icon rv-demo-back" to="/formats#photo-reveal" aria-label="Back to formats"><ArrowLeft size={18} /></Link>}
+        {demo && !embeddedPhone && <Link className="rv-icon rv-demo-back" to="/formats#photo-reveal" aria-label="Back to formats"><ArrowLeft size={18} /></Link>}
         {phase === 'reveal' && settings.movement && <button type="button" className="rv-icon" onClick={() => setMotionPaused(value => !value)} aria-label={motionPaused ? 'Resume photo movement' : 'Pause photo movement'} aria-pressed={motionPaused}>{motionPaused ? <Play size={17} /> : <Pause size={17} />}</button>}
         {track && <button type="button" className="rv-icon" onClick={toggleSound} aria-label={audioFailed ? 'Try soundtrack again' : muted ? 'Turn soundtrack on' : 'Mute soundtrack'} aria-busy={audioLoading}>{audioLoading ? <LoaderCircle className="rv-spin" size={18} /> : muted || audioFailed ? <VolumeX size={18} /> : <Volume2 size={18} />}</button>}
         {phase === 'closing' && <button className="rv-gallery-button" type="button" onClick={() => openGallery()} aria-label="Open full gallery"><Images size={18} /><span>Full gallery</span></button>}

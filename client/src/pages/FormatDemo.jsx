@@ -181,6 +181,7 @@ export function DemoHeader({ format, client, sectionId, onGallery, light = false
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const embeddedPhone = searchParams.get('phoneView') === '1';
 
   const isFromFormats =
     location.state?.from === 'formats' ||
@@ -201,7 +202,7 @@ export function DemoHeader({ format, client, sectionId, onGallery, light = false
     : `Back to the ${format} section on the homepage`;
 
   const handleBack = (e) => {
-    if (window.history.length > 1 && (isFromFormats || isFromNiche)) {
+    if (!embeddedPhone && window.history.length > 1 && (isFromFormats || isFromNiche)) {
       e.preventDefault();
       navigate(-1);
     }
@@ -218,6 +219,8 @@ export function DemoHeader({ format, client, sectionId, onGallery, light = false
         <DeliveryBrandMark branding={delivery.branding} className="fd-header-logo" />
         <span className="fd-header-brand-copy">{delivery.branding?.type === 'studio' && <small>Photographed by</small>}<strong>{brandName}</strong></span>
       </div>
+    ) : embeddedPhone ? (
+      <span className="fd-header-brand">Veylo</span>
     ) : (
       <Link className="fd-back" to={backDestination} onClick={handleBack} aria-label={backAria}>
         <ArrowLeft size={17} />
