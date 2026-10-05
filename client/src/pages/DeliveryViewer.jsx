@@ -40,6 +40,9 @@ export function apiMediaUrl(value) {
   if (typeof value !== 'string') return value;
   return value.startsWith('/api/') ? `${API_BASE_URL.replace(/\/$/, '')}${value.slice(4)}` : value;
 }
+function capabilityFormat(delivery) {
+  return delivery?.kind === 'photoswap' ? 'photoswap' : delivery?.format;
+}
 function fadeAudioVolume(element, target, duration = 420) {
   if (!element) return;
   const previousFrame = volumeRamps.get(element);
@@ -146,7 +149,7 @@ function preloadAudio(url, cleanup) {
 }
 
 export function DeliveryReadiness({ delivery, onReady }) {
-  const capabilities = getDeliveryCapabilities(delivery?.format);
+  const capabilities = getDeliveryCapabilities(capabilityFormat(delivery));
   const narrationUrl = delivery?.schemaVersion === 3 ? '' : delivery?.narration?.url;
   const mediaKey = [
     delivery.publicId || delivery._id || 'draft',
@@ -279,7 +282,7 @@ export default function DeliveryViewer() {
   const narrationRef = useRef(null);
   const playbackDelivery = useMemo(() => {
     if (!delivery) return null;
-    const capabilities = getDeliveryCapabilities(delivery.format);
+    const capabilities = getDeliveryCapabilities(capabilityFormat(delivery));
     const v3Narration = delivery.schemaVersion === 3 && delivery.narration && (delivery.narration.opening?.url || delivery.narration.closing?.url);
     return {
       ...delivery,
@@ -303,7 +306,7 @@ export default function DeliveryViewer() {
   }, [delivery, preloadedMedia]);
 
   const toggleAudio = async kind => {
-    const capabilities = getDeliveryCapabilities(delivery?.format);
+    const capabilities = getDeliveryCapabilities(capabilityFormat(delivery));
     if ((kind === 'soundtrack' && !capabilities.music) || (kind === 'narration' && !capabilities.narration)) return;
     const selected = kind === 'narration' ? narrationRef.current : soundtrackRef.current;
     const other = kind === 'narration' ? soundtrackRef.current : narrationRef.current;
@@ -657,7 +660,7 @@ export default function DeliveryViewer() {
     return <DeliveryReadiness delivery={delivery} onReady={media => { setPreloadedMedia(media); setExperienceReady(true); trackEvent('client.experience.started', { format: delivery.format }, { format: delivery.format, status: 'started' }); }} />;
   }
 
-  const format = delivery.format || 'photo-story';
+  const format = capabilityFormat(delivery) || 'photo-story';
   const capabilities = getDeliveryCapabilities(format);
   const galleryProps = {
     liked,

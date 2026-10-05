@@ -210,25 +210,6 @@
   padding: 0 0 4px;
 }
 
-.ps-swipe-hint {
-  position: absolute;
-  z-index: 6;
-  top: 4px;
-  left: 50%;
-  margin: 0;
-  padding: 5px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  color: rgba(255, 250, 246, 0.76);
-  background: rgba(10, 10, 14, 0.82);
-  font-size: 9.5px;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-  transform: translateX(-50%);
-  backdrop-filter: blur(16px);
-  pointer-events: none;
-}
-
 .ps-deck {
   position: relative;
   width: min(92vw, 480px);
@@ -310,51 +291,223 @@
   border-radius: 19px;
 }
 
-/* ═══════════════════════════════════════
-   Tinder Swipe Stamps (NEXT / BACK)
-   ═══════════════════════════════════════ */
-.ps-card-stamp {
+/* Distinct framing gives each photograph its own card treatment. */
+.ps-card-front.ps-design-matte {
+  padding: 10px;
+  background: linear-gradient(145deg, #17171d, #0a0a0e);
+}
+
+.ps-card-front.ps-design-matte .ps-card-photo {
+  height: calc(100% - 94px);
+  border-radius: 12px;
+}
+
+.ps-card-front.ps-design-matte .ps-card-overlay {
+  height: 84px;
+  padding: 12px 7px 7px;
+  background: linear-gradient(180deg, #15151a, #0d0d12);
+  border-radius: 0 0 10px 10px;
+}
+
+.ps-card-front.ps-design-paper {
+  border-color: rgba(255, 247, 230, 0.68);
+  background: #eee4d4;
+  box-shadow: inset 0 0 0 5px rgba(255, 250, 240, 0.92);
+}
+
+.ps-card-front.ps-design-paper .ps-card-photo {
+  width: calc(100% - 28px);
+  height: calc(100% - 126px);
+  margin: 14px 14px 0;
+  border-radius: 7px;
+}
+
+.ps-card-front.ps-design-paper .ps-card-overlay {
+  height: 105px;
+  padding: 13px 18px 15px;
+  background: linear-gradient(160deg, #f3eadb, #e8dcc9);
+  border-radius: 0 0 18px 18px;
+}
+
+.ps-card-front.ps-design-paper .ps-overlay-counter {
+  color: color-mix(in srgb, var(--ps-card-accent) 78%, #30241c);
+}
+
+.ps-card-front.ps-design-paper .ps-overlay-counter i {
+  color: rgba(47, 36, 28, 0.35);
+}
+
+.ps-card-front.ps-design-paper .ps-overlay-caption {
+  color: #2c241e;
+  text-shadow: none;
+}
+
+.ps-card-front.ps-design-editorial {
+  border-radius: 22px 22px 22px 6px;
+  border-left: 3px solid var(--ps-card-accent, #ff9b8e);
+}
+
+.ps-card-front.ps-design-editorial .ps-card-photo {
+  border-radius: 18px 18px 18px 3px;
+}
+
+.ps-card-front.ps-design-editorial .ps-card-overlay {
+  right: 14px;
+  bottom: 14px;
+  left: auto;
+  width: min(78%, 320px);
+  padding: 12px 14px 13px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-left: 2px solid var(--ps-card-accent, #ff9b8e);
+  border-radius: 4px 14px 4px 4px;
+  background: rgba(8, 8, 12, 0.76);
+  backdrop-filter: blur(14px);
+}
+
+.ps-card-back.ps-design-matte,
+.ps-card-middle.ps-design-matte {
+  padding: 7px;
+}
+
+.ps-card-back.ps-design-paper,
+.ps-card-middle.ps-design-paper {
+  border: 4px solid #eee4d4;
+}
+
+.ps-card-back.ps-design-editorial,
+.ps-card-middle.ps-design-editorial {
+  border-left: 3px solid var(--ps-card-accent, #ff9b8e);
+  border-radius: 22px 22px 22px 6px;
+}
+
+.ps-start-screen {
+  display: grid;
+  grid-row: 3;
+  min-height: 0;
+  align-content: center;
+  justify-items: center;
+  gap: clamp(10px, 2vh, 20px);
+  padding: 4px 0 12px;
+  text-align: center;
+}
+
+.ps-start-stack {
+  position: relative;
+  width: min(62vw, 280px);
+  height: min(39dvh, 340px);
+  min-height: 170px;
+  perspective: 1000px;
+}
+
+.ps-start-card {
   position: absolute;
-  z-index: 7;
-  top: 48px;
-  padding: 6px 16px;
-  border-radius: 8px;
-  font-size: 20px;
-  font-weight: 900;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  pointer-events: none;
-  user-select: none;
+  inset: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 19px;
+  background: #111116;
+  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.46);
 }
 
-.ps-stamp-next {
-  right: 22px;
-  color: #34d399;
-  border: 2.5px solid #34d399;
-  background: rgba(10, 30, 20, 0.45);
-  box-shadow: 0 0 20px rgba(52, 211, 153, 0.35);
-  text-shadow: 0 0 10px rgba(52, 211, 153, 0.6);
+.ps-start-card img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
-.ps-stamp-prev {
-  left: 22px;
-  color: #fbbf24;
-  border: 2.5px solid #fbbf24;
-  background: rgba(30, 24, 10, 0.45);
-  box-shadow: 0 0 20px rgba(251, 191, 36, 0.35);
-  text-shadow: 0 0 10px rgba(251, 191, 36, 0.6);
+.ps-start-back {
+  inset: 8px -12px -8px 12px;
+  opacity: 0.58;
+  transform: rotate(5deg) scale(0.94);
 }
 
-/* ── Double-Tap Heart Explosion ── */
-.ps-doubletap-heart {
+.ps-start-front {
+  z-index: 1;
+  transform-origin: 50% 70%;
+}
+
+.ps-start-front::after {
   position: absolute;
-  z-index: 10;
-  top: 50%;
-  left: 50%;
-  margin: -34px 0 0 -34px;
-  color: #ff5a47;
-  filter: drop-shadow(0 8px 30px rgba(255, 90, 71, 0.6));
+  inset: 45% 0 0;
+  background: linear-gradient(transparent, rgba(5, 5, 8, 0.56));
+  content: '';
   pointer-events: none;
+}
+
+.ps-start-gesture {
+  position: absolute;
+  z-index: 1;
+  right: 14px;
+  bottom: 14px;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  color: white;
+  background: rgba(10, 10, 14, 0.54);
+  backdrop-filter: blur(12px);
+}
+
+.ps-start-copy {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  max-width: 340px;
+  padding: 0 14px;
+}
+
+.ps-start-eyebrow {
+  color: var(--ps-coral-soft);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
+.ps-start-copy h1 {
+  margin: 0;
+  color: #fffaf6;
+  font-family: var(--delivery-font-heading, 'Outfit', sans-serif);
+  font-size: clamp(24px, 6vw, 32px);
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 1.08;
+}
+
+.ps-start-copy p {
+  max-width: 270px;
+  margin: 0;
+  color: rgba(247, 242, 238, 0.62);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ps-start-button {
+  display: inline-flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 0 20px;
+  border: 1px solid rgba(255, 155, 142, 0.4);
+  border-radius: 999px;
+  color: #fffaf6;
+  background: linear-gradient(135deg, #fa6856, #d94337);
+  box-shadow: 0 10px 28px rgba(255, 90, 71, 0.2);
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.ps-start-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 34px rgba(255, 90, 71, 0.28);
+}
+
+.ps-start-button:active {
+  transform: scale(0.97);
 }
 
 /* ═══════════════════════════════════════
@@ -446,41 +599,7 @@
   transform: none !important;
 }
 
-/* Rewind / Go Back (Amber / Gold) */
-.ps-btn-rewind {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(251, 191, 36, 0.32);
-  color: #fbbf24;
-  background: rgba(251, 191, 36, 0.08);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
-}
-
-.ps-btn-rewind:hover:not(:disabled) {
-  border-color: rgba(251, 191, 36, 0.6);
-  background: rgba(251, 191, 36, 0.16);
-  box-shadow: 0 6px 24px rgba(251, 191, 36, 0.24);
-}
-
-/* Next / Skip (Clean Frosted Glass) */
-.ps-btn-next {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.9);
-  background: rgba(255, 255, 255, 0.07);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
-}
-
-.ps-btn-next:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.14);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
-}
-
-/* Like Button (Large Radiant Coral Heart) */
+/* Individual photograph actions */
 .ps-btn-like {
   width: 64px;
   height: 64px;
@@ -523,14 +642,6 @@
   border-color: rgba(96, 165, 250, 0.55);
   background: rgba(96, 165, 250, 0.16);
   box-shadow: 0 6px 24px rgba(96, 165, 250, 0.24);
-}
-
-.ps-control-hint {
-  min-height: 14px;
-  margin: 0;
-  color: rgba(247, 242, 238, 0.38);
-  font-size: 9px;
-  letter-spacing: 0.04em;
 }
 
 /* ═══════════════════════════════════════
@@ -774,15 +885,9 @@
   gap: 12px;
 }
 
-.ps-viewer.is-preview .ps-btn-rewind,
 .ps-viewer.is-preview .ps-btn-download {
   width: 38px;
   height: 38px;
-}
-
-.ps-viewer.is-preview .ps-btn-next {
-  width: 42px;
-  height: 42px;
 }
 
 .ps-viewer.is-preview .ps-btn-like {
@@ -790,8 +895,10 @@
   height: 52px;
 }
 
-.ps-viewer.is-preview .ps-control-hint {
-  display: none;
+.ps-viewer.is-preview .ps-start-stack {
+  width: min(52vw, 210px);
+  height: min(31dvh, 250px);
+  min-height: 150px;
 }
 
 .ps-viewer.is-preview .ps-overlay-caption {
@@ -928,15 +1035,9 @@
     gap: 12px;
   }
 
-  .ps-btn-rewind,
   .ps-btn-download {
     width: 44px;
     height: 44px;
-  }
-
-  .ps-btn-next {
-    width: 48px;
-    height: 48px;
   }
 
   .ps-btn-like {
@@ -949,9 +1050,6 @@
     gap: 5px;
   }
 
-  .ps-control-hint {
-    font-size: 8.5px;
-  }
 }
 
 /* ── Very Short Mobile Screens (≤ 560px height) ── */
@@ -979,15 +1077,9 @@
     line-height: 1.35;
   }
 
-  .ps-btn-rewind,
   .ps-btn-download {
     width: 38px;
     height: 38px;
-  }
-
-  .ps-btn-next {
-    width: 42px;
-    height: 42px;
   }
 
   .ps-btn-like {
