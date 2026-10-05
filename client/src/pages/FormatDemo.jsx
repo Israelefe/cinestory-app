@@ -486,6 +486,7 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
   const [openIndex, setOpenIndex] = useState(null);
   const [gallery, setGallery] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(null);
+  const [demoLiked, setDemoLiked] = useState(() => new Set());
   const [motionPaused, setMotionPaused] = useState(false);
   const [pageVisible, setPageVisible] = useState(() => !document.hidden);
   const headingRef = useRef(null);
@@ -635,6 +636,28 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
     setGalleryIndex(null);
     setGallery(true);
   };
+  const downloadSamplePhoto = (photo, index) => {
+    if (!photo) return;
+    const link = document.createElement('a');
+    link.href = imageSrc(photo);
+    link.download = `${String(photo.name || `photograph-${index + 1}`).split('/').pop().replace(/[^a-z0-9_-]+/gi, '-')}.webp`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+  const demoGalleryProps = delivery ? {} : {
+    liked: demoLiked,
+    onLike: key => setDemoLiked(current => {
+      const next = new Set(current);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    }),
+    onDownload: (key, index) => {
+      const photo = allPhotos.find((item, itemIndex) => String(item.assetId || item.id || item.name || itemIndex) === String(key)) || allPhotos[index];
+      downloadSamplePhoto(photo, index);
+    },
+    onDownloadAll: () => allPhotos.forEach(downloadSamplePhoto)
+  };
   const motionControl = <button className="fd-chapter-motion-control" type="button" onClick={() => setMotionPaused(current => !current)} aria-pressed={motionPaused} aria-label={motionPaused ? 'Resume photo motion' : 'Pause photo motion'}>
     {motionPaused ? <Play size={15} aria-hidden="true" /> : <Pause size={15} aria-hidden="true" />}
     <span>{motionPaused ? 'Resume motion' : 'Pause motion'}</span>
@@ -729,7 +752,7 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
       </motion.main>}
     </>
 
-    <AnimatePresence>{gallery && <DemoGallery photos={allPhotos} title={client} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} fontStyles={themeStyles} {...galleryProps} singlePhoto={galleryIndex !== null} />}</AnimatePresence>
+    <AnimatePresence>{gallery && <DemoGallery photos={allPhotos} title={client} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} fontStyles={themeStyles} {...demoGalleryProps} {...galleryProps} singlePhoto={galleryIndex !== null} />}</AnimatePresence>
   </div>;
 }
 export const albumSpreads = [
