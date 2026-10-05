@@ -1,5 +1,7 @@
 # Veylo Create Delivery Pipeline — V2 Audit
 
+> **Provider routing update:** Veylo now sends creative direction, delivery tasks, photo analysis, caption writing, Veylo Help, and brief assistance to Groq AI using qwen/qwen3.8-27b. Alibaba Model Studio with deepseek-v4.1-flash is the fallback. Vision requests are limited to three photographs per call. The provider table and code findings below describe the earlier audit snapshot.
+
 **Audit date:** 26 September 2026
 
 **Scope:** Photographer-facing Create Delivery flow and the server, AI worker, media storage, preview, and publishing services it depends on.

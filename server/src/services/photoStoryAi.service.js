@@ -1,4 +1,5 @@
 import { CURATED_SOUNDTRACKS, THEME_PRESETS } from '../constants/photoStoryConstants.js';
+import { anyModelProviderConfigured, DEFAULT_ALIBABA_FALLBACK_MODEL, requestModelCompletion } from './modelProvider.service.js';
 
 const STYLE_DEFAULTS = Object.freeze({
   typographyStyle: 'cinematic_drift',
@@ -65,12 +66,11 @@ export async function generateAiPhotoStory({
 }) {
   const photoCount = photos.length;
   if (!photoCount) throw unavailableError('Add at least one finished photograph before generating a Photo Story.');
-  const apiKey = String(process.env.OPENROUTER_API_KEY || '').trim();
-  if (!apiKey) throw Object.assign(new Error('Photo Story caption generation is not configured.'), { code: 'PHOTO_STORY_AI_NOT_CONFIGURED', status: 503 });
+  if (!anyModelProviderConfigured()) throw Object.assign(new Error('Photo Story caption generation is not configured.'), { code: 'PHOTO_STORY_AI_NOT_CONFIGURED', status: 503 });
 
-  const candidateModels = [...new Set([process.env.OPENROUTER_MODEL, 'openrouter/free'].filter(Boolean))];
+  const fallbackModel = process.env.ALIBABA_FALLBACK_MODEL || DEFAULT_ALIBABA_FALLBACK_MODEL;
   const soundtrack = chooseSoundtrack({ occasion, adminDescription, selectedSoundtrackId });
-  const batchSize = 20;
+  const batchSize = 3;
   const slides = [];
   let storyMeta = {};
 
@@ -92,29 +92,22 @@ export async function generateAiPhotoStory({
     });
 
     let parsedBatch;
-    for (const model of candidateModels) {
-      try {
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'HTTP-Referer': 'https://veylo.com.ng',
-            'X-Title': 'Veylo Photo Story Director',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ model, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: messageContent }], temperature: 0.55, max_tokens: Math.min(8000, 900 + batchPhotos.length * 170) }),
-          signal: AbortSignal.timeout(35_000)
-        });
+    try {
+      const { response } = await requestModelCompletion({
+        model: fallbackModel,
+        messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: messageContent }],
+        temperature: 0.55,
+        max_tokens: Math.min(8000, 900 + batchPhotos.length * 170),
+        response_format: { type: 'json_object' }
+      }, { fallbackModel, timeoutMs: 35_000 });
+      if (response.ok) {
         const payload = await response.json().catch(() => ({}));
-        if (!response.ok) continue;
         let parsed;
-        try { parsed = JSON.parse(cleanReply(payload?.choices?.[0]?.message?.content)); } catch { continue; }
-        if (!validSlides(parsed?.slides, batchPhotos.length, occasion)) continue;
-        parsedBatch = parsed;
-        break;
-      } catch (error) {
-        console.warn(`[PHOTO-STORY-AI] ${model} batch ${offset + 1}-${offset + batchPhotos.length} failed:`, error.message);
+        try { parsed = JSON.parse(cleanReply(payload?.choices?.[0]?.message?.content)); } catch { parsed = null; }
+        if (validSlides(parsed?.slides, batchPhotos.length, occasion)) parsedBatch = parsed;
       }
+    } catch (error) {
+      console.warn('[PHOTO-STORY-AI] batch ' + (offset + 1) + '-' + (offset + batchPhotos.length) + ' failed: ' + error.message);
     }
     if (!parsedBatch) throw unavailableError(`AI could not return approved captions for photographs ${offset + 1}-${offset + batchPhotos.length}. No generic captions were inserted.`);
     if (!Object.keys(storyMeta).length) storyMeta = parsedBatch;

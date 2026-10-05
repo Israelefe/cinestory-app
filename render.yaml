@@ -61,18 +61,18 @@ services:
         value: https://veylo.com.ng/billing
       - key: BILLING_ENCRYPTION_KEY
         generateValue: true
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: qwen/qwen3.8-27b
+      - key: ALIBABA_FALLBACK_MODEL
+        value: deepseek-v4.1-flash
       - key: ALIBABA_MODEL_STUDIO_API_KEY
         sync: false
       - key: ALIBABA_WORKSPACE_ID
         sync: false
       - key: ALIBABA_BASE_URL
         sync: false
-      - key: ALIBABA_VISION_MODEL
-        value: qwen3-vl-flash
-      - key: ALIBABA_CREATIVE_MODEL
-        value: deepseek-v4.1-flash
-      - key: ALIBABA_ASSISTANT_MODEL
-        value: qwen3.8-flash
       # Existing V2 delivery jobs use this separate worker setting.
       - key: DELIVERY_WORKER_CONCURRENCY
         value: "4"
@@ -82,16 +82,10 @@ services:
       - key: DELIVERY_AI_CONCURRENCY
         value: "6"
       - key: DELIVERY_VISION_BATCH_SIZE
-        value: "12"
+        value: "3"
       - key: DELIVERY_CAPTION_BATCH_SIZE
         value: "8"
       - key: DEEPGRAM_API_KEY
         sync: false
       - key: DELIVERY_PIPELINE_ENABLED
         value: "true"
-      - key: ALIBABA_CAPTION_MODEL
-        value: qwen3.7-flash
-      - key: ALIBABA_BRIEF_MODEL
-        value: qwen3.8-flash
-      - key: ALIBABA_BRIEF_REVIEW_MODEL
-        value: deepseek-v4.1-flash

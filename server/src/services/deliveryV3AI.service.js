@@ -4,21 +4,10 @@ import { purposeWordingIssues } from '../utils/purposeWording.js';
 import { writeEditorialDirection, rewriteEditorialCaption, rewriteEditorialBlock } from './editorialDirection.service.js';
 import { deliveryWritingContext, deliveryWritingPolicy, requiresDirectAddress, supportsVisualWriting, shootWritingIssues, writingFallback } from '../constants/deliveryWriting.js';
 import { writingBlockLimit } from '../constants/deliveryWritingBlocks.js';
+import { anyModelProviderConfigured, DEFAULT_ALIBABA_FALLBACK_MODEL, requestModelCompletion } from './modelProvider.service.js';
 
-const MODEL = 'deepseek-v4.1-flash';
+const MODEL = DEFAULT_ALIBABA_FALLBACK_MODEL;
 const TRANSIENT = new Set([429, 500, 502, 503, 504]);
-
-function provider() {
-  const apiKey = String(process.env.ALIBABA_MODEL_STUDIO_API_KEY || '').trim();
-  const workspace = String(process.env.ALIBABA_WORKSPACE_ID || '').trim();
-  const base = String(process.env.ALIBABA_BASE_URL || (workspace ? `https://${workspace}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1` : '')).replace(/\/$/, '');
-  let url;
-  try { url = new URL(base); } catch { throw Object.assign(new Error('Model Studio is not configured.'), { code: 'V3_AI_UNAVAILABLE' }); }
-  if (!apiKey || url.protocol !== 'https:' || !/\.(?:aliyuncs\.com|alibabacloud\.com)$/.test(url.hostname)) {
-    throw Object.assign(new Error('Model Studio is not configured.'), { code: 'V3_AI_UNAVAILABLE' });
-  }
-  return { apiKey, endpoint: `${url.toString().replace(/\/$/, '')}/chat/completions` };
-}
 
 function parseJson(text) {
   const raw = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
@@ -36,7 +25,7 @@ function captionTimeout() {
 }
 
 async function request(system, user, { images = [], maxTokens = 4000, deadline = Infinity, timeoutError = captionTimeout } = {}) {
-  const { apiKey, endpoint } = provider();
+  if (!anyModelProviderConfigured()) throw Object.assign(new Error('Veylo AI is not configured.'), { code: 'V3_AI_UNAVAILABLE' });
   const content = [{ type: 'text', text: user }, ...images.map(image => ({ type: 'image_url', image_url: { url: signedImageUrl(image.publicId, { width: 960 }) } }))];
   const body = { model: MODEL, enable_thinking: false, temperature: 0.45, max_tokens: maxTokens, messages: [{ role: 'system', content: system }, { role: 'user', content }] };
   let malformedResponses = 0;
@@ -49,7 +38,7 @@ async function request(system, user, { images = [], maxTokens = 4000, deadline =
     if (remaining <= 0) throw timeoutError();
     let response;
     try {
-      response = await fetch(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(Math.ceil(remaining)) });
+      response = (await requestModelCompletion(body, { fallbackModel: process.env.ALIBABA_FALLBACK_MODEL || MODEL, timeoutMs: Math.ceil(remaining) })).response;
     } catch (error) {
       if (Number.isFinite(deadline) && (Date.now() >= deadline || error.name === 'TimeoutError')) throw timeoutError();
       throw error;
@@ -67,7 +56,7 @@ async function request(system, user, { images = [], maxTokens = 4000, deadline =
       }
       if (TRANSIENT.has(response.status) && attempt < 2) { await retryWait(900 * (attempt + 1)); continue; }
       const code = [400, 413].includes(response.status) && images.length > 1 ? 'V3_IMAGE_BATCH_TOO_LARGE' : 'V3_AI_REQUEST_FAILED';
-      throw Object.assign(new Error(`Model Studio could not complete this request (${response.status}). Retry from this step.`), { code });
+      throw Object.assign(new Error(`The AI providers could not complete this request (${response.status}). Retry from this step.`), { code });
     }
     try {
       const payload = await response.json();
@@ -203,17 +192,16 @@ export async function analyzeAllV3(delivery, onProgress = async () => {}) {
   const known = new Set(assets.map(asset => asset.assetId));
   const byId = new Map((delivery.collectionAnalysis?.images || []).filter(item => known.has(item.assetId) && (delivery.kind !== 'pinboard' || (Array.isArray(item.colorGroups) && Array.isArray(item.similarityTags)))).map(item => [item.assetId, item]));
   const pending = assets.filter(asset => !byId.has(asset.assetId));
-  // Model Studio documents an input-token limit for this model, but no fixed image count.
-  // Grow successful batches, then lower the ceiling if a batch exceeds the live limit.
-  let ceiling = Math.min(100, pending.length);
-  let size = Math.min(24, ceiling);
+  // Groq vision requests accept up to three images.
+  let ceiling = Math.min(3, pending.length);
+  let size = ceiling;
   for (let cursor = 0; cursor < pending.length;) {
     const batch = pending.slice(cursor, cursor + size);
     try {
       for (const item of await analyzeBatch(batch, delivery)) byId.set(item.assetId, item);
       cursor += batch.length;
       await onProgress(byId.size, assets.length, assets.map(asset => byId.get(asset.assetId)).filter(Boolean));
-      if (size < ceiling) size = Math.min(ceiling, size + Math.max(8, Math.ceil(size / 2)));
+      if (size < ceiling) size = Math.min(ceiling, size + 1);
     } catch (error) {
       if (['V3_IMAGE_BATCH_TOO_LARGE', 'V3_INVALID_AI_RESPONSE', 'V3_INCOMPLETE_ANALYSIS'].includes(error.code) || ['TimeoutError', 'AbortError'].includes(error.name)) {
         if (size > 1) { ceiling = Math.min(ceiling, size - 1); size = Math.max(1, Math.floor(size / 2)); continue; }

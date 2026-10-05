@@ -21,7 +21,7 @@ Keep the computer awake while it is processing jobs. CPU and memory determine re
 
 The worker requires Chrome or Chromium. Set `CONTENT_BROWSER_EXECUTABLE` to an installed executable, or allow Remotion to download its headless browser on the first render. Fonts are installed locally through npm; exports do not depend on Google Fonts requests.
 
-Required provider settings are `ALIBABA_MODEL_STUDIO_API_KEY`, `ALIBABA_WORKSPACE_ID` (or `ALIBABA_BASE_URL`), the three existing Cloudinary settings, and `DEEPGRAM_API_KEY` when voice-over is enabled. API keys stay on the server. Qwen Image 3.0 Pro must be available to the configured Alibaba workspace and region. See [Alibaba's API documentation](https://www.alibabacloud.com/help/en/model-studio/qwen-image-generation-and-editing-api-reference) and [Deepgram Flux TTS](https://developers.deepgram.com/docs/flux-tts/overview).
+AI text and photo analysis use `GROQ_API_KEY` with `GROQ_MODEL=qwen/qwen3.8-27b`. Set `ALIBABA_MODEL_STUDIO_API_KEY`, `ALIBABA_WORKSPACE_ID` (or `ALIBABA_BASE_URL`), and `ALIBABA_FALLBACK_MODEL=deepseek-v4.1-flash` to enable the fallback. Alibaba credentials are also needed when a campaign requests Qwen Image 3.0 Pro assets. Cloudinary stores media, and `DEEPGRAM_API_KEY` is needed only when voice-over is enabled. Keep provider keys on the server. See [Alibaba's API documentation](https://www.alibabacloud.com/help/en/model-studio/qwen-image-generation-and-editing-api-reference) and [Deepgram Flux TTS](https://developers.deepgram.com/docs/flux-tts/overview).
 
 Open **Content Studio** in the admin header. Only superadmins and operations administrators can use it. Each administrator can access their own campaigns.
 

@@ -37,6 +37,7 @@ import PhotoLike from '../models/PhotoLike.js';
 import DeliveryShareGrant from '../models/DeliveryShareGrant.js';
 import SupportTicket from '../models/SupportTicket.js';
 import { billingConfigured, paystackRequest } from '../services/paystack.service.js';
+import { anyModelProviderConfigured } from '../services/modelProvider.service.js';
 import { checkCloudinaryConnection, cloudinary, configureCloudinary } from '../services/cloudinary.service.js';
 import { PLAN_DEFINITIONS } from '../config/plans.js';
 import { tokenDigest } from '../utils/auth.js';
@@ -281,7 +282,7 @@ export async function getOperationsOverview(req, res) {
     const emailSuccesses = await AnalyticsEvent.countDocuments({ name: 'email.send.succeeded', occurredAt: { $gte: dayAgo } });
     const paymentEventCounts = Object.fromEntries(paymentEvents.map(item => [item._id || 'unknown', item.count]));
     const storageBytes = Number(storageAgg[0]?.bytes || 0);
-    const providerAiConfigured = process.env.DELIVERY_PIPELINE_ENABLED === 'true' && Boolean(process.env.ALIBABA_MODEL_STUDIO_API_KEY && process.env.ALIBABA_WORKSPACE_ID && process.env.DEEPGRAM_API_KEY);
+    const providerAiConfigured = process.env.DELIVERY_PIPELINE_ENABLED === 'true' && anyModelProviderConfigured() && Boolean(process.env.DEEPGRAM_API_KEY);
 
     res.json({
       success: true,
@@ -299,7 +300,7 @@ export async function getOperationsOverview(req, res) {
         providers: {
           database,
           cloudinary: health(cloudinary.ok, cloudinary.reason),
-          ai: health(providerAiConfigured && analyticsFailures === 0, providerAiConfigured ? (analyticsFailures ? `${analyticsFailures} AI jobs failed in the last 24 hours.` : '') : 'Delivery AI configuration is disabled or incomplete.', { configured: providerAiConfigured, failuresLast24Hours: analyticsFailures }),
+          ai: health(providerAiConfigured && analyticsFailures === 0, providerAiConfigured ? (analyticsFailures ? `${analyticsFailures} AI jobs failed in the last 24 hours.` : '') : 'Delivery AI configuration or narration provider is disabled or incomplete.', { configured: providerAiConfigured, failuresLast24Hours: analyticsFailures }),
           email: health(Boolean(process.env.RESEND_API_KEY) && emailFailures === 0, process.env.RESEND_API_KEY ? (emailFailures ? `${emailFailures} email sends failed in the last 24 hours.` : '') : 'RESEND_API_KEY is not configured.', { configured: Boolean(process.env.RESEND_API_KEY), sentLast24Hours: emailSuccesses, failuresLast24Hours: emailFailures }),
           paystack: health(billingConfigured() && failedPayments === 0, billingConfigured() ? (failedPayments ? `${failedPayments} payment failures or disputes were recorded in the last 24 hours.` : '') : 'Paystack billing is disabled or incomplete.', { configured: billingConfigured(), failuresLast24Hours: failedPayments })
         },
@@ -920,7 +921,7 @@ function aiJobSummary(job, kind, delivery = null, portfolio = null) {
     stage: job.stage || 'queued',
     progress: Number(job.progress || 0),
     attempts: Number(job.attempts || 0),
-    provider: job.provider || (job.type === 'narrate' ? 'Deepgram Flux' : 'Alibaba Model Studio'),
+    provider: job.provider || (job.type === 'narrate' ? 'Deepgram Flux' : 'Groq AI / Alibaba Model Studio fallback'),
     promptVersion: job.promptVersion || null,
     renderVersion: job.renderVersion || null,
     providerLatencyMs: Number(job.providerLatencyMs || 0),

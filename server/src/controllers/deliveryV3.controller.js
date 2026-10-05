@@ -191,7 +191,7 @@ export async function v3Prepare(req, res) {
     if (existing) return res.status(202).json({ success: true, data: existing });
     delivery.status = 'analyzing'; saveV3(delivery, { step: 'preparing' }); await delivery.save();
     let job;
-    try { job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'v3-prepare', provider: 'Alibaba Model Studio', promptVersion: 'delivery-v3', input: { revision: delivery.v3.revision } }); }
+    try { job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'v3-prepare', provider: 'Groq AI / Alibaba Model Studio fallback', promptVersion: 'delivery-v3', input: { revision: delivery.v3.revision } }); }
     catch (error) { delivery.status = 'draft'; saveV3(delivery, { step: delivery.kind === 'pinboard' ? 'photos' : 'upload' }); await delivery.save(); throw error; }
     res.status(202).json({ success: true, data: job });
   } catch (error) { fail(res, error); }

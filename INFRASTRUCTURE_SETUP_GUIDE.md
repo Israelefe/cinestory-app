@@ -8,7 +8,7 @@ This master guide details **every single external service, database, cloud bucke
 
 - [ ] **1. Dedicated MongoDB Database** (MongoDB Atlas)
 - [ ] **2. Dedicated Cloud Storage** (Cloudinary / AWS S3)
-- [ ] **3. Dedicated AI Director Engine** (OpenRouter)
+- [ ] **3. AI model provider** (Groq primary, Alibaba fallback)
 - [ ] **4. Transactional Email API** (Resend)
 - [ ] **5. SuperAdmin Account Setup** (Creator Master Control)
 - [ ] **6. Dedicated Brand Domain & DNS** (Namecheap / Porkbun)
@@ -53,17 +53,19 @@ This master guide details **every single external service, database, cloud bucke
 
 ---
 
-## 3. Dedicated AI Director Engine (OpenRouter)
-*Powers the AI Director that analyzes the occasion, selects themes, and writes captions.*
+## 3. AI provider setup (Groq primary, Alibaba fallback)
+*Groq handles Veylo creative direction, delivery tasks, photo analysis, captions, Veylo Help, and brief assistance. Alibaba Model Studio is the fallback.*
 
-1. Go to [OpenRouter](https://openrouter.ai/) and create an account.
-2. Go to **Keys** -> Click **"Create Key"** -> Name it `CineStory-Production-Key`.
-3. Add $5 - $10 credits to your balance (or default to `openrouter/free`).
-4. Copy the API key:
+1. Create a Groq API key in the [Groq Console](https://console.groq.com/keys).
+2. Add these server environment variables:
    ```env
-   OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxxxxxxxxxx
-   OPENROUTER_MODEL=openrouter/free
+   GROQ_API_KEY=your_groq_api_key
+   GROQ_MODEL=qwen/qwen3.8-27b
+   ALIBABA_FALLBACK_MODEL=deepseek-v4.1-flash
+   ALIBABA_MODEL_STUDIO_API_KEY=your_alibaba_api_key
+   ALIBABA_WORKSPACE_ID=your_alibaba_workspace_id
    ```
+3. Keep both API keys on the server. Groq is the default; configure Alibaba credentials to enable automatic fallback.
 
 ---
 
@@ -128,8 +130,11 @@ This master guide details **every single external service, database, cloud bucke
    PORT=5000
    MONGODB_URI=mongodb+srv://cinestory_admin:password@...
    JWT_SECRET=your_super_secret_jwt_random_hash_here
-   OPENROUTER_API_KEY=sk-or-v1-...
-   OPENROUTER_MODEL=openrouter/free
+   GROQ_API_KEY=your_groq_api_key
+   GROQ_MODEL=qwen/qwen3.8-27b
+   ALIBABA_FALLBACK_MODEL=deepseek-v4.1-flash
+   ALIBABA_MODEL_STUDIO_API_KEY=your_alibaba_api_key
+   ALIBABA_WORKSPACE_ID=your_alibaba_workspace_id
    CLOUDINARY_CLOUD_NAME=your_cloud_name
    CLOUDINARY_API_KEY=your_api_key
    CLOUDINARY_API_SECRET=your_api_secret

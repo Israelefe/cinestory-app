@@ -1,37 +1,17 @@
 import { buildAssistantKnowledge, assistantSuggestedQuestions, assistantTopicLabels } from '../knowledge/veyloAssistantKnowledge.js';
+import { DEFAULT_ALIBABA_FALLBACK_MODEL, DEFAULT_GROQ_MODEL, requestModelCompletion } from './modelProvider.service.js';
 
-export const VEYLO_ASSISTANT_PROVIDER = 'Alibaba Model Studio';
-export const VEYLO_ASSISTANT_MODEL = 'qwen3.8-flash';
+export const VEYLO_ASSISTANT_PROVIDER = 'Groq AI / Alibaba Model Studio fallback';
+export const VEYLO_ASSISTANT_MODEL = DEFAULT_GROQ_MODEL;
 export const VEYLO_ASSISTANT_PROMPT_VERSION = 'veylo-help-v2';
 
 const MAX_REPLY_CHARACTERS = 6000;
 const REFUSAL = 'I can help with Veylo deliveries, accounts, sharing, billing, and support. I cannot provide private system, database, security, or unrelated information. What Veylo task would you like help with?';
 
 function providerConfig() {
-  const apiKey = String(process.env.ALIBABA_MODEL_STUDIO_API_KEY || '').trim();
-  const workspaceId = String(process.env.ALIBABA_WORKSPACE_ID || '').trim();
-  const configuredBaseUrl = String(process.env.ALIBABA_BASE_URL || '').trim();
-  const baseUrl = configuredBaseUrl || (workspaceId ? `https://${workspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1` : '');
-  if (!apiKey || !baseUrl) {
-    const error = new Error('The Veylo assistant is not configured on the server.');
-    error.code = 'ASSISTANT_NOT_CONFIGURED';
-    throw error;
-  }
-  let parsed;
-  try { parsed = new URL(baseUrl); } catch {
-    const error = new Error('The Veylo assistant endpoint is not valid.');
-    error.code = 'ASSISTANT_NOT_CONFIGURED';
-    throw error;
-  }
-  if (parsed.protocol !== 'https:' || !parsed.hostname.endsWith('.aliyuncs.com')) {
-    const error = new Error('The Veylo assistant endpoint is not valid.');
-    error.code = 'ASSISTANT_NOT_CONFIGURED';
-    throw error;
-  }
   return {
-    apiKey,
-    baseUrl: baseUrl.replace(/\/$/, ''),
-    model: String(process.env.ALIBABA_ASSISTANT_MODEL || VEYLO_ASSISTANT_MODEL).trim() || VEYLO_ASSISTANT_MODEL
+    model: String(process.env.GROQ_MODEL || VEYLO_ASSISTANT_MODEL).trim() || VEYLO_ASSISTANT_MODEL,
+    fallbackModel: String(process.env.ALIBABA_FALLBACK_MODEL || DEFAULT_ALIBABA_FALLBACK_MODEL).trim() || DEFAULT_ALIBABA_FALLBACK_MODEL
   };
 }
 
@@ -67,11 +47,11 @@ function appearsSensitive(reply) {
   return [
     /mongodb(?:\+srv)?:\/\//i,
     /(?:postgres|mysql|redis):\/\//i,
-    /\b(?:JWT_SECRET|OTP_SECRET|ALIBABA_MODEL_STUDIO_API_KEY|PAYSTACK_SECRET_KEY|CLOUDINARY_API_SECRET|RESEND_API_KEY)\b/i,
+    /\b(?:JWT_SECRET|OTP_SECRET|ALIBABA_MODEL_STUDIO_API_KEY|GROQ_API_KEY|PAYSTACK_SECRET_KEY|CLOUDINARY_API_SECRET|RESEND_API_KEY)\b/i,
     /-----BEGIN [A-Z ]+ PRIVATE KEY-----/i,
     /\b(?:bearer|access[_ -]?token|refresh[_ -]?token)\s*[:=]/i,
     /https?:\/\/[^\s]*(?:res\.cloudinary|signature=|token=|expires=)/i,
-    /\b(?:Alibaba|Qwen|Deepgram|Cloudinary|Paystack|Resend)\b/i,
+    /\b(?:Alibaba|Qwen|Groq|Deepgram|Cloudinary|Paystack|Resend)\b/i,
     /(?:process\.env|SELECT\s+.+\s+FROM\s+|mongoose|express\.js|node\.js)/i
   ].some(pattern => pattern.test(reply));
 }
@@ -146,21 +126,16 @@ export async function answerVeyloQuestion({ messages, surface = 'public', authen
   const query = userMessages(messages);
   const knowledge = buildAssistantKnowledge({ query, audience });
   const provider = providerConfig();
-  const response = await fetch(`${provider.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${provider.apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: provider.model,
-      messages: [
-        { role: 'system', content: systemPrompt({ audience, knowledge, safeContext }) },
-        ...safeHistory(messages)
-      ],
-      temperature: 0.2,
-      max_tokens: 1200,
-      stream: false
-    }),
-    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(45_000)]) : AbortSignal.timeout(45_000)
-  });
+  const { response } = await requestModelCompletion({
+    model: provider.model,
+    messages: [
+      { role: 'system', content: systemPrompt({ audience, knowledge, safeContext }) },
+      ...safeHistory(messages)
+    ],
+    temperature: 0.2,
+    max_tokens: 1200,
+    stream: false
+  }, { fallbackModel: provider.fallbackModel, timeoutMs: 45_000, signal });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const error = assistantError('The Veylo assistant could not answer right now.', response.status === 429 ? 'ASSISTANT_PROVIDER_BUSY' : 'ASSISTANT_PROVIDER_FAILED');

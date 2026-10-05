@@ -11,7 +11,7 @@ A complete standalone platform that turns photoshoot pictures into interactive, 
 cd StoryApp/server
 npm install
 cp .env.example .env
-# Edit .env with your MongoDB URI & OpenRouter Key
+# Edit .env with your MongoDB URI & Groq API key and AI fallback settings
 npm run dev
 ```
 Backend runs at `http://localhost:5000`.
@@ -45,7 +45,7 @@ StoryApp/
     │   ├── models/             # User & PhotoStory Mongoose Schemas
     │   ├── routes/             # Auth & Story Endpoints + Audio Proxy
     │   ├── controllers/        # Business logic & Database operations
-    │   └── services/           # OpenRouter AI Director Prompt Engine
+    │   └── services/           # Groq AI with Alibaba Model Studio fallback
 ```
 
 ---

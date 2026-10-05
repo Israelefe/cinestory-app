@@ -2,6 +2,7 @@ import RuntimeConfig from '../models/RuntimeConfig.js';
 import { PLAN_DEFINITIONS } from '../config/plans.js';
 import { DELIVERY_SOUNDTRACKS } from '../constants/deliverySoundtracks.js';
 import { DEFAULT_NARRATION_VOICE_ID, NARRATION_VOICES } from '../constants/narrationVoices.js';
+import { modelProviderState } from './modelProvider.service.js';
 
 export const FORMAT_IDS = Object.freeze(['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign']);
 export const FORMAT_LABELS = Object.freeze({
@@ -65,9 +66,14 @@ function merge(base, override) {
 }
 
 function providerState() {
+  const modelProviders = modelProviderState();
+  const modelLabel = modelProviders.primaryConfigured
+    ? modelProviders.primaryModel + (modelProviders.fallbackConfigured ? ' (Alibaba fallback: ' + modelProviders.fallbackModel + ')' : ' (Alibaba fallback not configured)')
+    : modelProviders.model;
+  const providerLabel = modelProviders.primaryConfigured ? 'Groq AI (Alibaba Model Studio fallback)' : modelProviders.provider;
   return {
-    ai: { provider: 'Alibaba Model Studio', configured: Boolean(process.env.ALIBABA_MODEL_STUDIO_API_KEY && process.env.ALIBABA_WORKSPACE_ID), model: process.env.ALIBABA_CREATIVE_MODEL || 'deepseek-v4.1-flash', visionModel: process.env.ALIBABA_VISION_MODEL || 'qwen3-vl-flash', captionModel: process.env.ALIBABA_CAPTION_MODEL || 'qwen3.7-flash' },
-    assistant: { provider: 'Veylo Help', configured: Boolean(process.env.ALIBABA_MODEL_STUDIO_API_KEY && process.env.ALIBABA_WORKSPACE_ID), model: process.env.ALIBABA_ASSISTANT_MODEL || 'qwen3.8-flash' },
+    ai: { provider: providerLabel, configured: modelProviders.configured, primaryConfigured: modelProviders.primaryConfigured, fallbackProvider: modelProviders.fallbackProvider, fallbackConfigured: modelProviders.fallbackConfigured, model: modelLabel, visionModel: modelProviders.model, captionModel: modelProviders.model },
+    assistant: { provider: 'Veylo Help / ' + providerLabel, configured: modelProviders.configured, model: modelLabel },
     narration: { provider: 'Deepgram Flux', configured: Boolean(process.env.DEEPGRAM_API_KEY), defaultVoiceId: DEFAULT_NARRATION_VOICE_ID },
     email: { provider: 'Resend', configured: Boolean(process.env.RESEND_API_KEY), from: process.env.RESEND_FROM_EMAIL || 'Veylo <info@veylo.com.ng>' },
     billing: { provider: 'Paystack', configured: Boolean(process.env.PAYSTACK_SECRET_KEY && process.env.PAYSTACK_PRO_PLAN_CODE), enabled: process.env.BILLING_ENABLED === 'true' },

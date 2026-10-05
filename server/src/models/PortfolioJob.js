@@ -9,7 +9,7 @@ const portfolioJobSchema = new mongoose.Schema({
   stage: { type: String, default: 'queued' },
   progress: { type: Number, min: 0, max: 100, default: 0 },
   attempts: { type: Number, min: 0, default: 0 },
-  provider: { type: String, trim: true, maxlength: 80, default: 'Alibaba Model Studio' },
+  provider: { type: String, trim: true, maxlength: 80, default: 'Groq AI / Alibaba Model Studio fallback' },
   promptVersion: { type: String, trim: true, maxlength: 80 },
   providerLatencyMs: { type: Number, min: 0 },
   cancelRequestedAt: Date,

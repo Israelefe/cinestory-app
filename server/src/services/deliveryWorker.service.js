@@ -10,6 +10,7 @@ import { supportsDeliveryMusic, supportsDeliveryNarration } from '../constants/d
 import { recordAnalyticsEventAsync } from './analytics.service.js';
 import { recordWorkerHeartbeat, workerInstance } from './workerHeartbeat.service.js';
 import { fetchAlibabaQuotas } from './alibabaQuota.service.js';
+import { DEFAULT_ALIBABA_FALLBACK_MODEL, modelProviderState } from './modelProvider.service.js';
 
 const workerId = workerInstance();
 let timer;
@@ -56,10 +57,17 @@ function readWorkerSettings() {
 async function refreshProviderQuotas() {
   if (Date.now() - quotaFetchedAt < 5 * 60 * 1000) return;
   quotaFetchedAt = Date.now();
-  const creativeModel = process.env.ALIBABA_CREATIVE_MODEL || 'deepseek-v4.1-flash';
-  const visionModel = process.env.ALIBABA_VISION_MODEL || 'qwen3-vl-flash';
-  const captionModel = process.env.ALIBABA_CAPTION_MODEL || 'qwen3.7-flash';
-  const quotas = await fetchAlibabaQuotas([creativeModel, visionModel, captionModel]);
+  if (String(process.env.GROQ_API_KEY || '').trim()) {
+    quotaSnapshot = {};
+    effectiveJobConcurrency = workerSettings.maxJobConcurrency;
+    effectiveV3JobConcurrency = workerSettings.maxV3JobConcurrency;
+    effectiveAiBatchConcurrency = workerSettings.aiBatchConcurrency;
+    aiRequestStartSpacingMs = 0;
+    aiRequestWaiters.splice(0).forEach(resolve => resolve());
+    return;
+  }
+  const fallbackModel = process.env.ALIBABA_FALLBACK_MODEL || DEFAULT_ALIBABA_FALLBACK_MODEL;
+  const quotas = await fetchAlibabaQuotas([fallbackModel]);
   if (!Object.keys(quotas).length) return;
   quotaSnapshot = quotas;
   effectiveJobConcurrency = workerSettings.maxJobConcurrency;
@@ -409,12 +417,12 @@ async function run(job) {
     if (job.type === 'v3-prepare') {
       if (delivery.schemaVersion !== 3 || delivery.status !== 'analyzing') throw Object.assign(new Error('This draft changed. Start analysis again.'), { code: 'V3_DRAFT_CHANGED' });
       const insights = await analyzeAllV3(delivery, async (done, total, partial) => {
-        await Delivery.updateOne({ _id: delivery._id, status: 'analyzing', 'v3.revision': job.input?.revision }, { $set: { collectionAnalysis: { images: partial, model: 'deepseek-v4.1-flash', complete: done === total } } });
+        await Delivery.updateOne({ _id: delivery._id, status: 'analyzing', 'v3.revision': job.input?.revision }, { $set: { collectionAnalysis: { images: partial, model: modelProviderState().model, complete: done === total } } });
         await saveJob(job, { stage: 'analysing-photos', progress: Math.min(78, Math.round(done / total * 78)) });
       });
       const latest = await Delivery.findById(delivery._id);
       if (latest.status !== 'analyzing' || latest.v3?.revision !== job.input?.revision) throw Object.assign(new Error('This draft changed. Start analysis again.'), { code: 'V3_DRAFT_CHANGED' });
-      latest.collectionAnalysis = { images: insights, model: 'deepseek-v4.1-flash', complete: true };
+      latest.collectionAnalysis = { images: insights, model: modelProviderState().model, complete: true };
       if (latest.kind === 'pinboard') {
         await saveJob(job, { stage: 'designing-pinboard', progress: 84 });
         latest.pinboard = await directV3Pinboard(latest, insights);
@@ -436,7 +444,7 @@ async function run(job) {
         if (final.status !== 'analyzing' || final.v3?.revision !== job.input?.revision) throw Object.assign(new Error('This draft changed. Start analysis again.'), { code: 'V3_DRAFT_CHANGED' });
         const captions = new Map(frames.map(frame => [frame.assetId, frame.caption]));
         final.assets.forEach(asset => { asset.caption = captions.get(asset.assetId) || ''; });
-        final.collectionAnalysis = { images: insights, model: 'deepseek-v4.1-flash', complete: true };
+        final.collectionAnalysis = { images: insights, model: modelProviderState().model, complete: true };
         final.galleryAssetIds = final.assets.map(asset => asset.assetId);
         final.galleryOrder = final.galleryAssetIds;
         final.presentationOrder = final.galleryAssetIds;
@@ -450,7 +458,7 @@ async function run(job) {
         const result = await directV3(latest, insights);
         const final = await Delivery.findById(delivery._id);
         if (final.status !== 'analyzing' || final.v3?.revision !== job.input?.revision) throw Object.assign(new Error('This draft changed. Start analysis again.'), { code: 'V3_DRAFT_CHANGED' });
-        final.collectionAnalysis = { images: insights, model: 'deepseek-v4.1-flash', complete: true };
+        final.collectionAnalysis = { images: insights, model: modelProviderState().model, complete: true };
         final.curatedAssetIds = result.selected;
         final.galleryAssetIds = final.assets.map(asset => asset.assetId);
         final.presentationOrder = result.selected;

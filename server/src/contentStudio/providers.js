@@ -4,6 +4,7 @@ import { publicPlans } from '../config/plans.js';
 import { planSchema } from './schema.js';
 import { consumeUnits } from './allowance.js';
 import { mediaUrl, studioError, fetchGeneratedImage } from './media.js';
+import { anyModelProviderConfigured, DEFAULT_ALIBABA_FALLBACK_MODEL, requestModelCompletion } from '../services/modelProvider.service.js';
 
 function config() {
   const base = process.env.ALIBABA_BASE_URL || (process.env.ALIBABA_WORKSPACE_ID ? `https://${process.env.ALIBABA_WORKSPACE_ID}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1` : '');
@@ -13,17 +14,20 @@ function config() {
   return { base: base.replace(/\/$/, ''), key: process.env.ALIBABA_MODEL_STUDIO_API_KEY };
 }
 export function providerReadiness() {
-  let ai = true; try { config(); } catch { ai = false; }
-  return { ai, voice: Boolean(process.env.DEEPGRAM_API_KEY), storage: Boolean(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) };
+  let imageGeneration = true; try { config(); } catch { imageGeneration = false; }
+  return { ai: anyModelProviderConfigured(), imageGeneration, voice: Boolean(process.env.DEEPGRAM_API_KEY), storage: Boolean(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) };
 }
 async function jsonRequest(messages, { vision = false, signal }) {
-  const provider = config();
+  const fallbackModel = process.env.ALIBABA_FALLBACK_MODEL || DEFAULT_ALIBABA_FALLBACK_MODEL;
   await consumeUnits(vision ? 1 : 3);
-  const response = await fetch(`${provider.base}/chat/completions`, {
-    method: 'POST', headers: { Authorization: `Bearer ${provider.key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: vision ? (process.env.ALIBABA_VISION_MODEL || 'qwen3-vl-flash') : (process.env.CONTENT_CREATIVE_MODEL || process.env.ALIBABA_CREATIVE_MODEL || 'deepseek-v4.1-flash'), messages, response_format: { type: 'json_object' }, temperature: vision ? 0.2 : 0.8, max_tokens: vision ? 900 : 6500, stream: false }),
-    signal: AbortSignal.any([signal, AbortSignal.timeout(150_000)])
-  });
+  const { response } = await requestModelCompletion({
+    model: fallbackModel,
+    messages,
+    response_format: { type: 'json_object' },
+    temperature: vision ? 0.2 : 0.8,
+    max_tokens: vision ? 900 : 6500,
+    stream: false
+  }, { fallbackModel, timeoutMs: 150_000, signal });
   if (!response.ok) {
     const errorText = await response.text().catch(() => '');
     let detail = '';
@@ -33,11 +37,11 @@ async function jsonRequest(messages, { vision = false, signal }) {
     } catch {
       detail = errorText;
     }
-    throw studioError(`The creative service could not complete this request (${response.status})${detail ? `: ${detail}` : ''}.`, 502);
+    throw studioError('The creative service could not complete this request (' + response.status + ')' + (detail ? ': ' + detail : '') + '.', 502);
   }
   const payload = await response.json();
   const text = payload?.choices?.[0]?.message?.content;
-  try { return JSON.parse(String(text).replace(/^```(?:json)?\s*|\s*```$/g, '').trim()); }
+  try { return JSON.parse(String(text).replace(/^\x60\x60\x60(?:json)?\s*|\s*\x60\x60\x60$/g, '').trim()); }
   catch { throw studioError('The creative service returned an incomplete plan. Please retry.', 502); }
 }
 const analysisSchema = z.object({

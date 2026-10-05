@@ -13,7 +13,7 @@ const deliveryJobSchema = new mongoose.Schema({
   cursor: { type: Number, default: 0, min: 0 },
   errorCode: { type: String, trim: true },
   errorMessage: { type: String, trim: true, maxlength: 500 },
-  provider: { type: String, trim: true, maxlength: 80, default: 'Alibaba Model Studio' },
+  provider: { type: String, trim: true, maxlength: 80, default: 'Groq AI / Alibaba Model Studio fallback' },
   promptVersion: { type: String, trim: true, maxlength: 80 },
   renderVersion: { type: String, trim: true, maxlength: 100 },
   providerLatencyMs: { type: Number, min: 0 },

@@ -2,10 +2,11 @@ import { z } from 'zod';
 import { DELIVERY_SOUNDTRACKS, recommendSoundtracks } from '../constants/deliverySoundtracks.js';
 import { supportsDeliveryMusic, supportsDeliveryNarration } from '../constants/deliveryCapabilities.js';
 import { deliveryWritingPolicy, supportsVisualWriting, shootWritingIssues, FORMAT_WRITING_PROFILES } from '../constants/deliveryWriting.js';
+import { anyModelProviderConfigured, DEFAULT_ALIBABA_FALLBACK_MODEL, requestModelCompletion } from './modelProvider.service.js';
 
 const FORMATS = ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign'];
 const AI_DELIVERY_SOUNDTRACKS = DELIVERY_SOUNDTRACKS.filter(track => track.category === 'afrobeat');
-export const CREATIVE_DIRECTOR_PROVIDER = 'Alibaba Model Studio';
+export const CREATIVE_DIRECTOR_PROVIDER = 'Groq AI / Alibaba Model Studio fallback';
 export const CREATIVE_DIRECTOR_PROMPT_VERSION = 'creative-director-v8';
 const MOTIONS = ['slow-push', 'slow-pull', 'pan-left', 'pan-right', 'float', 'still'];
 const TRANSITIONS = ['fade', 'crossfade', 'wipe', 'slide', 'reveal', 'cut'];
@@ -494,29 +495,14 @@ const portfolioDirectionSchema = z.object({
 });
 
 function config() {
-  const apiKey = String(process.env.ALIBABA_MODEL_STUDIO_API_KEY || '').trim();
-  const workspaceId = String(process.env.ALIBABA_WORKSPACE_ID || '').trim();
-  const configured = String(process.env.ALIBABA_BASE_URL || '').trim();
-  const baseUrl = configured || (workspaceId ? `https://${workspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1` : '');
-  if (!apiKey || !baseUrl) {
+  if (!anyModelProviderConfigured()) {
     const error = new Error('The AI Creative Director is not configured on the server.');
     error.code = 'AI_NOT_CONFIGURED';
     throw error;
   }
-  let parsed;
-  try { parsed = new URL(baseUrl); } catch { throw new Error('ALIBABA_BASE_URL is not a valid URL.'); }
-  if (parsed.protocol !== 'https:' || !parsed.hostname.endsWith('.aliyuncs.com')) throw new Error('ALIBABA_BASE_URL must use the Singapore Alibaba Model Studio HTTPS endpoint.');
-  const creativeModel = process.env.ALIBABA_CREATIVE_MODEL || 'deepseek-v4.1-flash';
-  // DeepSeek remains the Creative Director. Image inspection uses a real
-  // multimodal model so the creative model never has to guess from missing
-  // visual input when the vision variable is not configured.
-  const visionModel = process.env.ALIBABA_VISION_MODEL || 'qwen3-vl-flash';
-  // Captions need both the brief and the actual photograph in one request.
-  // The text-only creative model still handles the collection direction.
-  const captionModel = process.env.ALIBABA_CAPTION_MODEL || 'qwen3.7-flash';
-  return { apiKey, baseUrl: baseUrl.replace(/\/$/, ''), visionModel, creativeModel, captionModel };
+  const fallbackModel = String(process.env.ALIBABA_FALLBACK_MODEL || DEFAULT_ALIBABA_FALLBACK_MODEL).trim() || DEFAULT_ALIBABA_FALLBACK_MODEL;
+  return { creativeModel: fallbackModel, visionModel: fallbackModel, captionModel: fallbackModel };
 }
-
 function repairTruncatedJson(raw) {
   let text = String(raw || '').trim();
   text = text.replace(/,\s*$/, '');
@@ -614,32 +600,33 @@ async function completion({ model, messages, temperature = 0.35, maxTokens = 600
   let currentMessages = messages;
   let lastError;
 
-  // Inner helper: fetch with transient HTTP retry (429, 502, 503, 504)
-  async function fetchWithTransientRetry(url, options) {
+  // Shared provider routing tries Groq first and Model Studio when Groq fails. Retry transient responses.
+  async function fetchWithTransientRetry(body) {
     const TRANSIENT_CODES = [429, 502, 503, 504];
     const DELAYS = [1000, 3000, 6000];
     for (let httpAttempt = 0; httpAttempt <= DELAYS.length; httpAttempt++) {
-      const response = await fetch(url, options);
+      const { response } = await requestModelCompletion(body, { fallbackModel: model, timeoutMs });
       if (response.ok || !TRANSIENT_CODES.includes(response.status)) return response;
       if (httpAttempt < DELAYS.length) {
-        console.warn(`[creative-director/${repairLabel}] HTTP ${response.status}, retrying in ${DELAYS[httpAttempt]}ms...`);
-        await new Promise(r => setTimeout(r, DELAYS[httpAttempt]));
+        console.warn('[creative-director/' + repairLabel + '] HTTP ' + response.status + ', retrying in ' + DELAYS[httpAttempt] + 'ms...');
+        await new Promise(resolve => setTimeout(resolve, DELAYS[httpAttempt]));
       } else {
-        return response; // final attempt, let caller handle the error
+        return response;
       }
     }
   }
-
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const response = await fetchWithTransientRetry(`${provider.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${provider.apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, messages: currentMessages, temperature: attempt ? 0.1 : temperature, max_tokens: maxTokens, response_format: { type: 'json_object' }, ...(enableThinking === undefined ? {} : { enable_thinking: enableThinking }) }),
-      signal: AbortSignal.timeout(timeoutMs)
+    const response = await fetchWithTransientRetry({
+      model,
+      messages: currentMessages,
+      temperature: attempt ? 0.1 : temperature,
+      max_tokens: maxTokens,
+      response_format: { type: 'json_object' },
+      ...(enableThinking === undefined ? {} : { enable_thinking: enableThinking })
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const error = new Error(payload?.error?.message || `Alibaba Model Studio returned ${response.status}.`);
+      const error = new Error(payload?.error?.message || `The configured AI provider returned ${response.status}.`);
       error.code = response.status === 404 ? 'MODEL_NOT_AVAILABLE' : 'MODEL_REQUEST_FAILED';
       throw error;
     }
@@ -857,6 +844,16 @@ export function photoStoryBirthdayFallbackCaption({ clientName, shootType, brief
 }
 
 export async function analyzeImageBatch({ brief, shootType, clientName, assets }) {
+  if (assets.length > 3) {
+    const images = [];
+    const missingAssetIds = [];
+    for (let offset = 0; offset < assets.length; offset += 3) {
+      const result = await analyzeImageBatch({ brief, shootType, clientName, assets: assets.slice(offset, offset + 3) });
+      images.push(...result.images);
+      missingAssetIds.push(...result.missingAssetIds);
+    }
+    return { images, missingAssetIds };
+  }
   const insightsById = new Map();
   const missingAssetIds = [];
   const analyzeSubset = async subset => {
@@ -1058,6 +1055,18 @@ Do not choose the generic quiet/rules/balanced combination unless the photograph
 }
 
 export async function createFrameBatch({ format, brief, shootType, clientName, direction, imageInsights, photoUrlsById, collectionAnalysis = null, revisionInstruction = '', currentFrames = [] }) {
+  if (imageInsights.length > 3) {
+    const frames = [];
+    for (let offset = 0; offset < imageInsights.length; offset += 3) {
+      const batch = imageInsights.slice(offset, offset + 3);
+      frames.push(...await createFrameBatch({
+        format, brief, shootType, clientName, direction, imageInsights: batch, photoUrlsById,
+        collectionAnalysis, revisionInstruction,
+        currentFrames: currentFrames.filter(frame => batch.some(item => item.assetId === frame.assetId))
+      }));
+    }
+    return frames;
+  }
   const provider = config();
   const formatProfile = FORMAT_DIRECTION_PROFILES[format] || FORMAT_DIRECTION_PROFILES['photo-story'];
   const validSectionIds = (direction?.sections?.map(s => s.id) || []).filter(Boolean);
