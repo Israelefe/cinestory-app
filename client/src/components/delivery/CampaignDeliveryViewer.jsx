@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useAnimationControls, useInView } from 'framer-motion';
-import { ArrowRight, ArrowUpRight, Camera, Download, FileCheck2, Images, Pause, Play } from 'lucide-react';
+import { ArrowUpRight, Camera, Download, FileCheck2, Images, Pause, Play } from 'lucide-react';
 import { DELIVERY_DEMO_DIMENSIONS } from '../../constants/deliveryDemoMetadata.js';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import { useClosingGallery } from '../../utils/useClosingGallery.js';
@@ -48,7 +48,6 @@ function anchorId(set) {
 export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, toggleAudio, onNarrationNavigate }) {
   const [gallery, setGallery] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(null);
-  const [activeFilter, setActiveFilter] = useState('all');
   const [activeSet, setActiveSet] = useState(null);
   const [motionPaused, setMotionPaused] = useState(false);
   const [pageVisible, setPageVisible] = useState(() => !document.hidden);
@@ -57,9 +56,6 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
   const galleryPhotos = useMemo(() => delivery?.schemaVersion === 3 ? normalizeDeliveryPhotos(delivery, campaignPhotos, true) : photos, [delivery, photos]);
   const { galleryUnlocked, closingRef } = useClosingGallery(`${delivery?.publicId || delivery?._id || 'campaign-demo'}:${photos.map(photo => photo.assetId || photo.name).join('|')}`);
   const sets = useMemo(() => resolveCampaignSets(delivery, photos), [delivery, photos]);
-  const filterOptions = [['all', 'All photographs'], ['hero', 'Hero'], ['detail', 'Detail'], ['lifestyle', 'In use'], ['kit', 'Kit'], ['context', 'Context']];
-  const availableFilters = filterOptions.filter(([value]) => value === 'all' || photos.some(photo => photo.campaignType === value));
-  const visibleSets = useMemo(() => sets.map(set => ({ ...set, photos: activeFilter === 'all' ? set.photos : set.photos.filter(photo => photo.campaignType === activeFilter) })).filter(set => set.photos.length), [sets, activeFilter]);
   const highlights = useMemo(() => {
     const ids = delivery?.formatConfig?.campaign?.highlightAssetIds || [];
     const byId = new Map(photos.map(photo => [String(photo.assetId), photo]));
@@ -76,8 +72,6 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
   const statement = delivery?.creativeDirection?.openingLine || delivery?.brief || 'Your finished campaign photographs, organised into sets. Take a look through the work, then open the complete gallery.';
   const usage = delivery?.formatConfig?.usageTerms || 'Contact the studio to confirm the agreed uses before publishing these photographs.';
   const styles = getFormatThemeStyles(delivery, { bg: '#070709', surface: '#0c0c10', text: '#f3f0e8', accent: '#ff9b8e', fontDisplay: "'Playfair Display', Georgia, serif" });
-  const visiblePhotoCount = new Set(visibleSets.flatMap(set => set.photos.map(photo => photo.assetId || photo.name))).size;
-
   useEffect(() => {
     const updateVisibility = () => setPageVisible(!document.hidden);
     document.addEventListener('visibilitychange', updateVisibility);
@@ -85,18 +79,18 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
   }, []);
 
   useEffect(() => {
-    setActiveSet(visibleSets[0]?.id || null);
+    setActiveSet(sets[0]?.id || null);
     if (!('IntersectionObserver' in window)) return undefined;
     const observer = new IntersectionObserver(entries => {
       const entry = entries.filter(item => item.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
       if (entry) setActiveSet(entry.target.dataset.setId);
     }, { rootMargin: '-20% 0px -45% 0px', threshold: 0 });
-    visibleSets.forEach(set => {
+    sets.forEach(set => {
       const element = document.getElementById(anchorId(set));
       if (element) observer.observe(element);
     });
     return () => observer.disconnect();
-  }, [visibleSets]);
+  }, [sets]);
 
   useEffect(() => {
     const nav = navigationRef.current;
@@ -122,7 +116,6 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
         <div className="vec-campaign-number">01 <span>/ THE CAMPAIGN</span></div>
         <motion.div className="vec-campaign-intro" {...formatFrameAttributes(heroPhoto)} style={formatFrameStyle(heroPhoto)} initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .75, ease: [.22, 1, .36, 1] }}>
           <span>CAMPAIGN DELIVERY</span><h1>{title}</h1><p>{statement}</p><small>Prepared for {client}</small>
-          <button className="vec-campaign-hero-cta" type="button" onClick={() => document.getElementById('campaign-sets')?.scrollIntoView({ behavior: 'smooth' })}>Explore the photographs<ArrowRight size={18} aria-hidden="true" /></button>
         </motion.div>
         <motion.figure {...formatFrameAttributes(heroPhoto)} style={formatFrameStyle(heroPhoto)} initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .9, delay: .12, ease: [.22, 1, .36, 1] }}>
           <div className="vec-campaign-hero-image" style={heroDimensions ? { aspectRatio: `${heroDimensions.width} / ${heroDimensions.height}` } : undefined}><PhotoMotion photo={heroPhoto} paused={pausePhotos}><Photo name={heroPhoto?.name} url={heroPhoto?.url} srcSet={heroPhoto?.srcSet} alt={heroPhoto?.alt || 'Campaign lead photograph'} style={heroPhoto?.focalPoint ? { objectPosition: heroPhoto.focalPoint } : undefined} eager sizes="(max-width: 767px) 92vw, 48vw" /></PhotoMotion></div>
@@ -141,7 +134,7 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
           <div><span>THE COLLECTION</span><strong>Find your photo set</strong></div>
         </div>
         <nav ref={navigationRef} className="vec-campaign-set-nav" aria-label="Campaign asset sets">
-          {visibleSets.map(set => <a key={set.id} href={`#${anchorId(set)}`} aria-current={activeSet === set.id ? 'location' : undefined} onClick={event => { event.preventDefault(); setActiveSet(set.id); document.getElementById(anchorId(set))?.scrollIntoView({ behavior: 'smooth' }); }}><span>{String(sets.findIndex(item => item.id === set.id) + 1).padStart(2, '0')}</span>{set.title}</a>)}
+          {sets.map(set => <a key={set.id} href={`#${anchorId(set)}`} aria-current={activeSet === set.id ? 'location' : undefined} onClick={event => { event.preventDefault(); setActiveSet(set.id); document.getElementById(anchorId(set))?.scrollIntoView({ behavior: 'smooth' }); }}><span>{String(sets.findIndex(item => item.id === set.id) + 1).padStart(2, '0')}</span>{set.title}</a>)}
         </nav>
       </section>
 
@@ -154,13 +147,7 @@ export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, tog
 
       <section id="campaign-sets" className="vec-campaign-sets">
         <motion.header {...reveal}><span>02 / THE PHOTO SETS</span><h2>The work, in detail.</h2><p>Browse the photographs by set. Your complete gallery follows at the end.</p></motion.header>
-        <div className="vec-campaign-filter-row">
-          {availableFilters.length > 1 && <div className="vec-campaign-filters" role="group" aria-label="Filter campaign assets">
-            {availableFilters.map(([value, label]) => <button type="button" key={value} className={activeFilter === value ? 'is-active' : ''} onClick={() => setActiveFilter(value)} aria-pressed={activeFilter === value}>{label}</button>)}
-          </div>}
-          <p className="vec-campaign-result-count" role="status">{visiblePhotoCount} {visiblePhotoCount === 1 ? 'photograph' : 'photographs'}{activeFilter !== 'all' ? ` · ${availableFilters.find(([value]) => value === activeFilter)?.[1] || ''}` : ''}</p>
-        </div>
-        <div className="vec-campaign-set-list">{visibleSets.map((set, setIndex) => <motion.article id={anchorId(set)} data-set-id={set.id} data-layout={set.layout || 'grid'} key={set.id} style={set.accent ? { '--section-accent': set.accent } : undefined} {...reveal}>
+        <div className="vec-campaign-set-list">{sets.map((set, setIndex) => <motion.article id={anchorId(set)} data-set-id={set.id} data-layout={set.layout || 'grid'} key={set.id} style={set.accent ? { '--section-accent': set.accent } : undefined} {...reveal}>
           <button className="vec-campaign-set-lead" type="button" {...formatFrameAttributes(set.photos[0])} style={formatFrameStyle(set.photos[0])} onClick={() => openPhoto(set.photos[0])} aria-label={`Open ${set.title}`}><PhotoMotion photo={set.photos[0]} index={setIndex} paused={pausePhotos}><Photo name={set.photos[0].name} url={set.photos[0].url} srcSet={set.photos[0].srcSet} alt={set.photos[0].alt || ''} style={set.photos[0].focalPoint ? { objectPosition: set.photos[0].focalPoint } : undefined} sizes="(max-width: 767px) 92vw, 46vw" /></PhotoMotion><span>{String(sets.findIndex(item => item.id === set.id) + 1).padStart(2, '0')}</span><small>View photograph<ArrowUpRight size={16} aria-hidden="true" /></small></button>
           <div className="vec-campaign-set-copy" {...formatFrameAttributes(set.photos[0])} style={formatFrameStyle(set.photos[0])}>{set.label && <small className="vec-set-label">{set.label}</small>}<h3>{set.title}</h3>{set.copy && <p>{set.copy}</p>}{set.photos[0].caption && <p className="vec-photo-caption">{set.photos[0].caption}</p>}<span>{set.photos.length} {set.photos.length === 1 ? 'photograph' : 'photographs'}</span></div>
           {set.photos.length > 1 && <div className="vec-campaign-set-support" aria-label={`${set.title} supporting photographs`}>

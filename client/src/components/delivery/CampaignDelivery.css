@@ -41,12 +41,6 @@
 }
 .vec-campaign .vec-campaign-hero p { max-width: 490px; margin-top: 24px; color: var(--campaign-muted); font-size: 16px; line-height: 1.8; }
 .vec-campaign .vec-campaign-hero small { font-size: 13px; color: var(--campaign-muted); margin-top: 22px; }
-.vec-campaign .vec-campaign-hero-cta {
-  min-height: 50px; padding: 14px 18px; margin-top: 28px; font-size: 14px; font-weight: 500;
-  border: 1px solid color-mix(in srgb,var(--fd-accent) 55%,transparent); border-radius: 4px;
-  transition: transform .2s, background .2s, color .2s;
-}
-.vec-campaign .vec-campaign-hero-cta:hover { transform: translateY(-2px); background: var(--fd-accent); color: var(--fd-bg); }
 .vec-campaign .vec-campaign-hero > figure {
   grid-column: auto; grid-row: auto; width: 100%; min-height: 0; max-height: none; max-width: none;
   height: auto; margin: 0; overflow: hidden; border: 1px solid var(--campaign-rule); background: var(--fd-surface);
@@ -121,12 +115,6 @@
 .vec-campaign .vec-campaign-photo-copy > p { margin-top: 8px; font-size: 13px; line-height: 1.75; color: var(--campaign-muted); }
 .vec-campaign .vec-campaign-sets { padding: 64px var(--campaign-gutter); scroll-margin-top: calc(var(--campaign-header) + 148px); }
 .vec-campaign .vec-campaign-sets > div { max-width: 1240px; }
-.vec-campaign .vec-campaign-filter-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px 24px; margin-bottom: 40px; }
-.vec-campaign .vec-campaign-filters { display: flex; flex-wrap: wrap; gap: 8px; max-width: 100%; margin: 0; padding: 0; overflow: visible; }
-.vec-campaign .vec-campaign-filters button { min-height: 44px; padding: 10px 15px; font-size: 13px; font-weight: 500; color: var(--campaign-muted); border-radius: 4px; }
-.vec-campaign .vec-campaign-filters button:hover { border-color: var(--fd-accent); transform: translateY(-1px); }
-.vec-campaign .vec-campaign-filters button.is-active { color: var(--fd-bg); }
-.vec-campaign-result-count { color: var(--campaign-muted); font-size: 13px; line-height: 1.5; }
 .vec-campaign[data-composition] .vec-campaign-sets > .vec-campaign-set-list { display: grid; grid-template-columns: minmax(0,1fr); gap: 60px; }
 .vec-campaign .vec-campaign-set-list article {
   display: grid; grid-template-columns: minmax(0,1fr); gap: 28px; padding-top: 32px;

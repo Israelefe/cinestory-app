@@ -35,16 +35,15 @@ for (const [width, height] of [[320,568], [390,844], [768,1024], [834,1194], [10
   });
 }
 
-test('campaign filters keep matching sets and support keyboard photo inspection', async ({ page }) => {
+test('campaign keeps every photo set visible and supports keyboard photo inspection', async ({ page }) => {
   await page.setViewportSize({ width: 834, height: 1194 });
   await setup(page);
   await page.goto('/demo/campaign?phoneView=1');
-  const detail = page.getByRole('group', { name: 'Filter campaign assets' }).getByRole('button', { name: 'Detail', exact: true });
-  await detail.click();
-  await expect(detail).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('status')).toHaveText('2 photographs · Detail');
-  await expect(page.locator('.vec-campaign-set-list article')).toHaveCount(1);
-  await expect(page.locator('.vec-campaign-set-copy h3')).toHaveText('Craft and detail');
+  await expect(page.getByRole('button', { name: 'Explore the photographs', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('group', { name: 'Filter campaign assets' })).toHaveCount(0);
+  for (const label of ['All photographs', 'Hero', 'Detail', 'In use', 'Kit', 'Context']) await expect(page.getByRole('button', { name: label, exact: true })).toHaveCount(0);
+  await expect(page.locator('.vec-campaign-set-list article')).toHaveCount(5);
+  await expect(page.getByRole('heading', { name: 'Craft and detail' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open full gallery', exact: true })).toHaveCount(0);
   const photo = page.getByRole('button', { name: 'Open Craft and detail', exact: true });
   await photo.focus(); await photo.press('Enter');
@@ -54,7 +53,6 @@ test('campaign filters keep matching sets and support keyboard photo inspection'
   await page.getByRole('button', { name: 'Return to presentation' }).press('Escape');
   await expect(page.locator('.client-gallery')).toHaveCount(0);
   await expect(photo).toBeFocused();
-  await page.getByRole('button', { name: 'All photographs', exact: true }).click();
   await expect(page.locator('.vec-campaign-set-list article')).toHaveCount(5);
 });
 
