@@ -54,7 +54,8 @@
 .cv-frame[data-image-motion="pan-left"] .cv-photo-image-motion{animation-name:cv-photo-pan-left}
 .cv-frame[data-image-motion="pan-right"] .cv-photo-image-motion{animation-name:cv-photo-pan-right}
 .cv-frame[data-image-motion="float"] .cv-photo-image-motion{animation-name:cv-photo-float}
-.cv-frame[data-photo-visible="true"]:not([data-image-motion="still"]) .cv-photo-image-motion{animation-play-state:running;will-change:transform}
+.cv-frame:where([data-photo-visible="true"][data-entrance-settled="true"]:not([data-image-motion="still"])) .cv-photo-image-motion{animation-play-state:running;will-change:transform}
+.cv-path-board[data-frame-moving="true"] .cv-photo-image-motion{animation-play-state:paused;will-change:auto}
 .cv-board[data-photo-motion="paused"] .cv-photo-image-motion,.cv-board[data-photo-motion="still"] .cv-photo-image-motion,.cv-path-board[data-page-hidden="true"] .cv-photo-image-motion{animation-play-state:paused;will-change:auto}
 .cv-frame[data-image-motion="still"] .cv-photo-image-scroll{transform:none!important}
 .cv-board[data-arrangement="ordered"] .cv-frame-drift{transform:none!important}

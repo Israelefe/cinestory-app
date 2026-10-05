@@ -134,6 +134,33 @@ for(const width of [390,834,1440]) test(`Canvas shuffles and staggers photograph
   expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBe(0);
 });
 
+for(const width of [320,768,834,1440]) for(const source of ['demo','delivery']) test(`Canvas ${source} starts photo motion after the frame settles at ${width}px`,async({page})=>{
+  await page.setViewportSize({width,height:900});await page.emulateMedia({reducedMotion:'reduce'});await init(page);
+  if(source==='demo')await page.goto('/demo/canvas?phoneView=1');else await preview(page,record());
+  const print=page.locator('.cv-checkpoint.is-group').last().locator('.cv-frame').last();
+  await expect(print).toBeAttached();
+  await expect(print).toHaveAttribute('data-entrance-settled','false');
+  const observation=await print.evaluate(node=>new Promise(resolve=>{
+    const image=node.querySelector('.cv-photo-image-motion'),board=node.closest('.cv-path-board');
+    let entranceSamples=0,movingSamples=0,overlap=false,initialTransform;
+    const started=performance.now();
+    const sample=()=>{
+      const style=getComputedStyle(image),entering=node.dataset.entranceSettled!=='true',moving=board.dataset.frameMoving==='true';
+      if(entering){entranceSamples++;initialTransform??=style.transform;if(style.transform!==initialTransform)overlap=true;}
+      if(moving)movingSamples++;
+      if((entering||moving)&&style.animationPlayState==='running')overlap=true;
+      if(performance.now()-started<2200)requestAnimationFrame(sample);else resolve({entranceSamples,movingSamples,overlap,running:style.animationPlayState});
+    };
+    const rect=node.getBoundingClientRect();scrollTo({top:scrollY+rect.top-innerHeight*.25,behavior:'instant'});sample();
+  }));
+  expect(observation.entranceSamples).toBeGreaterThan(5);
+  expect(observation.movingSamples).toBeGreaterThan(5);
+  expect(observation.overlap).toBe(false);
+  expect(observation.running).toBe('running');
+  await expect(print).toHaveAttribute('data-entrance-settled','true');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBe(0);
+});
+
 for(const width of [390,834,1440]) test(`Canvas photographs visibly animate, pause and resume at ${width}px`,async({page})=>{
   await page.setViewportSize({width,height:900});await page.emulateMedia({reducedMotion:'reduce'});await init(page);
   await page.goto('/demo/canvas?phoneView=1');
@@ -143,12 +170,13 @@ for(const width of [390,834,1440]) test(`Canvas photographs visibly animate, pau
   const initial=await image.evaluate(el=>new DOMMatrixReadOnly(getComputedStyle(el).transform).a);
   await expect.poll(()=>image.evaluate(el=>new DOMMatrixReadOnly(getComputedStyle(el).transform).a)).toBeGreaterThan(initial+.008);
   const scrollImage=print.locator('.cv-photo-image-scroll');
-  const beforeScroll=await scrollImage.evaluate(el=>{
-    const matrix=new DOMMatrixReadOnly(getComputedStyle(el).transform);return {zoom:matrix.a,pan:matrix.f};
-  });
-  await page.mouse.wheel(0,180);
-  await expect.poll(()=>scrollImage.evaluate(el=>new DOMMatrixReadOnly(getComputedStyle(el).transform).a)).toBeGreaterThan(beforeScroll.zoom+.009);
-  await expect.poll(()=>scrollImage.evaluate((el,previous)=>Math.abs(new DOMMatrixReadOnly(getComputedStyle(el).transform).f-previous),beforeScroll.pan),{message:'Scrolling must visibly pan the photograph, not just change a transform string'}).toBeGreaterThan(2);
+  await expect(scrollImage).toHaveCSS('transform','none');
+  await page.evaluate(()=>scrollBy({top:180,behavior:'instant'}));
+  await expect(image).toHaveCSS('animation-play-state','paused');
+  const scrolling=await image.evaluate(el=>getComputedStyle(el).transform);
+  await page.waitForTimeout(100);await expect(image).toHaveCSS('transform',scrolling);
+  await expect(image).toHaveCSS('animation-play-state','running');
+  await expect(scrollImage).toHaveCSS('transform','none');
   await page.getByRole('button',{name:'Pause photo motion',exact:true}).click();
   await print.scrollIntoViewIfNeeded();
   await expect(image).toHaveCSS('animation-play-state','paused');
