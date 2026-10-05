@@ -483,11 +483,16 @@ function ChapterPhotoMotion({ frame, index, paused, children }) {
 }
 
 export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, narrationRef, onNarrationNavigate }) {
+  const [openIndex, setOpenIndex] = useState(null);
   const [gallery, setGallery] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(null);
   const [motionPaused, setMotionPaused] = useState(false);
   const [pageVisible, setPageVisible] = useState(() => !document.hidden);
-  const chapterSectionRefs = useRef([]);
+  const headingRef = useRef(null);
+  const chapterCardsRef = useRef([]);
+  const directoryScrollRef = useRef(0);
+  const returnFocusIndexRef = useRef(0);
+  const previousChapterIndexRef = useRef(null);
   const activeNarrationSectionRef = useRef(null);
   const reduced = useVeyloReducedMotion();
   const photoMotionPaused = reduced || motionPaused || !pageVisible || gallery;
@@ -499,8 +504,7 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
     return () => document.removeEventListener('visibilitychange', update);
   }, []);
 
-  const photos = useMemo(() => normalizeDeliveryPhotos(delivery, weddingPhotos), [delivery]);
-  const allPhotos = useMemo(() => normalizeDeliveryPhotos(delivery, photos, true), [delivery, photos]);
+  const allPhotos = useMemo(() => normalizeDeliveryPhotos(delivery, delivery ? [] : weddingPhotos, true), [delivery]);
   const frames = useMemo(() => new Map((delivery?.creativeDirection?.frames || []).map(frame => [String(frame.assetId), frame])), [delivery]);
   const client = delivery ? (delivery.clientName || delivery.title || 'Your photographs') : 'Folake & Tunde';
   const studioName = delivery ? delivery.branding?.name : 'Mayflower Visuals';
@@ -509,26 +513,40 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
     if (delivery) {
       const sections = delivery.creativeDirection?.sections || [];
       if (!sections.length) {
-        return photos.length ? [{
+        return allPhotos.length ? [{
           id: 'full-collection',
-          name: delivery.title || 'The photographs',
-          note: delivery.creativeDirection?.openingLine || '',
-          photos,
+          name: 'Full collection',
+          line: '',
+          layout: 'single',
+          photos: allPhotos,
+          cover: allPhotos[0],
+          frame: frames.get(String(allPhotos[0]?.assetId)) || emptyChapterFrame,
           captions: []
         }] : [];
       }
       const accents = ['#d7a86e', '#c89057', '#e0b989', '#cca578', '#dfb88e'];
-      return sections.map((section, index) => ({
-        id: section.id || 'chapter-' + index,
-        name: section.title || 'Chapter ' + (index + 1),
-        note: section.body || section.subtitle || '',
-        accent: section.accent || delivery.creativeDirection?.palette?.accent || accents[index % accents.length],
-        photos: (section.assetIds || []).map(id => photos.find(photo => photo.assetId === id)).filter(Boolean),
-        captions: []
-      })).filter(section => section.photos.length > 0);
+      return sections.map((section, index) => {
+        const chapterPhotos = (section.assetIds || []).map(id => allPhotos.find(photo => String(photo.assetId) === String(id))).filter(Boolean);
+        const cover = allPhotos.find(photo => String(photo.assetId) === String(section.coverAssetId)) || chapterPhotos[0];
+        return {
+          id: section.id || 'chapter-' + index,
+          name: section.title || 'Chapter ' + (index + 1),
+          line: section.subtitle || '',
+          note: section.body || '',
+          layout: section.layout || 'pair',
+          accent: section.accent || delivery.creativeDirection?.palette?.accent || accents[index % accents.length],
+          photos: chapterPhotos,
+          cover,
+          frame: frames.get(String(cover?.assetId)) || emptyChapterFrame,
+          captions: []
+        };
+      }).filter(chapter => chapter.photos.length > 0);
     }
-    return chapters.map(chapter => ({ ...chapter, layout: chapter.layout || 'chapter-cover' }));
-  }, [delivery, photos]);
+    return chapters.map(chapter => {
+      const cover = chapter.cover || chapter.photos[0];
+      return { ...chapter, layout: chapter.layout || 'pair', cover, frame: chapter.frame || frames.get(String(cover?.assetId)) || emptyChapterFrame };
+    });
+  }, [delivery, allPhotos, frames]);
 
   const themeStyles = getFormatThemeStyles(delivery, {
     bg: '#070709',
@@ -536,6 +554,46 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
     text: '#f3ece4',
     accent: '#d7a86e'
   });
+
+  const chapterIdentity = `${delivery?.publicId || delivery?._id || client}:${allPhotos.map(photo => photo.assetId || photo.name).join('|')}:${(delivery?.creativeDirection?.sections || []).map(section => section.id).join('|')}`;
+  useEffect(() => {
+    setOpenIndex(null);
+    setGallery(false);
+    setGalleryIndex(null);
+    chapterCardsRef.current = [];
+    directoryScrollRef.current = 0;
+  }, [chapterIdentity]);
+
+  useEffect(() => {
+    const previousIndex = previousChapterIndexRef.current;
+    previousChapterIndexRef.current = openIndex;
+    if (previousIndex === null && openIndex === null) return undefined;
+    const frameId = requestAnimationFrame(() => {
+      if (openIndex === null) {
+        window.scrollTo({ top: directoryScrollRef.current, behavior: 'instant' });
+        chapterCardsRef.current[returnFocusIndexRef.current]?.focus({ preventScroll: true });
+      } else {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+        headingRef.current?.focus({ preventScroll: true });
+      }
+    });
+    return () => cancelAnimationFrame(frameId);
+  }, [openIndex]);
+
+  const openChapter = index => {
+    if (!chaptersData[index]) return;
+    if (openIndex === null) {
+      directoryScrollRef.current = window.scrollY;
+      returnFocusIndexRef.current = index;
+    }
+    setOpenIndex(index);
+    activeNarrationSectionRef.current = index;
+    onNarrationNavigate?.(chaptersData[index].photos.map(photo => photo.assetId));
+  };
+  const returnToChapters = () => {
+    setOpenIndex(null);
+    activeNarrationSectionRef.current = null;
+  };
 
   useEffect(() => {
     const narration = narrationRef?.current;
@@ -547,13 +605,14 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
       const segmentIndex = segments.findIndex(segment => time >= Number(segment.startSec || 0) && time < Number(segment.endSec || 0));
       if (segmentIndex < 0) return;
       const segment = segments[segmentIndex];
-      const matchedIndex = segment.sectionId ? chaptersData.findIndex(section => section.id === segment.sectionId) : -1;
+      const matchedIndex = segment.sectionId ? chaptersData.findIndex(chapter => String(chapter.id) === String(segment.sectionId)) : -1;
       const nextIndex = matchedIndex >= 0
-        ? Math.min(matchedIndex, chaptersData.length - 1)
+        ? matchedIndex
         : Math.min(chaptersData.length - 1, Math.floor((segmentIndex / Math.max(1, segments.length)) * chaptersData.length));
       if (activeNarrationSectionRef.current === nextIndex) return;
       activeNarrationSectionRef.current = nextIndex;
-      chapterSectionRefs.current[nextIndex]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setOpenIndex(nextIndex);
+      onNarrationNavigate?.(chaptersData[nextIndex]?.photos?.map(photo => photo.assetId) || []);
     };
     const finish = () => { activeNarrationSectionRef.current = null; };
     narration.addEventListener('timeupdate', syncChapter);
@@ -564,111 +623,111 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
       narration.removeEventListener('ended', finish);
       narration.removeEventListener('pause', finish);
     };
-  }, [narrationRef, delivery?.narration?.segments, delivery?.creativeDirection?.sections, chaptersData]);
+  }, [narrationRef, delivery?.narration?.segments, chaptersData, onNarrationNavigate]);
 
   const openPhoto = photo => {
-    const photoIndex = allPhotos.findIndex(item => (photo.assetId ? item.assetId === photo.assetId : item.name === photo.name));
+    const photoIndex = allPhotos.findIndex(item => (photo.assetId ? String(item.assetId) === String(photo.assetId) : item.name === photo.name));
     setGalleryIndex(photoIndex >= 0 ? photoIndex : 0);
     setGallery(true);
     onNarrationNavigate?.(photo.assetId);
   };
-  const openFullGallery = () => {
+  const openGallery = () => {
     setGalleryIndex(null);
     setGallery(true);
-  };
-  const jumpToChapter = event => {
-    const value = event.currentTarget.value;
-    if (value !== '') {
-      const index = Number(value);
-      if (Number.isInteger(index)) {
-        chapterSectionRefs.current[index]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        onNarrationNavigate?.(chaptersData[index]?.photos?.map(photo => photo.assetId) || []);
-      }
-    }
-    event.currentTarget.value = '';
   };
   const motionControl = <button className="fd-chapter-motion-control" type="button" onClick={() => setMotionPaused(current => !current)} aria-pressed={motionPaused} aria-label={motionPaused ? 'Resume photo motion' : 'Pause photo motion'}>
     {motionPaused ? <Play size={15} aria-hidden="true" /> : <Pause size={15} aria-hidden="true" />}
     <span>{motionPaused ? 'Resume motion' : 'Pause motion'}</span>
   </button>;
+  const chapterControlBar = <div className="fd-chapter-view-controls">
+    {openIndex !== null && <button className="fd-chapter-return" type="button" onClick={returnToChapters}><ArrowLeft size={16} aria-hidden="true" /><span>Chapters</span></button>}
+    {motionControl}
+  </div>;
 
-  return <div className="fd-page fd-chapters fd-chapters-refined" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} data-pace={themeStyles['--fd-pace']} style={{ ...themeStyles, '--chapter-accent': themeStyles['--fd-accent'] }}>
+  const currentChapter = openIndex === null ? null : chaptersData[openIndex];
+  const previousChapter = openIndex > 0 ? openIndex - 1 : -1;
+  const nextChapter = openIndex !== null && openIndex < chaptersData.length - 1 ? openIndex + 1 : -1;
+
+  return <div className="fd-page fd-chapters fd-chapters-refined" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} data-pace={themeStyles['--fd-pace']} style={{ ...themeStyles, '--chapter-accent': currentChapter?.accent || themeStyles['--fd-accent'] }}>
     <DemoHeader format="Chapters" client={client} sectionId="chapters" delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
-    <main className="fd-chapter-reader">
-      <header className="fd-chapter-reader-header">
-        <span className="fd-chapter-reader-studio"><Film size={15} aria-hidden="true" />{studioName || 'Photo collection'}</span>
-        <h1>{client}</h1>
-        <p>{delivery?.creativeDirection?.openingLine || (allPhotos.length ? 'Explore each chapter at your own pace. The full gallery is waiting at the end.' : 'Explore each chapter at your own pace.')}</p>
-      </header>
 
-      <div className="fd-chapter-reader-tools" aria-label="Chapter controls">
-        <label className="fd-chapter-jump">
-          <span className="sr-only">Jump to a chapter</span>
-          <select aria-label="Jump to a chapter" defaultValue="" onChange={jumpToChapter}>
-            <option value="">Jump to a chapter</option>
-            {chaptersData.map((chapter, index) => <option key={chapter.id || index} value={index}>{chapter.name}</option>)}
-          </select>
-          <ChevronRight size={15} aria-hidden="true" />
-        </label>
-        {motionControl}
-      </div>
-
-      {chaptersData.length ? <div className="fd-chapter-reading-flow">
-        {chaptersData.map((chapter, chapterIndex) => {
-          const anchorId = 'chapter-section-' + (chapterIndex + 1);
-          return <motion.section
-            key={chapter.id || chapterIndex}
-            ref={element => { chapterSectionRefs.current[chapterIndex] = element; }}
-            id={anchorId}
-            className="fd-chapter-reading-section"
-            style={{ '--chapter-section-accent': chapter.accent || themeStyles['--fd-accent'] }}
-            aria-labelledby={anchorId + '-title'}
-            initial={reduced ? false : { opacity: 0, y: 18 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: .12 }}
-            transition={{ ...entrance, delay: Math.min(chapterIndex * .035, .18) }}
-          >
-            <header className="fd-chapter-section-heading">
-              <h2 id={anchorId + '-title'}>{chapter.name}</h2>
-              {chapter.note && <p>{chapter.note}</p>}
-            </header>
-            <div className={'fd-chapter-reading-photos' + (chapter.photos.length === 1 ? ' is-single' : '')}>
-              {chapter.photos.map((photo, photoIndex) => {
-                const frame = frames.get(String(photo.assetId)) || emptyChapterFrame;
-                const caption = chapter.captions?.[photoIndex] || frame.caption || frame.headline || '';
-                return <motion.button
-                  type="button"
-                  key={photo.assetId || photo.url || photo.name}
-                  {...formatFrameAttributes(frame)}
-                  style={{ '--chapter-photo-ratio': photo.width && photo.height ? photo.width + ' / ' + photo.height : '4 / 5', ...formatFrameStyle(frame) }}
-                  className="fd-chapter-reading-photo"
-                  onClick={() => openPhoto(photo)}
-                  aria-label={caption ? 'View photo: ' + caption : 'View photo from ' + chapter.name}
-                  initial={reduced ? false : { opacity: 0, y: 20 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, amount: .12 }}
-                  transition={{ ...entrance, delay: Math.min(photoIndex * .06, .24) }}
-                  whileHover={reduced ? undefined : { y: -3 }}
-                  whileTap={reduced ? undefined : { scale: .99 }}
-                >
-                  <span className="fd-chapter-reading-photo-frame">
-                    <ChapterPhotoMotion frame={frame} index={photoIndex} paused={photoMotionPaused}>
-                      <Photo name={photo.name} url={photo.url} alt={photo.alt || chapter.name} width={photo.width} height={photo.height} style={frame.focalPoint ? { objectPosition: frame.focalPoint } : undefined} eager={chapterIndex === 0 && photoIndex === 0} sizes="(max-width: 767px) 92vw, (max-width: 1023px) 44vw, 38vw" />
-                    </ChapterPhotoMotion>
-                  </span>
-                  {caption && <span className="fd-chapter-reading-caption" data-delivery-font="caption" data-caption-position={frame.captionPosition || undefined} data-text-background={frame.textBackground || undefined} data-type-style={frame.typographyStyle || undefined} data-text-animation={frame.textAnimation || undefined}>{caption}</span>}
-                </motion.button>;
-              })}
-            </div>
-          </motion.section>;
-        })}
-      </div> : <div className="fd-chapter-reader-empty"><p>The photographs for this collection are not available yet.</p></div>}
-
-      {!!allPhotos.length && <footer className="fd-chapter-reading-end">
-        <p>Your full gallery is ready.</p>
-        <button type="button" onClick={openFullGallery}>View the full gallery<Images size={17} aria-hidden="true" /></button>
-      </footer>}
-    </main>
+    <>
+      {currentChapter ? <motion.main key={'chapter-' + (currentChapter.id || openIndex)} className="fd-chapter-reading-page" initial={reduced ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={entrance}>
+        {chapterControlBar}
+        <article className="fd-chapter-reading-content" style={{ '--chapter-section-accent': currentChapter.accent || themeStyles['--fd-accent'] }}>
+          <header className="fd-chapter-reading-heading">
+            <span className="fd-chapter-reading-studio"><Film size={15} aria-hidden="true" />{studioName || 'Photo collection'}</span>
+            <h1 ref={headingRef} tabIndex={-1}>{currentChapter.name}</h1>
+            {(currentChapter.note || currentChapter.line) && <p>{currentChapter.note || currentChapter.line}</p>}
+          </header>
+          <div className={'fd-chapter-reading-photos is-layout-' + currentChapter.layout + (currentChapter.photos.length === 1 ? ' is-single' : '')}>
+            {currentChapter.photos.map((photo, photoIndex) => {
+              const frame = frames.get(String(photo.assetId)) || emptyChapterFrame;
+              const caption = currentChapter.captions?.[photoIndex] || frame.caption || frame.headline || '';
+              return <motion.button
+                type="button"
+                key={photo.assetId || photo.url || photo.name}
+                {...formatFrameAttributes(frame)}
+                style={{ '--chapter-photo-ratio': photo.width && photo.height ? photo.width + ' / ' + photo.height : '4 / 5', ...formatFrameStyle(frame) }}
+                className="fd-chapter-reading-photo"
+                onClick={() => openPhoto(photo)}
+                aria-label={caption ? 'View photo: ' + caption : 'View photo from ' + currentChapter.name}
+                initial={reduced ? false : { opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, amount: .12 }}
+                transition={{ ...entrance, delay: Math.min(photoIndex * .06, .24) }}
+                whileHover={reduced ? undefined : { y: -3 }}
+                whileTap={reduced ? undefined : { scale: .99 }}
+              >
+                <span className="fd-chapter-reading-photo-frame">
+                  <ChapterPhotoMotion frame={frame} index={photoIndex} paused={photoMotionPaused}>
+                    <Photo name={photo.name} url={photo.url} alt={photo.alt || currentChapter.name} width={photo.width} height={photo.height} style={frame.focalPoint ? { objectPosition: frame.focalPoint } : undefined} eager={photoIndex === 0} sizes="(max-width: 767px) 92vw, (max-width: 1023px) 44vw, 38vw" />
+                  </ChapterPhotoMotion>
+                </span>
+                {caption && <span className="fd-chapter-reading-caption" data-delivery-font="caption" data-caption-position={frame.captionPosition || undefined} data-text-background={frame.textBackground || undefined} data-type-style={frame.typographyStyle || undefined} data-text-animation={frame.textAnimation || undefined}>{caption}</span>}
+              </motion.button>;
+            })}
+          </div>
+          {(previousChapter >= 0 || nextChapter >= 0) && <nav className="fd-chapter-sequence-nav" aria-label="Chapter navigation">
+            {previousChapter >= 0 && <button type="button" onClick={() => openChapter(previousChapter)}><ChevronLeft size={17} aria-hidden="true" /><span><small>Previous</small><strong>{chaptersData[previousChapter].name}</strong></span></button>}
+            {nextChapter >= 0 && <button type="button" onClick={() => openChapter(nextChapter)}><span><small>Next</small><strong>{chaptersData[nextChapter].name}</strong></span><ChevronRight size={17} aria-hidden="true" /></button>}
+          </nav>}
+        </article>
+      </motion.main> : <motion.main key="chapter-contents" className="fd-chapter-library" initial={reduced ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={entrance}>
+        {chapterControlBar}
+        <header className="fd-chapter-library-heading">
+          <span className="fd-chapter-reading-studio"><Film size={15} aria-hidden="true" />{studioName || 'Photo collection'}</span>
+          <h1>{client}</h1>
+          <p>{delivery?.creativeDirection?.openingLine || 'Choose a chapter to see its photographs.'}</p>
+        </header>
+        {chaptersData.length ? <section className="fd-chapter-library-grid" aria-label="Chapters">
+          {chaptersData.map((chapter, index) => {
+            const cover = chapter.cover || chapter.photos[0];
+            const frame = chapter.frame || frames.get(String(cover?.assetId)) || emptyChapterFrame;
+            return <motion.button
+              ref={element => { chapterCardsRef.current[index] = element; }}
+              type="button"
+              key={chapter.id || index}
+              className="fd-chapter-library-card"
+              {...formatFrameAttributes(frame)}
+              style={{ '--chapter-photo-ratio': cover?.width && cover?.height ? cover.width + ' / ' + cover.height : '4 / 3', ...formatFrameStyle(frame) }}
+              onClick={() => openChapter(index)}
+              aria-label={'Open chapter: ' + chapter.name}
+              initial={reduced ? false : { opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: .12 }}
+              transition={{ ...entrance, delay: Math.min(index * .06, .24) }}
+              whileHover={reduced ? undefined : { y: -3 }}
+              whileTap={reduced ? undefined : { scale: .99 }}
+            >
+              <span className="fd-chapter-library-cover"><ChapterPhotoMotion frame={frame} index={index} paused={photoMotionPaused}><Photo name={cover.name} url={cover.url} alt="" width={cover.width} height={cover.height} eager={index === 0} sizes="(max-width: 640px) 92vw, (max-width: 1024px) 44vw, 32vw" /></ChapterPhotoMotion></span>
+              <span className="fd-chapter-library-copy"><strong>{chapter.name}</strong>{(chapter.line || chapter.note) && <span>{chapter.line || chapter.note}</span>}<i>Read chapter<ArrowUpRight size={16} aria-hidden="true" /></i></span>
+            </motion.button>;
+          })}
+        </section> : <p className="fd-chapter-library-empty">The photographs for this collection are not available yet.</p>}
+        {!!allPhotos.length && <footer className="fd-chapter-library-footer"><button type="button" onClick={openGallery}>View full gallery<Images size={17} aria-hidden="true" /></button></footer>}
+      </motion.main>}
+    </>
 
     <AnimatePresence>{gallery && <DemoGallery photos={allPhotos} title={client} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} fontStyles={themeStyles} {...galleryProps} singlePhoto={galleryIndex !== null} />}</AnimatePresence>
   </div>;
