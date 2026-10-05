@@ -24,6 +24,7 @@ import {
   Play,
   RefreshCw,
   Trash2,
+  Type,
   Upload,
   X
 } from 'lucide-react';
@@ -33,6 +34,7 @@ import { API_BASE_URL } from '../config/env.js';
 import api, { apiMessage } from '../services/api.js';
 import { uploadDeliveryPhotosV3 } from '../utils/deliveryUploadV3.js';
 import { uploadDeliverySoundtrack } from '../utils/deliveryUpload.js';
+import { SHOOT_TYPES } from '../constants/shootTypes.js';
 import { creationPreviewBranding, mergeDeliveryDraft } from '../utils/deliveryDraft.js';
 import { useDialogFocus } from '../components/useDialogFocus.js';
 import { localDeliveryExpiry } from '../utils/deliveryAccess.js';
@@ -42,10 +44,11 @@ import './CreatePhotoSwapV3.css';
 
 const FONTS = ['Cormorant Garamond', 'Playfair Display', 'Libre Baskerville', 'Outfit', 'Plus Jakarta Sans', 'DM Sans', 'Manrope'];
 const PHOTO_PAGE_SIZE = 36;
-const DEFAULT_ACCESS = { allowIndividualDownloads: true, allowDownloadAll: true, allowLikes: false, expiresAt: '' };
+const DEFAULT_ACCESS = { allowIndividualDownloads: true, allowDownloadAll: false, allowLikes: true, expiresAt: '' };
 const STEPS = [
   { id: 'details', label: 'Details' },
   { id: 'photos', label: 'Photos' },
+  { id: 'captions', label: 'Captions' },
   { id: 'style', label: 'Style' },
   { id: 'access', label: 'Access' },
   { id: 'publish', label: 'Publish' }
@@ -74,9 +77,17 @@ function reachedQuota(data) {
 function initialStage(delivery) {
   if (delivery?.status === 'published') return 'published';
   const step = delivery?.v3?.step;
+  const missingCaptions = delivery?.kind === 'photoswap' && (delivery.assets || []).some(asset => String(asset.caption || '').trim().length < 5);
+  if (delivery?.kind === 'photoswap' && (delivery.status === 'analyzing' || step === 'preparing')) return 'captions';
+  if (missingCaptions) return 'photos';
+  if (step === 'captions') return 'captions';
   if (step === 'access') return delivery?.reviewApprovedAt ? 'publish' : 'access';
   if (step === 'photoswap' || delivery?.photoswap?.backgroundMode) return 'style';
   return delivery?._id ? 'photos' : 'details';
+}
+
+function canonicalShootType(value) {
+  return SHOOT_TYPES.find(option => option.toLocaleLowerCase() === String(value || '').trim().toLocaleLowerCase()) || '';
 }
 
 function Toggle({ checked, onChange, children }) {
@@ -101,12 +112,18 @@ function SectionHeading({ number, title, children }) {
 export default function CreatePhotoSwapV3({ user, initialDelivery }) {
   const navigate = useNavigate();
   const veyloMotion = useVeyloReducedMotion();
+  const initialKnownShootType = canonicalShootType(initialDelivery?.shootType);
   const [draft, setDraft] = useState(initialDelivery || null);
   const [stage, setStage] = useState(() => initialStage(initialDelivery));
   const [clientName, setClientName] = useState(initialDelivery?.clientName || '');
   const [title, setTitle] = useState(initialDelivery?.title || '');
-  const [shootType, setShootType] = useState(initialDelivery?.shootType || '');
-  const [clientMessage, setClientMessage] = useState(initialDelivery?.brief === 'Photo Swap delivery' ? '' : initialDelivery?.brief || '');
+  const [shootType, setShootType] = useState(initialKnownShootType || (initialDelivery?.shootType ? 'Other' : ''));
+  const [customShoot, setCustomShoot] = useState(initialKnownShootType ? '' : initialDelivery?.shootType || '');
+  const [purpose, setPurpose] = useState(initialDelivery?.brief === 'Photo Swap delivery' ? '' : initialDelivery?.brief || '');
+  const [captions, setCaptions] = useState(() => Object.fromEntries((initialDelivery?.assets || []).map(asset => [asset.assetId, asset.caption || ''])));
+  const [captionInstructions, setCaptionInstructions] = useState({});
+  const [captionPreparing, setCaptionPreparing] = useState(initialDelivery?.status === 'analyzing' || initialDelivery?.v3?.step === 'preparing');
+  const [captionJob, setCaptionJob] = useState(initialDelivery?.generationJob || null);
   const [entitlements, setEntitlements] = useState(null);
   const [billingLoading, setBillingLoading] = useState(true);
   const [busy, setBusy] = useState('');
@@ -140,6 +157,8 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
     [draft?.assets]
   );
   const assetIdentity = assets.map(asset => asset.assetId).join('|');
+  const captionIdentity = assets.map(asset => `${asset.assetId}:${asset.caption || ''}`).join('|');
+  const actualShootType = shootType === 'Other' ? customShoot.trim() : shootType;
   useEffect(() => {
     const available = new Set(assets.map(asset => asset.assetId));
     setPhotoOrder(current => {
@@ -147,6 +166,9 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
       return [...kept, ...assets.map(asset => asset.assetId).filter(id => !kept.includes(id))];
     });
   }, [assetIdentity]);
+  useEffect(() => {
+    setCaptions(current => Object.fromEntries(assets.map(asset => [asset.assetId, current[asset.assetId] ?? asset.caption ?? ''])));
+  }, [captionIdentity]);
 
   const assetsById = useMemo(() => new Map(assets.map(asset => [asset.assetId, asset])), [assets]);
   const orderedAssets = useMemo(
@@ -173,12 +195,12 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
     kind: 'photoswap',
     title: title || (clientName || 'Client') + '\'s photographs',
     clientName,
-    shootType,
-    brief: clientMessage,
-    assets: orderedAssets,
+    shootType: actualShootType,
+    brief: purpose,
+    assets: orderedAssets.map(asset => ({ ...asset, caption: captions[asset.assetId] ?? asset.caption ?? '' })),
     branding: previewBranding,
     photoswap: { backgroundMode, typography }
-  }), [draft, title, clientName, shootType, clientMessage, orderedAssets, previewBranding.type, previewBranding.name, previewBranding.logoUrl, backgroundMode, typography]);
+  }), [draft, title, clientName, actualShootType, purpose, captions, orderedAssets, previewBranding.type, previewBranding.name, previewBranding.logoUrl, backgroundMode, typography]);
 
   async function refresh() {
     if (!draft?._id) return null;
@@ -216,6 +238,34 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
       .finally(() => { if (active) setBillingLoading(false); });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (!draft?._id || stage !== 'captions' || !captionPreparing) return undefined;
+    let active = true;
+    const poll = async () => {
+      try {
+        const { data } = await api.get('/v1/deliveries/' + draft._id);
+        if (!active) return;
+        const next = data.data;
+        setDraft(next);
+        setCaptionJob(next.generationJob || null);
+        if (next.generationJob?.status === 'failed') {
+          setCaptionPreparing(false);
+          setError(next.generationJob.errorMessage || 'Caption preparation failed. You can try again.');
+          return;
+        }
+        if (next.status === 'review' && next.v3?.step === 'captions') {
+          setCaptions(Object.fromEntries((next.assets || []).map(asset => [asset.assetId, asset.caption || ''])));
+          setCaptionPreparing(false);
+        }
+      } catch (failure) {
+        if (active) setError(errorText(failure));
+      }
+    };
+    void poll();
+    const timer = window.setInterval(poll, 2500);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [draft?._id, stage, captionPreparing]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -305,14 +355,22 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
       setError('Give this Photo Swap a title before continuing.');
       return;
     }
+    if (actualShootType.length < 2) {
+      setError(shootType === 'Other' ? 'Name the type of shoot before continuing.' : 'Choose a type of shoot before continuing.');
+      return;
+    }
+    if (!purpose.trim()) {
+      setError('Write why the shoot was taken before continuing.');
+      return;
+    }
     await action('details', async () => {
       const body = {
         kind: 'photoswap',
         clientName: clientName.trim(),
         title: title.trim(),
-        shootType: shootType.trim(),
-        purpose: clientMessage.trim(),
-        originalPurpose: clientMessage.trim(),
+        shootType: actualShootType,
+        purpose: purpose.trim(),
+        originalPurpose: purpose.trim(),
         clarificationAnswers: []
       };
       if (draft?._id) {
@@ -385,6 +443,46 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
     }
     await action('order', async () => {
       const { data } = await api.patch('/v1/deliveries/' + draft._id + '/v3/photoswap', { assetOrder: photoOrder });
+      setDraft(current => mergeDeliveryDraft(current, data.data));
+      const hasCaptions = orderedAssets.every(asset => String(captions[asset.assetId] ?? asset.caption ?? '').trim().length >= 5);
+      if (hasCaptions) {
+        setStage('captions');
+        return;
+      }
+      const prepared = await api.post('/v1/deliveries/' + draft._id + '/v3/prepare');
+      setCaptionJob(prepared.data.data);
+      setCaptionPreparing(true);
+      setStage('captions');
+    });
+  }
+
+  async function retryCaptions() {
+    await action('prepare-captions', async () => {
+      const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/prepare');
+      setCaptionJob(data.data);
+      setCaptionPreparing(true);
+    });
+  }
+
+  async function regenerateCaption(assetId) {
+    const current = String(captions[assetId] || '').slice(0, 180);
+    await action('caption-' + assetId, async () => {
+      const { data } = await api.post('/v1/deliveries/' + draft._id + '/v3/captions/' + assetId + '/regenerate', {
+        instruction: String(captionInstructions[assetId] || '').trim(),
+        previous: { headline: 'Photo caption', caption: current }
+      });
+      setCaptions(value => ({ ...value, [assetId]: data.data.caption }));
+    });
+  }
+
+  async function saveCaptions() {
+    const values = orderedAssets.map(asset => ({ assetId: asset.assetId, caption: String(captions[asset.assetId] || '').trim() }));
+    if (values.some(item => item.caption.length < 5 || item.caption.length > 180)) {
+      setError('Add a caption of 5 to 180 characters for every photograph.');
+      return;
+    }
+    await action('save-captions', async () => {
+      const { data } = await api.patch('/v1/deliveries/' + draft._id + '/v3/photoswap', { captions: values, assetOrder: photoOrder });
       setDraft(current => mergeDeliveryDraft(current, data.data));
       setStage('style');
     });
@@ -462,6 +560,7 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
   const pageTitle = {
     details: 'Give this set a name.',
     photos: 'Choose the order.',
+    captions: 'Put words to the photos.',
     style: 'Set the mood.',
     access: 'Choose how clients open it.',
     publish: 'Review before you send it.'
@@ -506,7 +605,7 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
       <div className="ps-create-wrap">
         <header className="ps-create-intro">
           <div>
-            <p className="ps-create-kicker">PHOTO SWAP <span>·</span> {String(currentStep + 1).padStart(2, '0')} / 05</p>
+            <p className="ps-create-kicker">PHOTO SWAP <span>·</span> {String(currentStep + 1).padStart(2, '0')} / {String(STEPS.length).padStart(2, '0')}</p>
             <h1>{pageTitle}</h1>
           </div>
           <p className="ps-create-subtitle">A full-screen photo stack your client can swipe through at their own pace.</p>
@@ -520,8 +619,8 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
                 type="button"
                 key={item.id}
                 className={(index === currentStep ? 'is-current ' : '') + (done ? 'is-done' : '')}
-                onClick={() => { if (done && !busy) setStage(item.id); }}
-                disabled={!done && index !== currentStep}
+                onClick={() => { if (done && !busy && !captionPreparing) setStage(item.id); }}
+                disabled={captionPreparing || (!done && index !== currentStep)}
                 aria-current={index === currentStep ? 'step' : undefined}
               >
                 <span>{done ? <Check size={13} /> : String(index + 1).padStart(2, '0')}</span>
@@ -565,21 +664,18 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
                     <label>Delivery title
                       <input value={title} onChange={event => setTitle(event.target.value)} maxLength={120} placeholder="e.g. Lora’s 25th birthday" />
                     </label>
-                    <label>Shoot type <span>Optional</span>
-                      <input list="ps-shoot-types" value={shootType} onChange={event => setShootType(event.target.value)} maxLength={80} placeholder="Choose or enter a type" />
-                      <datalist id="ps-shoot-types">
-                        <option value="Traditional wedding" />
-                        <option value="Birthday" />
-                        <option value="Bridal shower" />
-                        <option value="Owambe" />
-                        <option value="Studio portrait" />
-                        <option value="Lookbook" />
-                        <option value="Commercial" />
-                      </datalist>
+                    <label>Type of shoot
+                      <select value={shootType} onChange={event => setShootType(event.target.value)}>
+                        <option value="">Choose a shoot type</option>
+                        {SHOOT_TYPES.map(value => <option key={value}>{value}</option>)}
+                      </select>
                     </label>
-                    <label>Message for the client <span>Optional</span>
-                      <textarea value={clientMessage} onChange={event => setClientMessage(event.target.value)} maxLength={280} rows={3} placeholder="Add a short note to appear on the opening screen." />
-                      <small>{clientMessage.length} / 280</small>
+                    {shootType === 'Other' && <label>What type of shoot?
+                      <input value={customShoot} onChange={event => setCustomShoot(event.target.value)} maxLength={80} placeholder="e.g. naming ceremony" />
+                    </label>}
+                    <label>Purpose of the shoot
+                      <textarea value={purpose} onChange={event => setPurpose(event.target.value)} maxLength={3000} rows={4} placeholder="These photos were taken for Sharon’s studio portrait session…" />
+                      <small>{purpose.length} / 3,000. This helps write captions; it is not shown to your client.</small>
                     </label>
                   </div>
                   <div className="ps-step-note"><Layers3 size={18} /><p>Every finished photo stays in the delivery. You choose the order your client swipes through.</p></div>
@@ -661,7 +757,68 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
                     <button type="button" className="ps-back-link" onClick={() => setStage('details')}><ArrowLeft size={16} /> Back to details</button>
                     <button type="button" className="ps-create-primary" onClick={() => void saveOrder()} disabled={!orderedAssets.length || !!busy}>
                       {busy === 'order' ? <LoaderCircle className="ps-spin" size={17} /> : null}
-                      Save order <ArrowRight size={17} />
+                      Save order and write captions <ArrowRight size={17} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {stage === 'captions' && (
+                <div className="ps-step-card ps-caption-step">
+                  <SectionHeading number="03" title="Review the captions.">
+                    Veylo uses the shoot details and each photograph to draft a short caption. Edit any line before the client sees it.
+                  </SectionHeading>
+                  {captionPreparing ? (
+                    <div className="ps-caption-progress" role="status" aria-live="polite">
+                      <span className="ps-caption-progress-icon"><Type size={21} /></span>
+                      <div><strong>{captionJob?.stage === 'writing-captions' ? 'Writing a caption for each photo' : 'Reviewing your photographs'}</strong><p>We’re using the same photo analysis and writing rules as Showcase.</p></div>
+                      <span className="ps-caption-progress-value">{captionJob?.progress || 0}%</span>
+                      <div className="ps-caption-progress-track"><i style={{ transform: 'scaleX(' + (captionJob?.progress || 0) / 100 + ')' }} /></div>
+                    </div>
+                  ) : (
+                    <>
+                      {captionJob?.status === 'failed' && <div className="ps-caption-failed" role="status"><strong>We couldn’t finish the captions.</strong><span>Your photos and order are saved. You can try again or write the captions yourself.</span><button type="button" onClick={() => void retryCaptions()} disabled={!!busy}><RefreshCw size={15} /> Try again</button></div>}
+                      <div className="ps-caption-list">
+                        {visibleAssets.map(asset => {
+                          const index = getPageAssetIndex(asset.assetId);
+                          const caption = captions[asset.assetId] ?? asset.caption ?? '';
+                          const regenerating = busy === 'caption-' + asset.assetId;
+                          return (
+                            <article className="ps-caption-row" key={asset.assetId}>
+                              <div className="ps-caption-photo">
+                                <img src={mediaUrl(asset.thumbnailUrl || asset.url)} alt={asset.originalFilename || 'Finished photograph'} loading={index < 8 ? 'eager' : 'lazy'} decoding="async" />
+                                <span>{String(index + 1).padStart(2, '0')}</span>
+                              </div>
+                              <div className="ps-caption-fields">
+                                <label htmlFor={'ps-caption-' + asset.assetId}>Caption for photo {index + 1}</label>
+                                <textarea id={'ps-caption-' + asset.assetId} value={caption} onChange={event => setCaptions(current => ({ ...current, [asset.assetId]: event.target.value.slice(0, 180) }))} maxLength={180} rows={3} placeholder="Add a short caption for this photograph." />
+                                <div className="ps-caption-tools">
+                                  <input value={captionInstructions[asset.assetId] || ''} onChange={event => setCaptionInstructions(current => ({ ...current, [asset.assetId]: event.target.value.slice(0, 400) }))} maxLength={400} placeholder="Optional: ask for a different emphasis" aria-label={'Caption rewrite instruction for photo ' + (index + 1)} />
+                                  <span>{caption.length} / 180</span>
+                                  <button type="button" onClick={() => void regenerateCaption(asset.assetId)} disabled={!!busy || captionJob?.status === 'failed'}>
+                                    {regenerating ? <LoaderCircle className="ps-spin" size={15} /> : <RefreshCw size={15} />}
+                                    {regenerating ? 'Rewriting' : 'Rewrite'}
+                                  </button>
+                                </div>
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                  {!captionPreparing && currentPhotosPageCount > 1 && (
+                    <div className="ps-caption-pagination">
+                      <button type="button" onClick={() => setPhotoPage(Math.max(0, safePhotoPage - 1))} disabled={safePhotoPage === 0}><ChevronLeft size={16} /> Previous photos</button>
+                      <span>Showing {safePhotoPage * PHOTO_PAGE_SIZE + 1}–{Math.min((safePhotoPage + 1) * PHOTO_PAGE_SIZE, orderedAssets.length)} of {orderedAssets.length}</span>
+                      <button type="button" onClick={() => setPhotoPage(Math.min(currentPhotosPageCount - 1, safePhotoPage + 1))} disabled={safePhotoPage >= currentPhotosPageCount - 1}>More photos <ChevronRight size={16} /></button>
+                    </div>
+                  )}
+                  <div className="ps-step-actions">
+                    <button type="button" className="ps-back-link" onClick={() => setStage('photos')} disabled={captionPreparing}><ArrowLeft size={16} /> Back to photos</button>
+                    <button type="button" className="ps-create-primary" onClick={() => void saveCaptions()} disabled={captionPreparing || !orderedAssets.length || !!busy}>
+                      {busy === 'save-captions' ? <LoaderCircle className="ps-spin" size={17} /> : null}
+                      Save captions <ArrowRight size={17} />
                     </button>
                   </div>
                 </div>
@@ -669,7 +826,7 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
 
               {stage === 'style' && (
                 <div className="ps-step-card ps-style-step">
-                  <SectionHeading number="03" title="Choose how the stack feels.">
+                  <SectionHeading number="04" title="Choose how the stack feels.">
                     Keep the controls quiet and let the photographs carry the experience.
                   </SectionHeading>
                   <section className="ps-form-section">
@@ -684,7 +841,7 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
                     </div>
                   </section>
                   <section className="ps-form-section">
-                    <div className="ps-form-section-heading"><strong>TYPE</strong><span>Used on the cover and finish screen</span></div>
+                    <div className="ps-form-section-heading"><strong>TYPE</strong><span>Used for the captions and finishing screen</span></div>
                     <div className="ps-font-selects">
                       <label>Display
                         <select value={typography.display} onChange={event => setTypography(current => ({ ...current, display: event.target.value }))}>
@@ -700,7 +857,7 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
                   </section>
                   <section className="ps-form-section ps-music-section">
                     <div className="ps-form-section-heading">
-                      <div><strong>SOUNDTRACK <i>OPTIONAL</i></strong><span>It starts when the client opens the photos.</span></div>
+                      <div><strong>SOUNDTRACK <i>OPTIONAL</i></strong><span>It starts automatically when the client opens the set, where their browser allows it.</span></div>
                       {draft?.soundtrack && <button type="button" className="ps-text-button" onClick={() => void clearSoundtrack()} disabled={busy === 'soundtrack'}>Remove track</button>}
                     </div>
                     {draft?.soundtrack && (
@@ -763,7 +920,7 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
 
               {stage === 'access' && (
                 <div className="ps-step-card">
-                  <SectionHeading number="04" title="Set up the private link.">
+                  <SectionHeading number="05" title="Set up the private link.">
                     Choose who can open the delivery and what they can download.
                   </SectionHeading>
                   <div className="ps-access-panel">
@@ -775,9 +932,9 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
                       <input type="datetime-local" value={access.expiresAt} onChange={event => setAccess(current => ({ ...current, expiresAt: event.target.value }))} />
                     </label>
                     <div className="ps-download-settings">
-                      <p>DOWNLOADS</p>
+                      <p>PHOTO ACTIONS</p>
                       <Toggle checked={access.allowIndividualDownloads} onChange={value => setAccess(current => ({ ...current, allowIndividualDownloads: value }))}>Allow individual photo downloads</Toggle>
-                      <Toggle checked={access.allowDownloadAll} onChange={value => setAccess(current => ({ ...current, allowDownloadAll: value }))}>Allow a complete gallery download</Toggle>
+                      <Toggle checked={access.allowLikes} onChange={value => setAccess(current => ({ ...current, allowLikes: value }))}>Allow clients to like photos</Toggle>
                     </div>
                     <div className="ps-access-note"><LockKeyhole size={17} /><span>The PIN and expiry apply to the private link. Your original files stay unchanged.</span></div>
                   </div>
@@ -793,7 +950,7 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
 
               {stage === 'publish' && (
                 <div className="ps-step-card">
-                  <SectionHeading number="05" title="Ready when you are.">
+                  <SectionHeading number="06" title="Ready when you are.">
                     Check the details, then publish the private link for your client.
                   </SectionHeading>
                   <div className="ps-publish-details">
@@ -822,7 +979,7 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
               <button type="button" onClick={showPreview} ref={previewTrigger}><Eye size={14} /> Open larger</button>
             </div>
             <ClientPreviewPhoneFrame delivery={previewDelivery} access={access} accessPin="" />
-            <p className="ps-preview-caption">The client starts on the cover, then swipes through your photo order.</p>
+            <p className="ps-preview-caption">The client opens on your first photo, then swipes through your photos and captions in order.</p>
           </aside>
         </div>
       </div>

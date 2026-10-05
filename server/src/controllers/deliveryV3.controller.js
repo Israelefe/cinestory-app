@@ -156,13 +156,14 @@ export async function v3Details(req, res) {
     const delivery = await owned(req); if (!editable(delivery)) return res.status(404).json({ success: false, message: 'Draft not found.' });
     if (delivery.kind !== input.data.kind) return res.status(409).json({ success: false, code: 'V3_DELIVERY_KIND_LOCKED', message: 'The delivery type cannot be changed after its draft is created.' });
     if (delivery.kind === 'showcase' && (input.data.shootType.length < 2 || !input.data.purpose)) return res.status(400).json({ success: false, code: 'V3_SHOWCASE_DETAILS_REQUIRED', message: 'Add the shoot type and purpose before continuing.' });
+    if (delivery.kind === 'photoswap' && (input.data.shootType.length < 2 || !input.data.purpose)) return res.status(400).json({ success: false, code: 'V3_PHOTOSWAP_DETAILS_REQUIRED', message: 'Add the shoot type and purpose so the photo captions have the right context.' });
     const purpose = input.data.purpose || (delivery.kind === 'pinboard' ? 'GridBoard delivery' : delivery.kind === 'photoswap' ? 'Photo Swap delivery' : '');
     const titleChanged = ['pinboard', 'photoswap'].includes(delivery.kind) && Boolean(input.data.title) && delivery.title !== input.data.title;
     const changed = delivery.clientName !== input.data.clientName || delivery.shootType !== input.data.shootType || delivery.brief !== purpose || JSON.stringify(delivery.v3?.clarificationAnswers || []) !== JSON.stringify(input.data.clarificationAnswers);
     const discardedAudio = changed ? narrationAudioIds(delivery) : [];
     delivery.clientName = input.data.clientName; delivery.shootType = input.data.shootType; delivery.brief = purpose; if (input.data.title) delivery.title = input.data.title;
     if (titleChanged) { if (delivery.kind === 'pinboard') { delivery.pinboard = { ...delivery.pinboard, title: input.data.title }; delivery.markModified('pinboard'); } if (!changed) invalidateApproval(delivery); }
-    if (changed) { delivery.collectionAnalysis = undefined; delivery.creativeDirection = undefined; delivery.curatedAssetIds = []; delivery.narration = undefined; if (delivery.kind === 'pinboard') delivery.pinboard = { ...delivery.pinboard, layouts: [], moments: [], analysisStatus: 'pending' }; delivery.status = 'draft'; invalidateApproval(delivery); saveV3(delivery, { narrationChoice: 'skip', captionNarrationChoice: 'skip' }); }
+    if (changed) { delivery.collectionAnalysis = undefined; delivery.creativeDirection = undefined; delivery.curatedAssetIds = []; delivery.narration = undefined; if (delivery.kind === 'photoswap') { delivery.assets.forEach(asset => { asset.caption = ''; }); delivery.markModified('assets'); } if (delivery.kind === 'pinboard') delivery.pinboard = { ...delivery.pinboard, layouts: [], moments: [], analysisStatus: 'pending' }; delivery.status = 'draft'; invalidateApproval(delivery); saveV3(delivery, { narrationChoice: 'skip', captionNarrationChoice: 'skip' }); }
     saveV3(delivery, { originalPurpose: input.data.originalPurpose, clarificationAnswers: input.data.clarificationAnswers, step: ['pinboard', 'photoswap'].includes(delivery.kind) ? 'photos' : 'format' });
     await delivery.save(); await removeAudioIds(discardedAudio); res.json({ success: true, data: delivery });
   } catch (error) { fail(res, error); }
@@ -182,9 +183,10 @@ export async function v3Format(req, res) {
 
 export async function v3Prepare(req, res) {
   try {
-    const delivery = await owned(req); if (!delivery || !['draft', 'review', 'analyzing'].includes(delivery.status) || (delivery.kind !== 'pinboard' && !delivery.format)) return res.status(409).json({ success: false, message: 'Choose a format first.' });
+    const delivery = await owned(req); if (!delivery || !['draft', 'review', 'analyzing'].includes(delivery.status) || (!['pinboard', 'photoswap'].includes(delivery.kind) && !delivery.format)) return res.status(409).json({ success: false, message: 'Choose a format first.' });
     if (delivery.kind === 'pinboard' && delivery.assets.length < 1) return res.status(409).json({ success: false, code: 'V3_PINBOARD_PHOTO_REQUIRED', message: 'Add at least one finished photograph to this GridBoard.' });
-    if (delivery.kind !== 'pinboard' && delivery.assets.length < V3_FORMATS[delivery.format][0]) return res.status(409).json({ success: false, message: `Add at least ${V3_FORMATS[delivery.format][0]} photographs for this format.` });
+    if (delivery.kind === 'photoswap' && delivery.assets.length < 1) return res.status(409).json({ success: false, code: 'V3_PHOTOSWAP_PHOTO_REQUIRED', message: 'Add at least one finished photograph to this Photo Swap.' });
+    if (!['pinboard', 'photoswap'].includes(delivery.kind) && delivery.assets.length < V3_FORMATS[delivery.format][0]) return res.status(409).json({ success: false, message: `Add at least ${V3_FORMATS[delivery.format][0]} photographs for this format.` });
     const existing = await DeliveryJob.findOne({ deliveryId: delivery._id, type: 'v3-prepare', status: { $in: ['queued', 'running'] } });
     if (existing) return res.status(202).json({ success: true, data: existing });
     delivery.status = 'analyzing'; saveV3(delivery, { step: 'preparing' }); await delivery.save();
@@ -297,8 +299,9 @@ export async function v3Pinboard(req, res) {
 const photoswapInput = z.object({
   backgroundMode: z.enum(['auto', 'dark']).optional(),
   typography: z.object({ display: z.string(), body: z.string() }).strict().optional(),
-  assetOrder: z.array(z.string().uuid()).max(500).optional()
-}).strict().refine(input => Boolean(input.backgroundMode || input.typography || input.assetOrder), { message: 'Choose a Photo Swap setting to save.' });
+  assetOrder: z.array(z.string().uuid()).max(500).optional(),
+  captions: z.array(z.object({ assetId: z.string().uuid(), caption: z.string().trim().min(5).max(180) }).strict()).max(500).optional()
+}).strict().refine(input => Boolean(input.backgroundMode || input.typography || input.assetOrder || input.captions), { message: 'Choose a Photo Swap setting to save.' });
 
 export async function v3Photoswap(req, res) {
   try {
@@ -310,6 +313,12 @@ export async function v3Photoswap(req, res) {
     const ids = input.data.assetOrder || existingIds;
     if (ids.length !== existingIds.length || new Set(ids).size !== existingIds.length || ids.some(id => !existingIds.includes(id))) return res.status(400).json({ success: false, code: 'PHOTOSWAP_ORDER_INVALID', field: 'assetOrder', message: 'Keep every photograph in the delivery order, once each.' });
     const positions = new Map(ids.map((id, index) => [id, index]));
+    if (input.data.captions) {
+      const captionIds = input.data.captions.map(item => item.assetId);
+      if (captionIds.length !== existingIds.length || new Set(captionIds).size !== existingIds.length || captionIds.some(id => !existingIds.includes(id))) return res.status(400).json({ success: false, code: 'PHOTOSWAP_CAPTIONS_INVALID', message: 'Add one caption for each photograph in this Photo Swap.' });
+      const captionsById = new Map(input.data.captions.map(item => [item.assetId, item.caption]));
+      delivery.assets.forEach(asset => { asset.caption = captionsById.get(asset.assetId); });
+    }
     delivery.assets.forEach(asset => { asset.sortOrder = positions.get(asset.assetId); });
     delivery.photoswap = {
       ...delivery.photoswap,
@@ -471,6 +480,7 @@ export async function v3Approve(req, res) {
       if (!delivery.assets.length || order.length !== ids.size || new Set(order).size !== ids.size || order.some(id => !ids.has(id))) return res.status(409).json({ success: false, code: 'PINBOARD_PHOTO_ORDER_INVALID', message: 'This board no longer includes every finished photograph. Save the board arrangement again.' });
     } else if (delivery.kind === 'photoswap') {
       if (!delivery.assets.length) return res.status(409).json({ success: false, message: 'Add photographs before approving this Photo Swap.' });
+      if (delivery.assets.some(asset => String(asset.caption || '').trim().length < 5)) return res.status(409).json({ success: false, code: 'PHOTOSWAP_CAPTIONS_REQUIRED', message: 'Generate and review a caption for each photograph before approving this Photo Swap.' });
     } else {
       if (!validShowcase(delivery.format, delivery.curatedAssetIds, ids)) return res.status(409).json({ success: false, message: 'Review the showcase photo count.' });
       if (V3_MUSIC_FORMATS.has(delivery.format) && !delivery.soundtrack) return res.status(409).json({ success: false, message: 'Choose music for this format.' });
@@ -497,6 +507,7 @@ export async function v3Publish(req, res) {
       if (!delivery.assets.length || order.length !== ids.size || new Set(order).size !== ids.size || order.some(id => !ids.has(id))) return res.status(409).json({ success: false, code: 'PINBOARD_PHOTO_ORDER_INVALID', message: 'The board photo order changed. Preview it again before publishing.' });
     } else if (delivery.kind === 'photoswap') {
       if (!delivery.assets.length) return res.status(409).json({ success: false, message: 'Add photographs to publish this Photo Swap.' });
+      if (delivery.assets.some(asset => String(asset.caption || '').trim().length < 5)) return res.status(409).json({ success: false, code: 'PHOTOSWAP_CAPTIONS_REQUIRED', message: 'Review a caption for each Photo Swap photograph before publishing.' });
     } else {
       if (!validShowcase(delivery.format, delivery.curatedAssetIds, ids)) return res.status(409).json({ success: false, message: 'The showcase photo count has changed.' });
       if (V3_MUSIC_FORMATS.has(delivery.format) && !delivery.soundtrack) return res.status(409).json({ success: false, message: 'Choose music first.' });

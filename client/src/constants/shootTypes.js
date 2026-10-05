@@ -10,9 +10,14 @@ export const SHOOT_TYPES = [
   'Anniversary',
   'Portrait',
   'Fashion',
+  'Lookbook',
   'Personal Branding',
   'Corporate',
+  'Commercial',
   'Event',
+  'Bridal Shower',
+  'Owambe',
+  'Studio Portrait',
   'Memorial',
   'Other'
 ];

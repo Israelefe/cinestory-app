@@ -155,7 +155,7 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
   }
 
   if (delivery?.kind === 'pinboard') return <div className="v-client-preview-runtime"><PinboardViewer delivery={playbackDelivery} preview galleryProps={{ onDownload: () => toast.info('Photo downloads will be available on the published client link.'), onDownloadAll: () => toast.info('The published link will download each photograph separately.') }} /></div>;
-  if (delivery?.kind === 'photoswap') return <div className="v-client-preview-runtime"><PhotoSwapViewer delivery={playbackDelivery} preview galleryProps={{ onDownload: () => toast.info('Photo downloads will be available on the published client link.'), onDownloadAll: () => toast.info('The published link will download each photograph separately.') }} /></div>;
+  if (delivery?.kind === 'photoswap') return <div className="v-client-preview-runtime"><PhotoSwapViewer delivery={playbackDelivery} preview galleryProps={{ liked: previewLiked, onLike: assetId => setPreviewLiked(current => { const next = new Set(current); if (next.has(assetId)) next.delete(assetId); else next.add(assetId); return next; }), onDownload: () => toast.info('Individual photo downloads will be active on the published client link.') }} /></div>;
 
   const galleryProps = {
     liked: previewLiked,

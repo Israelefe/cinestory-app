@@ -762,6 +762,54 @@ async function repairNarrativeFrames(delivery, selected, prompt, firstFrames, av
   }
 }
 
+export async function directV3PhotoSwapCaptions(delivery, insights, onProgress = () => {}) {
+  const assets = [...delivery.assets].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+  const insightById = new Map(insights.map(insight => [insight.assetId, insight]));
+  const selected = assets.map(asset => asset.assetId);
+  const allFrames = [];
+  const batchSize = 18;
+  const system = 'Return JSON {"frames":[{"assetId":"...","headline":"...","caption":"..."}]}. Write exactly one headline and standalone caption per supplied photograph, in the supplied order. A headline is 2 to 7 words and at most 70 characters. A caption is one or two natural sentences and at most 180 characters. Ground each caption in the photographer’s purpose and its own photograph. Keep the captions distinct across the set. Do not describe the act of taking a photo or invent details. ' + deliveryWritingPolicy(delivery);
+
+  for (let start = 0; start < selected.length; start += batchSize) {
+    const batch = selected.slice(start, start + batchSize);
+    const prompt = [
+      'Authoritative delivery context: ' + narrativeContext(delivery),
+      "Photographer's purpose: " + delivery.brief,
+      'Shoot type: ' + delivery.shootType,
+      'Finished photographs in the client’s swipe order: ' + JSON.stringify(batch.map(assetId => ({ assetId, cue: captionCue(insightById.get(assetId), delivery) })))
+    ].join('\n');
+    const generated = await request(system, prompt, { maxTokens: Math.min(8000, 600 + batch.length * 230) });
+    const initial = alignNarrativeFrames(generated.frames, batch);
+    const reviewed = await repairNarrativeFrames(delivery, batch, prompt, initial, allFrames);
+    const clean = reviewed.map((frame, index) => {
+      const rawHeadline = String(frame?.headline || '').replace(/^\s*headline\s*:\s*/i, '').trim();
+      const rawCaption = String(frame?.caption || '').replace(/^\s*caption\s*:\s*/i, '').trim();
+      const headline = fitText(
+        shootWritingIssues(rawHeadline, delivery).length || headlineNeedsRepair(rawHeadline)
+          || !headlineHasPurposeAnchor(rawHeadline, delivery, rawCaption)
+          || hasUnsupportedAddress(rawHeadline + '. ' + rawCaption, delivery)
+          || hasUnsupportedNumbers(rawHeadline + '. ' + rawCaption, delivery)
+          || describesPhoto(rawHeadline, delivery)
+          || hasUnsupportedGathering(rawHeadline + '. ' + rawCaption, delivery)
+          ? purposeHeadline(delivery, start + index) : rawHeadline,
+        70
+      );
+      const caption = substantialCaption(rawCaption, delivery, 180, headline, start + index);
+      return { assetId: batch[index], headline, caption };
+    });
+    for (const frame of clean) {
+      if (repeatsWording(frame, allFrames)) {
+        const fallback = writingFallback(delivery, allFrames.length, 180);
+        frame.headline = fitText(fallback.headline, 70);
+        frame.caption = fallback.caption;
+      }
+      allFrames.push(frame);
+    }
+    await onProgress(Math.min(start + batch.length, selected.length), selected.length);
+  }
+  return allFrames;
+}
+
 export async function directV3(delivery, insights) {
   const [minimum, maximum] = V3_FORMATS[delivery.format];
   const candidates = [...insights].sort((a, b) => b.score - a.score);

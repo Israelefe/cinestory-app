@@ -4,6 +4,7 @@ export const SHOOT_WRITING_PROFILES = Object.freeze({
   birthday: profile('Focus on the person and birthday. Only use an age or milestone supplied by the photographer. Vary celebration, keeping the portraits, and wishes; do not make every caption a birthday wish.'),
   wedding: profile('Focus on the couple and their wedding. Name traditions, relationships and parts of the day only when supplied or clearly established in the photographs.'),
   'traditional-wedding': profile('Focus on the couple and their traditional wedding. Do not guess ethnicity, family roles, ceremonial meanings or the names of rituals.'),
+  'bridal-shower': profile('Focus on the supplied bridal shower purpose. Do not guess who attended, relationships, gifts, or private plans.', 'documentary'),
   engagement: profile('Focus on the couple and the stated engagement. Do not invent a proposal story or relationship history.'),
   'pre-wedding': profile('Focus on the couple and this pre-wedding session. Do not describe it as the wedding ceremony or invent future dates.'),
   anniversary: profile('Focus on the stated anniversary. Do not invent how long the relationship has lasted or what the couple has overcome.'),
@@ -12,6 +13,8 @@ export const SHOOT_WRITING_PROFILES = Object.freeze({
   newborn: profile('Focus on the supplied newborn session. Do not guess names, gender, health, age or family relationships.'),
   portrait: profile('Focus on the photographed person and why this portrait session was commissioned. Do not invent a milestone or personality.'),
   fashion: profile('Styling, garments and useful visible details can be the subject. Use a clear fashion or lookbook voice, without invented brands, materials, claims or personal biography.', 'commercial'),
+  lookbook: profile('Styling, garments and useful visible details can be the subject. Use a clear lookbook voice, without invented brands, materials, claims or personal biography.', 'commercial'),
+  commercial: profile('Describe useful visible product or styling details in a clear commercial voice, without invented brands, materials, claims or marketing promises.', 'commercial'),
   'personal-branding': profile('Focus on professional purpose and the intended audience. Do not invent job titles, credentials, success claims or services.', 'professional'),
   corporate: profile('Use professional language appropriate to the supplied organisation, people and purpose. Do not guess roles or business claims.', 'professional'),
   event: profile('Use factual scene context for an event with multiple people. Visible activities can support scene labels; do not identify unnamed people or infer relationships.', 'documentary'),
@@ -21,6 +24,7 @@ export const SHOOT_WRITING_PROFILES = Object.freeze({
 
 export const FORMAT_WRITING_PROFILES = Object.freeze({
   'photo-story': { caption: 150, opening: 140, closing: 160, focus: 'Short personal thoughts that develop through the sequence. Keep the photographs primary.' },
+  photoswap: { caption: 180, opening: 0, closing: 0, focus: 'Write one short, standalone caption for each finished photograph. Keep the photographer’s purpose central and let each caption make sense on its own.' },
   editorial: { caption: 320, opening: 300, closing: 280, focus: 'A magazine cover, useful section paragraphs and supporting captions. Third-person prose is welcome. A birthday magazine remains a birthday feature; this format does not turn every shoot into fashion.' },
   'photo-reveal': { caption: 180, opening: 140, closing: 160, focus: 'Each photograph gets a short heading, usually 2–5 words, and a concise caption that stands on its own. Usually one useful sentence is enough. The heading introduces the thought; the caption adds to it. Keep each reveal personal or factual according to the shoot purpose, with variety across the set. Do not narrate a transition, invent a reaction, or repeatedly describe clothes and poses.' },
   canvas: { caption: 180, opening: 140, closing: 160, focus: 'Brief useful captions and clear labels for freely exploring the collection.' },
@@ -36,10 +40,10 @@ export function deliveryWritingContext(delivery) {
   const brief = String(delivery.brief || '');
   let shoot = Object.keys(SHOOT_WRITING_PROFILES).find(key => rawType === key || rawType.includes(key) && key !== 'other');
   // Check the specific types before broad labels, including custom shoot types.
-  for (const key of ['traditional-wedding', 'pre-wedding', 'personal-branding', 'newborn', 'maternity', 'memorial', 'anniversary', 'engagement', 'graduation', 'birthday']) if (rawType.includes(key)) { shoot = key; break; }
+  for (const key of ['traditional-wedding', 'bridal-shower', 'pre-wedding', 'personal-branding', 'studio-portrait', 'newborn', 'maternity', 'memorial', 'anniversary', 'engagement', 'graduation', 'birthday']) if (rawType.includes(key)) { shoot = key === 'studio-portrait' ? 'portrait' : key; break; }
   if (!shoot || shoot === 'other') {
     const source = normalize(`${rawType} ${brief}`);
-    shoot = ['memorial', 'traditional-wedding', 'pre-wedding', 'anniversary', 'engagement', 'birthday', 'graduation', 'maternity', 'newborn', 'wedding', 'personal-branding', 'fashion', 'corporate', 'portrait'].find(key => source.includes(key)) || (/\b(?:conference|concert|owambe|church service|event coverage)\b/i.test(`${rawType.replace(/-/g, ' ')} ${brief}`) ? 'event' : 'other');
+    shoot = ['memorial', 'traditional-wedding', 'bridal-shower', 'pre-wedding', 'anniversary', 'engagement', 'birthday', 'graduation', 'maternity', 'newborn', 'wedding', 'personal-branding', 'lookbook', 'commercial', 'fashion', 'corporate', 'portrait'].find(key => source.includes(key)) || (/\b(?:conference|concert|owambe|church service|event coverage)\b/i.test(`${rawType.replace(/-/g, ' ')} ${brief}`) ? 'event' : 'other');
   }
   const commercialBrief = /\b(?:lookbook|product|commercial|campaign|catalogue|catalog|brand assets|product launch)\b/i.test(brief);
   const commercial = SHOOT_WRITING_PROFILES[shoot].style === 'commercial' || commercialBrief && ['other', 'corporate', 'personal-branding', 'portrait'].includes(shoot);
@@ -47,7 +51,7 @@ export function deliveryWritingContext(delivery) {
     const named = brief.match(/\b([\p{Lu}][\p{L}\p{M}-]+)[’']s\s+(?:\d+(?:st|nd|rd|th)?\s+)?(?:birthday|portraits?|graduation|wedding|anniversary)/u)?.[1];
     return Boolean(named && !String(delivery.clientName || '').toLowerCase().split(/\s+/).includes(named.toLowerCase()));
   })();
-  return { clientName: String(delivery.clientName || ''), purpose: brief, shootType: String(delivery.shootType || ''), recipientName: String(delivery.clientName || ''), shoot, format: delivery.format || 'photo-story', commercial, separateSubject, style: commercial ? 'commercial' : SHOOT_WRITING_PROFILES[shoot].style };
+  return { clientName: String(delivery.clientName || ''), purpose: brief, shootType: String(delivery.shootType || ''), recipientName: String(delivery.clientName || ''), shoot, format: delivery.kind === 'photoswap' ? 'photoswap' : delivery.format || 'photo-story', commercial, separateSubject, style: commercial ? 'commercial' : SHOOT_WRITING_PROFILES[shoot].style };
 }
 
 export function requiresDirectAddress(delivery) {

@@ -2,36 +2,34 @@ import React from 'react';
 import PhotoSwapViewer from '../components/delivery/PhotoSwapViewer.jsx';
 
 const photos = [
-  { alt: 'A birthday portrait with a green dress and cake', name: 'demo-lora-1', colors: ['#bf562a', '#114639', '#eee0c8'] },
-  { alt: 'An editorial portrait in a green jacket', name: 'demo-ada-1', colors: ['#4a2030', '#0d4936', '#aa8068'] },
-  { alt: 'A fashion portrait in white against a blue backdrop', name: 'demo-sharon-1', colors: ['#173b70', '#f0eae0', '#1f2131'] },
-  { alt: 'A portrait in a yellow suit against a blue backdrop', name: 'audience-portrait', colors: ['#142d58', '#d49b2e', '#c18b75'] },
-  { alt: 'A couple in gold traditional wedding attire indoors', name: 'demo-wedding-1', colors: ['#b78d5c', '#e8dfcf', '#756048'] },
-  { alt: 'A birthday portrait in the same green dress', name: 'demo-lora-4', colors: ['#b64f2a', '#104537', '#a16c53'] },
-  { alt: 'The couple in gold traditional wedding attire outdoors', name: 'demo-wedding-3', colors: ['#a7814e', '#719064', '#e7dbc4'] },
-  { alt: 'A black-and-white portrait with an instant camera', name: 'commercial', colors: ['#161616', '#e6e6e6', '#888888'] }
+  { alt: "Sharon's studio portrait against a cobalt backdrop", caption: "Sharon’s portrait session, set against a deep blue backdrop." },
+  { alt: "A closer studio portrait of Sharon", caption: "A closer look from Sharon’s studio portrait session." },
+  { alt: "Sharon in an ivory look against blue", caption: "The ivory styling stands out against the cobalt backdrop." },
+  { alt: "A final portrait from Sharon's session", caption: "A final portrait from Sharon’s session." }
 ];
 
 const assets = photos.map((photo, index) => ({
-  assetId: `photoswap-demo-${index + 1}`,
+  assetId: 'photoswap-demo-' + (index + 1),
   sortOrder: index,
   alt: photo.alt,
-  dominantColor: photo.colors[0],
-  photoColors: photo.colors,
-  thumbnailUrl: `/veylo/web/${photo.name}-480.webp`,
-  url: `/veylo/web/${photo.name}-1440.webp`,
+  caption: photo.caption,
+  dominantColor: '#173b70',
+  photoColors: ['#173b70', '#f0eae0', '#1f2131'],
+  thumbnailUrl: '/veylo/web/demo-sharon-' + (index + 1) + '-480.webp',
+  url: '/veylo/web/demo-sharon-' + (index + 1) + '-1440.webp',
   width: 480,
   height: 640
 }));
 
 const demoDelivery = {
   kind: 'photoswap',
-  title: "Lora's 25th Birthday Celebration",
-  clientName: 'Lora Ade',
+  title: "Sharon’s Studio Portraits",
+  clientName: 'Sharon',
+  shootType: 'Studio Portrait',
   branding: { name: 'Kora Media Studio', logoUrl: '/veylo/veylo-logo.png' },
   assets,
   soundtrack: { title: 'Lagos Sunset · Ambient Chill', url: '/audio/soundtrack-1.mp3' },
-  access: { allowIndividualDownloads: true, allowDownloadAll: true },
+  access: { allowIndividualDownloads: true, allowDownloadAll: false, allowLikes: true },
   photoswap: {
     backgroundMode: 'auto',
     typography: { display: 'Playfair Display', body: 'Outfit' }
@@ -39,5 +37,14 @@ const demoDelivery = {
 };
 
 export default function PhotoSwapDemo() {
-  return <PhotoSwapViewer delivery={demoDelivery} demo />;
+  function downloadSample(assetId, index) {
+    const asset = assets.find(photo => photo.assetId === assetId) || assets[index];
+    if (!asset) return;
+    const link = document.createElement('a');
+    link.href = asset.url;
+    link.download = 'sharon-portrait-' + (index + 1) + '.webp';
+    link.click();
+  }
+
+  return <PhotoSwapViewer delivery={demoDelivery} galleryProps={{ onDownload: downloadSample }} demo />;
 }

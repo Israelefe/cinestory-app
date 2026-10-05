@@ -94,7 +94,7 @@ export function EndNote({ title = 'Your next shoot.', accent = 'Give it a proper
 }
 
 export const questions = [
-  { q: 'What does Veylo deliver?', a: 'Choose a Photo Swap for a one-photo-at-a-time swipe through the finished set, a GridBoard for clients who want the full gallery first, or one of eight Showcase formats before the complete gallery.' },
+  { q: 'What does Veylo deliver?', a: 'Choose a Photo Swap for a swipe through finished photos with individual captions, likes, and downloads; a GridBoard for the complete gallery first; or one of eight Showcase formats.' },
   { q: 'What should I upload?', a: 'Upload the final edited photographs your client is meant to receive. Add the client’s name and explain what the shoot is about so the presentation has the right context.' },
   { q: 'Does Veylo change my photographs?', a: 'No. Veylo designs the presentation around your photographs. It does not replace an image, retouch a face, or alter your colour grade.' },
   { q: 'Do I choose a template?', a: 'No fixed template decides how the shoot looks. Veylo studies the photographs and proposes the layout, colours, type, order, motion, and pacing. You review the result before publishing.' },

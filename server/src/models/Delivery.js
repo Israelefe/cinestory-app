@@ -16,6 +16,7 @@ const assetSchema = new mongoose.Schema({
   hashVerifiedAt: Date,
   originalFilename: { type: String, trim: true, maxlength: 180 },
   alt: { type: String, maxlength: 180 },
+  caption: { type: String, trim: true, maxlength: 320 },
   // Optional context carried over when a photograph is reused from the Pro library.
   libraryTags: [{ type: String, trim: true, maxlength: 40 }],
   libraryCaption: { type: String, trim: true, maxlength: 180 },

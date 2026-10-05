@@ -2,29 +2,30 @@ import React from 'react';
 import {
   ArrowDownToLine,
   Check,
-  Grid2X2,
+  Heart,
   Image,
-  Layers3,
   LockKeyhole,
   MoveHorizontal,
-  Music2
+  Music2,
+  Type
 } from 'lucide-react';
 import { Action, Eyebrow, Page, Reveal, TextLink } from '../components/PublicDesign.jsx';
 import './PhotoSwapDelivery.css';
 
 const samplePhotos = [
-  { src: '/veylo/web/demo-wedding-1-480.webp', alt: 'A couple in traditional wedding attire' },
-  { src: '/veylo/web/demo-ada-1-480.webp', alt: 'An editorial portrait in a green jacket' },
-  { src: '/veylo/web/demo-lora-1-480.webp', alt: 'A birthday portrait in a green dress' }
+  { src: '/veylo/web/demo-sharon-1-480.webp', alt: "Sharon's studio portrait against a cobalt backdrop" },
+  { src: '/veylo/web/demo-sharon-2-480.webp', alt: "A second portrait from Sharon's session" },
+  { src: '/veylo/web/demo-sharon-3-480.webp', alt: "A closer portrait from Sharon's session" },
+  { src: '/veylo/web/demo-sharon-4-480.webp', alt: "The final portrait from Sharon's session" }
 ];
 
 const features = [
-  { icon: MoveHorizontal, label: 'Swipe at their own pace', copy: 'Clients move forward or back whenever they like. No slideshow timer to wait for.' },
-  { icon: Layers3, label: 'A real card stack', copy: 'The next photographs peek out behind the current one, with a light response to each drag.' },
-  { icon: Image, label: 'Your order stays yours', copy: 'Arrange the finished set before publishing. Photo Swap follows the order you choose.' },
-  { icon: Music2, label: 'Music when it fits', copy: 'Add a catalogue track or music you have permission to use. Clients choose when to start it.' },
-  { icon: Grid2X2, label: 'The full gallery is close', copy: 'Clients can leave the stack to browse the complete set at any time.' },
-  { icon: LockKeyhole, label: 'Access stays in your hands', copy: 'Set a PIN, expiry, and download permissions for the private delivery link.' }
+  { icon: MoveHorizontal, label: 'Swipe to move on', copy: 'Swipe the card either way. Each gesture brings the next finished photo into view.' },
+  { icon: Image, label: 'Your order stays yours', copy: 'Arrange every finished photo before publishing. The client swipes through that order, with the next cards waiting behind.' },
+  { icon: Type, label: 'Captions written for each photo', copy: 'Veylo uses the photo and your shoot details to draft a caption. Review or rewrite each one before publishing.' },
+  { icon: Music2, label: 'Soundtrack starts on open', copy: 'Add a catalogue track or music you can share. It starts automatically when the browser allows playback.' },
+  { icon: Heart, label: 'Likes and individual downloads', copy: 'Clients can like a photo or save that finished image from the card.' },
+  { icon: LockKeyhole, label: 'Private link controls', copy: 'Set a PIN or expiry date, and choose whether clients can like or download each photo.' }
 ];
 
 export default function PhotoSwapDelivery() {
@@ -48,12 +49,12 @@ export default function PhotoSwapDelivery() {
           <div className="v-ps-stack-card v-ps-stack-middle"><img src={samplePhotos[1].src} alt="" /></div>
           <div className="v-ps-stack-card v-ps-stack-front">
             <img src={samplePhotos[2].src} alt="" />
-            <span className="v-ps-art-count">01 <i>/</i> 08</span>
+            <span className="v-ps-art-count">01 <i>/</i> 04</span>
           </div>
-          <div className="v-ps-art-top"><span>PHOTO SWAP</span><span>01 / 08</span></div>
-          <div className="v-ps-art-progress"><i /><i /><i /><i /><i /><i /><i /><i /></div>
-          <div className="v-ps-art-dock"><span><ArrowDownToLine size={14} /></span><b>01 <i>/</i> 08</b><span><Grid2X2 size={14} /></span></div>
-          <p className="v-ps-art-caption">A client view, ready for a thumb.</p>
+          <div className="v-ps-art-top"><span>PHOTO SWAP</span><span>01 / 04</span></div>
+          <div className="v-ps-art-progress"><i /><i /><i /><i /></div>
+          <div className="v-ps-art-dock"><span><Heart size={14} /></span><b>01 <i>/</i> 04</b><span><ArrowDownToLine size={14} /></span></div>
+          <p className="v-ps-art-caption">Sharon’s portraits, one card at a time.</p>
         </Reveal>
       </header>
 
@@ -64,7 +65,7 @@ export default function PhotoSwapDelivery() {
             <h2>Let each finished photo<br /><em>have its turn.</em></h2>
           </Reveal>
           <Reveal delay={0.08}>
-            <p>Some clients want to open every image at once. Others want to take their time with each photograph. Photo Swap gives them a simple, touch-first way to move through the set, while keeping your chosen order intact.</p>
+            <p>Photo Swap gives your client one finished photograph at a time, with its caption and simple photo actions close by. They swipe through the order you chose.</p>
             <TextLink to="/demo/photoswap">See the stack in action</TextLink>
           </Reveal>
         </div>
@@ -75,7 +76,7 @@ export default function PhotoSwapDelivery() {
           <Reveal className="v-ps-section-head">
             <Eyebrow number="02">Made for the client’s thumb</Eyebrow>
             <h2>Easy to pick up.<br /><em>Made around the photographs.</em></h2>
-            <p>Swipe, tap the arrows, or use the keyboard. The photos remain the main event.</p>
+            <p>Swipe the card either way. The photos and their captions stay in front.</p>
           </Reveal>
           <div className="v-ps-feature-grid">
             {features.map(({ icon: Icon, label, copy }, index) => (
@@ -94,25 +95,27 @@ export default function PhotoSwapDelivery() {
           <Reveal className="v-ps-workflow-copy">
             <Eyebrow number="03">Your studio sets it up</Eyebrow>
             <h2>Upload. Set the order.<br /><em>Send the link.</em></h2>
-            <p>Photo Swap is for finished work. Upload the final photographs, arrange the sequence, choose the background, and set the client’s access before you publish.</p>
+            <p>Photo Swap is for finished work. Add the final photographs, review their captions, set the order and access, then send your client a private link.</p>
             <ol>
               <li><span>01</span><strong>Add the finished set</strong></li>
-              <li><span>02</span><strong>Choose the order and style</strong></li>
-              <li><span>03</span><strong>Preview and publish</strong></li>
+              <li><span>02</span><strong>Review each caption</strong></li>
+              <li><span>03</span><strong>Choose the order and style</strong></li>
+              <li><span>04</span><strong>Preview and publish</strong></li>
             </ol>
             <Action to="/create?type=photoswap">Create a Photo Swap</Action>
           </Reveal>
           <Reveal className="v-ps-settings-card" delay={0.08}>
             <div className="v-ps-settings-top"><span>PHOTO SWAP SETTINGS</span><strong>Ready to publish</strong></div>
             <div className="v-ps-settings-photo">
-              <img src={samplePhotos[2].src} alt="A sample birthday portrait" loading="lazy" />
+            <img src={samplePhotos[2].src} alt={samplePhotos[2].alt} loading="lazy" />
               <span>01 <i>FIRST PHOTO</i></span>
             </div>
             <div className="v-ps-settings-list">
               <p><Check size={15} /> Your photo order</p>
-              <p><Check size={15} /> Background and type</p>
-              <p><Check size={15} /> Optional soundtrack</p>
-              <p><Check size={15} /> PIN, expiry, and downloads</p>
+              <p><Check size={15} /> Reviewed photo captions</p>
+              <p><Check size={15} /> Optional auto-start soundtrack</p>
+              <p><Check size={15} /> Individual likes and downloads</p>
+              <p><Check size={15} /> PIN and expiry</p>
             </div>
             <footer><span><LockKeyhole size={14} /> PRIVATE CLIENT LINK</span><span>VEYLO</span></footer>
           </Reveal>
@@ -121,7 +124,7 @@ export default function PhotoSwapDelivery() {
 
       <section className="v-ps-compare-section">
         <div className="v-wrap v-ps-compare">
-          <Reveal><Eyebrow>Choose how the set opens</Eyebrow><h2>Photo Swap is one of<br /><em>three delivery types.</em></h2></Reveal>
+          <Reveal><Eyebrow>Choose how the set opens</Eyebrow><h2>A swipe-first way to<br /><em>view every finished photo.</em></h2></Reveal>
           <Reveal className="v-ps-other-types" delay={0.08}>
             <TextLink to="/formats">Compare all delivery types</TextLink>
             <TextLink to="/gridboard">See GridBoard</TextLink>

@@ -1,6 +1,6 @@
 import Delivery from '../models/Delivery.js';
 import DeliveryJob from '../models/DeliveryJob.js';
-import { analyzeAllV3, directV3, directV3Pinboard } from './deliveryV3AI.service.js';
+import { analyzeAllV3, directV3, directV3PhotoSwapCaptions, directV3Pinboard } from './deliveryV3AI.service.js';
 import { synthesizeV3Narration } from './narration.service.js';
 import { CREATIVE_DIRECTOR_PROVIDER, CREATIVE_DIRECTOR_PROMPT_VERSION, FORMAT_DIRECTION_PROFILES, analyzeImageBatch, createFrameBatch, createGlobalDirection, recommendFormats, selectCuratedPhotos } from './alibabaCreativeDirector.service.js';
 import { removeDeliveryAudio, signedImageUrl } from './deliveryMedia.service.js';
@@ -426,6 +426,25 @@ async function run(job) {
         latest.status = 'review';
         await latest.save();
         await saveJob(job, { status: 'review', stage: 'pinboard-ready', progress: 100, completedAt: new Date(), result: { analyzed: insights.length, moments: latest.pinboard.moments.length, layouts: latest.pinboard.layouts.length } });
+      } else if (latest.kind === 'photoswap') {
+        await saveJob(job, { stage: 'writing-captions', progress: 82 });
+        const frames = await directV3PhotoSwapCaptions(latest, insights, async (done, total) => {
+          const progress = 82 + Math.round(done / total * 16);
+          await saveJob(job, { stage: 'writing-captions', progress });
+        });
+        const final = await Delivery.findById(delivery._id);
+        if (final.status !== 'analyzing' || final.v3?.revision !== job.input?.revision) throw Object.assign(new Error('This draft changed. Start analysis again.'), { code: 'V3_DRAFT_CHANGED' });
+        const captions = new Map(frames.map(frame => [frame.assetId, frame.caption]));
+        final.assets.forEach(asset => { asset.caption = captions.get(asset.assetId) || ''; });
+        final.collectionAnalysis = { images: insights, model: 'deepseek-v4.1-flash', complete: true };
+        final.galleryAssetIds = final.assets.map(asset => asset.assetId);
+        final.galleryOrder = final.galleryAssetIds;
+        final.presentationOrder = final.galleryAssetIds;
+        final.v3 = { ...final.v3, step: 'captions' };
+        final.markModified('assets'); final.markModified('collectionAnalysis'); final.markModified('v3');
+        final.status = 'review';
+        await final.save();
+        await saveJob(job, { status: 'review', stage: 'captions-ready', progress: 100, completedAt: new Date(), result: { captions: frames.length, analyzed: insights.length } });
       } else {
         await saveJob(job, { stage: 'writing-showcase', progress: 82 });
         const result = await directV3(latest, insights);

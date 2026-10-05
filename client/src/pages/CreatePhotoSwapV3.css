@@ -1758,3 +1758,334 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+
+.ps-caption-step {
+  gap: 24px;
+}
+
+.ps-caption-progress,
+.ps-caption-failed {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 22px;
+  border: 1px solid rgba(255, 255, 255, .11);
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, .045), rgba(255, 255, 255, .018));
+}
+
+.ps-caption-progress-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border: 1px solid rgba(255, 155, 142, .28);
+  border-radius: 14px;
+  color: #ff9b8e;
+  background: rgba(255, 91, 71, .09);
+}
+
+.ps-caption-progress > div:nth-child(2),
+.ps-caption-failed {
+  min-width: 0;
+}
+
+.ps-caption-progress strong,
+.ps-caption-failed strong {
+  color: #f4efeb;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.ps-caption-progress p,
+.ps-caption-failed > span {
+  margin: 5px 0 0;
+  color: #a79f99;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.ps-caption-progress-value {
+  color: #ffb2a6;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.ps-caption-progress-track {
+  grid-column: 1 / -1;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .09);
+}
+
+.ps-caption-progress-track i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ff6f5c, #ffb2a6);
+  transform-origin: left;
+  transition: transform .3s ease;
+}
+
+.ps-caption-failed {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.ps-caption-failed > strong,
+.ps-caption-failed > span {
+  grid-column: 1;
+}
+
+.ps-caption-failed button {
+  display: inline-flex;
+  min-height: 40px;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-items: center;
+  gap: 8px;
+  padding: 0 13px;
+  border: 1px solid rgba(255, 155, 142, .3);
+  border-radius: 8px;
+  color: #ffb2a6;
+  background: rgba(255, 91, 71, .08);
+  cursor: pointer;
+}
+
+.ps-caption-list {
+  display: grid;
+  gap: 14px;
+}
+
+.ps-caption-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 13px;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+}
+
+.ps-caption-pagination button {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 6px;
+  color: #d9d1ca;
+  background: #121216;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.ps-caption-pagination button:disabled {
+  cursor: default;
+  opacity: .4;
+}
+
+.ps-caption-pagination > span {
+  color: #928983;
+  font-size: 9px;
+  text-align: center;
+}
+
+.ps-caption-row {
+  display: grid;
+  grid-template-columns: minmax(86px, 23%) minmax(0, 1fr);
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, .09);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .025);
+}
+
+.ps-caption-photo {
+  position: relative;
+  min-width: 0;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  border-radius: 7px;
+  background: #111114;
+}
+
+.ps-caption-photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ps-caption-photo span {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  display: grid;
+  min-width: 26px;
+  height: 24px;
+  place-items: center;
+  padding: 0 5px;
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 6px;
+  color: white;
+  background: rgba(7, 7, 9, .68);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ps-caption-fields {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 8px;
+}
+
+.ps-caption-fields > label {
+  color: #e8e1dc;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.ps-caption-fields textarea,
+.ps-caption-tools input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, .11);
+  border-radius: 7px;
+  color: #f4efeb;
+  background: #101014;
+  font: inherit;
+}
+
+.ps-caption-fields textarea {
+  min-height: 82px;
+  padding: 10px 11px;
+  resize: vertical;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ps-caption-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.ps-caption-tools input {
+  min-height: 36px;
+  padding: 0 9px;
+  font-size: 10px;
+}
+
+.ps-caption-tools > span {
+  color: #938a84;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ps-caption-tools button {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 7px;
+  color: #e8dfd9;
+  background: rgba(255, 255, 255, .045);
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.ps-caption-tools button:hover:not(:disabled),
+.ps-caption-failed button:hover:not(:disabled) {
+  border-color: rgba(255, 155, 142, .42);
+  background: rgba(255, 91, 71, .11);
+}
+
+.ps-caption-tools button:disabled,
+.ps-caption-failed button:disabled {
+  cursor: wait;
+  opacity: .55;
+}
+
+@media (max-width: 640px) {
+  .ps-caption-step {
+    gap: 17px;
+  }
+
+  .ps-caption-progress,
+  .ps-caption-failed {
+    gap: 11px;
+    padding: 15px;
+  }
+
+  .ps-caption-progress-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .ps-caption-progress strong,
+  .ps-caption-failed strong {
+    font-size: 11px;
+  }
+
+  .ps-caption-progress p,
+  .ps-caption-failed > span {
+    font-size: 10px;
+  }
+
+  .ps-caption-row {
+    grid-template-columns: 68px minmax(0, 1fr);
+    gap: 10px;
+    padding: 8px;
+  }
+
+  .ps-caption-pagination {
+    gap: 6px;
+  }
+
+  .ps-caption-pagination button {
+    min-height: 35px;
+    gap: 4px;
+    padding-inline: 6px;
+    font-size: 9px;
+  }
+
+  .ps-caption-pagination > span {
+    max-width: 110px;
+    font-size: 8px;
+  }
+
+  .ps-caption-fields textarea {
+    min-height: 88px;
+    padding: 8px;
+    font-size: 11px;
+  }
+
+  .ps-caption-tools {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .ps-caption-tools input {
+    grid-column: 1 / -1;
+  }
+
+  .ps-caption-tools button {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .ps-caption-tools > span {
+    grid-column: 1;
+    grid-row: 2;
+  }
+}

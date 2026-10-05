@@ -21,7 +21,7 @@ const showcaseFormats = [
 const types = [
   { id: 'showcase', title: 'Showcase Delivery', line: 'Lead with a designed experience, then open the full gallery.', detail: 'Choose from Photo Story, Editorial Page, Photo Reveal, Canvas, Chapters, Album, Event Coverage, and Campaign Delivery.', icon: Clapperboard, action: 'Create a Showcase' },
   { id: 'pinboard', title: 'GridBoard Delivery', line: 'Put the finished gallery first in a board clients can browse freely.', detail: 'Veylo studies the photos, suggests three arrangements and useful moment groups, and keeps every uploaded photo in the board.', icon: Grid2X2, action: 'Create a GridBoard' },
-  { id: 'photoswap', title: 'Photo Swap Delivery', line: 'A full-screen stack your client can swipe through one photo at a time.', detail: 'Upload finished photos, set their order, choose the background, and publish a private link.', icon: Layers3, action: 'Create a Photo Swap' }
+  { id: 'photoswap', title: 'Photo Swap Delivery', line: 'A card stack your client swipes through one photo at a time.', detail: 'Add captions, choose the order, and give every photo its own like and download controls.', icon: Layers3, action: 'Create a Photo Swap' }
 ];
 
 export default function CreateDeliveryChoice() {
@@ -49,8 +49,8 @@ export default function CreateDeliveryChoice() {
             ) : (
               <div className="v-choice-photoswap">
                 <span className="v-choice-swap-card is-back"><img src="/veylo/web/demo-sharon-1-480.webp" alt="" loading="lazy" decoding="async" /></span>
-                <span className="v-choice-swap-card is-mid"><img src="/veylo/web/demo-ada-1-480.webp" alt="" loading="lazy" decoding="async" /></span>
-                <span className="v-choice-swap-card is-front"><img src="/veylo/web/demo-lora-1-480.webp" alt="" loading="lazy" decoding="async" /></span>
+                <span className="v-choice-swap-card is-mid"><img src="/veylo/web/demo-sharon-2-480.webp" alt="" loading="lazy" decoding="async" /></span>
+                <span className="v-choice-swap-card is-front"><img src="/veylo/web/demo-sharon-3-480.webp" alt="" loading="lazy" decoding="async" /></span>
               </div>
             )}
           </div>

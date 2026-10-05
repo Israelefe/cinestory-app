@@ -545,7 +545,7 @@ export async function confirmDeliveryUpload(req, res) {
       $expr: { $lt: [{ $size: '$assets' }, entitlements.limits.photosPerDelivery] }
     }, {
       $push: { assets: asset },
-      $set: { status: 'draft', formatRecommendations: [], ...(delivery.schemaVersion === 3 ? { 'v3.step': delivery.kind === 'pinboard' ? 'photos' : 'upload', 'v3.approvedRevision': null, 'v3.narrationChoice': 'skip', 'v3.captionNarrationChoice': 'skip', curatedAssetIds: [], presentationOrder: [], ...(delivery.kind === 'pinboard' ? { 'pinboard.layouts': [], 'pinboard.moments': [], 'pinboard.analysisStatus': 'pending' } : {}) } : {}) },
+      $set: { status: 'draft', formatRecommendations: [], ...(delivery.schemaVersion === 3 ? { 'v3.step': ['pinboard', 'photoswap'].includes(delivery.kind) ? 'photos' : 'upload', 'v3.approvedRevision': null, 'v3.narrationChoice': 'skip', 'v3.captionNarrationChoice': 'skip', curatedAssetIds: [], presentationOrder: [], ...(delivery.kind === 'pinboard' ? { 'pinboard.layouts': [], 'pinboard.moments': [], 'pinboard.analysisStatus': 'pending' } : {}) } : {}) },
       $inc: delivery.schemaVersion === 3 ? { 'v3.revision': 1 } : {},
       $unset: { collectionAnalysis: 1, creativeDirection: 1, reviewApprovedAt: 1, ...(delivery.schemaVersion === 3 ? { narration: 1 } : {}) }
     }, { new: true, runValidators: true });
@@ -633,6 +633,7 @@ export async function deleteDeliveryAsset(req, res) {
     const portfolioCleanup = await schedulePortfolioRemoval(req.user.id, [asset.publicId]);
     await removeDeliveryImage(asset.publicId);
     delivery.assets = delivery.assets.filter(item => item.assetId !== asset.assetId).map((item, sortOrder) => ({ ...item.toObject(), sortOrder }));
+    if (delivery.kind === 'photoswap') delivery.assets.forEach(item => { item.caption = ''; });
     delivery.collectionAnalysis = undefined;
     delivery.formatRecommendations = [];
     delivery.creativeDirection = undefined;

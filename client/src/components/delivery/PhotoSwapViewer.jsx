@@ -1,26 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, animate, motion, useIsPresent, useMotionValue, useMotionValueEvent, useTransform } from 'framer-motion';
+import { AnimatePresence, animate, motion, useMotionValue, useMotionValueEvent } from 'framer-motion';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
-import {
-  ArrowDownToLine,
-  ArrowRight,
-  Check,
-  ChevronLeft,
-  Grid2X2,
-  RotateCcw,
-  Volume2,
-  VolumeX
-} from 'lucide-react';
+import { ArrowDownToLine, Check, Heart, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import DeliveryBrandMark from './DeliveryBrandMark.jsx';
-import ClientGallery from './ClientGallery.jsx';
 import { API_BASE_URL } from '../../config/env.js';
 import { deliveryFontStyles } from '../../utils/deliveryTypography.js';
 import { useSmoothSoundtrackLoop } from '../../utils/smoothSoundtrackLoop.js';
 import './PhotoSwapViewer.css';
 import './DeliveryTypography.css';
 
-const SWIPE_VELOCITY = 280;
-const SWIPE_DISTANCE = 0.22;
+const SWIPE_VELOCITY = 300;
 
 function mediaUrl(value) {
   return typeof value === 'string' && value.startsWith('/api/')
@@ -28,44 +17,13 @@ function mediaUrl(value) {
     : value;
 }
 
-function photoUrl(asset, full = false) {
-  return full ? asset?.url || asset?.thumbnailUrl || '' : asset?.thumbnailUrl || asset?.url || '';
+function photoUrl(asset) {
+  return asset?.url || asset?.thumbnailUrl || '';
 }
 
 function dominantColor(asset) {
-  const value = asset?.dominantColor
-    || asset?.photoColors?.[0]
-    || asset?.analysis?.colors?.[0];
+  const value = asset?.dominantColor || asset?.photoColors?.[0] || asset?.analysis?.colors?.[0];
   return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : null;
-}
-
-function PhotoSwapPrint({ stackOffset, onDragEnd, ...props }) {
-  const x = useMotionValue(0);
-  const rotation = useMotionValue(0);
-  const isPresent = useIsPresent();
-
-  useMotionValueEvent(x, 'change', value => {
-    if (isPresent) stackOffset.set(value);
-  });
-  useEffect(() => {
-    if (isPresent) stackOffset.set(0);
-  }, [isPresent, stackOffset]);
-
-  return (
-    <motion.article
-      {...props}
-      style={{ x, rotate: rotation }}
-      onDrag={(_, info) => rotation.set(Math.max(-8, Math.min(8, info.offset.x * 0.024)))}
-      onDragEnd={(event, info) => {
-        animate(rotation, 0, { type: 'spring', damping: 26, stiffness: 280 });
-        onDragEnd?.(event, info);
-      }}
-    />
-  );
-}
-
-function photoDescription(asset, index) {
-  return asset?.alt || 'Photograph ' + (index + 1);
 }
 
 export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = false, preview = false }) {
@@ -75,120 +33,130 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
   );
   const [currentIndex, setCurrentIndex] = useState(0);
   const [direction, setDirection] = useState(1);
-  const [showGallery, setShowGallery] = useState(false);
-  const [muted, setMuted] = useState(true);
   const [hasInteracted, setHasInteracted] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [soundBlocked, setSoundBlocked] = useState(false);
+  const [localLiked, setLocalLiked] = useState(() => new Set());
   const audioRef = useRef(null);
   const reduced = useVeyloReducedMotion();
   const stackOffset = useMotionValue(0);
-  const behindScale = useTransform(stackOffset, [-260, 0, 260], [1, 0.935, 1]);
-  const behindRotation = useTransform(stackOffset, [-260, 0, 260], [0, 3.1, 0]);
-  const behindOpacity = useTransform(stackOffset, [-260, 0, 260], [1, 0.7, 1]);
-  const deepScale = useTransform(stackOffset, [-260, 0, 260], [0.94, 0.88, 0.94]);
-  const deepRotation = useTransform(stackOffset, [-260, 0, 260], [3, -3.6, 3]);
-  const deepOpacity = useTransform(stackOffset, [-260, 0, 260], [0.68, 0.36, 0.68]);
+  const backScale = useMotionValue(.93);
+  const backRotate = useMotionValue(3.3);
+  useMotionValueEvent(stackOffset, 'change', value => {
+    backScale.set(.93 + Math.min(1, Math.abs(value) / 360) * .045);
+    backRotate.set(3.3 - Math.min(1, Math.abs(value) / 360) * 1.1);
+  });
 
   const isEnd = currentIndex >= assets.length;
   const currentAsset = isEnd ? null : assets[currentIndex];
   const nextAsset = assets[currentIndex + 1];
-  const thirdAsset = assets[currentIndex + 2];
+  const secondAsset = assets[currentIndex + 2];
   const soundtrackUrl = delivery?.soundtrack?.url ? mediaUrl(delivery.soundtrack.url) : '';
-  const title = delivery?.title || (delivery?.clientName ? delivery.clientName + "'s photos" : 'Your photos');
   const studioName = delivery?.branding?.name || 'Your photographer';
-  const shootType = delivery?.shootType || 'Photo set';
+  const title = delivery?.title || (delivery?.clientName ? delivery.clientName + "'s photographs" : 'Your photographs');
+  const shootType = delivery?.shootType || 'Portraits';
   const fontStyles = useMemo(
     () => deliveryFontStyles(delivery?.photoswap?.typography),
     [delivery?.photoswap?.typography]
   );
-  const color = delivery?.photoswap?.backgroundMode === 'dark' || isEnd
-    ? null
-    : dominantColor(currentAsset);
-  const stageStyle = {
-    ...fontStyles,
-    '--ps-photo-glow': color || '#171319',
-    backgroundColor: '#09090c'
-  };
+  const glow = dominantColor(currentAsset) || '#30202b';
+  const stageStyle = { ...fontStyles, '--ps-photo-glow': glow };
 
-  const canDownloadPhoto = !demo && !preview
-    && delivery?.access?.allowIndividualDownloads !== false
-    && Boolean(galleryProps?.onDownload);
-  const canDownloadAll = !demo && !preview
-    && delivery?.access?.allowDownloadAll !== false
-    && Boolean(galleryProps?.onDownloadAll);
+  const canLike = delivery?.access?.allowLikes !== false
+    && (typeof galleryProps?.onLike === 'function' || demo || preview);
+  const canDownloadPhoto = delivery?.access?.allowIndividualDownloads !== false
+    && typeof galleryProps?.onDownload === 'function';
+
   useSmoothSoundtrackLoop(audioRef, soundtrackUrl);
+
+  const requestSoundtrack = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio || !soundtrackUrl || muted) return;
+    try {
+      audio.muted = false;
+      const playback = audio.play();
+      playback?.then(() => setSoundBlocked(false)).catch(() => setSoundBlocked(true));
+    } catch {
+      setSoundBlocked(true);
+    }
+  }, [muted, soundtrackUrl]);
+
+  useEffect(() => {
+    if (!soundtrackUrl) return undefined;
+    const audio = audioRef.current;
+    if (!audio) return undefined;
+    audio.muted = false;
+    try {
+      audio.play().then(() => setSoundBlocked(false)).catch(() => setSoundBlocked(true));
+    } catch {
+      setSoundBlocked(true);
+    }
+    return undefined;
+  }, [soundtrackUrl]);
 
   useEffect(() => {
     if (!assets.length) return undefined;
     [1, 2].forEach(offset => {
-      const asset = assets[currentIndex + offset];
-      const source = photoUrl(asset, true);
+      const source = photoUrl(assets[currentIndex + offset]);
       if (!source) return;
       const image = new window.Image();
       image.decoding = 'async';
-      if (asset.srcSet) {
-        image.sizes = '(max-width: 640px) 82vw, (max-width: 1024px) 500px, 42vw';
-        image.srcset = asset.srcSet;
-      }
       image.src = mediaUrl(source);
     });
     return undefined;
   }, [assets, currentIndex]);
 
-  const paginate = useCallback((step) => {
-    if (showGallery) return;
-    const nextIndex = Math.max(0, Math.min(assets.length, currentIndex + step));
-    if (nextIndex === currentIndex) return;
+  const advance = useCallback((swipeSide = -1) => {
+    if (currentIndex >= assets.length) return;
     setHasInteracted(true);
-    setDirection(step);
-    setCurrentIndex(nextIndex);
-  }, [assets.length, currentIndex, showGallery]);
+    setDirection(swipeSide < 0 ? 1 : -1);
+    setCurrentIndex(index => Math.min(assets.length, index + 1));
+  }, [assets.length, currentIndex]);
 
   const toggleSound = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    const nextMuted = !muted;
-    audio.muted = nextMuted;
-    setMuted(nextMuted);
-    if (!nextMuted) audio.play().catch(() => {});
-  }, [muted]);
+    if (muted || soundBlocked) {
+      setMuted(false);
+      audio.muted = false;
+      try {
+        audio.play().then(() => setSoundBlocked(false)).catch(() => setSoundBlocked(true));
+      } catch {
+        setSoundBlocked(true);
+      }
+      return;
+    }
+    audio.muted = true;
+    setMuted(true);
+  }, [muted, soundBlocked]);
+
+  const toggleLike = useCallback(() => {
+    if (!currentAsset || !canLike) return;
+    if (typeof galleryProps?.onLike === 'function') {
+      galleryProps.onLike(currentAsset.assetId);
+    } else {
+      setLocalLiked(current => {
+        const next = new Set(current);
+        if (next.has(currentAsset.assetId)) next.delete(currentAsset.assetId);
+        else next.add(currentAsset.assetId);
+        return next;
+      });
+    }
+  }, [canLike, currentAsset, galleryProps]);
 
   useEffect(() => {
     const handleKey = event => {
-      if (showGallery || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
       const target = event.target;
       if (target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(target.tagName)) return;
-      if (event.key === 'ArrowRight') {
+      if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
         event.preventDefault();
-        paginate(1);
-      } else if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        paginate(-1);
+        advance(event.key === 'ArrowLeft' ? -1 : 1);
       }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [paginate, showGallery]);
-
-  if (showGallery) {
-    const photos = assets.map((asset, index) => ({
-      name: asset.assetId,
-      url: mediaUrl(photoUrl(asset, true)),
-      thumbnailUrl: mediaUrl(photoUrl(asset)),
-      srcSet: asset.srcSet,
-      alt: photoDescription(asset, index),
-      assetId: asset.assetId
-    }));
-    return (
-      <ClientGallery
-        photos={photos}
-        title={title}
-        delivery={delivery}
-        fontStyles={fontStyles}
-        {...galleryProps}
-        onClose={() => setShowGallery(false)}
-      />
-    );
-  }
+  }, [advance]);
 
   if (!assets.length) {
     return (
@@ -205,143 +173,150 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
 
   const photoNumber = String(Math.min(currentIndex + 1, assets.length)).padStart(2, '0');
   const totalNumber = String(assets.length).padStart(2, '0');
+  const liked = currentAsset && (
+    galleryProps?.liked instanceof Set
+      ? galleryProps.liked.has(currentAsset.assetId)
+      : Array.isArray(galleryProps?.liked)
+        ? galleryProps.liked.includes(currentAsset.assetId)
+        : localLiked.has(currentAsset.assetId)
+  );
 
   return (
-    <div className={'ps-viewer' + (preview ? ' is-preview' : '')} style={stageStyle}>
-      <div className="ps-atmosphere" aria-hidden="true" />
-      {soundtrackUrl && <audio ref={audioRef} src={soundtrackUrl} loop preload="none" muted={muted} />}
-
+    <div
+      className={'ps-viewer' + (preview ? ' is-preview' : '')}
+      style={stageStyle}
+      onPointerDownCapture={requestSoundtrack}
+      onKeyDownCapture={requestSoundtrack}
+    >
+      {soundtrackUrl && <audio ref={audioRef} src={soundtrackUrl} loop preload="auto" muted={muted} />}
+      <div className="ps-ambient" aria-hidden="true" />
       <main className="ps-stage" aria-label="Photo Swap">
         <header className="ps-header">
-          <div className="ps-header-shell">
-            <div className="ps-header-studio">
-              <span className="ps-brand-mark"><DeliveryBrandMark branding={delivery?.branding} /></span>
-              <span className="ps-header-copy">
-                <small><i aria-hidden="true" /> PHOTO SWAP</small>
-                <strong>{studioName}</strong>
-              </span>
-            </div>
-            <div className="ps-header-actions">
-              <span className="ps-photo-position" aria-label={isEnd ? 'All photos viewed' : 'Photo ' + (currentIndex + 1) + ' of ' + assets.length}>
-                {isEnd ? 'DONE' : photoNumber + ' / ' + totalNumber}
-              </span>
-              {soundtrackUrl && (
-                <button type="button" className="ps-icon-button" onClick={toggleSound} aria-label={muted ? 'Turn soundtrack on' : 'Mute soundtrack'} title={muted ? 'Turn soundtrack on' : 'Mute soundtrack'}>
-                  {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
-                </button>
-              )}
-              <button type="button" className="ps-icon-button ps-gallery-button" onClick={() => setShowGallery(true)} aria-label="Open all photos" title="Open all photos">
-                <Grid2X2 size={18} />
-                <span>Gallery</span>
-              </button>
-            </div>
+          <div className="ps-header-brand">
+            <span className="ps-brand-mark"><DeliveryBrandMark branding={delivery?.branding} /></span>
+            <span className="ps-header-copy">
+              <small>PHOTO SWAP</small>
+              <strong>{studioName}</strong>
+              <span>{title}</span>
+            </span>
           </div>
+          <div className="ps-header-tools">
+            <div className="ps-progress-copy" aria-label={isEnd ? 'All photos viewed' : 'Photo ' + (currentIndex + 1) + ' of ' + assets.length}>
+              <strong>{isEnd ? 'DONE' : photoNumber}</strong><span>/ {totalNumber}</span>
+            </div>
+            {soundtrackUrl && (
+              <button
+                type="button"
+                className="ps-sound-button"
+                onClick={toggleSound}
+                aria-label={muted ? 'Play soundtrack' : soundBlocked ? 'Try soundtrack again' : 'Mute soundtrack'}
+                title={muted ? 'Play soundtrack' : soundBlocked ? 'Try soundtrack again' : 'Mute soundtrack'}
+              >
+                {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+              </button>
+            )}
+          </div>
+          <div className="ps-progress-track" aria-hidden="true"><i style={{ width: (isEnd ? 100 : ((currentIndex + 1) / assets.length) * 100) + '%' }} /></div>
         </header>
 
-        <section className="ps-deck-region" aria-label="Photo deck">
+        <section className="ps-deck-region" aria-label="Swipe through the photographs">
           {!isEnd && !hasInteracted && (
-            <motion.p className="ps-swipe-hint" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35, duration: 0.3 }}>
-              Swipe to see the next photo
+            <motion.p className="ps-swipe-hint" initial={{ opacity: 0, y: 7 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .24, duration: reduced ? .12 : .28 }}>
+              Swipe either way to continue
             </motion.p>
           )}
           <div className="ps-deck">
-            {!isEnd && thirdAsset && (
-              <motion.div className="ps-photo-card ps-card-back" style={{ scale: deepScale, rotate: deepRotation, opacity: deepOpacity }} aria-hidden="true">
-                <img src={mediaUrl(photoUrl(thirdAsset))} alt="" loading="lazy" decoding="async" />
+            {!isEnd && secondAsset && (
+              <motion.div className="ps-photo-card ps-card-back" style={{ scale: backScale, rotate: backRotate }} aria-hidden="true">
+                <img src={mediaUrl(photoUrl(secondAsset))} alt="" loading="lazy" decoding="async" />
               </motion.div>
             )}
             {!isEnd && nextAsset && (
-              <motion.div className="ps-photo-card ps-card-middle" style={{ scale: behindScale, rotate: behindRotation, opacity: behindOpacity }} aria-hidden="true">
-                <img src={mediaUrl(photoUrl(nextAsset, true))} alt="" loading="eager" decoding="async" />
-              </motion.div>
+              <div className="ps-photo-card ps-card-middle" aria-hidden="true">
+                <img src={mediaUrl(photoUrl(nextAsset))} alt="" loading="eager" decoding="async" />
+              </div>
             )}
             <AnimatePresence initial={false} custom={direction} mode="sync">
               {!isEnd && currentAsset ? (
-                <PhotoSwapPrint
+                <motion.article
                   key={currentAsset.assetId}
                   className="ps-photo-card ps-card-front"
-                  stackOffset={stackOffset}
-                  drag={reduced ? false : 'x'}
+                  style={{ x: stackOffset }}
+                  drag="x"
                   dragConstraints={{ left: 0, right: 0 }}
-                  dragElastic={0.82}
+                  dragElastic={.84}
                   dragMomentum={false}
-                  onDragStart={() => setHasInteracted(true)}
+                  onDragStart={requestSoundtrack}
+                  onDrag={(_, info) => stackOffset.set(info.offset.x)}
                   onDragEnd={(_, info) => {
-                    if (info.offset.x < -window.innerWidth * SWIPE_DISTANCE || info.velocity.x < -SWIPE_VELOCITY) paginate(1);
-                    else if (info.offset.x > window.innerWidth * SWIPE_DISTANCE || info.velocity.x > SWIPE_VELOCITY) paginate(-1);
+                    animate(stackOffset, 0, { type: 'spring', damping: 25, stiffness: 280 });
+                    const threshold = Math.max(52, window.innerWidth * .18);
+                    if (Math.abs(info.offset.x) >= threshold || Math.abs(info.velocity.x) >= SWIPE_VELOCITY) advance(info.offset.x < 0 ? -1 : 1);
                   }}
-                  initial={{ opacity: 0.72, scale: 0.95, x: direction > 0 ? 82 : -82, rotate: direction > 0 ? 3 : -3 }}
-                  animate={{ opacity: 1, scale: 1, x: 0, rotate: 0, transition: { type: 'spring', damping: 25, stiffness: 280 } }}
-                  exit={{ opacity: 0, x: direction > 0 ? -window.innerWidth * 0.92 : window.innerWidth * 0.92, rotate: direction > 0 ? -9 : 9, transition: { duration: 0.26, ease: [0.32, 0, 0.67, 0] } }}
+                  initial={{ opacity: .7, scale: .94, x: direction > 0 ? 84 : -84, rotate: direction > 0 ? 4 : -4 }}
+                  animate={{ opacity: 1, scale: 1, x: 0, rotate: 0, transition: { type: 'spring', damping: 25, stiffness: reduced ? 230 : 280 } }}
+                  exit={{ opacity: 0, x: direction > 0 ? -window.innerWidth * .9 : window.innerWidth * .9, rotate: direction > 0 ? -10 : 10, transition: { duration: reduced ? .18 : .28, ease: [.32, 0, .67, 0] } }}
                   role="group"
                   aria-roledescription="photograph"
                   aria-label={'Photo ' + (currentIndex + 1) + ' of ' + assets.length}
                 >
-                  <img src={mediaUrl(photoUrl(currentAsset, true))} srcSet={currentAsset.srcSet || undefined} sizes="(max-width: 640px) 82vw, (max-width: 1024px) 500px, 42vw" alt={photoDescription(currentAsset, currentIndex)} fetchPriority="high" decoding="async" draggable="false" />
-                  <div className="ps-card-shade" aria-hidden="true" />
+                  <div className="ps-photo-image">
+                    <img src={mediaUrl(photoUrl(currentAsset))} srcSet={currentAsset.srcSet || undefined} sizes="(max-width: 640px) 88vw, (max-width: 1024px) 500px, 460px" alt={currentAsset.alt || currentAsset.caption || 'Finished photograph ' + (currentIndex + 1)} fetchPriority="high" decoding="async" draggable="false" />
+                    <span className="ps-image-index">{photoNumber}<i> / {totalNumber}</i></span>
+                  </div>
                   <div className="ps-card-caption">
                     <span>{shootType} <i aria-hidden="true">/</i> {photoNumber} of {totalNumber}</span>
-                    <strong>{title}</strong>
+                    <p>{currentAsset.caption || 'A finished photograph from ' + title + '.'}</p>
                   </div>
-                </PhotoSwapPrint>
+                </motion.article>
               ) : (
                 <motion.section
                   key="complete"
                   className="ps-complete-card"
-                  initial={{ opacity: 0, y: 18, scale: 0.97 }}
+                  initial={{ opacity: .65, y: 14, scale: .96 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={{ type: 'spring', damping: 25, stiffness: 260 }}
+                  transition={{ type: 'spring', damping: 25, stiffness: reduced ? 230 : 270 }}
                   aria-labelledby="ps-complete-title"
                 >
-                  <span className="ps-complete-icon"><Check size={24} strokeWidth={2.5} /></span>
-                  <p className="ps-complete-label">SET COMPLETE</p>
+                  <span className="ps-complete-mark"><Check size={21} strokeWidth={2.3} /></span>
+                  <p className="ps-complete-label">PHOTO SWAP COMPLETE</p>
                   <h1 id="ps-complete-title">You’ve seen every photo.</h1>
-                  <p className="ps-complete-copy">{assets.length} photos from {title}.</p>
-                  <div className="ps-complete-actions">
-                    <button type="button" className="ps-primary-button" onClick={() => setShowGallery(true)}><Grid2X2 size={17} /> Open gallery</button>
-                    {canDownloadAll && (
-                      <button type="button" className="ps-secondary-button" onClick={() => galleryProps?.onDownloadAll?.()} disabled={Boolean(galleryProps?.downloadProgress)}>
-                        <ArrowDownToLine size={17} />
-                        {galleryProps?.downloadProgress ? 'Preparing photos…' : 'Download all'}
-                      </button>
-                    )}
-                    <button type="button" className="ps-restart-button" onClick={() => { setDirection(-1); setCurrentIndex(0); setHasInteracted(true); }}>
-                      <RotateCcw size={16} /> Start over
-                    </button>
-                  </div>
-                  {galleryProps?.downloadNotice && <p className="ps-download-note" role="status">{galleryProps.downloadNotice}</p>}
-                  {demo && <p className="ps-demo-note">You’re viewing a live demo.</p>}
+                  <p className="ps-complete-copy">{title} <span>·</span> {assets.length} photographs</p>
+                  <button type="button" className="ps-restart-button" onClick={() => { setDirection(-1); setCurrentIndex(0); setHasInteracted(true); }}>
+                    <RotateCcw size={16} /> Start again
+                  </button>
+                  {demo && <p className="ps-demo-note">You’re looking at a live demo.</p>}
                 </motion.section>
               )}
             </AnimatePresence>
           </div>
         </section>
 
-        {!isEnd ? (
-          <footer className="ps-control-area">
-            <div className="ps-actions" role="toolbar" aria-label="Photo controls">
-              <button type="button" className="ps-action-circle" onClick={() => paginate(-1)} disabled={currentIndex === 0} aria-label="Previous photo" title="Previous photo">
-                <ChevronLeft size={22} />
-              </button>
-              <button type="button" className="ps-action-primary" onClick={() => paginate(1)} aria-label="Next photo">
-                <span>Next photo</span><ArrowRight size={18} />
-              </button>
+        {!isEnd && currentAsset && (
+          <footer className="ps-action-area">
+            <div className="ps-photo-actions" role="toolbar" aria-label="Photo actions">
+              {canLike && (
+                <button type="button" className={'ps-photo-action ps-like-button' + (liked ? ' is-liked' : '')} onClick={toggleLike} aria-pressed={Boolean(liked)} aria-label={liked ? 'Unlike this photo' : 'Like this photo'}>
+                  <span className="ps-action-icon"><Heart size={21} fill={liked ? 'currentColor' : 'none'} strokeWidth={liked ? 2.2 : 1.8} /></span>
+                  <span>{liked ? 'Liked' : 'Like'}</span>
+                </button>
+              )}
               {canDownloadPhoto && (
                 <button
                   type="button"
-                  className="ps-action-circle ps-download-button"
-                  onClick={() => galleryProps?.onDownload?.(currentAsset.assetId, currentIndex)}
-                  disabled={galleryProps?.busy === currentAsset?.assetId}
+                  className="ps-photo-action ps-download-button"
+                  onClick={() => galleryProps.onDownload(currentAsset.assetId, currentIndex)}
+                  disabled={galleryProps?.busy === currentAsset.assetId}
                   aria-label="Download this photo"
-                  title="Download this photo"
                 >
-                  <ArrowDownToLine size={19} />
+                  <span className="ps-action-icon"><ArrowDownToLine size={20} /></span>
+                  <span>{galleryProps?.busy === currentAsset.assetId ? 'Saving' : 'Download'}</span>
                 </button>
               )}
             </div>
-            <p className="ps-control-hint">Drag the card or tap Next photo</p>
+            <p className="ps-control-hint">{hasInteracted ? 'Keep swiping to see the rest.' : 'The full photograph stays in view as you swipe.'}</p>
           </footer>
-        ) : null}
+        )}
       </main>
       <span className="ps-sr-only" aria-live="polite">{isEnd ? 'All ' + assets.length + ' photos viewed' : 'Photo ' + (currentIndex + 1) + ' of ' + assets.length}</span>
     </div>
