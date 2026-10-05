@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
-import { ArrowLeft, ChevronLeft, ChevronRight, Heart, Images, LoaderCircle, RotateCcw, Volume2, VolumeX } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Images, LoaderCircle, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import ClientGallery from './ClientGallery.jsx';
@@ -45,6 +45,7 @@ export default function RevealViewer({ delivery, demo = false, galleryProps = {}
   const [failed, setFailed] = useState(null);
   const [resume, setResume] = useState(null);
   const [navigationDirection, setNavigationDirection] = useState(1);
+  const [tapPressed, setTapPressed] = useState(false);
   const [frameSize, setFrameSize] = useState({ width: 0, height: 0 });
   const [muted, setMuted] = useState(false);
   const [musicStarted, setMusicStarted] = useState(false);
@@ -62,7 +63,8 @@ export default function RevealViewer({ delivery, demo = false, galleryProps = {}
     const update = () => { const { width, height } = element.getBoundingClientRect(); setFrameSize(current => current.width === width && current.height === height ? current : { width, height }); };
     update(); regionObserver.current = new ResizeObserver(update); regionObserver.current.observe(element);
   }, []);
-  const touch = useRef(null);
+  const tapStart = useRef(null);
+  const suppressTap = useRef(false);
   const cache = useRef(new Map());
   const request = useRef(0);
   const mounted = useRef(true);
@@ -77,9 +79,7 @@ export default function RevealViewer({ delivery, demo = false, galleryProps = {}
   const orderKey = photos.map(photo => `${photo.assetId}:${photo.url}`).join('|');
   const storageKey = !demo && delivery?.publicId ? `veylo:reveal:${delivery.publicId}` : null;
   const active = photos[index];
-  const liked = demo ? demoLiked : galleryProps.liked;
   const onLike = demo ? assetId => setDemoLiked(current => { const next = new Set(current); next.has(assetId) ? next.delete(assetId) : next.add(assetId); return next; }) : galleryProps.onLike;
-  const allowLikes = Boolean(delivery?.access?.allowLikes && onLike);
   useSmoothSoundtrackLoop(audio, track);
 
   function load(photo, priority = 'low') {
@@ -211,7 +211,7 @@ export default function RevealViewer({ delivery, demo = false, galleryProps = {}
   const title = direction.title || delivery?.title || `${delivery?.clientName || 'Your'} photographs`;
   const galleryActions = demo ? { liked: demoLiked, onLike, onDownload: runDemoDownload, onDownloadAll: () => runDemoDownload(), busy: demoBusy } : galleryProps;
   const loading = pending !== null;
-  return <div className="fd-page rv-viewer" style={theme} data-reveal-style={settings.style}>
+  return <div className="fd-page rv-viewer" style={theme} data-reveal-style={settings.style} data-phase={phase}>
     {track && <audio ref={audio} src={track} crossOrigin="anonymous" loop preload="metadata" onWaiting={() => setAudioLoading(true)} onPlaying={() => { setAudioLoading(false); setAudioFailed(false); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioLoading(false); setAudioFailed(true); }} />}
     <header className="rv-header">
       <div className="rv-brand"><DeliveryBrandMark branding={delivery.branding} /><div><span>{delivery.branding?.type === 'studio' ? 'Photographed by' : 'Photo Reveal'}</span><strong>{delivery.branding?.name || 'Veylo'}</strong></div></div>
@@ -222,18 +222,30 @@ export default function RevealViewer({ delivery, demo = false, galleryProps = {}
         <motion.div className="rv-cover-photo" initial={reduced ? false : { scale: 1.035 }} animate={{ scale: 1 }} transition={{ duration: reduced ? 0 : 2.5, ease }}><RevealImage photo={cover} eager /></motion.div>
         <div className="rv-opening-copy"><motion.span className="rv-eyebrow" initial={reduced ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>A PRIVATE PHOTO REVEAL <i /></motion.span><motion.h1 initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .65, delay: reduced ? 0 : .1, ease }}>{title}</motion.h1><p>{direction.openingLine || 'Take your time. Reveal each photograph when you are ready.'}</p><div className="rv-opening-actions"><button className="rv-primary" type="button" disabled={loading} onClick={() => navigate(0, true)}>{loading ? <LoaderCircle className="rv-spin" size={18} /> : null}Begin reveal<ChevronRight size={19} /></button>{resume !== null && <button className="rv-secondary" type="button" disabled={loading} onClick={() => navigate(resume, true)}>Continue from {number(resume + 1)}<ChevronRight size={17} /></button>}</div><span className="rv-opening-count">{number(photos.length)} photographs · At your own pace</span>{failed !== null && <p className="rv-error" role="alert">The first photograph could not load. <button type="button" onClick={() => navigate(failed, true)}>Try again</button></p>}</div>
       </motion.main> : phase === 'reveal' ? <motion.main key="reveal" className="rv-room" initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .3 }}>
-        <div className="rv-photo-region" style={{ '--rv-ratio': ratio }} ref={observeRegion} onTouchStart={event => { if (gallery) return; const t = event.changedTouches[0]; touch.current = { x: t.clientX, y: t.clientY }; }} onTouchEnd={event => { const start = touch.current; touch.current = null; if (!start || gallery || loading) return; const t = event.changedTouches[0], dx = t.clientX - start.x, dy = t.clientY - start.y; if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.5) { if (dx < 0) next(); else if (index > 0) navigate(index - 1); } }}>
-          <motion.div className="rv-photo-frame" style={{ width, height: width / ratio }} animate={!reduced && settings.movement && !gallery ? { y: [0, -3, 0] } : { y: 0 }} transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}>
-            <AnimatePresence initial={false}>{<motion.figure key={active.assetId} {...revealMotion} className="rv-photo" data-asset-id={active.assetId}><RevealImage photo={active} eager />{settings.style === 'curtain' && !reduced && <div className="rv-curtain" aria-hidden="true"><motion.i initial={{ x: 0 }} animate={{ x: '-101%' }} transition={{ duration: .85, ease }} /><motion.i initial={{ x: 0 }} animate={{ x: '101%' }} transition={{ duration: .85, ease }} /></div>}</motion.figure>}</AnimatePresence>
+        <div className="rv-photo-region" style={{ '--rv-ratio': ratio }} ref={observeRegion}>
+          <motion.div className="rv-photo-frame" style={{ width, height: width / ratio }} animate={{ y: !reduced && settings.movement && !gallery ? [0, -3, 0] : 0, scale: !reduced && tapPressed ? .985 : 1 }} transition={{ y: { duration: 8, repeat: Infinity, ease: 'easeInOut' }, scale: { type: 'spring', damping: 25, stiffness: 280 } }}>
+            <AnimatePresence initial={false}>{<motion.figure key={active.assetId} {...revealMotion} className="rv-photo" data-asset-id={active.assetId}>
+              <motion.div className="rv-photo-content" initial={!reduced && settings.movement ? { scale: .97, y: 8 } : false} animate={{ scale: 1, y: 0 }} transition={{ duration: 1.15, delay: settings.style === 'curtain' ? .12 : 0, ease }}><RevealImage photo={active} eager /></motion.div>
+              {settings.style === 'curtain' && !reduced && <div className="rv-curtain" aria-hidden="true"><motion.i initial={{ x: 0 }} animate={{ x: '-101%' }} transition={{ duration: .95, ease }} /><motion.i initial={{ x: 0 }} animate={{ x: '101%' }} transition={{ duration: .95, delay: .08, ease }} /></div>}
+            </motion.figure>}</AnimatePresence>
             <div className="rv-corners" aria-hidden="true"><i /><i /><i /><i /></div>
           </motion.div>
+          <div className="rv-photo-hit-area" style={{ width, height: width / ratio }}>
+            <button className="rv-tap-target" type="button" disabled={loading} aria-label={index === photos.length - 1 ? 'Complete reveal' : 'Reveal next photo'} aria-describedby="rv-reveal-hint"
+              onPointerDown={event => { if (!event.isPrimary || event.button !== 0) return; tapStart.current = { x: event.clientX, y: event.clientY }; suppressTap.current = false; setTapPressed(true); event.currentTarget.setPointerCapture(event.pointerId); }}
+              onPointerMove={event => { const start = tapStart.current; if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 12) suppressTap.current = true; }}
+              onPointerUp={event => { const start = tapStart.current; tapStart.current = null; setTapPressed(false); if (event.isPrimary && start && !suppressTap.current && Math.hypot(event.clientX - start.x, event.clientY - start.y) <= 12) next(); }}
+              onPointerCancel={() => { tapStart.current = null; suppressTap.current = true; setTapPressed(false); }}
+              onClick={event => { if (event.detail === 0) next(); }} />
+            {index > 0 && <button className="rv-icon rv-photo-previous" type="button" disabled={loading} onClick={() => navigate(index - 1)} aria-label="Previous photograph"><ChevronLeft size={21} /></button>}
+          </div>
         </div>
-        <aside className="rv-details"><div className="rv-position fd-reveal-position" aria-label={`Photograph ${index + 1} of ${photos.length}`}><span>{number(index + 1)}</span><div role="progressbar" aria-label="Reveal progress" aria-valuemin={0} aria-valuemax={photos.length} aria-valuenow={seen.size}><motion.i animate={{ scaleX: seen.size / photos.length }} transition={{ duration: reduced ? 0 : .4, ease }} /></div><span>{number(photos.length)}</span></div>
+        <aside className="rv-details"><div className="rv-detail-top"><div className="rv-position fd-reveal-position" aria-label={`Photograph ${index + 1} of ${photos.length}`}><span>{number(index + 1)}</span><div role="progressbar" aria-label="Reveal progress" aria-valuemin={0} aria-valuemax={photos.length} aria-valuenow={seen.size}><motion.i animate={{ scaleX: seen.size / photos.length }} transition={{ duration: reduced ? 0 : .4, ease }} /></div><span>{number(photos.length)}</span></div>
+          <div className="rv-photo-actions"><button type="button" className="rv-icon rv-seen-button" onClick={() => setTray(value => !value)} aria-label="Revisit photos" title="Revisit photos" aria-expanded={tray} aria-controls="rv-seen"><Images size={18} /></button></div>
+          </div>
           <AnimatePresence mode="wait"><motion.div className="rv-caption fd-reveal-caption" key={active.assetId} initial={reduced ? false : { opacity: 0, y: navigationDirection * 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .32, delay: reduced ? 0 : .18, ease }}><h2 ref={attachHeading} tabIndex={-1}>{active.headline || `Photograph ${number(index + 1)}`}</h2>{active.caption && <p>{active.caption}</p>}</motion.div></AnimatePresence>
-          <div className="rv-photo-actions">{allowLikes && <button type="button" className={`rv-icon ${liked?.has(active.assetId) ? 'is-liked' : ''}`} onClick={() => onLike(active.assetId, allPhotos.findIndex(photo => photo.assetId === active.assetId))} aria-label={liked?.has(active.assetId) ? 'Remove from favourites' : 'Add to favourites'} aria-pressed={Boolean(liked?.has(active.assetId))}><Heart size={19} fill={liked?.has(active.assetId) ? 'currentColor' : 'none'} /></button>}<button type="button" className="rv-seen-button" onClick={() => setTray(value => !value)} aria-expanded={tray} aria-controls="rv-seen"><Images size={16} />Revisit photos</button></div>
           {tray && <motion.nav className="rv-seen" id="rv-seen" aria-label="Seen photographs" initial={reduced ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .2 }}>{photos.map((photo, at) => seen.has(photo.assetId) ? <button key={photo.assetId} type="button" onClick={() => navigate(at)} disabled={loading} aria-label={`Revisit photograph ${at + 1}`} aria-current={at === index ? 'true' : undefined}><img src={photo.thumbnailUrl || photo.url} alt="" /><span>{number(at + 1)}</span></button> : null)}</motion.nav>}
-          <div className="rv-controls"><button className="rv-icon" type="button" disabled={index === 0 || loading} onClick={() => navigate(index - 1)} aria-label="Previous photograph"><ChevronLeft size={21} /></button><button className="rv-primary fd-reveal-next" type="button" onClick={next} disabled={loading}>{loading ? <LoaderCircle className="rv-spin" size={18} /> : null}{index === photos.length - 1 ? 'Complete reveal' : 'Reveal next photo'}<ChevronRight size={19} /></button></div>
-          <div className="rv-loading-status" role="status" aria-live="polite">{loading ? 'Loading the next photograph…' : ''}</div>{failed !== null && <p className="rv-error" role="alert">This photograph could not load. <button type="button" onClick={() => navigate(failed)}>Retry photograph</button></p>}
+          <div className="rv-loading-status rv-tap-hint" id="rv-reveal-hint" role="status" aria-live="polite">{loading ? 'Loading the next photograph…' : index === photos.length - 1 ? 'Tap the photo to finish your reveal.' : 'Tap the photo to reveal the next one.'}</div>{failed !== null && <p className="rv-error" role="alert">This photograph could not load. <button type="button" onClick={() => navigate(failed)}>Retry photograph</button></p>}
         </aside>
       </motion.main> : <motion.main key="closing" className="rv-closing" initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: reduced ? 0 : .45 }}>
         <div className={`rv-ending-photos ${ending.length === 1 ? 'is-single' : ''}`}>{ending.map((photo, at) => <motion.figure key={photo.assetId} className={photo.assetId === closing?.assetId ? 'is-leading' : ''} initial={reduced ? false : { opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .65, delay: reduced ? 0 : at * .1, ease }}><button type="button" onClick={() => openPhoto(photo)} aria-label={`View closing photograph ${at + 1}`}><RevealImage photo={photo} eager /></button></motion.figure>)}</div>

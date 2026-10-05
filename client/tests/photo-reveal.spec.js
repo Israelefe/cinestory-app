@@ -42,7 +42,11 @@ for (const width of [320, 390, 768, 834, 1024, 1440]) test(`Reveal shows complet
   await expect(view.locator('.rv-caption p')).toHaveText(d.creativeDirection.frames[0].caption);
   expect(await view.locator('.rv-caption p').evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(14);
   await expect.poll(() => view.locator('html').evaluate(el => el.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+  await expect.poll(() => view.locator('html').evaluate(el => el.scrollHeight - innerHeight)).toBeLessThanOrEqual(1);
+  await expect(view.locator('.rv-tap-hint')).toHaveText('Tap the photo to reveal the next one.');
+  expect(await view.locator('.rv-photo-frame').evaluate(el => el.getBoundingClientRect().height)).toBeGreaterThan(width === 320 ? 220 : 440);
   await view.getByRole('button', { name: 'Revisit photos', exact: true }).click(); await expect(view.getByRole('button', { name: 'Revisit photograph 1' })).toBeVisible();
+  await expect.poll(() => view.locator('html').evaluate(el => el.scrollHeight - innerHeight)).toBeLessThanOrEqual(1);
   for (let at = 1; at < d.assets.length; at++) { await view.getByRole('button', { name: 'Reveal next photo', exact: true }).click(); await expect(view.locator('.rv-caption h2')).toHaveText(d.creativeDirection.frames[at].headline); }
   await view.getByRole('button', { name: 'Complete reveal', exact: true }).click();
   await expect(view.locator('.rv-ending-photos figure')).toHaveCount(3);
@@ -79,12 +83,15 @@ test('gallery unlocks only after completing the reveal and replay closes access 
   await begin(page);
   await expect(page.getByRole('button', { name: 'Open full gallery', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'View photo', exact: true })).toHaveCount(0);
-  await page.locator('.rv-photo').last().click();
+  await page.getByRole('button', { name: 'Reveal next photo', exact: true }).click();
+  await expect(page.locator('.rv-position')).toHaveAttribute('aria-label', 'Photograph 2 of 5');
   await expect(page.locator('.client-gallery')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Previous photograph', exact: true }).click();
+  await expect(page.locator('.rv-position')).toHaveAttribute('aria-label', 'Photograph 1 of 5');
   await page.getByRole('button', { name: 'Revisit photos', exact: true }).click();
-  await expect(page.locator('.rv-seen button')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Add to favourites', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Remove from favourites', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.rv-seen button')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: 'Add to favourites', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Revisit photos', exact: true })).toHaveText('');
   await complete(page, d);
   await page.getByRole('button', { name: 'Open full gallery', exact: true }).click();
   await expect(page.locator('.client-gallery')).toBeVisible();
@@ -155,4 +162,39 @@ test('demo and client use the same renderer, settings and five-photo sample', as
   await complete(page, PHOTO_REVEAL_DEMO);
   await page.getByRole('button', { name: 'View full gallery', exact: true }).click();
   await expect(page.locator('.client-gallery')).toBeVisible();
+});
+
+test.describe('tap to reveal', () => {
+  test.use({ hasTouch: true });
+
+  for (const route of ['/demo/reveal?phoneView=1', '/d/reveal-test']) test(`swipes leave the photograph unchanged and a tap reveals it on ${route}`, async ({ page }) => {
+    await setup(page, fixture());
+    await page.goto(route);
+    await begin(page);
+    const target = page.getByRole('button', { name: 'Reveal next photo', exact: true });
+    await target.click({ trial: true });
+    const box = await target.boundingBox();
+    const x = box.x + box.width / 2, y = box.y + box.height / 2;
+    const session = await page.context().newCDPSession(page);
+    for (const distance of [-90, 90]) {
+      await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+      await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + distance, y }] });
+      await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await expect(page.locator('.rv-position')).toHaveAttribute('aria-label', 'Photograph 1 of 5');
+    }
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x - 80, y, { steps: 4 });
+    await page.mouse.up();
+    await expect(page.locator('.rv-position')).toHaveAttribute('aria-label', 'Photograph 1 of 5');
+    await target.tap();
+    await expect(page.locator('.rv-position')).toHaveAttribute('aria-label', 'Photograph 2 of 5');
+    await expect(page.locator('.rv-photo').last()).toHaveAttribute('data-asset-id', PHOTO_REVEAL_DEMO.assets[1].assetId);
+    await expect.poll(() => page.locator('.rv-curtain').last().locator('i').first().evaluate(el => Math.abs(el.getBoundingClientRect().x - el.parentElement.getBoundingClientRect().x))).toBeGreaterThan(40);
+    await page.screenshot({ path: `../.visual-review/photo-reveal-${route.startsWith('/demo') ? 'demo' : 'client'}.png` });
+    await target.focus();
+    await page.keyboard.press('Space');
+    await expect(page.locator('.rv-position')).toHaveAttribute('aria-label', 'Photograph 3 of 5');
+    await expect.poll(() => page.locator('html').evaluate(el => el.scrollHeight - innerHeight)).toBeLessThanOrEqual(1);
+  });
 });
