@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useReducedMotion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 
 function TypedLine({ text, start, typedCount, reduced, accent }) {
   const characters = [...text].map((character, index) => {
@@ -14,7 +14,7 @@ function TypedLine({ text, start, typedCount, reduced, accent }) {
 }
 
 export default function TypedHeading({ lines, className = '' }) {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const headlineLength = lines.reduce((total, line) => total + [...line.text].length, 0);
   const [typedCount, setTypedCount] = useState(0);
   const [typingForward, setTypingForward] = useState(true);

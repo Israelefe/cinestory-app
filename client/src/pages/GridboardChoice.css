@@ -26,7 +26,6 @@
 .v-create-choice-card:hover .v-choice-masonry img { transform: scale(1.04); }
 @media (max-width: 900px) { .v-choice-masonry { width: min(82%, 400px); height: 78%; } }
 @media (max-width: 680px) { .v-choice-masonry { width: min(78%, 390px); height: 79%; } }
-@media (prefers-reduced-motion: reduce) { .v-choice-masonry img { transition: none; } .v-create-choice-card:hover .v-choice-masonry img { transform: none; } }
 
 .v-create-choice-visual {
   flex-direction: column;
@@ -86,7 +85,6 @@
   .v-choice-masonry { width: min(78%, 390px); height: 100%; }
   .v-choice-format b { min-height: 31px; font-size: clamp(8px, 2.4vw, 10px); }
 }
-@media (prefers-reduced-motion: reduce) { .v-choice-format { transition: none; } .v-create-choice-card:hover .v-choice-format:nth-child(2n) { transform: none; } }
 
 /* Photo Swap choice card styling */
 .is-photoswap .v-create-choice-visual {
@@ -164,14 +162,5 @@
   .v-create-choice-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 18px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .v-choice-swap-card {
-    transition: none !important;
-  }
-  .v-create-choice-card.is-photoswap:hover .v-choice-swap-card {
-    transform: none !important;
   }
 }

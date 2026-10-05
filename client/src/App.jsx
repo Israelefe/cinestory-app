@@ -2,6 +2,7 @@ import React, { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useSt
 import { RegionalPricingProvider } from './components/RegionalPricing.jsx';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigationType } from 'react-router-dom';
 import { MotionConfig } from 'framer-motion';
+import { VEYLO_MOTION_CONFIG } from './utils/motionPolicy.js';
 import { ToastContainer } from 'react-toastify';
 import { PhonePresentationRoute } from './components/delivery/PhonePresentation.jsx';
 import Navbar from './components/Navbar.jsx';
@@ -234,7 +235,7 @@ export default function App() {
     window.location.assign('/');
   };
   const handlePlanChanged = useCallback(plan => setUser(current => current ? { ...current, plan } : current), []);
-  return <RegionalPricingProvider><MotionConfig reducedMotion="user"><BrowserRouter><RoutePosition /><DeliveryChrome user={user} /><ToastContainer position="top-right" theme="dark" autoClose={3000} /><Suspense fallback={<div className="v-page-loading" role="status">Opening Veylo…</div>}><Routes>
+  return <RegionalPricingProvider><MotionConfig {...VEYLO_MOTION_CONFIG}><BrowserRouter><RoutePosition /><DeliveryChrome user={user} /><ToastContainer position="top-right" theme="dark" autoClose={3000} /><Suspense fallback={<div className="v-page-loading" role="status">Opening Veylo…</div>}><Routes>
     <Route path="/story/:storyId" element={<PhonePresentationRoute title="Photo Story demo"><StoryViewer /></PhonePresentationRoute>} />
     <Route path="/d/:publicId" element={<PhonePresentationRoute title="Client delivery"><DeliveryViewer /></PhonePresentationRoute>} />
     <Route path="/__phone-preview" element={<PhonePreviewPage />} />

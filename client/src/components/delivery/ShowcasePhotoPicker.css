@@ -9,4 +9,3 @@
 @media(hover:hover){.showcase-picker-grid>button:not(:disabled):hover{transform:translateY(-2px)}}
 @media(max-width:1024px){.showcase-picker-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}}
 @media(max-width:640px){.showcase-picker-backdrop{padding:10px}.showcase-picker{max-height:calc(100dvh - 20px);border-radius:16px}.showcase-picker header{padding:20px 16px 16px;gap:12px}.showcase-picker h2{font-size:21px}.showcase-picker-search{margin:0 16px 16px}.showcase-picker-grid{grid-template-columns:repeat(2,minmax(0,1fr));padding:4px 16px 20px;gap:14px}.showcase-picker footer{padding:16px}.showcase-picker footer>div{align-items:stretch;flex-direction:column;gap:12px}.showcase-picker footer button{width:100%}}
-@media(prefers-reduced-motion:reduce){.showcase-picker-grid>button,.v3-photo-choice-button{transition:none;transform:none!important}}

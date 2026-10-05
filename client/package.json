@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "npm run verify:motion-policy",
     "build": "vite build",
     "deploy": "npm run build && npx wrangler deploy",
     "preview": "vite preview",
     "verify:share-meta": "node scripts/verify-share-meta.mjs",
     "verify:delivery-v2": "node scripts/verify-delivery-v2.mjs",
-    "verify:responsive": "node scripts/verify-responsive-contract.mjs"
+    "verify:responsive": "node scripts/verify-responsive-contract.mjs",
+    "verify:motion-policy": "node scripts/verify-motion-policy.mjs"
   },
   "dependencies": {
     "@dnd-kit/dom": "^0.5.0",

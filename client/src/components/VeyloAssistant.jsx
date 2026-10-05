@@ -81,8 +81,7 @@ function AssistantChat({ chatKey, surface, pathname }) {
   const scrollToLatest = (smooth = false) => {
     const element = scrollRef.current;
     if (!element) return;
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    element.scrollTo({ top: element.scrollHeight, behavior: smooth && !reducedMotion ? 'smooth' : 'auto' });
+    element.scrollTo({ top: element.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
     stickToBottomRef.current = true;
     setAwayFromBottom(false);
   };

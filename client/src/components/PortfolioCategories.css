@@ -18,4 +18,3 @@
 .v-pedit .v-pcategories-actions { position: sticky; bottom: -1px; z-index: 2; background: #0c0c10; padding-bottom: 12px; box-shadow: 0 -16px 20px #0c0c10; }
 @media (min-width: 641px) { .v-pcategories-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 1025px) { .v-pcategories-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (prefers-reduced-motion: reduce) { .v-pcategory-card, .v-pcategory-card button { transition: none; } }

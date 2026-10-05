@@ -35,6 +35,7 @@ async function complete(view, delivery) {
 }
 
 for (const width of [320, 390, 768, 834, 1024, 1440]) test(`Reveal shows complete photos, readable captions and three closing photos at ${width}px`, async ({ page }) => {
+  test.setTimeout(60000); // Full-motion transitions also run inside the desktop phone preview.
   await page.setViewportSize({ width, height: width === 320 ? 568 : 1000 }); const d = fixture();
   await setup(page, d); await page.goto('/d/reveal-test'); const view = viewAt(page, width);
   await expect(view.locator('.rv-opening h1')).toHaveText(d.creativeDirection.title); await begin(view);

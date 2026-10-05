@@ -116,7 +116,10 @@ Every single page and UI component must feature fluid, lightweight, 60fps animat
   - Smooth spring physics for drawers, dropdowns, and modals (`type: 'spring', damping: 25, stiffness: 280`)
   - Ambient breathing glows and soft status pulses
 - **Zero Performance Lag:** Animations must be lightweight and GPU hardware-accelerated (`transform`, `opacity`, `translateZ(0)`). Never animate layout triggers like `height` or `width` during continuous motion.
-- **Accessibility:** Always respect `prefers-reduced-motion` and disable intense animations for users who request reduced motion.
+- **Mandatory Veylo Motion Policy:** Veylo must preserve its intended animations and interactions regardless of the device's Reduce Motion preference. All existing and future pages, components, portfolios, previews, and delivery formats must follow `client/src/utils/motionPolicy.js`. Use `useVeyloReducedMotion` for the shared component flag and `VEYLO_MOTION_CONFIG` for any Framer Motion provider. Never use Framer Motion's device-preference hooks, browser reduced-motion queries, or CSS reduced-motion media rules to suppress Veylo animations. Do not override the shared provider configuration.
+- **Preserve User Controls:** Keep explicit photographer-selected settings such as still photographs, still portfolio motion, and disabled effects, along with client pause controls and visibility-based pauses. The device preference must not change these choices.
+- **Enforcement:** `npm run build` must run `verify:motion-policy` before bundling. Do not remove, bypass, or weaken this check. New animation code must pass the check and retain full motion when the browser reports reduced motion.
+- **Accessibility:** Maintain keyboard access, visible focus, readable content, and practical pause controls. Keep animations lightweight and avoid flashing effects.
 
 ---
 
@@ -139,4 +142,3 @@ Security is non-negotiable across every line of frontend and backend code:
 
 ## Core Brand North Star
 > **Don’t just deliver photos. Showcase them.**
-

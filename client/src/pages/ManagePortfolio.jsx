@@ -4,7 +4,7 @@ import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronRight, ExternalLink, GripV
 import { DragDropProvider } from '@dnd-kit/react';
 import { useSortable } from '@dnd-kit/react/sortable';
 import { KeyboardSensor, PointerSensor, PointerActivationConstraints } from '@dnd-kit/dom';
-import { useReducedMotion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import api, { apiMessage } from '../services/api.js';
 import { contactErrors } from '../services/portfolio.js';
 import { usePortfolioDraft } from '../hooks/usePortfolioDraft.js';
@@ -50,7 +50,7 @@ function PhotoTile({
   onMove,
   count
 }) {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const {
     ref,
     handleRef,

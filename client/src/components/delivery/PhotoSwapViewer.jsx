@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { motion, AnimatePresence, useMotionValue, useTransform, useReducedMotion } from 'framer-motion';
+import { motion, AnimatePresence, animate, useIsPresent, useMotionValue, useMotionValueEvent, useTransform } from 'framer-motion';
+import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import {
   ArrowDownToLine,
   ArrowRight,
@@ -40,6 +41,22 @@ function getDominantColor(asset) {
 const SWIPE_VELOCITY = 280;
 const SWIPE_DISTANCE = 0.22;
 
+function PhotoSwapPrint({ stackOffset, reduced, onDragEnd, ...props }) {
+  // Each entering/exiting print owns its values so the next print cannot cancel its exit.
+  const x = useMotionValue(0), rotate = useMotionValue(0);
+  const present = useIsPresent();
+  useMotionValueEvent(x, 'change', value => {
+    if (present) stackOffset.set(value);
+  });
+  useEffect(() => { if (present) stackOffset.set(0); }, [present, stackOffset]);
+  return <motion.div {...props} style={{ x, rotate: reduced ? 0 : rotate }}
+    onDrag={(_, info) => rotate.set(Math.max(-7, Math.min(7, info.offset.x * 7 / 300)))}
+    onDragEnd={(event, info) => {
+      animate(rotate, 0, { type: 'spring', damping: 26, stiffness: 280 });
+      onDragEnd?.(event, info);
+    }} />;
+}
+
 export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = false, preview = false }) {
   const assets = useMemo(() => {
     return [...(delivery?.assets || [])].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
@@ -53,7 +70,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
   const [showGallery, setShowGallery] = useState(false);
   const [muted, setMuted] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const audioRef = useRef(null);
 
   const isEnd = currentIndex >= assets.length;
@@ -107,9 +124,8 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
     setCurrentIndex(next);
   }, [currentIndex, showGallery, assets.length]);
 
-  // Motion drag values for the active top card
+  // The active print reports its offset to the cards behind it.
   const x = useMotionValue(0);
-  const rotate = useTransform(x, [-300, 0, 300], [-7, 0, 7]);
   const behindScale1 = useTransform(x, [-250, 0, 250], [1, 0.94, 1]);
   const behindRotate1 = useTransform(x, [-250, 0, 250], [0, 3, 0]);
   const behindOpacity1 = useTransform(x, [-250, 0, 250], [1, 0.72, 1]);
@@ -419,10 +435,11 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
               {/* Top Active Card with Spring Drag */}
               <AnimatePresence initial={false} custom={direction}>
                 {!isEnd && currentAsset ? (
-                  <motion.div
+                  <PhotoSwapPrint
                     key={currentAsset.assetId}
                     className="ps-print-card ps-print-top"
-                    style={{ x, rotate: reduced ? 0 : rotate }}
+                    stackOffset={x}
+                    reduced={reduced}
                     drag={reduced ? false : 'x'}
                     dragConstraints={{ left: 0, right: 0 }}
                     dragElastic={0.85}
@@ -475,7 +492,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
                       loading="eager"
                     />
                     <div className="ps-print-glare" />
-                  </motion.div>
+                  </PhotoSwapPrint>
                 ) : isEnd ? (
                   /* ─── State 3: Editorial Finale Screen ──────────────── */
                   <motion.div

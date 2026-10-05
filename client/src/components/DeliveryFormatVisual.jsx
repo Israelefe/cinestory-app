@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { AnimatePresence, motion, useInView, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion, useInView } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { ArrowRight, BookOpen, BriefcaseBusiness, CalendarRange, Film, Grid2X2, Layers3, MousePointer2, PackageOpen, ScanLine, UsersRound } from 'lucide-react';
 import { Photo } from './PublicDesign.jsx';
 
@@ -8,7 +9,7 @@ const move = (reduced, values, duration = 8) => reduced
   : { animate: values, transition: { duration, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' } };
 
 export default function DeliveryFormatVisual({ format, compact = false, paused = false }) {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const visualRef = useRef(null);
   const visible = useInView(visualRef, { amount: .06, margin: '140px 0px' });
   const pauseMotion = reduced || paused || !visible;

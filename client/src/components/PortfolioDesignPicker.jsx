@@ -1,7 +1,7 @@
 import React from 'react';
 import { Check, ArrowUpRight, Image as ImageIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { usePortfolioReducedMotion } from './usePortfolioReducedMotion.js';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { portfolioDesigns } from './portfolioDesigns.js';
 import './PortfolioDesignPicker.css';
 
@@ -18,7 +18,7 @@ function DesignThumbnail({ design, form }) {
 }
 
 export default function PortfolioDesignPicker({ form, onChange, onPreview }) {
-  const reduced = usePortfolioReducedMotion();
+  const reduced = useVeyloReducedMotion();
   return <section className="vpd-picker" aria-labelledby="vpd-title">
     <div className="vpd-introduction"><div><p className="vpd-kicker">The look of your studio</p><h2 id="vpd-title">Choose how your work is seen.</h2></div><p>Each design has its own opening, photo arrangement and mobile layout. Try it with your photographs before you choose.</p></div>
     <div className="vpd-grid" role="radiogroup" aria-label="Portfolio design">

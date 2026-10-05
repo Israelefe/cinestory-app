@@ -25,7 +25,8 @@ const heroPhotos = {
 const ease = [0.22, 1, 0.36, 1];
 
 function MovingPhoto({ name, alt, className = '', reduced, motion: movement, eager = false }) {
-  return <motion.figure className={className} animate={reduced ? undefined : movement} transition={reduced ? undefined : { duration: 8, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={name} alt={alt} eager={eager} sizes="(max-width: 1023px) 92vw, 48vw" /></motion.figure>;
+  // Start a fresh animation when the hero enters view after its paused mount.
+  return <motion.figure key={reduced ? 'still' : 'moving'} className={className} animate={reduced ? undefined : movement} transition={reduced ? undefined : { duration: 8, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}><Photo name={name} alt={alt} eager={eager} sizes="(max-width: 1023px) 92vw, 48vw" /></motion.figure>;
 }
 
 function StoryScene({ reduced }) {

@@ -303,7 +303,6 @@
 .v-portfolio-canvas.type-editorial .vpc-hero h1, .v-portfolio-canvas.type-classic .vpc-hero h1 { font-family: 'Playfair Display', Georgia, serif; font-weight: 450; }
 .v-portfolio-canvas.type-modern .vpc-hero h1 { font-family: 'Outfit', sans-serif; font-weight: 550; }
 .v-portfolio-canvas[data-motion='still'] * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
-@media (prefers-reduced-motion: reduce) { .v-portfolio-canvas * { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
 
 /* Studio information stays readable across all four photographic designs. */
 .v-portfolio-canvas .vpc-brand{gap:12px}.vpc-brand img{width:34px;height:34px;object-fit:contain;flex:none}

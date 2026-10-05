@@ -1,6 +1,7 @@
 import { ProPrice, PricingNotice } from '../components/RegionalPricing.jsx';
 import React from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import {
   Camera,
   Clapperboard,
@@ -22,7 +23,7 @@ const directionChoices = [
 ];
 
 export default function PortfolioPage({ user }) {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
 
   return (
     <Page className="v-portfolio-page">

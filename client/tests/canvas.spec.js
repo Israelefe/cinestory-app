@@ -112,7 +112,8 @@ test('normal-motion connections reveal in place, stay dashed, and avoid photo fr
   })).toBe(true);
 });
 
-test('staggered Canvas keeps captions upright, reveals group members separately and retains normal-motion navigation',async({page})=>{
+test('staggered Canvas keeps captions upright, reveals group members separately and retains normal-motion navigation',async({page,browserName})=>{
+  test.skip(browserName !== 'chromium', 'This test dispatches touch gestures through Chromium CDP.');
   await page.setViewportSize({width:1440,height:600});await page.emulateMedia({reducedMotion:'no-preference'});await init(page);const data=record();
   data.creativeDirection.sections[0].assetIds=data.curatedAssetIds.slice(1,5);data.formatConfig.canvas.checkpoints=data.formatConfig.canvas.checkpoints.filter(p=>p.type==='group'||!data.curatedAssetIds.slice(3,5).includes(p.assetId));await preview(page,data);
   await page.getByRole('button',{name:'Explore the canvas',exact:true}).click();
@@ -135,8 +136,8 @@ test('staggered Canvas keeps captions upright, reveals group members separately 
   await page.evaluate(delivery=>window.postMessage({type:'veylo:phone-preview-data',payload:{delivery}},location.origin),data);
   // Reordering a live preview keeps connections for prints already explored.
   await expect.poll(()=>branchMasks.evaluateAll(masks=>masks.slice(1,5).filter(el=>Number(getComputedStyle(el).getPropertyValue('--cv-line-length'))===1).length)).toBe(4);
-  await page.emulateMedia({reducedMotion:'reduce'});await expect(page.locator('.cv-frame-drift').first()).toHaveCSS('transform','none');
-  await expect(page.locator('.cv-frame-surface').first()).toHaveCSS('transform','none');
+  await page.emulateMedia({reducedMotion:'reduce'});await expect(page.locator('.cv-frame-drift').first()).not.toHaveCSS('transform','none');
+  await expect(page.locator('.cv-frame-surface').first()).not.toHaveCSS('transform','none');
 });
 
 test('aligned Canvas keeps straight prints without scroll depth in the same creator preview',async({page})=>{

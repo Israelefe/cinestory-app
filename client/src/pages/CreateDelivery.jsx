@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronUp, Clapperboard, ExternalLink, Image, LayoutTemplate, ListChecks, LoaderCircle, LockKeyhole, Mail, Music2, Pause, Play, QrCode, RefreshCw, Search, Share2, Trash2, Upload, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
@@ -23,7 +24,7 @@ const NARRATION_RENDER_VERSION = 'flux-hannah-captions-v5';
 const steps = ['Tell us about the shoot', 'Add finished photos', 'Choose the format', 'Review every detail', 'Publish and share'];
 
 function Stage({ children }) {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   return <motion.section className="v-create-stage" initial={reduced ? false : { opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={reduced ? {} : { opacity: 0, y: -10 }} transition={{ duration: reduced ? 0 : .42, ease: [.22, 1, .36, 1] }}>{children}</motion.section>;
 }
 
@@ -165,7 +166,7 @@ async function waitForJob(deliveryId, jobId, onUpdate) {
 }
 
 export default function CreateDelivery({ user }) {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const [params, setParams] = useSearchParams();
   const inputRef = useRef(null);
   const audioInputRef = useRef(null);

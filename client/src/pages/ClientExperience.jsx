@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import {
   ArrowRight, Check, Download, FolderOpen, Image as ImageIcon,
   LockKeyhole, MessageCircle, MousePointer2, Send, Smartphone
@@ -123,7 +124,7 @@ function ClientPhone({ active, setActive, reduced }) {
 
 export default function ClientExperience() {
   const [activeMoment, setActiveMoment] = useState(0);
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
 
   return <Page className="v-client-page-v2">
     <header className="v-wrap v-ce-hero">

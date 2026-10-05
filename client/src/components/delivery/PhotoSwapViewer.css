@@ -751,12 +751,3 @@
 }
 
 /* Reduced motion preference */
-@media (prefers-reduced-motion: reduce) {
-  .ps-btn,
-  .ps-icon-btn,
-  .ps-icon-pill,
-  .ps-dock-btn,
-  .ps-print-card {
-    transition: none !important;
-  }
-}

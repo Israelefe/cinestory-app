@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import { ArrowRight, BriefcaseBusiness, CalendarRange, Download, FileCheck2, Images, MapPin, Users } from 'lucide-react';
 import { Photo } from '../PublicDesign.jsx';
 import {
@@ -99,7 +100,7 @@ function OpeningPhoto({ photo, alt }) {
 }
 
 export function EventCoverageViewer({ delivery, galleryProps, audioState, toggleAudio, onNarrationNavigate }) {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const [gallery, setGallery] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(null);
   const [activeFilter, setActiveFilter] = useState('all');
@@ -217,7 +218,7 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
 }
 
 export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, toggleAudio, onNarrationNavigate }) {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const [gallery, setGallery] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(null);
   const [activeFilter, setActiveFilter] = useState('all');

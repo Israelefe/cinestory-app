@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { Menu, X, ArrowUpRight, ArrowRight, LayoutDashboard, LogOut } from 'lucide-react';
 import { useDialogFocus } from './useDialogFocus.js';
 import './Header.css';
@@ -8,7 +9,7 @@ const links = [['Home', '/'], ['Formats', '/formats'], ['GridBoard', '/gridboard
 export default function Navbar({ user, onLogout }) {
  const [open, setOpen] = useState(false);
  const { pathname } = useLocation();
- const reduced = useReducedMotion();
+ const reduced = useVeyloReducedMotion();
  const menuRef = useRef(null);
  const triggerRef = useRef(null);
  useDialogFocus(open, menuRef, () => setOpen(false), triggerRef);

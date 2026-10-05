@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import { ArrowRight, Images, LoaderCircle, RefreshCw } from 'lucide-react';
 import { toast } from 'react-toastify';
 import ClientGallery from './ClientGallery.jsx';
@@ -13,7 +14,7 @@ export function CollectionGallery({ context, delivery, selection, onClose, singl
 }
 
 export function Arrival({ children, className, index = 0, ...props }) {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   return <motion.div className={className} initial={reduced ? false : { opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .15 }} transition={{ duration: reduced ? 0 : .45, delay: reduced ? 0 : Math.min(index % 6 * .045, .225), ease: presentationEase }} {...props}>{children}</motion.div>;
 }
 export function usePresentation(delivery, galleryProps = {}, demo = false) {

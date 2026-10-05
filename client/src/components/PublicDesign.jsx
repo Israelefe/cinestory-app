@@ -1,12 +1,13 @@
 import { ProPrice, PricingNotice } from './RegionalPricing.jsx';
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { ArrowUpRight, ArrowRight, Plus, Check, BadgeCheck, Camera } from 'lucide-react';
 import Footer from './Footer.jsx';
 
 export function Reveal({ children, className = '', delay = 0, ...props }) {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   return <motion.div className={className} initial={reduced ? false : { opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.14, margin: "-30px 0px" }} transition={{ duration: reduced ? 0 : 0.65, delay: reduced ? 0 : delay, ease: [0.22, 1, 0.36, 1] }} {...props}>{children}</motion.div>;
 }
 

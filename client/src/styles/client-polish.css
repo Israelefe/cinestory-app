@@ -92,7 +92,3 @@
   :is(.v-fguide-director-copy, .v-portfolio-direction-copy, .v-ce-control-copy) { align-self: end; }
   :is(.v-fguide-director-stage, .v-portfolio-direction-art, .v-ce-control-card) { align-self: center; }
 }
-@media (prefers-reduced-motion: reduce) {
-  :is(.v-formats-page-v2, .v-gridboard-page, .v-portfolio-page, .v-client-page-v2, .v-pricing-page) :is(.v-button, .v-fguide-demo-link) { transition: none; }
-  :is(.v-formats-page-v2, .v-gridboard-page, .v-portfolio-page, .v-client-page-v2, .v-pricing-page) :is(.v-button, .v-fguide-demo-link):is(:hover, :active) { transform: none; }
-}

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import { AlertCircle, Check, LoaderCircle, Search, X } from 'lucide-react';
 import { useDialogFocus } from '../useDialogFocus.js';
 import './ShowcasePhotoPicker.css';
@@ -14,7 +15,7 @@ export default function ShowcasePhotoPicker({ title, assets, currentId, mediaUrl
   const [choice, setChoice] = useState(currentId || '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   useEffect(() => () => controller.current?.abort(), []);
   const close = () => { requestVersion.current++; controller.current?.abort(); onClose(); };
   useDialogFocus(true, dialog, close);

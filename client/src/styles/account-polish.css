@@ -65,7 +65,3 @@
   .v-auth-page .v-auth-two { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .v-onboarding-page .v-onboarding-guide h1 { font-size: 58px; }
 }
-@media (prefers-reduced-motion: reduce) {
-  :is(.v-auth-page, .v-auth-flow-page, .v-onboarding-page) :is(.v-button, input, select) { transition: none; }
-  :is(.v-auth-page, .v-auth-flow-page, .v-onboarding-page) .v-button:is(:hover,:active) { transform: none; }
-}

@@ -1,7 +1,8 @@
 import { ProPrice } from '../components/RegionalPricing.jsx';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { Plus, AlertCircle, ArrowLeft, ArrowRight, AudioLines, Check, ChevronLeft, ChevronRight, Clock3, ExternalLink, Image, LoaderCircle, Mail, Mic2, Music2, Pause, Play, QrCode, RefreshCw, RotateCcw, Search, Share2, Trash2, Upload } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
@@ -107,7 +108,7 @@ function FormatCard({ item, selected, onSelect }) {
 
 export default function CreateDeliveryV3({ user, initialDelivery }) {
   const navigate = useNavigate();
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const [draft, setDraft] = useState(initialDelivery || null);
   const [entitlements, setEntitlements] = useState(null);
   const [billingLoading, setBillingLoading] = useState(true);

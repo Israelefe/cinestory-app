@@ -117,4 +117,3 @@
   .v-fguide-brief,.v-niche-hero-art,.v-pricing-format-board,.v-about-simple-page .v-editorial-image{grid-area:art;align-self:center}
   .v-fguide-hero-after,.v-niche-hero-after,.v-pricing-hero-after,.v-about-hero-after{grid-area:after;align-self:start}
 }
-@media(prefers-reduced-motion:reduce){.v-fguide-hero-jump,.v-pricing-early-actions a,.v-niche-hero-demo,.v-portfolio-hero-actions>a{transition:none;transform:none!important}}

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { verifyMotionPolicy } from './verify-motion-policy.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');
@@ -29,18 +30,18 @@ const css = sources.join('\n');
 for (const [index, source] of sources.entries()) {
   const path = paths[index];
   assert.match(source, /:focus-visible/, `${path} must expose a keyboard focus treatment`);
-  assert.match(source, /prefers-reduced-motion/, `${path} must respect reduced motion`);
+  assert.doesNotMatch(source, /prefers-reduced-motion/, `${path} must preserve Veylo motion`);
 }
 for (const breakpoint of [640, 768, 1024]) {
   assert.match(css, new RegExp(`@media\\s*\\(\\s*min-width:\\s*${breakpoint}px`), `Missing ${breakpoint}px layout checkpoint`);
 }
 assert.doesNotMatch(css, /overflow-x\s*:\s*scroll/, 'Core delivery surfaces must not introduce forced horizontal scrolling');
 assert.match(css, /overflow-x\s*:\s*hidden/, 'Core delivery surfaces must clip accidental page-wide overflow');
-assert.match(css, /prefers-reduced-motion/, 'Core delivery surfaces must respect reduced motion');
+await verifyMotionPolicy();
 assert.match(css, /@media\s*\(\s*max-width\s*:\s*(?:374|380|420|430|639|640)px/, 'Core delivery surfaces must include a narrow-phone adjustment');
 assert.match(css, /minmax\(0,1fr\)/, 'Core delivery grids must allow cards to shrink without horizontal overflow');
 assert.match(css, /:focus(?:-visible)?\s*\{/, 'Core delivery surfaces must include a visible keyboard focus treatment');
 assert.match(css, /min-height\s*:\s*(?:4[4-9]|[5-9]\d)px/, 'Interactive controls must include touch-safe target sizing');
 const viewportCheckpoints = [320, 768, 834, 1024, 1280];
 assert.deepEqual(viewportCheckpoints, [320, 768, 834, 1024, 1280], 'Phone, tablet, and desktop checkpoints must remain explicit');
-console.log('Responsive contract verified: phone, tablet, desktop checkpoints, overflow guard, and reduced-motion coverage are present.');
+console.log('Responsive contract verified: phone, tablet, desktop checkpoints, overflow guard, and full-motion policy are present.');

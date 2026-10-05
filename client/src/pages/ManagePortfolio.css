@@ -856,13 +856,6 @@
     grid-template-columns: repeat(2,minmax(0,1fr))
   }
 }
-@media(prefers-reduced-motion:reduce) {
-  .v-pedit * {
-    animation: none!important;
-    transition: none!important;
-    scroll-behavior: auto!important
-  }
-}
 .v-pedit-ai-order {
   display: grid;
   grid-template-columns: repeat(3,minmax(0,1fr));

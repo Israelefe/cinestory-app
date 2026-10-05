@@ -114,30 +114,35 @@ for (const width of [320, 768, 834, 1440]) {
 }
 
 test('slideshow movement pauses, keeps photo timing, completes gently, and replays from the first photo', async ({ page }) => {
-  test.setTimeout(45000);
+  test.setTimeout(60000);
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 3, necessary: true, serviceAnalytics: true })));
+  await page.route('**/api/v1/**', route => route.fulfill({ json: { success: true, user: null, data: {} } }));
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/demo/gridboard');
   await page.getByRole('button', { name: 'Slideshow', exact: true }).click();
-  await page.getByLabel('Time per photo').selectOption('4');
+  await page.getByLabel('Time per photo').selectOption('9');
   await page.locator('.pb-slideshow-choice').filter({ hasText: 'Green outfits' }).click();
+  await page.getByRole('button', { name: 'Pause slideshow' }).click();
   await expect(page.locator('.pb-slideshow-main-photo')).toHaveCount(1);
   await expect(page.locator('.pb-slideshow > footer')).toContainText('Photograph 1 of 2');
-  await expect(page.locator('.pb-slideshow-main-photo')).toHaveCSS('animation-duration', '4s');
+  await expect(page.locator('.pb-slideshow-main-photo')).toHaveCSS('animation-duration', '9s');
   await expect.poll(() => page.locator('.pb-slideshow-main-photo').evaluate(image => getComputedStyle(image).transform)).not.toBe('none');
-  await page.getByRole('button', { name: 'Pause slideshow' }).click();
+  await expect(page.locator('.pb-slideshow-main-photo')).toHaveCSS('animation-play-state', 'paused');
+  await page.locator('.pb-slideshow-main-photo').evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const still = await page.locator('.pb-slideshow-main-photo').evaluate(image => getComputedStyle(image).transform);
   await page.waitForTimeout(450);
   expect(await page.locator('.pb-slideshow-main-photo').evaluate(image => getComputedStyle(image).transform)).toBe(still);
   await expect(page.locator('.pb-slideshow-progress i')).toHaveCSS('animation-play-state', 'paused');
   await page.getByRole('button', { name: 'Resume slideshow' }).click();
-  await expect(page.locator('.pb-slideshow > footer')).toContainText('Photograph 2 of 2', { timeout: 6000 });
-  await expect(page.locator('.pb-slideshow-ending')).toBeVisible({ timeout: 6000 });
+  await expect(page.locator('.pb-slideshow > footer')).toContainText('Photograph 2 of 2', { timeout: 12000 });
+  await expect(page.locator('.pb-slideshow-ending')).toBeVisible({ timeout: 12000 });
   await expect.poll(() => page.locator('.pb-viewer > audio').evaluate(audio => audio.paused && audio.volume === 0)).toBe(true);
   await page.getByRole('button', { name: 'Replay slideshow' }).click();
   await expect(page.locator('.pb-slideshow > footer')).toContainText('Photograph 1 of 2');
   await expect(page.locator('.pb-slideshow-ending')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Pause slideshow' }).click();
   await page.getByRole('button', { name: 'Next photo', exact: true }).click();
   await expect(page.locator('.pb-slideshow > footer')).toContainText('Photograph 2 of 2');
   await page.getByRole('button', { name: 'Previous photo', exact: true }).click();
@@ -147,15 +152,15 @@ test('slideshow movement pauses, keeps photo timing, completes gently, and repla
   expect(errors).toEqual([]);
 });
 
-test('reduced motion keeps slideshow photographs and their backgrounds still', async ({ page }) => {
+test('device reduced motion preserves slideshow photographs and background movement', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 834, height: 900 });
   await page.goto('/demo/gridboard');
   await page.getByRole('button', { name: 'Slideshow', exact: true }).click();
   await page.locator('.pb-slideshow-choice').filter({ hasText: 'Every photograph' }).click();
-  await expect(page.locator('.pb-slideshow-main-photo')).toHaveCSS('animation-name', 'none');
-  await expect(page.locator('.pb-slideshow-ambient')).toHaveCSS('animation-name', 'none');
-  await expect(page.locator('.pb-slideshow-main-photo')).toHaveCSS('transform', 'none');
+  await expect(page.locator('.pb-slideshow-main-photo')).toHaveCSS('animation-name', /pb-slide-/);
+  await expect(page.locator('.pb-slideshow-ambient')).toHaveCSS('animation-name', /pb-slide-ambient-/);
+  await expect(page.locator('.pb-slideshow-main-photo')).not.toHaveCSS('transform', 'none');
   expect(await page.locator('.pb-slideshow').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
 

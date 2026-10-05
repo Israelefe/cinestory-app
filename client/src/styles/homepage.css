@@ -148,9 +148,3 @@
   .v-home-refined .v-hero-after .v-actions { display: grid; grid-template-columns: minmax(0, 1fr); }
   .v-home-refined .v-hero-after .v-button { width: 100%; justify-content: space-between; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .v-home-refined .v-button, .v-home-refined .v-format-after .v-text-link { transition: none; }
-  .v-home-refined .v-button:hover, .v-home-refined .v-button:active,
-  .v-home-refined .v-format-after .v-text-link:hover,
-  .v-home-refined .v-format-after .v-text-link:active { transform: none; }
-}

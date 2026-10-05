@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { ArrowDown, ArrowUp, Image as ImageIcon, Plus, Trash2, Upload } from 'lucide-react';
 import PortfolioPhotoPicker from './PortfolioPhotoPicker.jsx';
 import { PORTFOLIO_LIMITS, normalizePortfolioContent, normalizeProjectDetails } from '../services/portfolioContent.mjs';
@@ -61,7 +62,7 @@ const definitions = {
   process: { title: 'How working with you works', introduction: 'Explain the real steps from the first enquiry to receiving the finished photographs.', singular: 'process step', fields: [['title', 'Step title', 100], ['description', 'Step description', 400, true]] }
 };
 export function PortfolioCollectionEditor({ form, setForm, Field, kind }) {
-  const content = contentOf(form), config = definitions[kind], rows = content[kind], reduced = useReducedMotion();
+  const content = contentOf(form), config = definitions[kind], rows = content[kind], reduced = useVeyloReducedMotion();
   const patch = (id, changes) => setForm(current => { const next = contentOf(current); return { ...current, content: { ...next, [kind]: next[kind].map(row => row.id === id ? { ...row, ...changes } : row) } }; });
   const add = () => { const row = { id: crypto.randomUUID(), ...Object.fromEntries(config.fields.map(([key]) => [key, ''])), ...(kind === 'services' ? { priceMode: 'hidden', price: 0, priceMax: 0, projectIds: [] } : kind === 'testimonials' ? { projectId: '', permission: false } : {}) }; changeContent(setForm, { [kind]: [...rows, row] }); };
   const move = (index, offset) => { const next = [...rows]; [next[index], next[index + offset]] = [next[index + offset], next[index]]; changeContent(setForm, { [kind]: next }); };

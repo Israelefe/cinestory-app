@@ -118,11 +118,6 @@
   .veylo-assistant-starters button { padding: .8rem .7rem; }
   .veylo-assistant-footer { padding: .75rem 1rem max(.75rem, env(safe-area-inset-bottom)); }
 }
-@media (prefers-reduced-motion: reduce) {
-  .veylo-assistant-panel, .veylo-assistant-panel *, .veylo-assistant-launch, .veylo-assistant-backdrop { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
-  .veylo-assistant-panel button:hover, .veylo-assistant-launch:hover { transform: none; }
-  .veylo-assistant-panel button:active { scale: 1; }
-}
 
 .veylo-assistant-panel .veylo-markdown { color: rgba(255, 255, 255, .84); font-size: .9rem; overflow-wrap: anywhere; }
 .veylo-assistant-panel .veylo-markdown > :first-child { margin-top: 0; }

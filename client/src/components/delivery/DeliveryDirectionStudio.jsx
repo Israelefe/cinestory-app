@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Check, Clapperboard, Monitor, Palette, Smartphone, Type } from 'lucide-react';
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import { formatName } from '../../constants/formatRegistry.jsx';
 import './DeliveryDirectionStudio.css';
 
@@ -46,7 +47,7 @@ const FORMAT_DIRECTION_OPTIONS = {
 const fontFamily = value => value === 'clean-sans' ? "'Plus Jakarta Sans',sans-serif" : value === 'condensed-sans' ? "'Outfit',sans-serif" : value === 'soft-serif' ? "'Cormorant Garamond','Playfair Display',serif" : "'Playfair Display',serif";
 
 export default function DeliveryDirectionStudio({ delivery, assets, frameMap, onDirectionChange, onSectionChange, onFrameChange }) {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const [device, setDevice] = useState('phone');
   const [activeIndex, setActiveIndex] = useState(0);
   const direction = delivery?.creativeDirection || {};

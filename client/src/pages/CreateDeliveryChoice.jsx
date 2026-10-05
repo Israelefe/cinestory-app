@@ -1,5 +1,6 @@
 import React from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { ArrowRight, Clapperboard, Grid2X2, Image, Layers3 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import './CreateDeliveryChoice.css';
@@ -24,7 +25,7 @@ const types = [
 ];
 
 export default function CreateDeliveryChoice() {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   return <main className="v-create-choice">
     <div className="v-create-choice-top"><Link to="/dashboard" aria-label="Back to dashboard"><Image size={18} /> Dashboard</Link><span>NEW DELIVERY</span></div>
     <section className="v-create-choice-intro">

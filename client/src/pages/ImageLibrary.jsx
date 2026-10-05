@@ -1,6 +1,7 @@
 import { ProPrice } from '../components/RegionalPricing.jsx';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { Download, FolderOpen, HardDrive, Image, MessageSquareText, Search, Tag, Trash2, Upload, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
@@ -17,7 +18,7 @@ function bytes(value) {
 }
 
 export default function ImageLibrary() {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const inputRef = useRef(null);
   const [assets, setAssets] = useState([]);
   const [usage, setUsage] = useState({ usedBytes: 0, limitBytes: 50 * 1024 ** 3 });

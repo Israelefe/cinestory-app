@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, LayoutGroup, motion, useReducedMotion, useScroll, useSpring, useTransform } from 'framer-motion';
+import { AnimatePresence, LayoutGroup, motion, useScroll, useSpring, useTransform } from 'framer-motion';
+import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import { ArrowDown, ChevronLeft, ChevronRight, Images, List, RefreshCw, X } from 'lucide-react';
 import { Photo } from '../PublicDesign.jsx';
 import { useDialogFocus } from '../useDialogFocus.js';
@@ -104,15 +105,8 @@ function CanvasFocus({ all, selection, setSelection, onClose, triggerRef, reduce
 }
 
 export default function CanvasBoard({ delivery: supplied, galleryProps, audioState, toggleAudio, onNarrationNavigate }) {
-  const delivery = supplied || CANVAS_DEMO_DELIVERY, initialReduced = useReducedMotion();
-  const [reduced, setReduced] = useState(initialReduced);
+  const delivery = supplied || CANVAS_DEMO_DELIVERY, reduced = useVeyloReducedMotion();
   const [finePointer, setFinePointer] = useState(() => window.matchMedia('(hover: hover) and (pointer: fine)').matches);
-  useEffect(() => {
-    const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const update = () => setReduced(preference.matches);
-    update(); preference.addEventListener('change', update);
-    return () => preference.removeEventListener('change', update);
-  }, []);
   useEffect(() => {
     const preference = window.matchMedia('(hover: hover) and (pointer: fine)');
     const update = () => setFinePointer(preference.matches);

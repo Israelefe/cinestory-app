@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import { ArrowLeft, ChevronLeft, ChevronRight, Heart, Images, LoaderCircle, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -26,7 +27,7 @@ function RevealImage({ photo, className = '', eager = false }) {
 }
 
 export default function RevealViewer({ delivery, demo = false, galleryProps = {} }) {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const photos = useMemo(() => revealPhotos(delivery), [delivery]);
   const allPhotos = useMemo(() => revealPhotos(delivery, true), [delivery]);
   const settings = revealSettings(delivery);

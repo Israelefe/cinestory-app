@@ -39,7 +39,3 @@
   .v-home-pinboard-card { grid-template-columns: 1fr; gap: 25px; }
   .v-home-pinboard-art { max-width: none; height: clamp(265px, 75vw, 350px); }
 }
-@media (prefers-reduced-motion: reduce) {
-  .v-home-pinboard-art img { transition: none; }
-  .v-home-pinboard-card:hover .v-home-pinboard-art img { transform: none; }
-}

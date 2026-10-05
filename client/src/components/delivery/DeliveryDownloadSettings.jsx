@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import { Check, LoaderCircle, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api, { apiMessage } from '../../services/api.js';
@@ -9,7 +10,7 @@ import './DeliveryDownloadSettings.css';
 
 export default function DeliveryDownloadSettings({ deliveryId, onClose, onSaved }) {
   const panel = useRef(null);
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const [delivery, setDelivery] = useState(null);
   const [access, setAccess] = useState(null);
   const [loading, setLoading] = useState(true);

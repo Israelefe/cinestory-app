@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { storyFrameDurationSeconds } from '../utils/storyPacing';
 import { Play, Pause, Volume2, VolumeX, Download, Share2, Grid, RotateCcw, ArrowUpRight, Film, Eye, EyeOff, LoaderCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -195,7 +196,7 @@ export default function StoryViewer({ demoMode = false, delivery: suppliedDelive
   }
  };
 
- const reduced = useReducedMotion();
+ const reduced = useVeyloReducedMotion();
  const [story, setStory] = useState(null);
  const [loading, setLoading] = useState(true);
  const [error, setError] = useState('');

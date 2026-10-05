@@ -21,4 +21,3 @@
 @keyframes narration-voice-spin{to{transform:rotate(360deg)}}
 @media(min-width:768px){.narration-voice-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}.narration-voice-card label{padding:22px 20px}.narration-voice-tone{min-height:18px}}
 @media(hover:hover){.narration-voice-card:hover{transform:translateY(-2px)}}
-@media(prefers-reduced-motion:reduce){.narration-voice-card,.narration-voice-card button{transition:none}.narration-voice-card:hover,.narration-voice-card button:active{transform:none}.narration-voice-loading{animation:none}}

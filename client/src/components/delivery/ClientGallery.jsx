@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import { ArrowLeft, ChevronLeft, ChevronRight, Download, Heart, Image as ImageIcon, LoaderCircle, X } from 'lucide-react';
 import { Photo } from '../PublicDesign.jsx';
 import { useDialogFocus } from '../useDialogFocus.js';
@@ -17,7 +18,7 @@ export default function ClientGallery({ photos: collectionPhotos = [], singlePho
   const photos = useMemo(() => singlePhoto ? collectionPhotos.slice(initialIndex, initialIndex + 1) : collectionPhotos, [collectionPhotos, singlePhoto, initialIndex]);
   const originalIndex = index => singlePhoto ? initialIndex : index;
   const photographNumber = index => originalIndex(index) + 1;
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const galleryId = useId();
   const panel = useRef(null);
   const collection = useRef(null);

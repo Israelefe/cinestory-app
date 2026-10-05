@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import { ArrowUpRight, X } from 'lucide-react';
 import { useDialogFocus } from '../useDialogFocus.js';
 
@@ -25,7 +26,7 @@ export function StoryCaptionContent({ text, children, onRead }) {
 
 export function StoryCaptionDialog({ title, text, onClose, fontStyles }) {
   const panel = useRef(null);
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   useDialogFocus(true, panel, onClose);
   return createPortal(<motion.div className="v-story-reading-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .18 }} onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
     <motion.section ref={panel} className="v-story-reading" style={fontStyles} role="dialog" aria-modal="true" aria-labelledby="story-reading-title" tabIndex={-1} initial={reduced ? false : { y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 12, opacity: 0 }} transition={{ duration: reduced ? 0 : .25 }}>

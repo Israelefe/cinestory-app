@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { ArrowRight, BadgeCheck, Check, Clock, Music2, PenLine, Type } from 'lucide-react';
 import { Photo } from './PublicDesign.jsx';
 
@@ -15,7 +16,7 @@ export default function StudioReviewStage() {
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
   const [approved, setApproved] = useState(false);
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const current = frames[active];
 
   useEffect(() => {

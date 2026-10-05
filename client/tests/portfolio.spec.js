@@ -197,7 +197,7 @@ for (const template of ['editorial', 'cinema', 'gallery', 'folio']) {
   });
 }
 
-test('cinema category strips support keyboard navigation, scoped viewing and reduced motion', async ({ page }) => {
+test('cinema category strips support keyboard navigation and retain studio motion when the device preference changes', async ({ page }) => {
   const draft = initial(); draft.direction = { ...portfolioDesigns.find(design => design.id === 'cinema').defaults, template: 'cinema', motion: 'expressive' };
   draft.items.push({ ...photographs[2], id: 'photo-4', publicId: 'studio/photo-4', title: 'Wedding portrait' }); await setup(page, { draft });
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/@amara-studio');
@@ -214,8 +214,18 @@ test('cinema category strips support keyboard navigation, scoped viewing and red
   const lightbox = page.getByRole('dialog', { name: 'Photograph viewer' }); await expect(lightbox).toBeVisible();
   await expect(lightbox.locator('figcaption')).toContainText('2 / 3');
   await page.keyboard.press('Escape'); await expect(lightbox).not.toBeVisible();
-  await page.emulateMedia({ reducedMotion: 'reduce' }); await expect(page.locator('.v-portfolio-canvas')).toHaveAttribute('data-motion', 'still');
-  await expect(page.locator('.vpc-filmstrip-photo').first()).toHaveCSS('transition-duration', '0s');
+  await page.emulateMedia({ reducedMotion: 'reduce' }); await expect(page.locator('.v-portfolio-canvas')).toHaveAttribute('data-motion', 'expressive');
+  await expect(page.locator('.vpc-filmstrip-photo').first()).toHaveCSS('transition-duration', '0.2s, 0.2s');
+});
+
+test('a photographer-selected still portfolio stays still with either device preference', async ({ page }) => {
+  const draft = initial(); draft.direction = { ...portfolioDesigns.find(design => design.id === 'cinema').defaults, template: 'cinema', motion: 'still' };
+  await setup(page, { draft }); await page.setViewportSize({ width: 390, height: 844 });
+  for (const reducedMotion of ['no-preference', 'reduce']) {
+    await page.emulateMedia({ reducedMotion }); await page.goto('/@amara-studio');
+    await expect(page.locator('.v-portfolio-canvas')).toHaveAttribute('data-motion', 'still');
+    await expect(page.locator('.v-portfolio-canvas button').first()).toHaveCSS('transition-duration', '0s');
+  }
 });
 
 test('design picker and preview controls fit a small phone and both tablet widths', async ({ page }) => {

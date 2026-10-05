@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AnimatePresence, motion, useReducedMotion, useScroll, useTransform } from 'framer-motion';
+import { AnimatePresence, motion, useScroll, useTransform } from 'framer-motion';
+import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import { ArrowDown, ArrowUpRight, Images, List, Monitor, RotateCcw, Smartphone, X } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -15,7 +16,7 @@ const number = value => String(value).padStart(2, '0');
 const ease = [.22, 1, .36, 1];
 
 function EditorialImage({ photo, index, onOpen, eager = false, cover = false, nextPhoto }) {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const ref = useRef(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -56,7 +57,7 @@ function EditorialImage({ photo, index, onOpen, eager = false, cover = false, ne
 }
 
 function Contents({ items, active, theme, onClose, onChoose }) {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const ref = useRef(null);
   useDialogFocus(true, ref, onClose);
   return createPortal(<motion.div className="ed-contents-backdrop" style={theme} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
@@ -69,7 +70,7 @@ function Contents({ items, active, theme, onClose, onChoose }) {
 }
 
 export default function EditorialViewer({ delivery, galleryProps = {}, demo = false }) {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const location = useLocation();
   const navigate = useNavigate();
   const [gallery, setGallery] = useState(null);

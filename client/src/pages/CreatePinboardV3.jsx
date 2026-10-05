@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { ArrowLeft, ArrowRight, BadgeCheck, Check, ChevronDown, ChevronUp, CircleHelp, Clock3, Copy, Download, Eye, Grid2X2, Image, LoaderCircle, LockKeyhole, MessageCircle, Music2, Palette, Pause, Play, RefreshCw, Trash2, Upload, X } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -80,7 +81,7 @@ function Toggle({ checked, onChange, children }) {
 
 export default function CreatePinboardV3({ user, initialDelivery }) {
   const navigate = useNavigate();
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const [draft, setDraft] = useState(initialDelivery || null);
   const [stage, setStage] = useState(() => initialStage(initialDelivery));
   const [clientName, setClientName] = useState(initialDelivery?.clientName || '');

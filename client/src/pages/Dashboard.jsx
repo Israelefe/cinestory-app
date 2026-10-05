@@ -1,7 +1,8 @@
 import { ProPrice } from '../components/RegionalPricing.jsx';
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { Archive, ArrowRight, BadgeCheck, Camera, Clock3, Copy, Download, ExternalLink, Eye, Film, Folder, Grid2X2, Image, Images, Layers3, List, LockKeyhole, MessageCircle, MoreHorizontal, Plus, RefreshCw, Search, Trash2, Users } from 'lucide-react';
 import api, { apiMessage } from '../services/api.js';
 import { APP_URL } from '../config/env.js';
@@ -13,7 +14,7 @@ import DeliveryDownloadSettings from '../components/delivery/DeliveryDownloadSet
 import './StudioWorkspace.css';
 
 export default function Dashboard({ user }) {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const [stories, setStories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);

@@ -28,4 +28,3 @@
 .v-delivery-download-settings:hover { transform: translateY(-1px); background: #ffffff0c; }
 .v-delivery-download-settings:active { transform: scale(.98); }
 @media (min-width: 641px) { .delivery-settings-overlay { padding: 24px; } .delivery-settings-dialog { max-height: calc(100svh - 48px); padding: 30px; } }
-@media (prefers-reduced-motion: reduce) { .delivery-settings-dialog button, .v-delivery-download-settings { transition: none; } .delivery-settings-dialog button:hover:not(:disabled), .delivery-settings-dialog button:active:not(:disabled), .v-delivery-download-settings:hover, .v-delivery-download-settings:active { transform: none; } }

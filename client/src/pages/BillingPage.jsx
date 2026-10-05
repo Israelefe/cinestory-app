@@ -1,7 +1,8 @@
 import { ProPrice, PricingNotice, useRegionalPricing } from '../components/RegionalPricing.jsx';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { AlertCircle, ArrowLeft, BadgeCheck, CalendarClock, Check, CreditCard, ExternalLink, Image, Receipt, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import api, { apiMessage } from '../services/api.js';
 import { toast } from 'react-toastify';
@@ -25,7 +26,7 @@ function money(kobo) {
 }
 
 export default function BillingPage({ onPlanChanged }) {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const { pricing, refresh: refreshPricing, setPricing } = useRegionalPricing();
   const [params, setParams] = useSearchParams();
   const [data, setData] = useState(null);

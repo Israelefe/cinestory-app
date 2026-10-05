@@ -299,7 +299,3 @@
   .v-studio-ui .v-account-section-nav a { font-size: 11px; padding: 10px; }
   .v-studio-ui .v-delivery-body { padding: 18px; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .v-studio-ui *, .v-studio-ui *::before, .v-studio-ui *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
-  .v-studio-ui :is(a,button):is(:hover,:active) { transform: none !important; }
-}

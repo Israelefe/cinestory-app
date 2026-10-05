@@ -71,6 +71,3 @@
   .pb-create-shell .pb-section-heading { flex-wrap: wrap; }
   .pb-create-shell .pb-moment-edit { flex-wrap: wrap; }
 }
-@media (prefers-reduced-motion: reduce) {
-  :is(.v-create-choice, .v3-create, .pb-create-shell, .ds-page) :is(.v-create-choice-cta, .v3-button, .pb-create-actions button, .ds-layout form > button) { transition: none; transform: none !important; }
-}

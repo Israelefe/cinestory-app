@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import { ArrowDownToLine, MoreHorizontal, Search, Check, ChevronLeft, ChevronRight, Download, ExternalLink, Image, MessageCircle, Pause, Play, RotateCcw, Shirt, SkipBack, SkipForward, Volume2, VolumeX, X } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { API_BASE_URL } from '../../config/env.js';
@@ -153,7 +154,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   const preloadedPhotos = useRef(new Map());
   const slideStartedAt = useRef(0);
   const slideshowStartToken = useRef(0);
-  const reducedMotion = useReducedMotion();
+  const reducedMotion = useVeyloReducedMotion();
   const [viewportWidth, setViewportWidth] = useState(() => typeof window === 'undefined' ? 390 : window.innerWidth);
   const board = delivery?.pinboard || {};
   const assets = useMemo(() => [...(delivery?.assets || [])].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)), [delivery?.assets]);

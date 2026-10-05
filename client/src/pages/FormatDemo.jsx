@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { AnimatePresence, motion, useReducedMotion, useScroll, useTransform } from 'framer-motion';
+import { AnimatePresence, motion, useScroll, useTransform } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { ArrowLeft, BookOpen, Check, ChevronLeft, ChevronRight, Download, Grid2X2, Heart, Images, LoaderCircle, RotateCcw, Volume2, VolumeX, X } from 'lucide-react';
 import { Photo } from '../components/PublicDesign.jsx';
 import { useDialogFocus } from '../components/useDialogFocus.js';
@@ -460,7 +461,7 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
   const [gallery, setGallery] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(null);
   const [narrationChapter, setNarrationChapter] = useState(null);
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
 
   const photos = normalizeDeliveryPhotos(delivery, weddingPhotos);
   const frames = useMemo(() => new Map((delivery?.creativeDirection?.frames || []).map(f => [f.assetId, f])), [delivery]);
@@ -637,7 +638,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
   const [audioFailed, setAudioFailed] = useState(false);
   const touchStart = useRef(null);
   const audio = useRef(null);
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
 
   const photos = normalizeDeliveryPhotos(delivery, albumPhotos);
   const v3BookendPhotos = delivery?.schemaVersion === 3 ? normalizeDeliveryPhotos(delivery, photos, true) : [];

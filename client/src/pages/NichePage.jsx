@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import {
   ArrowRight,
   BookOpen,
@@ -240,7 +241,7 @@ const pages = {
 };
 
 function HeroArtwork({ item }) {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   return (
     <Reveal className="v-niche-hero-art" delay={0.06}>
       <span className="v-niche-hero-word" aria-hidden="true">{item.recommendation.name}</span>

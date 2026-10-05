@@ -87,6 +87,3 @@
   .v-account-page .v-account-layout { gap: 38px; }
   .v-pedit .v-pedit-header { padding-bottom: 32px; }
 }
-@media (prefers-reduced-motion: reduce) {
-  :is(.v-dashboard-page, .v-library-page, .v-account-page, .v-billing-page, .v-pedit) :is(.v-button,.v-pedit-primary,.v-billing-primary) { transition: none; transform: none !important; }
-}

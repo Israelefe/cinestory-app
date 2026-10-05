@@ -24,11 +24,12 @@ async function ask(page, question) {
   await page.getByRole('button', { name: 'Send question', exact: true }).click();
 }
 
-test('chat fits phone, tablet and desktop, with touch targets and reduced motion', async ({ page }) => {
+test('chat fits phone, tablet and desktop and retains animation with device reduced motion', async ({ page }) => {
   await setup(page);
   for (const [width, height] of [[320, 568], [390, 844], [640, 800], [768, 1024], [834, 1112], [1024, 768], [1440, 900], [834, 430]]) {
     await page.setViewportSize({ width, height });
     const panel = await openChat(page);
+    await panel.evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished.catch(() => {}))));
     const box = await panel.boundingBox();
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.y).toBeGreaterThanOrEqual(0);
@@ -38,7 +39,7 @@ test('chat fits phone, tablet and desktop, with touch targets and reduced motion
     expect(send.height).toBeGreaterThanOrEqual(44);
     expect(send.y + send.height).toBeLessThanOrEqual(height);
     expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
-    await expect(panel).toHaveCSS('animation-name', 'none');
+    await expect(panel).toHaveCSS('animation-name', 'veylo-assistant-rise');
     await panel.getByRole('button', { name: 'Close Veylo Help', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Open Veylo Help', exact: true })).toBeFocused();
   }

@@ -94,7 +94,3 @@
   .v-contact-page .v-form { padding: 36px; }
   .v-contact-page .v-form-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 }
-@media (prefers-reduced-motion: reduce) {
-  :is(.v-niche-page, .v-about-simple-page, .v-contact-page, .v-changelog-page, .v-policy-page, .v-not-found-page) .v-button { transition: none; transform: none !important; }
-  .v-contact-page .animate-pulse { animation: none; }
-}

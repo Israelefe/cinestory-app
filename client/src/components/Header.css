@@ -72,12 +72,6 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .v-nav-dashboard {
-    transition: none;
-  }
-}
-
 .v-product-menu-trigger,.v-product-menu-backdrop,.v-product-mobile-menu{display:none}
 @media(max-width:767px){
   .v-product-header .v-product-header-inner{justify-content:space-between;gap:12px}
@@ -92,7 +86,6 @@
   .v-product-mobile-menu>button{margin-top:16px}
   .v-product-mobile-menu a:active,.v-product-mobile-menu>button:active,.v-product-menu-trigger:active{transform:scale(.98)}
 }
-@media(prefers-reduced-motion:reduce){.v-product-mobile-menu a,.v-product-mobile-menu>button,.v-product-menu-trigger{transition:none!important}}
 
 @media(max-width:1023px){
   .v-nav .v-nav-home,.v-nav .v-nav-actions>.v-nav-logout{display:none}

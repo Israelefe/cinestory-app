@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, ArrowUpRight, Instagram, MessageCircle, Mail, Share2, Menu, X, Image as ImageIcon } from 'lucide-react';
 import { directionDefaults, instagramName, readableColors, whatsappNumber } from '../services/portfolio.js';
 import { findPortfolioDesign } from '../components/portfolioDesigns.js';
-import { usePortfolioReducedMotion } from '../components/usePortfolioReducedMotion.js';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { portfolioPresentation, portfolioCategoryLabel, photoId } from '../services/portfolioPresentation.js';
 import { normalizePortfolioContent, sectionVisible, servicePrice } from '../services/portfolioContent.mjs';
 import PortfolioEnquiryForm from '../components/PortfolioEnquiryForm.jsx';
@@ -48,7 +48,7 @@ function PhotoRail({ photos, studioName, onOpen, still, label = 'Featured photog
 }
 
 export default function PortfolioCanvas({ portfolio, preview = false, projectId = '', categoryId = '', serviceId = '', onPhotoOpen, onFilter, onProjectOpen, onContact, onServiceOpen, onShare }) {
-  const reduced = usePortfolioReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const content = normalizePortfolioContent(portfolio.content, portfolio.categories);
   const [category, setCategory] = useState(() => content.categoryDetails.find(item => item.id === categoryId)?.name || null);
   const [selectedService, setSelectedService] = useState(serviceId);

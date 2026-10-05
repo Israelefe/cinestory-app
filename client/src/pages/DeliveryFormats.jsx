@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import {
   ArrowDown,
   ArrowUpRight,
@@ -175,7 +176,7 @@ const directorChoices = [
 ];
 
 export default function DeliveryFormats() {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const location = useLocation();
   const [activeFormat, setActiveFormat] = useState('photo-story');
 

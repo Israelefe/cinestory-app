@@ -72,7 +72,7 @@ export default function OnboardingPage({ user, onAuthenticated }) {
       if (step < 3) {
         setStep(value => value + 1);
         setStatus({ loading: false, upload: false, error: '' });
-        window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
       }
       const completed = await api.post('/v1/onboarding/complete');

@@ -1,7 +1,8 @@
 import { ProPrice, PricingNotice } from '../components/RegionalPricing.jsx';
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { motion, useInView, useReducedMotion } from 'framer-motion';
+import { motion, useInView } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import {
   ArrowRight, ArrowUpRight, Camera, Check, Clapperboard, Download, Eye,
   FolderClosed, Image as ImageIcon, Images, LayoutTemplate, Music2, Send,
@@ -93,7 +94,7 @@ function ScrollSection({ children, className = '', ...props }) {
 }
 
 function SectionOnePortrait() {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const frameRef = React.useRef(null);
   const visible = useInView(frameRef, { amount: .06, margin: '80px 0px' });
   const pauseMotion = reduced || !visible;
@@ -108,7 +109,7 @@ function SectionOnePortrait() {
 }
 
 function AssurancePortrait() {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const frameRef = React.useRef(null);
   const visible = useInView(frameRef, { amount: .06, margin: '140px 0px' });
   const pauseMotion = reduced || !visible;
@@ -123,7 +124,7 @@ function AssurancePortrait() {
 }
 
 export default function LandingPage() {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
 
   return <Page className="landing-page v-home-refined">
     <section className="v-hero"><div className="v-wrap v-hero-grid">

@@ -122,7 +122,3 @@
   .v-hf-chapters>p{bottom:94px}
   .v-hf-album-page.is-copy{padding:13px}.v-hf-album-page.is-copy>strong{font-size:15px}.v-hf-album-page.is-copy>p{display:none}.v-hf-album-note{bottom:92px;min-width:175px}
 }
-
-@media(prefers-reduced-motion:reduce){
-  .v-hf-canvas-focus,.v-hf-chapters-photo,.v-hf-album-page.is-photo figure{will-change:auto}.v-hf-album-turn{display:none}
-}

@@ -23,4 +23,3 @@
 .vd-gate.vd-pin-entry > small { width: min(100%, 360px); margin-top: 18px; padding: 14px 16px; border: 1px solid color-mix(in srgb, var(--vd-ready-text) 22%, transparent); border-radius: 6px; background: var(--vd-ready-surface); color: var(--vd-ready-text); font-size: 13px; line-height: 1.7; text-align: left; }
 @media (hover: hover) { .vd-gate.vd-pin-entry form button:hover:not(:disabled) { transform: translateY(-1px); } }
 @media (min-width: 768px) { .vd-gate.vd-pin-entry { padding: 48px; } .vd-gate.vd-pin-entry h1 { font-size: 46px; } .vd-gate.vd-pin-entry > span:not(.delivery-brand-mark) { max-width: 370px; font-size: 15px; } }
-@media (prefers-reduced-motion: reduce) { .vd-gate.vd-pin-entry input, .vd-gate.vd-pin-entry form button { transition: none; transform: none !important; } .vd-gate.vd-pin-entry .v-spin { animation: none !important; } }

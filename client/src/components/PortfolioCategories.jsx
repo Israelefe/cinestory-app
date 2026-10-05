@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Check, Folder, Plus, Trash2 } from 'lucide-react';
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
+import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { categoryKey, categoryName, changeCategory, portfolioCategories, UNGROUPED } from '../services/portfolioCategories.js';
 import './PortfolioCategories.css';
 
@@ -9,7 +10,7 @@ export function PortfolioCategoryField({ value, onChange, categories, label = 'C
 }
 
 export default function PortfolioCategories({ form, setForm, Sheet }) {
-  const reduced = useReducedMotion();
+  const reduced = useVeyloReducedMotion();
   const [editing, setEditing] = useState(null);
   const [removing, setRemoving] = useState('');
   const [error, setError] = useState('');
