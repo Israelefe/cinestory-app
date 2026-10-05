@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { AnimatePresence, motion, useScroll, useTransform } from 'framer-motion';
+import { AnimatePresence, motion, useAnimationControls, useInView, useScroll, useTransform } from 'framer-motion';
 import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { ArrowLeft, ArrowUpRight, BookOpen, Check, ChevronLeft, ChevronRight, Download, Film, Grid2X2, Heart, Images, LoaderCircle, Pause, Play, RotateCcw, Volume2, VolumeX, X } from 'lucide-react';
 import { Photo } from '../components/PublicDesign.jsx';
@@ -459,22 +459,37 @@ export const chapters = [
   }
 ];
 
+const emptyChapterFrame = Object.freeze({});
+
+function ChapterPhotoMotion({ frame, index, paused, children }) {
+  const ref = useRef(null);
+  const visible = useInView(ref, { amount: .04, margin: '140px 0px' });
+  const controls = useAnimationControls();
+  const reduced = useVeyloReducedMotion();
+
+  useEffect(() => {
+    if (reduced || frame?.motion === 'still') {
+      controls.set({ scale: 1, x: 0, y: 0 });
+    } else if (visible && !paused) {
+      controls.start({ ...frameMotionValues(frame), transition: frameMotionTransition(frame, index) });
+    } else {
+      controls.stop();
+    }
+    return () => controls.stop();
+  }, [controls, frame, index, paused, reduced, visible]);
+
+  return <motion.span ref={ref} className="fd-chapter-photo-motion" initial={false} animate={controls}>{children}</motion.span>;
+}
+
 export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, narrationRef, onNarrationNavigate }) {
-  const [openIndex, setOpenIndex] = useState(null);
-  const [visited, setVisited] = useState([]);
   const [gallery, setGallery] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(null);
-  const [narrationChapter, setNarrationChapter] = useState(null);
   const [motionPaused, setMotionPaused] = useState(false);
   const [pageVisible, setPageVisible] = useState(() => !document.hidden);
-  const headingRef = useRef(null);
-  const directoryCardsRef = useRef([]);
-  const directoryReturnIndexRef = useRef(0);
-  const directoryScrollRef = useRef(0);
-  const pendingNavigationRef = useRef(null);
+  const chapterSectionRefs = useRef([]);
+  const activeNarrationSectionRef = useRef(null);
   const reduced = useVeyloReducedMotion();
   const photoMotionPaused = reduced || motionPaused || !pageVisible || gallery;
-  const chapterNumber = number => String(number).padStart(2, '0');
   const entrance = { duration: .55, ease: [0.22, 1, 0.36, 1] };
 
   useEffect(() => {
@@ -483,41 +498,36 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
     return () => document.removeEventListener('visibilitychange', update);
   }, []);
 
-  const photos = normalizeDeliveryPhotos(delivery, weddingPhotos);
-  const frames = useMemo(() => new Map((delivery?.creativeDirection?.frames || []).map(f => [f.assetId, f])), [delivery]);
-
-  const client = delivery ? (delivery.clientName ? `${delivery.clientName} / Chapters` : delivery.title) : 'Folake & Tunde';
-  const clientName = delivery ? (delivery.clientName || delivery.title || 'Your photographs') : 'Folake & Tunde';
+  const photos = useMemo(() => normalizeDeliveryPhotos(delivery, weddingPhotos), [delivery]);
+  const allPhotos = useMemo(() => normalizeDeliveryPhotos(delivery, photos, true), [delivery, photos]);
+  const frames = useMemo(() => new Map((delivery?.creativeDirection?.frames || []).map(frame => [String(frame.assetId), frame])), [delivery]);
+  const client = delivery ? (delivery.clientName || delivery.title || 'Your photographs') : 'Folake & Tunde';
   const studioName = delivery ? delivery.branding?.name : 'Mayflower Visuals';
 
   const chaptersData = useMemo(() => {
-    if (delivery?.creativeDirection?.sections?.length) {
+    if (delivery) {
+      const sections = delivery.creativeDirection?.sections || [];
+      if (!sections.length) {
+        return photos.length ? [{
+          id: 'full-collection',
+          name: delivery.title || 'The photographs',
+          note: delivery.creativeDirection?.openingLine || '',
+          photos,
+          captions: []
+        }] : [];
+      }
       const accents = ['#d7a86e', '#c89057', '#e0b989', '#cca578', '#dfb88e'];
-      return delivery.creativeDirection.sections.map((section, idx) => ({
-        id: section.id || `chapter-${idx}`,
-        name: section.title || `Chapter ${idx + 1}`,
-        kicker: `CHAPTER ${chapterNumber(idx + 1)}`,
-        line: section.subtitle || '',
+      return sections.map((section, index) => ({
+        id: section.id || 'chapter-' + index,
+        name: section.title || 'Chapter ' + (index + 1),
         note: section.body || section.subtitle || '',
-        accent: section.accent || delivery?.creativeDirection?.palette?.accent || accents[idx % accents.length],
-        layout: section.layout || 'chapter-cover',
-        photos: (section.assetIds || []).map(id => photos.find(p => p.assetId === id)).filter(Boolean),
-        cover: photos.find(p => p.assetId === section.coverAssetId) || photos.find(p => p.assetId === section.assetIds?.[0]),
-        frame: frames.get(section.coverAssetId || section.assetIds?.[0]) || {}
-      })).filter(ch => ch.photos.length > 0);
+        accent: section.accent || delivery.creativeDirection?.palette?.accent || accents[index % accents.length],
+        photos: (section.assetIds || []).map(id => photos.find(photo => photo.assetId === id)).filter(Boolean),
+        captions: []
+      })).filter(section => section.photos.length > 0);
     }
     return chapters.map(chapter => ({ ...chapter, layout: chapter.layout || 'chapter-cover' }));
-  }, [delivery, photos, frames]);
-
-  const galleryUnlocked = chaptersData.length > 0 && chaptersData.every((_, index) => visited.includes(index));
-  const openGallery = () => { if (!galleryUnlocked) return; setGalleryIndex(null); setGallery(true); };
-  const openChapterData = openIndex === null ? null : chaptersData[openIndex];
-  const chapterIdentity = `${delivery?.publicId || delivery?._id || 'chapters-demo'}:${photos.map(photo => photo.assetId || photo.name).join('|')}`;
-  const { galleryUnlocked: chapterExplored, closingRef: chapterEndRef } = useClosingGallery(`${chapterIdentity}:${openIndex}`);
-  useEffect(() => {
-    if (chapterExplored && openIndex !== null) setVisited(current => current.includes(openIndex) ? current : [...current, openIndex]);
-  }, [chapterExplored, openIndex]);
-  useEffect(() => { setVisited([]); setOpenIndex(null); setGallery(false); }, [chapterIdentity]);
+  }, [delivery, photos]);
 
   const themeStyles = getFormatThemeStyles(delivery, {
     bg: '#070709',
@@ -526,104 +536,142 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
     accent: '#d7a86e'
   });
 
-  const openChapter = index => {
-    if (!chaptersData[index] || index === openIndex) return;
-    if (openIndex === null) {
-      directoryScrollRef.current = window.scrollY;
-      directoryReturnIndexRef.current = index;
-    }
-    pendingNavigationRef.current = { index };
-    setOpenIndex(index);
-    onNarrationNavigate?.(chaptersData[index]?.photos?.map(photo => photo.assetId) || []);
-  };
-  const returnToDirectory = () => {
-    pendingNavigationRef.current = { index: null };
-    setOpenIndex(null);
-  };
-  const finishNavigation = definition => {
-    if (definition?.opacity !== 1 || !pendingNavigationRef.current || pendingNavigationRef.current.index !== openIndex) return;
-    pendingNavigationRef.current = null;
-    const focusTarget = openIndex === null ? directoryCardsRef.current[directoryReturnIndexRef.current] : headingRef.current;
-    focusTarget?.focus({ preventScroll: true });
-    window.scrollTo({ top: openIndex === null ? directoryScrollRef.current : 0, behavior: 'instant' });
-  };
   useEffect(() => {
     const narration = narrationRef?.current;
     const segments = delivery?.narration?.segments || [];
     if (!narration || !segments.length || !chaptersData.length) return undefined;
+
     const syncChapter = () => {
       const time = narration.currentTime;
       const segmentIndex = segments.findIndex(segment => time >= Number(segment.startSec || 0) && time < Number(segment.endSec || 0));
       if (segmentIndex < 0) return;
       const segment = segments[segmentIndex];
-      const matchedIndex = segment.sectionId ? (delivery.creativeDirection?.sections || []).findIndex(section => section.id === segment.sectionId) : -1;
-      const nextIndex = matchedIndex >= 0 ? Math.min(matchedIndex, chaptersData.length - 1) : Math.min(chaptersData.length - 1, Math.floor((segmentIndex / Math.max(1, segments.length)) * chaptersData.length));
-      setNarrationChapter(nextIndex);
-      setOpenIndex(current => current === nextIndex ? current : nextIndex);
+      const matchedIndex = segment.sectionId ? chaptersData.findIndex(section => section.id === segment.sectionId) : -1;
+      const nextIndex = matchedIndex >= 0
+        ? Math.min(matchedIndex, chaptersData.length - 1)
+        : Math.min(chaptersData.length - 1, Math.floor((segmentIndex / Math.max(1, segments.length)) * chaptersData.length));
+      if (activeNarrationSectionRef.current === nextIndex) return;
+      activeNarrationSectionRef.current = nextIndex;
+      chapterSectionRefs.current[nextIndex]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
-    const finish = () => setNarrationChapter(null);
+    const finish = () => { activeNarrationSectionRef.current = null; };
     narration.addEventListener('timeupdate', syncChapter);
     narration.addEventListener('ended', finish);
     narration.addEventListener('pause', finish);
-    return () => { narration.removeEventListener('timeupdate', syncChapter); narration.removeEventListener('ended', finish); narration.removeEventListener('pause', finish); };
+    return () => {
+      narration.removeEventListener('timeupdate', syncChapter);
+      narration.removeEventListener('ended', finish);
+      narration.removeEventListener('pause', finish);
+    };
   }, [narrationRef, delivery?.narration?.segments, delivery?.creativeDirection?.sections, chaptersData]);
+
   const openPhoto = photo => {
-    const galleryPhotos = normalizeDeliveryPhotos(delivery, photos, true);
-    const photoIdx = galleryPhotos.findIndex(item => (photo.assetId ? item.assetId === photo.assetId : item.name === photo.name));
-    setGalleryIndex(photoIdx >= 0 ? photoIdx : 0);
+    const photoIndex = allPhotos.findIndex(item => (photo.assetId ? item.assetId === photo.assetId : item.name === photo.name));
+    setGalleryIndex(photoIndex >= 0 ? photoIndex : 0);
     setGallery(true);
     onNarrationNavigate?.(photo.assetId);
   };
+  const openFullGallery = () => {
+    setGalleryIndex(null);
+    setGallery(true);
+  };
+  const jumpToChapter = event => {
+    const value = event.currentTarget.value;
+    if (value !== '') {
+      const index = Number(value);
+      if (Number.isInteger(index)) {
+        chapterSectionRefs.current[index]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        onNarrationNavigate?.(chaptersData[index]?.photos?.map(photo => photo.assetId) || []);
+      }
+    }
+    event.currentTarget.value = '';
+  };
+  const motionControl = <button className="fd-chapter-motion-control" type="button" onClick={() => setMotionPaused(current => !current)} aria-pressed={motionPaused} aria-label={motionPaused ? 'Resume photo motion' : 'Pause photo motion'}>
+    {motionPaused ? <Play size={15} aria-hidden="true" /> : <Pause size={15} aria-hidden="true" />}
+    <span>{motionPaused ? 'Resume motion' : 'Pause motion'}</span>
+  </button>;
 
-  const nextChapterIndex = openIndex !== null && openIndex < chaptersData.length - 1
-    ? openIndex + 1
-    : chaptersData.findIndex((_, index) => index !== openIndex && !visited.includes(index));
-  const motionControl = <button className="fd-chapter-motion-control" type="button" onClick={() => setMotionPaused(current => !current)} aria-pressed={motionPaused} aria-label={motionPaused ? 'Resume photo motion' : 'Pause photo motion'}>{motionPaused ? <Play size={15} aria-hidden="true" /> : <Pause size={15} aria-hidden="true" />}<span>{motionPaused ? 'Resume motion' : 'Pause motion'}</span></button>;
+  return <div className="fd-page fd-chapters fd-chapters-refined" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} data-pace={themeStyles['--fd-pace']} style={{ ...themeStyles, '--chapter-accent': themeStyles['--fd-accent'] }}>
+    <DemoHeader format="Chapters" client={client} sectionId="chapters" delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
+    <main className="fd-chapter-reader">
+      <header className="fd-chapter-reader-header">
+        <span className="fd-chapter-reader-studio"><Film size={15} aria-hidden="true" />{studioName || 'Photo collection'}</span>
+        <h1>{client}</h1>
+        <p>{delivery?.creativeDirection?.openingLine || (allPhotos.length ? 'Explore each chapter at your own pace. The full gallery is waiting at the end.' : 'Explore each chapter at your own pace.')}</p>
+      </header>
 
-  return <div className="fd-page fd-chapters fd-chapters-refined" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} data-pace={themeStyles['--fd-pace']} style={{ ...themeStyles, '--chapter-accent': openChapterData?.accent || themeStyles['--fd-accent'] }}>
-    <DemoHeader format="Chapters" client={client} sectionId="chapters" onGallery={galleryUnlocked ? openGallery : undefined} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
-    {openChapterData === null && <V3Bookend delivery={delivery} kind="opening" onGallery={() => setGallery(true)} />}
+      <div className="fd-chapter-reader-tools" aria-label="Chapter controls">
+        <label className="fd-chapter-jump">
+          <span className="sr-only">Jump to a chapter</span>
+          <select aria-label="Jump to a chapter" defaultValue="" onChange={jumpToChapter}>
+            <option value="">Jump to a chapter</option>
+            {chaptersData.map((chapter, index) => <option key={chapter.id || index} value={index}>{chapter.name}</option>)}
+          </select>
+          <ChevronRight size={15} aria-hidden="true" />
+        </label>
+        {motionControl}
+      </div>
 
-    <AnimatePresence mode="wait">
-      {openChapterData === null ? <motion.main key="chapter-directory" className="fd-chapter-directory" initial={reduced ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={entrance} onAnimationComplete={finishNavigation}>
-        <header>
-          <div className="fd-chapter-intro"><span className="fd-chapter-eyebrow"><Film size={15} aria-hidden="true" />{studioName || 'Your photo collection'}</span><h1 ref={headingRef} tabIndex={-1}>{clientName}</h1><p className="fd-chapter-invitation">Choose where to begin.</p></div>
-          <div className="fd-chapter-intro-detail"><p>{delivery?.creativeDirection?.openingLine || 'The portraits, the smiles, and the moments in between. Open any chapter and take your time.'}</p><div className="fd-chapter-collection-count"><span><strong>{chapterNumber(chaptersData.length)}</strong> chapters</span><span><strong>{chapterNumber(photos.length)}</strong> photographs</span></div></div>
-        </header>
-        <div className="fd-chapter-directory-toolbar"><span role="status">{visited.length} of {chaptersData.length} chapters viewed</span>{motionControl}</div>
-        <section className={`fd-chapter-directory-board ${chaptersData.length > 3 ? 'is-grid-layout' : ''}`} aria-label={`${clientName}'s chapters`}>{chaptersData.map((item, index) => <motion.button ref={element => { directoryCardsRef.current[index] = element; }} type="button" key={item.id || index} data-layout={item.layout || 'chapter-cover'} {...formatFrameAttributes(item.frame)} style={formatFrameStyle(item.frame)} className={`is-card-${(index % 3) + 1}${visited.includes(index) ? ' is-visited' : ''}${narrationChapter === index ? ' is-narrating' : ''}`} onClick={() => openChapter(index)} aria-label={`Open chapter ${index + 1}: ${item.name}${visited.includes(index) ? ', viewed' : ''}`} initial={reduced ? false : { opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .15 }} transition={{ ...entrance, delay: (index % 3) * .07 }} whileHover={reduced ? undefined : { y: -4 }} whileTap={reduced ? undefined : { scale: .985 }}>
-          <span className="fd-chapter-cover"><motion.span className="fd-chapter-directory-photo" animate={frameMotionValues(item.frame || {}, photoMotionPaused)} transition={frameMotionTransition(item.frame || {}, index, photoMotionPaused)}><Photo name={(item.cover || item.photos[0]).name} url={(item.cover || item.photos[0]).url} alt={`${item.name} chapter cover`} style={item.frame?.focalPoint ? { objectPosition: item.frame.focalPoint } : undefined} eager={index === 0} sizes="(max-width: 767px) 92vw, (max-width: 1023px) 45vw, 32vw" /></motion.span><span className="fd-chapter-directory-number">{chapterNumber(index + 1)}</span>{visited.includes(index) && <span className="fd-chapter-directory-viewed"><Check size={13} aria-hidden="true" />Viewed</span>}</span>
-          <span className="fd-chapter-directory-copy"><i>{item.photos.length} {item.photos.length === 1 ? 'photograph' : 'photographs'}</i><strong>{item.name}</strong>{item.line && <span className="fd-chapter-cover-description" data-delivery-font="caption">{item.line}</span>}<b>Open chapter<ArrowUpRight size={17} aria-hidden="true" /></b></span>
-        </motion.button>)}</section>
-        <footer><div><Images size={20} aria-hidden="true" /><span>{galleryUnlocked ? 'Every chapter viewed. Your full gallery is ready.' : 'View each chapter to open the full gallery.'}</span></div>{galleryUnlocked && <button type="button" onClick={openGallery}>View all {photos.length} photographs<ArrowUpRight size={17} aria-hidden="true" /></button>}</footer>
-      </motion.main> : <motion.main data-chapter-explored={visited.includes(openIndex)} key={'chapter-room-' + openIndex} className={`fd-chapter-room${narrationChapter === openIndex ? ' is-narrating' : ''}`} style={{ '--chapter-accent': openChapterData.accent }} initial={reduced ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={entrance} onAnimationComplete={finishNavigation}>
-        <aside className="fd-chapter-room-copy">
-          <button type="button" onClick={returnToDirectory}><ArrowLeft size={16} aria-hidden="true" />All chapters</button>
-          <span>{openChapterData.kicker}</span>
-          {narrationChapter === openIndex && <div className="fd-chapter-narration"><Volume2 size={14} />Narrating this chapter</div>}
-          <div className="fd-chapter-room-count">{chapterNumber(openIndex + 1)} / {chapterNumber(chaptersData.length)}</div>
-          <h1 ref={headingRef} tabIndex={-1}>{openChapterData.name}</h1>
-          {openChapterData.note && <p>{openChapterData.note}</p>}
-          <nav aria-label="Other chapters">{chaptersData.map((item, index) => <button type="button" key={item.id || index} aria-current={openIndex === index ? 'page' : undefined} className={openIndex === index ? 'is-active' : ''} onClick={() => openChapter(index)}><i>{chapterNumber(index + 1)}</i><span>{item.name}</span>{visited.includes(index) && <Check size={14} aria-label="Viewed" />}</button>)}</nav>
-          {motionControl}
-        </aside>
-        <section className={'fd-chapter-room-art ' + (openChapterData.photos.length === 1 ? 'is-single' : 'is-pair')}>
-          <div className="fd-chapter-photo-heading"><span>{openChapterData.photos.length} {openChapterData.photos.length === 1 ? 'photograph' : 'photographs'}</span><span>Open a photo to view it full size<ArrowUpRight size={14} aria-hidden="true" /></span></div>
-          <div className="fd-chapter-room-photos">{openChapterData.photos.map((photo, index) => {
-            const caption = openChapterData.captions?.[index] || frames.get(photo.assetId)?.caption || frames.get(photo.assetId)?.headline || '';
-            const frame = frames.get(photo.assetId) || {};
-            return <motion.button type="button" key={photo.assetId || photo.url || photo.name} {...formatFrameAttributes(frame)} style={formatFrameStyle(frame)} onClick={() => openPhoto(photo)} initial={reduced ? false : { opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .15 }} transition={{ ...entrance, delay: (index % 2) * .08 }} whileHover={{ y: -3 }} whileTap={{ scale: .985 }} aria-label={caption ? `Open ${caption}` : `Open photograph ${index + 1}: ${openChapterData.name}`}><div className="fd-chapter-photo-surface"><motion.div className="fd-chapter-photo-motion" animate={frameMotionValues(frame, photoMotionPaused)} transition={frameMotionTransition(frame, index, photoMotionPaused)}><Photo name={photo.name} url={photo.url} alt={photo.alt} style={frame.focalPoint ? { objectPosition: frame.focalPoint } : undefined} eager={index === 0} sizes="(max-width: 767px) 92vw, (max-width: 1023px) 44vw, 33vw" /></motion.div></div><span className="fd-chapter-photo-index">{chapterNumber(index + 1)}<ArrowUpRight size={16} aria-hidden="true" /></span><p>{caption || `Photograph ${chapterNumber(index + 1)}`}</p></motion.button>;
-          })}</div>
-          <footer ref={chapterEndRef}><div className="fd-chapter-end-note"><Check size={17} aria-hidden="true" /><span>You’ve reached the end of this chapter.</span></div><div className="fd-chapter-end-actions"><button type="button" onClick={returnToDirectory}>All chapters<Grid2X2 size={17} aria-hidden="true" /></button>{nextChapterIndex >= 0 && <button className="fd-chapter-next" type="button" onClick={() => openChapter(nextChapterIndex)}>Next chapter<ChevronRight size={17} aria-hidden="true" /></button>}{galleryUnlocked && <button className="fd-chapter-next" type="button" onClick={openGallery}>View full gallery<Images size={17} aria-hidden="true" /></button>}</div></footer>
-        </section>
-      </motion.main>}
-    </AnimatePresence>
+      {chaptersData.length ? <div className="fd-chapter-reading-flow">
+        {chaptersData.map((chapter, chapterIndex) => {
+          const anchorId = 'chapter-section-' + (chapterIndex + 1);
+          return <motion.section
+            key={chapter.id || chapterIndex}
+            ref={element => { chapterSectionRefs.current[chapterIndex] = element; }}
+            id={anchorId}
+            className="fd-chapter-reading-section"
+            style={{ '--chapter-section-accent': chapter.accent || themeStyles['--fd-accent'] }}
+            aria-labelledby={anchorId + '-title'}
+            initial={reduced ? false : { opacity: 0, y: 18 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, amount: .12 }}
+            transition={{ ...entrance, delay: Math.min(chapterIndex * .035, .18) }}
+          >
+            <header className="fd-chapter-section-heading">
+              <h2 id={anchorId + '-title'}>{chapter.name}</h2>
+              {chapter.note && <p>{chapter.note}</p>}
+            </header>
+            <div className={'fd-chapter-reading-photos' + (chapter.photos.length === 1 ? ' is-single' : '')}>
+              {chapter.photos.map((photo, photoIndex) => {
+                const frame = frames.get(String(photo.assetId)) || emptyChapterFrame;
+                const caption = chapter.captions?.[photoIndex] || frame.caption || frame.headline || '';
+                return <motion.button
+                  type="button"
+                  key={photo.assetId || photo.url || photo.name}
+                  {...formatFrameAttributes(frame)}
+                  style={{ '--chapter-photo-ratio': photo.width && photo.height ? photo.width + ' / ' + photo.height : '4 / 5', ...formatFrameStyle(frame) }}
+                  className="fd-chapter-reading-photo"
+                  onClick={() => openPhoto(photo)}
+                  aria-label={caption ? 'View photo: ' + caption : 'View photo from ' + chapter.name}
+                  initial={reduced ? false : { opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, amount: .12 }}
+                  transition={{ ...entrance, delay: Math.min(photoIndex * .06, .24) }}
+                  whileHover={reduced ? undefined : { y: -3 }}
+                  whileTap={reduced ? undefined : { scale: .99 }}
+                >
+                  <span className="fd-chapter-reading-photo-frame">
+                    <ChapterPhotoMotion frame={frame} index={photoIndex} paused={photoMotionPaused}>
+                      <Photo name={photo.name} url={photo.url} alt={photo.alt || chapter.name} width={photo.width} height={photo.height} style={frame.focalPoint ? { objectPosition: frame.focalPoint } : undefined} eager={chapterIndex === 0 && photoIndex === 0} sizes="(max-width: 767px) 92vw, (max-width: 1023px) 44vw, 38vw" />
+                    </ChapterPhotoMotion>
+                  </span>
+                  {caption && <span className="fd-chapter-reading-caption" data-delivery-font="caption" data-caption-position={frame.captionPosition || undefined} data-text-background={frame.textBackground || undefined} data-type-style={frame.typographyStyle || undefined} data-text-animation={frame.textAnimation || undefined}>{caption}</span>}
+                </motion.button>;
+              })}
+            </div>
+          </motion.section>;
+        })}
+      </div> : <div className="fd-chapter-reader-empty"><p>The photographs for this collection are not available yet.</p></div>}
 
-    {openChapterData === null && galleryUnlocked && <V3Bookend delivery={delivery} kind="closing" onGallery={galleryUnlocked ? openGallery : undefined} />}
-    <AnimatePresence>{gallery && (galleryUnlocked || galleryIndex !== null) && <DemoGallery photos={normalizeDeliveryPhotos(delivery, photos, true)} title={client} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} fontStyles={themeStyles} {...galleryProps} singlePhoto={!galleryUnlocked} />}</AnimatePresence>
+      {!!allPhotos.length && <footer className="fd-chapter-reading-end">
+        <p>Your full gallery is ready.</p>
+        <button type="button" onClick={openFullGallery}>View the full gallery<Images size={17} aria-hidden="true" /></button>
+      </footer>}
+    </main>
+
+    <AnimatePresence>{gallery && <DemoGallery photos={allPhotos} title={client} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} fontStyles={themeStyles} {...galleryProps} singlePhoto={galleryIndex !== null} />}</AnimatePresence>
   </div>;
 }
-
 export const albumSpreads = [
   {
     id: 'opening',
