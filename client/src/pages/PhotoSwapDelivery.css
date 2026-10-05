@@ -52,11 +52,6 @@
   line-height: 1.75;
 }
 
-.v-ps-hero-copy .v-actions {
-  flex-wrap: wrap;
-  margin-top: 30px;
-}
-
 .v-ps-hero-note {
   display: flex;
   align-items: center;
@@ -569,8 +564,24 @@
 @media (min-width: 760px) {
   .v-ps-hero {
     grid-template-columns: minmax(0, 1fr) minmax(0, .95fr);
-    gap: 20px;
+    grid-template-rows: auto auto;
+    gap: 0 20px;
     padding-top: 150px;
+  }
+
+  .v-ps-hero-headline {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .v-ps-hero-art {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .v-ps-hero-support {
+    grid-column: 1;
+    grid-row: 2;
   }
 
   .v-ps-intro-grid {
@@ -587,7 +598,7 @@
   .v-ps-hero {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.03fr);
     min-height: 860px;
-    gap: 45px;
+    gap: 0 45px;
     padding-top: 160px;
   }
 
@@ -621,9 +632,21 @@
     padding-bottom: 55px;
   }
 
+  .v-ps-hero-headline {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
   .v-ps-hero-art {
+    grid-column: 1;
+    grid-row: 2;
     min-height: min(520px, 120vw);
     margin-top: 16px;
+  }
+
+  .v-ps-hero-support {
+    grid-column: 1;
+    grid-row: 3;
   }
 
   .v-ps-stack-card {
@@ -695,16 +718,6 @@
 
   .v-ps-hero-copy > p:not(.v-eyebrow) {
     font-size: 13px;
-  }
-
-  .v-ps-hero-copy .v-actions {
-    display: grid;
-    align-items: stretch;
-  }
-
-  .v-ps-hero-copy .v-actions .v-button {
-    width: 100%;
-    justify-content: space-between;
   }
 
   .v-ps-hero-art {

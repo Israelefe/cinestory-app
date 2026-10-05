@@ -32,15 +32,9 @@ export default function PhotoSwapDelivery() {
   return (
     <Page className="v-photoswap-page">
       <header className="v-wrap v-ps-hero">
-        <Reveal className="v-ps-hero-copy">
+        <Reveal className="v-ps-hero-copy v-ps-hero-headline">
           <Eyebrow>PHOTO SWAP DELIVERY</Eyebrow>
           <h1>One photo.<br /><em>Then the next.</em></h1>
-          <p>A full-screen stack of finished photographs your client can swipe through at their own pace.</p>
-          <div className="v-actions">
-            <Action to="/demo/photoswap">Try the live demo</Action>
-            <Action to="/create?type=photoswap" secondary>Create a Photo Swap</Action>
-          </div>
-          <div className="v-ps-hero-note"><Check size={15} /><span>Send one private link by WhatsApp or Instagram DM.</span></div>
         </Reveal>
 
         <Reveal className="v-ps-hero-art" delay={0.08} aria-label="Preview of a swipeable Photo Swap stack">
@@ -55,6 +49,11 @@ export default function PhotoSwapDelivery() {
           <div className="v-ps-art-progress"><i /><i /><i /><i /></div>
           <div className="v-ps-art-dock"><span><Heart size={14} /></span><b>01 <i>/</i> 04</b><span><ArrowDownToLine size={14} /></span></div>
           <p className="v-ps-art-caption">Sharon’s portraits, one card at a time.</p>
+        </Reveal>
+
+        <Reveal className="v-ps-hero-copy v-ps-hero-support" delay={0.12}>
+          <p>A full-screen stack of finished photographs your client can swipe through at their own pace.</p>
+          <div className="v-ps-hero-note"><Check size={15} /><span>Send one private link by WhatsApp or Instagram DM.</span></div>
         </Reveal>
       </header>
 
