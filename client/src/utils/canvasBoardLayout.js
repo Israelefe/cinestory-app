@@ -4,7 +4,7 @@ export function canvasPrintPose(index, phone, ordered, landscape = false) {
   const angles = [-2.6, 2.2, -1.8, 1.7, -2.1, 2.8];
   const directions = [[-26, 24], [22, 28], [28, -16], [-20, 28], [18, 26], [-22, 18]];
   const [x, y] = directions[index % directions.length];
-  return { phone, tilt: angles[index % angles.length] * (phone ? .48 : landscape ? .7 : 1), drift: phone ? 0 : 6, x: phone ? 0 : x, y: phone ? 0 : y, turn: phone ? 0 : index % 2 ? 3 : -3 };
+  return { phone, tilt: angles[index % angles.length] * (phone ? .48 : landscape ? .7 : 1), drift: phone ? 6 : 12, x: phone ? 0 : x, y: phone ? 14 : y, turn: phone ? 0 : index % 2 ? 3 : -3 };
 }
 
 // Coordinates belong to the responsive viewer, never to the saved delivery.
@@ -239,5 +239,13 @@ export function canvasBoardPaths(layout, points, width) {
     const start = { x: p.x+last.x+last.width*.5, y: p.y+last.y+last.height+40 };
     connect(`${point.id}-next`,point.id,next.id,start,next.marker);
   });
-  return paths;
+  // Each connection gets its own small SVG. Control points safely bound the
+  // curves without a board-sized mask that repaints as photographs arrive.
+  return paths.map(path => {
+    const coordinates = path.d.match(/-?\d+(?:\.\d+)?/g).map(Number);
+    const xs = coordinates.filter((_, index) => index % 2 === 0);
+    const ys = coordinates.filter((_, index) => index % 2 === 1);
+    const x = Math.min(...xs) - 4, y = Math.min(...ys) - 4;
+    return { ...path, bounds: { x, y, width: Math.max(...xs) - x + 4, height: Math.max(...ys) - y + 4 } };
+  });
 }

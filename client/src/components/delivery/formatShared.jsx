@@ -111,7 +111,7 @@ export function normalizeDeliveryPhotos(delivery, fallbackPhotos, includeAll = f
   return fallbackPhotos.map(photo => ({ ...photo, caption: photo.caption || '' }));
 }
 
-export function DemoHeader({ format, client, sectionId, onGallery, light = false, delivery, audioState, toggleAudio, hideSoundtrack = false }) {
+export function DemoHeader({ format, client, sectionId, onGallery, light = false, delivery, audioState, toggleAudio, hideSoundtrack = false, hideFormatLabel = false, titleDetail, headerClassName = '' }) {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -146,7 +146,7 @@ export function DemoHeader({ format, client, sectionId, onGallery, light = false
   const soundtrackLoading = audioState?.loading === 'soundtrack';
   const narrationLoading = audioState?.loading === 'narration';
 
-  return <header className={'fd-header ' + (light ? 'is-light' : '')}>
+  return <header className={'fd-header ' + (light ? 'is-light ' : '') + headerClassName}>
     {delivery ? (
       <div className="fd-header-brand">
         <DeliveryBrandMark branding={delivery.branding} className="fd-header-logo" />
@@ -159,7 +159,7 @@ export function DemoHeader({ format, client, sectionId, onGallery, light = false
       </Link>
     )}
 
-    <div className="fd-header-title"><span>{format}</span><strong>{client}</strong></div>
+    <div className="fd-header-title">{!hideFormatLabel && <span>{format}</span>}<strong>{client}</strong>{titleDetail && <small>{titleDetail}</small>}</div>
 
     <div className="fd-header-actions">
       {audioState && toggleAudio && capabilities.music && delivery?.soundtrack?.url && !hideSoundtrack && (

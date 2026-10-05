@@ -37,10 +37,38 @@ async function swipe(page, locator, dx, dy = 0) {
   await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]}); await cdp.detach();
 }
 
+test('Canvas header gives long client and studio names room and keeps the gallery at the end', async ({page}) => {
+  await init(page); const data=record();
+  data.clientName='Courage and her graduation portraits';
+  data.branding.name='Amara Photography and Portrait Studio';
+  await preview(page,data);
+  for(const [width,height] of widths){
+    await page.setViewportSize({width,height});
+    await page.evaluate(()=>scrollTo({top:0,behavior:'instant'}));
+    const header=page.locator('.cv-header');
+    await expect(header.locator('.fd-header-title strong')).toHaveText(data.clientName);
+    await expect(header.locator('.fd-header-title small')).toHaveText('6 photographs');
+    await expect(page.locator('.cv-intro-bar,.cv-directory,.fd-header .fd-gallery-button,.fd-header-title>span')).toHaveCount(0);
+    expect(await header.evaluate(el=>{
+      const bounds=el.getBoundingClientRect(),parts=[...el.querySelectorAll('.fd-header-brand,.fd-header-title')].map(part=>part.getBoundingClientRect());
+      return parts.every((r,i)=>r.left>=bounds.left&&r.right<=bounds.right&&r.top>=bounds.top&&r.bottom<=bounds.bottom&&parts.every((o,j)=>i===j||r.right<=o.left||r.left>=o.right||r.bottom<=o.top||r.top>=o.bottom));
+    })).toBe(true);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBe(0);
+  }
+  await page.locator('.cv-bookend.is-closing').scrollIntoViewIfNeeded();
+  await page.getByRole('button',{name:'View full gallery',exact:true}).click();
+  await expect(page.locator('.client-gallery')).toBeVisible();
+  await expect(page.locator('.client-gallery-photo')).toHaveCount(data.assets.length);
+  await page.getByRole('button',{name:'Close gallery',exact:true}).click();
+  await expect(page.locator('.client-gallery')).toHaveCount(0);
+});
+
 test('Courage demo uses the same saved checkpoints as preview, with working responsive loading and real touch scroll',async({page})=>{
   await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:'reduce'});await init(page);
   await page.goto('/demo/canvas?phoneView=1');await expect(page.locator('.cv-board')).toBeVisible();
-  await page.getByRole('button',{name:'Explore the canvas',exact:true}).click();
+  await page.locator('.cv-photo-open').first().scrollIntoViewIfNeeded();
+  await expect(page.locator('.fd-header-title>span,.cv-intro-bar,.fd-header .fd-gallery-button,.cv-directory')).toHaveCount(0);
+  await expect(page.locator('.fd-header-title strong')).toHaveText('Courage');
   const initial=await page.evaluate(()=>scrollY);await swipe(page,page.locator('.cv-photo-open').first(),0,-180);await expect.poll(()=>page.evaluate(()=>scrollY)).toBeGreaterThan(initial+60);
   const signature=()=>page.locator('.cv-checkpoint').evaluateAll(nodes=>nodes.map(node=>({id:node.dataset.point,type:node.dataset.type,photos:[...node.querySelectorAll('.cv-frame-label>span')].map(el=>el.textContent)})));
   const demo=await signature();await page.getByRole('button',{name:'Open photograph 1',exact:true}).click();
@@ -48,11 +76,11 @@ test('Courage demo uses the same saved checkpoints as preview, with working resp
   await page.waitForTimeout(350);await expect(page.locator('.cv-focus .pv-image-waiting')).toHaveCount(0);
   expect(await page.locator('.cv-focus figure img').evaluate(image=>image.complete&&image.naturalWidth>0)).toBe(true);
   await page.keyboard.press('Escape');await preview(page,structuredClone(CANVAS_DEMO_DELIVERY));expect(await signature()).toEqual(demo);
-  await page.getByRole('button',{name:'Explore the canvas',exact:true}).click();await page.getByRole('button',{name:/Checkpoints/}).click();await page.locator('.cv-directory nav button').last().click();
-  await expect(page.locator('.cv-checkpoint').last()).toHaveClass(/is-jumped/);expect(await page.locator('.cv-checkpoint').last().evaluate(node=>Math.abs(node.getBoundingClientRect().top-32)<2)).toBe(true);
+  await page.getByRole('button',{name:'Checkpoint 4',exact:true}).click();
+  await expect(page.locator('.cv-checkpoint').last()).toHaveClass(/is-jumped/);await expect.poll(()=>page.locator('.cv-checkpoint').last().evaluate(node=>Math.abs(node.getBoundingClientRect().top-32)<2)).toBe(true);
 });
 
-test('normal-motion touch scrolling keeps tilted prints stationary and compact pairs separated',async({browser})=>{
+test('normal-motion touch scrolling moves prints gently, keeps captions steady and compact pairs separated',async({browser})=>{
   const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,reducedMotion:'no-preference'});
   try {
     const page=await context.newPage();await init(page);await page.goto('http://127.0.0.1:5178/demo/canvas?phoneView=1');
@@ -62,13 +90,15 @@ test('normal-motion touch scrolling keeps tilted prints stationary and compact p
     await expect.poll(()=>page.locator('.cv-frame').first().evaluate(el=>getComputedStyle(el).opacity)).toBe('1');
     await page.evaluate(()=>window.scrollTo({top:scrollY,left:0,behavior:'instant'}));
     const transform=await surface.evaluate(el=>getComputedStyle(el).transform);
+    const drift=await page.locator('.cv-frame-drift').first().evaluate(el=>getComputedStyle(el).transform);
     expect(await surface.evaluate(el=>Math.abs(new DOMMatrixReadOnly(getComputedStyle(el).transform).b))).toBeGreaterThan(.01);
     const initial=await page.evaluate(()=>scrollY);
     await swipe(page,photo,0,-180);
     await expect.poll(()=>page.evaluate(()=>scrollY)).toBeGreaterThan(initial+60);
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(surface).toHaveCSS('transform',transform);
-    await expect(page.locator('.cv-frame-drift').first()).toHaveCSS('transform','none');
+    await expect.poll(()=>page.locator('.cv-frame-drift').first().evaluate(el=>getComputedStyle(el).transform)).not.toBe(drift);
+    await expect(page.locator('.cv-frame-label').first()).toHaveCSS('transform','none');
     const pair=page.locator('.cv-checkpoint.is-group').first().locator('.cv-frame');
     const left=await pair.nth(0).boundingBox(),right=await pair.nth(1).boundingBox();
     expect(left.x+left.width).toBeLessThan(right.x);
@@ -100,15 +130,17 @@ test('long focus copy keeps navigation visible on a short phone and mouse drag s
 
 test('normal-motion connections reveal in place, stay dashed, and avoid photo frames',async({page})=>{
   await page.setViewportSize({width:1440,height:900});await page.emulateMedia({reducedMotion:'no-preference'});await init(page);await preview(page,record(8,'mixed'));
-  await page.getByRole('button',{name:'Explore the canvas',exact:true}).click();
-  const mask=page.locator('.cv-paths mask path').first();await expect.poll(()=>mask.evaluate(el=>Number(getComputedStyle(el).getPropertyValue('--cv-line-length')))).toBe(1);
-  await expect(page.locator('.cv-paths>path').first()).toHaveCSS('stroke-dasharray','4px, 7px');await expect(mask).toHaveCSS('animation-name','none');
+  await page.locator('.cv-photo-open').first().scrollIntoViewIfNeeded();
+  const connection=page.locator('.cv-paths').first();await expect(connection).toHaveCSS('opacity','1');
+  await expect(page.locator('.cv-paths>path').first()).toHaveCSS('stroke-dasharray','4px, 7px');
+  await expect(page.locator('.cv-paths mask')).toHaveCount(0);
+  expect(await connection.evaluate(el=>el.getBoundingClientRect().height<el.closest('.cv-path-board').getBoundingClientRect().height)).toBe(true);
   // Finish each arrival before checking the whole board's resting geometry.
   // Offscreen prints still have their entry offsets, and their lines are hidden.
   for(const frame of await page.locator('.cv-frame').all()){await frame.scrollIntoViewIfNeeded();await expect.poll(()=>frame.evaluate(el=>getComputedStyle(el).opacity)).toBe('1');}
-  await expect.poll(()=>page.locator('.cv-paths').evaluate(svg=>{
-    const bounds=svg.getBoundingClientRect(),photos=[...document.querySelectorAll('.cv-frame-surface')].map(node=>node.getBoundingClientRect());
-    return [...svg.querySelectorAll(':scope>path')].every(path=>{for(let at=0;at<=80;at++){const point=path.getPointAtLength(path.getTotalLength()*at/80),x=point.x+bounds.left,y=point.y+bounds.top;if(photos.some(rect=>x>rect.left&&x<rect.right&&y>rect.top&&y<rect.bottom))return false;}return true;});
+  await expect.poll(()=>page.locator('.cv-path-board').evaluate(board=>{
+    const photos=[...board.querySelectorAll('.cv-frame-surface')].map(node=>node.getBoundingClientRect());
+    return [...board.querySelectorAll('.cv-paths>path')].every(path=>{for(let at=0;at<=80;at++){const point=path.getPointAtLength(path.getTotalLength()*at/80).matrixTransform(path.getScreenCTM()),x=point.x,y=point.y;if(photos.some(rect=>x>rect.left&&x<rect.right&&y>rect.top&&y<rect.bottom))return false;}return true;});
   })).toBe(true);
 });
 
@@ -116,33 +148,33 @@ test('staggered Canvas keeps captions upright, reveals group members separately 
   test.skip(browserName !== 'chromium', 'This test dispatches touch gestures through Chromium CDP.');
   await page.setViewportSize({width:1440,height:600});await page.emulateMedia({reducedMotion:'no-preference'});await init(page);const data=record();
   data.creativeDirection.sections[0].assetIds=data.curatedAssetIds.slice(1,5);data.formatConfig.canvas.checkpoints=data.formatConfig.canvas.checkpoints.filter(p=>p.type==='group'||!data.curatedAssetIds.slice(3,5).includes(p.assetId));await preview(page,data);
-  await page.getByRole('button',{name:'Explore the canvas',exact:true}).click();
+  await page.locator('.cv-photo-open').first().scrollIntoViewIfNeeded();
   await expect.poll(()=>page.locator('.cv-frame').first().evaluate(el=>getComputedStyle(el).opacity)).toBe('1');
   const poses=await page.locator('.cv-frame').evaluateAll(frames=>frames.map(el=>({tilt:parseFloat(el.style.getPropertyValue('--cv-tilt')),caption:getComputedStyle(el.querySelector('figcaption')).transform})));
   expect(poses.some(p=>p.tilt>=2)).toBe(true);expect(poses.some(p=>p.tilt<=-2)).toBe(true);expect(poses.every(p=>p.caption==='none')).toBe(true);
   await expect.poll(()=>page.locator('.cv-frame-surface').first().evaluate(el=>Math.abs(new DOMMatrixReadOnly(getComputedStyle(el).transform).b))).toBeGreaterThan(.02);
-  const branchMasks=page.locator('.cv-paths mask path');
-  await expect.poll(()=>branchMasks.nth(1).evaluate(el=>Number(getComputedStyle(el).getPropertyValue('--cv-line-length')))).toBe(1);
+  const connections=page.locator('.cv-paths');
+  await expect(connections.nth(1)).toHaveCSS('opacity','1');
   // The last member sits below the fold; its branch waits for that print.
-  expect(await branchMasks.nth(4).evaluate(el=>Number(getComputedStyle(el).getPropertyValue('--cv-line-length')))).toBe(0);
+  await expect(connections.nth(4)).toHaveCSS('opacity','0');
   await page.locator('.cv-checkpoint.is-group .cv-frame').last().scrollIntoViewIfNeeded();
-  await expect.poll(()=>branchMasks.nth(4).evaluate(el=>Number(getComputedStyle(el).getPropertyValue('--cv-line-length')))).toBe(1);
+  await expect(connections.nth(4)).toHaveCSS('opacity','1');
   await page.locator('.cv-checkpoint.is-group .cv-frame').nth(1).scrollIntoViewIfNeeded();
-  await expect.poll(()=>branchMasks.nth(2).evaluate(el=>Number(getComputedStyle(el).getPropertyValue('--cv-line-length')))).toBe(1);
+  await expect(connections.nth(2)).toHaveCSS('opacity','1');
   await page.getByRole('button',{name:'Open photograph 3',exact:true}).click();const before=await page.evaluate(()=>scrollY);
   const dialog=page.getByRole('dialog');await expect(dialog.locator('h2')).toHaveText('Portrait 3');await expect.poll(()=>dialog.locator('.cv-focus-header small').textContent()).not.toContain('Loading');
   await swipe(page,dialog.locator('.cv-focus-image'),-110);await expect(dialog.locator('h2')).toHaveText('Portrait 4');await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);expect(await page.evaluate(()=>scrollY)).toBe(before);
   data.creativeDirection.sections[0].assetIds.reverse();
   await page.evaluate(delivery=>window.postMessage({type:'veylo:phone-preview-data',payload:{delivery}},location.origin),data);
   // Reordering a live preview keeps connections for prints already explored.
-  await expect.poll(()=>branchMasks.evaluateAll(masks=>masks.slice(1,5).filter(el=>Number(getComputedStyle(el).getPropertyValue('--cv-line-length'))===1).length)).toBe(4);
+  await expect.poll(()=>connections.evaluateAll(lines=>lines.slice(1,5).filter(el=>getComputedStyle(el).opacity==='1').length)).toBe(4);
   await page.emulateMedia({reducedMotion:'reduce'});await expect(page.locator('.cv-frame-drift').first()).not.toHaveCSS('transform','none');
   await expect(page.locator('.cv-frame-surface').first()).not.toHaveCSS('transform','none');
 });
 
 test('aligned Canvas keeps straight prints without scroll depth in the same creator preview',async({page})=>{
   await page.setViewportSize({width:834,height:1194});await page.emulateMedia({reducedMotion:'no-preference'});await init(page);const data=record();data.formatConfig.canvas.arrangement='ordered';await preview(page,data);
-  await page.getByRole('button',{name:'Explore the canvas',exact:true}).click();
+  await page.locator('.cv-photo-open').first().scrollIntoViewIfNeeded();
   await expect(page.locator('.cv-frame-drift').first()).toHaveCSS('transform','none');
   expect(await page.locator('.cv-frame').evaluateAll(frames=>frames.every(el=>parseFloat(el.style.getPropertyValue('--cv-tilt'))===0))).toBe(true);
   await page.locator('.cv-bookend.is-closing').scrollIntoViewIfNeeded();await expect(page.locator('.cv-paths>path')).toHaveCount(6);
@@ -181,7 +213,7 @@ for(const [count,mode] of [[6,'mixed'],[8,'single'],[12,'mixed'],[18,'group']]) 
   const checkpointCount=await page.locator('.cv-checkpoint').count();
   const groupedPhotos=await page.locator('.cv-checkpoint.is-group .cv-frame').count();
   await expect(page.locator('.cv-paths>path')).toHaveCount(checkpointCount-1+groupedPhotos);
-  expect(await page.locator('.cv-path-board').evaluate(board=>{
+  await expect.poll(()=>page.locator('.cv-path-board').evaluate(board=>{
     const bounds=board.getBoundingClientRect(), parts=[...board.querySelectorAll('.cv-frame,.cv-group-heading,.cv-bookend')].map(el=>el.getBoundingClientRect());
     return parts.every((r,i)=>r.left>=bounds.left-2&&r.right<=bounds.right+2&&r.top>=bounds.top&&r.bottom<=bounds.bottom+2&&parts.every((other,j)=>i===j||r.right<=other.left||r.left>=other.right||r.bottom<=other.top||r.top>=other.bottom));
   })).toBe(true);
