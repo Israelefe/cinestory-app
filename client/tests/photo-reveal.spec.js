@@ -24,7 +24,23 @@ async function setup(page, delivery, captures = {}) {
   });
 }
 const viewAt = (page, width) => width > 1024 ? page.frameLocator('.v-phone-screen iframe') : page;
-async function begin(view) { await view.getByRole('button', { name: 'Begin reveal', exact: true }).click(); await expect(view.locator('.rv-photo').last()).toHaveAttribute('data-asset-id', PHOTO_REVEAL_DEMO.assets[0].assetId); }
+async function begin(view, screenshot) {
+  await view.getByRole('button', { name: 'Begin reveal', exact: true }).click();
+  await expect(view.locator('.rv-viewer')).toHaveAttribute('data-phase', /^(introduction|reveal)$/);
+  if (await view.locator('.rv-viewer').getAttribute('data-phase') === 'introduction') {
+    await expect(view.getByRole('dialog', { name: 'A tap reveals the next photo.' })).toBeVisible();
+    await expect(view.locator('.rv-photo')).toHaveCount(0);
+    await expect.poll(() => view.locator('html').evaluate(el => el.scrollHeight - innerHeight)).toBeLessThanOrEqual(1);
+    await expect.poll(() => view.locator('html').evaluate(el => el.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+    if (screenshot) {
+      await expect.poll(() => view.locator('.rv-introduction-screen').evaluate(el => getComputedStyle(el).opacity)).toBe('1');
+      await view.locator('.rv-viewer').screenshot({ path: screenshot });
+    }
+    await view.getByRole('button', { name: 'Got it', exact: true }).click();
+  }
+  await expect(view.locator('.rv-photo').last()).toHaveAttribute('data-asset-id', PHOTO_REVEAL_DEMO.assets[0].assetId);
+  await expect(view.locator('.rv-introduction-screen')).toHaveCount(0);
+}
 async function complete(view, delivery) {
   for (let at = 1; at < delivery.assets.length; at++) {
     await view.getByRole('button', { name: 'Reveal next photo', exact: true }).click();
@@ -39,9 +55,8 @@ for (const width of [320, 390, 768, 834, 1024, 1440]) test(`Reveal shows complet
   await page.setViewportSize({ width, height: width === 320 ? 568 : 1000 }); const d = fixture();
   await setup(page, d); await page.goto('/d/reveal-test'); const view = viewAt(page, width);
   await expect(view.locator('.rv-opening h1')).toHaveText(d.creativeDirection.title);
-  await expect(view.locator('.rv-introduction strong')).toHaveText('A tap reveals the next photo.');
-  if (width === 320 || width === 834) await view.locator('.rv-viewer').screenshot({ path: `../.visual-review/photo-reveal-introduction-${width}.png` });
-  await begin(view);
+  await expect(view.locator('.rv-introduction')).toHaveCount(0);
+  await begin(view, width === 320 || width === 834 ? `../.visual-review/photo-reveal-introduction-${width}.png` : undefined);
   await expect(view.locator('.rv-caption p')).toHaveText(d.creativeDirection.frames[0].caption);
   expect(await view.locator('.rv-caption p').evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(14);
   await expect.poll(() => view.locator('html').evaluate(el => el.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
@@ -55,6 +70,32 @@ for (const width of [320, 390, 768, 834, 1024, 1440]) test(`Reveal shows complet
   await expect(view.locator('.rv-ending-photos figure')).toHaveCount(3);
   expect(await view.locator('.rv-ending-photos figure').first().evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(65);
   await expect(view.getByRole('button', { name: 'Start again', exact: true })).toBeVisible();
+});
+
+for (const route of ['/demo/reveal?phoneView=1', '/d/reveal-test']) test(`tap introduction appears after Begin reveal only once per session on ${route}`, async ({ page }) => {
+  test.setTimeout(60000);
+  const d = fixture(); await setup(page, d); await page.goto(route);
+  await expect(page.getByRole('button', { name: 'Begin reveal', exact: true })).toBeVisible();
+  await expect(page.locator('.rv-introduction')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Begin reveal', exact: true }).click();
+  const guide = page.getByRole('dialog', { name: 'A tap reveals the next photo.' });
+  await expect(guide).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Got it', exact: true })).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('.rv-photo')).toHaveCount(0);
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Got it', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.rv-position')).toHaveAttribute('aria-label', 'Photograph 1 of 5');
+  await complete(page, d);
+  await page.getByRole('button', { name: 'Start again', exact: true }).click();
+  await page.getByRole('button', { name: 'Begin reveal', exact: true }).click();
+  await expect(page.locator('.rv-viewer')).toHaveAttribute('data-phase', 'reveal');
+  await expect(guide).toHaveCount(0);
+  await page.reload();
+  await page.getByRole('button', { name: 'Begin reveal', exact: true }).click();
+  await expect(page.locator('.rv-viewer')).toHaveAttribute('data-phase', 'reveal');
+  await expect(guide).toHaveCount(0);
 });
 
 test('slow next photo keeps current photo and caption visible, then retries a failed photo', async ({ page }) => {

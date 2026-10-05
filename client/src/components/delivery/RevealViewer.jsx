@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import ClientGallery from './ClientGallery.jsx';
 import DeliveryBrandMark from './DeliveryBrandMark.jsx';
+import { useDialogFocus } from '../useDialogFocus.js';
 import { StoryCaptionContent, StoryCaptionDialog } from './StoryCaption.jsx';
 import { revealEndingPhotos, revealPhotos, revealSettings, revealTheme } from '../../utils/photoReveal.js';
 import { useSmoothSoundtrackLoop } from '../../utils/smoothSoundtrackLoop.js';
@@ -27,15 +28,21 @@ function RevealImage({ photo, className = '', eager = false }) {
   </div>;
 }
 
-function RevealIntroduction({ photo, count }) {
-  return <div className="rv-introduction">
+function RevealIntroduction({ photo, count, onContinue, loading, failed }) {
+  const dialog = useRef(null);
+  useDialogFocus(true, dialog, onContinue);
+  return <motion.main ref={dialog} key="introduction" className="rv-introduction-screen" role="dialog" aria-modal="true" aria-labelledby="rv-introduction-title" aria-describedby="rv-introduction-description" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: .4, ease }}>
+    <div className="rv-introduction">
     <div className="rv-introduction-preview" aria-hidden="true">
       <RevealImage photo={photo} eager />
       <div className="rv-introduction-shutters">{[-1, 1].map(side => <motion.i key={side} animate={{ x: ['0%', '0%', `${side * 101}%`, `${side * 101}%`, '0%'] }} transition={{ duration: 5.5, times: [0, .18, .42, .8, 1], repeat: Infinity, ease }} />)}</div>
       <motion.span className="rv-introduction-hand" animate={{ y: [6, 0, 0, 6], scale: [1, .88, 1, 1] }} transition={{ duration: 5.5, times: [0, .18, .3, 1], repeat: Infinity, ease }}><Pointer size={24} strokeWidth={1.5} /></motion.span>
     </div>
-    <div><span>{number(count)} PHOTOGRAPHS · YOUR PACE</span><strong>A tap reveals the next photo.</strong><p>Tap anywhere on a photo. Stay with it as long as you like.</p></div>
-  </div>;
+    <div><span>{number(count)} PHOTOGRAPHS · YOUR PACE</span><h2 id="rv-introduction-title">A tap reveals the next photo.</h2><p id="rv-introduction-description">Tap anywhere on a photo. Stay with it as long as you like.</p></div>
+    <button className="rv-primary" type="button" disabled={loading} onClick={onContinue}>{loading ? <LoaderCircle className="rv-spin" size={18} /> : null}Got it<ChevronRight size={19} /></button>
+    {failed && <p className="rv-error" role="alert">The first photograph could not load. Tap “Got it” to try again.</p>}
+    </div>
+  </motion.main>;
 }
 
 function RevealVeil({ closed, style, onComplete }) {
@@ -99,6 +106,7 @@ export default function RevealViewer({ delivery, demo = false, galleryProps = {}
   const mounted = useRef(true);
   const heading = useRef(null);
   const focusAfterNavigation = useRef(false);
+  const introductionsSeen = useRef(new Set());
   const attachHeading = useCallback(element => {
     heading.current = element;
     if (element && focusAfterNavigation.current) { element.focus({ preventScroll: true }); focusAfterNavigation.current = false; }
@@ -158,6 +166,20 @@ export default function RevealViewer({ delivery, demo = false, galleryProps = {}
     setAudioLoading(true); setAudioFailed(false);
     audio.current.volume = .45;
     audio.current.play().catch(() => { if (mounted.current) { setAudioLoading(false); setAudioFailed(true); } });
+  }
+
+  function beginReveal() {
+    const key = `veylo:reveal:introduction:${identity}`;
+    let introduced = introductionsSeen.current.has(identity);
+    try { introduced ||= sessionStorage.getItem(key) === 'seen'; } catch { /* The in-memory flag still covers replays when storage is unavailable. */ }
+    if (introduced) navigate(0, true);
+    else setPhase('introduction');
+  }
+
+  function finishIntroduction() {
+    introductionsSeen.current.add(identity);
+    try { sessionStorage.setItem(`veylo:reveal:introduction:${identity}`, 'seen'); } catch { /* Storage is optional. */ }
+    navigate(0, true);
   }
 
   async function navigate(target, beginning = false) {
@@ -235,14 +257,14 @@ export default function RevealViewer({ delivery, demo = false, galleryProps = {}
   }, []);
   useEffect(() => {
     if (phase === 'reveal' && storageKey && active) try { localStorage.setItem(storageKey, active.assetId); } catch { /* Storage is optional. */ }
-    const toLoad = phase === 'opening' ? [photos[0]] : [photos[index + 1], photos[index - 1], ...(index >= photos.length - 2 ? [closing] : [])];
+    const toLoad = phase === 'opening' || phase === 'introduction' ? [photos[0]] : [photos[index + 1], photos[index - 1], ...(index >= photos.length - 2 ? [closing] : [])];
     toLoad.filter(Boolean).forEach(photo => load(photo).catch(() => {}));
   }, [phase, index, orderKey, storageKey]);
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [phase]);
   useEffect(() => {
     const player = audio.current;
     if (!player) return undefined;
-    if (gallery || captionExpanded || hidden || muted || !musicStarted || phase === 'opening') { player.pause(); return undefined; }
+    if (gallery || captionExpanded || hidden || muted || !musicStarted || phase === 'opening' || phase === 'introduction') { player.pause(); return undefined; }
     if (phase === 'reveal') { playMusic(); return undefined; }
     let frame;
     const from = player.volume, start = performance.now();
@@ -286,11 +308,10 @@ export default function RevealViewer({ delivery, demo = false, galleryProps = {}
           <motion.span className="rv-eyebrow" initial={reduced ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>A PRIVATE PHOTO REVEAL <i /></motion.span>
           <motion.h1 initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .65, delay: reduced ? 0 : .1, ease }}>{title}</motion.h1>
           <p>{direction.openingLine || 'Take your time. Reveal each photograph when you are ready.'}</p>
-          <RevealIntroduction photo={cover} count={photos.length} />
-          <div className="rv-opening-actions"><button className="rv-primary" type="button" disabled={loading} onClick={() => navigate(0, true)}>{loading ? <LoaderCircle className="rv-spin" size={18} /> : null}Begin reveal<ChevronRight size={19} /></button>{resume !== null && <button className="rv-secondary" type="button" disabled={loading} onClick={() => navigate(resume, true)}>Continue from {number(resume + 1)}<ChevronRight size={17} /></button>}</div>
+          <div className="rv-opening-actions"><button className="rv-primary" type="button" disabled={loading} onClick={beginReveal}>{loading ? <LoaderCircle className="rv-spin" size={18} /> : null}Begin reveal<ChevronRight size={19} /></button>{resume !== null && <button className="rv-secondary" type="button" disabled={loading} onClick={() => navigate(resume, true)}>Continue from {number(resume + 1)}<ChevronRight size={17} /></button>}</div>
           {failed !== null && <p className="rv-error" role="alert">The first photograph could not load. <button type="button" onClick={() => navigate(failed, true)}>Try again</button></p>}
         </div>
-      </motion.main> : phase === 'reveal' ? <motion.main key="reveal" className="rv-room" initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .3 }}>
+      </motion.main> : phase === 'introduction' ? <RevealIntroduction key="introduction" photo={cover} count={photos.length} onContinue={finishIntroduction} loading={loading} failed={failed !== null} /> : phase === 'reveal' ? <motion.main key="reveal" className="rv-room" initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .3 }}>
         <div className="rv-photo-region" style={{ '--rv-ratio': ratio }} ref={observeRegion}>
           <motion.div className="rv-photo-frame" style={{ width, height: width / ratio }} data-moving={moving} animate={{ y: moving ? [0, -10, 0, 7, 0] : 0, rotate: moving ? [0, -.4, 0, .4, 0] : 0, scale: !reduced && tapPressed ? .975 : 1 }} transition={{ y: { duration: moving ? 6.5 : 0, repeat: moving ? Infinity : 0, ease: 'easeInOut' }, rotate: { duration: moving ? 9 : 0, repeat: moving ? Infinity : 0, ease: 'easeInOut' }, scale: { type: 'spring', damping: 24, stiffness: 260 } }}>
             <AnimatePresence initial={false}>{<motion.figure key={active.assetId} {...revealMotion} className="rv-photo" data-asset-id={active.assetId}>
