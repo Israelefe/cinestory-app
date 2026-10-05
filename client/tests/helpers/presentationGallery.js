@@ -1,6 +1,12 @@
 import { expect } from '@playwright/test';
 
 export async function completePresentation(view, format) {
+  if (format === 'editorial') {
+    const button = view.getByRole('button', { name: 'View full gallery', exact: true });
+    await button.scrollIntoViewIfNeeded();
+    await expect(button).toBeEnabled();
+    return;
+  }
   const galleryButton = view.getByRole('button', { name: format === 'photo-story' ? 'Open gallery' : 'Open full gallery', exact: true });
   if (await galleryButton.isVisible()) return;
   if (format === 'photo-story') {
@@ -69,5 +75,5 @@ export async function completePresentation(view, format) {
 
 export async function openPresentationGallery(view, format) {
   await completePresentation(view, format);
-  await view.getByRole('button', { name: format === 'photo-story' ? 'Open gallery' : 'Open full gallery', exact: true }).click();
+  await view.getByRole('button', { name: format === 'photo-story' ? 'Open gallery' : format === 'editorial' ? 'View full gallery' : 'Open full gallery', exact: true }).click();
 }

@@ -43,6 +43,34 @@ export function editorialFromDelivery(delivery) {
   return reconcileEditorial(direction.editorial || { sections: legacySections }, selected, direction.frames || []);
 }
 
+// Reserve bookend photographs without changing the studio's saved sections or wording.
+export function editorialReadingSections(sections, availableIds, bookendIds = []) {
+  const available = new Set(availableIds);
+  const seen = new Set(bookendIds);
+  const result = [];
+  const leadingCopy = [];
+  for (const section of sections) {
+    const assetIds = section.assetIds.filter(id => {
+      if (!available.has(id) || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+    if (assetIds.length) {
+      result.push({ ...section, assetIds, mergedCopy: leadingCopy.splice(0) });
+    } else if (section.body) {
+      // Keep paragraphs from a photo section that has moved to the cover or ending.
+      const target = result.at(-1)?.mergedCopy || leadingCopy;
+      target.push({ id: section.id, title: section.title, body: section.body });
+    }
+  }
+  // Very small legacy collections can consist entirely of bookend photographs.
+  if (!result.length && leadingCopy.length) {
+    const [first, ...rest] = leadingCopy;
+    result.push({ ...first, assetIds: [], pullLine: '', layout: 'auto', mergedCopy: rest });
+  }
+  return result;
+}
+
 export function editorialPhotos(delivery, all = false) {
   const frames = new Map((delivery.creativeDirection?.frames || []).map(frame => [frame.assetId, frame]));
   const assets = (delivery.assets || []).map((asset, index) => ({ ...asset, ...frames.get(asset.assetId), assetId: asset.assetId, url: asset.url, thumbnailUrl: asset.thumbnailUrl || asset.url, alt: asset.alt || `Photograph ${index + 1}`, name: asset.assetId }));
