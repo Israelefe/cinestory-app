@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, animate, motion, useMotionValue, useTransform } from 'framer-motion';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import {
@@ -19,31 +19,6 @@ import './DeliveryTypography.css';
 
 const SWIPE_VELOCITY = 560;
 const SWIPE_DISTANCE_RATIO = 0.2;
-const CARD_MOTION_VARIANTS = {
-  enter: custom => {
-    const direction = custom?.direction ?? 1;
-    const reduced = Boolean(custom?.reduced);
-    return {
-      opacity: 0.5,
-      x: direction < 0 ? 88 : -88,
-      transition: { duration: reduced ? 0.12 : 0.18 }
-    };
-  },
-  visible: custom => ({
-    opacity: 1,
-    x: 0,
-    transition: { type: 'spring', damping: 24, stiffness: custom?.reduced ? 220 : 280 }
-  }),
-  exit: custom => {
-    const direction = custom?.direction ?? 1;
-    const reduced = Boolean(custom?.reduced);
-    return {
-      opacity: 0,
-      x: direction < 0 ? -window.innerWidth * 1.05 : window.innerWidth * 1.05,
-      transition: { duration: reduced ? 0.15 : 0.28, ease: [0.32, 0, 0.67, 0] }
-    };
-  }
-};
 
 function mediaUrl(value) {
   return typeof value === 'string' && value.startsWith('/api/')
@@ -91,7 +66,6 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
     [delivery?.assets]
   );
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [direction, setDirection] = useState(1);
   const [hasStarted, setHasStarted] = useState(false);
   const [isAdvancing, setIsAdvancing] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -100,12 +74,15 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
   const audioRef = useRef(null);
   const soundtrackAttemptRef = useRef(null);
   const advanceLockRef = useRef(false);
+  const pointerGestureRef = useRef(null);
+  const pendingArrivalRef = useRef(false);
   const reduced = useVeyloReducedMotion();
 
   /* ── 3D Card Stack Physics with Dynamic Tinder Rotation & Depth ── */
   const stackOffset = useMotionValue(0);
   const cardRotation = useTransform(stackOffset, [-340, 0, 340], [-17, 0, 17]);
   const cardScale = useTransform(stackOffset, [-340, 0, 340], [0.97, 1, 0.97]);
+  const cardOpacity = useTransform(stackOffset, [-480, -80, 0, 80, 480], [0, 1, 1, 1, 0]);
 
   /* Middle & back card responsive depth */
   const middleScale = useTransform(stackOffset, [-320, 0, 320], [0.985, 0.94, 0.985]);
@@ -207,17 +184,117 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
     return undefined;
   }, [assets, currentIndex]);
 
-  /* Every horizontal swipe advances the stack, whichever way the card moves. */
-  const goNext = useCallback((swipeDirection = 1) => {
-    if (currentIndex >= assets.length || advanceLockRef.current) return;
+  /* Left advances; right returns to the previous photograph. */
+  const navigateAdjacent = useCallback((swipeDirection, cardWidth = window.innerWidth) => {
+    if (currentIndex >= assets.length || advanceLockRef.current) return false;
+    const step = swipeDirection < 0 ? 1 : -1;
+    const nextIndex = currentIndex + step;
+    if (nextIndex < 0 || nextIndex > assets.length) return false;
+
     advanceLockRef.current = true;
     setIsAdvancing(true);
-    setDirection(swipeDirection < 0 ? -1 : 1);
-    setCurrentIndex(i => Math.min(assets.length, i + 1));
-  }, [assets.length, currentIndex]);
+    const exitX = (swipeDirection < 0 ? -1 : 1) * (Math.max(window.innerWidth, cardWidth) + cardWidth / 2);
+    animate(stackOffset, exitX, {
+      type: 'tween',
+      duration: reduced ? 0.18 : 0.24,
+      ease: [0.32, 0, 0.67, 0],
+      onComplete: () => {
+        if (nextIndex >= assets.length) {
+          advanceLockRef.current = false;
+          setIsAdvancing(false);
+          setCurrentIndex(nextIndex);
+          return;
+        }
+
+        pendingArrivalRef.current = true;
+        stackOffset.set(swipeDirection < 0 ? 68 : -68);
+        setCurrentIndex(nextIndex);
+      }
+    });
+    return true;
+  }, [assets.length, currentIndex, reduced, stackOffset]);
+
+  useLayoutEffect(() => {
+    if (!pendingArrivalRef.current || isEnd) return;
+    pendingArrivalRef.current = false;
+    animate(stackOffset, 0, {
+      type: 'spring',
+      damping: 24,
+      stiffness: reduced ? 220 : 280,
+      onComplete: () => {
+        advanceLockRef.current = false;
+        setIsAdvancing(false);
+      }
+    });
+  }, [currentIndex, isEnd, reduced, stackOffset]);
+
+  const snapCardToCenter = useCallback(() => {
+    animate(stackOffset, 0, { type: 'spring', damping: 28, stiffness: 300 });
+  }, [stackOffset]);
+
+  const handleCardPointerDown = useCallback(event => {
+    if (advanceLockRef.current || !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    pointerGestureRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startedAt: event.timeStamp,
+      axis: null,
+      width: event.currentTarget.getBoundingClientRect().width
+    };
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture is unavailable in a few embedded webviews.
+    }
+    requestSoundtrack(true);
+  }, [requestSoundtrack]);
+
+  const handleCardPointerMove = useCallback(event => {
+    const gesture = pointerGestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - gesture.startX;
+    const deltaY = event.clientY - gesture.startY;
+    if (!gesture.axis) {
+      if (Math.abs(deltaX) < 8 && Math.abs(deltaY) < 8) return;
+      gesture.axis = Math.abs(deltaX) > Math.abs(deltaY) ? 'x' : 'y';
+    }
+    if (gesture.axis !== 'x') return;
+
+    event.preventDefault();
+    stackOffset.set(deltaX);
+  }, [stackOffset]);
+
+  const handleCardPointerUp = useCallback(event => {
+    const gesture = pointerGestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    pointerGestureRef.current = null;
+
+    const deltaX = event.clientX - gesture.startX;
+    const deltaY = event.clientY - gesture.startY;
+    const elapsed = Math.max(1, event.timeStamp - gesture.startedAt);
+    const velocityX = (deltaX / elapsed) * 1000;
+    const horizontal = gesture.axis === 'x'
+      || (!gesture.axis && Math.abs(deltaX) >= 8 && Math.abs(deltaX) > Math.abs(deltaY));
+    const threshold = Math.max(64, gesture.width * SWIPE_DISTANCE_RATIO);
+    const passed = Math.abs(deltaX) >= threshold
+      || (Math.abs(deltaX) >= 32 && Math.abs(velocityX) >= SWIPE_VELOCITY);
+
+    if (horizontal && passed && navigateAdjacent(Math.sign(deltaX || velocityX), gesture.width)) return;
+    snapCardToCenter();
+  }, [navigateAdjacent, snapCardToCenter]);
+
+  const handleCardPointerCancel = useCallback(event => {
+    const gesture = pointerGestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    pointerGestureRef.current = null;
+    snapCardToCenter();
+  }, [snapCardToCenter]);
 
   const handleRestart = useCallback(() => {
-    setDirection(1);
+    pointerGestureRef.current = null;
+    pendingArrivalRef.current = false;
     stackOffset.set(0);
     advanceLockRef.current = false;
     setIsAdvancing(false);
@@ -255,7 +332,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
     }
   }, [canLike, currentAsset, galleryProps]);
 
-  /* Keyboard users can advance the same one-way stack. */
+  /* Keyboard users can move in either direction through the photo set. */
   useEffect(() => {
     const handleKey = event => {
       if (event.altKey || event.ctrlKey || event.metaKey) return;
@@ -264,12 +341,15 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
       if (!hasStarted) return;
       if (event.key === 'ArrowRight' || event.key === ' ' || event.key === 'Enter') {
         event.preventDefault();
-        goNext(1);
+        navigateAdjacent(-1);
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        navigateAdjacent(1);
       }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [goNext, hasStarted]);
+  }, [hasStarted, navigateAdjacent]);
 
   if (!assets.length) {
     return (
@@ -467,24 +547,14 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
                 )}
 
                 {/* Active Front Card */}
-                <AnimatePresence
-                  initial={false}
-                  custom={{ direction, reduced }}
-                  mode="wait"
-                  onExitComplete={() => {
-                    stackOffset.set(0);
-                    advanceLockRef.current = false;
-                    setIsAdvancing(false);
-                  }}
-                >
-                  {currentAsset && (
+                {currentAsset && (
                     <motion.article
-                      key={currentAsset.assetId}
                       className={'ps-photo-card ps-card-front ps-design-' + currentPalette.design}
-                      variants={CARD_MOTION_VARIANTS}
                       style={{
+                        x: stackOffset,
                         rotate: cardRotation,
                         scale: cardScale,
+                        opacity: cardOpacity,
                         borderColor: currentPalette.design === 'paper' || currentPalette.design === 'editorial'
                           ? undefined
                           : currentPalette.border,
@@ -493,25 +563,11 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
                           ? `0 28px 76px -14px color-mix(in srgb, ${currentPalette.glow} 55%, black), 0 4px 18px rgba(0, 0, 0, 0.4), inset 0 0 0 5px rgba(255, 250, 240, 0.92)`
                           : `0 28px 76px -14px color-mix(in srgb, ${currentPalette.glow} 55%, black), 0 4px 18px rgba(0, 0, 0, 0.4)`
                       }}
-                      drag={isAdvancing ? false : 'x'}
-                      dragConstraints={{ left: -window.innerWidth, right: window.innerWidth }}
-                      dragElastic={0.12}
-                      dragMomentum={false}
-                      initial="enter"
-                      animate="visible"
-                      exit="exit"
-                      onDragStart={() => requestSoundtrack(true)}
-                      onDrag={(_, info) => stackOffset.set(info.offset.x)}
-                      onDragEnd={(event, info) => {
-                        const cardWidth = event.currentTarget?.getBoundingClientRect().width || window.innerWidth;
-                        const threshold = Math.max(64, cardWidth * SWIPE_DISTANCE_RATIO);
-                        if (Math.abs(info.offset.x) >= threshold || Math.abs(info.velocity.x) >= SWIPE_VELOCITY) {
-                          const swipeDirection = Math.sign(info.offset.x || info.velocity.x);
-                          goNext(swipeDirection);
-                        } else {
-                          animate(stackOffset, 0, { type: 'spring', damping: 28, stiffness: 300 });
-                        }
-                      }}
+                      onPointerDown={handleCardPointerDown}
+                      onPointerMove={handleCardPointerMove}
+                      onPointerUp={handleCardPointerUp}
+                      onPointerCancel={handleCardPointerCancel}
+                      onLostPointerCapture={handleCardPointerCancel}
                       role="group"
                       aria-roledescription="photograph"
                       aria-label={'Photo ' + (currentIndex + 1) + ' of ' + assets.length}
@@ -537,15 +593,14 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
                         )}
                       </div>
                     </motion.article>
-                  )}
-                </AnimatePresence>
+                )}
               </div>
             </motion.section>
           )}
         </AnimatePresence>
 
         {/* ── Photo Actions ── */}
-        {hasStarted && !isEnd && currentAsset && (
+        {hasStarted && !isEnd && currentAsset && !isAdvancing && (
           <footer className="ps-action-area">
             <div className="ps-tinder-actions" role="toolbar" aria-label="Photo actions">
               {/* Like Button */}
