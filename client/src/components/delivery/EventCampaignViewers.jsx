@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion, useAnimationControls, useInView } from 'framer-motion';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
-import { ArrowRight, BriefcaseBusiness, CalendarRange, Download, FileCheck2, Images, MapPin, Users } from 'lucide-react';
+import { ArrowRight, BriefcaseBusiness, CalendarRange, Download, FileCheck2, Images, Maximize2, Pause, Play, Users } from 'lucide-react';
 import { Photo } from '../PublicDesign.jsx';
 import {
   DemoGallery,
@@ -17,6 +17,35 @@ import {
 } from '../../pages/FormatDemo.jsx';
 import { useClosingGallery } from '../../utils/useClosingGallery.js';
 import './EventCampaignViewers.css';
+import './EventCoverageViewer.css';
+
+const eventEase = [.22, 1, .36, 1];
+const eventReveal = {
+  initial: { opacity: 0, y: 20 },
+  whileInView: { opacity: 1, y: 0 },
+  viewport: { once: true, amount: .15 },
+  transition: { duration: .65, ease: eventEase }
+};
+
+// Keep saved photograph motion, but stop work while it is out of view or paused.
+function EventPhotoMotion({ photo, index = 0, paused, className = '', children }) {
+  const ref = useRef(null);
+  const visible = useInView(ref);
+  const controls = useAnimationControls();
+  const reduced = useVeyloReducedMotion();
+  const motionName = photo?.motion;
+  useEffect(() => {
+    if (reduced || motionName === 'still') {
+      controls.set({ scale: 1, x: 0, y: 0 });
+    } else if (visible && !paused) {
+      controls.start({ ...frameMotionValues({ motion: motionName }), transition: frameMotionTransition({ motion: motionName }, index) });
+    } else {
+      controls.stop();
+    }
+    return () => controls.stop();
+  }, [controls, visible, paused, reduced, motionName, index]);
+  return <motion.div ref={ref} className={`vec-frame-motion ${className}`} initial={false} animate={controls}>{children}</motion.div>;
+}
 
 function splitIntoGroups(photos, wantedGroups) {
   const count = Math.max(1, Math.min(wantedGroups, photos.length));
@@ -36,7 +65,7 @@ function resolveSections(delivery, photos, fallbackSections) {
     return {
       id: section.id || `section-${index + 1}`,
       title: section.title || section.name || section.headline || fallback.title || `Scene ${String(index + 1).padStart(2, '0')}`,
-      copy: section.copy || section.subtitle || section.caption || section.description || fallback.copy || '',
+      copy: section.copy || section.subtitle || (delivery?.format === 'event-coverage' ? section.body : '') || section.caption || section.description || fallback.copy || '',
       label: section.label || section.eyebrow || fallback.label || '',
       delivery: section.delivery || section.output || fallback.delivery || '',
       layout: section.layout || fallback.layout || 'grid',
@@ -84,7 +113,7 @@ function sceneAnchorId(section, index) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
-  return `event-scene-${slug || index + 1}`;
+  return `event-scene-${slug || 'scene'}-${index + 1}`;
 }
 
 function campaignAnchorId(section, index) {
@@ -101,14 +130,23 @@ function OpeningPhoto({ photo, alt }) {
 
 export function EventCoverageViewer({ delivery, galleryProps, audioState, toggleAudio, onNarrationNavigate }) {
   const reduced = useVeyloReducedMotion();
+  const viewerRef = useRef(null);
+  const toolsRef = useRef(null);
   const [gallery, setGallery] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(null);
   const [activeFilter, setActiveFilter] = useState('all');
+  const [activeScene, setActiveScene] = useState('');
+  const [motionPaused, setMotionPaused] = useState(false);
+  const [pageVisible, setPageVisible] = useState(() => !document.hidden);
+  const [navigationOffset, setNavigationOffset] = useState(180);
+  const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight);
+  const pausePhotos = motionPaused || !pageVisible || gallery;
   const openGallery = () => { if (!galleryUnlocked) return; setGalleryIndex(null); setGallery(true); };
   const photos = useMemo(() => normalizeDeliveryPhotos(delivery, eventCoveragePhotos), [delivery]);
   const galleryPhotos = useMemo(() => delivery?.schemaVersion === 3 ? normalizeDeliveryPhotos(delivery, eventCoveragePhotos, true) : photos, [delivery, photos]);
   const { galleryUnlocked, closingRef } = useClosingGallery(`${delivery?.publicId || delivery?._id || 'event-demo'}:${photos.map(photo => photo.assetId || photo.name).join('|')}`);
   const openingPhoto = delivery?.schemaVersion === 3 ? galleryPhotos.find(photo => photo.assetId === delivery.v3?.openingAssetId) || photos[0] : photos[0];
+  const hasPhotoMotion = [openingPhoto, ...photos].some(photo => photo && photo.motion !== 'still');
   const closingPhoto = delivery?.schemaVersion === 3 ? galleryPhotos.find(photo => photo.assetId === delivery.v3?.closingAssetId) : null;
   const sections = useMemo(() => resolveSections(delivery, photos, [
     { title: 'Arrivals and check-in', copy: 'The room takes shape as people arrive, find their bearings, and start the first conversations.', label: 'OPENING SCENE', delivery: 'WELCOME' },
@@ -119,8 +157,8 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
   ]), [delivery, photos]);
   const title = delivery?.title || delivery?.clientName || 'A day in the room';
   const studio = delivery?.branding?.name || 'Veylo Studio';
-  const opening = delivery?.creativeDirection?.openingLine || delivery?.brief || 'A complete record of the people, programme, and small moments that made the gathering feel like itself.';
-  const styles = getFormatThemeStyles(delivery, { bg: '#080b0d', surface: '#101417', text: '#f4efe8', accent: '#dba56f', fontDisplay: "'Outfit', sans-serif" });
+  const opening = delivery?.creativeDirection?.openingLine || delivery?.brief || 'The people, the programme, and the moments in between.';
+  const styles = getFormatThemeStyles(delivery, { bg: '#070709', surface: '#0c0c10', text: '#f4efe8', accent: '#ff9b8e', fontDisplay: "'Outfit', sans-serif" });
   const filterOptions = [
     ['all', 'All moments'],
     ['people', 'People'],
@@ -128,16 +166,81 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
     ['networking', 'Networking'],
     ['details', 'Details']
   ];
-  const hasEventTypes = photos.some(photo => photo.eventType);
-  const visibleSections = sections
-    .map(section => ({
+  const scenePhotos = useMemo(() => sections.flatMap(section => section.photos), [sections]);
+  const hasEventTypes = scenePhotos.some(photo => photo.eventType);
+  const availableFilters = filterOptions.filter(([value]) => value === 'all' || scenePhotos.some(photo => photo.eventType === value));
+  const visibleSections = useMemo(() => sections
+    .map((section, index) => ({
       ...section,
+      sceneIndex: index,
+      anchorId: sceneAnchorId(section, index),
       photos: !hasEventTypes || activeFilter === 'all'
         ? section.photos
         : section.photos.filter(photo => photo.eventType === activeFilter)
     }))
-    .filter(section => section.photos.length);
+    .filter(section => section.photos.length), [sections, hasEventTypes, activeFilter]);
+  const visiblePhotoCount = visibleSections.reduce((count, section) => count + section.photos.length, 0);
   const highlights = photos.slice(0, 4);
+
+  useEffect(() => {
+    const update = () => setPageVisible(!document.hidden);
+    document.addEventListener('visibilitychange', update);
+    return () => document.removeEventListener('visibilitychange', update);
+  }, []);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    const header = viewer?.querySelector('.fd-header');
+    const tools = toolsRef.current;
+    if (!header || !tools) return undefined;
+    const measure = () => {
+      const headerHeight = header.getBoundingClientRect().height;
+      const offset = Math.ceil(headerHeight + tools.getBoundingClientRect().height + 24);
+      viewer.style.setProperty('--event-header-height', `${headerHeight}px`);
+      viewer.style.setProperty('--event-scroll-offset', `${offset}px`);
+      setNavigationOffset(offset);
+      setViewportHeight(window.innerHeight);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(header);
+    observer.observe(tools);
+    window.addEventListener('resize', measure);
+    return () => { observer.disconnect(); window.removeEventListener('resize', measure); };
+  }, []);
+
+  useEffect(() => {
+    setActiveScene('');
+    const observer = new IntersectionObserver(entries => {
+      const current = entries.filter(entry => entry.isIntersecting)
+        .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+      if (current) setActiveScene(current.target.id);
+    }, { rootMargin: `-${navigationOffset}px 0px -${Math.max(0, viewportHeight - navigationOffset - 100)}px 0px`, threshold: 0 });
+    visibleSections.forEach(section => {
+      const element = document.getElementById(section.anchorId);
+      if (element) observer.observe(element);
+    });
+    return () => observer.disconnect();
+  }, [visibleSections, navigationOffset, viewportHeight]);
+
+  useEffect(() => {
+    const nav = toolsRef.current?.querySelector('.vec-event-scene-nav');
+    const link = Array.from(nav?.querySelectorAll('a') || []).find(item => item.getAttribute('href') === `#${activeScene}`);
+    if (!nav || !link) return;
+    const bounds = link.getBoundingClientRect();
+    const navBounds = nav.getBoundingClientRect();
+    if (bounds.left < navBounds.left || bounds.right > navBounds.right) {
+      nav.scrollTo({ left: nav.scrollLeft + bounds.left - navBounds.left - 20, behavior: 'smooth' });
+    }
+  }, [activeScene]);
+
+  const browseScene = (event, anchorId) => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+    event.preventDefault();
+    const target = document.getElementById(anchorId);
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const openPhoto = photo => {
     setGalleryIndex(Math.max(0, galleryPhotos.findIndex(item => item.assetId ? item.assetId === photo.assetId : item.name === photo.name)));
@@ -145,73 +248,77 @@ export function EventCoverageViewer({ delivery, galleryProps, audioState, toggle
     onNarrationNavigate?.(photo.assetId);
   };
 
-  return <div className="fd-page vec-viewer vec-event" data-composition={styles['--fd-composition']} data-accent-placement={styles['--fd-accent-placement']} data-pace={styles['--fd-pace']} style={styles}>
+  return <div ref={viewerRef} className="fd-page vec-viewer vec-event" data-composition={styles['--fd-composition']} data-accent-placement={styles['--fd-accent-placement']} data-pace={styles['--fd-pace']} data-motion-paused={motionPaused} style={styles}>
     <DemoHeader format="Event Coverage" client={title} sectionId="event-coverage" onGallery={galleryUnlocked ? openGallery : undefined} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     <main>
       <section className="vec-event-hero">
         <motion.figure {...formatFrameAttributes(openingPhoto)} style={formatFrameStyle(openingPhoto)} initial={reduced ? false : { opacity: 0, scale: 1.035 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: reduced ? 0 : 1.05, ease: [.22, 1, .36, 1] }}>
-          <motion.div className="vec-frame-motion" animate={frameMotionValues(openingPhoto, reduced)} transition={frameMotionTransition(openingPhoto, 0, reduced)}><OpeningPhoto photo={openingPhoto} alt="Event opening photograph" /></motion.div>
+          <EventPhotoMotion photo={openingPhoto} paused={pausePhotos}><OpeningPhoto photo={openingPhoto} alt="Event opening photograph" /></EventPhotoMotion>
           <i />
         </motion.figure>
-        <motion.div {...formatFrameAttributes(photos[0])} style={formatFrameStyle(photos[0])} initial={reduced ? false : { opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .7, delay: reduced ? 0 : .18 }}>
+        <motion.div className="vec-event-hero-copy" initial={reduced ? false : { opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .8, delay: reduced ? 0 : .18, ease: eventEase }}>
           <span><CalendarRange size={14} /> EVENT COVERAGE</span>
           <h1>{title}</h1>
           <p>{opening}</p>
-          <button type="button" onClick={() => document.getElementById('event-scenes')?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth' })}>Browse the scenes<ArrowRight size={17} /></button>
+          <button type="button" onClick={() => document.getElementById('event-scenes')?.scrollIntoView({ behavior: 'smooth' })}>Browse the scenes<ArrowRight size={17} /></button>
         </motion.div>
       </section>
 
       <section className="vec-event-summary" aria-label="Event summary">
-        <div><Images size={19} /><strong>{galleryPhotos.length}</strong><span>finished photographs</span></div>
-        <div><Users size={19} /><strong>{sections.length}</strong><span>event scenes</span></div>
-        <div><MapPin size={19} /><strong>{delivery?.shootType || 'Conference'}</strong><span>coverage type</span></div>
+        <motion.div {...eventReveal}><Images size={19} /><strong>{galleryPhotos.length}</strong><span>finished photographs</span></motion.div>
+        <motion.div {...eventReveal} transition={{ ...eventReveal.transition, delay: .08 }}><Users size={19} /><strong>{sections.length}</strong><span>event scenes</span></motion.div>
+        <motion.div {...eventReveal} transition={{ ...eventReveal.transition, delay: .16 }}><CalendarRange size={19} /><strong>{delivery?.shootType?.replace(/-/g, ' ') || (delivery ? 'Event' : 'Conference')}</strong><span>coverage type</span></motion.div>
       </section>
 
-      <section className="vec-event-tools" aria-label="Event navigation and actions">
+      <section ref={toolsRef} className="vec-event-tools" aria-label="Event navigation and actions">
         <div className="vec-event-tools-head">
-          <div><span>FIND A MOMENT</span><strong>Choose a scene. Your full gallery follows the presentation.</strong></div>
+          <div><span>EXPLORE THE EVENT</span><strong>{galleryUnlocked ? 'Your full gallery is ready.' : 'Choose a scene to start browsing.'}</strong></div>
           <div className="vec-event-tools-actions">
+            {hasPhotoMotion && <button type="button" className="vec-event-motion-toggle" onClick={() => setMotionPaused(value => !value)} aria-label={motionPaused ? 'Resume photo motion' : 'Pause photo motion'} aria-pressed={motionPaused}>{motionPaused ? <Play size={15} /> : <Pause size={15} />}<span>{motionPaused ? 'Resume motion' : 'Pause motion'}</span></button>}
             {galleryUnlocked && <button type="button" onClick={openGallery}><Images size={15} />Full gallery</button>}
             {galleryUnlocked && galleryProps?.onDownloadAll && delivery?.access?.allowDownloadAll !== false && <button type="button" onClick={() => { if (galleryUnlocked) galleryProps.onDownloadAll(); }} disabled={Boolean(galleryProps.busy)}><Download size={15} />{galleryProps.busy === 'all' ? 'Preparing…' : 'Download all'}</button>}
           </div>
         </div>
         <nav className="vec-event-scene-nav" aria-label="Event scenes">
-          {sections.map((section, index) => <a key={section.id} href={`#${sceneAnchorId(section, index)}`}><span>{String(index + 1).padStart(2, '0')}</span>{section.title}</a>)}
+          {visibleSections.map(section => <a key={section.anchorId} href={`#${section.anchorId}`} onClick={event => browseScene(event, section.anchorId)} aria-current={activeScene === section.anchorId ? 'location' : undefined}><span>{String(section.sceneIndex + 1).padStart(2, '0')}</span>{section.title}</a>)}
         </nav>
       </section>
 
       <section className="vec-event-highlights" aria-label="Event highlights">
-        <header><span>START HERE</span><h2>The moments that set the day in motion.</h2></header>
+        <motion.header {...eventReveal}><span>A FEW HIGHLIGHTS</span><h2>A first look at the day.</h2><p>Tap a photograph to take a closer look.</p></motion.header>
         <div className="vec-event-highlight-grid">
-          {highlights.map((photo, index) => <button type="button" key={photo.assetId || photo.name || index} {...formatFrameAttributes(photo)} style={formatFrameStyle(photo)} onClick={() => openPhoto(photo)} aria-label={`Open highlight ${index + 1}`}>
-            <motion.div className="vec-frame-motion" animate={frameMotionValues(photo, reduced)} transition={frameMotionTransition(photo, index, reduced)}><Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || `Event highlight ${index + 1}`} sizes="(max-width: 640px) 78vw, 23vw" /></motion.div>
-            <span>{photo.caption || `Highlight ${String(index + 1).padStart(2, '0')}`}</span>
-          </button>)}
+          {highlights.map((photo, index) => <motion.button type="button" key={photo.assetId || photo.name || index} {...eventReveal} transition={{ ...eventReveal.transition, delay: index * .07 }} {...formatFrameAttributes(photo)} style={formatFrameStyle(photo)} onClick={() => openPhoto(photo)} aria-label={`Open highlight ${index + 1}`}>
+            <EventPhotoMotion photo={photo} index={index} paused={pausePhotos}><Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || `Event highlight ${index + 1}`} style={photo.focalPoint ? { objectPosition: photo.focalPoint } : undefined} sizes="(max-width: 639px) 82vw, (max-width: 1023px) 46vw, 23vw" /></EventPhotoMotion>
+            <span className="vec-photo-open" aria-hidden="true"><Maximize2 size={16} /></span>
+            <span className="vec-highlight-caption">{photo.caption || `Highlight ${String(index + 1).padStart(2, '0')}`}</span>
+          </motion.button>)}
         </div>
       </section>
 
       <section className="vec-event-manifesto" aria-label="Event coverage approach">
-        <div><span>ONE EVENT / MANY PERSPECTIVES</span><h2>Nothing important gets lost in the crowd.</h2></div>
-        <p>Event Coverage keeps the people, programme, atmosphere, and details together so guests can find the moment they came for without turning the delivery into one long, loose grid.</p>
+        <motion.div {...eventReveal}><span>PEOPLE / PROGRAMME / DETAILS</span><h2>See the day from every side.</h2></motion.div>
+        <motion.p {...eventReveal}>Browse the scenes below. Open any photograph for a closer look, then find the full gallery at the end.</motion.p>
       </section>
 
       <section id="event-scenes" className="vec-event-scenes">
-        <header><span>THE COMPLETE EVENT</span><h2>Move through the day by scene.</h2></header>
-        {hasEventTypes && <div className="vec-event-filters" role="group" aria-label="Filter event photographs">
-          {filterOptions.map(([value, label]) => <button type="button" key={value} className={activeFilter === value ? 'is-active' : ''} onClick={() => setActiveFilter(value)} aria-pressed={activeFilter === value}>{label}</button>)}
-        </div>}
-        {visibleSections.map((section, sectionIndex) => <motion.article id={sceneAnchorId(section, sectionIndex)} data-layout={section.layout || 'grid'} key={section.id} style={section.accent ? { '--section-accent': section.accent } : undefined} initial={reduced ? false : { opacity: 0, y: 28 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .12 }} transition={{ duration: reduced ? 0 : .6 }}>
-          <div className="vec-scene-copy"><span>{String(sectionIndex + 1).padStart(2, '0')}</span><div>{section.label && <small>{section.label}</small>}<h3>{section.title}</h3>{section.copy && <p>{section.copy}</p>}</div><b>{section.photos.length} photos</b></div>
+        <motion.header {...eventReveal}><span>SCENE BY SCENE</span><h2>Find your part of the day.</h2></motion.header>
+        {hasEventTypes && <div className="vec-event-filter-bar"><div className="vec-event-filters" role="group" aria-label="Filter event photographs">
+          {availableFilters.map(([value, label]) => <motion.button type="button" key={value} className={activeFilter === value ? 'is-active' : ''} onClick={() => setActiveFilter(value)} aria-pressed={activeFilter === value} whileTap={{ scale: .96 }}>{activeFilter === value && <motion.span className="vec-event-filter-selection" layoutId="event-filter-selection" transition={{ type: 'spring', damping: 25, stiffness: 280 }} />}<span>{label}</span></motion.button>)}
+        </div><p className="vec-event-filter-status" role="status" aria-live="polite">{visiblePhotoCount} {visiblePhotoCount === 1 ? 'photograph' : 'photographs'} across {visibleSections.length} {visibleSections.length === 1 ? 'scene' : 'scenes'}</p></div>}
+        {!visibleSections.length && <div className="vec-event-empty"><p>No photographs in this view.</p><button type="button" onClick={() => setActiveFilter('all')}>Show all moments<ArrowRight size={16} /></button></div>}
+        {visibleSections.map(section => <article id={section.anchorId} tabIndex={-1} aria-labelledby={`${section.anchorId}-title`} data-layout={section.layout || 'grid'} key={section.anchorId} style={section.accent ? { '--section-accent': section.accent } : undefined}>
+          <motion.div className="vec-scene-copy" {...eventReveal}><span>{String(section.sceneIndex + 1).padStart(2, '0')}</span><div>{section.label && <small>{section.label}</small>}<h3 id={`${section.anchorId}-title`}>{section.title}</h3>{section.copy && <p>{section.copy}</p>}</div><b>{section.photos.length} {section.photos.length === 1 ? 'photo' : 'photos'}</b></motion.div>
           <div className={`vec-scene-grid is-count-${Math.min(section.photos.length, 4)}`}>
-            {section.photos.map((photo, index) => <button type="button" key={photo.assetId || photo.name || index} {...formatFrameAttributes(photo)} style={formatFrameStyle(photo)} onClick={() => openPhoto(photo)} aria-label={`Open ${section.title} photograph ${index + 1}`}>
-              <motion.span className="vec-scene-image vec-frame-motion" animate={frameMotionValues(photo, reduced)} transition={frameMotionTransition(photo, index, reduced)}><Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || photo.caption || ''} style={photo.focalPoint ? { objectPosition: photo.focalPoint } : undefined} sizes="(max-width: 640px) 92vw, (max-width: 1024px) 46vw, 31vw" /></motion.span>
-              <small className="vec-photo-caption">{photo.caption}</small>
-            </button>)}
+            {section.photos.map((photo, index) => <motion.button type="button" key={`${activeFilter}:${photo.assetId || photo.name || index}`} {...eventReveal} transition={{ ...eventReveal.transition, delay: Math.min(index % 4, 3) * .06 }} {...formatFrameAttributes(photo)} style={formatFrameStyle(photo)} onClick={() => openPhoto(photo)} aria-label={`Open ${section.title} photograph ${index + 1}`}>
+              <EventPhotoMotion photo={photo} index={index} paused={pausePhotos} className="vec-scene-image"><Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || photo.caption || ''} style={photo.focalPoint ? { objectPosition: photo.focalPoint } : undefined} sizes="(max-width: 639px) 92vw, (max-width: 1023px) 46vw, 46vw" /></EventPhotoMotion>
+              <span className="vec-photo-open" aria-hidden="true"><Maximize2 size={16} /></span>
+              {photo.caption && <small className="vec-photo-caption">{photo.caption}</small>}
+            </motion.button>)}
           </div>
-        </motion.article>)}
+        </article>)}
       </section>
 
-      <footer ref={closingRef} className="vec-event-close">{closingPhoto && <img className="vec-v3-bookend-photo" src={closingPhoto.url} alt="" />}<span>{studio}</span><h2>{delivery?.schemaVersion === 3 ? delivery?.creativeDirection?.closingLine : 'The whole day, in one place.'}</h2><button type="button" disabled={!galleryUnlocked} onClick={openGallery}>Open all {galleryPhotos.length} photographs<Images size={18} /></button></footer>
+      <footer ref={closingRef} className="vec-event-close">{closingPhoto && <img className="vec-v3-bookend-photo" src={closingPhoto.url} alt="" loading="lazy" />}<motion.div {...eventReveal}><span>{studio}</span><h2>{delivery?.creativeDirection?.closingLine || 'The whole day, in one place.'}</h2><p>All {galleryPhotos.length} finished photographs, ready to browse.</p><button type="button" disabled={!galleryUnlocked} onClick={openGallery}>Open all {galleryPhotos.length} photographs<Images size={18} /></button></motion.div></footer>
     </main>
     <AnimatePresence>{gallery && <DemoGallery photos={galleryPhotos} title={title} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} fontStyles={styles} {...galleryProps} singlePhoto={!galleryUnlocked} />}</AnimatePresence>
   </div>;
