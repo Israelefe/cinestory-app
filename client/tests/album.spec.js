@@ -11,25 +11,42 @@ async function turnTo(page, index) {
   await expect(page.locator('.album-turn-leaf')).toHaveCount(0);
 }
 
+test('every photograph fits completely on a small phone without scrolling the paper', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 }); await prepare(page);
+  await page.goto('/demo/album?phoneView=1');
+  await expect(page.getByRole('button', { name: 'Open album', exact: true })).toBeInViewport({ ratio: 1 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight - innerHeight)).toBeLessThanOrEqual(1);
+  await page.getByRole('button', { name: 'Open album', exact: true }).click();
+  const pages = page.getByRole('button', { name: /^Open album page \d+$/ });
+  for (let at = 0; at < await pages.count(); at++) {
+    await turnTo(page, at);
+    await expect.poll(() => page.locator('.fd-album-stage').evaluate(el => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
+    const images = page.locator('.fd-album-spread .v-photo');
+    for (const image of await images.all()) {
+      await expect(image).toHaveJSProperty('complete', true);
+      await expect(image).toBeInViewport({ ratio: 1 });
+    }
+  }
+});
+
 for (const [width, height] of [[320,568], [390,844], [768,1024], [834,1194], [1440,900], [1024,600]]) {
   test(`album pages and controls fit at ${width} by ${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height });
     await prepare(page);
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     await page.goto('/demo/album?phoneView=1');
+    await expect(page.getByRole('button', { name: 'Open album', exact: true })).toBeInViewport({ ratio: 1 });
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight - innerHeight)).toBeLessThanOrEqual(1);
     await page.getByRole('button', { name: 'Open album', exact: true }).click();
     await expect(page.locator('.fd-album-spread .v-photo').first()).toHaveJSProperty('complete', true);
     await expect(page.getByRole('button', { name: 'Next page', exact: true })).toBeInViewport();
-    await expect.poll(() => page.locator('.fd-album-spread').evaluate((el, width) => {
-      const left = el.querySelector('.album-paper-left').getBoundingClientRect();
-      const right = el.querySelector('.album-paper-right').getBoundingClientRect();
-      return width < 768 ? right.y >= left.y + left.height - 1 : Math.abs(left.y - right.y) < 1;
-    }, width)).toBe(true);
+    await expect(page.locator('.album-note')).toBeInViewport();
     expect(await page.locator('.fd-album-spread .v-photo').first().evaluate(el => getComputedStyle(el).objectFit)).toBe('contain');
-    await turnTo(page, 1);
-    await turnTo(page, 2);
+    const pages = page.getByRole('button', { name: /^Open album page \d+$/ });
+    for (let at = 1; at < await pages.count(); at++) await turnTo(page, at);
     await expect(page.getByRole('button', { name: 'View full gallery', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'View full gallery', exact: true }).scrollIntoViewIfNeeded();
+    await expect(page.getByRole('button', { name: 'View full gallery', exact: true })).toBeInViewport({ ratio: 1 });
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight - innerHeight)).toBeLessThanOrEqual(1);
     await expect(page.getByRole('button', { name: 'Next page', exact: true })).toBeInViewport();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     expect(errors).toEqual([]);

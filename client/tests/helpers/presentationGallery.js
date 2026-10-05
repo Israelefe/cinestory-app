@@ -31,11 +31,18 @@ export async function completePresentation(view, format) {
     const count = await dots.count();
     for (let at = 0; at < count; at++) {
       await dots.nth(at).click();
-      await expect(view.locator(`.fd-album-stage>[data-spread-index="${at}"] .fd-album-spread`)).toBeVisible();
+      await expect(view.locator('.album-open-book')).toHaveAttribute('data-spread-index', String(at));
+      await expect(view.locator('.album-turn-leaf')).toHaveCount(0);
+      await expect(view.locator('.album-open-book>.fd-album-spread')).toBeVisible();
     }
     if (!count) {
       const next = view.getByRole('button', { name: 'Next page', exact: true });
-      while (await next.isEnabled()) { await next.click(); await expect(view.locator('.fd-album-spread')).toHaveCount(1); }
+      let current = Number(await view.locator('.album-open-book').getAttribute('data-spread-index') || 0);
+      while (await next.isEnabled()) {
+        await next.click(); current += 1;
+        await expect(view.locator('.album-open-book')).toHaveAttribute('data-spread-index', String(current));
+        await expect(view.locator('.album-turn-leaf')).toHaveCount(0);
+      }
     }
     await expect(view.getByRole('button', { name: 'Open full gallery', exact: true })).toBeVisible();
   } else if (format === 'chapters') {
