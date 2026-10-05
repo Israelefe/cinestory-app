@@ -50,6 +50,15 @@ test('campaign keeps every photo set visible and supports keyboard photo inspect
   await expect(page.locator('.client-gallery')).toBeVisible();
   await expect(page.locator('.client-gallery-grid')).toHaveCount(0);
   await expect.poll(() => page.locator('.client-gallery-lightbox-main').evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
+  const likeButton = page.getByRole('button', { name: 'Add to favourites' });
+  const downloadButton = page.getByRole('button', { name: 'Download photograph' });
+  await expect(likeButton).toBeVisible();
+  await expect(downloadButton).toBeVisible();
+  await likeButton.click();
+  await expect(page.getByRole('button', { name: 'Remove from favourites' })).toHaveAttribute('aria-pressed', 'true');
+  const downloadStarted = page.waitForEvent('download');
+  await downloadButton.click();
+  expect((await downloadStarted).suggestedFilename()).toBeTruthy();
   await page.getByRole('button', { name: 'Return to presentation' }).press('Escape');
   await expect(page.locator('.client-gallery')).toHaveCount(0);
   await expect(photo).toBeFocused();

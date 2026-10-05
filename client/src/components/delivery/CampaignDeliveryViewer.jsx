@@ -4,8 +4,9 @@ import { ArrowUpRight, Camera, Download, FileCheck2, Images, Pause, Play } from 
 import { DELIVERY_DEMO_DIMENSIONS } from '../../constants/deliveryDemoMetadata.js';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import { useClosingGallery } from '../../utils/useClosingGallery.js';
+import { toast } from 'react-toastify';
 import { Photo } from '../PublicDesign.jsx';
-import { DemoGallery, DemoHeader, campaignPhotos, formatFrameAttributes, formatFrameStyle, frameMotionTransition, frameMotionValues, getFormatThemeStyles, normalizeDeliveryPhotos } from '../../pages/FormatDemo.jsx';
+import { DemoGallery, DemoHeader, campaignPhotos, formatFrameAttributes, formatFrameStyle, frameMotionTransition, frameMotionValues, getFormatThemeStyles, imageSrc, normalizeDeliveryPhotos } from '../../pages/FormatDemo.jsx';
 import './CampaignDelivery.css';
 
 const reveal = {
@@ -45,15 +46,35 @@ function anchorId(set) {
   return `campaign-set-${String(set.id).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
 }
 
-export function CampaignDeliveryViewer({ delivery, galleryProps, audioState, toggleAudio, onNarrationNavigate }) {
+export function CampaignDeliveryViewer({ delivery, galleryProps: suppliedGalleryProps, audioState, toggleAudio, onNarrationNavigate }) {
   const [gallery, setGallery] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(null);
+  const [demoLiked, setDemoLiked] = useState(() => new Set());
   const [activeSet, setActiveSet] = useState(null);
   const [motionPaused, setMotionPaused] = useState(false);
   const [pageVisible, setPageVisible] = useState(() => !document.hidden);
   const navigationRef = useRef(null);
   const photos = useMemo(() => normalizeDeliveryPhotos(delivery, campaignPhotos), [delivery]);
   const galleryPhotos = useMemo(() => delivery?.schemaVersion === 3 ? normalizeDeliveryPhotos(delivery, campaignPhotos, true) : photos, [delivery, photos]);
+  const galleryProps = suppliedGalleryProps || (!delivery ? {
+    liked: demoLiked,
+    onLike: key => setDemoLiked(current => {
+      const next = new Set(current);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    }),
+    onDownload: (key, index) => {
+      const photo = galleryPhotos.find((item, photoIndex) => String(item.assetId || item.id || item.name || photoIndex) === String(key)) || galleryPhotos[index];
+      if (!photo) return;
+      const link = document.createElement('a');
+      link.href = imageSrc(photo);
+      link.download = `${String(photo.name || `photograph-${index + 1}`).split('/').pop().replace(/[^a-z0-9_-]+/gi, '-')}.webp`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    },
+    onDownloadAll: () => toast.info('These are sample files. Open a photograph to download a sample.')
+  } : {});
   const { galleryUnlocked, closingRef } = useClosingGallery(`${delivery?.publicId || delivery?._id || 'campaign-demo'}:${photos.map(photo => photo.assetId || photo.name).join('|')}`);
   const sets = useMemo(() => resolveCampaignSets(delivery, photos), [delivery, photos]);
   const highlights = useMemo(() => {
