@@ -8,11 +8,11 @@ import useStudioNameAvailability from '../hooks/useStudioNameAvailability.js';
 import './StudioWorkspace.css';
 
 const workTypes = ['Portraits', 'Weddings', 'Birthdays', 'Fashion and editorial', 'Commercial and branding', 'Maternity', 'Graduation', 'Events', 'Other'];
-const sources = ['Instagram', 'TikTok', 'YouTube', 'Google Search', 'WhatsApp', 'Another photographer', 'Friend or colleague', 'Event or workshop', 'Other', 'Prefer not to say'];
+const sources = ['Instagram', 'TikTok', 'YouTube', 'Google Search', 'WhatsApp', 'Another photographer', 'Friend or colleague', 'Event or workshop', 'Other'];
 const stepCopy = [
   { label: 'Your brand', title: 'What name do your clients know?', text: 'Use your Studio or Brand name. This is the name clients will see.' },
   { label: 'Your work', title: 'What do you usually photograph?', text: 'Choose the shoots you deliver most often. You can change these later.' },
-  { label: 'How you found us', title: 'One optional question.', text: 'Tell us where you found Veylo, or go straight to your dashboard.' }
+  { label: 'How you found us', title: 'How did you hear about Veylo?', text: 'Choose an option before you open your dashboard.' }
 ];
 
 export default function OnboardingPage({ user, onAuthenticated }) {
@@ -64,7 +64,7 @@ export default function OnboardingPage({ user, onAuthenticated }) {
   async function next(event) {
     event.preventDefault();
     if (status.loading || status.upload || (step === 1 && !nameAvailability.canSubmit)) return;
-    const data = step === 1 ? studio : step === 2 ? work : { ...discovery, source: discovery.source || 'Prefer not to say' };
+    const data = step === 1 ? studio : step === 2 ? work : discovery;
     setStatus(currentStatus => ({ ...currentStatus, loading: true, error: '' }));
     try {
       const saved = await api.patch('/v1/onboarding', { step, data });
@@ -90,7 +90,7 @@ export default function OnboardingPage({ user, onAuthenticated }) {
         <p className="v-eyebrow"><Camera size={16} />WELCOME TO VEYLO</p>
         <h1>Your work.<br /><em>Your name.</em></h1>
         <p>Set up your account, then get your finished photographs ready to share with clients.</p>
-        <ol aria-label="Setup progress">{stepCopy.map((item, index) => <li key={item.label} aria-current={step === index + 1 ? 'step' : undefined} className={step === index + 1 ? 'is-current' : step > index + 1 ? 'is-complete' : ''}><span>{step > index + 1 ? <Check size={14} /> : `0${index + 1}`}</span><div><strong>{item.label}</strong><small>{index === 0 ? 'Name, image, and location' : index === 1 ? 'Shoot types and contact details' : 'Optional, before you start'}</small></div></li>)}</ol>
+        <ol aria-label="Setup progress">{stepCopy.map((item, index) => <li key={item.label} aria-current={step === index + 1 ? 'step' : undefined} className={step === index + 1 ? 'is-current' : step > index + 1 ? 'is-complete' : ''}><span>{step > index + 1 ? <Check size={14} /> : `0${index + 1}`}</span><div><strong>{item.label}</strong><small>{index === 0 ? 'Name, image, and location' : index === 1 ? 'Shoot types and contact details' : 'Required before you start'}</small></div></li>)}</ol>
         <div className="v-setup-note"><ShieldCheck size={19} /><p>Your Studio or Brand name belongs to one account. Choose the name you use with clients.</p></div>
         <p className="v-onboarding-account">Signed in as <strong>{user?.email}</strong></p>
       </Reveal>
@@ -118,8 +118,8 @@ export default function OnboardingPage({ user, onAuthenticated }) {
             <div className="v-form-row"><div className="v-field"><label htmlFor="studio-instagram">Instagram <small>Optional</small></label><input id="studio-instagram" maxLength={80} value={work.instagram} onChange={event => setWork(value => ({ ...value, instagram: event.target.value }))} placeholder="@yourstudio" /></div><div className="v-field"><label htmlFor="studio-whatsapp">WhatsApp number <small>Optional</small></label><input id="studio-whatsapp" inputMode="tel" maxLength={30} value={work.whatsapp} onChange={event => setWork(value => ({ ...value, whatsapp: event.target.value }))} placeholder="+234" /></div></div>
           </>}
           {step === 3 && <>
-            <fieldset className="v-choice-field"><legend>Choose one if you like</legend><div className="v-source-grid">{sources.map(item => <label key={item} className={discovery.source === item ? 'is-selected' : ''}><input type="radio" name="source" checked={discovery.source === item} onChange={() => setDiscovery(value => ({ ...value, source: item }))} /><span>{item}</span></label>)}</div></fieldset>
-            {discovery.source === 'Other' && <div className="v-field"><label htmlFor="other-source">Where did you hear about Veylo?</label><input id="other-source" required maxLength={120} value={discovery.otherSource} onChange={event => setDiscovery(value => ({ ...value, otherSource: event.target.value }))} /></div>}
+            <fieldset className="v-choice-field"><legend>Choose one to continue</legend><div className="v-source-grid">{sources.map(item => <label key={item} className={discovery.source === item ? 'is-selected' : ''}><input type="radio" name="source" required checked={discovery.source === item} onChange={() => setDiscovery(value => ({ ...value, source: item }))} /><span>{item}</span></label>)}</div></fieldset>
+            {discovery.source === 'Other' && <div className="v-field"><label htmlFor="other-source">Where did you hear about Veylo?</label><input id="other-source" required minLength={2} maxLength={120} value={discovery.otherSource} onChange={event => setDiscovery(value => ({ ...value, otherSource: event.target.value }))} /></div>}
           </>}
           {status.error && <p className="v-form-status" role="alert">{status.error}</p>}
           <div className="v-onboarding-actions">{step > 1 && <button type="button" className="v-auth-text-button" disabled={status.loading || status.upload} onClick={() => setStep(value => value - 1)}><ArrowLeft size={16} />Back</button>}<button className="v-button" disabled={status.loading || status.upload || (step === 1 && !nameAvailability.canSubmit)}>{status.loading ? 'Saving…' : step === 3 ? 'Open my dashboard' : 'Save and continue'}<ArrowRight size={18} /></button></div>

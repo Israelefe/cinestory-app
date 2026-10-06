@@ -9,7 +9,7 @@ import { signedImageUrl } from '../services/deliveryMedia.service.js';
 import { STUDIO_NAME_CHANGE_COOLDOWN_MS, isoDate, nextChangeAt } from '../constants/profilePolicy.js';
 
 const specialties = ['Portraits', 'Weddings', 'Birthdays', 'Fashion and editorial', 'Commercial and branding', 'Maternity', 'Graduation', 'Events', 'Other'];
-const sources = ['Instagram', 'TikTok', 'YouTube', 'Google Search', 'WhatsApp', 'Another photographer', 'Friend or colleague', 'Event or workshop', 'Other', 'Prefer not to say'];
+const sources = ['Instagram', 'TikTok', 'YouTube', 'Google Search', 'WhatsApp', 'Another photographer', 'Friend or colleague', 'Event or workshop', 'Other'];
 
 const stepOne = z.object({
   studioName: studioNameSchema,
@@ -93,7 +93,7 @@ export async function completeOnboarding(req, res) {
   try {
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
-    if (!user.studio?.name || !user.studio?.businessType || !user.studio?.city || !user.studio?.state || !user.studio?.specialties?.length || !user.acquisition?.source) return res.status(400).json({ success: false, message: 'Complete the three short steps before finishing.' });
+    if (!user.studio?.name || !user.studio?.businessType || !user.studio?.city || !user.studio?.state || !user.studio?.specialties?.length || !sources.includes(user.acquisition?.source)) return res.status(400).json({ success: false, message: 'Complete the three short steps and choose how you heard about Veylo before finishing.' });
     user.onboardingCompletedAt = user.onboardingCompletedAt || new Date();
     user.onboardingStep = 3;
     await user.save();
