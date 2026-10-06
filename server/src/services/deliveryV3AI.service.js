@@ -4,7 +4,7 @@ import { purposeWordingIssues } from '../utils/purposeWording.js';
 import { writeEditorialDirection, rewriteEditorialCaption, rewriteEditorialBlock } from './editorialDirection.service.js';
 import { deliveryWritingContext, deliveryWritingPolicy, requiresDirectAddress, supportsVisualWriting, shootWritingIssues, writingFallback } from '../constants/deliveryWriting.js';
 import { writingBlockLimit } from '../constants/deliveryWritingBlocks.js';
-import { anyModelProviderConfigured, DEFAULT_ALIBABA_FALLBACK_MODEL, requestModelCompletion } from './modelProvider.service.js';
+import { anyModelProviderConfigured, DEFAULT_ALIBABA_FALLBACK_MODEL, MAX_CONCURRENT_MODEL_REQUESTS, requestModelCompletion } from './modelProvider.service.js';
 
 const MODEL = DEFAULT_ALIBABA_FALLBACK_MODEL;
 const TRANSIENT = new Set([429, 500, 502, 503, 504]);
@@ -192,22 +192,40 @@ export async function analyzeAllV3(delivery, onProgress = async () => {}) {
   const known = new Set(assets.map(asset => asset.assetId));
   const byId = new Map((delivery.collectionAnalysis?.images || []).filter(item => known.has(item.assetId) && (delivery.kind !== 'pinboard' || (Array.isArray(item.colorGroups) && Array.isArray(item.similarityTags)))).map(item => [item.assetId, item]));
   const pending = assets.filter(asset => !byId.has(asset.assetId));
-  // Groq vision requests accept up to three images.
-  let ceiling = Math.min(3, pending.length);
-  let size = ceiling;
-  for (let cursor = 0; cursor < pending.length;) {
-    const batch = pending.slice(cursor, cursor + size);
+  const imagesPerRequest = 3;
+  const parallelRequests = MAX_CONCURRENT_MODEL_REQUESTS;
+  const recoverableBatchErrors = new Set(['V3_IMAGE_BATCH_TOO_LARGE', 'V3_INVALID_AI_RESPONSE', 'V3_INCOMPLETE_ANALYSIS']);
+  const analyzeBatchWithRecovery = async batch => {
     try {
-      for (const item of await analyzeBatch(batch, delivery)) byId.set(item.assetId, item);
-      cursor += batch.length;
-      await onProgress(byId.size, assets.length, assets.map(asset => byId.get(asset.assetId)).filter(Boolean));
-      if (size < ceiling) size = Math.min(ceiling, size + 1);
+      return await analyzeBatch(batch, delivery);
     } catch (error) {
-      if (['V3_IMAGE_BATCH_TOO_LARGE', 'V3_INVALID_AI_RESPONSE', 'V3_INCOMPLETE_ANALYSIS'].includes(error.code) || ['TimeoutError', 'AbortError'].includes(error.name)) {
-        if (size > 1) { ceiling = Math.min(ceiling, size - 1); size = Math.max(1, Math.floor(size / 2)); continue; }
-      }
-      throw error;
+      const canSplit = recoverableBatchErrors.has(error.code) || ['TimeoutError', 'AbortError'].includes(error.name);
+      if (!canSplit || batch.length <= 1) throw error;
+      const midpoint = Math.ceil(batch.length / 2);
+      const first = await analyzeBatchWithRecovery(batch.slice(0, midpoint));
+      const second = await analyzeBatchWithRecovery(batch.slice(midpoint));
+      return [...first, ...second];
     }
+  };
+
+  for (let offset = 0; offset < pending.length; offset += imagesPerRequest * parallelRequests) {
+    const batches = [];
+    const groupEnd = Math.min(offset + imagesPerRequest * parallelRequests, pending.length);
+    for (let cursor = offset; cursor < groupEnd; cursor += imagesPerRequest) {
+      batches.push(pending.slice(cursor, cursor + imagesPerRequest));
+    }
+
+    const results = await Promise.allSettled(batches.map(analyzeBatchWithRecovery));
+    let firstError = null;
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        firstError ||= result.reason;
+        continue;
+      }
+      for (const item of result.value) byId.set(item.assetId, item);
+    }
+    await onProgress(byId.size, assets.length, assets.map(asset => byId.get(asset.assetId)).filter(Boolean));
+    if (firstError) throw firstError;
   }
   const analyses = assets.map(asset => byId.get(asset.assetId));
   return delivery.kind === 'pinboard' ? linkSimilarShots(assets, analyses) : analyses;

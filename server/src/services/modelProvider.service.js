@@ -3,6 +3,25 @@ export const GROQ_PROVIDER_NAME = 'Groq AI';
 export const ALIBABA_PROVIDER_NAME = 'Alibaba Model Studio';
 export const DEFAULT_GROQ_MODEL = 'qwen/qwen3.8-27b';
 export const DEFAULT_ALIBABA_FALLBACK_MODEL = 'deepseek-v4.1-flash';
+export const MAX_CONCURRENT_MODEL_REQUESTS = 5;
+let activeModelRequests = 0;
+const modelRequestWaiters = [];
+
+async function withModelRequestSlot(task) {
+  if (activeModelRequests >= MAX_CONCURRENT_MODEL_REQUESTS) {
+    await new Promise(resolve => modelRequestWaiters.push(resolve));
+  } else {
+    activeModelRequests += 1;
+  }
+
+  try {
+    return await task();
+  } finally {
+    const next = modelRequestWaiters.shift();
+    if (next) next();
+    else activeModelRequests -= 1;
+  }
+}
 
 function groqKey() {
   return String(process.env.GROQ_API_KEY || '').trim();
@@ -88,7 +107,7 @@ function providerCandidates(fallbackModel) {
  * Send a chat completion to Groq first, then Model Studio if Groq is missing
  * or rejects/fails the request. Provider keys stay server-side.
  */
-export async function requestModelCompletion(body, { fallbackModel, timeoutMs = 90_000, signal } = {}) {
+async function requestModelCompletionUnlocked(body, { fallbackModel, timeoutMs = 90_000, signal } = {}) {
   const providers = providerCandidates(fallbackModel);
   if (!providers.length) {
     throw Object.assign(new Error('Configure Groq or Alibaba Model Studio to use Veylo AI.'), { code: 'AI_NOT_CONFIGURED' });
@@ -126,4 +145,8 @@ export async function requestModelCompletion(body, { fallbackModel, timeoutMs = 
 
   if (lastResponse) return { response: lastResponse, provider: lastProvider.name, model: lastProvider.model, fallbackUsed: lastProviderIndex > 0 };
   throw lastThrown || Object.assign(new Error('The configured AI providers could not complete this request.'), { code: 'AI_PROVIDER_FAILED' });
+}
+
+export function requestModelCompletion(body, options = {}) {
+  return withModelRequestSlot(() => requestModelCompletionUnlocked(body, options));
 }
