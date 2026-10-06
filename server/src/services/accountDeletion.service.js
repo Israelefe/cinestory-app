@@ -21,6 +21,7 @@ import DeliveryShareGrant from '../models/DeliveryShareGrant.js';
 import PhotoLike from '../models/PhotoLike.js';
 import DeliveryView from '../models/DeliveryView.js';
 import StorageAsset from '../models/StorageAsset.js';
+import LibraryCollaboration from '../models/LibraryCollaboration.js';
 import Portfolio from '../models/Portfolio.js';
 import PortfolioJob from '../models/PortfolioJob.js';
 import PortfolioEnquiry from '../models/PortfolioEnquiry.js';
@@ -123,7 +124,7 @@ async function removeMedia({ user, stories, hasDeliveries, hasStorageAssets }) {
   try {
     await Promise.all([
       hasStudioAsset ? removeCloudinaryFolder(`veylo/studios/${user._id}`, ['image']) : Promise.resolve(),
-      hasUserMedia ? removeCloudinaryFolder(userPrefix, ['image', 'video']) : Promise.resolve()
+      hasUserMedia ? removeCloudinaryFolder(userPrefix, ['image', 'video', 'raw']) : Promise.resolve()
     ]);
   } catch (error) {
     throw providerError(error, 'MEDIA_CLEANUP_FAILED');
@@ -177,6 +178,7 @@ async function deleteOwnedRecords({ accountId, deliveryIds, storyIds, volumeJobI
   await deleteMany('volumeSubjects', VolumeSubject, { userId: accountId });
   await deleteMany('volumeJobs', VolumeJob, { userId: accountId });
   await deleteMany('storageAssets', StorageAsset, { userId: accountId });
+  await deleteMany('libraryCollaborations', LibraryCollaboration, { userId: accountId });
   const ownedPortfolios = await Portfolio.find({ userId: accountId }).select('_id items.publicId draft.items.publicId profileMedia.publicId draft.profileMedia.publicId').session(session || null).lean();
   await deleteMany('portfolioHandles', PortfolioHandle, { portfolioId: { $in: ownedPortfolios.map(item => item._id) } });
   await deleteMany('portfolioMedia', PortfolioMedia, { $or: [{ publicId: { $in: ownedPortfolios.flatMap(item => [...(item.items || []), ...(item.draft?.items || []), ...(item.profileMedia || []), ...(item.draft?.profileMedia || [])].map(photo => photo.publicId)) } }, { publicId: { $regex: `^veylo/users/${accountId}/` } }] });

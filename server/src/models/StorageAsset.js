@@ -6,6 +6,11 @@ const storageAssetSchema = new mongoose.Schema({
   assetId: { type: String, unique: true, default: () => crypto.randomUUID() },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   publicId: { type: String, required: true, unique: true },
+  // A camera original is kept as a separate authenticated RAW resource. The
+  // publicId remains an image so delivery and portfolio reuse stay compatible.
+  rawPublicId: { type: String, trim: true, unique: true, sparse: true },
+  rawFormat: { type: String, trim: true, lowercase: true, maxlength: 12 },
+  rawBytes: { type: Number, min: 0, default: 0 },
   originalFilename: { type: String, trim: true, maxlength: 180 },
   format: { type: String, enum: ['jpg', 'jpeg', 'png', 'webp'], required: true },
   width: { type: Number, min: 1 },

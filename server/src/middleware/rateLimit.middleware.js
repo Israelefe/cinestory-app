@@ -117,6 +117,31 @@ export const publicAccessLimit = limiter({
   identifier: 'public-access'
 });
 
+export const privateLinkUnlockLimit = limiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 12,
+  message: 'Too many password or PIN attempts. Wait a little while before trying again.',
+  keyGenerator: req => securityIdentityKey(req, 'private-library-link'),
+  identifier: 'private-library-link-unlock',
+  skipSuccessfulRequests: true
+});
+
+export const privateLinkMediaLimit = limiter({
+  windowMs: 60 * 60 * 1000,
+  limit: 1500,
+  message: 'This private link has been opened many times. Please wait before loading more photographs.',
+  keyGenerator: req => `private-library:${digest(req.params?.publicId)}:${clientIp(req)}`,
+  identifier: 'private-library-link-media'
+});
+
+export const privateLinkUploadLimit = limiter({
+  windowMs: 60 * 60 * 1000,
+  limit: 120,
+  message: 'Many edits have been uploaded through this link. Please wait before sending more.',
+  keyGenerator: req => `private-library:${digest(req.params?.publicId)}:${clientIp(req)}`,
+  identifier: 'private-library-link-uploads'
+});
+
 export const portfolioEnquiryLimit = limiter({ windowMs: 60 * 60 * 1000, limit: 5, keyGenerator: req => `portfolio-enquiry:${clientIp(req)}`, identifier: 'portfolio-enquiry', message: 'Several enquiries have been sent from this connection. Please wait before sending another, or contact the photographer directly.' });
 
 export const clientDeliveryEmailLimit = limiter({

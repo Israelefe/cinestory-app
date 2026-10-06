@@ -28,7 +28,7 @@ api.interceptors.response.use(response => {
   trackApiRequest({ path: error.config?.url, status: error.response?.status, durationMs: (typeof performance !== 'undefined' ? performance.now() : Date.now()) - Number(error.config?.metadata?.startedAt || 0), failed: true, errorCode: error.response?.data?.code || (error.code ? String(error.code).slice(0, 80) : 'REQUEST_FAILED') });
   const original = error.config;
   const path = String(original?.url || '');
-  const canRefresh = error.response?.status === 401 && original && !original._retried && !path.includes('/auth/login') && !path.includes('/auth/google') && !path.includes('/auth/refresh');
+  const canRefresh = error.response?.status === 401 && original && !original._retried && !path.includes('/auth/login') && !path.includes('/auth/google') && !path.includes('/auth/refresh') && !path.includes('/storage/public/');
   if (!canRefresh) throw error;
   original._retried = true;
   refreshRequest ||= axios.post(`${API_BASE_URL}/v1/auth/refresh`, {}, { withCredentials: true, headers: { 'X-Requested-With': 'XMLHttpRequest' } }).finally(() => { refreshRequest = null; });

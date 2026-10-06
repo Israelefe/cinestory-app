@@ -41,6 +41,7 @@ const OnboardingPage = lazyWithRecovery(() => import('./pages/OnboardingPage.jsx
 const AccountSettings = lazyWithRecovery(() => import('./pages/AccountSettings.jsx'), 'settings');
 const BillingPage = lazyWithRecovery(() => import('./pages/BillingPage.jsx'), 'billing');
 const ImageLibrary = lazyWithRecovery(() => import('./pages/ImageLibrary.jsx'), 'image-library');
+const LibraryCollaborationPage = lazyWithRecovery(() => import('./pages/LibraryCollaborationPage.jsx'), 'library-collaboration');
 const ManagePortfolio = lazyWithRecovery(() => import('./pages/ManagePortfolio.jsx'), 'manage-portfolio');
 const PortfolioEnquiries = lazyWithRecovery(() => import('./pages/PortfolioEnquiries.jsx'), 'portfolio-enquiries');
 const PublicStudioPortfolio = lazyWithRecovery(() => import('./pages/PublicStudioPortfolio.jsx'), 'studio-portfolio');
@@ -106,6 +107,8 @@ function RoutePosition() {
     names['/demo/campaign'] = 'Open a Campaign Delivery';
     if (pathname === '/billing') names[pathname] = 'Plan and billing';
     if (pathname === '/library') names[pathname] = 'Personal image library';
+    if (pathname.startsWith('/select/')) names[pathname] = 'Client photo selection';
+    if (pathname.startsWith('/edit/')) names[pathname] = 'Editor photo handoff';
     if (pathname === '/portfolio/manage') names[pathname] = 'Manage portfolio';
     if (pathname === '/portfolio/enquiries') names[pathname] = 'Enquiry inbox';
     if (publicPortfolioHandle(pathname)) return;
@@ -144,7 +147,7 @@ function DeliveryChrome({ user }) {
   // screen. Necessary session and analytics cookies still work in the
   // background, but neither the privacy notice nor Veylo Help is rendered on
   // a delivery or delivery demo.
-  const isDeliverySurface = /^\/(?:d|story|volume)(?:\/|$)/.test(pathname)
+  const isDeliverySurface = /^\/(?:d|story|volume|select|edit)(?:\/|$)/.test(pathname)
     || pathname === '/demo'
     || pathname.startsWith('/demo/')
     || pathname === '/__phone-preview';
@@ -237,6 +240,8 @@ export default function App() {
   };
   const handlePlanChanged = useCallback(plan => setUser(current => current ? { ...current, plan } : current), []);
   return <ProPricingProvider><MotionConfig {...VEYLO_MOTION_CONFIG}><BrowserRouter><RoutePosition /><DeliveryChrome user={user} /><ToastContainer position="top-right" theme="dark" autoClose={3000} /><Suspense fallback={<div className="v-page-loading" role="status">Opening Veylo…</div>}><Routes>
+    <Route path="/select/:publicId" element={<LibraryCollaborationPage kind="preselection" />} />
+    <Route path="/edit/:publicId" element={<LibraryCollaborationPage kind="editor-handoff" />} />
     <Route path="/story/:storyId" element={<PhonePresentationRoute title="Photo Story demo"><StoryViewer /></PhonePresentationRoute>} />
     <Route path="/d/:publicId" element={<PhonePresentationRoute title="Client delivery"><DeliveryViewer /></PhonePresentationRoute>} />
     <Route path="/__phone-preview" element={<PhonePreviewPage />} />

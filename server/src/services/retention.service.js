@@ -7,6 +7,7 @@ import { resolveEntitlements } from './entitlement.service.js';
 import { processPortfolioRemovals } from './portfolioLifecycle.service.js';
 import Portfolio from '../models/Portfolio.js';
 import StorageAsset from '../models/StorageAsset.js';
+import LibraryCollaboration from '../models/LibraryCollaboration.js';
 import User from '../models/User.js';
 import Subscription from '../models/Subscription.js';
 import Delivery from '../models/Delivery.js';
@@ -34,6 +35,9 @@ export async function referencedMedia(ids, resourceType) {
     for (const delivery of deliveries) for (const asset of delivery.assets) if (ids.includes(asset.publicId)) referenced.add(asset.publicId);
     for (const asset of stored) referenced.add(asset.publicId);
     for (const preview of previews) for (const variant of preview.variants || []) if (ids.includes(variant.publicId)) referenced.add(variant.publicId);
+  } else if (resourceType === 'raw') {
+    const stored = await StorageAsset.find({ rawPublicId: { $in: ids } }).select('rawPublicId').lean();
+    for (const asset of stored) if (asset.rawPublicId) referenced.add(asset.rawPublicId);
   } else {
     const deliveries = await Delivery.find({ $or: [
       { 'soundtrack.publicId': { $in: ids } }, { 'narration.publicId': { $in: ids } },
@@ -52,7 +56,7 @@ export async function referencedMedia(ids, resourceType) {
 async function purgeOrphanedUploads(now, orphanUploadHours = 2) {
   if (!configureCloudinary()) return;
   const cutoff = now.getTime() - Math.max(1, Number(orphanUploadHours) || 2) * 60 * 60 * 1000;
-  for (const resourceType of ['image', 'video']) {
+  for (const resourceType of ['image', 'video', 'raw']) {
     let nextCursor;
     let pages = 0;
     do {
@@ -134,13 +138,19 @@ export async function purgeExpiredProData(now = new Date()) {
       await PortfolioHandle.deleteMany({ portfolioId: { $in: portfolios.map(item => item._id) } });
       await PortfolioJob.deleteMany({ userId: user._id });
       await PortfolioMedia.deleteMany({ $or: [{ publicId: { $in: portfolios.flatMap(item => [...(item.items || []), ...(item.draft?.items || []), ...(item.profileMedia || []), ...(item.draft?.profileMedia || [])].map(photo => photo.publicId)) } }, { publicId: { $regex: `^veylo/users/${user._id}/` } }] });
-      const assets = await StorageAsset.find({ userId: user._id }).select('publicId').lean();
-      for (const asset of assets) await removeStorageAsset(asset.publicId).catch(error => {
-        recordAnalyticsEventAsync({ name: 'storage.delete.failed', source: 'system', actorType: 'system', userId: user._id, status: 'failed', errorCode: error.code || 'RETENTION_LIBRARY_DELETE_FAILED', metadata: { surface: 'retention', publicId: String(asset.publicId).slice(0, 180) } });
-        console.error('[retention/cloudinary]', error.http_code || error.message);
-      });
+      const assets = await StorageAsset.find({ userId: user._id }).select('publicId rawPublicId').lean();
+      for (const asset of assets) {
+        for (const [publicId, resourceType] of [[asset.publicId, 'image'], [asset.rawPublicId, 'raw']]) {
+          if (!publicId) continue;
+          await removeStorageAsset(publicId, resourceType).catch(error => {
+            recordAnalyticsEventAsync({ name: 'storage.delete.failed', source: 'system', actorType: 'system', userId: user._id, status: 'failed', errorCode: error.code || 'RETENTION_LIBRARY_DELETE_FAILED', metadata: { surface: 'retention', publicId: String(publicId).slice(0, 180), resourceType } });
+            console.error('[retention/cloudinary]', error.http_code || error.message);
+          });
+        }
+      }
       await Promise.all([
         StorageAsset.deleteMany({ userId: user._id }),
+        LibraryCollaboration.deleteMany({ userId: user._id }),
         Portfolio.deleteMany({ userId: user._id }),
         PortfolioEnquiry.deleteMany({ userId: user._id }),
         User.updateOne({ _id: user._id }, { $set: { storageUsedBytes: 0 }, $unset: { proRetentionUntil: 1 } })

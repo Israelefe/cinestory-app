@@ -1112,11 +1112,11 @@ function safeStorageNumber(value) {
 async function scanCloudinaryReferences() {
   const startedAt = new Date();
   if (!configureCloudinary()) return { status: 'unavailable', reason: 'Cloudinary credentials are not configured.', startedAt, completedAt: new Date(), orphaned: null, missingDatabaseRecords: null };
-  const discovered = { image: new Set(), video: new Set() };
-  const pages = { image: 0, video: 0 };
+  const discovered = { image: new Set(), video: new Set(), raw: new Set() };
+  const pages = { image: 0, video: 0, raw: 0 };
   let truncated = false;
   try {
-    for (const resourceType of ['image', 'video']) {
+    for (const resourceType of ['image', 'video', 'raw']) {
       let nextCursor;
       do {
         const response = await cloudinary.api.resources({ resource_type: resourceType, type: 'authenticated', prefix: 'veylo/users/', max_results: 500, ...(nextCursor ? { next_cursor: nextCursor } : {}) });
@@ -1128,17 +1128,17 @@ async function scanCloudinaryReferences() {
     }
 
     const [libraryRefs, deliveries] = await Promise.all([
-      StorageAsset.find({ publicId: /^veylo\/users\// }).select('publicId').lean(),
+      StorageAsset.find({ $or: [{ publicId: /^veylo\/users\// }, { rawPublicId: /^veylo\/users\// }] }).select('publicId rawPublicId').lean(),
       Delivery.find({ $or: [{ 'assets.publicId': /^veylo\/users\// }, { 'soundtrack.publicId': /^veylo\/users\// }, { 'narration.publicId': /^veylo\/users\// }] }).select('assets.publicId soundtrack.publicId narration.publicId').lean()
     ]);
-    const dbRefs = { image: new Set(libraryRefs.map(asset => asset.publicId)), video: new Set() };
+    const dbRefs = { image: new Set(libraryRefs.map(asset => asset.publicId)), video: new Set(), raw: new Set(libraryRefs.map(asset => asset.rawPublicId).filter(Boolean)) };
     for (const delivery of deliveries) {
       for (const asset of delivery.assets || []) if (asset.publicId?.startsWith('veylo/users/')) dbRefs.image.add(asset.publicId);
       if (delivery.soundtrack?.publicId?.startsWith('veylo/users/')) dbRefs.video.add(delivery.soundtrack.publicId);
       if (delivery.narration?.publicId?.startsWith('veylo/users/')) dbRefs.video.add(delivery.narration.publicId);
     }
     const result = { status: truncated ? 'partial' : 'complete', startedAt, completedAt: new Date(), truncated, pages, orphaned: {}, missingDatabaseRecords: {} };
-    for (const resourceType of ['image', 'video']) {
+    for (const resourceType of ['image', 'video', 'raw']) {
       const orphaned = [...discovered[resourceType]].filter(publicId => !dbRefs[resourceType].has(publicId));
       result.orphaned[resourceType] = { count: orphaned.length, sample: orphaned.slice(0, 20) };
       result.missingDatabaseRecords[resourceType] = truncated
