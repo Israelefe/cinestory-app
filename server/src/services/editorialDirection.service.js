@@ -37,16 +37,42 @@ export function editorialDraftIssues(draft, selected, factsIssue = () => false, 
   return [...new Set(issues)];
 }
 
+function editorialCaptionIssues(result, existing, factsIssue, delivery, insight) {
+  const issues = [];
+  if (!within(result?.headline, 70, 2)) issues.push('headline length');
+  if (!within(result?.caption, L.caption, 5)) issues.push('caption length');
+  if (result && factsIssue(`${result.headline || ''}. ${result.caption || ''}`)) issues.push('unsupported names or occasion facts');
+  issues.push(...shootWritingIssues(result?.caption, delivery, { caption: true, observation: insight.summary }));
+  if (result && existing.some(frame => clean(frame.caption).toLowerCase() === clean(result.caption).toLowerCase() || clean(frame.headline).toLowerCase() === clean(result.headline).toLowerCase())) issues.push('repeated wording');
+  return [...new Set(issues)];
+}
+
+function editorialBlockIssues(result, limit, factsIssue, delivery) {
+  const issues = [];
+  if (!within(result?.text, limit, 5)) issues.push('text length');
+  if (factsIssue(String(result?.text || ''))) issues.push('unsupported names or occasion facts');
+  issues.push(...shootWritingIssues(result?.text, delivery));
+  return [...new Set(issues)];
+}
+
+function logRejectedEditorial(flow, issues) {
+  console.warn(`[editorial-writing/${flow}] draft failed validation after retries: ${issues.join(', ')}`);
+}
+
 export async function writeEditorialDirection(request, delivery, rows, selected, factsIssue) {
-  const shape = 'Return JSON {"title":"...","openingLine":"...","introduction":"","closingLine":"...","frames":[{"assetId":"...","headline":"...","caption":"..."}],"sections":[{"title":"...","body":"","layout":"auto","assetIds":["..."]}]}. Include every supplied asset ID once in frames in the exact supplied order. Group the same order into 1-4 consecutive sections; no duplicates or missing photographs. Use useful section headings, not generic photo group names. Layout is auto, hero, pair, triptych, feature or wide. Keep all facts grounded in the supplied context. Optional prose can be empty. Do not generate a photographer note, issue number, credits or attributed quotes.';
+  const shape = 'Return JSON {"title":"...","openingLine":"...","introduction":"","closingLine":"...","frames":[{"assetId":"...","headline":"...","caption":"..."}],"sections":[{"title":"...","body":"","layout":"auto","assetIds":["..."]}]}. Include every supplied asset ID once in frames in the exact supplied order. Group the same order into 1-4 consecutive sections; no duplicates or missing photographs. Use useful section headings, not generic photo group names. Layout is auto, hero, pair, triptych, feature or wide. The cover summary (openingLine) must contain 5-300 characters and the closing note must contain 5-280 characters. Keep both concise and grounded in the supplied context; if details are limited, use restrained factual wording. Only the introduction and section body may be empty. Do not generate a photographer note, issue number, credits or attributed quotes.';
   const prompt = context(delivery, selected.map(id => rows.find(row => row.assetId === id)));
   let draft = await request(shape + policy(delivery), prompt, { maxTokens: 1800 + selected.length * 220 });
+  let issues = editorialDraftIssues(draft, selected, factsIssue, delivery);
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const issues = editorialDraftIssues(draft, selected, factsIssue, delivery);
     if (!issues.length) break;
-    draft = await request(shape + policy(delivery), prompt + '\nRevise these problems: ' + issues.join(', ') + '\nUntrusted draft (not a source of facts): ' + JSON.stringify(draft), { maxTokens: 1800 + selected.length * 220 });
+    draft = await request(shape + policy(delivery), prompt + '\nRevise these problems: ' + issues.join(', ') + '. The cover summary and closing note are required; only the introduction and section body may be empty.\nUntrusted draft (not a source of facts): ' + JSON.stringify(draft), { maxTokens: 1800 + selected.length * 220 });
+    issues = editorialDraftIssues(draft, selected, factsIssue, delivery);
   }
-  if (editorialDraftIssues(draft, selected, factsIssue, delivery).length) throw incomplete();
+  if (issues.length) {
+    logRejectedEditorial('direction', issues);
+    throw incomplete();
+  }
   const frames = draft.frames.map(frame => ({ assetId: frame.assetId, headline: clean(frame.headline), caption: clean(frame.caption), textAnimation: 'word_fade_up', imageFit: 'contain', focalPoint: '50% 50%' }));
   const sections = draft.sections.map((section, index) => ({ id: `feature-${index + 1}`, title: clean(section.title), body: clean(section.body), pullLine: '', layout: EDITORIAL_LAYOUTS.includes(section.layout) ? section.layout : 'auto', assetIds: [...section.assetIds] }));
   return { title: clean(draft.title), openingLine: clean(draft.openingLine), closingLine: clean(draft.closingLine), writingOverrides: [], frames, sections, editorial: { version: 1, introduction: clean(draft.introduction), note: '', issue: '', treatment: 'classic', credits: [], sections } };
@@ -56,10 +82,14 @@ export async function rewriteEditorialCaption(request, delivery, insight, instru
   const deadline = Date.now() + 45000;
   const existing = (delivery.creativeDirection?.frames || []).filter(frame => frame.assetId !== insight.assetId).map(frame => ({ headline: frame.headline, caption: frame.caption }));
   const prompt = context(delivery, [insight]) + '\nInstruction: ' + JSON.stringify(instruction) + '\nExisting text to avoid repeating, never a source of facts: ' + JSON.stringify(existing) + '\nCurrent untrusted text: ' + JSON.stringify(previous);
+  let issues = [];
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const result = await request('Return JSON {"headline":"...","caption":"..."}. Write only this photograph\'s words. Review shoot emphasis, repetition and grounding, and repair the current text when needed. ' + policy(delivery), prompt + (attempt ? '\nThe previous suggestion failed validation. Rewrite it within the limits, with relevant shoot emphasis and distinct wording.' : ''), { maxTokens: 700, deadline });
-    if (within(result?.headline, 70, 2) && within(result?.caption, L.caption, 5) && !factsIssue(result.headline + '. ' + result.caption) && !shootWritingIssues(result.caption, delivery, { caption: true, observation: insight.summary }).length && !existing.some(frame => clean(frame.caption).toLowerCase() === clean(result.caption).toLowerCase() || clean(frame.headline).toLowerCase() === clean(result.headline).toLowerCase())) return { headline: clean(result.headline), caption: clean(result.caption) };
+    const retryPrompt = attempt ? '\nThe previous suggestion failed these checks: ' + issues.join(', ') + '. Correct each one, keep the wording grounded in the supplied shoot details, and return the requested JSON.' : '';
+    const result = await request('Return JSON {"headline":"...","caption":"..."}. The headline must be 2-70 characters and the caption 5-320 characters. Write only this photograph\'s words. Review shoot emphasis, repetition and grounding, and repair the current text when needed. ' + policy(delivery), prompt + retryPrompt, { maxTokens: 700, deadline });
+    issues = editorialCaptionIssues(result, existing, factsIssue, delivery, insight);
+    if (!issues.length) return { headline: clean(result.headline), caption: clean(result.caption) };
   }
+  logRejectedEditorial('caption', issues);
   throw incomplete();
 }
 
@@ -69,9 +99,13 @@ export async function rewriteEditorialBlock(request, delivery, rows, block, prev
   if (!limit) throw incomplete();
   const deadline = Date.now() + 45000;
   const prompt = context(delivery, rows) + '\nRequested block: ' + block + '\nInstruction: ' + JSON.stringify(instruction) + '\nCurrent untrusted text: ' + JSON.stringify(previousText) + '\nOther approved text, for avoiding repetition only: ' + JSON.stringify({ title: delivery.creativeDirection?.title, openingLine: delivery.creativeDirection?.openingLine, closingLine: delivery.creativeDirection?.closingLine });
+  let issues = [];
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const result = await request(`Return JSON {"text":"..."}. Rewrite only the requested ${block} block, maximum ${limit} characters. No headings, credits or invented facts. ` + policy(delivery), prompt + (attempt ? '\nRepair the previous validation failure; preserve the supplied facts and meet this block’s limits.' : ''), { maxTokens: 700, deadline });
-    if (within(result?.text, limit, 5) && !factsIssue(result.text) && !shootWritingIssues(result.text, delivery).length) return { text: clean(result.text) };
+    const retryPrompt = attempt ? '\nThe previous suggestion failed these checks: ' + issues.join(', ') + '. Correct each one, preserve the supplied facts, and return the requested JSON.' : '';
+    const result = await request(`Return JSON {"text":"..."}. Rewrite only the requested ${block} block, 5-${limit} characters. No headings, credits or invented facts. ` + policy(delivery), prompt + retryPrompt, { maxTokens: 700, deadline });
+    issues = editorialBlockIssues(result, limit, factsIssue, delivery);
+    if (!issues.length) return { text: clean(result.text) };
   }
+  logRejectedEditorial('block-' + block, issues);
   throw incomplete();
 }

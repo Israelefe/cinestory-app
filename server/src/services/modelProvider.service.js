@@ -7,19 +7,40 @@ export const MAX_CONCURRENT_MODEL_REQUESTS = 5;
 let activeModelRequests = 0;
 const modelRequestWaiters = [];
 
-async function withModelRequestSlot(task) {
+async function withModelRequestSlot(task, signal) {
+  if (signal?.aborted) throw signal.reason || new Error('The model request was cancelled.');
+
   if (activeModelRequests >= MAX_CONCURRENT_MODEL_REQUESTS) {
-    await new Promise(resolve => modelRequestWaiters.push(resolve));
+    await new Promise((resolve, reject) => {
+      const waiter = { resolve, reject, signal, queued: true, onAbort: null };
+      waiter.onAbort = () => {
+        if (!waiter.queued) return;
+        waiter.queued = false;
+        const index = modelRequestWaiters.indexOf(waiter);
+        if (index !== -1) modelRequestWaiters.splice(index, 1);
+        reject(signal.reason || new Error('The model request was cancelled.'));
+      };
+      modelRequestWaiters.push(waiter);
+      signal?.addEventListener('abort', waiter.onAbort, { once: true });
+      if (signal?.aborted) waiter.onAbort();
+    });
   } else {
     activeModelRequests += 1;
   }
 
   try {
+    if (signal?.aborted) throw signal.reason || new Error('The model request was cancelled.');
     return await task();
   } finally {
-    const next = modelRequestWaiters.shift();
-    if (next) next();
-    else activeModelRequests -= 1;
+    let next;
+    while ((next = modelRequestWaiters.shift())) {
+      if (!next.queued) continue;
+      next.queued = false;
+      next.signal?.removeEventListener('abort', next.onAbort);
+      next.resolve();
+      break;
+    }
+    if (!next) activeModelRequests -= 1;
   }
 }
 
@@ -64,10 +85,6 @@ export function anyModelProviderConfigured() {
 function requestSignal(signal, timeoutMs) {
   const timeout = AbortSignal.timeout(timeoutMs);
   return signal ? AbortSignal.any([signal, timeout]) : timeout;
-}
-
-function wasCallerCancelled(signal) {
-  return Boolean(signal?.aborted && signal.reason?.name !== 'TimeoutError');
 }
 
 function bodyForProvider(body, provider) {
@@ -136,7 +153,7 @@ async function requestModelCompletionUnlocked(body, { fallbackModel, timeoutMs =
       try { await response.body?.cancel?.(); } catch { /* Continue to the configured fallback. */ }
       console.warn('[ai-provider] ' + provider.name + ' returned HTTP ' + response.status + '; trying ' + providers[index + 1].name + '.');
     } catch (error) {
-      if (wasCallerCancelled(signal)) throw error;
+      if (signal?.aborted) throw error;
       lastThrown = error;
       if (index === providers.length - 1) throw error;
       console.warn('[ai-provider] ' + provider.name + ' request failed (' + (error.name || 'network error') + '); trying ' + providers[index + 1].name + '.');
@@ -148,5 +165,18 @@ async function requestModelCompletionUnlocked(body, { fallbackModel, timeoutMs =
 }
 
 export function requestModelCompletion(body, options = {}) {
-  return withModelRequestSlot(() => requestModelCompletionUnlocked(body, options));
+  // Start the deadline before queuing so waiting for a slot uses the same budget as the provider call.
+  const configuredTimeout = Number(options.timeoutMs);
+  const timeoutMs = options.timeoutMs === undefined || !Number.isFinite(configuredTimeout)
+    ? 90_000
+    : Math.max(1, configuredTimeout);
+  const deadline = Date.now() + timeoutMs;
+  const timeoutSignal = AbortSignal.timeout(Math.max(1, Math.ceil(timeoutMs)));
+  const signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
+
+  return withModelRequestSlot(() => {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0 || signal.aborted) throw signal.reason || Object.assign(new Error('The model request timed out.'), { name: 'TimeoutError' });
+    return requestModelCompletionUnlocked(body, { ...options, signal, timeoutMs: Math.ceil(remaining) });
+  }, signal);
 }
