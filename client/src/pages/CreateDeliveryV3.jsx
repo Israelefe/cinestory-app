@@ -80,6 +80,34 @@ function withMediaUrl(value) { return String(value || '').startsWith('/api/') ? 
 function nextAfterShowcase(format) { return format === 'photo-story' ? 'narration' : MUSIC.has(format) ? 'music' : 'design'; }
 function freeMonthlyLimitReached(entitlements) { return entitlements?.plan === 'free' && entitlements?.usage?.deliveriesRemaining === 0; }
 function freeMonthlyLimitMessage(entitlements) { return `You've published all ${entitlements?.limits?.deliveriesPerMonth || 3} Free deliveries this month. You can create another next month, or move to Pro.`; }
+
+async function requestPurposeSuggestion(payload, signal) {
+  const deadline = Date.now() + 120_000;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await api.post('/v1/deliveries/v3/assist', payload, { signal, timeout: Math.max(1, deadline - Date.now()) });
+    } catch (error) {
+      const retryable = attempt === 0 && !signal.aborted
+        && [502, 503, 504].includes(error.response?.status)
+        && !error.response?.data?.code;
+      if (!retryable || Date.now() + 1000 >= deadline) throw error;
+
+      await new Promise((resolve, reject) => {
+        const onAbort = () => {
+          clearTimeout(timer);
+          signal.removeEventListener('abort', onAbort);
+          reject(signal.reason || Object.assign(new Error('Request canceled.'), { name: 'AbortError' }));
+        };
+        const timer = setTimeout(() => {
+          signal.removeEventListener('abort', onAbort);
+          resolve();
+        }, 1000);
+        signal.addEventListener('abort', onAbort, { once: true });
+        if (signal.aborted) onAbort();
+      });
+    }
+  }
+}
 function formatTrackTime(value) {
   const seconds = Math.max(0, Math.floor(Number(value) || 0));
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
@@ -328,7 +356,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     setPurposeFeedback('');
     await action('improve', async () => {
       try {
-        const { data } = await api.post('/v1/deliveries/v3/assist', { mode: 'improve', purpose: source, shootType: actualShootType }, { signal: request.signal });
+        const { data } = await requestPurposeSuggestion({ mode: 'improve', purpose: source, shootType: actualShootType }, request.signal);
         if (request.signal.aborted) return;
         if (revision !== purposeRevision.current) { setPurposeFeedback('You edited the text while Veylo was working. Your latest words have been kept.'); return; }
         const suggestion = data.data;
