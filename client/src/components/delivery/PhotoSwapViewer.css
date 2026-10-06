@@ -197,6 +197,10 @@
   padding: 0 2px 8px;
 }
 
+.ps-stage.is-complete .ps-segments {
+  margin-bottom: 14px;
+}
+
 .ps-segment {
   flex: 1 1 0;
   height: 2.5px;
@@ -825,6 +829,10 @@
   padding-bottom: 5px;
 }
 
+.ps-viewer.is-preview .ps-stage.is-complete .ps-segments {
+  margin-bottom: 10px;
+}
+
 .ps-viewer.is-preview .ps-deck,
 .ps-viewer.is-preview .ps-complete-card {
   width: min(74vw, 340px);
@@ -1017,6 +1025,10 @@
 
   .ps-segments {
     padding-bottom: 3px;
+  }
+
+  .ps-stage.is-complete .ps-segments {
+    margin-bottom: 8px;
   }
 
   .ps-card-overlay {

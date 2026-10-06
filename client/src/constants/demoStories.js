@@ -1,4 +1,11 @@
 const frame = (url, direction) => ({ duration: 6.4, ...direction, url });
+const photoStoryDemoSoundtrack = {
+  id: 'pixabay_183350',
+  title: 'Rheme - Afrobeat x african instrumental x reggae beat',
+  audioUrl: '/api/v1/deliveries/demo/photo-story/soundtrack',
+  genre: 'Afrobeat',
+  durationSec: 186
+};
 
 export const DEMO_PRESETS = [
   {
@@ -7,7 +14,7 @@ export const DEMO_PRESETS = [
     storySummary: 'Sharon, you came in with one strong look and made it completely your own. These are the moments we loved most from your session.',
     opening: { eyebrow: 'Studio Lumière presents', headline: 'Sharon, these portraits are all you.', copy: 'You stepped onto the cobalt set with a quiet confidence that carried through the entire session.', buttonLabel: 'See your story' },
     finale: { eyebrow: 'Sharon’s studio session', headline: 'Sharon, you made this look your own.', copy: 'Your finished portraits are ready. Take your time and enjoy every one of them.', buttonLabel: 'Open your gallery', textAnimation: 'blur_reveal' },
-    soundtrack: { title: 'Studio 35mm · High-Fashion Lounge', audioUrl: '/audio/soundtrack-3.mp3' },
+    soundtrack: photoStoryDemoSoundtrack,
     theme: { accentColor: '#d9c8b5', secondaryColor: '#101419', glowColor: 'rgba(217, 200, 181, 0.28)' },
     photos: [
       frame('/veylo/show/sharon-1.jpeg', { chapterTitle: 'YOU CAME READY', caption: 'Sharon, you made that ivory suit look like it was made just for you.', sceneLayout: 'cinema', transition: 'cut', typographyStyle: 'bold_banner', textAnimation: 'word_fade_up', textBackground: 'transparent_shadow', captionPosition: 'bottom', zoomEffect: 'zoom_in', colorAccent: '#d9c8b5', visualAnalysis: { composition: 'Three-quarter portrait in sculpted ivory tailoring', palette: ['ivory', 'cobalt blue', 'black piping'], safeTextArea: 'lower left', mood: 'controlled and direct' } }),
@@ -22,7 +29,7 @@ export const DEMO_PRESETS = [
     storySummary: 'Lora, this birthday session had everything we wanted to remember: the green dress, the cake, the gift, and a smile that changed every frame.',
     opening: { eyebrow: 'Lora’s birthday portraits', headline: 'Lora, this birthday looks good on you.', copy: 'You brought the green dress and a smile that made the whole room feel lighter.', buttonLabel: 'See your birthday story', hint: 'Sound on. Tap either side when you want to move.' },
     finale: { eyebrow: 'Lora’s birthday', headline: 'Happy birthday, Lora.', copy: 'Keep this smile close. Your complete birthday gallery is ready whenever you want to see it again.', buttonLabel: 'Open your birthday gallery', textAnimation: 'letter_drift' },
-    soundtrack: { title: 'Birthday Afternoon · Afrobeat Celebration', audioUrl: '/audio/ada-birthday.mp3' },
+    soundtrack: photoStoryDemoSoundtrack,
     theme: { accentColor: '#dc3f2f', secondaryColor: '#064735', glowColor: 'rgba(220, 63, 47, 0.34)' },
     photos: [
       frame('/veylo/lora/lora-1.jpeg', { chapterTitle: 'A SWEET BEGINNING', caption: 'That smile beside the cake, Lora. This is one to keep.', sceneLayout: 'cinema', transition: 'cut', typographyStyle: 'bold_banner', textAnimation: 'word_fade_up', textBackground: 'transparent_shadow', captionPosition: 'bottom', zoomEffect: 'zoom_in', colorAccent: '#ef7950', secondaryColor: '#064735', visualAnalysis: { composition: 'Smiling three-quarter portrait with a white-and-green cake held at chest level', subject: 'Lora smiling beside her birthday cake', palette: ['burnt orange', 'emerald green', 'ivory', 'gold'], safeTextArea: 'upper left', mood: 'warm and joyful' } }),
@@ -39,7 +46,7 @@ export const DEMO_PRESETS = [
     storySummary: 'Ada, this session was your way of celebrating thirty—bold, playful, and full of personality. Here are a few moments from the day you stepped into a new decade.',
     opening: { eyebrow: 'Apex Imagery presents', headline: 'Ada, welcome to thirty.', copy: 'You chose the green suit and a set that felt just like you. Happy 30th birthday.', buttonLabel: 'See your birthday story', hint: 'Sound on. Tap either side when you want to move.' },
     finale: { eyebrow: 'Ada is thirty', headline: 'Happy 30th birthday, Ada.', copy: 'May this new decade bring you more laughter, bigger wins, and many more reasons to celebrate.', buttonLabel: 'Open your birthday gallery', textAnimation: 'letter_drift' },
-    soundtrack: { title: 'Lekki Golden Hour · Afrobeat Celebration', audioUrl: '/audio/ada-birthday.mp3' },
+    soundtrack: photoStoryDemoSoundtrack,
     theme: { accentColor: '#ef3f35', secondaryColor: '#0b5b43', glowColor: 'rgba(239, 63, 53, 0.34)' },
     photos: [
       frame('/veylo/ada/ada-1.jpg', { chapterTitle: 'HELLO, THIRTY', caption: 'Ada, thirty looks good on you. The green suit only made it better.', sceneLayout: 'cinema', transition: 'cut', typographyStyle: 'bold_banner', textAnimation: 'word_fade_up', textBackground: 'transparent_shadow', captionPosition: 'bottom', zoomEffect: 'zoom_in', colorAccent: '#ef3f35', secondaryColor: '#0b5b43', visualAnalysis: { composition: 'Standing three-quarter portrait with the telephone held low', subject: 'Ada holding an ivory handset at her waist', palette: ['emerald green', 'aubergine', 'ivory', 'gold'], safeTextArea: 'lower left', mood: 'assured and playful' } }),
@@ -55,7 +62,7 @@ export const DEMO_PRESETS = [
     storySummary: 'Folake and Tunde, before you joined your family and friends, you had a few quiet moments together. This is how your wedding story began.',
     opening: { eyebrow: 'Mayflower Visuals presents', headline: 'Folake and Tunde, this is your day.', copy: 'Before the music and celebration, we had a few quiet minutes to photograph the two of you together.', buttonLabel: 'See your wedding story' },
     finale: { eyebrow: 'Folake & Tunde are married', headline: 'Congratulations, Folake and Tunde.', copy: 'May the love and happiness you shared on this day stay with you through every year ahead.', buttonLabel: 'Open your wedding gallery', textAnimation: 'word_fade_up' },
-    soundtrack: { title: 'The Two of Us · Soft Wedding Highlife', audioUrl: '/audio/soundtrack-1.mp3' },
+    soundtrack: photoStoryDemoSoundtrack,
     theme: { accentColor: '#c89445', secondaryColor: '#5f341d', glowColor: 'rgba(200, 148, 69, 0.32)' },
     photos: [
       frame('/veylo/wedding/wedding-1.jpg', { chapterTitle: 'YOUR WEDDING DAY', caption: 'Folake and Tunde, your wedding day looked good on both of you.', sceneLayout: 'cinema', transition: 'fade', typographyStyle: 'editorial_quote', textAnimation: 'word_fade_up', textBackground: 'transparent_shadow', captionPosition: 'bottom', zoomEffect: 'zoom_in', colorAccent: '#c89445', visualAnalysis: { composition: 'Couple seated and standing by bright glass wall', palette: ['bronze', 'gold', 'garden green'], safeTextArea: 'upper left', mood: 'tender' } }),
@@ -66,4 +73,3 @@ export const DEMO_PRESETS = [
     ]
   }
 ];
-

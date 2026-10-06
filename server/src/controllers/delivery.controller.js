@@ -145,13 +145,13 @@ function curatedPreviewUrl(trackId, token = '') {
   return token ? `${url}?token=${encodeURIComponent(token)}` : url;
 }
 
-async function streamAudioFile(req, res, filePath) {
+async function streamAudioFile(req, res, filePath, cacheControl = 'private, max-age=3600') {
   const details = await stat(filePath);
   const range = String(req.get('range') || '');
   res.set({
     'Accept-Ranges': 'bytes',
     'Content-Type': 'audio/mpeg',
-    'Cache-Control': 'private, max-age=3600',
+    'Cache-Control': cacheControl,
     'X-Content-Type-Options': 'nosniff'
   });
   if (!range) {
@@ -207,6 +207,18 @@ export async function streamDeliverySoundtrack(req, res) {
     if (error.code === 'ENOENT') return res.status(404).json({ success: false, message: 'Soundtrack file not found.' });
     console.error('[deliveries/soundtrack-stream]', error.message);
     return res.status(500).json({ success: false, message: 'We could not play that soundtrack.' });
+  }
+}
+
+export async function streamPhotoStoryDemoSoundtrack(req, res) {
+  try {
+    const filePath = deliverySoundtrackFile('pixabay_183350');
+    if (!filePath) return res.status(404).json({ success: false, message: 'Demo soundtrack not found.' });
+    return await streamAudioFile(req, res, filePath, 'public, max-age=86400, immutable');
+  } catch (error) {
+    if (error.code === 'ENOENT') return res.status(404).json({ success: false, message: 'Demo soundtrack not found.' });
+    console.error('[deliveries/photo-story-demo-soundtrack]', error.message);
+    return res.status(500).json({ success: false, message: 'We could not play the demo soundtrack.' });
   }
 }
 

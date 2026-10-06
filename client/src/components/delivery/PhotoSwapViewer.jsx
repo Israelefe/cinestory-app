@@ -432,7 +432,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
         />
       )}
       <div className="ps-ambient" aria-hidden="true" />
-      <main className="ps-stage" aria-label="Photo Swap">
+      <main className={'ps-stage' + (isEnd ? ' is-complete' : '')} aria-label="Photo Swap">
         {/* ── Minimal header ── */}
         <header className="ps-header">
           <div className="ps-header-brand">

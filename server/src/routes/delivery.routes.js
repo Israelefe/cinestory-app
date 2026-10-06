@@ -9,7 +9,7 @@ import {
   getPublicDelivery, getPublicSoundtrack, getPinboardStatusCard, listDeliveries, listDeliverySoundtracks, listNarrationVoices,
   listShareGrants, publishDelivery, queueAnalysis, queueDirection, queueNarration, queueRevision,
   restoreDelivery, retryDeliveryJob, recoverDeliveryUpload, revokeShareGrant, selectCuratedSoundtrack, signDeliveryUpload,
-  signSoundtrackUpload, streamDeliverySoundtrack, streamPhotoDownload, togglePhotoLike, trackPhotoDownload,
+  signSoundtrackUpload, streamDeliverySoundtrack, streamPhotoStoryDemoSoundtrack, streamPhotoDownload, togglePhotoLike, trackPhotoDownload,
   unlockDelivery, updateDeliveryDetails, updateDeliveryReview, updateDownloadSettings
 } from '../controllers/delivery.controller.js';
 
@@ -26,6 +26,7 @@ router.get('/public/:publicId/photos/:assetId/download', publicMediaLimit, getPh
 router.get('/public/:publicId/photos/:assetId/file', publicMediaLimit, streamPhotoDownload);
 router.post('/public/:publicId/photos/:assetId/downloaded', publicMediaLimit, trackPhotoDownload);
 router.get('/public/:publicId/download-all', publicMediaLimit, getGalleryDownload);
+router.get('/demo/photo-story/soundtrack', publicMediaLimit, streamPhotoStoryDemoSoundtrack);
 router.get('/soundtracks/:trackId/audio', publicMediaLimit, streamDeliverySoundtrack);
 
 router.use(authMiddleware);
