@@ -49,12 +49,34 @@ export function handleApiProxy(request, env) {
     headers,
     // Downloads hand the browser a 3xx to a signed Cloudinary URL. Letting the
     // edge follow it would hide that Location from the client.
-    redirect: 'manual'
+    redirect: 'manual',
+    signal: request.signal
   };
   if (request.method !== 'GET' && request.method !== 'HEAD') init.body = request.body;
+
+  const proxyRequest = new Request(target, init);
+  const retryV3Assist = request.method === 'POST' && incoming.pathname === '/api/v1/deliveries/v3/assist';
+  let response;
+  try {
+    // V3 assist only asks the model for wording or a recommendation; retrying
+    // this one inference request cannot duplicate a delivery write.
+    response = await fetch(proxyRequest.clone());
+  } catch (error) {
+    if (!retryV3Assist || request.signal.aborted) throw error;
+    console.warn('[api-proxy] V3 assist upstream request failed; retrying once.');
+  }
+
+  if (response) {
+    if (!retryV3Assist || ![502, 503, 504].includes(response.status) || request.signal.aborted) return response;
+    try { await response.body?.cancel?.(); } catch { /* Retry the safe inference request below. */ }
+    console.warn('[api-proxy] V3 assist upstream returned HTTP ' + response.status + '; retrying once.');
+  }
+
+  if (!retryV3Assist) return response;
+  await new Promise(resolve => setTimeout(resolve, 300));
 
   // Returned untouched rather than rebuilt from `response.headers`: constructing
   // a new Response collapses repeated Set-Cookie headers into one, which would
   // silently break session and CSRF cookies.
-  return fetch(new Request(target, init));
+  return fetch(proxyRequest);
 }
