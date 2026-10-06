@@ -1,4 +1,4 @@
-import { ProPrice, PricingNotice } from './RegionalPricing.jsx';
+import { ProPrice, PricingNotice } from './ProPricing.jsx';
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';

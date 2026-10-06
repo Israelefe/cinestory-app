@@ -1,4 +1,4 @@
-import { ProPrice, PricingNotice } from '../components/RegionalPricing.jsx';
+import { ProPrice, PricingNotice } from '../components/ProPricing.jsx';
 import React from 'react';
 import { motion } from 'framer-motion';
 import { useVeyloReducedMotion } from '../utils/motionPolicy.js';

@@ -1,4 +1,4 @@
-import { ProPrice } from '../components/RegionalPricing.jsx';
+import { ProPrice } from '../components/ProPricing.jsx';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useVeyloReducedMotion } from '../utils/motionPolicy.js';

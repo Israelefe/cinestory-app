@@ -77,7 +77,7 @@ export async function resolveEntitlements(user, { includeUsage = true, now = new
       status: subscription.status,
       amountKobo: subscription.amountKobo || (subscription.provider === 'paystack' ? 2500000 : 0),
       currency: subscription.currency || 'NGN',
-      pricingRegion: subscription.pricingRegion || 'nigeria',
+      pricingRegion: subscription.pricingRegion,
       paidThrough: subscription.paidThrough,
       graceEndsAt: subscription.graceEndsAt,
       cancelRequestedAt: subscription.cancelRequestedAt,

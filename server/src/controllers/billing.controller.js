@@ -7,9 +7,9 @@ import BillingEvent from '../models/BillingEvent.js';
 import { publicPlans } from '../config/plans.js';
 import { resolveEntitlements } from '../services/entitlement.service.js';
 import { sendPaymentDisputeEmail, sendPaymentDisputeResolvedEmail, sendPaymentFailedEmail, sendPaymentReceiptEmail, sendProWelcomeEmail, sendRefundFailedEmail, sendRefundProcessedEmail, sendRenewalFailedEmail, sendSubscriptionCancellationEmail, sendSubscriptionResumedEmail } from '../services/email.service.js';
-import { billingConfigured, decryptBillingToken, encryptBillingToken, paystackRequest, validateConfiguredPlan, verifyPaystackSignature } from '../services/paystack.service.js';
+import { billingConfigured, decryptBillingToken, encryptBillingToken, paystackRequest, storedPlanMatchesProPrice, validateConfiguredPlan, verifyPaystackSignature } from '../services/paystack.service.js';
 import { getRuntimeConfig } from '../services/runtimeConfig.service.js';
-import { billingEventIdentity, planForRegion, redactBillingSnapshot, regionalPrice } from '../services/billingPricing.service.js';
+import { billingEventIdentity, LEGACY_PRO_PRICES_KOBO, PRO_PRICING, proPlanCode, proPricing, redactBillingSnapshot } from '../services/billingPricing.service.js';
 import { withBillingLock } from '../services/billingLock.service.js';
 import { stopRecurringSubscription, subscriptionCredentials, recoverSubscriptionLink } from '../services/billingCancellation.service.js';
 
@@ -38,15 +38,21 @@ export async function billingStatusData(user, req = {}) {
   const cursor = typeof req.query?.paymentsBefore === 'string' && /^[a-f0-9]{24}$/i.test(req.query.paymentsBefore) ? req.query.paymentsBefore : null;
   const [entitlements, paymentRows, runtime, refunds] = await Promise.all([resolveEntitlements(user), Payment.find({ userId: user._id, ...(cursor ? { _id: { $lt: cursor } } : {}) }).sort({ _id: -1 }).limit(25).lean(), getRuntimeConfig(), Refund.find({ userId: user._id }).select('paymentId amountKobo currency status createdAt updatedAt').sort({ createdAt: -1 }).limit(100).lean()]);
   const payments = paymentRows.slice(0, 24);
-  const pricing = regionalPrice(req);
+  const pricing = proPricing();
   const recurring = await Subscription.find({ userId: user._id, provider: 'paystack', subscriptionCode: { $exists: true, $ne: '' }, providerCanceledAt: null }).select('status paidThrough cancelPendingAt').lean();
   const unlinked = await Subscription.find({ userId: user._id, provider: 'paystack', subscriptionCode: { $exists: false }, customerCode: { $exists: true }, providerCanceledAt: null }).select('cancelPendingAt').lean();
-  return { ...entitlements, payments, refunds, paymentsNextCursor: paymentRows.length > 24 ? payments.at(-1)._id : null, pricing, billingAvailable: pricing.region !== 'unknown' && billingConfigured(pricing.region), retentionDays: Math.max(1, Number(runtime.retention?.proRetentionDays) || 30), recurringSchedules: recurring.length, cancellationPending: [...recurring, ...unlinked].some(item => item.cancelPendingAt), canCancel: recurring.length + unlinked.length > 0, duplicateSchedules: recurring.length > 1 };
+  return { ...entitlements, payments, refunds, paymentsNextCursor: paymentRows.length > 24 ? payments.at(-1)._id : null, pricing, billingAvailable: billingConfigured(), retentionDays: Math.max(1, Number(runtime.retention?.proRetentionDays) || 30), recurringSchedules: recurring.length, cancellationPending: [...recurring, ...unlinked].some(item => item.cancelPendingAt), canCancel: recurring.length + unlinked.length > 0, duplicateSchedules: recurring.length > 1 };
 }
 export async function activateSubscription({ data, user, subscription }) {
   if (!user || !subscription || subscription.accountDeletedAt) return null;
   return withBillingLock(user._id, async () => {
-    const reference = referenceOf(data), expected = subscription.amountKobo || 2_500_000;
+    const reference = referenceOf(data), recordedAmount = subscription.amountKobo || 2_500_000;
+    const providerPlanCode = providerPlan(data);
+    let expected = recordedAmount;
+    if (Number(data.amount) !== recordedAmount) {
+      if (Number(data.amount) !== PRO_PRICING.amountKobo || !LEGACY_PRO_PRICES_KOBO.includes(recordedAmount) || providerPlanCode !== subscription.planCode || !await storedPlanMatchesProPrice(subscription)) return null;
+      expected = PRO_PRICING.amountKobo;
+    }
     const code = data.subscription_code || data.subscription?.subscription_code, plan = providerPlan(data);
     if (!reference || String(subscription.userId) !== String(user._id) || (data.status && data.status !== 'success')) return null;
     if (Number(data.amount) !== expected || data.currency !== (subscription.currency || 'NGN') || (plan && plan !== subscription.planCode)) return null;
@@ -94,9 +100,9 @@ export async function activateSubscription({ data, user, subscription }) {
   });
 }
 export function getPlans(req, res) {
-  const pricing = regionalPrice(req);
+  const pricing = proPricing();
   res.set('Cache-Control', 'private, no-store');
-  res.json({ success: true, data: publicPlans().map(plan => plan.id === 'pro' ? { ...plan, monthlyPriceNaira: pricing.monthlyPriceNaira } : plan), pricing, billingAvailable: pricing.region !== 'unknown' && billingConfigured(pricing.region) });
+  res.json({ success: true, data: publicPlans(), pricing, billingAvailable: billingConfigured() });
 }
 export async function getBillingStatus(req, res) {
   try {
@@ -108,11 +114,10 @@ export async function getBillingStatus(req, res) {
 }
 export async function startCheckout(req, res) {
   try {
-    const pricing = regionalPrice(req);
-    if (pricing.region === 'unknown') throw fail('We could not confirm your country. Refresh pricing or contact payment@veylo.com.ng.', 409, 'COUNTRY_UNKNOWN');
-    if (!billingConfigured(pricing.region)) throw fail('Online billing for your region is not available yet. Contact payment@veylo.com.ng.', 503);
+    const pricing = proPricing();
+    if (!billingConfigured()) throw fail('Online billing is not available yet. Contact payment@veylo.com.ng.', 503);
     if (req.body?.quote !== pricing.quote) return res.status(409).json({ success: false, code: 'PRICE_CHANGED', pricing, message: 'Your checkout price has updated. Review it before continuing.' });
-    const providerPlanData = await validateConfiguredPlan(pricing.region);
+    const providerPlanData = await validateConfiguredPlan();
     const result = await withBillingLock(req.user.id, async lock => {
       const user = await User.findById(req.user.id);
       if (!user || user.accountStatus !== 'active') throw fail('This account is not available for checkout.', 403);
@@ -130,12 +135,12 @@ export async function startCheckout(req, res) {
       const oldSchedules = await Subscription.find({ userId: user._id, subscriptionCode: { $exists: true, $ne: '' }, providerCanceledAt: null }).select('+emailTokenEncrypted');
       for (const old of oldSchedules) await stopRecurringSubscription(old);
       const reference = `veylo_${crypto.randomUUID().replaceAll('-', '')}`;
-      subscription = await Subscription.create({ userId: user._id, status: 'checkout_pending', billingPolicyVersion: '2026-10-01', billingPolicyAcceptedAt: new Date(), checkoutCountry: pricing.country, amountKobo: pricing.amountKobo, currency: 'NGN', pricingRegion: pricing.region, planCode: planForRegion(pricing.region), planProviderId: String(providerPlanData.id), checkoutReference: reference });
-      await Payment.create({ userId: user._id, subscriptionId: subscription._id, reference, amountKobo: pricing.amountKobo, currency: 'NGN', pricingRegion: pricing.region });
+      subscription = await Subscription.create({ userId: user._id, status: 'checkout_pending', billingPolicyVersion: '2026-10-06', billingPolicyAcceptedAt: new Date(), amountKobo: pricing.amountKobo, currency: 'NGN', planCode: proPlanCode(), planProviderId: String(providerPlanData.id), checkoutReference: reference });
+      await Payment.create({ userId: user._id, subscriptionId: subscription._id, reference, amountKobo: pricing.amountKobo, currency: 'NGN' });
       lock.pendingReference = reference; await lock.save();
       try {
         const initialized = await paystackRequest('/transaction/initialize', { method: 'POST', body: { email: user.email, amount: pricing.amountKobo, currency: 'NGN', plan: subscription.planCode, reference,
-          callback_url: process.env.PAYSTACK_CALLBACK_URL || `${String(process.env.CLIENT_URL).replace(/\/$/, '')}/billing`, channels: pricing.region === 'nigeria' ? ['card', 'direct_debit'] : ['card'], metadata: { userId: String(user._id), product: 'veylo-pro-monthly', pricingRegion: pricing.region } } });
+          callback_url: process.env.PAYSTACK_CALLBACK_URL || `${String(process.env.CLIENT_URL).replace(/\/$/, '')}/billing`, metadata: { userId: String(user._id), product: 'veylo-pro-monthly' } } });
         if (initialized.reference && initialized.reference !== reference) throw fail('Paystack returned a different payment reference. Contact payment@veylo.com.ng before retrying.', 502);
         if (!/^https:\/\/checkout\.paystack\.com\//.test(initialized.authorization_url || '')) throw fail('Paystack returned an invalid checkout address.', 502);
         subscription.checkoutUrl = initialized.authorization_url; subscription.checkoutExpiresAt = new Date(Date.now() + 3600000); await subscription.save();
@@ -251,7 +256,7 @@ export async function processWebhookEvent(event, eventKey = '', accountLocked = 
   if (!subscription && event.event === 'subscription.create') {
     const candidates = data.customer?.customer_code && providerPlan(data) ? await Subscription.find({ customerCode: data.customer.customer_code, planCode: providerPlan(data), subscriptionCode: { $exists: false }, status: { $in: ['active', 'canceling'] } }) : [];
     if (candidates.length === 1) subscription = candidates[0];
-    else if ([process.env.PAYSTACK_PRO_PLAN_CODE, process.env.PAYSTACK_INTERNATIONAL_PLAN_CODE].filter(Boolean).includes(providerPlan(data))) throw fail('Subscription linking awaits its verified charge.', 503);
+    else if (process.env.PAYSTACK_PRO_PLAN_CODE === providerPlan(data)) throw fail('Subscription linking awaits its verified charge.', 503);
   }
   if (payment && subscription && String(payment.subscriptionId) !== String(subscription._id)) throw fail('The payment and provider subscription mapping did not match.', 503);
   const user = subscription ? await User.findById(subscription.userId) : payment ? await User.findById(payment.userId) : null;

@@ -1,5 +1,7 @@
 # Veylo payment and subscription audit
 
+Historical note: this audit describes the earlier regional-price rollout. Pro now has one ₦40,000 monthly NGN price for all customers; see [the unified billing rollout](billing-rollout.md) for current setup instructions.
+
 Initial audit: 30 September 2026. Implementation update: 1 October 2026.
 
 This report covers checkout, payment verification, Paystack webhooks, renewals, cancellation, refunds, access to paid features, account suspension and deletion, payment emails, customer billing screens, finance reports, and international pricing.

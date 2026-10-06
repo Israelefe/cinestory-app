@@ -31,7 +31,7 @@ import { requestReviewedRefund } from '../src/services/billingRefund.service.js'
 import { refundEvidence, recordPaidUsage } from '../src/services/paidUsage.service.js';
 import { encryptBillingToken, decryptBillingToken } from '../src/services/paystack.service.js';
 import { resolveEdgeClientIp } from '../src/middleware/clientIp.middleware.js';
-import { regionalPrice, redactBillingSnapshot } from '../src/services/billingPricing.service.js';
+import { proPricing, redactBillingSnapshot } from '../src/services/billingPricing.service.js';
 import { stopAccountRenewals } from '../src/services/billingCancellation.service.js';
 import { retryBillingEmails } from '../src/services/email.service.js';
 let mongo, owner, calls, provider, initialized, transportFailure;
@@ -39,15 +39,14 @@ const realFetch = globalThis.fetch;
 process.env.NODE_ENV = 'test';
 process.env.BILLING_ENABLED = 'true';
 process.env.PAYSTACK_SECRET_KEY = 'sk_test_regression_only';
-process.env.PAYSTACK_PRO_PLAN_CODE = 'PLN_local';
-process.env.PAYSTACK_INTERNATIONAL_PLAN_CODE = 'PLN_international';
+process.env.PAYSTACK_PRO_PLAN_CODE = 'PLN_pro';
 process.env.BILLING_ENCRYPTION_KEY = 'regression-only-encryption-value-never-live';
 process.env.CLIENT_URL = 'https://veylo.example';
 process.env.RESEND_API_KEY = 're_regression_only';
 process.env.VEYLO_EDGE_KEY = 'regression-edge-only';
 function response() { return { code: 200, body: null, headers: {}, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; }, set(key, value) { if (typeof key === 'object') Object.assign(this.headers, key); else this.headers[key] = value; return this; }, send(body) { this.body = body; return this; }, sendStatus(code) { this.code = code; return this; } }; }
-async function invoke(handler, options = {}) { const res = response(); await handler({ user: { id: String(owner._id) }, billingCountry: 'NG', body: {}, params: {}, ...options }, res); return res; }
-async function checkout(country = 'NG') { const price = regionalPrice({ billingCountry: country }); return invoke(startCheckout, { billingCountry: country, body: { quote: price.quote } }); }
+async function invoke(handler, options = {}) { const res = response(); await handler({ user: { id: String(owner._id) }, body: {}, params: {}, ...options }, res); return res; }
+async function checkout(country) { return invoke(startCheckout, { billingCountry: country, body: { quote: proPricing().quote } }); }
 async function paid(amountKobo = 2500000, overrides = {}) {
   const reference = `veylo_${crypto.randomBytes(16).toString('hex')}`;
   const subscription = await Subscription.create({ userId: owner._id, amountKobo, currency: 'NGN', planCode: amountKobo === 2500000 ? 'PLN_local' : 'PLN_international', status: 'checkout_pending', checkoutReference: reference, ...overrides });
@@ -70,7 +69,11 @@ before(async () => {
       return new Response(JSON.stringify({ id: 'email-test' }), { status: 200, headers: { 'content-type': 'application/json' } });
     }
     assert.equal(url.hostname, 'api.paystack.co', 'No external network calls are allowed in this suite');
-    if (url.pathname.startsWith('/plan/')) return new Response(JSON.stringify({ status: true, data: { id: url.pathname.includes('international') ? 2 : 1, amount: url.pathname.includes('international') ? 3000000 : 2500000, currency: 'NGN', interval: 'monthly' } }));
+    if (url.pathname.startsWith('/plan/')) {
+      const code = decodeURIComponent(url.pathname.slice('/plan/'.length));
+      const plan = provider.get(url.pathname) || { id: code === 'PLN_pro' ? 3 : code === 'PLN_international' ? 2 : 1, plan_code: code, amount: code === 'PLN_pro' ? 4000000 : code === 'PLN_international' ? 3000000 : 2500000, currency: 'NGN', interval: 'monthly' };
+      return new Response(JSON.stringify({ status: true, data: plan }));
+    }
     if (url.pathname === '/transaction/initialize') {
       initialized++;
       assert.ok(await Payment.exists({ reference: body.reference }), 'payment saved before contacting provider');
@@ -202,7 +205,7 @@ test('maintenance recovers an orphaned checkout and purges expired deleted ledge
   assert.equal(await Payment.findById(ledger._id), null);
 });
 
-test('owner MRR uses recorded regional amounts and excludes canceled or unsupported Pro access', async () => {
+test('owner MRR uses recorded subscription amounts and excludes canceled or unsupported Pro access', async () => {
   await Subscription.create({ userId: owner._id, status: 'active', amountKobo: 2500000, paidThrough: addOneMonth() });
   await Subscription.create({ userId: new mongoose.Types.ObjectId(), status: 'active', amountKobo: 3000000, paidThrough: addOneMonth() });
   await Subscription.create({ userId: new mongoose.Types.ObjectId(), status: 'canceling', amountKobo: 3000000, paidThrough: addOneMonth(), cancelRequestedAt: new Date() });
@@ -284,36 +287,47 @@ beforeEach(async () => {
 });
 after(async () => { await new Promise(resolve => setTimeout(resolve, 100)); globalThis.fetch = realFetch; await mongoose.disconnect(); await mongo?.stop(); });
 
-test('Nigeria and international checkout save and charge their own NGN prices', async () => {
-  let res = await checkout('NG'); assert.equal(res.code, 201);
-  assert.equal(calls.find(call => call.path === '/transaction/initialize').body.amount, 2500000);
-  await Subscription.deleteMany({}); await Payment.deleteMany({}); await BillingLock.deleteMany({}); calls = [];
-  res = await checkout('US'); assert.equal(res.code, 201);
-  const payment = await Payment.findOne({}); assert.equal(payment.amountKobo, 3000000); assert.equal(payment.currency, 'NGN');
-  assert.equal(calls.find(call => call.path === '/transaction/initialize').body.plan, 'PLN_international');
+test('checkout uses one NGN price regardless of visitor location', async () => {
+  for (const country of ['NG', 'US', null]) {
+    const res = await checkout(country); assert.equal(res.code, 201); assert.equal(res.body.data.amountKobo, 4000000);
+    const payment = await Payment.findOne({}); assert.equal(payment.amountKobo, 4000000); assert.equal(payment.currency, 'NGN');
+    const subscription = await Subscription.findOne({}); assert.equal(subscription.planCode, 'PLN_pro'); assert.equal(subscription.amountKobo, 4000000);
+    assert.equal(calls.find(call => call.path === '/transaction/initialize').body.amount, 4000000);
+    assert.equal(calls.find(call => call.path === '/transaction/initialize').body.plan, 'PLN_pro');
+    await Subscription.deleteMany({}); await Payment.deleteMany({}); await BillingLock.deleteMany({}); calls = [];
+  }
+  assert.equal(initialized, 3);
 });
-test('unknown country and a changed quote cannot initiate a charge', async () => {
-  const unknown = await checkout(null); assert.equal(unknown.code, 409); assert.equal(unknown.body.code, 'COUNTRY_UNKNOWN');
-  const changed = await invoke(startCheckout, { billingCountry: 'US', body: { quote: 'nigeria:2500000', amount: 1 } });
+test('a stale price quote cannot initiate a charge', async () => {
+  const changed = await invoke(startCheckout, { billingCountry: 'US', body: { quote: 'pro:3990000', amount: 1 } });
   assert.equal(changed.body.code, 'PRICE_CHANGED'); assert.equal(initialized, 0);
 });
-test('country headers are trusted only with a matching edge key and valid visitor IP', () => {
+test('edge identity accepts only a matching key and valid visitor IP, with no billing-country field', () => {
   const probe = headers => { const req = { headers, get(key) { return this.headers[key]; } }; resolveEdgeClientIp(req, {}, () => {}); return req; };
-  assert.equal(probe({ 'x-veylo-country': 'NG', 'cf-ipcountry': 'NG' }).billingCountry, null);
-  assert.equal(probe({ 'x-veylo-country': 'NG', 'x-veylo-edge-key': 'wrong', 'x-veylo-client-ip': '203.0.113.1' }).billingCountry, null);
-  for (const country of ['XX', 'T1', 'ng', '']) assert.equal(probe({ 'x-veylo-country': country, 'x-veylo-edge-key': process.env.VEYLO_EDGE_KEY, 'x-veylo-client-ip': '203.0.113.1' }).billingCountry, null);
-  assert.equal(probe({ 'x-veylo-country': 'US', 'x-veylo-edge-key': process.env.VEYLO_EDGE_KEY, 'x-veylo-client-ip': '203.0.113.1' }).billingCountry, 'US');
+  const forged = probe({ 'x-veylo-country': 'NG', 'cf-ipcountry': 'NG' }); assert.equal(forged.billingCountry, undefined);
+  assert.equal(probe({ 'x-veylo-country': 'US', 'x-veylo-edge-key': 'wrong', 'x-veylo-client-ip': '203.0.113.1' }).billingCountry, undefined);
+  const trusted = probe({ 'x-veylo-country': 'US', 'x-veylo-edge-key': process.env.VEYLO_EDGE_KEY, 'x-veylo-client-ip': '203.0.113.1' });
+  assert.equal(trusted.headers['x-forwarded-for'], '203.0.113.1'); assert.equal(trusted.billingCountry, undefined);
 });
 test('concurrent and repeated checkout requests initialize only one payment', async () => {
   const results = await Promise.all([checkout(), checkout()]); assert.ok(results.some(result => result.code === 201));
   assert.equal(initialized, 1); assert.equal(await Payment.countDocuments({}), 1);
   const again = await checkout(); assert.equal(again.code, 201); assert.equal(initialized, 1);
 });
-test('international payment verification accepts the stored amount and rejects another account', async () => {
+test('a legacy subscription verifies against its recorded amount and rejects another account', async () => {
   const { data } = await paid(3000000);
-  const res = await invoke(verifyCheckout, { params: { reference: data.reference }, billingCountry: 'NG' });
+  const res = await invoke(verifyCheckout, { params: { reference: data.reference } });
   assert.equal(res.body.confirmed, true); assert.equal(res.body.data.subscription.amountKobo, 3000000); assert.equal(res.body.data.payments.length, 1);
   const other = new mongoose.Types.ObjectId(); const denied = await invoke(verifyCheckout, { user: { id: String(other) }, params: { reference: data.reference } }); assert.equal(denied.code, 404);
+});
+test('a legacy renewal moves to ₦40,000 only after its stored Paystack plan is updated', async () => {
+  const { data, subscription } = await paid(2500000, { planProviderId: '1' });
+  const renewal = { ...data, reference: 'veylo_upgrade_renewal', amount: 4000000, paid_at: new Date(Date.now() + 86400000).toISOString() };
+  const mismatched = await activateSubscription({ data: renewal, user: owner, subscription }); assert.equal(mismatched, null);
+  provider.set('/plan/PLN_local', { id: 1, plan_code: 'PLN_local', amount: 4000000, currency: 'NGN', interval: 'monthly' });
+  const updated = await activateSubscription({ data: renewal, user: owner, subscription });
+  assert.equal(updated.amountKobo, 4000000);
+  assert.equal((await Payment.findOne({ reference: renewal.reference })).amountKobo, 4000000);
 });
 test('refund, dispute and cancellation survive replayed success', async () => {
   const { data, subscription } = await paid();
@@ -334,7 +348,7 @@ test('old payment replay cannot shorten newer paid access', async () => {
 });
 test('provider customer, plan, amount, currency and environment mismatches do not grant access', async () => {
   const checkoutResult = await checkout(); const payment = await Payment.findOne({ reference: checkoutResult.body.data.reference }); const subscription = await Subscription.findById(payment.subscriptionId);
-  const data = { reference: payment.reference, amount: 2500000, currency: 'NGN', paid_at: new Date().toISOString(), customer: { email: owner.email }, plan: { plan_code: 'PLN_local' } };
+  const data = { reference: payment.reference, amount: 4000000, currency: 'NGN', paid_at: new Date().toISOString(), customer: { email: owner.email }, plan: { plan_code: 'PLN_pro' } };
   for (const change of [{ amount: 3000000 }, { currency: 'USD' }, { customer: { email: 'stranger@example.test' } }, { plan: { plan_code: 'PLN_unrelated' } }, { plan: 99 }, { domain: 'live' }]) assert.equal(await activateSubscription({ data: { ...data, ...change }, user: owner, subscription }), null);
   assert.equal((await resolveEntitlements(owner)).plan, 'free');
 });

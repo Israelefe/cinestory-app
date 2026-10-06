@@ -1,17 +1,10 @@
 import crypto from 'node:crypto';
+import { PRO_PRICE_KOBO, PRO_PRICE_NAIRA } from '../config/plans.js';
 
-export const REGIONAL_PRICES = Object.freeze({ nigeria: 2_500_000, international: 3_000_000 });
-export function planForRegion(region) {
-  return region === 'international' ? process.env.PAYSTACK_INTERNATIONAL_PLAN_CODE : process.env.PAYSTACK_PRO_PLAN_CODE;
-}
-export function regionalPrice(req) {
-  const country = req.billingCountry || null;
-  const region = country ? (country === 'NG' ? 'nigeria' : 'international') : 'unknown';
-  const amountKobo = REGIONAL_PRICES[region] ?? null;
-  return { region, country, currency: 'NGN', amountKobo, monthlyPriceNaira: amountKobo === null ? null : amountKobo / 100,
-    alternatives: { nigeria: 25000, international: 30000 },
-    quote: amountKobo === null ? null : `${region}:${amountKobo}` };
-}
+export const LEGACY_PRO_PRICES_KOBO = Object.freeze([2_500_000, 3_000_000]);
+export const PRO_PRICING = Object.freeze({ currency: 'NGN', amountKobo: PRO_PRICE_KOBO, monthlyPriceNaira: PRO_PRICE_NAIRA, quote: `pro:${PRO_PRICE_KOBO}` });
+export function proPlanCode() { return process.env.PAYSTACK_PRO_PLAN_CODE; }
+export function proPricing() { return { ...PRO_PRICING }; }
 export function redactBillingSnapshot(value) {
   if (Array.isArray(value)) return value.map(redactBillingSnapshot);
   if (!value || typeof value !== 'object') return value;

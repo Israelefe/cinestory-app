@@ -1,5 +1,5 @@
 import React, { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { RegionalPricingProvider } from './components/RegionalPricing.jsx';
+import { ProPricingProvider } from './components/ProPricing.jsx';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigationType } from 'react-router-dom';
 import { MotionConfig } from 'framer-motion';
 import { VEYLO_MOTION_CONFIG } from './utils/motionPolicy.js';
@@ -236,7 +236,7 @@ export default function App() {
     window.location.assign('/');
   };
   const handlePlanChanged = useCallback(plan => setUser(current => current ? { ...current, plan } : current), []);
-  return <RegionalPricingProvider><MotionConfig {...VEYLO_MOTION_CONFIG}><BrowserRouter><RoutePosition /><DeliveryChrome user={user} /><ToastContainer position="top-right" theme="dark" autoClose={3000} /><Suspense fallback={<div className="v-page-loading" role="status">Opening Veylo…</div>}><Routes>
+  return <ProPricingProvider><MotionConfig {...VEYLO_MOTION_CONFIG}><BrowserRouter><RoutePosition /><DeliveryChrome user={user} /><ToastContainer position="top-right" theme="dark" autoClose={3000} /><Suspense fallback={<div className="v-page-loading" role="status">Opening Veylo…</div>}><Routes>
     <Route path="/story/:storyId" element={<PhonePresentationRoute title="Photo Story demo"><StoryViewer /></PhonePresentationRoute>} />
     <Route path="/d/:publicId" element={<PhonePresentationRoute title="Client delivery"><DeliveryViewer /></PhonePresentationRoute>} />
     <Route path="/__phone-preview" element={<PhonePreviewPage />} />
@@ -248,5 +248,5 @@ export default function App() {
     <Route path="/demo/photoswap" element={<PhonePresentationRoute title="Photo Swap delivery demo"><PhotoSwapDemo /></PhonePresentationRoute>} />
     <Route path="/demo/:formatId" element={<PhonePresentationRoute title="Delivery format demo"><FormatDemo /></PhonePresentationRoute>} />
     <Route path="*" element={<WebsiteShell user={user} authLoading={authLoading} onAuthenticated={handleAuthenticated} onLogout={handleLogout} onAccountDeleted={handleAccountDeleted} onPlanChanged={handlePlanChanged} />} />
-  </Routes></Suspense></BrowserRouter></MotionConfig></RegionalPricingProvider>;
+  </Routes></Suspense></BrowserRouter></MotionConfig></ProPricingProvider>;
 }

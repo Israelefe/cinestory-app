@@ -1,4 +1,4 @@
-import { ProPrice } from '../components/RegionalPricing.jsx';
+import { ProPrice } from '../components/ProPricing.jsx';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, BadgeCheck, Camera, CreditCard, Images, Save, ShieldCheck, Trash2, Upload, UserRound, MapPin, MessageCircle } from 'lucide-react';

@@ -1,5 +1,5 @@
-export const PRO_PRICE_KOBO = 2_500_000;
-export const PRO_PRICE_NAIRA = 25_000;
+export const PRO_PRICE_KOBO = 4_000_000;
+export const PRO_PRICE_NAIRA = 40_000;
 
 export const PLAN_DEFINITIONS = Object.freeze({
   free: Object.freeze({

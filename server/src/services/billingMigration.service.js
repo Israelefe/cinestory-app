@@ -29,7 +29,7 @@ export async function migrateBillingRecords({ apply = false } = {}) {
     const payment = await Payment.collection.findOne({ subscriptionId: row._id, paidAt: { $exists: true }, status: { $in: ['success', 'partially_refunded', 'refunded', 'disputed'] } }, { sort: { paidAt: -1 } });
     const amount = validAmount(row.amountKobo) ? Number(row.amountKobo) : validAmount(payment?.amountKobo) ? Number(payment.amountKobo) : validAmount(snapshot.plan?.amount) ? Number(snapshot.plan.amount) : 2500000;
     const currency = row.currency || payment?.currency || snapshot.plan?.currency || 'NGN';
-    if (row.provider !== 'admin' && (currency !== 'NGN' || ![2500000, 3000000].includes(amount))) issue('unsupported-price', row, 'Review the existing contracted price; it was not changed.');
+    if (row.provider !== 'admin' && (currency !== 'NGN' || ![2500000, 3000000, 4000000].includes(amount))) issue('unsupported-price', row, 'Review the existing contracted price; it was not changed.');
     if (row.amountKobo === undefined) patch.amountKobo = row.provider === 'admin' ? 0 : amount;
     if (!row.currency) patch.currency = currency;
     if (!row.pricingRegion && currency === 'NGN' && [2500000, 3000000].includes(amount)) patch.pricingRegion = amount === 3000000 ? 'international' : 'nigeria';

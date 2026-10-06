@@ -1,11 +1,11 @@
 import crypto from 'crypto';
 import { PRO_PRICE_KOBO } from '../config/plans.js';
-import { planForRegion, REGIONAL_PRICES } from './billingPricing.service.js';
+import { proPlanCode } from './billingPricing.service.js';
 
 const PAYSTACK_URL = 'https://api.paystack.co';
 
-export function billingConfigured(region = 'nigeria') {
-  return process.env.BILLING_ENABLED === 'true' && Boolean(process.env.PAYSTACK_SECRET_KEY && planForRegion(region) && process.env.BILLING_ENCRYPTION_KEY?.length >= 32);
+export function billingConfigured() {
+  return process.env.BILLING_ENABLED === 'true' && Boolean(process.env.PAYSTACK_SECRET_KEY && proPlanCode() && process.env.BILLING_ENCRYPTION_KEY?.length >= 32);
 }
 
 function secretKey() {
@@ -35,8 +35,8 @@ export async function paystackRequest(path, { method = 'GET', body } = {}) {
 }
 
 const checkedPlans = new Map();
-export async function validateConfiguredPlan(region = 'nigeria') {
-  const code = planForRegion(region);
+export async function validateConfiguredPlan() {
+  const code = proPlanCode();
   const checkedPlan = checkedPlans.get(code);
   if (checkedPlan && checkedPlan.expiresAt > Date.now()) return checkedPlan.data;
   if (!code) {
@@ -45,13 +45,21 @@ export async function validateConfiguredPlan(region = 'nigeria') {
     throw error;
   }
   const plan = await paystackRequest(`/plan/${encodeURIComponent(code)}`);
-  if (!plan.id || (plan.plan_code && plan.plan_code !== code) || plan.interval !== 'monthly' || Number(plan.amount) !== (REGIONAL_PRICES[region] || PRO_PRICE_KOBO) || plan.currency !== 'NGN') {
+  if (!plan.id || (plan.plan_code && plan.plan_code !== code) || plan.interval !== 'monthly' || Number(plan.amount) !== PRO_PRICE_KOBO || plan.currency !== 'NGN') {
     const error = new Error('The configured Paystack plan does not match the monthly NGN price.');
     error.status = 503;
     throw error;
   }
   checkedPlans.set(code, { data: plan, expiresAt: Date.now() + 10 * 60 * 1000 });
   return plan;
+}
+
+export async function storedPlanMatchesProPrice(subscription) {
+  if (!subscription?.planCode || !subscription.planProviderId) return false;
+  const plan = await paystackRequest(`/plan/${encodeURIComponent(subscription.planCode)}`);
+  return Boolean(plan.id && String(plan.id) === String(subscription.planProviderId)
+    && (!plan.plan_code || plan.plan_code === subscription.planCode)
+    && plan.interval === 'monthly' && Number(plan.amount) === PRO_PRICE_KOBO && plan.currency === 'NGN');
 }
 
 export function verifyPaystackSignature(rawBody, signature) {

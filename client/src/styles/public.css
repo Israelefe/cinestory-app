@@ -2264,17 +2264,16 @@
 .v-ce-format-list-title{margin:25px 0 14px}.v-ce-format-list-title h3{margin:0 0 5px;color:#f2ece6;font:500 24px/1.2 'Playfair Display',Georgia,serif}.v-ce-format-list-title p{margin:0;color:#9f9892;font-size:12px}
 .v-home-pinboard-art i:nth-child(1){background:linear-gradient(140deg,#00000005,#00000030),url('/veylo/demo/event/event-06-arrivals-greeting.webp') center/cover!important}.v-home-pinboard-art i:nth-child(2){background:linear-gradient(135deg,#00000005,#00000030),url('/veylo/demo/event/event-02-keynote.webp') center/cover!important}.v-home-pinboard-art i:nth-child(3){background:linear-gradient(145deg,#00000005,#00000030),url('/veylo/demo/event/event-05-details.webp') center/cover!important}.v-home-pinboard-art i:nth-child(4){background:linear-gradient(145deg,#00000005,#00000030),url('/veylo/demo/event/event-10-networking-conversation.webp') center/cover!important}.v-home-pinboard-art i:nth-child(5){background:linear-gradient(135deg,#00000005,#00000030),url('/veylo/demo/event/event-04-stage.webp') center/cover!important}
 /* Country pricing and billing controls share the page's existing visual language. */
-.v-regional-price { overflow-wrap: anywhere; }
-.v-regional-notice { margin: 16px 0 22px; max-width: 42rem; font-size: 13px; line-height: 1.7; color: #b8b1aa; }
-.v-regional-notice p { margin: 0 0 10px; }
-.v-regional-notice small { display: block; font-size: 11px; line-height: 1.7; }
-.v-regional-notice a, .v-billing-help a { color: #ff9b8e; overflow-wrap: anywhere; }
-.v-regional-notice button, .v-billing-retry, .v-billing-payment-list button { min-height: 44px; padding: 10px 14px; border: 1px solid #ffffff26; border-radius: 8px; color: #ff9b8e; background: #0c0c10; transition: transform .18s, border-color .18s; }
-.v-regional-notice button:hover, .v-billing-retry:hover, .v-billing-payment-list button:hover { transform: translateY(-2px); border-color: #ff9b8e; }
-.v-regional-notice button:active, .v-billing-retry:active { transform: scale(.98); }
+.v-pro-price { overflow-wrap: anywhere; }
+.v-pro-pricing-note { margin: 16px 0 22px; max-width: 42rem; font-size: 13px; line-height: 1.7; color: #b8b1aa; }
+.v-pro-pricing-note p { margin: 0 0 10px; }
+.v-pro-pricing-note small { display: block; font-size: 11px; line-height: 1.7; }
+.v-billing-retry, .v-billing-payment-list button { min-height: 44px; padding: 10px 14px; border: 1px solid #ffffff26; border-radius: 8px; color: #ff9b8e; background: #0c0c10; transition: transform .18s, border-color .18s; }
+.v-billing-retry:hover, .v-billing-payment-list button:hover { transform: translateY(-2px); border-color: #ff9b8e; }
+.v-billing-retry:active { transform: scale(.98); }
 .v-billing-offer { font-size: clamp(20px, 4vw, 30px); color: #f1efe9; }
 .v-billing-price > span { white-space: nowrap; flex-shrink: 0; }
-.v-billing-includes .v-regional-notice small { font-size: 11px; font-weight: 400; letter-spacing: 0; text-transform: none; line-height: 1.7; }
+.v-billing-includes .v-pro-pricing-note small { font-size: 11px; font-weight: 400; letter-spacing: 0; text-transform: none; line-height: 1.7; }
 @media (min-width: 768px) and (max-width: 1023px) { .v-billing-price strong { font-size: 42px; } }
 .v-billing-current .v-billing-consent { font-size: .78rem; line-height: 1.75; color: #b6b0ad; margin-top: 1rem; }
 .v-billing-consent a { color: #ff9b8e; text-decoration: underline; text-underline-offset: 3px; }
@@ -2283,4 +2282,4 @@
 .v-billing-modal { max-height: calc(100dvh - 40px); overflow-y: auto; }
 .v-billing-payment-list article { min-width: 0; }
 .v-billing-payment-list small { overflow-wrap: anywhere; }
-@media (max-width: 640px) { .v-billing-modal > div { flex-wrap: wrap; } .v-billing-modal > div button { flex: 1 1 170px; min-height: 44px; } .v-price:has(.v-regional-price) { font-size: clamp(24px, 7vw, 42px); } }
+@media (max-width: 640px) { .v-billing-modal > div { flex-wrap: wrap; } .v-billing-modal > div button { flex: 1 1 170px; min-height: 44px; } .v-price:has(.v-pro-price) { font-size: clamp(24px, 7vw, 42px); } }

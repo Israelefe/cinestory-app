@@ -117,7 +117,7 @@ Start with a small number of services, each linked to relevant work. A service c
 - Optional starting price in naira, a price range, or a request-for-quote label.
 - An enquiry action that carries the service name.
 
-Photographer service prices are separate from Veylo's subscription prices. Never use Veylo's ₦25,000 Pro price as a photographer's shoot price. Optional pricing should accommodate both fixed portrait packages and custom wedding/commercial quotes.
+Photographer service prices are separate from Veylo's subscription prices. Never use Veylo's ₦40,000 Pro price as a photographer's shoot price. Optional pricing should accommodate both fixed portrait packages and custom wedding/commercial quotes.
 
 ### 3. Projects with enough context to assess the work
 

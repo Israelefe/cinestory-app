@@ -55,8 +55,6 @@ services:
         value: "false"
       - key: PAYSTACK_PRO_PLAN_CODE
         sync: false
-      - key: PAYSTACK_INTERNATIONAL_PLAN_CODE
-        sync: false
       - key: PAYSTACK_CALLBACK_URL
         value: https://veylo.com.ng/billing
       - key: BILLING_ENCRYPTION_KEY

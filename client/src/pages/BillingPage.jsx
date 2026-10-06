@@ -1,4 +1,4 @@
-import { ProPrice, PricingNotice, useRegionalPricing } from '../components/RegionalPricing.jsx';
+import { ProPrice, PricingNotice, useProPricing } from '../components/ProPricing.jsx';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -27,7 +27,7 @@ function money(kobo) {
 
 export default function BillingPage({ onPlanChanged }) {
   const reduced = useVeyloReducedMotion();
-  const { pricing, refresh: refreshPricing, setPricing } = useRegionalPricing();
+  const { pricing, setPricing } = useProPricing();
   const [params, setParams] = useSearchParams();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -197,13 +197,13 @@ export default function BillingPage({ onPlanChanged }) {
             {data?.subscription?.canResume && <button type="button" className="v-billing-primary" onClick={() => changeSubscription('resume')} disabled={Boolean(working)}>{working === 'resume' ? 'Restoring Pro…' : 'Keep my Pro plan'}<RefreshCw size={15} /></button>}
           </div>
           {(!isPro || state === 'past_due') && <p className="v-billing-consent">By choosing Pro, you agree to the <Link to="/terms">Terms</Link> and <Link to="/refund-policy">Refund Policy</Link>. Paystack will charge the displayed checkout price in NGN each month until you cancel.</p>}
-          {!data?.billingAvailable && <small className="v-billing-unavailable">Checkout is unavailable until your country and payment configuration are confirmed. Email payment@veylo.com.ng for help.</small>}
+          {!data?.billingAvailable && <small className="v-billing-unavailable">Checkout is temporarily unavailable. Email payment@veylo.com.ng for help.</small>}
         </motion.article>
 
         <motion.article className="v-billing-includes" initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .5, delay: .1 }}>
           <header><small>VEYLO PRO</small><p className="v-billing-offer"><ProPrice /> / month</p><PricingNotice /><h2>For regular client delivery.</h2><p>One monthly plan for photographers and studios delivering finished work every week.</p></header>
           <div>{features.map(([label, value]) => <div key={label}><Check size={16} /><span><small>{label}</small><strong>{value}</strong></span></div>)}</div>
-          <footer><ShieldCheck size={17} /><span>Pay securely through Paystack by card or Nigerian Direct Debit. Cancel before the next renewal whenever you need to.</span></footer>
+          <footer><ShieldCheck size={17} /><span>Pay securely through Paystack. Cancel before the next renewal whenever you need to.</span></footer>
         </motion.article>
       </section>
 

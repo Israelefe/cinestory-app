@@ -4,7 +4,7 @@ const DOCUMENTS = [
     title: 'What Veylo is',
     keywords: ['veylo', 'delivery', 'gallery', 'photo story', 'client', 'photographer', 'finished shoot'],
     audiences: ['studio', 'recipient', 'visitor'],
-    text: `Veylo is for delivering finished photographs from photographers and studios. A photographer uploads the edited photographs, reviews the presentation, and sends one private link. Clients can experience the presentation, browse the complete gallery, read captions, and download photographs. Veylo does not replace the photographer's original pixels, retouch a finished photograph, or act as a culling tool.`
+    text: `Veylo is for presenting and delivering photographs from photographers and studios. A photographer uploads edited photographs, reviews the presentation, and sends one private link. Clients can experience the presentation, browse the complete gallery, read captions, and download photographs. Veylo Pro also has private Image Library links for clients to choose photos for editing and for editors to return finished files. Veylo does not retouch photographs or automatically cull a shoot.`
   },
   {
     id: 'account-and-profile',
@@ -18,21 +18,28 @@ const DOCUMENTS = [
     title: 'Free and Pro plans',
     keywords: ['free', 'pro', 'price', 'pricing', 'storage', 'limit', 'photos', 'deliveries', 'subscription', 'upgrade', 'cancel', 'renewal'],
     audiences: ['studio', 'visitor'],
-    text: `Veylo Free is ₦0, allows up to 3 published deliveries each month, and up to 100 photographs in one delivery. Veylo Pro is ₦25,000 per month in Nigeria and ₦30,000 per month outside Nigeria, charged in NGN, removes the monthly delivery count, allows up to 500 photographs in one delivery, includes studio branding, includes a 50 GB personal image library, and includes Veylo Portfolio. Plan details shown in the Billing page are the source of truth. Cancelling stops the next renewal and normally leaves paid access until the paid period ends. A failed renewal can place an account into the billing recovery process and may end Pro access if payment is not recovered. The assistant cannot change a plan, issue a refund, or delete an account.`
+    text: `Veylo Free is ₦0, allows up to 3 published deliveries each month, and up to 100 photographs in one delivery. Veylo Pro is ₦40,000 per month for everyone, charged in NGN, removes the monthly delivery count, allows up to 500 photographs in one delivery, includes studio branding, includes a 50 GB personal image library, and includes Veylo Portfolio. A bank or card provider may convert the naira charge and add a fee. Plan details shown in the Billing page are the source of truth. Cancelling stops the next renewal and normally leaves paid access until the paid period ends. A failed renewal can place an account into the billing recovery process and may end Pro access if payment is not recovered. The assistant cannot change a plan, issue a refund, or delete an account.`
+  },
+  {
+    id: 'image-library-sharing',
+    title: 'Pro Image Library, client choices and editor handoff',
+    keywords: ['image library', 'raw', 'camera file', 'client selection', 'preselection', 'editor', 'handoff', 'PIN', 'password', '50 GB', 'preview'],
+    audiences: ['studio', 'recipient'],
+    text: `Veylo Pro includes 50 GB of Image Library storage. Photographers can create a client preselection link so a client can choose up to 500 photographs for editing. A preselection can have an optional six-digit PIN and shows marked previews without download controls; the photographer can reopen a submitted selection. Photographers can also make an editor handoff link. Editor links require a password; the editor can download the source files and upload finished edits to the same link. Returned edits become Image Library items and use the same 50 GB. Supported camera RAW files are kept unchanged, and Veylo makes a paired JPEG preview in the browser so they can be viewed and selected. That JPEG is not a replacement for the RAW original, and both files count toward storage. Uploads are limited to 100 MB per file. Links expire, can be revoked, and stop working when Pro access ends. Keep separate backups of every original.`
   },
   {
     id: 'billing-refunds',
     title: 'Payment support and refunds',
     keywords: ['refund', 'cancel', 'charged', 'billing', 'payment', 'renewal'],
     audiences: ['studio', 'visitor'],
-    text: `Payment support is payment@veylo.com.ng. The refund policy is at /refund-policy. A first payment may qualify for a change-of-mind refund within seven days if no client delivery was published during that paid period and no paid storage or Portfolio feature was used. Deleting work does not reset usage. Used paid periods and normal renewals are not routinely refunded or prorated. Duplicate payments, charges after confirmed cancellation, payments without access, and material service failures can be reviewed regardless of usage; applicable consumer rights still apply. Refunds require support review. Cancellation is separate: use Billing to stop future renewals and check the confirmation and remaining access date. Both regional prices are charged in NGN; an overseas card issuer handles currency conversion. Country detection is based on the current connection, so VPNs can affect it. Existing subscriptions retain their recorded price.`
+    text: `Payment support is payment@veylo.com.ng. The refund policy is at /refund-policy. A first payment may qualify for a change-of-mind refund within seven days if no client delivery was published during that paid period and no paid storage or Portfolio feature was used. Deleting work does not reset usage. Used paid periods and normal renewals are not routinely refunded or prorated. Duplicate payments, charges after confirmed cancellation, payments without access, and material service failures can be reviewed regardless of usage; applicable consumer rights still apply. Refunds require support review. Cancellation is separate: use Billing to stop future renewals and check the confirmation and remaining access date. Veylo charges one monthly NGN price for Pro and does not use country detection to set it. A bank or card provider may handle currency conversion. Existing subscribers will be notified before a change to their renewal amount takes effect.`
   },
   {
     id: 'create-delivery',
     title: 'Creating a delivery',
     keywords: ['create', 'creation', 'upload', 'photographs', 'photos', 'image library', 'brief', 'shoot', 'review', 'publish', 'draft'],
     audiences: ['studio'],
-    text: `Start from New delivery or a finished shoot in the Dashboard. Tell Veylo who the photographs are for, what the shoot celebrates, and anything the presentation should understand. Upload the final edited files, or add photographs from the image library. JPEG, PNG, and WebP files are accepted within the size shown in the uploader. The upload screen reports each file and allows a retry for a failed file. Review the order, captions, sections, design, music, narration, and exact client preview before publishing. A draft can be resumed; publishing creates the private client delivery.`
+    text: `Start from New delivery or a finished shoot in the Dashboard. Tell Veylo who the photographs are for, what the shoot celebrates, and anything the presentation should understand. Upload final JPEG, PNG, or WebP files, or add photographs from the image library. The library also accepts supported camera RAW files and keeps each original beside a browser-made JPEG preview. A library RAW original is preserved; reuse its paired JPEG preview when building a delivery. The upload screen reports each file and allows a retry for a failed file. Review the order, captions, sections, design, music, narration, and exact client preview before publishing. A draft can be resumed; publishing creates the private client delivery.`
   },
   {
     id: 'delivery-formats',

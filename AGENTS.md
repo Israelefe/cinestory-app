@@ -69,7 +69,7 @@ Veylo is built Nigeria-first for photographers and media studios:
 - Understand the real-world environment:
   - Clients receive links on WhatsApp or Instagram DMs.
   - Mobile-first experience is mandatory (fast loading on mobile networks).
-  - Pricing is in Nigerian Naira (₦25,000/month for Pro, ₦0 for Free).
+  - Pricing is in Nigerian Naira (₦40,000/month for Pro, ₦0 for Free), the same for every customer.
   - Authentic shoot categories: Traditional weddings, 30th birthday milestone shoots, bridal showers, lookbooks, owambe celebrations, studio portraits.
 - Keep the tone respectful, sharp, and focused on helping photographers get paid and look professional.
 

@@ -1,4 +1,4 @@
-import { ProPrice } from '../components/RegionalPricing.jsx';
+import { ProPrice } from '../components/ProPricing.jsx';
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { BadgeCheck, Camera, Check, ShieldCheck } from 'lucide-react';

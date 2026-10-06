@@ -1190,7 +1190,7 @@ Free is the acquisition engine.
 
 For working photographers and studios.
 
-# **₦25,000/month**
+# **₦40,000/month**
 
 For photographers delivering more shoots each month.
 
@@ -1526,7 +1526,7 @@ If the answer is no, it probably does not belong in Veylo V1.
 
 If the development agent needs a short permanent instruction, use this:
 
-> **Veylo is a Nigeria-first photo delivery SaaS built for photographers and media studios. Its positioning is “Veylo — The Photo Delivery Platform for Photographers.” Photographers upload already edited client photographs, provide context such as occasion and mood, and Veylo's AI Director analyzes the full collection and automatically creates an interactive cinematic Photo Story using intelligent sequencing, visual chapters, short editorial storytelling, tasteful photo motion, music and optional TTS narration. The photographer can preview and make simple edits before publishing the story as a shareable web link. Clients experience the Photo Story first and then access the normal downloadable photo gallery. Veylo is photo-only for V1. It is not a video generator, photo editor, CRM, booking platform, invoicing system, website builder or general photography-management suite. Veylo Free currently allows 2 Photo Stories per month. Veylo Pro costs ₦25,000/month and offers unlimited Photo Stories subject to reasonable fair use. The product must remain simple, premium, mobile-first, photographer-focused and strongly optimized for client delivery through links and WhatsApp.**
+> **Veylo is a Nigeria-first photo delivery SaaS built for photographers and media studios. Its positioning is “Veylo — The Photo Delivery Platform for Photographers.” Photographers upload already edited client photographs, provide context such as occasion and mood, and Veylo's AI Director analyzes the full collection and automatically creates an interactive cinematic Photo Story using intelligent sequencing, visual chapters, short editorial storytelling, tasteful photo motion, music and optional TTS narration. The photographer can preview and make simple edits before publishing the story as a shareable web link. Clients experience the Photo Story first and then access the normal downloadable photo gallery. Veylo is photo-only for V1. It is not a video generator, photo editor, CRM, booking platform, invoicing system, website builder or general photography-management suite. Veylo Free currently allows 2 Photo Stories per month. Veylo Pro costs ₦40,000/month for every customer and offers unlimited Photo Stories subject to reasonable fair use. The product must remain simple, premium, mobile-first, photographer-focused and strongly optimized for client delivery through links and WhatsApp.**
 
 ## Final Brand Structure
 
@@ -1599,5 +1599,4 @@ Veylo does not handle unedited client proofing, photo culling, or pre-delivery s
    Every single claim must reflect how the app actually works. No contradictory statements, no fake pixel generation claims, and no confusion about quotas, pricing, or features. Veylo is strictly a final-delivery platform for completed photoshoots.
 
 5. **Nigerian Photography Context:**
-   Keep the product grounded in Nigerian photography reality: Naira pricing (₦25,000/mo), WhatsApp delivery, mobile data mindfulness, and authentic celebration culture (traditional weddings, 30th birthdays, lookbooks, owambe events).
-
+   Keep the product grounded in Nigerian photography reality: Naira pricing (₦40,000/mo for every customer), WhatsApp delivery, mobile data mindfulness, and authentic celebration culture (traditional weddings, 30th birthdays, lookbooks, owambe events).

@@ -11,7 +11,7 @@ const DEFAULT_API_ORIGIN = 'https://veylo-api-ptk3.onrender.com';
 const EDGE_KEY_HEADER = 'x-veylo-edge-key';
 const EDGE_CLIENT_IP_HEADER = 'x-veylo-client-ip';
 
-export function handleApiProxy(request, env) {
+export async function handleApiProxy(request, env) {
   const apiOrigin = (env?.VEYLO_API_ORIGIN || DEFAULT_API_ORIGIN).replace(/\/+$/, '');
 
   const incoming = new URL(request.url);
@@ -40,8 +40,6 @@ export function handleApiProxy(request, env) {
   if (edgeKey && clientIp) {
     headers.set(EDGE_KEY_HEADER, edgeKey);
     headers.set(EDGE_CLIENT_IP_HEADER, clientIp);
-    const country = request.cf?.country;
-    if (/^[A-Z]{2}$/.test(country || '') && country !== 'XX') headers.set('x-veylo-country', country);
   }
 
   const init = {

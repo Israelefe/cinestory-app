@@ -1,29 +1,27 @@
-# Regional billing rollout
+# Unified Pro billing rollout
 
-Updated 1 October 2026. Implementation and isolated tests are complete locally. No live database migration, deployment, Paystack charge, cancellation, refund, or email was performed for this work.
+Updated 6 October 2026. The app uses one NGN 40,000 monthly Pro price and no longer selects prices by visitor country. Code and isolated tests are updated locally; no deployment, Paystack plan change, charge, cancellation, refund, or email was performed here.
 
 ## Price and customer experience
 
-| Customer connection | New monthly subscription | Charge currency |
+| Customer | New monthly subscription | Charge currency |
 | --- | --- | --- |
-| Nigeria | ₦25,000 | NGN |
-| Outside Nigeria | ₦30,000 | NGN |
-| Country unavailable | Both prices displayed; checkout waits | No charge |
+| Everyone | ₦40,000 | NGN |
 
-Existing subscriptions keep the amount and provider plan recorded for their subscription. A VPN or travelling can affect the price offered for a new checkout. Location errors go to payment@veylo.com.ng. The server checks the displayed quote again before creating a payment; the client cannot submit its own amount or country.
+The server checks the fixed price quote before creating a payment; the client cannot submit its own amount. Country is not requested or used to set the price. A card issuer may convert the NGN charge and add fees.
 
 International-card enablement supports this NGN approach. The card issuer converts the charge into its own currency and may charge fees. USD activation and a USD payout account are not needed for the selected NGN prices. Acceptance of a particular card and recurring authorization still depends on Paystack and the issuer. [Paystack international payments](https://support.paystack.com/en/articles/2130690).
 
 ## Provider and hosting setup
 
-1. Keep the existing NGN 25,000 monthly Paystack plan. Do not edit its price or migrate its subscribers.
-2. Create a separate NGN 30,000 monthly plan in the same Paystack account and mode as the server secret. Set its code as `PAYSTACK_INTERNATIONAL_PLAN_CODE`. Keep the 25,000 plan code as `PAYSTACK_PRO_PLAN_CODE`. The server validates plan ID, code when supplied, amount, NGN currency and monthly interval before checkout. Test and live plan codes must match their respective key.
+1. Create or select one NGN 40,000 monthly Paystack plan in the same account and mode as the server secret. Set its code as `PAYSTACK_PRO_PLAN_CODE`. The server validates its ID, amount, currency and monthly interval before checkout. Test and live plan codes must match their respective key. `PAYSTACK_INTERNATIONAL_PLAN_CODE` is no longer used.
+2. Existing subscribers may still be attached to the old NGN 25,000 and NGN 30,000 plans. To move their renewals to the single price, notify subscribers first, deploy this code, then update each old plan in Paystack with `PUT /plan/{code}` and `{ "amount": 4000000, "currency": "NGN", "update_existing_subscriptions": true }`. Paystack documents that this option applies plan changes to existing subscriptions ([Plan API](https://paystack.com/docs/api/plan/)). Confirm the updated amount and affected subscription count in Paystack. Keep old plan records available while subscriptions still reference them. The app accepts a renewal at ₦40,000 from an old plan only after Paystack confirms that plan code and stored plan ID now identify a monthly NGN 40,000 plan. Historical payment records keep their original amounts.
 3. Preserve the existing `BILLING_ENCRYPTION_KEY`. It must contain at least 32 characters and is needed to decrypt existing subscription tokens, unfinished events and email retries. Do not regenerate it on deployment.
-4. Set the same `VEYLO_EDGE_KEY` in Render and the Cloudflare Pages/Worker production environment. Deploy the updated API proxy. It removes caller-supplied country headers and forwards `request.cf.country` with the trusted visitor IP. Direct requests to Render cannot choose a price by forging a country header. Local preview does not provide a real Cloudflare country.
-5. Keep browser API requests on the site's `/api` origin. Bypass Cloudflare caching for `/api/v1/billing/*`; the origin also sends `no-store` for country-specific plans and private billing status. Never cache pricing across visitors.
+4. Set the same `VEYLO_EDGE_KEY` in Render and the Cloudflare Pages/Worker production environment. It lets the API trust the visitor IP for security rate limits. The proxy no longer forwards a visitor country for billing.
+5. Keep browser API requests on the site's `/api` origin. Bypass Cloudflare caching for `/api/v1/billing/*`; the origin sends `no-store` for plans and private billing status.
 6. Configure Paystack's webhook as `https://veylo.com.ng/api/v1/webhooks/paystack`. It requires the exact raw body and a valid Paystack signature. Ensure the proxy forwards it unchanged. Set `PAYSTACK_CALLBACK_URL=https://veylo.com.ng/billing` and the existing production `CLIENT_URL`.
 7. Configure a verified Resend sender through `RESEND_FROM_EMAIL` and `RESEND_API_KEY`. Create or confirm that `payment@veylo.com.ng` receives mail. Billing messages use that address as Reply-To; application code does not provision a mailbox.
-8. Keep the API process running: `startBillingWorker()` retries billing work every minute. `BILLING_ENABLED=true`, the Nigeria plan, Paystack secret and encryption key are required for provider recovery. `BILLING_ENABLED=false` pauses new checkout and provider recovery; Paystack itself continues existing schedules, and signed webhooks can still update local records. Disabling checkout is not cancellation.
+8. Keep the API process running: `startBillingWorker()` retries billing work every minute. `BILLING_ENABLED=true`, the Pro plan code, Paystack secret and encryption key are required for provider recovery. `BILLING_ENABLED=false` pauses new checkout and provider recovery; Paystack itself continues existing schedules, and signed webhooks can still update local records. Disabling checkout is not cancellation.
 
 ## Existing-record audit and migration
 
@@ -41,7 +39,7 @@ After reviewing the dry run and backup, the operator can apply local record back
 npm.cmd run billing:migrate
 ```
 
-The migration preserves recorded prices. Legacy NGN subscriptions without an amount use the original ₦25,000 contract, or a recorded paid amount where available. It recovers provider numeric IDs from stored evidence, adds paid-period metadata where supported, encrypts legacy management tokens and unfinished event payloads, and redacts credentials from snapshots. It does not create support grants, cancel schedules, invent refund IDs, change provider plans, or manufacture policy acceptance for old checkouts. Repeat application is safe; a failed run may leave completed backfills and should be rerun after correcting its cause.
+The migration preserves recorded payment amounts. Legacy NGN subscriptions without an amount use the original ₦25,000 contract, or a recorded paid amount where available. It recognises the current ₦40,000 price and the two earlier NGN prices. It recovers provider numeric IDs from stored evidence, adds paid-period metadata where supported, encrypts legacy management tokens and unfinished event payloads, and redacts credentials from snapshots. It does not create support grants, cancel schedules, invent refund IDs, change provider plans, or manufacture policy acceptance for old checkouts. Repeat application is safe; a failed run may leave completed backfills and should be rerun after correcting its cause.
 
 Resolve these issues before enabling new checkout:
 
@@ -80,8 +78,8 @@ npm.cmd run build
 npm.cmd run build
 ```
 
-Backend tests use an isolated in-memory database and mocked Paystack/Resend. Browser tests mock API responses and check regional prices, returned payments, retries, cancellation failures, refund copy and keyboard/reduced-motion layouts at 320, 390, 768, 834, 1024 and 1440 pixels, including a short landscape viewport. Delivery and Portfolio regression tests also pass after the entitlement and deletion changes. Builds have the existing large-chunk warnings.
+Backend tests use an isolated in-memory database and mocked Paystack/Resend. Browser tests mock API responses and check the single price, returned payments, retries, cancellation failures, refund copy and keyboard/reduced-motion layouts at 320, 390, 768, 834, 1024 and 1440 pixels, including a short landscape viewport. Delivery and Portfolio regression tests also pass after the entitlement and deletion changes. Builds have the existing large-chunk warnings.
 
-Before live enablement, exercise both NGN plans through the deployed trusted edge using Paystack test mode; check foreign-card checkout, actual recurring renewal and failed renewal, cancellation confirmation, a refund through to bank/provider status, and email receipt/Reply-To delivery. Check the deployed API pricing cache headers. Real foreign-card acceptance, bank conversion, settlements and mailbox delivery were not verified locally.
+Before live enablement, exercise the single NGN plan through the deployed trusted edge using Paystack test mode; check checkout from Nigeria and outside Nigeria, actual recurring renewal (including an updated legacy plan) and failed renewal, cancellation confirmation, a refund through to bank/provider status, and email receipt/Reply-To delivery. Check the deployed API pricing cache headers. Real foreign-card acceptance, bank conversion, settlements and mailbox delivery were not verified locally.
 
 Finance reports use stored prices for recurring revenue, disclose capped tables and exports, compare provider transactions in both directions, and distinguish recorded fees from actual bank settlement. Inspect failed events, cancellation-pending issues and uncertain refunds after rollout. The worker has bounded batches and account leases; monitoring and support review are still needed for prolonged provider/database outages or ambiguous historical data.

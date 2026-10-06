@@ -25,7 +25,7 @@ The current implementation is a browser-based creator backed by a React/Vite cli
 
 Each delivery has two parts: a directed presentation for the client and a complete gallery for browsing and downloads. Photo Story and selected formats can use music; narration is limited to Photo Story. The final publish step adds optional PIN protection, an expiry date, download controls, a balance lock, watermark settings, and likes. After publishing, the creator can open or copy the client link, share through WhatsApp or the browser share sheet, send email, or download a QR code.
 
-The current plan rules are three Free deliveries per month with up to 100 photos each, and Pro at ₦25,000/month with up to 500 photos each. The public pricing page and server configuration agree on these values ([PricingPage.jsx](../client/src/pages/PricingPage.jsx#L7), [plans.js](../server/src/config/plans.js#L4)). The master product description still says two Free Photo Stories and frames the product as a V1 Photo Story tool, so it is no longer a reliable description of this pipeline ([productdescription.md](../productdescription.md#L1144)).
+At the time of this audit, the plan rules were three Free deliveries per month with up to 100 photos each, and Pro at ₦25,000/month with up to 500 photos each. Pro is now ₦40,000/month for every customer; see the [current billing rollout](../server/docs/billing-rollout.md). The master product description still says two Free Photo Stories and frames the product as a V1 Photo Story tool, so it is no longer a reliable description of this pipeline ([productdescription.md](../productdescription.md#L1144)).
 
 ## How the pipeline works today
 
