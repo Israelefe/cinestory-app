@@ -77,13 +77,14 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
   const pointerGestureRef = useRef(null);
   const pendingArrivalRef = useRef(null);
   const imageReadinessRef = useRef(new Map());
+  const cardElementRef = useRef(null);
+  const viewerElementRef = useRef(null);
   const reduced = useVeyloReducedMotion();
 
   /* The active photo and its swipe animation share one horizontal position. */
   const cardOffset = useMotionValue(0);
   const cardRotation = useTransform(cardOffset, [-340, 0, 340], [-17, 0, 17]);
   const cardScale = useTransform(cardOffset, [-340, 0, 340], [0.97, 1, 0.97]);
-  const cardOpacity = useTransform(cardOffset, [-480, -80, 0, 80, 480], [0, 1, 1, 1, 0]);
 
   const isEnd = currentIndex >= assets.length;
   const currentAsset = isEnd ? null : assets[currentIndex];
@@ -206,7 +207,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
   }, [assets, currentIndex, ensurePhotoReady]);
 
   /* Left advances; right returns to the previous photograph. */
-  const navigateAdjacent = useCallback((swipeDirection, cardWidth = window.innerWidth) => {
+  const navigateAdjacent = useCallback((swipeDirection, cardWidth, releaseVelocity = 0) => {
     if (currentIndex >= assets.length || advanceLockRef.current) return false;
     const step = swipeDirection < 0 ? 1 : -1;
     const nextIndex = currentIndex + step;
@@ -214,11 +215,21 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
 
     advanceLockRef.current = true;
     setIsAdvancing(true);
-    const exitX = (swipeDirection < 0 ? -1 : 1) * (Math.max(window.innerWidth, cardWidth) + cardWidth / 2);
+    const cardNode = cardElementRef.current;
+    const width = cardWidth || cardNode?.offsetWidth || window.innerWidth;
+    const height = cardNode?.offsetHeight || width;
+    const stageWidth = viewerElementRef.current?.clientWidth || window.innerWidth;
+    const exitX = (swipeDirection < 0 ? -1 : 1)
+      * ((stageWidth + width) / 2 + height * 0.2 + 24);
+    const launchVelocity = Math.sign(releaseVelocity) === Math.sign(swipeDirection)
+      ? Math.max(-1800, Math.min(1800, releaseVelocity))
+      : 0;
     animate(cardOffset, exitX, {
-      type: 'tween',
-      duration: reduced ? 0.18 : 0.24,
-      ease: [0.32, 0, 0.67, 0],
+      type: 'spring',
+      stiffness: reduced ? 500 : 420,
+      damping: reduced ? 46 : 38,
+      velocity: launchVelocity,
+      restDelta: 2,
       onComplete: () => {
         if (nextIndex >= assets.length) {
           advanceLockRef.current = false;
@@ -227,7 +238,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
           return;
         }
 
-        const incomingOffset = swipeDirection < 0 ? 68 : -68;
+        const incomingOffset = swipeDirection < 0 ? 56 : -56;
         ensurePhotoReady(assets[nextIndex]).then(() => {
           if (!advanceLockRef.current) return;
           pendingArrivalRef.current = incomingOffset;
@@ -245,8 +256,9 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
     cardOffset.set(incomingOffset);
     animate(cardOffset, 0, {
       type: 'spring',
-      damping: 24,
-      stiffness: reduced ? 220 : 280,
+      damping: 38,
+      stiffness: 420,
+      restDelta: 0.5,
       onComplete: () => {
         advanceLockRef.current = false;
         setIsAdvancing(false);
@@ -307,7 +319,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
     const passed = Math.abs(deltaX) >= threshold
       || (Math.abs(deltaX) >= 32 && Math.abs(velocityX) >= SWIPE_VELOCITY);
 
-    if (horizontal && passed && navigateAdjacent(Math.sign(deltaX || velocityX), gesture.width)) return;
+    if (horizontal && passed && navigateAdjacent(Math.sign(deltaX || velocityX), gesture.width, velocityX)) return;
     snapCardToCenter();
   }, [navigateAdjacent, snapCardToCenter]);
 
@@ -402,6 +414,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
 
   return (
     <div
+      ref={viewerElementRef}
       className={'ps-viewer' + (preview ? ' is-preview' : '')}
       style={stageStyle}
     >
@@ -541,12 +554,12 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
                 {/* Only the active photo is rendered in the swipe stage. */}
                 {currentAsset && (
                     <motion.article
+                      ref={cardElementRef}
                       className={'ps-photo-card ps-card-front ps-design-' + currentPalette.design}
                       style={{
                         x: cardOffset,
                         rotate: cardRotation,
                         scale: cardScale,
-                        opacity: cardOpacity,
                         borderColor: currentPalette.design === 'paper' || currentPalette.design === 'editorial'
                           ? undefined
                           : currentPalette.border,
@@ -592,8 +605,11 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
         </AnimatePresence>
 
         {/* ── Photo Actions ── */}
-        {hasStarted && !isEnd && currentAsset && !isAdvancing && (
-          <footer className="ps-action-area">
+        {hasStarted && !isEnd && currentAsset && (
+          <footer
+            className={'ps-action-area' + (isAdvancing ? ' is-advancing' : '')}
+            aria-hidden={isAdvancing}
+          >
             <div className="ps-tinder-actions" role="toolbar" aria-label="Photo actions">
               {/* Like Button */}
               {canLike && (
@@ -601,6 +617,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
                   type="button"
                   className={'ps-tinder-btn ps-btn-like' + (liked ? ' is-liked' : '')}
                   onClick={toggleLike}
+                  disabled={isAdvancing}
                   aria-pressed={Boolean(liked)}
                   aria-label={liked ? 'Unlike this photo' : 'Like this photo'}
                   title={liked ? 'Liked' : 'Like'}
@@ -615,7 +632,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
                   type="button"
                   className="ps-tinder-btn ps-btn-download"
                   onClick={() => galleryProps.onDownload(currentAsset.assetId, currentIndex)}
-                  disabled={galleryProps?.busy === currentAsset.assetId}
+                  disabled={isAdvancing || galleryProps?.busy === currentAsset.assetId}
                   aria-label="Download this photo"
                   title="Download photo"
                 >
