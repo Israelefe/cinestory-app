@@ -1,8 +1,8 @@
+// Migration-only Cloudinary access. Production media paths use Cloudflare R2.
+// This module remains isolated for the one-time media migration and old test fixtures.
 import { v2 as cloudinary } from 'cloudinary';
 
-function value(name) {
-  return String(process.env[name] || '').trim();
-}
+function value(name) { return String(process.env[name] || '').trim(); }
 
 export function configureCloudinary() {
   const cloudName = value('CLOUDINARY_CLOUD_NAME');
@@ -18,21 +18,13 @@ export function cloudinaryErrorStatus(error) {
 }
 
 export function safeProviderError(error) {
-  // SDK rejection objects can contain request authentication and signed URLs.
   return { status: cloudinaryErrorStatus(error), code: /^[A-Z0-9_]{1,80}$/.test(error?.code || '') ? error.code : 'PROVIDER_REQUEST_FAILED' };
 }
 
 export async function checkCloudinaryConnection() {
-  if (!configureCloudinary()) return { ok: false, reason: 'one or more Cloudinary environment values are missing' };
-  try {
-    await cloudinary.api.ping();
-    return { ok: true };
-  } catch (error) {
-    const reason = String(error?.message || error?.error?.message || 'Cloudinary rejected the connection')
-      .replace(/[A-Za-z0-9_-]{20,}/g, '[redacted]')
-      .slice(0, 180);
-    return { ok: false, reason };
-  }
+  if (!configureCloudinary()) return { ok: false, reason: 'migration credentials are missing' };
+  try { await cloudinary.api.ping(); return { ok: true }; }
+  catch { return { ok: false, reason: 'Cloudinary rejected the migration connection' }; }
 }
 
 export { cloudinary };

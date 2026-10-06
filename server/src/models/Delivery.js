@@ -12,7 +12,7 @@ const assetSchema = new mongoose.Schema({
   height: { type: Number, min: 1 },
   bytes: { type: Number, min: 0 },
   contentHash: { type: String, trim: true, maxlength: 200 },
-  hashAlgorithm: { type: String, enum: ['cloudinary-etag', 'sha256'] },
+  hashAlgorithm: { type: String, enum: ['cloudinary-etag', 'r2-etag', 'sha256'] },
   hashVerifiedAt: Date,
   originalFilename: { type: String, trim: true, maxlength: 180 },
   alt: { type: String, maxlength: 180 },

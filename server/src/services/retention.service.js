@@ -12,9 +12,10 @@ import User from '../models/User.js';
 import Subscription from '../models/Subscription.js';
 import Delivery from '../models/Delivery.js';
 import DeliveryPreviewFile from '../models/DeliveryPreviewFile.js';
+import PhotoStory from '../models/PhotoStory.js';
 import AnalyticsEvent from '../models/AnalyticsEvent.js';
 import { removeStorageAsset } from './storageMedia.service.js';
-import { cloudinary, configureCloudinary } from './cloudinary.service.js';
+import { deleteR2Object, deleteR2Prefix, listR2ObjectRecords, r2Configured } from './r2.service.js';
 import { recordWorkerHeartbeat } from './workerHeartbeat.service.js';
 import { recordAnalyticsEventAsync } from './analytics.service.js';
 import { sendProEndedEmail } from './email.service.js';
@@ -26,7 +27,7 @@ let lastRunAt = 0;
 
 export async function referencedMedia(ids, resourceType) {
   const referenced = new Set();
-  if (resourceType === 'image') {
+  if (resourceType === 'image' || resourceType === 'raw') {
     const [deliveries, stored, previews] = await Promise.all([
       Delivery.find({ 'assets.publicId': { $in: ids } }).select('assets.publicId').lean(),
       StorageAsset.find({ publicId: { $in: ids } }).select('publicId').lean(),
@@ -35,10 +36,10 @@ export async function referencedMedia(ids, resourceType) {
     for (const delivery of deliveries) for (const asset of delivery.assets) if (ids.includes(asset.publicId)) referenced.add(asset.publicId);
     for (const asset of stored) referenced.add(asset.publicId);
     for (const preview of previews) for (const variant of preview.variants || []) if (ids.includes(variant.publicId)) referenced.add(variant.publicId);
-  } else if (resourceType === 'raw') {
-    const stored = await StorageAsset.find({ rawPublicId: { $in: ids } }).select('rawPublicId').lean();
-    for (const asset of stored) if (asset.rawPublicId) referenced.add(asset.rawPublicId);
-  } else {
+    const storedRaw = await StorageAsset.find({ rawPublicId: { $in: ids } }).select('rawPublicId').lean();
+    for (const asset of storedRaw) if (asset.rawPublicId) referenced.add(asset.rawPublicId);
+  }
+  if (resourceType !== 'raw') {
     const deliveries = await Delivery.find({ $or: [
       { 'soundtrack.publicId': { $in: ids } }, { 'narration.publicId': { $in: ids } },
       { 'narration.opening.publicId': { $in: ids } }, { 'narration.closing.publicId': { $in: ids } }
@@ -49,27 +50,25 @@ export async function referencedMedia(ids, resourceType) {
       if (delivery.narration?.opening?.publicId) referenced.add(delivery.narration.opening.publicId);
       if (delivery.narration?.closing?.publicId) referenced.add(delivery.narration.closing.publicId);
     }
+    const stories = await PhotoStory.find({ $or: [{ 'photos.storageKey': { $in: ids } }, { 'soundtrack.storageKey': { $in: ids } }] }).select('photos.storageKey soundtrack.storageKey').lean();
+    for (const story of stories) {
+      for (const photo of story.photos || []) if (photo.storageKey) referenced.add(photo.storageKey);
+      if (story.soundtrack?.storageKey) referenced.add(story.soundtrack.storageKey);
+    }
   }
   return referenced;
 }
 
 async function purgeOrphanedUploads(now, orphanUploadHours = 2) {
-  if (!configureCloudinary()) return;
+  if (!r2Configured()) return;
   const cutoff = now.getTime() - Math.max(1, Number(orphanUploadHours) || 2) * 60 * 60 * 1000;
-  for (const resourceType of ['image', 'video', 'raw']) {
-    let nextCursor;
-    let pages = 0;
-    do {
-      const page = await cloudinary.api.resources({ resource_type: resourceType, type: 'authenticated', prefix: 'veylo/users/', max_results: 500, ...(nextCursor ? { next_cursor: nextCursor } : {}) });
-      const candidates = (page.resources || []).filter(resource => new Date(resource.created_at).getTime() <= cutoff).map(resource => resource.public_id);
-      if (candidates.length) {
-        const referenced = await referencedMedia(candidates, resourceType);
-        const orphaned = candidates.filter(id => !referenced.has(id));
-        for (let offset = 0; offset < orphaned.length; offset += 100) await cloudinary.api.delete_resources(orphaned.slice(offset, offset + 100), { resource_type: resourceType, type: 'authenticated', invalidate: true });
-      }
-      nextCursor = page.next_cursor;
-      pages += 1;
-    } while (nextCursor && pages < 20);
+  const oldObjects = (await listR2ObjectRecords('veylo/users/', { maxObjects: 20_000 })).filter(object => object.lastModified && new Date(object.lastModified).getTime() <= cutoff);
+  const roots = [...new Set(oldObjects.map(object => object.key.includes('.__veylo/') ? object.key.split('.__veylo/')[0] : object.key))];
+  for (let offset = 0; offset < roots.length; offset += 200) {
+    const chunk = roots.slice(offset, offset + 200);
+    const referenced = await referencedMedia(chunk, 'image');
+    const orphanRoots = chunk.filter(key => !referenced.has(key));
+    for (const key of orphanRoots) await Promise.all([deleteR2Object(key), deleteR2Prefix(`${key}.__veylo/`)]);
   }
 }
 
@@ -144,7 +143,7 @@ export async function purgeExpiredProData(now = new Date()) {
           if (!publicId) continue;
           await removeStorageAsset(publicId, resourceType).catch(error => {
             recordAnalyticsEventAsync({ name: 'storage.delete.failed', source: 'system', actorType: 'system', userId: user._id, status: 'failed', errorCode: error.code || 'RETENTION_LIBRARY_DELETE_FAILED', metadata: { surface: 'retention', publicId: String(publicId).slice(0, 180), resourceType } });
-            console.error('[retention/cloudinary]', error.http_code || error.message);
+            console.error('[retention/r2]', error.code || error.message);
           });
         }
       }

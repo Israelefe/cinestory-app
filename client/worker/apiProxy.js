@@ -45,7 +45,7 @@ export async function handleApiProxy(request, env) {
   const init = {
     method: request.method,
     headers,
-    // Downloads hand the browser a 3xx to a signed Cloudinary URL. Letting the
+    // Downloads hand the browser a 3xx to a signed object-storage URL. Letting the
     // edge follow it would hide that Location from the client.
     redirect: 'manual',
     signal: request.signal

@@ -21,9 +21,9 @@ Create a Managed widget for the production and local development hostnames. Use 
 
 Create a Web OAuth client. Add the exact production and local frontend origins to Authorized JavaScript origins. Use the same client ID for `GOOGLE_CLIENT_ID` and `VITE_GOOGLE_CLIENT_ID`. The client secret is not needed for the ID-token button flow used here.
 
-## Cloudinary
+## Cloudflare R2
 
-Configure `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` and `CLOUDINARY_API_SECRET` on the server. Studio images pass through the authenticated API, accept only JPEG, PNG or WebP, and are limited to 5 MB. Do not place the Cloudinary API secret in Vite variables.
+Create a private R2 bucket and a bucket-scoped S3 API token. Configure `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and `R2_BUCKET_NAME` on the server. Keep the bucket private; Veylo serves profile images through the API and signs private media requests. Never put the access key or secret in Vite variables. See [the R2 storage setup](server/docs/r2-storage-setup.md) for the bucket CORS policy and one-time move from Cloudinary.
 
 ## Application secrets and cookies
 

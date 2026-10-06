@@ -1,6 +1,8 @@
 import api from '../services/api.js';
+import { uploadR2Object } from './r2Upload.js';
 
 const RAW_FORMATS = new Set(['arw', 'cr2', 'cr3', 'dng', 'nef', 'nrw', 'orf', 'rw2', 'raf', 'pef', 'srw', '3fr', 'iiq', 'mos', 'mef', 'mrw', 'rwl', 'x3f']);
+const MAX_LIBRARY_FILE_BYTES = 100 * 1024 * 1024;
 
 function extension(filename = '') {
   return String(filename).split('.').pop()?.toLowerCase() || '';
@@ -57,22 +59,8 @@ async function makeRawPreview(file) {
 }
 
 async function uploadOne(file, signature) {
-  const form = new FormData();
-  form.append('file', file);
-  form.append('api_key', signature.apiKey);
-  form.append('timestamp', signature.timestamp);
-  form.append('signature', signature.signature);
-  form.append('folder', signature.folder);
-  form.append('public_id', signature.public_id);
-  form.append('type', signature.type);
-  form.append('overwrite', String(signature.overwrite));
-  form.append('unique_filename', String(signature.unique_filename));
-  if (signature.allowed_formats) form.append('allowed_formats', signature.allowed_formats.join(','));
-  if (signature.eager) form.append('eager', signature.eager);
-  const response = await fetch(`https://api.cloudinary.com/v1_1/${signature.cloudName}/${signature.resourceType || 'image'}/upload`, { method: 'POST', body: form });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result?.error?.message || `Upload failed for ${file.name}.`);
-  return result;
+  if (file.size > MAX_LIBRARY_FILE_BYTES) throw new Error(`${file.name} is over the 100 MB upload limit. Choose a smaller file and try again.`);
+  return uploadR2Object(signature, file);
 }
 
 export async function uploadLibraryPhotos(files, { folder = 'All photographs', onProgress = () => {} } = {}) {
@@ -86,9 +74,11 @@ export async function uploadLibraryPhotos(files, { folder = 'All photographs', o
       try {
         if (isRawPhoto(file)) {
           const preview = await makeRawPreview(file);
+          if (file.size > MAX_LIBRARY_FILE_BYTES) throw new Error('This camera file is over the 100 MB upload limit. Choose a smaller file or use a camera JPEG.');
+          if (preview.size > MAX_LIBRARY_FILE_BYTES) throw new Error('The JPEG preview made from this camera file is over the 100 MB limit. Try a smaller RAW file or use a camera JPEG.');
           const [rawSignature, imageSignature] = await Promise.all([
             api.post('/v1/storage/uploads/sign', { resourceType: 'raw', format: extension(file.name) }),
-            api.post('/v1/storage/uploads/sign', { resourceType: 'image' })
+            api.post('/v1/storage/uploads/sign', { resourceType: 'image', contentType: preview.type })
           ]);
           const uploads = await Promise.allSettled([
             uploadOne(file, rawSignature.data.data),
@@ -99,15 +89,14 @@ export async function uploadLibraryPhotos(files, { folder = 'All photographs', o
           const failed = uploads.find(result => result.status === 'rejected');
           if (failed) throw failed.reason;
         } else {
-          const signResponse = await api.post('/v1/storage/uploads/sign', { resourceType: 'image' });
+          const signResponse = await api.post('/v1/storage/uploads/sign', { resourceType: 'image', contentType: file.type });
           uploadedImage = await uploadOne(file, signResponse.data.data);
         }
         onProgress(Math.round(((index + 0.8) / files.length) * 100), `Saving ${file.name}`);
         const response = await api.post('/v1/storage/uploads/confirm', {
-          publicId: uploadedImage.public_id,
-          version: uploadedImage.version,
-          signature: uploadedImage.signature,
-          ...(uploadedRaw ? { rawOriginal: { publicId: uploadedRaw.public_id, version: uploadedRaw.version, signature: uploadedRaw.signature } } : {}),
+          objectKey: uploadedImage.objectKey,
+          uploadToken: uploadedImage.uploadToken,
+          ...(uploadedRaw ? { rawOriginal: { objectKey: uploadedRaw.objectKey, uploadToken: uploadedRaw.uploadToken, format: extension(file.name), resourceType: 'raw' } } : {}),
           originalFilename: file.name,
           folder,
           tags: []
@@ -115,8 +104,8 @@ export async function uploadLibraryPhotos(files, { folder = 'All photographs', o
         completed.push(response.data.data);
       } catch (error) {
         const cleanup = [
-          ...(uploadedImage ? [{ publicId: uploadedImage.public_id, resourceType: 'image' }] : []),
-          ...(uploadedRaw ? [{ publicId: uploadedRaw.public_id, resourceType: 'raw' }] : [])
+          ...(uploadedImage ? [{ publicId: uploadedImage.objectKey, resourceType: 'image' }] : []),
+          ...(uploadedRaw ? [{ publicId: uploadedRaw.objectKey, resourceType: 'raw' }] : [])
         ];
         if (cleanup.length) await api.post('/v1/storage/uploads/cleanup', { uploads: cleanup }).catch(() => {});
         throw error;
@@ -131,17 +120,16 @@ export async function uploadLibraryPhotos(files, { folder = 'All photographs', o
 }
 
 export async function uploadEditorReturn(file, sourceAssetId, token, publicId) {
-  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 100 * 1024 * 1024) {
-    throw new Error('Choose a JPEG, PNG, or WebP edit no larger than 100 MB.');
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > MAX_LIBRARY_FILE_BYTES) {
+    throw new Error('Choose a JPEG, PNG, or WebP edit that is 100 MB or smaller.');
   }
   const headers = { Authorization: `Bearer ${token}` };
   const endpoint = `/v1/storage/public/${encodeURIComponent(publicId)}/uploads`;
-  const signResponse = await api.post(`${endpoint}/sign`, { sourceAssetId }, { headers });
+  const signResponse = await api.post(`${endpoint}/sign`, { sourceAssetId, contentType: file.type }, { headers });
   const uploaded = await uploadOne(file, signResponse.data.data);
   const response = await api.post(`${endpoint}/confirm`, {
-    publicId: uploaded.public_id,
-    version: uploaded.version,
-    signature: uploaded.signature,
+    objectKey: uploaded.objectKey,
+    uploadToken: uploaded.uploadToken,
     sourceAssetId,
     originalFilename: file.name
   }, { headers });

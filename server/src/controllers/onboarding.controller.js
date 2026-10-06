@@ -1,9 +1,11 @@
+import crypto from 'node:crypto';
 import { z } from 'zod';
 import { isStudioNameDuplicate, studioNameSchema, studioNameTaken } from '../utils/studioName.js';
 import { studioNameAvailable, studioNameUnavailable } from '../services/studioName.service.js';
 import User from '../models/User.js';
 import { publicUser } from '../utils/auth.js';
-import { cloudinary, configureCloudinary } from '../services/cloudinary.service.js';
+import { deleteR2Object, deleteR2Prefix, prepareR2Image, putR2Object, r2Configured } from '../services/r2.service.js';
+import { signedImageUrl } from '../services/deliveryMedia.service.js';
 import { STUDIO_NAME_CHANGE_COOLDOWN_MS, isoDate, nextChangeAt } from '../constants/profilePolicy.js';
 
 const specialties = ['Portraits', 'Weddings', 'Birthdays', 'Fashion and editorial', 'Commercial and branding', 'Maternity', 'Graduation', 'Events', 'Other'];
@@ -114,21 +116,45 @@ function isSupportedImage(file) {
 export async function uploadStudioLogo(req, res) {
   try {
     if (!isSupportedImage(req.file)) return res.status(400).json({ success: false, message: 'Choose a JPEG, PNG or WebP image.' });
-    if (!configureCloudinary()) return res.status(503).json({ success: false, code: 'UPLOAD_CONFIGURATION_ERROR', message: 'Veylo could not connect to image storage. Please try again shortly.' });
+    if (!r2Configured()) return res.status(503).json({ success: false, code: 'UPLOAD_CONFIGURATION_ERROR', message: 'Veylo could not connect to image storage. Please try again shortly.' });
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
-    const uploaded = await new Promise((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream({ folder: `veylo/studios/${req.user.id}`, public_id: 'profile', overwrite: true, invalidate: true, resource_type: 'image', transformation: [{ width: 900, height: 900, crop: 'limit', quality: 'auto:good' }] }, (error, result) => error ? reject(error) : resolve(result));
-      stream.end(req.file.buffer);
-    });
-    user.studio.logoUrl = uploaded.secure_url;
-    user.studio.logoPublicId = uploaded.public_id;
-    user.avatar = uploaded.secure_url;
+    const oldKeys = [...new Set([user.studio?.logoPublicId, user.avatarPublicId].filter(Boolean))];
+    const key = `veylo/studios/${user._id}/profile/${crypto.randomUUID()}`;
+    await putR2Object(key, req.file.buffer, { contentType: req.file.mimetype });
+    await prepareR2Image(key);
+    const publicUrl = `/api/v1/onboarding/public-logo/${user._id}`;
+    const avatarUrl = `/api/v1/onboarding/public-avatar/${user._id}`;
+    user.studio.logoUrl = publicUrl;
+    user.studio.logoPublicId = key;
+    user.avatarPublicId = key;
+    user.avatar = avatarUrl;
     await user.save();
-    res.json({ success: true, user: publicUser(user), url: uploaded.secure_url });
+    for (const oldKey of oldKeys) if (oldKey !== key) void Promise.all([deleteR2Prefix(`${oldKey}.__veylo/`), deleteR2Object(oldKey)]).catch(() => {});
+    res.json({ success: true, user: publicUser(user), url: publicUrl });
   } catch (error) {
-    console.error('[onboarding/logo]', error.http_code || error.name || 'upload_error', error.message);
-    const unavailable = [401, 403].includes(Number(error.http_code));
+    console.error('[onboarding/logo]', error.code || error.name || 'upload_error', error.message);
+    const unavailable = error.code === 'R2_NOT_CONFIGURED';
     res.status(unavailable ? 503 : 502).json({ success: false, code: unavailable ? 'UPLOAD_CONFIGURATION_ERROR' : 'IMAGE_UPLOAD_FAILED', message: unavailable ? 'Veylo could not connect to image storage. Please try again shortly.' : 'That image could not be processed. Try a different JPEG, PNG or WebP file.' });
   }
+}
+
+export async function getPublicStudioLogo(req, res) {
+  try {
+    const user = await User.findById(req.params.userId).select('studio.logoPublicId').lean();
+    const key = user?.studio?.logoPublicId;
+    if (!key || !String(key).startsWith(`veylo/studios/${req.params.userId}/`)) return res.status(404).end();
+    res.set({ 'Cache-Control': 'public, max-age=300, stale-while-revalidate=600', 'X-Content-Type-Options': 'nosniff' });
+    res.redirect(302, signedImageUrl(key, { width: 800 }));
+  } catch { res.status(502).end(); }
+}
+
+export async function getPublicStudioAvatar(req, res) {
+  try {
+    const user = await User.findById(req.params.userId).select('avatarPublicId studio.logoPublicId').lean();
+    const key = user?.avatarPublicId || user?.studio?.logoPublicId;
+    if (!key || !String(key).startsWith(`veylo/studios/${req.params.userId}/`)) return res.status(404).end();
+    res.set({ 'Cache-Control': 'public, max-age=300, stale-while-revalidate=600', 'X-Content-Type-Options': 'nosniff' });
+    res.redirect(302, signedImageUrl(key, { width: 800 }));
+  } catch { res.status(502).end(); }
 }

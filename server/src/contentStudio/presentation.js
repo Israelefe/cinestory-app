@@ -7,7 +7,7 @@ export function compositionProps(project, version, format = 'video', sceneIndex 
     asset.id,
     {
       id: asset.id,
-      src: asset.url || mediaUrl(asset.publicId),
+      src: mediaUrl(asset.publicId) || asset.url,
       localPath: asset.localPath,
       kind: asset.kind,
       slotId: asset.slotId,
@@ -18,8 +18,8 @@ export function compositionProps(project, version, format = 'video', sceneIndex 
 
   const customMusic = project.assets.find(a => a.kind === 'music');
   const musicSrc = customMusic
-    ? (customMusic.url || mediaUrl(customMusic.publicId))
-    : (version.music ? (version.music.url || mediaUrl(version.music.publicId, { resourceType: 'video', format: 'wav' })) : null);
+    ? (mediaUrl(customMusic.publicId, { resourceType: 'video', format: 'mp3' }) || customMusic.url)
+    : (version.music ? (mediaUrl(version.music.publicId, { resourceType: 'video', format: 'wav' }) || version.music.url) : null);
 
   return {
     plan: version.plan,
@@ -31,14 +31,14 @@ export function compositionProps(project, version, format = 'video', sceneIndex 
     voice: Object.fromEntries(Object.entries(version.brief.narration ? version.voice || {} : {}).map(([id, value]) => [
       id,
       {
-        src: value.url || mediaUrl(value.publicId, { resourceType: 'video', format: 'mp3' }),
+        src: mediaUrl(value.publicId, { resourceType: 'video', format: 'mp3' }) || value.url,
         localPath: value.localPath,
         duration: value.duration,
         words: value.words || []
       }
     ])),
     music: musicSrc ? { src: musicSrc, bpm: version.music?.bpm || 108 } : null,
-    effect: version.effect ? (version.effect.url || mediaUrl(version.effect.publicId, { resourceType: 'video', format: 'wav' })) : null,
+    effect: version.effect ? (mediaUrl(version.effect.publicId, { resourceType: 'video', format: 'wav' }) || version.effect.url) : null,
     still: format !== 'video',
     reducedMotion: false
   };
@@ -60,7 +60,7 @@ export function presentProject(project) {
       slotId: asset.slotId,
       width: asset.width,
       height: asset.height,
-      url: asset.url || mediaUrl(asset.publicId),
+      url: mediaUrl(asset.publicId) || asset.url,
       localPath: asset.localPath,
       analysis: asset.analysis
     })),
@@ -82,7 +82,7 @@ export function presentProject(project) {
       outputs: (version.outputs || []).map(output => ({
         ...output,
         publicId: undefined,
-        url: output.url || (output.publicId ? mediaUrl(output.publicId, { resourceType: output.format === 'video' ? 'video' : 'image', format: output.format === 'video' ? 'mp4' : 'png' }) : undefined),
+        url: output.publicId ? mediaUrl(output.publicId, { resourceType: output.format === 'video' ? 'video' : 'image', format: output.format === 'video' ? 'mp4' : 'png' }) : output.url,
         localPath: output.localPath,
         filename: output.filename,
         exportFolder: output.exportFolder

@@ -25,7 +25,7 @@ try {
   console.info('  Connected to database. Listening for Content Studio render jobs…');
   console.info(`  Rendered MP4 videos & graphics will save directly to your PC:`);
   console.info(`  -> ${exportsPath}`);
-  console.info('  (Zero Cloudinary storage is used for exported files)');
+  console.info('  Campaign media uses Cloudflare R2; final exports are saved to this PC.');
   console.info('  Keep this window open while rendering. Press Ctrl+C to stop.');
   console.info('================================================================================\n');
 

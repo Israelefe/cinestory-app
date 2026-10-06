@@ -66,7 +66,7 @@ router.patch('/projects/:id', limited, action(async (req, res) => {
   res.json({ project: presentProject(project) });
 }));
 
-// Serve locally saved media directly without Cloudinary dependency
+// Serve files saved to this computer directly during local Content Studio use.
 router.get('/media/:projectId/:key(*)', (req, res) => {
   const filePath = path.join(localMediaDir, req.params.projectId, req.params.key);
   if (!fs.existsSync(filePath)) return res.status(404).send('Media not found');
@@ -119,7 +119,6 @@ router.post('/projects/:id/assets', limited, (req, res, next) => upload.single('
       slotId,
       name: req.file.originalname.replace(/[<>\u0000-\u001f]/g, '').slice(0, 120),
       publicId: uploaded.public_id,
-      url: uploaded.url || mediaUrl(uploaded.public_id),
       localPath: uploaded.filePath,
       width,
       height,

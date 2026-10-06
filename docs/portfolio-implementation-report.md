@@ -54,7 +54,7 @@ they do not represent a real studio's published content or measured mobile speed
 ## Release conditions
 
 Deploy the compatible server/portfolio worker before the new client and client
-Worker. Real Cloudinary media, WhatsApp/social share rendering, Resend delivery,
+Worker. Real R2 media requests, WhatsApp/social share rendering, Resend delivery,
 worker retries, public sitemap/crawler responses, and live access revocation
 still need staging verification. Measure mobile loading and image bytes before
 making performance claims. No real email delivery or production speed result is

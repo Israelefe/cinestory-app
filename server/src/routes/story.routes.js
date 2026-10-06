@@ -6,13 +6,18 @@ import {
   getPublicStory,
   getUserStories,
   trackDownload,
-  deleteStory
+  deleteStory,
+  signStoryUpload,
+  confirmStoryUpload,
+  streamStoryMedia
 } from '../controllers/story.controller.js';
 import { authMiddleware } from './auth.routes.js';
 
 const router = express.Router();
 
 // Public Viewer Endpoints
+router.get('/public/:storyId/photos/:photoId/:kind(media|thumbnail)', publicMediaLimit, streamStoryMedia);
+router.get('/public/:storyId/soundtrack', publicMediaLimit, streamStoryMedia);
 router.get('/public/:storyId', getPublicStory);
 router.post('/public/:storyId/track-download', trackDownload);
 
@@ -47,6 +52,8 @@ router.get('/proxy/audio-stream', publicMediaLimit, async (req, res) => {
 });
 
 // Creator Studio Endpoints
+router.post('/uploads/sign', authMiddleware, signStoryUpload);
+router.post('/uploads/confirm', authMiddleware, confirmStoryUpload);
 router.post('/ai-generate', authMiddleware, generateStoryWithAi);
 router.post('/', authMiddleware, createStory);
 router.get('/my-stories', authMiddleware, getUserStories);

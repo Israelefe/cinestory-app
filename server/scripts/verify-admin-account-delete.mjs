@@ -18,7 +18,7 @@ assert.match(adminRoutes, /router\.delete\('\/users\/:id', requireAdminRoles\('s
 assert.match(adminController, /confirmation !== 'DELETE'/, 'The server must require an explicit deletion confirmation.');
 assert.match(adminController, /account\.deletion_started/, 'Deletion attempts must be recorded before destructive work begins.');
 assert.match(adminController, /account\.deleted_by_admin/, 'Successful admin deletions must be audited.');
-assert.match(service, /cloudinary\.api\.delete_resources_by_prefix/, 'Account deletion must remove stored media.');
+assert.match(service, /deleteR2Prefix/, 'Account deletion must remove stored media from R2.');
 assert.match(service, /transactionUnsupported/, 'Account deletion must handle MongoDB deployments without replica-set transactions.');
 assert.match(service, /ACCOUNT_RECORD_CLEANUP_FAILED/, 'Account deletion must identify a failed cleanup stage safely.');
 assert.match(service, /DeliveryShareGrant\.js/, 'Account deletion must remove share grants.');

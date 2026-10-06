@@ -3,6 +3,7 @@ import { PLAN_DEFINITIONS } from '../config/plans.js';
 import { DELIVERY_SOUNDTRACKS } from '../constants/deliverySoundtracks.js';
 import { DEFAULT_NARRATION_VOICE_ID, NARRATION_VOICES } from '../constants/narrationVoices.js';
 import { modelProviderState } from './modelProvider.service.js';
+import { r2Configured } from './r2.service.js';
 
 export const FORMAT_IDS = Object.freeze(['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign']);
 export const FORMAT_LABELS = Object.freeze({
@@ -77,7 +78,7 @@ function providerState() {
     narration: { provider: 'Deepgram Flux', configured: Boolean(process.env.DEEPGRAM_API_KEY), defaultVoiceId: DEFAULT_NARRATION_VOICE_ID },
     email: { provider: 'Resend', configured: Boolean(process.env.RESEND_API_KEY), from: process.env.RESEND_FROM_EMAIL || 'Veylo <info@veylo.com.ng>' },
     billing: { provider: 'Paystack', configured: Boolean(process.env.PAYSTACK_SECRET_KEY && process.env.PAYSTACK_PRO_PLAN_CODE), enabled: process.env.BILLING_ENABLED === 'true' },
-    cloudinary: { provider: 'Cloudinary', configured: Boolean(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) }
+    r2: { provider: 'Cloudflare R2', configured: r2Configured() }
   };
 }
 

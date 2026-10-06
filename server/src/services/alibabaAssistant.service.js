@@ -47,11 +47,11 @@ function appearsSensitive(reply) {
   return [
     /mongodb(?:\+srv)?:\/\//i,
     /(?:postgres|mysql|redis):\/\//i,
-    /\b(?:JWT_SECRET|OTP_SECRET|ALIBABA_MODEL_STUDIO_API_KEY|GROQ_API_KEY|PAYSTACK_SECRET_KEY|CLOUDINARY_API_SECRET|RESEND_API_KEY)\b/i,
+    /\b(?:JWT_SECRET|OTP_SECRET|ALIBABA_MODEL_STUDIO_API_KEY|GROQ_API_KEY|PAYSTACK_SECRET_KEY|R2_SECRET_ACCESS_KEY|R2_ACCESS_KEY_ID|RESEND_API_KEY)\b/i,
     /-----BEGIN [A-Z ]+ PRIVATE KEY-----/i,
     /\b(?:bearer|access[_ -]?token|refresh[_ -]?token)\s*[:=]/i,
-    /https?:\/\/[^\s]*(?:res\.cloudinary|signature=|token=|expires=)/i,
-    /\b(?:Alibaba|Qwen|Groq|Deepgram|Cloudinary|Paystack|Resend)\b/i,
+    /https?:\/\/[^\s]*(?:r2\.cloudflarestorage|signature=|token=|expires=)/i,
+    /\b(?:Alibaba|Qwen|Groq|Deepgram|Cloudflare|Paystack|Resend)\b/i,
     /(?:process\.env|SELECT\s+.+\s+FROM\s+|mongoose|express\.js|node\.js)/i
   ].some(pattern => pattern.test(reply));
 }

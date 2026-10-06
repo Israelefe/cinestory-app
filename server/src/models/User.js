@@ -48,6 +48,7 @@ const userSchema = new mongoose.Schema({
   storageUsedBytes: { type: Number, default: 0, min: 0 },
   proRetentionUntil: Date,
   avatar: { type: String, trim: true },
+  avatarPublicId: { type: String, trim: true },
   studio: { type: studioSchema, default: () => ({}) },
   acquisition: { type: acquisitionSchema, default: () => ({}) },
   onboardingStep: { type: Number, default: 1, min: 1, max: 3 },

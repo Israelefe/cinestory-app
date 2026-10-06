@@ -23,6 +23,7 @@ const photoStorySchema = new mongoose.Schema({
     title: { type: String },
     artist: { type: String },
     audioUrl: { type: String, required: true },
+    storageKey: { type: String, trim: true },
     genre: { type: String, default: 'Cinematic Ambient' },
     durationSec: { type: Number, default: 120 }
   },
@@ -31,6 +32,7 @@ const photoStorySchema = new mongoose.Schema({
       id: { type: String },
       url: { type: String, required: true },
       thumbnailUrl: { type: String },
+      storageKey: { type: String, trim: true },
       chapterTitle: { type: String, default: 'The Moment' },
       caption: { type: String, default: '' },
       typographyStyle: { type: String, default: 'typewriter' },

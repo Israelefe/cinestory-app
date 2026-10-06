@@ -1,31 +1,7 @@
 import api from '../services/api.js';
+import { uploadR2Object } from './r2Upload.js';
 
 const MAX_SIMULTANEOUS_PHOTO_UPLOADS = 6;
-
-function transfer(url, fields, file, onProgress) {
-  return new Promise((resolve, reject) => {
-    const request = new XMLHttpRequest();
-    const form = new FormData();
-    form.append('file', file);
-    form.append('api_key', fields.apiKey);
-    ['timestamp', 'signature', 'folder', 'public_id', 'type', 'overwrite', 'unique_filename', 'allowed_formats', 'eager'].forEach(key => {
-      const value = fields[key];
-      if (value !== undefined && value !== null) form.append(key, Array.isArray(value) ? value.join(',') : String(value));
-    });
-    request.open('POST', url);
-    request.responseType = 'json';
-    request.timeout = 120000;
-    request.upload.onprogress = event => { if (event.lengthComputable) onProgress(event.loaded); };
-    request.onerror = () => reject(new Error('The upload connection was interrupted.'));
-    request.ontimeout = () => reject(new Error('The upload took too long.'));
-    request.onload = () => {
-      const data = request.response || {};
-      if (request.status < 200 || request.status >= 300) reject(new Error(data.error?.message || 'The photograph did not upload.'));
-      else resolve(data);
-    };
-    request.send(form);
-  });
-}
 
 export async function uploadDeliveryPhotosV3(deliveryId, files, onProgress = () => {}) {
   const outcomes = new Array(files.length);
@@ -47,10 +23,10 @@ export async function uploadDeliveryPhotosV3(deliveryId, files, onProgress = () 
           let payload;
           let signature;
           if (attempt === 0) {
-            const signed = await api.post('/v1/deliveries/' + deliveryId + '/uploads/sign', { uploadId });
+            const signed = await api.post('/v1/deliveries/' + deliveryId + '/uploads/sign', { uploadId, contentType: file.type });
             signature = signed.data.data;
           } else {
-            const recovered = await api.post('/v1/deliveries/' + deliveryId + '/uploads/recover', { uploadId });
+            const recovered = await api.post('/v1/deliveries/' + deliveryId + '/uploads/recover', { uploadId, contentType: file.type });
             if (recovered.data.data.asset) {
               outcomes[index] = { file, asset: recovered.data.data.asset };
               report(index, file.size, 'complete');
@@ -59,8 +35,8 @@ export async function uploadDeliveryPhotosV3(deliveryId, files, onProgress = () 
             payload = recovered.data.data.uploaded;
             signature = recovered.data.data.signature;
           }
-          if (!payload) payload = await transfer('https://api.cloudinary.com/v1_1/' + signature.cloudName + '/image/upload', signature, file, amount => report(index, Math.min(amount, file.size * .98), 'uploading'));
-          const confirmed = await api.post('/v1/deliveries/' + deliveryId + '/uploads/confirm', { publicId: payload.public_id, version: payload.version, signature: payload.signature, resourceType: 'image', originalFilename: file.name, uploadId });
+          if (!payload) payload = await uploadR2Object(signature, file, amount => report(index, Math.min(amount, file.size * .98), 'uploading'));
+          const confirmed = await api.post('/v1/deliveries/' + deliveryId + '/uploads/confirm', { objectKey: payload.objectKey || payload.public_id || signature.objectKey, uploadToken: signature.uploadToken, resourceType: 'image', originalFilename: file.name, uploadId });
           outcomes[index] = { file, asset: confirmed.data.data };
           report(index, file.size, 'complete');
           break;

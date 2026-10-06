@@ -1,6 +1,6 @@
-import { Readable } from 'stream';
-import { cloudinary, configureCloudinary } from './cloudinary.service.js';
-import { deliveryFolder } from './deliveryMedia.service.js';
+import crypto from 'node:crypto';
+import { removeDeliveryAudio, deliveryFolder } from './deliveryMedia.service.js';
+import { putR2Object, r2Configured } from './r2.service.js';
 import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID, narrationVoice } from '../constants/narrationVoices.js';
 
 // V3 reads only the opening and closing. Legacy narration helpers remain below.
@@ -85,17 +85,10 @@ export function captionSegments(delivery) {
 }
 
 async function uploadAudio(buffer, delivery) {
-  if (!configureCloudinary()) throw Object.assign(new Error('Cloudinary is not configured for narration.'), { code: 'NARRATION_STORAGE_UNAVAILABLE' });
-  return new Promise((resolve, reject) => {
-    const upload = cloudinary.uploader.upload_stream({
-      resource_type: 'video',
-      type: 'authenticated',
-      folder: `${deliveryFolder(delivery.userId, delivery._id)}/narration`,
-      format: 'mp3',
-      overwrite: false
-    }, (error, result) => error ? reject(error) : resolve(result));
-    Readable.from(buffer).pipe(upload);
-  });
+  if (!r2Configured()) throw Object.assign(new Error('Image storage is unavailable for narration.'), { code: 'NARRATION_STORAGE_UNAVAILABLE', status: 503 });
+  const publicId = `${deliveryFolder(delivery.userId, delivery._id)}/narration/${crypto.randomUUID()}`;
+  const uploaded = await putR2Object(publicId, buffer, { contentType: 'audio/mpeg' });
+  return { public_id: publicId, bytes: uploaded.bytes, format: 'mp3', etag: uploaded.etag, hashAlgorithm: uploaded.etag ? 'r2-etag' : undefined };
 }
 
 async function synthesize({ apiKey, text, voiceId = DEFAULT_NARRATION_VOICE_ID, speed = VOICE_SETTINGS.speed }) {
@@ -165,7 +158,7 @@ export async function synthesizeV3Bookends(delivery, { voiceId = DEFAULT_NARRATI
     }
     return { voiceId: voice.id, voiceName: voice.name, renderVersion: NARRATION_BOOKEND_RENDER_VERSION, opening: uploaded[0], closing: uploaded[1] };
   } catch (error) {
-    await Promise.all(uploaded.map(item => cloudinary.uploader.destroy(item.publicId, { resource_type: 'video', type: 'authenticated' }).catch(() => {})));
+    await Promise.all(uploaded.map(item => removeDeliveryAudio(item.publicId).catch(() => {})));
     throw error;
   }
 }
@@ -387,7 +380,7 @@ export async function generateNarration(delivery, { voiceId = DEFAULT_NARRATION_
     format: uploaded.format,
     bytes: uploaded.bytes,
     contentHash: uploaded.etag || undefined,
-    hashAlgorithm: uploaded.etag ? 'cloudinary-etag' : undefined,
+    hashAlgorithm: uploaded.hashAlgorithm,
     hashVerifiedAt: uploaded.etag ? new Date() : undefined,
     duration,
     transcript,

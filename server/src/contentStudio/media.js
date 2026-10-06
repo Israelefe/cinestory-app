@@ -1,40 +1,37 @@
 import { Readable } from 'node:stream';
 import sharp from 'sharp';
-import { cloudinary, configureCloudinary } from '../services/cloudinary.service.js';
-
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { deleteR2Object, deleteR2Prefix, imageVariantKey, prepareR2Image, presignedR2Get, putR2Object, r2Configured } from '../services/r2.service.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 export const localMediaDir = path.resolve(root, '.runtime/content-studio/media');
 
 export function studioError(message, status = 400) { return Object.assign(new Error(message), { status, safe: true }); }
-export function requireStorage() { return true; }
+export function requireStorage() { return r2Configured(); }
 
 export async function saveLocalMedia(source, { projectId, key, format = 'png' }) {
   const dir = path.join(localMediaDir, String(projectId), path.dirname(key));
   await fs.mkdir(dir, { recursive: true });
   const filename = `${path.basename(key)}.${format}`;
   const filePath = path.join(dir, filename);
-  let buffer;
-  if (Buffer.isBuffer(source)) {
-    buffer = source;
-  } else if (typeof source === 'string') {
-    buffer = await fs.readFile(source);
-  } else {
-    const chunks = [];
-    for await (const chunk of source) chunks.push(chunk);
-    buffer = Buffer.concat(chunks);
-  }
+  const buffer = await sourceBuffer(source);
   await fs.writeFile(filePath, buffer);
-  return {
-    filePath,
-    filename,
-    public_id: `local:${projectId}/${key}.${format}`,
-    bytes: buffer.byteLength,
-    url: `/api/v1/admin/content-studio/media/${projectId}/${key}.${format}`
-  };
+  return { filePath, filename, public_id: `local:${projectId}/${key}.${format}`, bytes: buffer.byteLength, url: `/api/v1/admin/content-studio/media/${projectId}/${key}.${format}` };
+}
+
+async function sourceBuffer(source, maxBytes = 500 * 1024 * 1024) {
+  if (Buffer.isBuffer(source)) return source;
+  if (typeof source === 'string') return fs.readFile(source);
+  const chunks = [];
+  let bytes = 0;
+  for await (const chunk of source instanceof Readable ? source : Readable.from(source)) {
+    bytes += chunk.length;
+    if (bytes > maxBytes) throw studioError('This file is too large to store.', 413);
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks, bytes);
 }
 
 export async function normalizeImage(buffer) {
@@ -46,51 +43,47 @@ export async function normalizeImage(buffer) {
   return { buffer: data, width: info.width, height: info.height };
 }
 
+function contentTypeFor(resourceType, format) {
+  if (resourceType === 'image') return ({ jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' })[format] || 'image/png';
+  return ({ mp3: 'audio/mpeg', wav: 'audio/wav', mp4: 'video/mp4', webm: 'video/webm', aac: 'audio/aac', ogg: 'audio/ogg', m4a: 'audio/mp4', flac: 'audio/flac' })[format] || 'application/octet-stream';
+}
+
 export async function uploadMedia(source, { projectId, key, resourceType = 'image', format = 'png' }) {
-  const hasCloudinary = configureCloudinary();
-  if (!hasCloudinary || process.env.CONTENT_STORAGE_LOCAL === 'true') {
-    return saveLocalMedia(source, { projectId, key, format });
-  }
-  try {
-    const options = { resource_type: resourceType, type: 'authenticated', public_id: `veylo/content-studio/${projectId}/${key}`, overwrite: true, invalidate: true, format, timeout: 120_000 };
-    if (typeof source === 'string') return await cloudinary.uploader.upload(source, options);
-    return await new Promise((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(options, (error, result) => error ? reject(error) : resolve(result));
-      Readable.from(source).pipe(stream);
-    });
-  } catch (error) {
-    // Graceful fallback to local PC storage if Cloudinary rejects
-    return saveLocalMedia(source, { projectId, key, format });
-  }
+  if (process.env.CONTENT_STORAGE_LOCAL === 'true') return saveLocalMedia(source, { projectId, key, format });
+  if (!r2Configured()) throw studioError('Image storage is temporarily unavailable.', 503);
+  const buffer = await sourceBuffer(source);
+  const objectKey = `veylo/content-studio/${projectId}/${key}`;
+  const contentType = contentTypeFor(resourceType, format);
+  const uploaded = await putR2Object(objectKey, buffer, { contentType });
+  let image = {};
+  if (resourceType === 'image') image = await prepareR2Image(objectKey);
+  return {
+    public_id: objectKey,
+    bytes: uploaded.bytes,
+    format,
+    width: image.width,
+    height: image.height,
+    etag: uploaded.etag,
+    url: mediaUrl(objectKey, { resourceType, format })
+  };
 }
 
 export function mediaUrl(publicId, { resourceType = 'image', format = 'png', download = false } = {}) {
   if (!publicId) return '';
-  if (publicId.startsWith('http://') || publicId.startsWith('https://') || publicId.startsWith('/') || publicId.startsWith('data:')) {
-    return publicId;
-  }
-  if (publicId.startsWith('local:')) {
-    const clean = publicId.replace(/^local:/, '');
+  if (String(publicId).startsWith('local:')) {
+    const clean = String(publicId).replace(/^local:/, '');
     return `/api/v1/admin/content-studio/media/${clean}`;
   }
-  if (!configureCloudinary()) {
-    return `/api/v1/admin/content-studio/media/${publicId}`;
-  }
-  try {
-    return cloudinary.url(publicId, { secure: true, resource_type: resourceType, type: 'authenticated', sign_url: true, format, ...(download ? { flags: 'attachment' } : {}) });
-  } catch {
-    return `/api/v1/admin/content-studio/media/${publicId}`;
-  }
+  if (/^https:\/\//i.test(String(publicId))) return publicId;
+  const filename = `${String(publicId).split('/').at(-1) || 'media'}.${format}`;
+  const key = resourceType === 'image' && !download ? imageVariantKey(publicId, '1600') : publicId;
+  return presignedR2Get(key, { downloadFilename: download ? filename : '', expiresIn: 6 * 60 * 60 });
 }
 
 export async function removeImage(publicId) {
-  if (publicId?.startsWith('local:')) return true;
-  if (!configureCloudinary()) return true;
-  try {
-    return await cloudinary.uploader.destroy(publicId, { resource_type: 'image', type: 'authenticated', invalidate: true });
-  } catch {
-    return true;
-  }
+  if (!publicId || String(publicId).startsWith('local:') || /^https?:\/\//i.test(String(publicId))) return true;
+  await Promise.all([deleteR2Object(publicId), deleteR2Prefix(`${publicId}.__veylo/`)]);
+  return true;
 }
 
 // Only provider-owned object storage can be fetched. Redirects cannot bypass this list.

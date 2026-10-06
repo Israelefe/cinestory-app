@@ -2,7 +2,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
-import { ArrowLeft, ChevronLeft, ChevronRight, Download, ExternalLink, Heart, Image as ImageIcon, LoaderCircle, X } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, Heart, Image as ImageIcon, LoaderCircle, X } from 'lucide-react';
 import { Photo } from '../PublicDesign.jsx';
 import { useDialogFocus } from '../useDialogFocus.js';
 import { trackEvent } from '../../services/analytics.js';
@@ -34,7 +34,7 @@ function LightboxPhoto({ photo, sourceUrl, alt }) {
   return <img className="client-gallery-lightbox-main" src={source === 'thumbnail' ? fallback : photo?.url || sourceUrl} srcSet={source === 'responsive' ? photo?.srcSet : undefined} sizes="(max-width: 640px) 94vw, (max-width: 1024px) 86vw, 1080px" alt={alt} draggable="false" onError={handleError} />;
 }
 
-export default function ClientGallery({ photos: collectionPhotos = [], singlePhoto = false, title = 'Your photographs', eyebrow = 'The complete collection', onClose, initialIndex = null, liked, onLike, onDownload, onOpenOriginal, onDownloadAll, busy, downloading = null, allDownloading = false, downloadNotice = '', downloadProgress = null, delivery, demoId, fontStyles }) {
+export default function ClientGallery({ photos: collectionPhotos = [], singlePhoto = false, title = 'Your photographs', eyebrow = 'The complete collection', onClose, initialIndex = null, liked, onLike, onDownload, onDownloadAll, busy, downloading = null, allDownloading = false, downloadNotice = '', downloadProgress = null, delivery, demoId, fontStyles }) {
   const photos = useMemo(() => singlePhoto ? collectionPhotos.slice(initialIndex, initialIndex + 1) : collectionPhotos, [collectionPhotos, singlePhoto, initialIndex]);
   const originalIndex = index => singlePhoto ? initialIndex : index;
   const photographNumber = index => originalIndex(index) + 1;
@@ -52,8 +52,6 @@ export default function ClientGallery({ photos: collectionPhotos = [], singlePho
   const [favouritesOnly, setFavouritesOnly] = useState(false);
   const [groupId, setGroupId] = useState('all');
   const [ratios, setRatios] = useState({});
-  const [openingOriginal, setOpeningOriginal] = useState(false);
-  const [originalNotice, setOriginalNotice] = useState('');
   useDialogFocus(true, panel, () => singlePhoto || selected === null ? onClose?.() : setSelected(null));
   useEffect(() => {
     navigation.current = null;
@@ -151,31 +149,7 @@ export default function ClientGallery({ photos: collectionPhotos = [], singlePho
 
   const runDownload = (photo, index) => onDownload?.(photoKey(photo, originalIndex(index)), originalIndex(index));
   const runLike = (photo, index) => onLike?.(photoKey(photo, originalIndex(index)), originalIndex(index));
-  async function openOriginal(photo, index) {
-    const tab = window.open('about:blank', '_blank');
-    if (!tab) {
-      setOriginalNotice('Allow pop-ups to open the full-size photograph.');
-      return;
-    }
-    tab.opener = null;
-    tab.document.title = 'Opening photograph';
-    tab.document.body.style.cssText = 'margin:0;display:grid;min-height:100vh;place-items:center;background:#08080b;color:#f7f3ef;font:14px system-ui,sans-serif';
-    tab.document.body.textContent = 'Opening the full-size photograph…';
-    setOpeningOriginal(true);
-    setOriginalNotice('');
-    try {
-      const url = await onOpenOriginal?.(photoKey(photo, index), originalIndex(index));
-      if (!url) throw new Error('The original image link was empty.');
-      tab.location.replace(url);
-    } catch {
-      tab.close();
-      setOriginalNotice('We could not open this photograph. Please try again.');
-    } finally {
-      setOpeningOriginal(false);
-    }
-  }
   const layoutId = key => `${galleryId}-photograph-${key}`;
-  const canOpenOriginal = allowIndividualDownloads && Boolean(onOpenOriginal);
   const sceneTransition = { duration: reduced ? 0 : .32, ease: [.22, 1, .36, 1] };
 
   return createPortal(<LayoutGroup id={galleryId}><motion.div className="client-gallery-overlay" initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .2 }} onMouseDown={event => { if (event.target === event.currentTarget) onClose?.(); }}>
@@ -186,7 +160,7 @@ export default function ClientGallery({ photos: collectionPhotos = [], singlePho
           {selected === null && allowDownloadAll && onDownloadAll && <button className="client-gallery-download-all" type="button" onClick={onDownloadAll} disabled={Boolean(resolvedBusy)}>{resolvedBusy === 'all' ? <LoaderCircle className="client-gallery-spin" size={16} /> : <Download size={16} />}<span>{resolvedBusy === 'all' && downloadProgress ? `Starting ${downloadProgress.current}/${downloadProgress.total}` : resolvedBusy === 'all' ? 'Starting…' : 'Download all photos'}</span></button>}
           <button className="client-gallery-icon" type="button" onClick={onClose} aria-label="Close gallery"><X size={21} /></button>
         </div>
-        {!singlePhoto && groups.length > 0 && <label className="client-gallery-group-filter">{delivery?.format === 'campaign' ? 'File set' : delivery?.format === 'chapters' ? 'Chapter' : 'Photo group'}<select aria-label={delivery?.format === 'campaign' ? 'File set' : delivery?.format === 'chapters' ? 'Chapter' : 'Photo group'} value={groupId} onChange={event => { setGroupId(event.target.value); gridScroll.current = 0; collection.current?.scrollTo(0, 0); }}><option value="all">All photographs</option>{groups.map(group => <option key={group.id} value={group.id}>{group.title}</option>)}</select></label>}
+        {groups.length > 0 && <label className="client-gallery-group-filter">{delivery?.format === 'campaign' ? 'File set' : delivery?.format === 'chapters' ? 'Chapter' : 'Photo group'}<select aria-label={delivery?.format === 'campaign' ? 'File set' : delivery?.format === 'chapters' ? 'Chapter' : 'Photo group'} value={groupId} onChange={event => { setGroupId(event.target.value); gridScroll.current = 0; collection.current?.scrollTo(0, 0); }}><option value="all">All photographs</option>{groups.map(group => <option key={group.id} value={group.id}>{group.title}</option>)}</select></label>}
       </header>
       {downloadNotice && <p className="client-gallery-download-tip" role="status">{downloadNotice}</p>}
       {!singlePhoto && <div ref={collection} className="client-gallery-collection" hidden={selected !== null}>
@@ -220,10 +194,8 @@ export default function ClientGallery({ photos: collectionPhotos = [], singlePho
           <button ref={lightboxBack} className="client-gallery-back" type="button" onClick={() => singlePhoto ? onClose?.() : setSelected(null)} aria-label={singlePhoto ? 'Return to presentation' : 'All photographs'}><ArrowLeft size={16} /><span>{singlePhoto ? 'Return to presentation' : 'All photographs'}</span></button>
           {allowLikes && <button className={`client-gallery-icon ${liked?.has(activeKey) ? 'is-liked' : ''}`} type="button" onClick={() => runLike(activePhoto, selected)} aria-pressed={Boolean(liked?.has(activeKey))} aria-label={liked?.has(activeKey) ? 'Remove from favourites' : 'Add to favourites'}><Heart size={17} fill={liked?.has(activeKey) ? 'currentColor' : 'none'} /></button>}
           {allowIndividualDownloads && <button className="client-gallery-download-one" type="button" aria-label="Download photograph" onClick={() => runDownload(activePhoto, selected)} disabled={resolvedBusy === activeKey || resolvedBusy === 'all'}>{resolvedBusy === activeKey ? <LoaderCircle className="client-gallery-spin" size={16} /> : <Download size={16} />}<span>{resolvedBusy === activeKey ? 'Preparing…' : 'Download'}</span></button>}
-          {canOpenOriginal && <button className="client-gallery-open-original" type="button" aria-label="Open full-size photograph in a new tab" onClick={() => openOriginal(activePhoto, selected)} disabled={openingOriginal}>{openingOriginal ? <LoaderCircle className="client-gallery-spin" size={16} /> : <ExternalLink size={16} />}<span>{openingOriginal ? 'Opening…' : 'Full size'}</span></button>}
           {!singlePhoto && <button className="client-gallery-icon" type="button" onClick={() => navigatePhoto(1)} disabled={atEnd} aria-label="Next photograph"><ChevronRight size={21} /></button>}
         </div>
-        {originalNotice && <p className="client-gallery-original-notice" role="status">{originalNotice}</p>}
       </motion.div>}</AnimatePresence>
     </motion.section>
   </motion.div></LayoutGroup>, document.body);

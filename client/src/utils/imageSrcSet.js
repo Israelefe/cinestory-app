@@ -1,4 +1,4 @@
-// A URL can contain commas (Cloudinary transformation URLs do).
+// Keep signed media URLs intact when building responsive candidates.
 // Candidates are separated after their width/density descriptor, not at every comma.
 export function imageSrcSetCandidates(value) {
   return [...String(value || '').matchAll(/(?:^|,\s*)(\S+)\s+(\d+(?:\.\d+)?[wx])(?=\s*(?:,|$))/g)]

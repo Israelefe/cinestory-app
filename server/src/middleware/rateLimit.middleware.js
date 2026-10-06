@@ -152,7 +152,7 @@ export const clientDeliveryEmailLimit = limiter({
   identifier: 'delivery-emails'
 });
 
-// Viewer media is normally served by signed Cloudinary URLs. This high
+// Viewer media is normally served by short-lived signed R2 URLs. This high
 // backstop is only for origin endpoints such as download tracking and audio;
 // it must not behave like a gallery-size quota.
 export const publicMediaLimit = limiter({

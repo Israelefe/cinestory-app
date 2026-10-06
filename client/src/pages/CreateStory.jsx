@@ -25,7 +25,7 @@ import { Eyebrow } from '../components/PublicDesign.jsx';
 import Footer from '../components/Footer.jsx';
 import { useDialogFocus } from '../components/useDialogFocus.js';
 import { toast } from 'react-toastify';
-import { uploadImageToCloudinary } from '../utils/cloudinaryService.js';
+import { uploadStoryMedia } from '../utils/storyUpload.js';
 import {
   CURATED_SOUNDTRACKS,
   SOUNDTRACK_GENRES,
@@ -98,17 +98,15 @@ export default function CreateStory({ user }) {
     try {
       setUploadingAudio(true);
       toast.info('Uploading custom soundtrack...');
-      const cloudRes = await uploadImageToCloudinary(file, {
-        folder: `veylo/users/${user.id}/audio`,
-        resource_type: 'auto'
-      });
+      const uploaded = await uploadStoryMedia(file, 'audio');
 
       const customTrack = {
         id: `custom_${Date.now()}`,
         title: file.name.replace(/\.[^/.]+$/, ''),
         artist: 'Custom Music',
         genre: 'Custom',
-        audioUrl: cloudRes.url,
+        audioUrl: uploaded.audioUrl,
+        storageKey: uploaded.storageKey,
         durationSec: 180
       };
 
@@ -138,18 +136,14 @@ export default function CreateStory({ user }) {
     for (let i = 0; i < total; i++) {
       const file = fileArray[i];
       try {
-        const result = await uploadImageToCloudinary(file, {
-          folder: `veylo/users/${user.id}/photos`,
-          onProgress: (p) => {
-            setUploadProgress(Math.round(((i + p / 100) / total) * 100));
-          }
-        });
+        const result = await uploadStoryMedia(file, 'image', p => setUploadProgress(Math.round(((i + p / 100) / total) * 100)));
         setUploadProgress(Math.round(((i + 1) / total) * 100));
 
         uploadedList.push({
           id: `ph_${Date.now()}_${i}`,
           url: result.url,
           thumbnailUrl: result.thumbnailUrl || result.url,
+          storageKey: result.storageKey,
           chapterTitle: `Moment ${formData.photos.length + uploadedList.length + 1}`,
           caption: '',
           typographyStyle: 'typewriter',

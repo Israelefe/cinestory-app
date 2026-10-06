@@ -106,7 +106,7 @@ happy.
 - [ ] Proxy: `curl -i <worker-url>/api/health` returns the API's health JSON, not HTML.
 - [ ] Link preview: open a real `/d/<publicId>`, **view source**, and confirm `og:title`, `og:description`, `og:image` and `og:url` are the delivery's, not Veylo's defaults.
 - [ ] Auth cookies: sign in, reload. `withCredentials: true` only works because `/api/*` is same-origin — if the session drops, check that `Set-Cookie` survived the proxy intact (the handler returns the upstream response untouched precisely so repeated `Set-Cookie` headers are not collapsed).
-- [ ] Downloads: request a photo download and confirm the browser still receives the 3xx to the signed Cloudinary URL (the proxy sets `redirect: 'manual'` for this).
+- [ ] Downloads: request a photo download and confirm the browser still receives the 3xx to the signed R2 URL (the proxy sets `redirect: 'manual'` for this).
 - [ ] Google sign-in: the popup must complete. `public/_headers` carries the COOP value, and the `/d/:publicId` route sets it too so it applies on delivery links.
 - [ ] Sign in from the `*.workers.dev` URL itself. That origin is only permitted because of the `workers.dev` rule in `isAllowedOrigin`; without it, preview deploys fail CORS at login with a 403.
 
@@ -130,8 +130,8 @@ Because the hostnames don't change, no server-side configuration needs touching.
 **Worker invocations are now the metered thing.** Static hosting is free and unmetered, and
 because `run_worker_first` is scoped to two route patterns, page views and image loads cost
 no invocation. Only `/api/*` and `/d/*` do — the free plan is 100k/day, $5/mo for 10M.
-Uploads never touch the Worker: they go straight from the browser to `api.cloudinary.com`
-(`client/src/utils/storageUpload.js:16`).
+Uploads never send their file bytes through the Worker: the API issues a short-lived R2
+upload link, then the browser uploads directly to the private bucket.
 
 **`/d/:publicId` shells are deliberately not cached.** The HTML references Vite's
 content-hashed JavaScript files, so serving an older shell after a deploy can strand a

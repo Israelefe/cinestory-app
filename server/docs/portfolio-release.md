@@ -15,8 +15,8 @@ labels and do not become new public captions.
 
 Public media requests check current account status, effective paid access,
 publication state, photo membership and source ownership. The API prepares
-authenticated Cloudinary variants at 400, 800 and 1600 pixels, plus a 1200×630
-sharing image, and streams them without exposing signed provider URLs. Responses
+private R2 variants at 400, 800 and 1600 pixels, plus a 1200×630 sharing image,
+and streams them without exposing signed provider URLs. Responses
 use `no-store` so making a portfolio private closes subsequent media requests.
 A visitor who has already downloaded a photograph can retain that copy.
 
@@ -172,7 +172,7 @@ using the supported [Cloudflare path patterns](https://developers.cloudflare.com
    and handle reservations. Correct any reported duplicate photos, unavailable
    covers, invalid contact details or conflicting handle reservations. The audit
    is read-only.
-3. With the production Cloudinary account configured, run
+3. With production R2 credentials configured, run
    `node scripts/migrate-portfolios.mjs --apply`. This prepares display variants,
    keeps current addresses and reservations, assigns stable photo IDs, types the
    draft and backfills job snapshots. Rerunning is supported.
@@ -199,7 +199,7 @@ Browser checks include 320, 390, 640, 768, 834, 1024 and 1440px views, photograp
 uniqueness, category lifecycle, reduced motion, all four expanded designs,
 enquiry retry/context, inbox status, notice placement and image retry.
 
-Before production, validate real Cloudinary variants and sharing previews,
+Before production, validate real R2 variants and sharing previews,
 Resend notifications and retry recovery, Worker sitemap/crawler output and
 revocation after unpublishing, suspension, paid expiry and source deletion.
 Measure actual mobile LCP/INP/CLS, image bytes and failures. Local fixtures and

@@ -19,7 +19,7 @@ import analyticsRoutes from './src/routes/analytics.routes.js';
 import assistantRoutes from './src/routes/assistant.routes.js';
 import { paystackWebhook } from './src/controllers/billing.controller.js';
 import { resolveEdgeClientIp } from './src/middleware/clientIp.middleware.js';
-import { checkCloudinaryConnection } from './src/services/cloudinary.service.js';
+import { checkR2Connection } from './src/services/r2.service.js';
 import { startDeliveryWorker } from './src/services/deliveryWorker.service.js';
 import { startRetentionWorker } from './src/services/retention.service.js';
 import { startBillingWorker } from './src/services/billingWorker.service.js';
@@ -33,7 +33,7 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 if (process.env.NODE_ENV === 'production') {
-  const required = ['MONGODB_URI', 'JWT_SECRET', 'OTP_SECRET', 'RESEND_API_KEY', 'TURNSTILE_SECRET_KEY', 'GOOGLE_CLIENT_ID', 'CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET', 'CLIENT_URL'];
+  const required = ['MONGODB_URI', 'JWT_SECRET', 'OTP_SECRET', 'RESEND_API_KEY', 'TURNSTILE_SECRET_KEY', 'GOOGLE_CLIENT_ID', 'R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET_NAME', 'CLIENT_URL'];
   const missing = required.filter(name => !process.env[name]);
   if (missing.length) throw new Error(`Missing required production configuration: ${missing.join(', ')}`);
   if (process.env.JWT_SECRET.length < 32 || process.env.OTP_SECRET.length < 32) throw new Error('JWT_SECRET and OTP_SECRET must each contain at least 32 characters.');
@@ -122,6 +122,14 @@ app.use((error, req, res, next) => {
 
 connectDB().then(async connection => {
   if (!connection && process.env.NODE_ENV === 'production') process.exit(1);
+  if (process.env.NODE_ENV === 'production') {
+    const storage = await checkR2Connection();
+    if (!storage.ok) {
+      console.error(`[r2] Production storage check failed: ${storage.reason}`);
+      process.exit(1);
+      return;
+    }
+  }
   if (connection) {
     try { await prepareStudioNames(); }
     catch (error) { console.error('[studio-names]', error.message); }
@@ -129,9 +137,9 @@ connectDB().then(async connection => {
   await seedAdminFromEnv();
   const server = app.listen(PORT, () => {
     console.log(`[Veylo] Server running at http://localhost:${server.address().port}`);
-    checkCloudinaryConnection().then(result => {
-      if (result.ok) console.info('[cloudinary] Connection verified.');
-      else console.error(`[cloudinary] Configuration rejected: ${result.reason}`);
+    if (process.env.NODE_ENV !== 'production') checkR2Connection().then(result => {
+      if (result.ok) console.info('[r2] Connection verified.');
+      else console.error(`[r2] Configuration rejected: ${result.reason}`);
     });
     startPortfolioWorker();
     if (process.env.DELIVERY_PIPELINE_ENABLED === 'true') {

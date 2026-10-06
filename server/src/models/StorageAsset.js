@@ -16,10 +16,10 @@ const storageAssetSchema = new mongoose.Schema({
   width: { type: Number, min: 1 },
   height: { type: Number, min: 1 },
   bytes: { type: Number, min: 1 },
-  // Cloudinary returns an etag for the uploaded bytes. Keep the algorithm
-  // explicit so this is never mistaken for an application-generated hash.
+  // Keep the provider hash algorithm explicit so its ETag is never mistaken
+  // for an application-generated SHA-256 digest during integrity checks.
   contentHash: { type: String, trim: true, maxlength: 200 },
-  hashAlgorithm: { type: String, enum: ['cloudinary-etag', 'sha256'] },
+  hashAlgorithm: { type: String, enum: ['cloudinary-etag', 'r2-etag', 'sha256'] },
   hashVerifiedAt: Date,
   folder: { type: String, trim: true, maxlength: 100, default: 'All photographs' },
   tags: [{ type: String, trim: true, maxlength: 40 }],

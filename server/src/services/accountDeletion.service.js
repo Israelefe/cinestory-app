@@ -25,6 +25,7 @@ import LibraryCollaboration from '../models/LibraryCollaboration.js';
 import Portfolio from '../models/Portfolio.js';
 import PortfolioJob from '../models/PortfolioJob.js';
 import PortfolioEnquiry from '../models/PortfolioEnquiry.js';
+import ContentProject from '../models/ContentProject.js';
 import VolumeJob from '../models/VolumeJob.js';
 import VolumeSubject from '../models/VolumeSubject.js';
 import VolumeAccessCode from '../models/VolumeAccessCode.js';
@@ -32,7 +33,7 @@ import AdminAccountNote from '../models/AdminAccountNote.js';
 import SupportAccessGrant from '../models/SupportAccessGrant.js';
 import SupportTicket from '../models/SupportTicket.js';
 import AnalyticsEvent from '../models/AnalyticsEvent.js';
-import { cloudinary, configureCloudinary } from './cloudinary.service.js';
+import { deleteR2Prefix, r2Configured } from './r2.service.js';
 import Refund from '../models/Refund.js';
 import PaidUsage from '../models/PaidUsage.js';
 import { stopAccountRenewals } from './billingCancellation.service.js';
@@ -53,50 +54,17 @@ function providerError(error, fallbackCode) {
   return wrapped;
 }
 
-async function removeCloudinaryResources(prefix, resourceType) {
-  await Promise.all(['upload', 'authenticated'].map(async type => {
-    try {
-      await cloudinary.api.delete_resources_by_prefix(prefix, { resource_type: resourceType, type, invalidate: true });
-    } catch (error) {
-      if (error?.http_code !== 404) throw error;
-    }
-  }));
-}
-
-async function deleteCloudinaryFolder(path) {
-  await cloudinary.api.delete_folder(path).catch(error => {
-    if (error?.http_code !== 404) throw error;
-  });
-}
-
-async function nestedCloudinaryFolders(prefix) {
-  const found = [];
-  let cursor;
-  do {
-    let response;
-    try {
-      response = await cloudinary.api.sub_folders(prefix, { max_results: 500, next_cursor: cursor });
-    } catch (error) {
-      if (error?.http_code === 404) return found;
-      throw error;
-    }
-    for (const folder of response.folders || []) {
-      found.push(...await nestedCloudinaryFolders(folder.path), folder.path);
-    }
-    cursor = response.next_cursor;
-  } while (cursor);
-  return found;
-}
-
-async function removeCloudinaryFolder(prefix, resourceTypes) {
-  await Promise.all(resourceTypes.map(resourceType => removeCloudinaryResources(prefix, resourceType)));
-  for (const child of await nestedCloudinaryFolders(prefix)) await deleteCloudinaryFolder(child);
-  await deleteCloudinaryFolder(prefix);
-}
-
 async function cancelActiveSubscriptions(userId) {
   return stopAccountRenewals(userId);
 }
+
+function hasR2ContentMedia(value) {
+  if (typeof value === 'string') return value.startsWith('veylo/content-studio/');
+  if (Array.isArray(value)) return value.some(hasR2ContentMedia);
+  if (!value || typeof value !== 'object') return false;
+  return Object.values(value).some(hasR2ContentMedia);
+}
+
 function accountBeforeSnapshot(user) {
   return {
     id: String(user._id),
@@ -110,21 +78,29 @@ function accountBeforeSnapshot(user) {
   };
 }
 
-async function removeMedia({ user, stories, hasDeliveries, hasStorageAssets }) {
+async function removeMedia({ user, stories, contentProjects, hasDeliveries, hasStorageAssets }) {
   const userPrefix = `veylo/users/${user._id}`;
   const storyUsesUserFolder = stories.some(story => [
     story.soundtrack?.audioUrl,
     ...(story.photos || []).map(photo => photo.url)
-  ].some(url => String(url || '').includes(`/${userPrefix}/`)));
+  ].some(url => String(url || '').includes(`/${userPrefix}/`)) || [
+    story.soundtrack?.storageKey,
+    ...(story.photos || []).map(photo => photo.storageKey)
+  ].some(key => String(key || '').startsWith(`${userPrefix}/`)));
   const hasUserMedia = storyUsesUserFolder || hasDeliveries || hasStorageAssets;
-  const hasStudioAsset = String(user.studio?.logoPublicId || '').startsWith(`veylo/studios/${user._id}/`);
-  if (!hasUserMedia && !hasStudioAsset) return;
-  if (!configureCloudinary()) throw new AccountDeletionError('The account has stored media, but media storage is not available. Nothing was deleted. Try again when Cloudinary is configured.', 503, 'MEDIA_CLEANUP_UNAVAILABLE');
+  const hasStudioAsset = [user.studio?.logoPublicId, user.avatarPublicId].some(key => String(key || '').startsWith(`veylo/studios/${user._id}/`));
+  const contentMediaProjects = (contentProjects || []).filter(hasR2ContentMedia);
+  if (!hasUserMedia && !hasStudioAsset && !contentMediaProjects.length) return;
+  if (!r2Configured()) throw new AccountDeletionError('The account has stored media, but image storage is not available. Nothing was deleted. Try again when storage is configured.', 503, 'MEDIA_CLEANUP_UNAVAILABLE');
 
   try {
     await Promise.all([
-      hasStudioAsset ? removeCloudinaryFolder(`veylo/studios/${user._id}`, ['image']) : Promise.resolve(),
-      hasUserMedia ? removeCloudinaryFolder(userPrefix, ['image', 'video', 'raw']) : Promise.resolve()
+      hasStudioAsset ? deleteR2Prefix(`veylo/studios/${user._id}/`) : Promise.resolve(),
+      hasUserMedia ? deleteR2Prefix(`${userPrefix}/`) : Promise.resolve(),
+      ...Array.from(new Set(contentMediaProjects.flatMap(project => [
+        `veylo/content-studio/${user._id}/`,
+        `veylo/content-studio/${project._id}/`
+      ])), prefix => deleteR2Prefix(prefix))
     ]);
   } catch (error) {
     throw providerError(error, 'MEDIA_CLEANUP_FAILED');
@@ -185,6 +161,7 @@ async function deleteOwnedRecords({ accountId, deliveryIds, storyIds, volumeJobI
   await deleteMany('portfolioCleanup', PortfolioCleanup, { userId: accountId });
   await deleteMany('portfolioJobs', PortfolioJob, { userId: accountId });
   await deleteMany('portfolioEnquiries', PortfolioEnquiry, { userId: accountId });
+  await deleteMany('contentProjects', ContentProject, { ownerId: accountId });
   await deleteMany('portfolios', Portfolio, { userId: accountId });
   await deleteMany('deletionRequests', AccountDeletionRequest, { userId: accountId });
   await deleteMany('adminAccountNotes', AdminAccountNote, { userId: accountId });
@@ -222,22 +199,23 @@ async function deleteOwnedRecords({ accountId, deliveryIds, storyIds, volumeJobI
 async function deleteUserAccountLocked({ userId } = {}) {
   if (!mongoose.isValidObjectId(userId)) throw new AccountDeletionError('That account identifier is not valid.', 400, 'INVALID_ACCOUNT_ID');
   const accountId = new mongoose.Types.ObjectId(userId);
-  const user = await User.findById(accountId).select('name email role plan accountStatus storageUsedBytes createdAt studio');
+  const user = await User.findById(accountId).select('name email role plan accountStatus storageUsedBytes createdAt studio avatarPublicId');
   if (!user) throw new AccountDeletionError('Account not found.', 404, 'ACCOUNT_NOT_FOUND');
 
   const cancelledSubscriptionIds = await cancelActiveSubscriptions(accountId);
-  const [stories, deliveries, volumeJobs, storageAssets, portfolio] = await Promise.all([
-    PhotoStory.find({ userId: accountId }).select('_id photos.url soundtrack.audioUrl').lean(),
+  const [stories, deliveries, volumeJobs, storageAssets, portfolio, contentProjects] = await Promise.all([
+    PhotoStory.find({ userId: accountId }).select('_id photos.url photos.storageKey soundtrack.audioUrl soundtrack.storageKey').lean(),
     Delivery.find({ userId: accountId }).select('_id').lean(),
     VolumeJob.find({ userId: accountId }).select('_id').lean(),
     StorageAsset.find({ userId: accountId }).select('_id').lean(),
-    Portfolio.findOne({ userId: accountId }).select('_id').lean()
+    Portfolio.findOne({ userId: accountId }).select('_id').lean(),
+    ContentProject.find({ ownerId: accountId }).select('_id assets.publicId versions').lean()
   ]);
   const deliveryIds = deliveries.map(item => item._id);
   const storyIds = stories.map(item => item._id);
   const volumeJobIds = volumeJobs.map(item => item._id);
 
-  await removeMedia({ user, stories, hasDeliveries: deliveries.length > 0, hasStorageAssets: storageAssets.length > 0 });
+  await removeMedia({ user, stories, contentProjects, hasDeliveries: deliveries.length > 0, hasStorageAssets: storageAssets.length > 0 });
 
   const deleted = {};
   const session = await mongoose.startSession();

@@ -5,6 +5,7 @@ import { planSchema } from './schema.js';
 import { consumeUnits } from './allowance.js';
 import { mediaUrl, studioError, fetchGeneratedImage } from './media.js';
 import { anyModelProviderConfigured, DEFAULT_ALIBABA_FALLBACK_MODEL, requestModelCompletion } from '../services/modelProvider.service.js';
+import { r2Configured } from '../services/r2.service.js';
 
 function config() {
   const base = process.env.ALIBABA_BASE_URL || (process.env.ALIBABA_WORKSPACE_ID ? `https://${process.env.ALIBABA_WORKSPACE_ID}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1` : '');
@@ -15,7 +16,7 @@ function config() {
 }
 export function providerReadiness() {
   let imageGeneration = true; try { config(); } catch { imageGeneration = false; }
-  return { ai: anyModelProviderConfigured(), imageGeneration, voice: Boolean(process.env.DEEPGRAM_API_KEY), storage: Boolean(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) };
+  return { ai: anyModelProviderConfigured(), imageGeneration, voice: Boolean(process.env.DEEPGRAM_API_KEY), storage: r2Configured() || process.env.CONTENT_STORAGE_LOCAL === 'true' };
 }
 async function jsonRequest(messages, { vision = false, signal }) {
   const fallbackModel = process.env.ALIBABA_FALLBACK_MODEL || DEFAULT_ALIBABA_FALLBACK_MODEL;

@@ -7,7 +7,7 @@ This master guide details **every single external service, database, cloud bucke
 ## Master Checklist Overview
 
 - [ ] **1. Dedicated MongoDB Database** (MongoDB Atlas)
-- [ ] **2. Dedicated Cloud Storage** (Cloudinary / AWS S3)
+- [ ] **2. Dedicated Cloud Storage** (Cloudflare R2)
 - [ ] **3. AI model provider** (Groq primary, Alibaba fallback)
 - [ ] **4. Transactional Email API** (Resend)
 - [ ] **5. SuperAdmin Account Setup** (Creator Master Control)
@@ -36,20 +36,17 @@ This master guide details **every single external service, database, cloud bucke
 
 ---
 
-## 2. Dedicated Media Storage (Cloudinary)
-*A separate storage bucket for story photos, thumbnails, and custom audio tracks.*
+## 2. Dedicated Media Storage (Cloudflare R2)
+*Veylo keeps library photos, camera RAW originals, delivery media, stories, profile images, portfolio media and Content Studio files in a private R2 bucket.*
 
-1. Go to [Cloudinary](https://cloudinary.com/) and create a separate account.
-2. In your Dashboard, copy:
-   - `CLOUDINARY_CLOUD_NAME`
-   - `CLOUDINARY_API_KEY`
-   - `CLOUDINARY_API_SECRET`
-3. Go to **Settings -> Upload -> Upload Presets**:
-   - Click **"Add Upload Preset"**
-   - Name: `cinestory_preset`
-   - Signing Mode: **Unsigned**
-   - Folder: `cinestory/uploads`
-   - Quality/Format: Set to **Auto** (Automatic WebP/AVIF mobile compression).
+Follow [the R2 storage setup and migration guide](server/docs/r2-storage-setup.md). Create a private bucket and a bucket-scoped S3 API token, then set these server variables:
+
+- `R2_ACCOUNT_ID`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `R2_BUCKET_NAME`
+
+The browser receives short-lived signed upload links; storage credentials stay on the server. Existing Cloudinary files need the documented one-time migration before the Cloudinary-free build is deployed.
 
 ---
 
@@ -135,9 +132,10 @@ This master guide details **every single external service, database, cloud bucke
    ALIBABA_FALLBACK_MODEL=deepseek-v4.1-flash
    ALIBABA_MODEL_STUDIO_API_KEY=your_alibaba_api_key
    ALIBABA_WORKSPACE_ID=your_alibaba_workspace_id
-   CLOUDINARY_CLOUD_NAME=your_cloud_name
-   CLOUDINARY_API_KEY=your_api_key
-   CLOUDINARY_API_SECRET=your_api_secret
+   R2_ACCOUNT_ID=your_cloudflare_account_id
+   R2_ACCESS_KEY_ID=your_bucket_scoped_access_key
+   R2_SECRET_ACCESS_KEY=your_bucket_scoped_secret
+   R2_BUCKET_NAME=veylo-media
    RESEND_API_KEY=re_...
    RESEND_FROM_EMAIL=CineStory AI <notifications@cinestory.app>
    CLIENT_URL=https://cinestory.app
@@ -158,8 +156,6 @@ This master guide details **every single external service, database, cloud bucke
    ```env
    VITE_API_URL=https://api.cinestory.app/api
    VITE_APP_URL=https://cinestory.app
-   VITE_CLOUDINARY_CLOUD_NAME=your_cloud_name
-   VITE_CLOUDINARY_UPLOAD_PRESET=cinestory_preset
    ```
 
 ---

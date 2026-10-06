@@ -20,7 +20,8 @@ import Portfolio from '../models/Portfolio.js';
 import User from '../models/User.js';
 import StorageAsset from '../models/StorageAsset.js';
 import { CREATIVE_DIRECTOR_PROMPT_VERSION, CREATIVE_DIRECTOR_PROVIDER, assistPhotographerBrief, creativeDirectorAllowlist } from '../services/alibabaCreativeDirector.service.js';
-import { confirmUploadedAsset, copyStorageImageToDelivery, createUploadSignature, deliveryFolder, recoverImageUpload, removeDeliveryAudio, removeDeliveryImage, removeDeliveryMedia, signedArchiveUrl, signedImageUrl, signedOgImageUrl } from '../services/deliveryMedia.service.js';
+import { confirmUploadedAsset, copyStorageImageToDelivery, createArchiveTokenData, createUploadSignature, deliveryFolder, recoverImageUpload, removeDeliveryAudio, removeDeliveryImage, removeDeliveryMedia, signedArchiveUrl, signedImageUrl, signedOgImageUrl } from '../services/deliveryMedia.service.js';
+import { streamR2Zip } from '../services/r2Archive.service.js';
 import { reservePublishSlot, resolveEntitlements } from '../services/entitlement.service.js';
 import { tokenDigest } from '../utils/auth.js';
 import { sendDeliveryDownloadedEmail, sendDeliveryViewedEmail, sendShareGrantEmail, sendStoryReadyEmail } from '../services/email.service.js';
@@ -33,13 +34,14 @@ import { supportsDeliveryMusic, supportsDeliveryNarration } from '../constants/d
 import { getNarrationVoiceCatalogue, NARRATION_RENDER_VERSION } from '../services/narration.service.js';
 import { recordAnalyticsEventAsync } from '../services/analytics.service.js';
 import { isRuntimeFeatureEnabled } from '../services/runtimeConfig.service.js';
-import { safeProviderError } from '../services/cloudinary.service.js';
+import { storageProviderError } from '../services/deliveryMedia.service.js';
 import { cleanDeliveryAccess } from '../utils/deliveryAccess.js';
 
 const createSchema = z.object({ clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().min(2).max(80), brief: z.string().trim().min(1).max(3000) }).strict();
 const briefAssistSchema = createSchema.extend({ mode: z.enum(['assess', 'enhance']) }).strict();
-const confirmSchema = z.object({ publicId: z.string().min(5).max(500), version: z.union([z.string(), z.number()]), signature: z.string().min(20).max(200), resourceType: z.enum(['image']).default('image'), originalFilename: z.string().trim().max(180).default('photograph'), uploadId: z.string().max(100).optional(), sortOrder: z.number().int().min(0).max(100000).optional() }).strict();
-const soundtrackSchema = z.object({ publicId: z.string().min(5).max(500), version: z.union([z.string(), z.number()]), signature: z.string().min(20).max(200), originalFilename: z.string().trim().max(180), title: z.string().trim().min(1).max(100), rightsConfirmed: z.literal(true) }).strict();
+const r2UploadSchema = z.object({ objectKey: z.string().min(5).max(1000), uploadToken: z.string().min(20).max(4000) });
+const confirmSchema = r2UploadSchema.extend({ resourceType: z.enum(['image']).default('image'), originalFilename: z.string().trim().max(180).default('photograph'), uploadId: z.string().max(100).optional(), sortOrder: z.number().int().min(0).max(100000).optional() }).strict();
+const soundtrackSchema = r2UploadSchema.extend({ originalFilename: z.string().trim().max(180), title: z.string().trim().min(1).max(100), rightsConfirmed: z.literal(true) }).strict();
 const formatSchema = z.object({ format: z.enum(creativeDirectorAllowlist.formats) }).strict();
 const narrationSchema = z.object({
   voiceId: z.enum(NARRATION_VOICES.map(voice => voice.id)).optional().default(DEFAULT_NARRATION_VOICE_ID)
@@ -476,12 +478,12 @@ export async function deleteDelivery(req, res) {
       () => removeStoredPreviews(removed._id),
       () => removeDeliveryMedia(req.user.id, removed._id)
     ];
-    // Respond as soon as the owned database record is gone. Cloudinary and
+    // Respond as soon as the owned database record is gone. R2 and
     // secondary collection cleanup can be slow or temporarily unavailable;
     // neither should make the photographer wait or report a failed delete.
     void Promise.allSettled(cleanupTasks.map(task => Promise.resolve().then(task))).then(results => {
       results.filter(result => result.status === 'rejected').forEach(result => {
-        console.error('[deliveries/delete-cleanup]', safeProviderError(result.reason));
+    console.error('[deliveries/delete-cleanup]', storageProviderError(result.reason));
       });
     });
     deleteStep = 'respond';
@@ -500,14 +502,14 @@ export async function deleteDelivery(req, res) {
 
 export async function signDeliveryUpload(req, res) {
   try {
-    const input = z.object({ uploadId: z.string().uuid().optional() }).strict().safeParse(req.body || {});
+    const input = z.object({ uploadId: z.string().uuid().optional(), contentType: z.string().max(100).optional() }).strict().safeParse(req.body || {});
     if (!input.success) return failValidation(res, input);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This delivery is not available for uploads.' });
     const user = await User.findById(req.user.id);
     const entitlements = await resolveEntitlements(user, { includeUsage: false });
     if (delivery.assets.length >= entitlements.limits.photosPerDelivery) return res.status(403).json({ success: false, code: 'PHOTO_LIMIT_REACHED', message: `${entitlements.planName} allows up to ${entitlements.limits.photosPerDelivery} photographs in one delivery.` });
-    res.json({ success: true, data: createUploadSignature({ userId: req.user.id, deliveryId: delivery._id, resourceType: 'image', uploadId: input.data.uploadId }) });
+    res.json({ success: true, data: createUploadSignature({ userId: req.user.id, deliveryId: delivery._id, resourceType: 'image', uploadId: input.data.uploadId, contentType: input.data.contentType }) });
   } catch (error) {
     recordAnalyticsEventAsync({ name: 'upload.failed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'failed', errorCode: error.code || 'DELIVERY_UPLOAD_SIGNATURE_FAILED', metadata: { surface: 'delivery', stage: 'signature' } });
     console.error('[deliveries/upload-signature]', error.message);
@@ -517,7 +519,7 @@ export async function signDeliveryUpload(req, res) {
 
 export async function recoverDeliveryUpload(req, res) {
   try {
-    const parsed = z.object({ uploadId: z.string().uuid() }).strict().safeParse(req.body);
+    const parsed = z.object({ uploadId: z.string().uuid(), contentType: z.string().max(100).optional() }).strict().safeParse(req.body);
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This draft is not available for uploads.' });
@@ -525,7 +527,7 @@ export async function recoverDeliveryUpload(req, res) {
     if (confirmed) return res.json({ success: true, data: { asset: ownerAsset(confirmed) } });
     const entitlements = await resolveEntitlements(await User.findById(req.user.id), { includeUsage: false });
     if (delivery.assets.length >= entitlements.limits.photosPerDelivery) return res.status(403).json({ success: false, code: 'PHOTO_LIMIT_REACHED', message: `${entitlements.planName} allows up to ${entitlements.limits.photosPerDelivery} photographs in one delivery.` });
-    const resource = await recoverImageUpload({ userId: req.user.id, deliveryId: delivery._id, uploadId: parsed.data.uploadId });
+    const resource = await recoverImageUpload({ userId: req.user.id, deliveryId: delivery._id, uploadId: parsed.data.uploadId, contentType: parsed.data.contentType });
     res.json({ success: true, data: resource });
   } catch (error) { res.status(error.status || 500).json({ success: false, message: error.message || 'We could not check that upload.' }); }
 }
@@ -537,7 +539,7 @@ export async function confirmDeliveryUpload(req, res) {
     if (!parsed.success) return failValidation(res, parsed);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This delivery is not available for uploads.' });
-    const existing = delivery.assets.find(asset => asset.publicId === parsed.data.publicId);
+    const existing = delivery.assets.find(asset => asset.publicId === parsed.data.objectKey);
     if (existing) return res.json({ success: true, data: ownerAsset(existing) });
     const user = await User.findById(req.user.id);
     const entitlements = await resolveEntitlements(user, { includeUsage: false });
@@ -548,7 +550,7 @@ export async function confirmDeliveryUpload(req, res) {
       error.status = 400;
       throw error;
     }
-    const asset = { assetId: crypto.randomUUID(), publicId: resource.public_id, resourceType: 'image', format: resource.format, width: resource.width, height: resource.height, bytes: resource.bytes, contentHash: resource.etag || undefined, hashAlgorithm: resource.etag ? 'cloudinary-etag' : undefined, hashVerifiedAt: resource.etag ? new Date() : undefined, originalFilename: parsed.data.originalFilename, uploadId: parsed.data.uploadId, sortOrder: parsed.data.sortOrder ?? delivery.assets.length };
+    const asset = { assetId: crypto.randomUUID(), publicId: resource.public_id, resourceType: 'image', format: resource.format, width: resource.width, height: resource.height, bytes: resource.bytes, contentHash: resource.etag || undefined, hashAlgorithm: resource.hashAlgorithm, hashVerifiedAt: resource.etag ? new Date() : undefined, originalFilename: parsed.data.originalFilename, uploadId: parsed.data.uploadId, sortOrder: parsed.data.sortOrder ?? delivery.assets.length };
     const updated = await Delivery.findOneAndUpdate({
       _id: delivery._id,
       userId: req.user.id,
@@ -599,12 +601,12 @@ export async function addLibraryAssets(req, res) {
     // Copy library photos in parallel (up to 4 at a time) instead of sequentially
     const copyResults = await Promise.all(parsed.data.assetIds.map(async (id) => {
       const source = byId.get(id);
-      const resource = await copyStorageImageToDelivery({ sourceUrl: signedImageUrl(source.publicId, { width: 8000 }), userId: user._id, deliveryId: delivery._id });
+      const resource = await copyStorageImageToDelivery({ sourcePublicId: source.publicId, userId: user._id, deliveryId: delivery._id });
       return { id, source, resource };
     }));
     for (const { source, resource } of copyResults) {
       copied.push(resource.public_id);
-      newAssets.push({ assetId: crypto.randomUUID(), publicId: resource.public_id, resourceType: 'image', format: resource.format, width: resource.width, height: resource.height, bytes: resource.bytes, contentHash: resource.etag || undefined, hashAlgorithm: resource.etag ? 'cloudinary-etag' : undefined, hashVerifiedAt: resource.etag ? new Date() : undefined, originalFilename: source.originalFilename, libraryTags: source.tags || [], libraryCaption: source.caption || '', sortOrder: delivery.assets.length + newAssets.length });
+      newAssets.push({ assetId: crypto.randomUUID(), publicId: resource.public_id, resourceType: 'image', format: resource.format, width: resource.width, height: resource.height, bytes: resource.bytes, contentHash: resource.etag || undefined, hashAlgorithm: resource.etag ? 'r2-etag' : undefined, hashVerifiedAt: resource.etag ? new Date() : undefined, originalFilename: source.originalFilename, libraryTags: source.tags || [], libraryCaption: source.caption || '', sortOrder: delivery.assets.length + newAssets.length });
     }
     const updated = await Delivery.findOneAndUpdate({
       _id: delivery._id,
@@ -671,10 +673,12 @@ export async function deleteDeliveryAsset(req, res) {
 
 export async function signSoundtrackUpload(req, res) {
   try {
+    const input = z.object({ contentType: z.string().trim().min(3).max(100) }).strict().safeParse(req.body || {});
+    if (!input.success) return failValidation(res, input);
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This delivery is not available for audio uploads.' });
     if (!['pinboard', 'photoswap'].includes(delivery.kind) && !supportsDeliveryMusic(delivery.format)) return res.status(409).json({ success: false, code: 'MUSIC_FORMAT_UNSUPPORTED', message: 'This delivery format does not use music.' });
-    res.json({ success: true, data: createUploadSignature({ userId: req.user.id, deliveryId: delivery._id, resourceType: 'video' }) });
+    res.json({ success: true, data: createUploadSignature({ userId: req.user.id, deliveryId: delivery._id, resourceType: 'video', contentType: input.data.contentType }) });
   } catch (error) {
     recordAnalyticsEventAsync({ name: 'upload.failed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'failed', errorCode: error.code || 'SOUNDTRACK_UPLOAD_SIGNATURE_FAILED', metadata: { surface: 'soundtrack', stage: 'signature' } });
     res.status(error.status || 500).json({ success: false, message: error.message || 'We could not prepare this audio upload.' });
@@ -689,11 +693,11 @@ export async function confirmSoundtrackUpload(req, res) {
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (!delivery || !['draft', 'review'].includes(delivery.status)) return res.status(404).json({ success: false, message: 'This delivery is not available for audio uploads.' });
     if (!['pinboard', 'photoswap'].includes(delivery.kind) && !supportsDeliveryMusic(delivery.format)) return res.status(409).json({ success: false, code: 'MUSIC_FORMAT_UNSUPPORTED', message: 'This delivery format does not use music.' });
-    const resource = await confirmUploadedAsset({ userId: req.user.id, deliveryId: delivery._id, publicId: parsed.data.publicId, version: parsed.data.version, signature: parsed.data.signature, resourceType: 'video' });
+    const resource = await confirmUploadedAsset({ userId: req.user.id, deliveryId: delivery._id, ...parsed.data, resourceType: 'video' });
     uploadedPublicId = resource.public_id;
     if (!['mp3', 'wav', 'm4a', 'ogg', 'aac'].includes(String(resource.format).toLowerCase()) || resource.bytes > 20 * 1024 * 1024 || Number(resource.duration || 0) > 20 * 60) throw Object.assign(new Error('Use an MP3, WAV, M4A, OGG, or AAC track no larger than 20 MB and no longer than 20 minutes.'), { status: 400 });
     if (delivery.soundtrack?.publicId && delivery.soundtrack.publicId !== resource.public_id) await removeDeliveryAudio(delivery.soundtrack.publicId).catch(() => {});
-    delivery.soundtrack = { publicId: resource.public_id, title: parsed.data.title, originalFilename: parsed.data.originalFilename, format: resource.format, bytes: resource.bytes, duration: resource.duration, contentHash: resource.etag || undefined, hashAlgorithm: resource.etag ? 'cloudinary-etag' : undefined, hashVerifiedAt: resource.etag ? new Date() : undefined, source: 'photographer', rightsConfirmedAt: new Date() };
+    delivery.soundtrack = { publicId: resource.public_id, title: parsed.data.title, originalFilename: parsed.data.originalFilename, format: resource.format, bytes: resource.bytes, duration: resource.duration, contentHash: resource.etag || undefined, hashAlgorithm: resource.hashAlgorithm, hashVerifiedAt: resource.etag ? new Date() : undefined, source: 'photographer', rightsConfirmedAt: new Date() };
     invalidateV3Music(delivery);
     delivery.markModified('soundtrack');
     await delivery.save();
@@ -1335,22 +1339,8 @@ export async function getPhotoDownload(req, res) {
     const asset = grantAssets(delivery, grant).find(item => item.assetId === req.params.assetId);
     if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
     recordAnalyticsEventAsync({ name: 'client.delivery.download_requested', source: 'server', actorType: grant ? 'guest' : 'client', deliveryId: delivery._id, sessionDigest: tokenDigest(visitorId(req, res)), format: delivery.format, status: 'requested', route: req.originalUrl, metadata: { downloadType: 'individual', role: grant?.role || null } });
-    res.json({ success: true, data: { url: signedImageUrl(asset.publicId, { original: true, attachment: true }) } });
+    res.json({ success: true, data: { url: signedImageUrl(asset.publicId, { original: true, attachment: true, downloadFilename: asset.originalFilename }) } });
   } catch (error) { res.status(500).json({ success: false, message: 'We could not prepare that download.' }); }
-}
-
-export async function getPhotoOriginal(req, res) {
-  try {
-    const delivery = await publicDelivery(req.params.publicId);
-    const grant = delivery ? await shareGrant(req, delivery) : null;
-    if (!delivery || expired(delivery) || (!grant && !hasPublicAccess(req, delivery))) return res.status(404).json({ success: false, message: 'This delivery is not available.' });
-    const individualAllowed = grant ? grant.allowIndividualDownloads : delivery.access?.allowIndividualDownloads;
-    if (!individualAllowed) return res.status(403).json({ success: false, message: 'Full-size photographs are not available for this link.' });
-    const asset = grantAssets(delivery, grant).find(item => item.assetId === req.params.assetId);
-    if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
-    res.setHeader('Cache-Control', 'private, no-store');
-    res.json({ success: true, data: { url: signedImageUrl(asset.publicId, { original: true }) } });
-  } catch (error) { res.status(500).json({ success: false, message: 'We could not open the full-size photograph.' }); }
 }
 
 export async function streamPhotoDownload(req, res) {
@@ -1363,8 +1353,8 @@ export async function streamPhotoDownload(req, res) {
     if (!individualAllowed) return res.status(403).json({ success: false, message: 'Downloads are turned off for this link.' });
     const asset = grantAssets(delivery, grant).find(item => item.assetId === req.params.assetId);
     if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
-    // Fetch the full-resolution image from Cloudinary
-    const imageUrl = signedImageUrl(asset.publicId, { original: true });
+    // Fetch the original from private object storage after checking gallery access.
+    const imageUrl = signedImageUrl(asset.publicId, { original: true, downloadFilename: asset.originalFilename });
     const upstream = await fetch(imageUrl, { signal: AbortSignal.timeout(60_000) });
     if (!upstream.ok) return res.status(502).json({ success: false, message: 'Could not fetch the photograph from storage.' });
     // Build a clean filename from the asset
@@ -1439,7 +1429,7 @@ export async function getGalleryDownload(req, res) {
     if (grant ? !grant.allowDownloadAll : !delivery.access?.allowDownloadAll) return res.status(403).json({ success: false, message: 'Full gallery download is turned off for this link.' });
     const selectedAssets = grantAssets(delivery, grant);
     if (!selectedAssets.length) return res.status(404).json({ success: false, message: 'No photographs are available on this link.' });
-    const url = signedArchiveUrl(selectedAssets.map(asset => asset.publicId), `${delivery.clientName || 'client'}-photographs`, grant?.assetIds?.length ? '' : deliveryFolder(delivery.userId._id, delivery._id));
+    const url = signedArchiveUrl(selectedAssets.map(asset => ({ key: asset.publicId, name: asset.originalFilename || asset.assetId })), `${delivery.clientName || 'client'}-photographs`);
     if (delivery.downloadsCount === 0 && delivery.userId?.email) {
       sendDeliveryDownloadedEmail({
         to: delivery.userId.email,
@@ -1497,4 +1487,15 @@ export async function getDeliveryQr(req, res) {
     const dataUrl = await QRCode.toDataURL(url, { errorCorrectionLevel: 'H', margin: 2, width: 1200, color: { dark: '#070709', light: '#ffffff' } });
     res.json({ success: true, data: { dataUrl, filename: `${String(delivery.title || 'veylo-delivery').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').slice(0, 60)}-qr.png` } });
   } catch { res.status(500).json({ success: false, message: 'We could not create that QR code.' }); }
+}
+
+export async function streamGalleryArchive(req, res) {
+  try {
+    const archive = await createArchiveTokenData(req.query.token);
+    await streamR2Zip(archive.files, res, archive.filename);
+  } catch (error) {
+    console.error('[deliveries/gallery-archive]', error.code || error.name || 'error');
+    if (res.headersSent) return res.destroy();
+    res.status(error.status || 502).json({ success: false, message: error.status === 401 ? error.message : 'We could not prepare the full gallery download.' });
+  }
 }

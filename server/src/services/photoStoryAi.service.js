@@ -1,5 +1,6 @@
 import { CURATED_SOUNDTRACKS, THEME_PRESETS } from '../constants/photoStoryConstants.js';
 import { anyModelProviderConfigured, DEFAULT_ALIBABA_FALLBACK_MODEL, MAX_CONCURRENT_MODEL_REQUESTS, requestModelCompletion } from './modelProvider.service.js';
+import { isR2PresignedUrl } from './r2.service.js';
 
 const STYLE_DEFAULTS = Object.freeze({
   typographyStyle: 'cinematic_drift',
@@ -27,7 +28,7 @@ function visualReference(url) {
   try {
     const parsed = new URL(String(url || ''));
     if (parsed.protocol !== 'https:') return '';
-    if (!['res.cloudinary.com', 'cdn.pixabay.com', 'pixabay.com', 'www.pixabay.com'].includes(parsed.hostname.toLowerCase())) return '';
+    if (!(['cdn.pixabay.com', 'pixabay.com', 'www.pixabay.com'].includes(parsed.hostname.toLowerCase()) || isR2PresignedUrl(parsed.toString()))) return '';
     return parsed.toString();
   } catch {
     return '';

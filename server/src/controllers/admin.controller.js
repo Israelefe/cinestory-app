@@ -30,7 +30,9 @@ import SupportAccessGrant from '../models/SupportAccessGrant.js';
 import AdminUser from '../models/AdminUser.js';
 import Session from '../models/Session.js';
 import Portfolio from '../models/Portfolio.js';
+import PortfolioMedia from '../models/PortfolioMedia.js';
 import StorageAsset from '../models/StorageAsset.js';
+import ContentProject from '../models/ContentProject.js';
 import DeliveryView from '../models/DeliveryView.js';
 import StoryView from '../models/StoryView.js';
 import PhotoLike from '../models/PhotoLike.js';
@@ -38,7 +40,7 @@ import DeliveryShareGrant from '../models/DeliveryShareGrant.js';
 import SupportTicket from '../models/SupportTicket.js';
 import { billingConfigured, paystackRequest } from '../services/paystack.service.js';
 import { anyModelProviderConfigured } from '../services/modelProvider.service.js';
-import { checkCloudinaryConnection, cloudinary, configureCloudinary } from '../services/cloudinary.service.js';
+import { checkR2Connection, listR2ObjectRecords, r2Configured } from '../services/r2.service.js';
 import { PLAN_DEFINITIONS } from '../config/plans.js';
 import { tokenDigest } from '../utils/auth.js';
 import { removeDeliveryMedia } from '../services/deliveryMedia.service.js';
@@ -248,7 +250,7 @@ export async function getOperationsOverview(req, res) {
       failedPayments,
       pastDueSubscriptions,
       database,
-      cloudinary,
+      r2,
       workers
     ] = await Promise.all([
       User.countDocuments(),
@@ -273,7 +275,7 @@ export async function getOperationsOverview(req, res) {
       Payment.countDocuments({ status: { $in: ['failed', 'disputed'] }, updatedAt: { $gte: dayAgo } }),
       Subscription.countDocuments({ status: 'past_due' }),
       databaseHealth(),
-      checkCloudinaryConnection(),
+      checkR2Connection(),
       workerHealth()
     ]);
 
@@ -299,7 +301,7 @@ export async function getOperationsOverview(req, res) {
         },
         providers: {
           database,
-          cloudinary: health(cloudinary.ok, cloudinary.reason),
+          r2: health(r2.ok, r2.reason),
           ai: health(providerAiConfigured && analyticsFailures === 0, providerAiConfigured ? (analyticsFailures ? `${analyticsFailures} AI jobs failed in the last 24 hours.` : '') : 'Delivery AI configuration or narration provider is disabled or incomplete.', { configured: providerAiConfigured, failuresLast24Hours: analyticsFailures }),
           email: health(Boolean(process.env.RESEND_API_KEY) && emailFailures === 0, process.env.RESEND_API_KEY ? (emailFailures ? `${emailFailures} email sends failed in the last 24 hours.` : '') : 'RESEND_API_KEY is not configured.', { configured: Boolean(process.env.RESEND_API_KEY), sentLast24Hours: emailSuccesses, failuresLast24Hours: emailFailures }),
           paystack: health(billingConfigured() && failedPayments === 0, billingConfigured() ? (failedPayments ? `${failedPayments} payment failures or disputes were recorded in the last 24 hours.` : '') : 'Paystack billing is disabled or incomplete.', { configured: billingConfigured(), failuresLast24Hours: failedPayments })
@@ -1109,45 +1111,52 @@ function safeStorageNumber(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
-async function scanCloudinaryReferences() {
+async function scanR2References() {
   const startedAt = new Date();
-  if (!configureCloudinary()) return { status: 'unavailable', reason: 'Cloudinary credentials are not configured.', startedAt, completedAt: new Date(), orphaned: null, missingDatabaseRecords: null };
-  const discovered = { image: new Set(), video: new Set(), raw: new Set() };
-  const pages = { image: 0, video: 0, raw: 0 };
-  let truncated = false;
+  if (!r2Configured()) return { status: 'unavailable', reason: 'R2 environment values are not configured.', startedAt, completedAt: new Date(), orphaned: null, missingDatabaseRecords: null };
   try {
-    for (const resourceType of ['image', 'video', 'raw']) {
-      let nextCursor;
-      do {
-        const response = await cloudinary.api.resources({ resource_type: resourceType, type: 'authenticated', prefix: 'veylo/users/', max_results: 500, ...(nextCursor ? { next_cursor: nextCursor } : {}) });
-        for (const resource of response.resources || []) if (resource.public_id) discovered[resourceType].add(resource.public_id);
-        nextCursor = response.next_cursor;
-        pages[resourceType] += 1;
-        if (nextCursor && pages[resourceType] >= 20) { truncated = true; nextCursor = null; }
-      } while (nextCursor);
-    }
-
-    const [libraryRefs, deliveries] = await Promise.all([
-      StorageAsset.find({ $or: [{ publicId: /^veylo\/users\// }, { rawPublicId: /^veylo\/users\// }] }).select('publicId rawPublicId').lean(),
-      Delivery.find({ $or: [{ 'assets.publicId': /^veylo\/users\// }, { 'soundtrack.publicId': /^veylo\/users\// }, { 'narration.publicId': /^veylo\/users\// }] }).select('assets.publicId soundtrack.publicId narration.publicId').lean()
+    const discoveredRows = await listR2ObjectRecords('veylo/', { maxObjects: 20_000 });
+    const truncated = discoveredRows.length >= 20_000;
+    const discovered = new Set(discoveredRows.map(item => item.key).filter(key => !key.includes('.__veylo/')));
+    const [libraryRefs, deliveries, stories, users, portfolios, portfolioMedia, contentProjects] = await Promise.all([
+      StorageAsset.find({}).select('publicId rawPublicId').lean(),
+      Delivery.find({}).select('assets soundtrack narration v3 creativeDirection formatConfig photoswap pinboard collectionAnalysis formatRecommendations').lean(),
+      PhotoStory.find({}).select('photos.storageKey soundtrack.storageKey').lean(),
+      User.find({}).select('studio.logoPublicId avatarPublicId').lean(),
+      Portfolio.find({}).select('heroPublicId items draft profileMedia').lean(),
+      PortfolioMedia.find({}).select('publicId variants').lean(),
+      ContentProject.find({}).select('assets versions').lean()
     ]);
-    const dbRefs = { image: new Set(libraryRefs.map(asset => asset.publicId)), video: new Set(), raw: new Set(libraryRefs.map(asset => asset.rawPublicId).filter(Boolean)) };
-    for (const delivery of deliveries) {
-      for (const asset of delivery.assets || []) if (asset.publicId?.startsWith('veylo/users/')) dbRefs.image.add(asset.publicId);
-      if (delivery.soundtrack?.publicId?.startsWith('veylo/users/')) dbRefs.video.add(delivery.soundtrack.publicId);
-      if (delivery.narration?.publicId?.startsWith('veylo/users/')) dbRefs.video.add(delivery.narration.publicId);
-    }
-    const result = { status: truncated ? 'partial' : 'complete', startedAt, completedAt: new Date(), truncated, pages, orphaned: {}, missingDatabaseRecords: {} };
-    for (const resourceType of ['image', 'video', 'raw']) {
-      const orphaned = [...discovered[resourceType]].filter(publicId => !dbRefs[resourceType].has(publicId));
-      result.orphaned[resourceType] = { count: orphaned.length, sample: orphaned.slice(0, 20) };
-      result.missingDatabaseRecords[resourceType] = truncated
-        ? { count: null, sample: [], reason: 'The resource listing was capped; missing records need a complete scan.' }
-        : { count: [...dbRefs[resourceType]].filter(publicId => !discovered[resourceType].has(publicId)).length, sample: [...dbRefs[resourceType]].filter(publicId => !discovered[resourceType].has(publicId)).slice(0, 20) };
-    }
+    const dbRefs = { image: new Set(), video: new Set(), raw: new Set() };
+    const audioFields = new Set(['soundtrack', 'narration', 'opening', 'closing', 'captions', 'music', 'effect', 'voice', 'audio']);
+    const collectReferences = (value, parentKey = '', inheritedType = 'image') => {
+      if (typeof value === 'string') {
+        if (!value.startsWith('veylo/')) return;
+        const key = value.split('.__veylo/')[0];
+        dbRefs[parentKey === 'rawPublicId' ? 'raw' : inheritedType].add(key);
+        return;
+      }
+      if (Array.isArray(value)) { for (const item of value) collectReferences(item, parentKey, inheritedType); return; }
+      if (!value || typeof value !== 'object') return;
+      let nodeType = inheritedType;
+      const declaredType = String(value.resourceType || value.resource_type || '').toLowerCase();
+      const format = String(value.format || '').toLowerCase();
+      if (declaredType === 'raw') nodeType = 'raw';
+      else if (declaredType === 'image') nodeType = 'image';
+      else if (declaredType === 'video' || declaredType === 'audio' || audioFields.has(parentKey) || ['audio', 'video', 'music'].includes(String(value.kind || '').toLowerCase()) || ['mp3', 'wav', 'm4a', 'ogg', 'aac', 'flac', 'mp4', 'webm', 'mov'].includes(format)) nodeType = 'video';
+      for (const [key, child] of Object.entries(value)) {
+        const childType = key === 'rawPublicId' ? 'raw' : audioFields.has(key) ? 'video' : nodeType;
+        collectReferences(child, key, childType);
+      }
+    };
+    for (const records of [libraryRefs, deliveries, stories, users, portfolios, portfolioMedia, contentProjects]) collectReferences(records);
+    const allRefs = new Set([...dbRefs.image, ...dbRefs.video, ...dbRefs.raw]);
+    const orphaned = [...discovered].filter(key => !allRefs.has(key));
+    const missing = [...allRefs].filter(key => !discovered.has(key));
+    const result = { status: truncated ? 'partial' : 'complete', startedAt, completedAt: new Date(), truncated, pages: { objects: Math.min(discoveredRows.length, 20_000) }, orphaned: { image: { count: orphaned.length, sample: orphaned.slice(0, 20) }, video: { count: 0, sample: [] }, raw: { count: 0, sample: [] } }, missingDatabaseRecords: { image: { count: missing.length, sample: missing.slice(0, 20) }, video: { count: 0, sample: [] }, raw: { count: 0, sample: [] } } };
     return result;
   } catch (error) {
-    return { status: 'failed', reason: String(error?.message || 'Cloudinary resource listing failed').replace(/[A-Za-z0-9_-]{20,}/g, '[redacted]').slice(0, 180), startedAt, completedAt: new Date(), pages, orphaned: null, missingDatabaseRecords: null };
+    return { status: 'failed', reason: String(error?.message || 'R2 object listing failed').replace(/[A-Za-z0-9_-]{20,}/g, '[redacted]').slice(0, 180), startedAt, completedAt: new Date(), orphaned: null, missingDatabaseRecords: null };
   }
 }
 
@@ -1160,7 +1169,7 @@ export async function getStorageOverview(req, res) {
   try {
     let accountQuery = {};
     if (search) accountQuery = { $or: [{ name: { $regex: escaped(search), $options: 'i' } }, { email: { $regex: escaped(search), $options: 'i' } }, { 'studio.name': { $regex: escaped(search), $options: 'i' } }] };
-    const [libraryTotal, deliveryPhotoTotal, soundtrackTotal, narrationTotal, libraryFormats, libraryDimensions, hashTotals, deliveryHashTotals, audioHashTotals, accountLibrary, accountDelivery, accounts, uploadTrend, failureBreakdown, cloudinaryHealth, retentionHeartbeat, deliveryIntegrity] = await Promise.all([
+    const [libraryTotal, deliveryPhotoTotal, soundtrackTotal, narrationTotal, libraryFormats, libraryDimensions, hashTotals, deliveryHashTotals, audioHashTotals, accountLibrary, accountDelivery, accounts, uploadTrend, failureBreakdown, r2Health, retentionHeartbeat, deliveryIntegrity] = await Promise.all([
       StorageAsset.aggregate([{ $group: { _id: null, files: { $sum: 1 }, bytes: { $sum: { $ifNull: ['$bytes', 0] } } } }]),
       Delivery.aggregate([{ $unwind: '$assets' }, { $group: { _id: null, files: { $sum: 1 }, bytes: { $sum: { $ifNull: ['$assets.bytes', 0] } } } }]),
       Delivery.aggregate([{ $match: { 'soundtrack.publicId': { $exists: true, $ne: '' } } }, { $group: { _id: null, files: { $sum: 1 }, bytes: { $sum: { $ifNull: ['$soundtrack.bytes', 0] } } } }]),
@@ -1175,7 +1184,7 @@ export async function getStorageOverview(req, res) {
       User.find(accountQuery).select('name email plan planOverride studio.name storageUsedBytes createdAt').sort({ storageUsedBytes: -1 }).limit(100).lean(),
       AnalyticsEvent.aggregate([{ $match: { name: 'upload.completed', occurredAt: { $gte: since } } }, { $project: { day: { $dateToString: { format: '%Y-%m-%d', date: '$occurredAt' } }, surface: { $ifNull: ['$metadata.surface', 'unknown'] }, bytes: { $ifNull: ['$bytes', 0] }, count: { $ifNull: ['$count', 1] } } }, { $group: { _id: { day: '$day', surface: '$surface' }, bytes: { $sum: '$bytes' }, files: { $sum: '$count' } } }, { $sort: { '_id.day': 1 } }]),
       AnalyticsEvent.aggregate([{ $match: { name: { $in: ['upload.failed', 'storage.delete.failed', 'storage.retention.failed'] }, occurredAt: { $gte: since } } }, { $group: { _id: { name: '$name', errorCode: '$errorCode' }, count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 50 }]),
-      checkCloudinaryConnection(),
+      checkR2Connection(),
       WorkerHeartbeat.findOne({ workerName: 'retention' }).sort({ heartbeatAt: -1 }).lean(),
       Delivery.aggregate([{ $unwind: '$assets' }, { $group: { _id: null, missingPublicId: { $sum: { $cond: [{ $or: [{ $eq: ['$assets.publicId', null] }, { $eq: ['$assets.publicId', ''] }] }, 1, 0] } }, missingBytes: { $sum: { $cond: [{ $or: [{ $eq: ['$assets.bytes', null] }, { $lte: ['$assets.bytes', 0] }] }, 1, 0] } } } }])
     ]);
@@ -1207,11 +1216,11 @@ export async function getStorageOverview(req, res) {
       accounts: accountsData,
       formats: libraryFormats.map(item => ({ format: item._id || 'unknown', files: item.files, bytes: item.bytes })),
       dimensions: libraryDimensions.map(item => ({ width: item._id?.width, height: item._id?.height, files: item.files })),
-      hashes: { verified: libraryHash.verified + deliveryHash.verified + audioHash.verified, missing: Math.max(0, libraryHash.files + deliveryHash.files + audioHash.files - libraryHash.verified - deliveryHash.verified - audioHash.verified), algorithm: 'cloudinary-etag' },
+      hashes: { verified: libraryHash.verified + deliveryHash.verified + audioHash.verified, missing: Math.max(0, libraryHash.files + deliveryHash.files + audioHash.files - libraryHash.verified - deliveryHash.verified - audioHash.verified), algorithm: 'R2 ETag or SHA-256' },
       growth: uploadTrend.map(item => ({ day: item._id.day, surface: item._id.surface, bytes: item.bytes, files: item.files })),
       failures: { uploadsLast24Hours: failedUploads, deletesInWindow: failedDeletes, breakdown: failureBreakdown.map(item => ({ name: item._id.name, errorCode: item._id.errorCode || 'unknown', count: item.count })) },
-      health: { cloudinary: storageStatus(cloudinaryHealth.ok, cloudinaryHealth.reason), retention: { status: retentionFresh ? (retentionHeartbeat.status || 'idle') : retentionAt ? 'stale' : 'not-started', heartbeatAt: retentionHeartbeat?.heartbeatAt || null, stage: retentionHeartbeat?.stage || 'not started' }, databaseReferences: storageStatus(!deliveryIntegrity[0]?.missingPublicId && !deliveryIntegrity[0]?.missingBytes, deliveryIntegrity[0] ? `${deliveryIntegrity[0].missingPublicId || 0} delivery files have no public ID; ${deliveryIntegrity[0].missingBytes || 0} have no byte count.` : ''), hashes: storageStatus((libraryHash.files + deliveryHash.files + audioHash.files) === (libraryHash.verified + deliveryHash.verified + audioHash.verified), `${Math.max(0, libraryHash.files + deliveryHash.files + audioHash.files - libraryHash.verified - deliveryHash.verified - audioHash.verified)} media records still need a provider hash.`) },
-      scan: { status: 'not-run', message: 'Cloudinary reference scanning is manual because it lists provider resources.' }
+      health: { r2: storageStatus(r2Health.ok, r2Health.reason), retention: { status: retentionFresh ? (retentionHeartbeat.status || 'idle') : retentionAt ? 'stale' : 'not-started', heartbeatAt: retentionHeartbeat?.heartbeatAt || null, stage: retentionHeartbeat?.stage || 'not started' }, databaseReferences: storageStatus(!deliveryIntegrity[0]?.missingPublicId && !deliveryIntegrity[0]?.missingBytes, deliveryIntegrity[0] ? `${deliveryIntegrity[0].missingPublicId || 0} delivery files have no public ID; ${deliveryIntegrity[0].missingBytes || 0} have no byte count.` : ''), hashes: storageStatus((libraryHash.files + deliveryHash.files + audioHash.files) === (libraryHash.verified + deliveryHash.verified + audioHash.verified), `${Math.max(0, libraryHash.files + deliveryHash.files + audioHash.files - libraryHash.verified - deliveryHash.verified - audioHash.verified)} media records still need a provider hash.`) },
+      scan: { status: 'not-run', message: 'Run a manual R2 reference scan to compare bucket objects with database records.' }
     } });
   } catch (error) {
     console.error('[admin/storage]', error.message);
@@ -1221,11 +1230,11 @@ export async function getStorageOverview(req, res) {
 
 export async function scanStorageReferences(req, res) {
   try {
-    const data = await scanCloudinaryReferences();
+    const data = await scanR2References();
     res.json({ success: true, data });
   } catch (error) {
     console.error('[admin/storage-scan]', error.message);
-    res.status(500).json({ success: false, message: 'We could not scan Cloudinary references.' });
+    res.status(500).json({ success: false, message: 'We could not scan R2 references.' });
   }
 }
 

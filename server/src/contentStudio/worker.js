@@ -111,7 +111,7 @@ export async function processProject(project, parentSignal) {
             const wordCount = scene.narration.trim().split(/\s+/).length;
             const estDuration = Math.max(1.5, wordCount / 2.2);
             const duration = uploaded.duration || estDuration;
-            record = { publicId: uploaded.public_id, url: uploaded.url, localPath: uploaded.filePath, duration, words: [] };
+            record = { publicId: uploaded.public_id, localPath: uploaded.filePath, duration, words: [] };
             version.voice[scene.id] = record;
             await checkpoint();
           }
@@ -135,18 +135,18 @@ export async function processProject(project, parentSignal) {
       // Check if user uploaded custom background music
       const customMusic = project.assets.find(a => a.kind === 'music');
       if (customMusic) {
-        version.music = { publicId: customMusic.publicId, url: customMusic.url, bpm: 108 };
+        version.music = { publicId: customMusic.publicId, bpm: 108 };
         await checkpoint();
       } else if (version.brief.music && !version.music) {
         const score = makeScore(version.plan.musicMood, duration + 1);
         const uploaded = await uploadMedia(score.buffer, { projectId: project._id, key: `${version.id}/audio/score`, resourceType: 'video', format: 'wav' });
-        version.music = { publicId: uploaded.public_id, url: uploaded.url, bpm: score.bpm };
+        version.music = { publicId: uploaded.public_id, bpm: score.bpm };
         await checkpoint();
       }
 
       if (version.brief.soundDesign && !version.effect) {
         const uploaded = await uploadMedia(makeTransitionSound(), { projectId: project._id, key: `${version.id}/audio/transition`, resourceType: 'video', format: 'wav' });
-        version.effect = { publicId: uploaded.public_id, url: uploaded.url };
+        version.effect = { publicId: uploaded.public_id };
         await checkpoint();
       }
     }

@@ -24,9 +24,8 @@ const createSchema = z.object({
   password: z.string().min(8).max(72).refine(value => Buffer.byteLength(value, 'utf8') <= 72).optional()
 }).strict();
 const uploadConfirmSchema = z.object({
-  publicId: z.string().min(5).max(500),
-  version: z.union([z.string(), z.number()]),
-  signature: z.string().min(20).max(200),
+  objectKey: z.string().min(5).max(1000),
+  uploadToken: z.string().min(20).max(4000),
   sourceAssetId: z.string().regex(/^[a-f\d]{24}$/i),
   originalFilename: z.string().trim().max(180).default('edited-photograph')
 }).strict();
@@ -318,7 +317,7 @@ export async function signPublicEditorUpload(req, res) {
     if (collaboration.kind !== 'editor-handoff' || collaboration.status !== 'active') return res.status(403).json({ success: false, message: 'This editor link is closed to uploads.' });
     const sourceAssetId = String(req.body?.sourceAssetId || '');
     if (!collaboration.assetIds.some(id => String(id) === sourceAssetId)) return res.status(400).json({ success: false, message: 'Choose a source photograph from this link.' });
-    res.json({ success: true, data: { ...createStorageUploadSignature(collaboration.userId, { resourceType: 'image' }), sourceAssetId } });
+    res.json({ success: true, data: { ...createStorageUploadSignature(collaboration.userId, { resourceType: 'image', contentType: req.body?.contentType }), sourceAssetId } });
   } catch (error) {
     res.status(error.status || 500).json({ success: false, message: error.message || 'We could not prepare this upload.' });
   }
@@ -336,17 +335,17 @@ export async function confirmPublicEditorUpload(req, res) {
     const { collaboration } = await authorizedPublic(req);
     if (collaboration.kind !== 'editor-handoff' || collaboration.status !== 'active') return res.status(403).json({ success: false, message: 'This editor link is closed to uploads.' });
     if (!collaboration.assetIds.some(id => String(id) === parsed.data.sourceAssetId)) return res.status(400).json({ success: false, message: 'Choose a source photograph from this link.' });
-    if (await StorageAsset.exists({ publicId: parsed.data.publicId })) return res.status(409).json({ success: false, message: 'That edit has already been added.' });
+    if (await StorageAsset.exists({ publicId: parsed.data.objectKey })) return res.status(409).json({ success: false, message: 'That edit has already been added.' });
     const resource = await confirmStorageUpload(collaboration.userId, parsed.data);
     uploadedPublicId = resource.public_id;
-    if (!imageFormats.has(String(resource.format).toLowerCase()) || Number(resource.bytes) > 100 * 1024 * 1024) throw Object.assign(new Error('Upload a JPEG, PNG, or WebP edit no larger than 100 MB.'), { status: 400 });
+    if (!imageFormats.has(String(resource.format).toLowerCase()) || Number(resource.bytes) > 100 * 1024 * 1024) throw Object.assign(new Error('Choose a JPEG, PNG, or WebP edit that is 100 MB or smaller.'), { status: 400 });
     const { entitlements } = await activeProFor(collaboration.userId);
     const storageLimitBytes = Number(entitlements.limits.personalStorageBytes || 0);
     const user = await User.findOneAndUpdate({ _id: collaboration.userId, $expr: { $lte: [{ $add: [{ $ifNull: ['$storageUsedBytes', 0] }, resource.bytes] }, storageLimitBytes] } }, { $inc: { storageUsedBytes: resource.bytes } }, { new: true });
     if (!user) throw Object.assign(new Error(`This edit would take the photographer's library above ${Math.round(storageLimitBytes / (1024 ** 3))} GB.`), { status: 403, code: 'STORAGE_LIMIT_REACHED' });
     reservedBytes = Number(resource.bytes);
     reservedUserId = String(user._id);
-    const asset = await StorageAsset.create({ userId: user._id, publicId: resource.public_id, originalFilename: parsed.data.originalFilename, format: resource.format, width: resource.width, height: resource.height, bytes: resource.bytes, contentHash: resource.etag || undefined, hashAlgorithm: resource.etag ? 'cloudinary-etag' : undefined, hashVerifiedAt: resource.etag ? new Date() : undefined, folder: 'Editor returns', tags: ['edited'] });
+    const asset = await StorageAsset.create({ userId: user._id, publicId: resource.public_id, originalFilename: parsed.data.originalFilename, format: resource.format, width: resource.width, height: resource.height, bytes: resource.bytes, contentHash: resource.etag || undefined, hashAlgorithm: resource.hashAlgorithm, hashVerifiedAt: resource.etag ? new Date() : undefined, folder: 'Editor returns', tags: ['edited'] });
     createdAssetId = String(asset._id);
     const linked = await LibraryCollaboration.updateOne({ _id: collaboration._id, status: 'active', expiresAt: { $gt: new Date() } }, { $push: { returnedAssets: { sourceAssetId: parsed.data.sourceAssetId, assetId: asset._id, uploadedAt: new Date() } } });
     if (!linked.modifiedCount) {

@@ -14,13 +14,14 @@ dotenv.config({ path: fileURLToPath(new URL('./.env', import.meta.url)) });
 // This service binds only to loopback. Rendering and image processing stay on this PC.
 const port = 5055;
 const root = fileURLToPath(new URL('../', import.meta.url));
+const r2Origin = process.env.R2_ACCOUNT_ID ? `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com` : '';
 const app = express();
 app.disable('x-powered-by');
 app.use(helmet({ contentSecurityPolicy: { directives: {
   defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"],
-  imgSrc: ["'self'", 'data:', 'blob:', 'https://res.cloudinary.com'],
-  mediaSrc: ["'self'", 'blob:', 'https://res.cloudinary.com'],
-  connectSrc: ["'self'", 'https://res.cloudinary.com'], fontSrc: ["'self'", 'data:'],
+  imgSrc: ["'self'", 'data:', 'blob:', r2Origin].filter(Boolean),
+  mediaSrc: ["'self'", 'blob:', r2Origin].filter(Boolean),
+  connectSrc: ["'self'", r2Origin].filter(Boolean), fontSrc: ["'self'", 'data:'],
   upgradeInsecureRequests: null
 } }, crossOriginEmbedderPolicy: false }));
 // Prevent cross-site requests and DNS rebinding against the local administrative API.

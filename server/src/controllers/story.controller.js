@@ -7,13 +7,16 @@ import User from '../models/User.js';
 import StoryView from '../models/StoryView.js';
 import { resolveEntitlements, reservePublishSlot } from '../services/entitlement.service.js';
 import { tokenDigest } from '../utils/auth.js';
+import { isR2PresignedUrl } from '../services/r2.service.js';
+import { createR2Upload, deleteR2Object, deleteR2Prefix, headR2Object, imageVariantKey, prepareR2Image, presignedR2Get, verifyUploadToken } from '../services/r2.service.js';
+import { signedImageUrl } from '../services/deliveryMedia.service.js';
 import { z } from 'zod';
 
 const legacyMediaUrl = z.string().trim().min(1).max(2000).refine(value => {
   if (value.startsWith('/')) return /^\/(?:api\/v1\/deliveries\/soundtracks\/|audio\/)/.test(value);
   try {
     const parsed = new URL(value);
-    return parsed.protocol === 'https:' && ['res.cloudinary.com', 'cdn.pixabay.com', 'pixabay.com', 'www.pixabay.com'].includes(parsed.hostname.toLowerCase());
+    return parsed.protocol === 'https:' && (['cdn.pixabay.com', 'pixabay.com', 'www.pixabay.com'].includes(parsed.hostname.toLowerCase()) || isR2PresignedUrl(value));
   } catch { return false; }
 }, 'Use a Veylo media URL.');
 
@@ -21,6 +24,7 @@ const legacyPhotoSchema = z.object({
   id: z.string().trim().min(1).max(100),
   url: legacyMediaUrl,
   thumbnailUrl: legacyMediaUrl.optional().or(z.literal('')),
+  storageKey: z.string().trim().min(8).max(1000),
   chapterTitle: z.string().trim().max(80).default('The Moment'),
   caption: z.string().trim().min(18).max(240),
   typographyStyle: z.enum(['typewriter', 'editorial_quote', 'neon_pop', 'cinematic_drift', 'minimal_clean', 'bold_banner']).default('minimal_clean'),
@@ -46,6 +50,7 @@ const legacySoundtrackSchema = z.object({
   title: z.string().trim().max(120),
   artist: z.string().trim().max(120).default(''),
   audioUrl: legacyMediaUrl,
+  storageKey: z.string().trim().min(8).max(1000).optional(),
   genre: z.string().trim().max(80).default(''),
   durationSec: z.number().min(1).max(3600).default(120)
 }).passthrough();
@@ -73,10 +78,18 @@ export async function generateStoryWithAi(req, res) {
   try {
     const parsed = legacyAiSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ success: false, message: parsed.error.issues[0]?.message || 'Check the shoot details and photographs.' });
-    const { clientName, occasion, adminDescription, photos, selectedSoundtrackId } = parsed.data;
+    const { clientName, occasion, adminDescription, selectedSoundtrackId } = parsed.data;
     const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
     const entitlements = await resolveEntitlements(user);
-    if (photos.length > entitlements.limits.photosPerDelivery) return res.status(403).json({ success: false, code: 'PHOTO_LIMIT_REACHED', message: `${entitlements.planName} allows up to ${entitlements.limits.photosPerDelivery} photographs in one delivery.` });
+    if (parsed.data.photos.length > entitlements.limits.photosPerDelivery) return res.status(403).json({ success: false, code: 'PHOTO_LIMIT_REACHED', message: `${entitlements.planName} allows up to ${entitlements.limits.photosPerDelivery} photographs in one delivery.` });
+    const prefix = `veylo/users/${user._id}/stories/`;
+    const photos = [];
+    for (const photo of parsed.data.photos) {
+      if (!photo.storageKey?.startsWith(prefix)) return res.status(403).json({ success: false, message: 'Use photographs uploaded to this account.' });
+      await headR2Object(photo.storageKey);
+      photos.push({ ...photo, url: signedImageUrl(photo.storageKey, { width: 960 }), thumbnailUrl: signedImageUrl(photo.storageKey, { thumbnail: true }) });
+    }
 
     const storyConfig = await generateAiPhotoStory({
       clientName: clientName || 'Client',
@@ -99,12 +112,26 @@ export async function createStory(req, res) {
     if (!parsed.success) return res.status(400).json({ success: false, message: parsed.error.issues[0]?.message || 'Check the delivery details before publishing.' });
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
+    const storyPrefix = `veylo/users/${user._id}/stories/`;
+    for (const photo of parsed.data.photos) {
+      if (!photo.storageKey?.startsWith(storyPrefix)) return res.status(403).json({ success: false, message: 'Use photographs uploaded to this account.' });
+      const media = await headR2Object(photo.storageKey);
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(media.contentType)) return res.status(400).json({ success: false, message: 'Use a JPEG, PNG, or WebP photograph.' });
+    }
+    if (parsed.data.soundtrack.storageKey) {
+      if (!parsed.data.soundtrack.storageKey.startsWith(storyPrefix)) return res.status(403).json({ success: false, message: 'Use audio uploaded to this account.' });
+      const soundtrack = await headR2Object(parsed.data.soundtrack.storageKey);
+      if (!storyAudioTypes.has(soundtrack.contentType)) return res.status(400).json({ success: false, message: 'Use a supported audio file.' });
+    }
     reservation = await reservePublishSlot(user, parsed.data.photos.length);
     const story = await PhotoStory.create({
       ...parsed.data,
       userId: req.user.id,
       status: 'published'
     });
+    story.photos = story.photos.map(photo => ({ ...photo.toObject(), url: `/api/v1/stories/public/${story.storyId}/photos/${encodeURIComponent(photo.id)}/media`, thumbnailUrl: `/api/v1/stories/public/${story.storyId}/photos/${encodeURIComponent(photo.id)}/thumbnail` }));
+    if (story.soundtrack?.storageKey) story.soundtrack.audioUrl = `/api/v1/stories/public/${story.storyId}/soundtrack`;
+    await story.save();
     if (reservation.entitlements.plan === 'pro') await recordPaidUsage(user._id, 'delivery', story._id, story.createdAt);
     res.status(201).json({ success: true, data: story });
   } catch (err) {
@@ -127,6 +154,14 @@ export async function getPublicStory(req, res) {
       } catch (error) { if (error.code !== 11000) throw error; }
     }
     const { userId, __v, ...publicStory } = story;
+    publicStory.photos = (publicStory.photos || []).map(photo => {
+      const { storageKey, ...safePhoto } = photo;
+      return storageKey ? ({ ...safePhoto, url: `/api/v1/stories/public/${story.storyId}/photos/${encodeURIComponent(photo.id)}/media`, thumbnailUrl: `/api/v1/stories/public/${story.storyId}/photos/${encodeURIComponent(photo.id)}/thumbnail` }) : safePhoto;
+    });
+    if (publicStory.soundtrack?.storageKey) {
+      publicStory.soundtrack.audioUrl = `/api/v1/stories/public/${story.storyId}/soundtrack`;
+      delete publicStory.soundtrack.storageKey;
+    }
     res.json({ success: true, data: publicStory });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -168,11 +203,69 @@ export async function deleteStory(req, res) {
     const ownerQuery = req.user.role === 'admin' ? {} : { userId: req.user.id };
     const removed = await PhotoStory.findOneAndDelete({ ...ownerQuery, ...identifierQuery });
     if (!removed) return res.status(404).json({ success: false, message: 'Story not found.' });
+    for (const key of [removed.soundtrack?.storageKey, ...(removed.photos || []).map(photo => photo.storageKey)].filter(Boolean)) {
+      await Promise.all([deleteR2Object(key), deleteR2Prefix(`${key}.__veylo/`)]).catch(() => {});
+    }
     void StoryView.deleteMany({ storyId: removed._id }).catch(error => console.error('[stories/delete-views]', error.message));
     res.json({ success: true, message: 'Story deleted.' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
+}
+
+const storyImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const storyAudioTypes = new Set(['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/ogg', 'audio/mp4']);
+
+export async function signStoryUpload(req, res) {
+  try {
+    const parsed = z.object({ resourceType: z.enum(['image', 'audio']), contentType: z.string().trim().min(3).max(100) }).strict().safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ success: false, message: 'Choose a supported photo or audio file.' });
+    const { resourceType, contentType } = parsed.data;
+    if (resourceType === 'image' ? !storyImageTypes.has(contentType) : !storyAudioTypes.has(contentType)) return res.status(400).json({ success: false, message: 'Choose a supported photo or audio file.' });
+    const user = await User.findById(req.user.id).select('_id');
+    if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
+    const key = `veylo/users/${user._id}/stories/${crypto.randomUUID()}`;
+    const data = createR2Upload({ key, userId: user._id, contentType, resourceType, maxBytes: 30 * 1024 * 1024 });
+    res.json({ success: true, data });
+  } catch (error) { res.status(error.status || 503).json({ success: false, message: error.message || 'We could not prepare this upload.' }); }
+}
+
+export async function confirmStoryUpload(req, res) {
+  try {
+    const parsed = z.object({ objectKey: z.string().min(8).max(1000), uploadToken: z.string().min(20).max(4000), resourceType: z.enum(['image', 'audio']) }).strict().safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ success: false, message: parsed.error.issues[0]?.message || 'That upload could not be checked.' });
+    const prefix = `veylo/users/${req.user.id}/stories/`;
+    if (!parsed.data.objectKey.startsWith(prefix)) return res.status(403).json({ success: false, message: 'That upload does not belong to your account.' });
+    const claims = verifyUploadToken(parsed.data.uploadToken, { key: parsed.data.objectKey, userId: req.user.id, resourceType: parsed.data.resourceType });
+    const object = await headR2Object(parsed.data.objectKey);
+    if (!object.bytes || object.bytes > Math.min(30 * 1024 * 1024, Number(claims.maxBytes || 0))) {
+      await deleteR2Object(parsed.data.objectKey).catch(() => {});
+      return res.status(413).json({ success: false, message: 'Choose a file up to 30 MB.' });
+    }
+    if (object.contentType !== claims.contentType) return res.status(400).json({ success: false, message: 'The uploaded file type did not match.' });
+    if (parsed.data.resourceType === 'image') {
+      const image = await prepareR2Image(parsed.data.objectKey, { maxBytes: 30 * 1024 * 1024 });
+      return res.json({ success: true, data: { storageKey: parsed.data.objectKey, url: signedImageUrl(parsed.data.objectKey), thumbnailUrl: signedImageUrl(parsed.data.objectKey, { thumbnail: true }), width: image.width, height: image.height, bytes: image.bytes } });
+    }
+    const audioUrl = presignedR2Get(parsed.data.objectKey, { expiresIn: 6 * 60 * 60 });
+    res.json({ success: true, data: { storageKey: parsed.data.objectKey, url: audioUrl, audioUrl, bytes: object.bytes, contentType: object.contentType } });
+  } catch (error) { res.status(error.status || 500).json({ success: false, message: error.message || 'We could not save that upload.' }); }
+}
+
+export async function streamStoryMedia(req, res) {
+  try {
+    const story = await PhotoStory.findOne({ storyId: req.params.storyId, status: 'published' }).lean();
+    if (!story) return res.status(404).end();
+    if (req.params.kind === 'soundtrack' || req.path.endsWith('/soundtrack')) {
+      const key = story.soundtrack?.storageKey;
+      if (!key) return res.status(404).end();
+      return res.redirect(302, presignedR2Get(key, { expiresIn: 6 * 60 * 60 }));
+    }
+    const photo = (story.photos || []).find(item => String(item.id) === String(req.params.photoId));
+    if (!photo?.storageKey) return res.status(404).end();
+    const key = req.params.kind === 'thumbnail' ? imageVariantKey(photo.storageKey, 'thumb') : imageVariantKey(photo.storageKey, '1600');
+    return res.redirect(302, presignedR2Get(key, { expiresIn: 6 * 60 * 60 }));
+  } catch { return res.status(502).end(); }
 }
 
 function isLikelyBot(req) {

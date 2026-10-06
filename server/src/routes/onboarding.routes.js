@@ -1,11 +1,13 @@
 import express from 'express';
 import multer from 'multer';
 import { authMiddleware } from '../middleware/auth.middleware.js';
-import { completeOnboarding, getOnboarding, updateOnboarding, uploadStudioLogo } from '../controllers/onboarding.controller.js';
+import { completeOnboarding, getOnboarding, getPublicStudioAvatar, getPublicStudioLogo, updateOnboarding, uploadStudioLogo } from '../controllers/onboarding.controller.js';
 
 const router = express.Router();
 const logoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
 
+router.get('/public-logo/:userId', getPublicStudioLogo);
+router.get('/public-avatar/:userId', getPublicStudioAvatar);
 router.use(authMiddleware);
 router.get('/', getOnboarding);
 router.patch('/', updateOnboarding);

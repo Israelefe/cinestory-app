@@ -6,6 +6,7 @@ import AdminSession from '../models/AdminSession.js';
 import AdminLoginAttempt from '../models/AdminLoginAttempt.js';
 import AdminAudit from '../models/AdminAudit.js';
 import { getRuntimeConfig } from '../services/runtimeConfig.service.js';
+import { r2Configured } from '../services/r2.service.js';
 import { encryptAdminSecret, createTotpSecret, decryptAdminSecret, totpUri, verifyTotp, requestDeviceLabel, requestIp, requestUserAgent } from '../utils/adminSecurity.js';
 
 const ADMIN_ROLES = ['superadmin', 'operations', 'finance', 'support', 'analyst', 'read-only'];
@@ -71,7 +72,7 @@ export async function getSecurityOverview(req, res) {
       secretStatus: {
         jwt: Boolean(process.env.JWT_SECRET),
         otp: Boolean(process.env.OTP_SECRET),
-        cloudinary: Boolean(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET),
+        r2: r2Configured(),
         paystack: Boolean(process.env.PAYSTACK_SECRET_KEY),
         deepgram: Boolean(process.env.DEEPGRAM_API_KEY),
         email: Boolean(process.env.RESEND_API_KEY)
