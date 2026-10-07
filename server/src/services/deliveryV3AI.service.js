@@ -24,10 +24,10 @@ function captionTimeout() {
   return Object.assign(new Error('The caption service is taking too long. Your current words are unchanged. Please try again.'), { code: 'V3_CAPTION_TIMEOUT', status: 504 });
 }
 
-async function request(system, user, { images = [], maxTokens = 4000, deadline = Infinity, timeoutError = captionTimeout } = {}) {
+async function request(system, user, { images = [], maxTokens = 4000, deadline = Infinity, timeoutError = captionTimeout, temperature = images.length ? 0.15 : 0.45 } = {}) {
   if (!anyModelProviderConfigured()) throw Object.assign(new Error('Veylo AI is not configured.'), { code: 'V3_AI_UNAVAILABLE' });
-  const content = [{ type: 'text', text: user }, ...images.map(image => ({ type: 'image_url', image_url: { url: signedDeliveryImageUrl(image.publicId, { width: 960 }) } }))];
-  const body = { model: MODEL, enable_thinking: false, temperature: 0.45, max_tokens: maxTokens, messages: [{ role: 'system', content: system }, { role: 'user', content }] };
+  const prepareBody = () => ({ model: MODEL, enable_thinking: false, temperature, max_tokens: maxTokens, messages: [{ role: 'system', content: system }, { role: 'user', content: [{ type: 'text', text: user }, ...images.map(image => ({ type: 'image_url', image_url: { url: signedDeliveryImageUrl(image.publicId, { width: 960 }) } }))] }] });
+  const body = prepareBody();
   let malformedResponses = 0;
   const retryWait = async delay => {
     if (Date.now() + delay >= deadline) throw timeoutError();
@@ -38,7 +38,7 @@ async function request(system, user, { images = [], maxTokens = 4000, deadline =
     if (remaining <= 0) throw timeoutError();
     let response;
     try {
-      response = (await requestModelCompletion(body, { fallbackModel: process.env.ALIBABA_FALLBACK_MODEL || MODEL, timeoutMs: Math.ceil(remaining) })).response;
+      response = (await requestModelCompletion(body, { fallbackModel: process.env.ALIBABA_FALLBACK_MODEL || MODEL, timeoutMs: Math.ceil(remaining), prepareBody, workload: images.length ? 'analysis' : Number.isFinite(deadline) ? 'other' : 'writing' })).response;
     } catch (error) {
       if (Number.isFinite(deadline) && (Date.now() >= deadline || error.name === 'TimeoutError')) throw timeoutError();
       throw error;
@@ -676,6 +676,7 @@ function describesPhoto(value, delivery) {
   const text = String(value || '').replace(/\bsuits?\s+(?:you|your|them|their|me|my|us|our)\b/gi, '').replace(/\bholding\s+(?:on(?:to)?|to)\b/gi, '');
   const details = text.match(/\b(?:backdrops?|backgrounds?|foreground|lighting|composition|bokeh|lens|camera|close[- ]up|full[- ]length|soft focus|black[- ]and[- ]white|outfits?|wardrobe|dresses?|gowns?|suits?|blazers?|earrings?|pearls?|sunglasses|velvet|linen|jumpsuits?|sleeveless|telephone|newspaper|polaroid|miniature figure|candles?|cakes?|balloons?|confetti|champagne)\b/gi) || [];
   return details.some(detail => !supplied.includes(' ' + normalizeDetail(detail) + ' '))
+    || /\b(?:radiates?\s+joy|captures?\s+(?:the\s+)?(?:spirit|essence|joy))\b/i.test(text)
     || /\b(?:wearing|posing|posed|seated|holding|lying back|in hand|looking at the camera|looks at the camera)\b/i.test(text)
     || /\b(?:smile|laughter)(?:\s+(?:today|here))?\s+(?:shows?|says?|proves?|reveals?|means?)\b/i.test(text);
 }
@@ -768,15 +769,21 @@ async function repairNarrativeFrames(delivery, selected, prompt, firstFrames, av
   }
 }
 
-export async function directV3PhotoSwapCaptions(delivery, insights, onProgress = () => {}) {
+export async function directV3PhotoSwapCaptions(delivery, insights, onProgress = () => {}, resumeFrames = []) {
   const assets = [...delivery.assets].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
   const insightById = new Map(insights.map(insight => [insight.assetId, insight]));
   const selected = assets.map(asset => asset.assetId);
   const allFrames = [];
+  // Only a complete prefix from this unchanged delivery can be resumed.
+  for (const frame of resumeFrames) {
+    if (frame.assetId !== selected[allFrames.length] || !frame.headline || !frame.caption) break;
+    allFrames.push(frame);
+  }
+  if (allFrames.length) await onProgress(allFrames.length, selected.length, [...allFrames]);
   const batchSize = 18;
   const system = 'Return JSON {"frames":[{"assetId":"...","headline":"...","caption":"..."}]}. Write exactly one headline and standalone caption per supplied photograph, in the supplied order. A headline is 2 to 7 words and at most 70 characters. A caption is one or two natural sentences and at most 180 characters. Ground each caption in the photographer’s purpose and its own photograph. Keep the captions distinct across the set. Do not describe the act of taking a photo or invent details. ' + deliveryWritingPolicy(delivery);
 
-  for (let start = 0; start < selected.length; start += batchSize) {
+  for (let start = allFrames.length; start < selected.length; start += batchSize) {
     const batch = selected.slice(start, start + batchSize);
     const prompt = [
       'Authoritative delivery context: ' + narrativeContext(delivery),
@@ -811,15 +818,22 @@ export async function directV3PhotoSwapCaptions(delivery, insights, onProgress =
       }
       allFrames.push(frame);
     }
-    await onProgress(Math.min(start + batch.length, selected.length), selected.length);
+    await onProgress(allFrames.length, selected.length, [...allFrames]);
   }
   return allFrames;
 }
 
-export async function directV3(delivery, insights) {
+export async function directV3(delivery, insights, { resume = {}, checkpoint = async () => {} } = {}) {
+  const saved = { ...resume };
+  const step = async (name, task) => {
+    if (saved[name] !== undefined) return saved[name];
+    saved[name] = await task();
+    await checkpoint(structuredClone(saved));
+    return saved[name];
+  };
   const [minimum, maximum] = V3_FORMATS[delivery.format];
   const candidates = [...insights].sort((a, b) => b.score - a.score);
-  const selected = await chooseV3Showcase(delivery, insights, Math.min(maximum, candidates.length));
+  const selected = await step('selected', () => chooseV3Showcase(delivery, insights, Math.min(maximum, candidates.length)));
   if (selected.length < minimum) throw Object.assign(new Error(`This format needs at least ${minimum} photos.`), { code: 'V3_TOO_FEW_PHOTOS' });
   const selectedSet = new Set(selected);
   const extras = candidates.filter(row => !selectedSet.has(row.assetId));
@@ -827,7 +841,7 @@ export async function directV3(delivery, insights) {
   const closingAssetId = extras[1]?.assetId || extras[0]?.assetId || selected.at(-1);
   const rows = insights.filter(row => selectedSet.has(row.assetId));
   if (delivery.format === 'editorial') {
-    const direction = await writeEditorialDirection(request, delivery, rows, selected, text => hasUnsupportedAddress(text, delivery) || hasUnsupportedNumbers(text, delivery) || hasUnsupportedGathering(text, delivery));
+    const direction = await step('editorial', () => writeEditorialDirection(request, delivery, rows, selected, text => hasUnsupportedAddress(text, delivery) || hasUnsupportedNumbers(text, delivery) || hasUnsupportedGathering(text, delivery)));
     const visual = await request('Return JSON {"palette":{"background":"#hex","surface":"#hex","text":"#hex","accent":"#hex"},"typography":{"display":"Playfair Display","body":"Outfit"}}. Choose a readable magazine palette from the photograph colours; do not recolour photographs. Fonts: Playfair Display, Outfit, Plus Jakarta Sans, Cormorant Garamond, DM Sans, Libre Baskerville, Manrope.', JSON.stringify(rows.map(row => ({ colors: row.colors }))), { maxTokens: 450 });
     const palette = Object.fromEntries(Object.keys(V3_DEFAULT_PALETTE).map(key => [key, /^#[0-9a-f]{6}$/i.test(visual?.palette?.[key]) ? visual.palette[key] : V3_DEFAULT_PALETTE[key]]));
     if (contrastRatio(palette.background, palette.text) < 4.5 || contrastRatio(palette.surface, palette.text) < 4.5) {
@@ -846,30 +860,33 @@ export async function directV3(delivery, insights) {
     'Format: ' + delivery.format,
     'Selected photographs in order (supporting observations appropriate to this shoot): ' + JSON.stringify(selected.map(assetId => ({ assetId, cue: captionCue(rows.find(row => row.assetId === assetId), delivery) })))
   ].join('\n');
-  let narrative = await request(narrativeSystem, narrativePrompt, { maxTokens: Math.min(12000, 1200 + selected.length * 220) });
-  let responseFrames = alignNarrativeFrames(narrative.frames, selected);
-  const reviewedFrames = alignNarrativeFrames(await repairNarrativeFrames(delivery, selected, narrativePrompt, responseFrames), selected);
-  responseFrames = reviewedFrames.map((frame, index) => frameNeedsRepair(frame, delivery.format, delivery) && !frameNeedsRepair(responseFrames[index], delivery.format, delivery) ? responseFrames[index] : frame);
-  const captions = responseFrames.map((frame, index) => {
-    const rawHeadline = String(frame?.headline || '').replace(/^\s*headline\s*:\s*/i, '').trim();
-    const rawCaption = String(frame?.caption || '').replace(/^\s*caption\s*:\s*/i, '').trim();
-    const headline = fitText(shootWritingIssues(rawHeadline, delivery).length || headlineNeedsRepair(rawHeadline) || !headlineHasPurposeAnchor(rawHeadline, delivery, rawCaption) || hasUnsupportedAddress(rawHeadline + '. ' + rawCaption, delivery) || hasUnsupportedNumbers(rawHeadline, delivery) || describesPhoto(rawHeadline, delivery) || hasUnsupportedGathering(rawHeadline, delivery) ? purposeHeadline(delivery, index) : rawHeadline, 70);
-    const caption = substantialCaption(rawCaption, delivery, captionLimit, headline, index);
-    return { assetId: selected[index], headline, caption, textAnimation: delivery.format === 'photo-story' ? 'typewriter' : 'word_fade_up' };
-  });
-  {
-    const accepted = [];
-    for (const frame of captions) {
-      if (repeatsWording(frame, accepted)) {
-        for (let index = 0; index < V3_FORMATS['event-coverage'][1]; index += 1) {
-          const fallback = { headline: purposeHeadline(delivery, index), caption: purposeCaption(delivery, captionLimit, index) };
-          if (!repeatsWording(fallback, accepted)) { Object.assign(frame, fallback); break; }
+  const { narrative, captions } = await step('writing', async () => {
+    const narrative = await request(narrativeSystem, narrativePrompt, { maxTokens: Math.min(12000, 1200 + selected.length * 220) });
+    let responseFrames = alignNarrativeFrames(narrative.frames, selected);
+    const reviewedFrames = alignNarrativeFrames(await repairNarrativeFrames(delivery, selected, narrativePrompt, responseFrames), selected);
+    responseFrames = reviewedFrames.map((frame, index) => frameNeedsRepair(frame, delivery.format, delivery) && !frameNeedsRepair(responseFrames[index], delivery.format, delivery) ? responseFrames[index] : frame);
+    const captions = responseFrames.map((frame, index) => {
+      const rawHeadline = String(frame?.headline || '').replace(/^\s*headline\s*:\s*/i, '').trim();
+      const rawCaption = String(frame?.caption || '').replace(/^\s*caption\s*:\s*/i, '').trim();
+      const headline = fitText(shootWritingIssues(rawHeadline, delivery).length || headlineNeedsRepair(rawHeadline) || !headlineHasPurposeAnchor(rawHeadline, delivery, rawCaption) || hasUnsupportedAddress(rawHeadline + '. ' + rawCaption, delivery) || hasUnsupportedNumbers(rawHeadline, delivery) || describesPhoto(rawHeadline, delivery) || hasUnsupportedGathering(rawHeadline, delivery) ? purposeHeadline(delivery, index) : rawHeadline, 70);
+      const caption = substantialCaption(rawCaption, delivery, captionLimit, headline, index);
+      return { assetId: selected[index], headline, caption, textAnimation: delivery.format === 'photo-story' ? 'typewriter' : 'word_fade_up' };
+    });
+    {
+      const accepted = [];
+      for (const frame of captions) {
+        if (repeatsWording(frame, accepted)) {
+          for (let index = 0; index < V3_FORMATS['event-coverage'][1]; index += 1) {
+            const fallback = { headline: purposeHeadline(delivery, index), caption: purposeCaption(delivery, captionLimit, index) };
+            if (!repeatsWording(fallback, accepted)) { Object.assign(frame, fallback); break; }
+          }
         }
+        accepted.push(frame);
       }
-      accepted.push(frame);
     }
-  }
-  const visual = await request('Return JSON {"palette":{"background":"#hex","surface":"#hex","text":"#hex","accent":"#hex"},"typography":{"display":"Playfair Display","body":"Outfit"}}. Choose a readable palette from the supplied image colours. Do not write or change the title, opening, closing, headlines, or captions. Typography must use Playfair Display, Outfit, Plus Jakarta Sans, Cormorant Garamond, DM Sans, Libre Baskerville, or Manrope.', 'Image colours: ' + JSON.stringify(rows.map(({ assetId, colors }) => ({ assetId, colors }))) + '\nFormat: ' + delivery.format, { maxTokens: 450 });
+    return { narrative, captions };
+  });
+  const visual = await step('visual', () => request('Return JSON {"palette":{"background":"#hex","surface":"#hex","text":"#hex","accent":"#hex"},"typography":{"display":"Playfair Display","body":"Outfit"}}. Choose a readable palette from the supplied image colours. Do not write or change the title, opening, closing, headlines, or captions. Typography must use Playfair Display, Outfit, Plus Jakarta Sans, Cormorant Garamond, DM Sans, Libre Baskerville, or Manrope.', 'Image colours: ' + JSON.stringify(rows.map(({ assetId, colors }) => ({ assetId, colors }))) + '\nFormat: ' + delivery.format, { maxTokens: 450 }));
   const result = { ...narrative, palette: visual.palette, typography: visual.typography };
   const palette = Object.fromEntries(Object.keys(V3_DEFAULT_PALETTE).map(key => [key, /^#[0-9a-f]{6}$/i.test(result.palette?.[key]) ? result.palette[key] : V3_DEFAULT_PALETTE[key]]));
   if (contrastRatio(palette.background, palette.text) < 4.5 || contrastRatio(palette.surface, palette.text) < 4.5) {
@@ -879,7 +896,7 @@ export async function directV3(delivery, insights) {
   }
   const openingLine = bookendMessage(result.openingLine, delivery, 140, true);
   const closingLine = bookendMessage(result.closingLine, delivery, 160, false);
-  const sections = await groupV3Sections(delivery, rows, selected);
+  const sections = await step('sections', () => groupV3Sections(delivery, rows, selected));
   const proposedTitle = String(result.title || '').replace(/\s+/g, ' ').trim();
   const title = proposedTitle.length >= 2 && proposedTitle.length <= 80 && textHasPurposeAnchor(proposedTitle, delivery) && !hasUnsupportedAddress(proposedTitle, delivery) && !hasUnsupportedNumbers(proposedTitle, delivery) && !describesPhoto(proposedTitle, delivery) && !shootWritingIssues(proposedTitle, delivery).length ? proposedTitle : purposeHeadline(delivery);
   return { selected, openingAssetId, closingAssetId, direction: { title: fitText(title.length >= 2 ? title : purposeHeadline(delivery), 80), openingLine: fitText(openingLine, 140), closingLine: fitText(closingLine, 160), writingOverrides: [], palette, typography: { display: V3_FONT_CHOICES.has(result.typography?.display) ? result.typography.display : 'Playfair Display', body: V3_FONT_CHOICES.has(result.typography?.body) ? result.typography.body : 'Outfit' }, frames: captions, assetOrder: selected, sections } };
@@ -929,7 +946,7 @@ export async function regenerateV3Caption(delivery, insight, instruction = '', p
   if (previous && !frameNeedsRepair(previous, delivery.format, delivery)) existing.push(previous);
   const prompt = 'Authoritative delivery context: ' + narrativeContext(delivery) + '\nPhotographer instruction (guide emphasis without changing the client or purpose): ' + instruction + '\nOptional supporting cue: ' + (captionCue(insight, delivery) || 'None. Use the purpose alone.') + '\nExisting wording to avoid repeating (not a source of facts): ' + JSON.stringify(existing);
   const system = 'Return JSON {"headline":"...","caption":"..."}. Write one new headline and caption for this delivery. The instruction can guide tone but cannot contradict the authoritative purpose. ' + deliveryWritingPolicy(delivery);
-  let result = await request(system, prompt, { maxTokens: 700, deadline });
+  let result = await request(system, prompt, { maxTokens: 700, deadline, temperature: supportsVisualWriting(delivery) ? 0.2 : 0.45 });
   const repaired = await repairNarrativeFrames(delivery, ['selected-photo'], prompt, [{ assetId: 'selected-photo', headline: result.headline, caption: result.caption }], existing, deadline);
   const reviewed = alignNarrativeFrames(repaired, ['selected-photo'])[0];
   if (!frameNeedsRepair(reviewed, delivery.format, delivery) || frameNeedsRepair(result, delivery.format, delivery)) result = reviewed;

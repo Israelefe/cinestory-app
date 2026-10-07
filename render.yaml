@@ -69,6 +69,25 @@ services:
         sync: false
       - key: GROQ_MODEL
         value: qwen/qwen3.8-27b
+      - key: GROQ_VISION_MODEL
+        value: qwen/qwen3.8-27b
+      - key: GROQ_TEXT_MODEL
+        value: openai/gpt-oss-120b
+      - key: GROQ_REQUESTS_PER_MINUTE
+        value: "1000"
+      - key: GROQ_TOKENS_PER_MINUTE
+        value: "250000"
+      - key: AI_ANALYSIS_CONCURRENCY
+        value: "100"
+      - key: AI_WRITING_CONCURRENCY
+        value: "30"
+      - key: AI_ASSISTANT_CONCURRENCY
+        value: "8"
+      - key: AI_OTHER_CONCURRENCY
+        value: "8"
+      # Set external after the separate delivery worker is running.
+      - key: DELIVERY_WORKER_MODE
+        value: inline
       - key: ALIBABA_FALLBACK_MODEL
         value: deepseek-v4.1-flash
       - key: ALIBABA_MODEL_STUDIO_API_KEY
@@ -80,9 +99,9 @@ services:
       # Existing V2 delivery jobs use this separate worker setting.
       - key: DELIVERY_WORKER_CONCURRENCY
         value: "4"
-      # V3 delivery preparation can run up to 50 jobs per API worker process.
+      # Up to 100 active preparations; provider allowance controls AI starts.
       - key: DELIVERY_V3_WORKER_CONCURRENCY
-        value: "50"
+        value: "100"
       - key: DELIVERY_AI_CONCURRENCY
         value: "6"
       - key: DELIVERY_VISION_BATCH_SIZE

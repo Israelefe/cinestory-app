@@ -6,6 +6,7 @@ import { captionSegments, generateNarration, narrationLine, NARRATION_RENDER_VER
 import { v3Assist } from '../src/controllers/deliveryV3.controller.js';
 
 const ids = Array.from({ length: 25 }, (_, index) => 'asset-' + index);
+Object.assign(process.env, { R2_ACCOUNT_ID: 'offline-account', R2_ACCESS_KEY_ID: 'offline-key', R2_SECRET_ACCESS_KEY: 'offline-secret', R2_BUCKET_NAME: 'offline-bucket', R2_IMAGE_WORKER_URL: 'https://offline-worker.example', R2_IMAGE_WORKER_SECRET: 'offline-secret-that-is-at-least-32-characters' });
 const narrativeHeadlines = ['Twenty-five begins', "Ada's Birthday Year", 'Ada at Twenty-Five', "Ada's Next Birthday", "Ada's Birthday, Her Terms", 'Twenty-Five, Ada’s Way', 'Ada Turns Twenty-Five', 'A Birthday for Ada', "Ada's Celebration Ahead", 'Birthday Year for Ada'];
 const narrativeCaptions = [
   'Ada, turning twenty-five is a chance to celebrate how far you have come and choose what matters most in the year ahead.',
@@ -218,7 +219,7 @@ function mockModel(responses, calls) {
       response = { frames: previousNarrative?.frames || [{ assetId: 'selected-photo', ...previousNarrative }] };
     } else response = responses.shift();
     if (response?.frames || response?.caption) previousNarrative = response;
-    return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(response) } }] }) };
+    return Response.json({ usage: { total_tokens: 1 }, choices: [{ message: { content: JSON.stringify(response) } }] });
   };
   return () => {
     globalThis.fetch = previousFetch;
@@ -238,8 +239,8 @@ test('V3 retries a throttled model request', async () => {
   let calls = 0;
   globalThis.fetch = async () => {
     calls += 1;
-    if (calls === 1) return { ok: false, status: 429, headers: { get: () => '0' } };
-    return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ improved: "Ada's 25th birthday celebration" }) } }] }) };
+    if (calls === 1) return Response.json({}, { status: 429, headers: { 'retry-after': '0.01' } });
+    return Response.json({ usage: { total_tokens: 1 }, choices: [{ message: { content: JSON.stringify({ improved: "Ada's 25th birthday celebration" }) } }] });
   };
   try {
     assert.equal(await improvePurpose({ purpose: 'Ada 25th birthday celebration', shootType: 'Birthday' }), "Ada's 25th birthday celebration");
@@ -414,7 +415,7 @@ test('headline and caption regeneration retries malformed and empty AI responses
   const valid = { headline: "Convennant's Birthday Year", caption: 'Convennant, this birthday is a chance to mark what matters to you and make room for what you want next.' };
   const outputs = ['{"headline": broken}', 'null', JSON.stringify(valid), JSON.stringify({ frames: [{ assetId: 'selected-photo', ...valid }] })];
   let calls = 0;
-  t.mock.method(globalThis, 'fetch', async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: outputs[calls++] } }] }) }));
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ usage: { total_tokens: 1 }, choices: [{ message: { content: outputs[calls++] } }] }));
   const result = await regenerateV3Caption({ clientName: 'Convennant', brief: 'birthday', shootType: 'Birthday', format: 'photo-story' }, { summary: 'A person smiles.' });
   assert.equal(calls, 4);
   assert.equal(result.headline, "Convennant's Birthday Year");
@@ -722,6 +723,9 @@ test('regeneration can still supply a different fitting message after a full Pho
 });
 
 test('regeneration has a total deadline below the browser timeout, including provider retries', async t => {
+  const previousModel = process.env.ALIBABA_FALLBACK_MODEL;
+  process.env.ALIBABA_FALLBACK_MODEL = 'deadline-test-model';
+  t.after(() => { if (previousModel === undefined) delete process.env.ALIBABA_FALLBACK_MODEL; else process.env.ALIBABA_FALLBACK_MODEL = previousModel; });
   const previous = { key: process.env.ALIBABA_MODEL_STUDIO_API_KEY, base: process.env.ALIBABA_BASE_URL };
   process.env.ALIBABA_MODEL_STUDIO_API_KEY = 'test-key';
   process.env.ALIBABA_BASE_URL = 'https://test.aliyuncs.com/compatible-mode/v1';
@@ -737,7 +741,7 @@ test('regeneration has a total deadline below the browser timeout, including pro
     calls += 1;
     assert.equal(options.signal.aborted, false);
     now += 46000;
-    return { ok: false, status: 429, body: { cancel: async () => {} }, headers: { get: () => '60' } };
+    return Response.json({}, { status: 429, headers: { 'retry-after': '60' } });
   });
   await assert.rejects(regenerateV3Caption({ clientName: 'Ada', brief: "Ada's birthday", format: 'photo-story' }, {}), error => error.code === 'V3_CAPTION_TIMEOUT' && error.status === 504 && /current words are unchanged/.test(error.message));
   assert.equal(calls, 1);
@@ -757,7 +761,7 @@ test('a slow review keeps an already checked caption without waiting past the to
   t.mock.method(Date, 'now', () => now);
   t.mock.method(globalThis, 'fetch', async () => {
     calls += 1;
-    if (calls === 1) return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(valid) } }] }) };
+    if (calls === 1) return Response.json({ usage: { total_tokens: 1 }, choices: [{ message: { content: JSON.stringify(valid) } }] });
     now += 46000;
     const error = new Error('Timed out'); error.name = 'TimeoutError'; throw error;
   });
@@ -886,7 +890,7 @@ test('invalid model selection fails instead of silently selecting other photos',
   } finally { restore(); }
 });
 
-test('vision batches grow, shrink at the provider limit, and analyse every photo', async () => {
+test('vision analyses every photo using requests of at most three images', async () => {
   const previous = Object.fromEntries(['ALIBABA_MODEL_STUDIO_API_KEY', 'ALIBABA_BASE_URL', 'CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'].map(key => [key, process.env[key]]));
   Object.assign(process.env, {
     ALIBABA_MODEL_STUDIO_API_KEY: 'test-key',
@@ -901,8 +905,8 @@ test('vision batches grow, shrink at the provider limit, and analyse every photo
     assert.equal(body.enable_thinking, false);
     const imageCount = body.messages[1].content.filter(part => part.type === 'image_url').length;
     sizes.push(imageCount);
-    if (imageCount > 30) return { ok: false, status: 413 };
-    return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ images: Array.from({ length: imageCount }, (_, index) => ({ index, summary: `Visible photo ${index}`, score: 7, colors: ['#ff5a47'], momentTags: ['portraits'], similarityTags: [index % 2 ? 'standing pose' : 'seated pose'], colorGroups: [{ area: 'outfit', color: 'green' }, { area: 'background', color: 'cream' }] })) }) } }] }) };
+    if (imageCount > 3) return Response.json({}, { status: 413 });
+    return Response.json({ usage: { total_tokens: 1 }, choices: [{ message: { content: JSON.stringify({ images: Array.from({ length: imageCount }, (_, index) => ({ index, summary: `Visible photo ${index}`, score: 7, colors: ['#ff5a47'], momentTags: ['portraits'], similarityTags: [index % 2 ? 'standing pose' : 'seated pose'], colorGroups: [{ area: 'outfit', color: 'green' }, { area: 'background', color: 'cream' }] })) }) } }] });
   };
   try {
     const assets = Array.from({ length: 90 }, (_, index) => ({ assetId: `photo-${index}`, publicId: `test/photo-${index}`, sortOrder: index }));
@@ -914,8 +918,8 @@ test('vision batches grow, shrink at the provider limit, and analyse every photo
     assert.deepEqual(result[0].similarityTags, ['seated pose']);
     assert.equal(result[0].similarAssetIds[0], 'photo-2');
     assert.ok(!result[0].similarAssetIds.includes('photo-1'), 'a shared outfit colour alone is not a similar shot');
-    assert.ok(sizes.some(size => size > 30));
-    assert.ok(sizes.some(size => size < 30));
+    assert.ok(sizes.every(size => size <= 3));
+    assert.equal(sizes.length, 30);
     assert.deepEqual(progress.at(-1), [90, 90]);
   } finally {
     globalThis.fetch = previousFetch;

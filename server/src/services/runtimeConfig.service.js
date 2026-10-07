@@ -73,8 +73,8 @@ function providerState() {
     : modelProviders.model;
   const providerLabel = modelProviders.primaryConfigured ? 'Groq AI (Alibaba Model Studio fallback)' : modelProviders.provider;
   return {
-    ai: { provider: providerLabel, configured: modelProviders.configured, primaryConfigured: modelProviders.primaryConfigured, fallbackProvider: modelProviders.fallbackProvider, fallbackConfigured: modelProviders.fallbackConfigured, model: modelLabel, visionModel: modelProviders.model, captionModel: modelProviders.model },
-    assistant: { provider: 'Veylo Help / ' + providerLabel, configured: modelProviders.configured, model: modelLabel },
+    ai: { provider: providerLabel, configured: modelProviders.configured, primaryConfigured: modelProviders.primaryConfigured, fallbackProvider: modelProviders.fallbackProvider, fallbackConfigured: modelProviders.fallbackConfigured, model: modelLabel, visionModel: modelProviders.visionModel, captionModel: modelProviders.textModel },
+    assistant: { provider: 'Veylo Help / ' + providerLabel, configured: modelProviders.configured, model: modelProviders.textModel },
     narration: { provider: 'Deepgram Flux', configured: Boolean(process.env.DEEPGRAM_API_KEY), defaultVoiceId: DEFAULT_NARRATION_VOICE_ID },
     email: { provider: 'Resend', configured: Boolean(process.env.RESEND_API_KEY), from: process.env.RESEND_FROM_EMAIL || 'Veylo <info@veylo.com.ng>' },
     billing: { provider: 'Paystack', configured: Boolean(process.env.PAYSTACK_SECRET_KEY && process.env.PAYSTACK_PRO_PLAN_CODE), enabled: process.env.BILLING_ENABLED === 'true' },

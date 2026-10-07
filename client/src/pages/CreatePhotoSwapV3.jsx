@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { deliveryPreparationMessage } from '../utils/deliveryPreparation.js';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import {
@@ -775,7 +776,7 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
                   {captionPreparing ? (
                     <div className="ps-caption-progress" role="status" aria-live="polite">
                       <span className="ps-caption-progress-icon"><Type size={21} /></span>
-                      <div><strong>{captionJob?.stage === 'writing-captions' ? 'Writing a caption for each photo' : 'Reviewing your photographs'}</strong><p>We’re using the same photo analysis and writing rules as Showcase.</p></div>
+                      <div><strong>{captionJob?.stage === 'writing-captions' ? 'Writing a caption for each photo' : 'Reviewing your photographs'}</strong><p>{deliveryPreparationMessage(captionJob)}</p></div>
                       <span className="ps-caption-progress-value">{captionJob?.progress || 0}%</span>
                       <div className="ps-caption-progress-track"><i style={{ transform: 'scaleX(' + (captionJob?.progress || 0) / 100 + ')' }} /></div>
                     </div>

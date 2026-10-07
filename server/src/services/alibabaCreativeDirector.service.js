@@ -1054,18 +1054,19 @@ Do not choose the generic quiet/rules/balanced combination unless the photograph
   return result;
 }
 
-export async function createFrameBatch({ format, brief, shootType, clientName, direction, imageInsights, photoUrlsById, collectionAnalysis = null, revisionInstruction = '', currentFrames = [] }) {
-  if (imageInsights.length > 3) {
+export async function createFrameBatch({ format, brief, shootType, clientName, direction, imageInsights, collectionAnalysis = null, revisionInstruction = '', currentFrames = [] }) {
+  if (imageInsights.length > 18) {
     const frames = [];
-    for (let offset = 0; offset < imageInsights.length; offset += 3) {
-      const batch = imageInsights.slice(offset, offset + 3);
-      frames.push(...await createFrameBatch({
-        format, brief, shootType, clientName, direction, imageInsights: batch, photoUrlsById,
+    for (let offset = 0; offset < imageInsights.length; offset += 18) {
+      const batch = imageInsights.slice(offset, offset + 18);
+      const result = await createFrameBatch({
+        format, brief, shootType, clientName, direction, imageInsights: batch,
         collectionAnalysis, revisionInstruction,
         currentFrames: currentFrames.filter(frame => batch.some(item => item.assetId === frame.assetId))
-      }));
+      });
+      frames.push(...result.frames);
     }
-    return frames;
+    return { frames };
   }
   const provider = config();
   const formatProfile = FORMAT_DIRECTION_PROFILES[format] || FORMAT_DIRECTION_PROFILES['photo-story'];
@@ -1103,13 +1104,8 @@ Return one frame per photograph in the supplied order.`;
 
   const photographInputs = (imageInsights || []).map(insight => {
     const assetId = String(insight.assetId || '');
-    const url = photoUrlsById?.get(assetId);
-    if (!url) {
-      throw Object.assign(new Error(`The photograph ${assetId} is unavailable for caption writing.`), { code: 'PHOTO_URL_REQUIRED' });
-    }
     return {
       assetId,
-      url,
       photographerCaption: insight.photographerCaption || '',
       photographerTags: insight.photographerTags || [],
       summary: insight.summary || '',
@@ -1266,7 +1262,7 @@ Return one frame per photograph in the supplied order.`;
 
 Every photograph must have a meaningful caption. Start with the photographer's brief and the stated purpose of the shoot. Give each headline and caption a clear job: name a useful idea or section, add context, or explain why the work matters to the client or brand.
 
-Inspect each attached photograph yourself. The photographer's brief and notes are the source for meaning, names, relationships, and purpose. Relevant visible details may support commercial and documentary writing. For personal shoots, keep them secondary to why the photographs were made. Avoid lists of visible contents. If the brief does not support a personal or emotional claim, stay direct and factual.
+Use the saved observations for each photograph. The photographer's brief and notes are the source for meaning, names, relationships, and purpose. Relevant visible details may support commercial and documentary writing. For personal shoots, keep them secondary to why the photographs were made. Avoid lists of visible contents. If the brief does not support a personal or emotional claim, stay direct and factual.
 
 Keep captions distinct from one another. Do not force a celebration or address the client by name in every line. Avoid mechanical alt-text, camera jargon, invented facts, and details that are not supported by the brief or photograph.
 
@@ -1309,7 +1305,7 @@ Assign every photograph to one existing section (${validSectionIds.join(', ')}).
               ? `A previous response was incomplete or unusable. Return exactly ${expectedAssetIds.length} unique frames, one for each assetId, in this exact order: ${expectedAssetIds.join(', ')}. Do not omit, merge, or duplicate photographs.`
               : `Return exactly ${expectedAssetIds.length} unique frames, one for each supplied assetId.`
             }) },
-            ...photographInputs.flatMap(({ assetId, url, photographerCaption, photographerTags, summary, subjects, expression, setting, clothing, moment }, index) => [
+            ...photographInputs.flatMap(({ assetId, photographerCaption, photographerTags, summary, subjects, expression, setting, clothing, moment }, index) => [
               {
                 type: 'text',
                 text: `Photograph ${index + 1} of ${photographInputs.length}. Context: ${JSON.stringify({
@@ -1318,8 +1314,7 @@ Assign every photograph to one existing section (${validSectionIds.join(', ')}).
                   photographerTags,
                   visualNotes: { summary, subjects, expression, setting, clothing, moment }
                 })}`
-              },
-              { type: 'image_url', image_url: { url } }
+              }
             ])
           ]
         }

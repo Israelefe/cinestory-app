@@ -389,7 +389,7 @@ export async function getDelivery(req, res) {
     if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
     const latestJob = await DeliveryJob.findOne({ deliveryId: delivery._id, userId: req.user.id })
       .sort({ createdAt: -1 })
-      .select('_id type status stage progress errorCode errorMessage attempts createdAt updatedAt')
+      .select('_id type status stage progress counts modelQueue errorCode errorMessage attempts createdAt updatedAt')
       .lean();
     const generationJob = latestJob && ['queued', 'running', 'failed'].includes(latestJob.status) ? latestJob : null;
     const data = delivery.toObject();

@@ -1,13 +1,14 @@
 import 'dotenv/config';
 import mongoose from 'mongoose';
 import { connectDB } from './src/config/db.js';
-import { startDeliveryWorker } from './src/services/deliveryWorker.service.js';
+import { startDeliveryWorker, stopDeliveryWorker } from './src/services/deliveryWorker.service.js';
 
 if (!await connectDB()) process.exit(1);
 
 startDeliveryWorker();
 
 async function shutdown() {
+  await stopDeliveryWorker();
   await mongoose.disconnect();
   process.exit(0);
 }

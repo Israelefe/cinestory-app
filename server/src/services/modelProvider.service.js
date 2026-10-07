@@ -1,60 +1,24 @@
+import { createModelRequestScheduler } from './modelRequestScheduler.service.js';
+import { modelBudget, providerBudgetObservation } from './modelBudget.service.js';
+import { modelRequestContext } from './modelRequestContext.service.js';
+
 const GROQ_API_BASE = 'https://api.groq.com/openai/v1';
 export const GROQ_PROVIDER_NAME = 'Groq AI';
 export const ALIBABA_PROVIDER_NAME = 'Alibaba Model Studio';
 export const DEFAULT_GROQ_MODEL = 'qwen/qwen3.8-27b';
+export const DEFAULT_GROQ_TEXT_MODEL = 'openai/gpt-oss-120b';
 export const DEFAULT_ALIBABA_FALLBACK_MODEL = 'deepseek-v4.1-flash';
+// Per delivery analysis batches, not a shared limit across AI features.
 export const MAX_CONCURRENT_MODEL_REQUESTS = 5;
-let activeModelRequests = 0;
-const modelRequestWaiters = [];
-
-async function withModelRequestSlot(task, signal) {
-  if (signal?.aborted) throw signal.reason || new Error('The model request was cancelled.');
-
-  if (activeModelRequests >= MAX_CONCURRENT_MODEL_REQUESTS) {
-    await new Promise((resolve, reject) => {
-      const waiter = { resolve, reject, signal, queued: true, onAbort: null };
-      waiter.onAbort = () => {
-        if (!waiter.queued) return;
-        waiter.queued = false;
-        const index = modelRequestWaiters.indexOf(waiter);
-        if (index !== -1) modelRequestWaiters.splice(index, 1);
-        reject(signal.reason || new Error('The model request was cancelled.'));
-      };
-      modelRequestWaiters.push(waiter);
-      signal?.addEventListener('abort', waiter.onAbort, { once: true });
-      if (signal?.aborted) waiter.onAbort();
-    });
-  } else {
-    activeModelRequests += 1;
-  }
-
-  try {
-    if (signal?.aborted) throw signal.reason || new Error('The model request was cancelled.');
-    return await task();
-  } finally {
-    let next;
-    while ((next = modelRequestWaiters.shift())) {
-      if (!next.queued) continue;
-      next.queued = false;
-      next.signal?.removeEventListener('abort', next.onAbort);
-      next.resolve();
-      break;
-    }
-    if (!next) activeModelRequests -= 1;
-  }
-}
-
-function groqKey() {
-  return String(process.env.GROQ_API_KEY || '').trim();
-}
+const scheduler = createModelRequestScheduler({ budget: modelBudget });
+const setting = (name, fallback) => String(process.env[name] || fallback).trim() || fallback;
+const groqKey = () => setting('GROQ_API_KEY', '');
 
 function alibabaSettings() {
-  const apiKey = String(process.env.ALIBABA_MODEL_STUDIO_API_KEY || '').trim();
-  const workspaceId = String(process.env.ALIBABA_WORKSPACE_ID || '').trim();
-  const configuredBase = String(process.env.ALIBABA_BASE_URL || '').trim();
-  const baseUrl = configuredBase || (workspaceId ? 'https://' + workspaceId + '.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1' : '');
+  const apiKey = setting('ALIBABA_MODEL_STUDIO_API_KEY', '');
+  const workspaceId = setting('ALIBABA_WORKSPACE_ID', '');
+  const baseUrl = setting('ALIBABA_BASE_URL', workspaceId ? 'https://' + workspaceId + '.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1' : '');
   if (!apiKey || !baseUrl) return null;
-
   let parsed;
   try { parsed = new URL(baseUrl); } catch { return null; }
   if (parsed.protocol !== 'https:' || parsed.username || parsed.password || !/\.(?:aliyuncs\.com|alibabacloud\.com)$/i.test(parsed.hostname)) return null;
@@ -62,121 +26,115 @@ function alibabaSettings() {
 }
 
 export function modelProviderState() {
-  const groqConfigured = Boolean(groqKey());
+  const primaryConfigured = Boolean(groqKey());
   const fallbackConfigured = Boolean(alibabaSettings());
-  const groqModel = String(process.env.GROQ_MODEL || DEFAULT_GROQ_MODEL).trim() || DEFAULT_GROQ_MODEL;
-  const fallbackModel = String(process.env.ALIBABA_FALLBACK_MODEL || DEFAULT_ALIBABA_FALLBACK_MODEL).trim() || DEFAULT_ALIBABA_FALLBACK_MODEL;
+  const primaryModel = setting('GROQ_VISION_MODEL', setting('GROQ_MODEL', DEFAULT_GROQ_MODEL));
+  const textModel = setting('GROQ_TEXT_MODEL', DEFAULT_GROQ_TEXT_MODEL);
+  const fallbackModel = setting('ALIBABA_FALLBACK_MODEL', DEFAULT_ALIBABA_FALLBACK_MODEL);
   return {
-    provider: groqConfigured ? GROQ_PROVIDER_NAME : fallbackConfigured ? ALIBABA_PROVIDER_NAME : GROQ_PROVIDER_NAME,
-    configured: groqConfigured || fallbackConfigured,
-    primaryConfigured: groqConfigured,
-    model: groqConfigured ? groqModel : fallbackConfigured ? fallbackModel : groqModel,
-    primaryModel: groqModel,
-    fallbackProvider: ALIBABA_PROVIDER_NAME,
-    fallbackConfigured,
-    fallbackModel
+    provider: primaryConfigured || !fallbackConfigured ? GROQ_PROVIDER_NAME : ALIBABA_PROVIDER_NAME,
+    configured: primaryConfigured || fallbackConfigured, primaryConfigured,
+    model: !primaryConfigured && fallbackConfigured ? fallbackModel : primaryModel,
+    primaryModel, visionModel: !primaryConfigured && fallbackConfigured ? fallbackModel : primaryModel,
+    textModel: !primaryConfigured && fallbackConfigured ? fallbackModel : textModel,
+    fallbackProvider: ALIBABA_PROVIDER_NAME, fallbackConfigured, fallbackModel
   };
 }
+export const anyModelProviderConfigured = () => modelProviderState().configured;
+export const modelRequestQueueState = () => scheduler.snapshot();
 
-export function anyModelProviderConfigured() {
-  return modelProviderState().configured;
+export function requestContainsImages(body) {
+  return (body.messages || []).some(message => Array.isArray(message.content) && message.content.some(part => part?.type === 'image_url'));
 }
 
-function requestSignal(signal, timeoutMs) {
-  const timeout = AbortSignal.timeout(timeoutMs);
-  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+export function estimatedModelTokens(body) {
+  let textBytes = 0, images = 0;
+  for (const message of body.messages || []) {
+    if (typeof message.content === 'string') textBytes += Buffer.byteLength(message.content);
+    else for (const part of message.content || []) {
+      if (part?.type === 'image_url') images++;
+      else if (typeof part?.text === 'string') textBytes += Buffer.byteLength(part.text);
+    }
+  }
+  return Math.ceil(textBytes / 3) + images * 2048 + Number(body.max_completion_tokens || body.max_tokens || 4000) + 128;
 }
 
 function bodyForProvider(body, provider) {
-  const requestBody = { ...body, model: provider.model };
+  const result = { ...body, model: provider.model };
   if (provider.name === GROQ_PROVIDER_NAME) {
-    if (requestBody.max_tokens !== undefined && requestBody.max_completion_tokens === undefined) {
-      requestBody.max_completion_tokens = requestBody.max_tokens;
-    }
-    delete requestBody.max_tokens;
-    delete requestBody.enable_thinking;
-    requestBody.reasoning_effort = 'none';
-    requestBody.reasoning_format = 'hidden';
+    result.max_completion_tokens ??= result.max_tokens;
+    delete result.max_tokens;
+    delete result.enable_thinking;
+    result.reasoning_effort = provider.model.startsWith('openai/gpt-oss-') ? 'low' : 'none';
+    result.reasoning_format = 'hidden';
   }
-  return requestBody;
+  return result;
 }
 
-function providerCandidates(fallbackModel) {
-  const providers = [];
-  const key = groqKey();
-  if (key) providers.push({
-    name: GROQ_PROVIDER_NAME,
-    apiKey: key,
-    endpoint: GROQ_API_BASE + '/chat/completions',
-    model: String(process.env.GROQ_MODEL || DEFAULT_GROQ_MODEL).trim() || DEFAULT_GROQ_MODEL
-  });
-
-  const alibaba = alibabaSettings();
-  if (alibaba) providers.push({
-    name: ALIBABA_PROVIDER_NAME,
-    ...alibaba,
-    model: String(process.env.ALIBABA_FALLBACK_MODEL || DEFAULT_ALIBABA_FALLBACK_MODEL).trim() || DEFAULT_ALIBABA_FALLBACK_MODEL
-  });
-  return providers;
-}
-
-/**
- * Send a chat completion to Groq first, then Model Studio if Groq is missing
- * or rejects/fails the request. Provider keys stay server-side.
- */
-async function requestModelCompletionUnlocked(body, { fallbackModel, timeoutMs = 90_000, signal } = {}) {
-  const providers = providerCandidates(fallbackModel);
-  if (!providers.length) {
-    throw Object.assign(new Error('Configure Groq or Alibaba Model Studio to use Veylo AI.'), { code: 'AI_NOT_CONFIGURED' });
-  }
-
-  let lastResponse = null;
-  let lastProvider = null;
-  let lastProviderIndex = -1;
-  let lastThrown = null;
-  for (let index = 0; index < providers.length; index += 1) {
-    const provider = providers[index];
-    lastProvider = provider;
-    lastProviderIndex = index;
+async function bufferedResponse(response) {
+  const chunks = []; let size = 0;
+  if (response.body) {
+    const reader = response.body.getReader();
     try {
-      const response = await fetch(provider.endpoint, {
-        method: 'POST',
-        headers: { Authorization: 'Bearer ' + provider.apiKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyForProvider(body, provider)),
-        signal: requestSignal(signal, timeoutMs)
-      });
-      lastResponse = response;
-      lastThrown = null;
-      if (response.ok || index === providers.length - 1) {
-        return { response, provider: provider.name, model: provider.model, fallbackUsed: index > 0 };
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > 2 * 1024 * 1024) {
+          await reader.cancel();
+          throw Object.assign(new Error('The AI response was too large. Try a smaller batch.'), { code: 'AI_RESPONSE_TOO_LARGE' });
+        }
+        chunks.push(Buffer.from(value));
       }
-      try { await response.body?.cancel?.(); } catch { /* Continue to the configured fallback. */ }
-      console.warn('[ai-provider] ' + provider.name + ' returned HTTP ' + response.status + '; trying ' + providers[index + 1].name + '.');
+    } finally { reader.releaseLock(); }
+  }
+  const content = Buffer.concat(chunks).toString('utf8');
+  let usage;
+  try { usage = JSON.parse(content).usage; } catch { /* Callers validate the response. */ }
+  return { response: new Response([204, 205, 304].includes(response.status) ? null : content, { status: response.status, statusText: response.statusText, headers: response.headers }), usage };
+}
+
+/** Fair processing lanes; MongoDB shares provider allowance across processes. */
+export async function requestModelCompletion(body, options = {}) {
+  const context = modelRequestContext();
+  const hasImages = requestContainsImages(body);
+  const workload = options.workload || context.workload || (hasImages ? 'analysis' : 'writing');
+  const state = modelProviderState();
+  const providers = [];
+  if (groqKey()) providers.push({ name: GROQ_PROVIDER_NAME, model: hasImages ? state.visionModel : state.textModel, apiKey: groqKey(), endpoint: GROQ_API_BASE + '/chat/completions' });
+  const alibaba = alibabaSettings();
+  if (alibaba) providers.push({ name: ALIBABA_PROVIDER_NAME, model: state.fallbackModel, ...alibaba });
+  if (!providers.length) throw Object.assign(new Error('Configure Groq or Alibaba Model Studio to use Veylo AI.'), { code: 'AI_NOT_CONFIGURED' });
+  const timeoutMs = Math.max(1, Math.min(600_000, Math.ceil(Number(options.timeoutMs) || 90_000)));
+  const background = options.background ?? context.background ?? false;
+  const signals = [options.signal, context.signal, !background && AbortSignal.timeout(timeoutMs)].filter(Boolean);
+  const signal = signals.length ? AbortSignal.any(signals) : undefined;
+  for (let index = 0; index < providers.length; index++) {
+    const provider = providers[index];
+    try {
+      while (true) {
+        const response = await scheduler.run(async (_admission, entry) => {
+          let original, usage;
+          try {
+            const transferSignal = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)].filter(Boolean));
+            original = await fetch(provider.endpoint, { method: 'POST', headers: { Authorization: 'Bearer ' + provider.apiKey, 'Content-Type': 'application/json' }, body: JSON.stringify(bodyForProvider(options.prepareBody ? options.prepareBody() : body, provider)), signal: transferSignal });
+            const buffered = await bufferedResponse(original);
+            usage = buffered.usage;
+            return buffered.response;
+          } finally {
+            await modelBudget.finish(entry, original ? providerBudgetObservation(original, usage) : {});
+          }
+        }, { provider: provider.name, model: provider.model, workload, owner: options.ownerId || context.ownerId || 'unassigned', tokens: estimatedModelTokens(body), timeoutMs, signal,
+          onWaiting: () => context.onWaiting?.(workload), onStarted: () => context.onStarted?.(workload) });
+        // Cooldowns are waiting work, not failed creation attempts.
+        if (response.status === 429 && background) continue;
+        if (response.ok || response.status === 429 || index === providers.length - 1) return { response, provider: provider.name, model: provider.model, fallbackUsed: index > 0 };
+        console.warn('[ai-provider] ' + provider.name + ' returned HTTP ' + response.status + '; trying ' + providers[index + 1].name + '.');
+        break;
+      }
     } catch (error) {
-      if (signal?.aborted) throw error;
-      lastThrown = error;
-      if (index === providers.length - 1) throw error;
+      if (signal?.aborted || index === providers.length - 1 || ['AI_REQUEST_TOO_LARGE', 'AI_SCHEDULER_UNAVAILABLE'].includes(error.code)) throw error;
       console.warn('[ai-provider] ' + provider.name + ' request failed (' + (error.name || 'network error') + '); trying ' + providers[index + 1].name + '.');
     }
   }
-
-  if (lastResponse) return { response: lastResponse, provider: lastProvider.name, model: lastProvider.model, fallbackUsed: lastProviderIndex > 0 };
-  throw lastThrown || Object.assign(new Error('The configured AI providers could not complete this request.'), { code: 'AI_PROVIDER_FAILED' });
-}
-
-export function requestModelCompletion(body, options = {}) {
-  // Start the deadline before queuing so waiting for a slot uses the same budget as the provider call.
-  const configuredTimeout = Number(options.timeoutMs);
-  const timeoutMs = options.timeoutMs === undefined || !Number.isFinite(configuredTimeout)
-    ? 90_000
-    : Math.max(1, configuredTimeout);
-  const deadline = Date.now() + timeoutMs;
-  const timeoutSignal = AbortSignal.timeout(Math.max(1, Math.ceil(timeoutMs)));
-  const signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
-
-  return withModelRequestSlot(() => {
-    const remaining = deadline - Date.now();
-    if (remaining <= 0 || signal.aborted) throw signal.reason || Object.assign(new Error('The model request timed out.'), { name: 'TimeoutError' });
-    return requestModelCompletionUnlocked(body, { ...options, signal, timeoutMs: Math.ceil(remaining) });
-  }, signal);
 }

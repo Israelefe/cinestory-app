@@ -23,7 +23,7 @@ function configure(t, fetch) {
   t.mock.method(RuntimeConfig, 'findOne', () => ({ lean: async () => null }));
   return t.mock.method(globalThis, 'fetch', fetch);
 }
-const providerReply = content => ({ ok: true, json: async () => ({ choices: [{ message: { content } }] }) });
+const providerReply = content => Response.json({ usage: { total_tokens: 1 }, choices: [{ message: { content } }] });
 
 test('long assistant history is accepted intact while questions stay bounded', async t => {
   const longAnswer = 'A'.repeat(5900);
@@ -118,7 +118,7 @@ test('disconnect aborts the provider request and avoids writing a reply', async 
 });
 
 test('provider errors expose a useful message without disclosing upstream details', async t => {
-  configure(t, async () => ({ ok: false, status: 429, json: async () => ({ error: { message: 'Private provider diagnostics' } }) }));
+  configure(t, async () => Response.json({ error: { message: 'Private provider diagnostics' } }, { status: 429, headers: { 'retry-after': '0.01' } }));
   const res = response();
   await chatWithVeyloAssistant({ body: { messages: [{ role: 'user', content: 'What is Veylo?' }] } }, res);
   assert.equal(res.statusCode, 503);

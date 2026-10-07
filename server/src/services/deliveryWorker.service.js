@@ -1,5 +1,6 @@
 import Delivery from '../models/Delivery.js';
 import DeliveryJob from '../models/DeliveryJob.js';
+import { withModelRequestContext } from './modelRequestContext.service.js';
 import { analyzeAllV3, directV3, directV3PhotoSwapCaptions, directV3Pinboard } from './deliveryV3AI.service.js';
 import { synthesizeV3Narration } from './narration.service.js';
 import { CREATIVE_DIRECTOR_PROVIDER, CREATIVE_DIRECTOR_PROMPT_VERSION, FORMAT_DIRECTION_PROFILES, analyzeImageBatch, createFrameBatch, createGlobalDirection, recommendFormats, selectCuratedPhotos } from './alibabaCreativeDirector.service.js';
@@ -15,11 +16,13 @@ import { DEFAULT_ALIBABA_FALLBACK_MODEL, modelProviderState } from './modelProvi
 const workerId = workerInstance();
 let timer;
 let polling = false;
+let pollingComplete = Promise.resolve();
+let stopping = false;
+const jobControllers = new Map();
 const activeJobs = new Map();
 const activeDeliveryIds = new Set();
 const activeV3JobIds = new Set();
 const activeLegacyJobIds = new Set();
-let activeAiRequests = 0;
 const aiRequestWaiters = [];
 let aiRequestStartSpacingMs = 0;
 let nextAiRequestStartAt = 0;
@@ -31,7 +34,7 @@ function positiveInt(value, fallback) {
 
 const workerSettings = {
   maxJobConcurrency: 4,
-  maxV3JobConcurrency: 50,
+  maxV3JobConcurrency: 100,
   aiBatchConcurrency: 8,
   visionBatchSize: 16,
   captionBatchSize: 12
@@ -44,7 +47,7 @@ let quotaFetchedAt = 0;
 
 function readWorkerSettings() {
   workerSettings.maxJobConcurrency = positiveInt(process.env.DELIVERY_WORKER_CONCURRENCY, 4);
-  workerSettings.maxV3JobConcurrency = positiveInt(process.env.DELIVERY_V3_WORKER_CONCURRENCY, 50);
+  workerSettings.maxV3JobConcurrency = positiveInt(process.env.DELIVERY_V3_WORKER_CONCURRENCY, 100);
   workerSettings.aiBatchConcurrency = positiveInt(process.env.DELIVERY_AI_CONCURRENCY, 8);
   workerSettings.visionBatchSize = positiveInt(process.env.DELIVERY_VISION_BATCH_SIZE, 16);
   workerSettings.captionBatchSize = positiveInt(process.env.DELIVERY_CAPTION_BATCH_SIZE, 12);
@@ -111,20 +114,13 @@ async function mapConcurrent(items, limit, handler) {
 }
 
 async function withAiRequestSlot(task) {
-  while (activeAiRequests >= effectiveAiBatchConcurrency) {
-    await new Promise(resolve => aiRequestWaiters.push(resolve));
-  }
-  activeAiRequests += 1;
-  try {
-    const now = Date.now();
-    const startsAt = Math.max(now, nextAiRequestStartAt);
-    nextAiRequestStartAt = startsAt + aiRequestStartSpacingMs;
-    if (startsAt > now) await new Promise(resolve => setTimeout(resolve, startsAt - now));
-    return await task();
-  } finally {
-    activeAiRequests -= 1;
-    aiRequestWaiters.splice(0).forEach(resolve => resolve());
-  }
+  // Model admission now separates analysis and writing. Legacy batching keeps
+  // its start spacing without holding a shared slot across both workloads.
+  const now = Date.now();
+  const startsAt = Math.max(now, nextAiRequestStartAt);
+  nextAiRequestStartAt = startsAt + aiRequestStartSpacingMs;
+  if (startsAt > now) await new Promise(resolve => setTimeout(resolve, startsAt - now));
+  return await task();
 }
 
 function serialSaveJob(job) {
@@ -140,11 +136,14 @@ function serialSaveJob(job) {
 }
 
 async function saveJob(job, update) {
-  const latest = await DeliveryJob.findById(job._id).select('cancelRequestedAt status').lean();
+  const signal = jobControllers.get(String(job._id))?.signal;
+  if (signal?.aborted) throw signal.reason;
+  const latest = await DeliveryJob.findById(job._id).select('cancelRequestedAt status lockedBy').lean();
+  if (!latest || latest.lockedBy && latest.lockedBy !== workerId) throw Object.assign(new Error('This delivery job moved to another worker.'), { code: 'JOB_LOCK_LOST' });
   if (latest?.cancelRequestedAt && update.status !== 'failed') {
     Object.assign(job, { status: 'cancelled', stage: 'cancelled', cancelledAt: new Date(), completedAt: new Date(), heartbeatAt: new Date() });
     await job.save();
-    return false;
+    throw Object.assign(new Error('This delivery job was cancelled.'), { code: 'JOB_CANCELLED' });
   }
   Object.assign(job, update, { heartbeatAt: new Date(), provider: job.provider || CREATIVE_DIRECTOR_PROVIDER, promptVersion: job.promptVersion || CREATIVE_DIRECTOR_PROMPT_VERSION });
   job.markModified('result');
@@ -254,7 +253,6 @@ async function direct(job, delivery) {
   delivery.curatedAssetIds = insights.map(i => i.assetId);
   delivery.galleryAssetIds = allInsights.map(i => i.assetId);
 
-  const photoUrlsById = new Map(delivery.assets.map(asset => [String(asset.assetId), signedDeliveryImageUrl(asset.publicId, { width: 1024 })]));
   let direction = job.result?.direction;
   let frames = Array.isArray(job.result?.frames) ? job.result.frames : [];
   if (!direction) {
@@ -284,7 +282,7 @@ async function direct(job, delivery) {
   const captionsStartedAt = Date.now();
   try {
     await mapConcurrent(pending, effectiveAiBatchConcurrency, async batch => {
-      const result = await withAiRequestSlot(() => createFrameBatch({ format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction, imageInsights: batch, photoUrlsById, collectionAnalysis: delivery.collectionAnalysis, revisionInstruction: job.input?.instruction || '', currentFrames: job.type === 'revise' ? (delivery.creativeDirection?.frames || []).filter(frame => batch.some(item => item.assetId === frame.assetId)) : [] }));
+      const result = await withAiRequestSlot(() => createFrameBatch({ format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction, imageInsights: batch, collectionAnalysis: delivery.collectionAnalysis, revisionInstruction: job.input?.instruction || '', currentFrames: job.type === 'revise' ? (delivery.creativeDirection?.frames || []).filter(frame => batch.some(item => item.assetId === frame.assetId)) : [] }));
       const frameMap = new Map((result.frames || []).map(frame => [String(frame.assetId), frame]));
       for (const item of batch) {
         const frame = frameMap.get(String(item.assetId));
@@ -380,10 +378,9 @@ async function revise(job, delivery) {
   const selected = new Set(assetIds);
   const insights = delivery.assets.filter(asset => selected.has(asset.assetId)).map(asset => asset.analysis).filter(Boolean);
   if (insights.length !== selected.size) throw Object.assign(new Error('One of the selected photographs has no analysis.'), { code: 'ANALYSIS_REQUIRED' });
-  const photoUrlsById = new Map(delivery.assets.filter(asset => selected.has(asset.assetId)).map(asset => [String(asset.assetId), signedDeliveryImageUrl(asset.publicId, { width: 1024 })]));
   const currentFrames = delivery.creativeDirection.frames.filter(frame => selected.has(frame.assetId));
   await saveJob(job, { stage: 'revising-selected-photographs', progress: 20 });
-  const result = await withAiRequestSlot(() => createFrameBatch({ format: delivery.format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction: delivery.creativeDirection, imageInsights: insights, photoUrlsById, revisionInstruction: instruction, currentFrames }));
+  const result = await withAiRequestSlot(() => createFrameBatch({ format: delivery.format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction: delivery.creativeDirection, imageInsights: insights, revisionInstruction: instruction, currentFrames }));
   if (result.frames.some((frame, index) => frame.assetId !== insights[index]?.assetId)) throw Object.assign(new Error('The creative model changed the selected photograph order.'), { code: 'INVALID_FRAME_SEQUENCE' });
   const sectionIds = new Set(delivery.creativeDirection.sections.map(section => section.id));
   if (result.frames.some(frame => !sectionIds.has(frame.sectionId))) throw Object.assign(new Error('The creative model returned an unknown section.'), { code: 'INVALID_FRAME_SECTION' });
@@ -405,27 +402,37 @@ async function revise(job, delivery) {
 }
 
 async function run(job) {
+  const controller = new AbortController();
+  if (stopping) controller.abort(Object.assign(new Error('Delivery processing is restarting.'), { code: 'WORKER_STOPPING' }));
+  jobControllers.set(String(job._id), controller);
   const startedAt = Date.now();
   await recordStageTiming(job, 'queueWaitMs', Number(job.createdAt) || startedAt);
   // Keep heartbeat alive during long model calls so tick() doesn't mark this job as stale
   const heartbeat = setInterval(async () => {
-    await DeliveryJob.updateOne({ _id: job._id }, { heartbeatAt: new Date() }).catch(() => {});
+    const current = await DeliveryJob.findById(job._id).select('status cancelRequestedAt lockedBy').lean().catch(() => undefined);
+    if (current === null || current && (current.cancelRequestedAt || current.status !== 'running' || current.lockedBy !== workerId)) controller.abort(Object.assign(new Error('This delivery job was cancelled.'), { code: 'JOB_CANCELLED' }));
+    await DeliveryJob.updateOne({ _id: job._id, lockedBy: workerId, status: 'running' }, { heartbeatAt: new Date() }).catch(() => {});
   }, 30_000);
+  const queueStatus = modelQueue => DeliveryJob.updateOne({ _id: job._id, lockedBy: workerId, status: 'running' }, { $set: { modelQueue } });
+  return withModelRequestContext({ ownerId: String(job.userId), background: true, signal: controller.signal,
+    onWaiting: () => queueStatus('waiting'), onStarted: () => queueStatus('processing') }, async () => {
   try {
     const delivery = await Delivery.findOne({ _id: job.deliveryId, userId: job.userId });
     if (!delivery) throw Object.assign(new Error('This delivery no longer exists.'), { code: 'DELIVERY_NOT_FOUND' });
     if (job.type === 'v3-prepare') {
       if (delivery.schemaVersion !== 3 || delivery.status !== 'analyzing') throw Object.assign(new Error('This draft changed. Start analysis again.'), { code: 'V3_DRAFT_CHANGED' });
+      await saveJob(job, { stage: 'analysing-photos', counts: { analysis: { done: delivery.collectionAnalysis?.images?.length || 0, total: delivery.assets.length } } });
       const insights = await analyzeAllV3(delivery, async (done, total, partial) => {
         await Delivery.updateOne({ _id: delivery._id, status: 'analyzing', 'v3.revision': job.input?.revision }, { $set: { collectionAnalysis: { images: partial, model: modelProviderState().model, complete: done === total } } });
-        await saveJob(job, { stage: 'analysing-photos', progress: Math.min(78, Math.round(done / total * 78)) });
+        await saveJob(job, { stage: 'analysing-photos', progress: Math.min(78, Math.round(done / total * 78)), counts: { analysis: { done, total } } });
       });
       const latest = await Delivery.findById(delivery._id);
       if (latest.status !== 'analyzing' || latest.v3?.revision !== job.input?.revision) throw Object.assign(new Error('This draft changed. Start analysis again.'), { code: 'V3_DRAFT_CHANGED' });
       latest.collectionAnalysis = { images: insights, model: modelProviderState().model, complete: true };
       if (latest.kind === 'pinboard') {
         await saveJob(job, { stage: 'designing-pinboard', progress: 84 });
-        latest.pinboard = await directV3Pinboard(latest, insights);
+        latest.pinboard = job.result?.pinboard || await directV3Pinboard(latest, insights);
+        await saveJob(job, { result: { ...job.result, pinboard: latest.pinboard } });
         latest.galleryAssetIds = latest.assets.map(asset => asset.assetId);
         latest.galleryOrder = latest.pinboard.layouts.find(layout => layout.id === latest.pinboard.selectedLayoutId)?.assetOrder || latest.galleryAssetIds;
         latest.presentationOrder = latest.galleryOrder;
@@ -436,10 +443,10 @@ async function run(job) {
         await saveJob(job, { status: 'review', stage: 'pinboard-ready', progress: 100, completedAt: new Date(), result: { analyzed: insights.length, moments: latest.pinboard.moments.length, layouts: latest.pinboard.layouts.length } });
       } else if (latest.kind === 'photoswap') {
         await saveJob(job, { stage: 'writing-captions', progress: 82 });
-        const frames = await directV3PhotoSwapCaptions(latest, insights, async (done, total) => {
+        const frames = await directV3PhotoSwapCaptions(latest, insights, async (done, total, partial) => {
           const progress = 82 + Math.round(done / total * 16);
-          await saveJob(job, { stage: 'writing-captions', progress });
-        });
+          await saveJob(job, { stage: 'writing-captions', progress, counts: { analysis: { done: insights.length, total: latest.assets.length }, writing: { done, total } }, result: { ...job.result, captionFrames: partial } });
+        }, job.result?.captionFrames || []);
         const final = await Delivery.findById(delivery._id);
         if (final.status !== 'analyzing' || final.v3?.revision !== job.input?.revision) throw Object.assign(new Error('This draft changed. Start analysis again.'), { code: 'V3_DRAFT_CHANGED' });
         const captions = new Map(frames.map(frame => [frame.assetId, frame.caption]));
@@ -455,7 +462,10 @@ async function run(job) {
         await saveJob(job, { status: 'review', stage: 'captions-ready', progress: 100, completedAt: new Date(), result: { captions: frames.length, analyzed: insights.length } });
       } else {
         await saveJob(job, { stage: 'writing-showcase', progress: 82 });
-        const result = await directV3(latest, insights);
+        const result = job.result?.preparedShowcase || await directV3(latest, insights, { resume: job.result?.writing || {}, checkpoint: async writing => {
+          await saveJob(job, { result: { ...job.result, writing }, counts: { analysis: { done: insights.length, total: latest.assets.length }, writing: { done: (writing.writing?.captions || writing.editorial?.frames || []).length, total: writing.selected?.length || 0 } } });
+        } });
+        await saveJob(job, { result: { ...job.result, preparedShowcase: result } });
         const final = await Delivery.findById(delivery._id);
         if (final.status !== 'analyzing' || final.v3?.revision !== job.input?.revision) throw Object.assign(new Error('This draft changed. Start analysis again.'), { code: 'V3_DRAFT_CHANGED' });
         final.collectionAnalysis = { images: insights, model: modelProviderState().model, complete: true };
@@ -502,6 +512,11 @@ async function run(job) {
     await DeliveryJob.updateOne({ _id: job._id }, { $set: { providerLatencyMs: Date.now() - startedAt } });
     recordAnalyticsEventAsync({ name: 'ai.job.completed', source: 'system', actorType: 'system', userId: job.userId, deliveryId: job.deliveryId, status: 'completed', durationMs: Date.now() - startedAt, metadata: { jobType: job.type, provider: job.provider || (job.type === 'narrate' ? 'Deepgram Flux' : CREATIVE_DIRECTOR_PROVIDER), promptVersion: job.promptVersion || CREATIVE_DIRECTOR_PROMPT_VERSION, renderVersion: job.renderVersion || null } });
   } catch (error) {
+    if (error.code === 'JOB_LOCK_LOST') return;
+    if (['WORKER_STOPPING', 'AI_SCHEDULER_UNAVAILABLE'].includes(error.code)) {
+      await DeliveryJob.updateOne({ _id: job._id, lockedBy: workerId, status: 'running', cancelRequestedAt: null }, { $set: { status: 'queued', stage: 'queued', lockedBy: null }, $inc: { attempts: -1 } });
+      return;
+    }
     const latest = await DeliveryJob.findById(job._id).select('cancelRequestedAt').lean();
     if (latest?.cancelRequestedAt) {
       await DeliveryJob.updateOne({ _id: job._id }, { $set: { status: 'cancelled', stage: 'cancelled', cancelledAt: new Date(), completedAt: new Date(), providerLatencyMs: Date.now() - startedAt } });
@@ -515,7 +530,7 @@ async function run(job) {
     // All other job types (direct, revise, narrate) fall back to 'review'
     // so the photographer doesn't lose completed analysis and format recommendations.
     const fallbackStatus = ['analyze', 'v3-prepare'].includes(job.type) ? 'draft' : 'review';
-    if (job.type !== 'v3-narrate') await Delivery.updateOne({ _id: job.deliveryId }, { status: fallbackStatus });
+    if (job.type !== 'v3-narrate') await Delivery.updateOne({ _id: job.deliveryId, userId: job.userId, ...(job.type === 'v3-prepare' ? { status: 'analyzing', 'v3.revision': job.input?.revision } : {}) }, { status: fallbackStatus });
     recordAnalyticsEventAsync({
       name: 'ai.job.failed',
       source: 'server',
@@ -531,12 +546,16 @@ async function run(job) {
     console.error(`[delivery-worker/${job.type}]`, error.code || error.name, error.message);
   } finally {
     clearInterval(heartbeat);
+    jobControllers.delete(String(job._id));
   }
+  });
 }
 
 async function tick() {
-  if (polling) return;
+  if (polling || stopping) return;
   polling = true;
+  let finishPolling;
+  pollingComplete = new Promise(resolve => { finishPolling = resolve; });
   try {
     refreshProviderQuotas().catch(err => console.warn('[delivery-worker] quota refresh failed:', err.message));
     await recordWorkerHeartbeat('delivery', { status: activeJobs.size ? 'busy' : 'idle', stage: 'polling', details: { activeJobs: activeJobs.size, activeV3Jobs: activeV3JobIds.size, maxV3Jobs: effectiveV3JobConcurrency, activeLegacyJobs: activeLegacyJobIds.size, maxLegacyJobs: effectiveJobConcurrency, aiConcurrency: effectiveAiBatchConcurrency, quotaModels: Object.keys(quotaSnapshot) } });
@@ -552,7 +571,7 @@ async function tick() {
       }
     }
 
-    while (activeV3JobIds.size < effectiveV3JobConcurrency || activeLegacyJobIds.size < effectiveJobConcurrency) {
+    while (!stopping && (activeV3JobIds.size < effectiveV3JobConcurrency || activeLegacyJobIds.size < effectiveJobConcurrency)) {
       const availableTypes = [];
       if (activeV3JobIds.size < effectiveV3JobConcurrency) availableTypes.push('v3-prepare', 'v3-narrate');
       if (activeLegacyJobIds.size < effectiveJobConcurrency) availableTypes.push('analyze', 'direct', 'revise', 'narrate');
@@ -560,6 +579,10 @@ async function tick() {
       if (activeDeliveryIds.size) filter.deliveryId = { $nin: [...activeDeliveryIds] };
       const job = await DeliveryJob.findOneAndUpdate(filter, { $set: { status: 'running', stage: 'starting', lockedAt: new Date(), heartbeatAt: new Date(), lockedBy: workerId }, $inc: { attempts: 1 } }, { new: true, sort: { createdAt: 1 } }).select('+input');
       if (!job) break;
+      if (stopping) {
+        await DeliveryJob.updateOne({ _id: job._id, lockedBy: workerId, status: 'running' }, { $set: { status: 'queued', stage: 'queued', lockedBy: null }, $inc: { attempts: -1 } });
+        break;
+      }
       const jobId = String(job._id);
       const deliveryId = String(job.deliveryId);
       const activeTypeIds = job.type.startsWith('v3-') ? activeV3JobIds : activeLegacyJobIds;
@@ -582,11 +605,13 @@ async function tick() {
     console.error('[delivery-worker]', error.message);
   } finally {
     polling = false;
+    finishPolling();
   }
 }
 
 export function startDeliveryWorker() {
   if (timer) return;
+  stopping = false;
   // server.js loads dotenv before calling this function. Reading settings here
   // keeps local `.env` values effective even though ES module imports are
   // evaluated before dotenv.config().
@@ -594,4 +619,14 @@ export function startDeliveryWorker() {
   timer = setInterval(tick, 5000);
   timer.unref?.();
   tick();
+}
+
+export async function stopDeliveryWorker() {
+  stopping = true;
+  clearInterval(timer); timer = undefined;
+  for (const controller of jobControllers.values()) controller.abort(Object.assign(new Error('Delivery processing is restarting.'), { code: 'WORKER_STOPPING' }));
+  let timeout;
+  const drain = async () => { await pollingComplete; await Promise.allSettled([...activeJobs.values()]); };
+  try { await Promise.race([drain(), new Promise(resolve => { timeout = setTimeout(resolve, 20_000); })]); }
+  finally { clearTimeout(timeout); }
 }

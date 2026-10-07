@@ -8,6 +8,7 @@ import { v3Details, v3Prepare, v3Publish } from '../src/controllers/deliveryV3.c
 import { recoverDeliveryUpload } from '../src/controllers/delivery.controller.js';
 
 Object.assign(process.env, { CLOUDINARY_CLOUD_NAME: 'offline-cloud', CLOUDINARY_API_KEY: 'offline-key', CLOUDINARY_API_SECRET: 'offline-secret' });
+Object.assign(process.env, { R2_ACCOUNT_ID: 'offline-account', R2_ACCESS_KEY_ID: 'offline-key', R2_SECRET_ACCESS_KEY: 'offline-secret', R2_BUCKET_NAME: 'offline-bucket' });
 const id = '507f1f77bcf86cd799439011', owner = '507f1f77bcf86cd799439012';
 const req = body => ({ params: { id }, user: { id: owner }, body });
 const response = () => ({ statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } });

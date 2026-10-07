@@ -19,6 +19,7 @@
     "verify:client-ip": "node scripts/verify-client-ip.mjs",
     "verify:delivery-v2": "node scripts/verify-delivery-v2.mjs",
     "verify:delivery-v3": "node --test scripts/delivery-v3.test.mjs scripts/purpose-wording.test.mjs",
+    "verify:model-scheduling": "node --test scripts/model-scheduling.test.mjs scripts/delivery-worker-scheduling.test.mjs",
     "verify:soundtracks": "node scripts/verify-soundtrack-catalogue.mjs",
     "verify:analytics": "node scripts/verify-analytics-privacy.mjs",
     "verify:email-system": "node scripts/verify-email-system.mjs",

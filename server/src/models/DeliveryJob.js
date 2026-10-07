@@ -7,6 +7,8 @@ const deliveryJobSchema = new mongoose.Schema({
   status: { type: String, enum: ['queued', 'running', 'needs_input', 'review', 'failed', 'cancelled'], default: 'queued', index: true },
   stage: { type: String, trim: true, default: 'queued' },
   progress: { type: Number, default: 0, min: 0, max: 100 },
+  counts: { type: mongoose.Schema.Types.Mixed },
+  modelQueue: { type: String, enum: ['waiting', 'processing'] },
   attempts: { type: Number, default: 0, min: 0 },
   input: { type: mongoose.Schema.Types.Mixed, select: false },
   result: { type: mongoose.Schema.Types.Mixed },

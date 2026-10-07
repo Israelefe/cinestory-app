@@ -20,7 +20,8 @@ import assistantRoutes from './src/routes/assistant.routes.js';
 import { paystackWebhook } from './src/controllers/billing.controller.js';
 import { resolveEdgeClientIp } from './src/middleware/clientIp.middleware.js';
 import { checkR2Connection } from './src/services/r2.service.js';
-import { startDeliveryWorker } from './src/services/deliveryWorker.service.js';
+import { startDeliveryWorker, stopDeliveryWorker } from './src/services/deliveryWorker.service.js';
+import { modelRequestContextMiddleware } from './src/services/modelRequestContext.service.js';
 import { startRetentionWorker } from './src/services/retention.service.js';
 import { startBillingWorker } from './src/services/billingWorker.service.js';
 import { startPortfolioWorker } from './src/services/portfolioWorker.service.js';
@@ -95,6 +96,7 @@ app.use(cookieParser());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 app.use(maintenanceMiddleware);
+app.use(modelRequestContextMiddleware);
 
 app.get('/health', (req, res) => res.json({
   status: 'healthy', app: 'Veylo API Server', revision: process.env.RENDER_GIT_COMMIT || null
@@ -142,7 +144,7 @@ connectDB().then(async connection => {
       else console.error(`[r2] Configuration rejected: ${result.reason}`);
     });
     startPortfolioWorker();
-    if (process.env.DELIVERY_PIPELINE_ENABLED === 'true') {
+    if (process.env.DELIVERY_PIPELINE_ENABLED === 'true' && process.env.DELIVERY_WORKER_MODE !== 'external') {
       startDeliveryWorker();
     }
     startRetentionWorker();
@@ -150,6 +152,7 @@ connectDB().then(async connection => {
   });
   const shutdown = async () => {
     server.close();
+    await stopDeliveryWorker();
     process.exit(0);
   };
   process.once('SIGTERM', shutdown);

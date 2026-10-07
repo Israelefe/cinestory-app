@@ -189,9 +189,10 @@ export async function v3Prepare(req, res) {
     if (!['pinboard', 'photoswap'].includes(delivery.kind) && delivery.assets.length < V3_FORMATS[delivery.format][0]) return res.status(409).json({ success: false, message: `Add at least ${V3_FORMATS[delivery.format][0]} photographs for this format.` });
     const existing = await DeliveryJob.findOne({ deliveryId: delivery._id, type: 'v3-prepare', status: { $in: ['queued', 'running'] } });
     if (existing) return res.status(202).json({ success: true, data: existing });
+    const previous = await DeliveryJob.findOne({ deliveryId: delivery._id, userId: req.user.id, type: 'v3-prepare', status: 'failed', 'input.revision': delivery.v3.revision }).sort({ createdAt: -1 }).select('result');
     delivery.status = 'analyzing'; saveV3(delivery, { step: 'preparing' }); await delivery.save();
     let job;
-    try { job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'v3-prepare', provider: 'Groq AI / Alibaba Model Studio fallback', promptVersion: 'delivery-v3', input: { revision: delivery.v3.revision } }); }
+    try { job = await DeliveryJob.create({ deliveryId: delivery._id, userId: req.user.id, type: 'v3-prepare', provider: 'Groq AI / Alibaba Model Studio fallback', promptVersion: 'delivery-v3', input: { revision: delivery.v3.revision }, result: previous?.result }); }
     catch (error) { delivery.status = 'draft'; saveV3(delivery, { step: delivery.kind === 'pinboard' ? 'photos' : 'upload' }); await delivery.save(); throw error; }
     res.status(202).json({ success: true, data: job });
   } catch (error) { fail(res, error); }

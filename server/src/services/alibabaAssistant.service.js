@@ -1,17 +1,18 @@
 import { buildAssistantKnowledge, assistantSuggestedQuestions, assistantTopicLabels } from '../knowledge/veyloAssistantKnowledge.js';
-import { DEFAULT_ALIBABA_FALLBACK_MODEL, DEFAULT_GROQ_MODEL, requestModelCompletion } from './modelProvider.service.js';
+import { DEFAULT_GROQ_TEXT_MODEL, modelProviderState, requestModelCompletion } from './modelProvider.service.js';
 
 export const VEYLO_ASSISTANT_PROVIDER = 'Groq AI / Alibaba Model Studio fallback';
-export const VEYLO_ASSISTANT_MODEL = DEFAULT_GROQ_MODEL;
+export const VEYLO_ASSISTANT_MODEL = DEFAULT_GROQ_TEXT_MODEL;
 export const VEYLO_ASSISTANT_PROMPT_VERSION = 'veylo-help-v2';
 
 const MAX_REPLY_CHARACTERS = 6000;
 const REFUSAL = 'I can help with Veylo deliveries, accounts, sharing, billing, and support. I cannot provide private system, database, security, or unrelated information. What Veylo task would you like help with?';
 
 function providerConfig() {
+  const state = modelProviderState();
   return {
-    model: String(process.env.GROQ_MODEL || VEYLO_ASSISTANT_MODEL).trim() || VEYLO_ASSISTANT_MODEL,
-    fallbackModel: String(process.env.ALIBABA_FALLBACK_MODEL || DEFAULT_ALIBABA_FALLBACK_MODEL).trim() || DEFAULT_ALIBABA_FALLBACK_MODEL
+    model: state.textModel,
+    fallbackModel: state.fallbackModel
   };
 }
 
@@ -135,7 +136,7 @@ export async function answerVeyloQuestion({ messages, surface = 'public', authen
     temperature: 0.2,
     max_tokens: 1200,
     stream: false
-  }, { fallbackModel: provider.fallbackModel, timeoutMs: 45_000, signal });
+  }, { fallbackModel: provider.fallbackModel, timeoutMs: 45_000, signal, workload: 'assistant' });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const error = assistantError('The Veylo assistant could not answer right now.', response.status === 429 ? 'ASSISTANT_PROVIDER_BUSY' : 'ASSISTANT_PROVIDER_FAILED');

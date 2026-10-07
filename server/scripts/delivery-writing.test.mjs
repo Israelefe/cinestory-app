@@ -12,15 +12,22 @@ const ids = Array.from({ length: 5 }, (_, index) => `11111111-1111-4111-8111-${S
 const personal = { format: 'editorial', clientName: 'Ada', shootType: 'Birthday', brief: "Ada's 30th birthday portraits." };
 const state = () => ({ format: 'editorial', selected: ids.slice(0, 4), openingAssetId: ids[0], closingAssetId: ids[3], openingLine: 'Ada at thirty.', closingLine: 'Your birthday collection is ready.', headlines: Object.fromEntries(ids.map(id => [id, 'Birthday portraits'])), captions: Object.fromEntries(ids.map(id => [id, 'Ada, keep these birthday portraits.'])), sections: [], editorial: { introduction: 'A birthday portrait feature for Ada at thirty.', note: 'Thank you, Ada.', credits: [], sections: [{ id: 'first', title: 'Marking thirty', body: 'Keep these birthday portraits.', pullLine: 'Keep these birthday portraits.', layout: 'pair', assetIds: ids.slice(0, 2) }, { id: 'next', title: 'Your birthday collection', body: '', layout: 'pair', assetIds: ids.slice(2, 4) }] } });
 const response = () => ({ statusCode: 200, status(value) { this.statusCode = value; return this; }, json(value) { this.body = value; return this; } });
+test('graduation captions cannot invent a ceremony from portrait notes', () => {
+  const delivery = { shootType: 'Graduation', brief: 'Graduation portraits after finishing university.' };
+  assert.ok(shootWritingIssues('Walking across the stage at your ceremony.', delivery).length > 0);
+  assert.deepEqual(shootWritingIssues('Your graduation portraits mark finishing university.', delivery), []);
+  assert.deepEqual(shootWritingIssues('The ceremony photographs.', { ...delivery, brief: 'Photographs of the graduation ceremony.' }), []);
+  assert.deepEqual(shootWritingIssues('Walking across the stage.', delivery, { observation: 'The graduate crosses the stage.' }), []);
+});
 function model(t, reply) {
   const key = process.env.ALIBABA_MODEL_STUDIO_API_KEY, base = process.env.ALIBABA_BASE_URL;
   process.env.ALIBABA_MODEL_STUDIO_API_KEY = 'test-key'; process.env.ALIBABA_BASE_URL = 'https://test.aliyuncs.com/compatible-mode/v1';
   t.after(() => { if (key === undefined) delete process.env.ALIBABA_MODEL_STUDIO_API_KEY; else process.env.ALIBABA_MODEL_STUDIO_API_KEY = key; if (base === undefined) delete process.env.ALIBABA_BASE_URL; else process.env.ALIBABA_BASE_URL = base; });
-  t.mock.method(globalThis, 'fetch', async (_url, options) => ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(reply(JSON.parse(options.body))) } }] }) }));
+  t.mock.method(globalThis, 'fetch', async (_url, options) => Response.json({ usage: { total_tokens: 1 }, choices: [{ message: { content: JSON.stringify(reply(JSON.parse(options.body))) } }] }));
 }
 
-test('all sixteen shoot types and eight formats retain shoot purpose independently of presentation', () => {
-  assert.equal(Object.keys(SHOOT_WRITING_PROFILES).length, 16); assert.equal(Object.keys(FORMAT_WRITING_PROFILES).length, 8);
+test('all nineteen shoot types and nine formats retain shoot purpose independently of presentation', () => {
+  assert.equal(Object.keys(SHOOT_WRITING_PROFILES).length, 19); assert.equal(Object.keys(FORMAT_WRITING_PROFILES).length, 9);
   for (const shootType of Object.keys(SHOOT_WRITING_PROFILES)) for (const format of Object.keys(FORMAT_WRITING_PROFILES)) {
     const delivery = { shootType, format, clientName: 'Client', brief: '' };
     assert.equal(deliveryWritingContext(delivery).shoot, shootType);
@@ -150,6 +157,18 @@ test('the older writer repairs an oversized Photo Story caption rather than clip
   model(t, () => ({ frames: [{ assetId: ids[0], sectionId: 'showcase', headline: 'Birthday portraits', caption: ++calls === 1 ? 'Your birthday photographs are ready. '.repeat(5) : 'Ada, keep these birthday portraits.' }] }));
   const result = await createFrameBatch({ format: 'photo-story', brief: "Ada's birthday", shootType: 'Birthday', clientName: 'Ada', direction: { sections: [{ id: 'showcase', title: 'Birthday portraits' }] }, imageInsights: [{ assetId: ids[0] }], photoUrlsById: new Map([[ids[0], 'https://example.com/photo.jpg']]) });
   assert.equal(calls, 2); assert.equal(result.frames[0].caption, 'Ada, keep these birthday portraits.');
+});
+
+test('the older writer sends eight saved photo observations as text without photo URLs', async t => {
+  const assets = Array.from({ length: 8 }, (_, index) => ({ assetId: 'saved-' + index, summary: 'Cream linen jacket ' + index }));
+  const calls = [];
+  model(t, body => {
+    calls.push(body);
+    assert.ok(body.messages.every(message => typeof message.content === 'string' || message.content.every(part => part.type === 'text')));
+    return { frames: assets.map((asset, index) => ({ assetId: asset.assetId, sectionId: 'showcase', headline: 'Linen collection', caption: 'Linen jacket ' + index + ' from the supplied lookbook collection.' })) };
+  });
+  const result = await createFrameBatch({ format: 'editorial', brief: 'A linen collection lookbook.', shootType: 'Fashion', clientName: 'Studio', direction: { sections: [{ id: 'showcase', title: 'Linen collection' }] }, imageInsights: assets });
+  assert.ok(Array.isArray(calls[0].messages.find(message => message.role === 'user').content)); assert.equal(result.frames.length, 8);
 });
 
 test('grouped formats repair invalid section wording instead of clipping it or accepting foreign photos', async t => {

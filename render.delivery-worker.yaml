@@ -1,0 +1,61 @@
+# Optional separate Render Blueprint. Switch the API to external mode only
+# after this worker is running. Copy secret values from the existing API.
+services:
+  - type: worker
+    name: veylo-delivery-worker
+    runtime: node
+    plan: starter
+    region: frankfurt
+    rootDir: server
+    buildCommand: npm ci && npm run verify:syntax
+    startCommand: npm run delivery:worker
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_VISION_MODEL
+        value: qwen/qwen3.8-27b
+      - key: GROQ_TEXT_MODEL
+        value: openai/gpt-oss-120b
+      - key: GROQ_REQUESTS_PER_MINUTE
+        value: "1000"
+      - key: GROQ_TOKENS_PER_MINUTE
+        value: "250000"
+      - key: DELIVERY_V3_WORKER_CONCURRENCY
+        value: "100"
+      - key: DELIVERY_WORKER_CONCURRENCY
+        value: "4"
+      - key: DELIVERY_AI_CONCURRENCY
+        value: "5"
+      - key: DELIVERY_VISION_BATCH_SIZE
+        value: "3"
+      - key: DELIVERY_CAPTION_BATCH_SIZE
+        value: "8"
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_IMAGE_WORKER_URL
+        sync: false
+      - key: R2_IMAGE_WORKER_SECRET
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: DEEPGRAM_API_KEY
+        sync: false
+      - key: ALIBABA_MODEL_STUDIO_API_KEY
+        sync: false
+      - key: ALIBABA_WORKSPACE_ID
+        sync: false
+      - key: ALIBABA_BASE_URL
+        sync: false
+      - key: ALIBABA_FALLBACK_MODEL
+        value: deepseek-v4.1-flash
