@@ -20,7 +20,7 @@ import Portfolio from '../models/Portfolio.js';
 import User from '../models/User.js';
 import StorageAsset from '../models/StorageAsset.js';
 import { CREATIVE_DIRECTOR_PROMPT_VERSION, CREATIVE_DIRECTOR_PROVIDER, assistPhotographerBrief, creativeDirectorAllowlist } from '../services/alibabaCreativeDirector.service.js';
-import { confirmUploadedAsset, copyStorageImageToDelivery, createArchiveTokenData, createUploadSignature, deliveryFolder, recoverImageUpload, removeDeliveryAudio, removeDeliveryImage, removeDeliveryMedia, signedArchiveUrl, signedImageUrl, signedOgImageUrl } from '../services/deliveryMedia.service.js';
+import { confirmUploadedAsset, copyStorageImageToDelivery, createArchiveTokenData, createUploadSignature, deliveryFolder, MAX_DELIVERY_IMAGE_BYTES, recoverImageUpload, removeDeliveryAudio, removeDeliveryImage, removeDeliveryMedia, signedArchiveUrl, signedDeliveryImageUrl, signedImageUrl, signedOgImageUrl } from '../services/deliveryMedia.service.js';
 import { streamR2Zip } from '../services/r2Archive.service.js';
 import { reservePublishSlot, resolveEntitlements } from '../services/entitlement.service.js';
 import { tokenDigest } from '../utils/auth.js';
@@ -128,9 +128,9 @@ function ownerAsset(asset) {
   delete data.libraryCaption;
   return {
     ...data,
-    url: signedImageUrl(asset.publicId),
-    thumbnailUrl: signedImageUrl(asset.publicId, { thumbnail: true }),
-    srcSet: [480, 960, 1600].map(width => `${signedImageUrl(asset.publicId, { width })} ${width}w`).join(', ')
+    url: signedDeliveryImageUrl(asset.publicId),
+    thumbnailUrl: signedDeliveryImageUrl(asset.publicId, { thumbnail: true }),
+    srcSet: [480, 960, 1600].map(width => `${signedDeliveryImageUrl(asset.publicId, { width })} ${width}w`).join(', ')
   };
 }
 
@@ -276,7 +276,7 @@ export async function listDeliveries(req, res) {
   try {
     const includeArchived = req.query.scope === 'archived';
     const deliveries = await Delivery.find({ userId: req.user.id, status: includeArchived ? 'archived' : { $ne: 'archived' } }).sort({ updatedAt: -1 }).lean();
-    const data = deliveries.map(delivery => ({ ...delivery, assets: delivery.assets?.slice(0, 1).map(asset => ({ ...asset, thumbnailUrl: signedImageUrl(asset.publicId, { thumbnail: true }) })) }));
+    const data = deliveries.map(delivery => ({ ...delivery, assets: delivery.assets?.slice(0, 1).map(asset => ({ ...asset, thumbnailUrl: signedDeliveryImageUrl(asset.publicId, { thumbnail: true }) })) }));
     res.json({ success: true, data });
   } catch (error) {
     console.error('[deliveries/list]', error.message);
@@ -545,8 +545,8 @@ export async function confirmDeliveryUpload(req, res) {
     const entitlements = await resolveEntitlements(user, { includeUsage: false });
     const resource = await confirmUploadedAsset({ userId: req.user.id, deliveryId: delivery._id, ...parsed.data });
     uploadedPublicId = resource.public_id;
-    if (!['jpg', 'jpeg', 'png', 'webp'].includes(String(resource.format).toLowerCase()) || resource.bytes > 50 * 1024 * 1024) {
-      const error = new Error('Use a JPEG, PNG, or WebP photograph no larger than 50 MB.');
+    if (!['jpg', 'jpeg', 'png', 'webp'].includes(String(resource.format).toLowerCase()) || resource.bytes > MAX_DELIVERY_IMAGE_BYTES) {
+      const error = new Error('Use a JPEG, PNG, or WebP photograph no larger than 20 MB.');
       error.status = 400;
       throw error;
     }
@@ -1178,7 +1178,7 @@ export async function getPinboardStatusCard(req, res) {
     const entitlement = await resolveEntitlements(owner, { includeUsage: false });
     const studioName = entitlement.features.branding === 'studio' ? owner.studio?.name || owner.name : 'Veylo';
     const sources = await Promise.all(assets.map(async asset => {
-      const url = signedImageUrl(asset.publicId, { width: 1600 });
+      const url = signedDeliveryImageUrl(asset.publicId, { width: 1600 });
       const upstream = await fetch(url, { signal: AbortSignal.timeout(30_000) });
       if (!upstream.ok) throw Object.assign(new Error('A photograph could not be prepared.'), { status: 502 });
       if (Number(upstream.headers.get('content-length') || 0) > 18 * 1024 * 1024) throw Object.assign(new Error('A photograph is too large to prepare for sharing.'), { status: 413 });

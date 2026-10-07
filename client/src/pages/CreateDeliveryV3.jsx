@@ -399,8 +399,8 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   async function uploadFiles(fileList) {
     const files = Array.from(fileList || []);
     if (!files.length) return;
-    const invalid = files.find(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 50 * 1024 * 1024);
-    if (invalid) { setError('Use JPEG, PNG, or WebP photos no larger than 50 MB each.'); return; }
+    const invalid = files.find(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 20_000_000);
+    if (invalid) { setError(invalid.size > 20_000_000 ? `${invalid.name} is larger than 20 MB. Choose a smaller photo.` : 'Use JPEG, PNG, or WebP photos up to 20 MB each.'); return; }
     if (assets.length + files.length > limits) { setError('Your plan allows up to ' + limits + ' photographs in one delivery.'); return; }
     await action('upload', async () => {
       setUploadPercent(0);
@@ -760,7 +760,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
           <Head eyebrow="03 / THE PHOTOGRAPHS" title="Add the finished photographs.">The complete upload goes into the client's gallery. We will select {bounds[0]}–{bounds[1]} photos for the {selectedFormat?.name || 'showcase'}.</Head>
           <div className="v3-upload-heading">
             <div className="v3-upload-total"><span>PHOTOS IN THIS DELIVERY</span><strong>{assets.length}<small> / {limits}</small></strong><p>{planName} plan · every uploaded photo stays in the full gallery</p></div>
-            <div className="v3-upload-specs"><span>JPEG, PNG or WebP</span><span>Up to 50 MB per photo</span><span>{bounds[0]}–{bounds[1]} photos in the showcase</span></div>
+            <div className="v3-upload-specs"><span>JPEG, PNG or WebP</span><span>Up to 20 MB per photo</span><span>{bounds[0]}–{bounds[1]} photos in the showcase</span></div>
           </div>
           <div className="v3-upload-workspace">
             <label className="v3-drop"><span className="v3-drop-icon"><Upload size={25} /></span><strong>Add finished photographs</strong><span>Choose as many as you need, up to {limits} total.</span><b>Browse photos</b><input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={event => { uploadFiles(event.target.files); event.target.value = ''; }} disabled={!!busy} /></label>

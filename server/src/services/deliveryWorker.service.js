@@ -3,7 +3,7 @@ import DeliveryJob from '../models/DeliveryJob.js';
 import { analyzeAllV3, directV3, directV3PhotoSwapCaptions, directV3Pinboard } from './deliveryV3AI.service.js';
 import { synthesizeV3Narration } from './narration.service.js';
 import { CREATIVE_DIRECTOR_PROVIDER, CREATIVE_DIRECTOR_PROMPT_VERSION, FORMAT_DIRECTION_PROFILES, analyzeImageBatch, createFrameBatch, createGlobalDirection, recommendFormats, selectCuratedPhotos } from './alibabaCreativeDirector.service.js';
-import { removeDeliveryAudio, signedImageUrl } from './deliveryMedia.service.js';
+import { removeDeliveryAudio, signedDeliveryImageUrl } from './deliveryMedia.service.js';
 import { generateNarration } from './narration.service.js';
 import { deliverySoundtrack } from '../constants/deliverySoundtracks.js';
 import { supportsDeliveryMusic, supportsDeliveryNarration } from '../constants/deliveryCapabilities.js';
@@ -171,7 +171,7 @@ async function analyze(job, delivery) {
   for (let offset = 0; offset < assets.length; offset += workerSettings.visionBatchSize) {
     batches.push(assets.slice(offset, offset + workerSettings.visionBatchSize).map(asset => ({
       assetId: asset.assetId,
-      analysisUrl: signedImageUrl(asset.publicId, { width: 640 }),
+      analysisUrl: signedDeliveryImageUrl(asset.publicId, { width: 640 }),
       photographerCaption: asset.libraryCaption || '',
       photographerTags: asset.libraryTags || []
     })));
@@ -254,7 +254,7 @@ async function direct(job, delivery) {
   delivery.curatedAssetIds = insights.map(i => i.assetId);
   delivery.galleryAssetIds = allInsights.map(i => i.assetId);
 
-  const photoUrlsById = new Map(delivery.assets.map(asset => [String(asset.assetId), signedImageUrl(asset.publicId, { width: 1024 })]));
+  const photoUrlsById = new Map(delivery.assets.map(asset => [String(asset.assetId), signedDeliveryImageUrl(asset.publicId, { width: 1024 })]));
   let direction = job.result?.direction;
   let frames = Array.isArray(job.result?.frames) ? job.result.frames : [];
   if (!direction) {
@@ -380,7 +380,7 @@ async function revise(job, delivery) {
   const selected = new Set(assetIds);
   const insights = delivery.assets.filter(asset => selected.has(asset.assetId)).map(asset => asset.analysis).filter(Boolean);
   if (insights.length !== selected.size) throw Object.assign(new Error('One of the selected photographs has no analysis.'), { code: 'ANALYSIS_REQUIRED' });
-  const photoUrlsById = new Map(delivery.assets.filter(asset => selected.has(asset.assetId)).map(asset => [String(asset.assetId), signedImageUrl(asset.publicId, { width: 1024 })]));
+  const photoUrlsById = new Map(delivery.assets.filter(asset => selected.has(asset.assetId)).map(asset => [String(asset.assetId), signedDeliveryImageUrl(asset.publicId, { width: 1024 })]));
   const currentFrames = delivery.creativeDirection.frames.filter(frame => selected.has(frame.assetId));
   await saveJob(job, { stage: 'revising-selected-photographs', progress: 20 });
   const result = await withAiRequestSlot(() => createFrameBatch({ format: delivery.format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction: delivery.creativeDirection, imageInsights: insights, photoUrlsById, revisionInstruction: instruction, currentFrames }));

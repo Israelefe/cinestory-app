@@ -25,14 +25,31 @@ export async function uploadDeliveryPhotos(deliveryId, files, onProgress = () =>
   let completed = 0;
   const errors = [];
   const successfulAssets = [];
+  let firstSignature = null;
+  let concurrency = 2;
+  if (files.length) {
+    onProgress(0, { index: 0, file: files[0], status: 'starting', loaded: 0, total: files[0].size });
+    try {
+      const signed = await api.post(`/v1/deliveries/${deliveryId}/uploads/sign`, { contentType: files[0].type });
+      firstSignature = signed.data.data;
+      const serverLimit = Number(firstSignature.maxConcurrentUploads);
+      concurrency = Number.isInteger(serverLimit) ? Math.max(1, Math.min(6, serverLimit)) : 2;
+    } catch {
+      // Let the normal per-file retry path request a fresh signature.
+    }
+  }
 
-  await pool(files, 3, async (file, index) => {
+  await pool(files, concurrency, async (file, index) => {
     const maxRetries = 2;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         onProgress(Math.round((loadedBytes.reduce((sum, value) => sum + value, 0) / totalBytes) * 100), { index, file, status: attempt > 0 ? 'starting' : 'starting', loaded: 0, total: file.size });
-        const signResponse = await api.post(`/v1/deliveries/${deliveryId}/uploads/sign`, { contentType: file.type });
-        const signature = signResponse.data.data;
+        let signature;
+        if (index === 0 && attempt === 0 && firstSignature) signature = firstSignature;
+        else {
+          const signResponse = await api.post(`/v1/deliveries/${deliveryId}/uploads/sign`, { contentType: file.type });
+          signature = signResponse.data.data;
+        }
         await uploadR2Object(signature, file, progress => {
           const transferProgress = Math.min(progress, Math.max(0, file.size * 0.98));
           report(index, transferProgress);

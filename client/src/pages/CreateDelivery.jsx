@@ -413,9 +413,12 @@ export default function CreateDelivery({ user }) {
   }
 
   async function addPhotos(files) {
-    const valid = [...files].filter(file => ['image/jpeg', 'image/png', 'image/webp'].includes(file.type) && file.size <= 50 * 1024 * 1024);
+    const selected = [...files];
+    const tooLarge = selected.find(file => file.size > 20_000_000);
+    const valid = selected.filter(file => ['image/jpeg', 'image/png', 'image/webp'].includes(file.type) && file.size <= 20_000_000);
     const remaining = limits.photosPerDelivery - (delivery?.assets?.length || 0);
-    if (!valid.length) return toast.error('Choose JPEG, PNG, or WebP photographs up to 50 MB each.');
+    if (!valid.length) return toast.error(tooLarge ? `${tooLarge.name} is larger than 20 MB. Choose a smaller photo.` : 'Choose JPEG, PNG, or WebP photographs up to 20 MB each.');
+    if (tooLarge) toast.error(`${tooLarge.name} is larger than 20 MB and was skipped.`);
     if (valid.length > remaining) return toast.error(`You can add ${remaining} more photograph${remaining === 1 ? '' : 's'} to this delivery.`);
     lastFilesRef.current = [...valid];
     setUploadQueue(valid.map(file => ({ name: file.name, size: file.size, status: 'starting', progress: 0 })));
@@ -788,7 +791,7 @@ export default function CreateDelivery({ user }) {
           </Stage> : step === 2 ? <Stage key="upload">
             <StageHead eyebrow="02 / Finished photographs" title="Add the files your client will receive." copy={`Upload the final edited photographs. Veylo will study the complete set without changing your retouching or colour grade.`} />
             <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={event => addPhotos(event.target.files)} />
-            <button type="button" className={`v-create-drop${draggingPhotos ? ' is-dragging' : ''}`} onClick={() => inputRef.current?.click()} onDragEnter={event => { event.preventDefault(); setDraggingPhotos(true); }} onDragOver={event => { event.preventDefault(); setDraggingPhotos(true); }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget)) setDraggingPhotos(false); }} onDrop={event => { event.preventDefault(); setDraggingPhotos(false); if (!busy) addPhotos(event.dataTransfer.files); }} disabled={Boolean(busy)}><span><Upload size={25} /></span><strong>{busy === 'upload' ? progress.stage : draggingPhotos ? 'Drop the finished photographs here' : 'Choose or drop finished photographs'}</strong><small>JPEG, PNG, or WebP · up to 50 MB each · {delivery?.assets?.length || 0} of {limits.photosPerDelivery}</small>{busy === 'upload' && <i><b style={{ transform: `scaleX(${progress.value / 100})` }} /></i>}</button>
+            <button type="button" className={`v-create-drop${draggingPhotos ? ' is-dragging' : ''}`} onClick={() => inputRef.current?.click()} onDragEnter={event => { event.preventDefault(); setDraggingPhotos(true); }} onDragOver={event => { event.preventDefault(); setDraggingPhotos(true); }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget)) setDraggingPhotos(false); }} onDrop={event => { event.preventDefault(); setDraggingPhotos(false); if (!busy) addPhotos(event.dataTransfer.files); }} disabled={Boolean(busy)}><span><Upload size={25} /></span><strong>{busy === 'upload' ? progress.stage : draggingPhotos ? 'Drop the finished photographs here' : 'Choose or drop finished photographs'}</strong><small>JPEG, PNG, or WebP · up to 20 MB each · {delivery?.assets?.length || 0} of {limits.photosPerDelivery}</small>{busy === 'upload' && <i><b style={{ transform: `scaleX(${progress.value / 100})` }} /></i>}</button>
             {(busy === 'upload' || uploadQueue.some(item => item.status === 'failed')) && uploadQueue.length > 0 && <section className="v-upload-queue" aria-live="polite" aria-label="Upload progress">
               <header>
                 <strong>{busy === 'upload' ? 'Sending your photographs' : 'Upload summary'}</strong>

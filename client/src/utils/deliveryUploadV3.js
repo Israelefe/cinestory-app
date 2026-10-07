@@ -1,7 +1,7 @@
 import api from '../services/api.js';
 import { uploadR2Object } from './r2Upload.js';
 
-const MAX_SIMULTANEOUS_PHOTO_UPLOADS = 2;
+const MAX_SIMULTANEOUS_PHOTO_UPLOADS = 6;
 
 function uploadErrorMessage(error) {
   const message = error?.response?.data?.message || error?.message || 'The upload could not be completed.';
@@ -12,19 +12,33 @@ export async function uploadDeliveryPhotosV3(deliveryId, files, onProgress = () 
   const outcomes = new Array(files.length);
   const loaded = new Array(files.length).fill(0);
   const total = files.reduce((sum, file) => sum + file.size, 0) || 1;
+  const uploadIds = files.map(() => crypto.randomUUID());
   let highestPercent = 0;
   let cursor = 0;
+  let initialSignature = null;
+  let concurrency = 2;
   function report(index, value, status, details = {}) {
     loaded[index] = Math.max(0, Math.min(files[index].size, value));
     const currentPercent = Math.round(loaded.reduce((sum, part) => sum + part, 0) / total * 100);
     highestPercent = Math.max(highestPercent, currentPercent);
     onProgress(highestPercent, { index, file: files[index], status, loaded: loaded[index], total: files[index].size, ...details });
   }
+  if (files.length) {
+    report(0, 0, 'starting', { attempt: 1 });
+    try {
+      const signed = await api.post('/v1/deliveries/' + deliveryId + '/uploads/sign', { uploadId: uploadIds[0], contentType: files[0].type });
+      initialSignature = signed.data.data;
+      const serverLimit = Number(initialSignature.maxConcurrentUploads);
+      concurrency = Number.isInteger(serverLimit) ? Math.max(1, Math.min(6, serverLimit)) : 2;
+    } catch {
+      // Let the normal per-file retry path request a fresh signature.
+    }
+  }
   async function worker() {
     while (cursor < files.length) {
       const index = cursor++;
       const file = files[index];
-      const uploadId = crypto.randomUUID();
+      const uploadId = uploadIds[index];
       let lastError = '';
       for (let attempt = 0; attempt < 3; attempt += 1) {
         try {
@@ -32,8 +46,11 @@ export async function uploadDeliveryPhotosV3(deliveryId, files, onProgress = () 
           let payload;
           let signature;
           if (attempt === 0) {
-            const signed = await api.post('/v1/deliveries/' + deliveryId + '/uploads/sign', { uploadId, contentType: file.type });
-            signature = signed.data.data;
+            if (index === 0 && initialSignature) signature = initialSignature;
+            else {
+              const signed = await api.post('/v1/deliveries/' + deliveryId + '/uploads/sign', { uploadId, contentType: file.type });
+              signature = signed.data.data;
+            }
           } else {
             const recovered = await api.post('/v1/deliveries/' + deliveryId + '/uploads/recover', { uploadId, contentType: file.type });
             if (recovered.data.data.asset) {
@@ -63,7 +80,7 @@ export async function uploadDeliveryPhotosV3(deliveryId, files, onProgress = () 
       }
     }
   }
-  await Promise.all(Array.from({ length: Math.min(MAX_SIMULTANEOUS_PHOTO_UPLOADS, files.length) }, worker));
+  await Promise.all(Array.from({ length: Math.min(MAX_SIMULTANEOUS_PHOTO_UPLOADS, concurrency, files.length) }, worker));
   const errors = outcomes.map((item, index) => item.error ? { file: item.file, index, error: item.error } : null).filter(Boolean);
   return { errors, successfulAssets: outcomes.filter(item => item.asset).map(item => item.asset), completed: outcomes.length - errors.length, total: outcomes.length };
 }

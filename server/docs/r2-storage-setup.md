@@ -60,3 +60,14 @@ The migration command streams one object at a time up to 5 GiB. Larger objects n
 Render's `server` service needs the four R2 variables and `MONGODB_URI`. `server/server.js` checks R2 connectivity during production startup, so a missing token or bucket permission causes startup to fail visibly rather than silently accepting uploads that cannot be saved.
 
 Uploads are sent directly from the browser to R2. Veylo currently signs upload links for 20 minutes and read links for up to 6 hours. Keep the server clock synchronized so S3 signatures remain valid.
+
+## Offload delivery photo previews
+
+The optional Cloudflare Worker reads delivery originals from the private bucket and prepares only the preview a delivery page asks for. It also checks the image dimensions when an upload finishes, so the API server does not need to download each original and save ten preview files. The library's upload and RAW preview flow stays on its existing path.
+
+Follow [the delivery image worker setup](../../cloudflare/delivery-images/README.md). It uses the existing R2 bucket name and adds these two optional Render variables:
+
+- `R2_IMAGE_WORKER_URL` — the Worker URL printed by Wrangler.
+- `R2_IMAGE_WORKER_SECRET` — the same private signing secret configured on the Worker as `IMAGE_SIGNING_SECRET`.
+
+Deploy the Worker and set both variables before deploying the application release. The delivery uploaders then allow up to six photo uploads at once. Without the Worker settings, uploads stay at two at a time while the API uses its previous preview-generation path.

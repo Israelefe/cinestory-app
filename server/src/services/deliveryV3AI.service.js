@@ -1,4 +1,4 @@
-import { signedImageUrl } from './deliveryMedia.service.js';
+import { signedDeliveryImageUrl } from './deliveryMedia.service.js';
 import { contrastRatio, V3_DEFAULT_PALETTE, V3_FONT_CHOICES, V3_FORMATS } from '../constants/deliveryV3.js';
 import { purposeWordingIssues } from '../utils/purposeWording.js';
 import { writeEditorialDirection, rewriteEditorialCaption, rewriteEditorialBlock } from './editorialDirection.service.js';
@@ -26,7 +26,7 @@ function captionTimeout() {
 
 async function request(system, user, { images = [], maxTokens = 4000, deadline = Infinity, timeoutError = captionTimeout } = {}) {
   if (!anyModelProviderConfigured()) throw Object.assign(new Error('Veylo AI is not configured.'), { code: 'V3_AI_UNAVAILABLE' });
-  const content = [{ type: 'text', text: user }, ...images.map(image => ({ type: 'image_url', image_url: { url: signedImageUrl(image.publicId, { width: 960 }) } }))];
+  const content = [{ type: 'text', text: user }, ...images.map(image => ({ type: 'image_url', image_url: { url: signedDeliveryImageUrl(image.publicId, { width: 960 }) } }))];
   const body = { model: MODEL, enable_thinking: false, temperature: 0.45, max_tokens: maxTokens, messages: [{ role: 'system', content: system }, { role: 'user', content }] };
   let malformedResponses = 0;
   const retryWait = async delay => {

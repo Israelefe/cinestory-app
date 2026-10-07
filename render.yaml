@@ -51,6 +51,10 @@ services:
         sync: false
       - key: R2_BUCKET_NAME
         sync: false
+      - key: R2_IMAGE_WORKER_URL
+        sync: false
+      - key: R2_IMAGE_WORKER_SECRET
+        sync: false
       - key: PAYSTACK_SECRET_KEY
         sync: false
       - key: BILLING_ENABLED

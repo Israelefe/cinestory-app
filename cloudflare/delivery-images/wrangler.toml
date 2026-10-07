@@ -1,0 +1,15 @@
+name = "veylo-delivery-images"
+main = "worker.js"
+compatibility_date = "2026-10-07"
+workers_dev = true
+
+# Uses the existing R2_BUCKET_NAME value from Render.
+[[r2_buckets]]
+binding = "DELIVERY_MEDIA"
+bucket_name = "veylo"
+
+[images]
+binding = "IMAGES"
+
+[cache]
+enabled = true
