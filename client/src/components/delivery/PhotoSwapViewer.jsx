@@ -1,17 +1,23 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, animate, motion, useMotionValue, useTransform } from 'framer-motion';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import {
   ArrowRight,
   ArrowDownToLine,
   Check,
+  ChevronLeft,
+  ChevronRight,
+  Grid2X2,
   Heart,
+  Image as ImageIcon,
+  LoaderCircle,
   MoveHorizontal,
   RotateCcw,
   Volume2,
   VolumeX
 } from 'lucide-react';
 import DeliveryBrandMark from './DeliveryBrandMark.jsx';
+import ClientGallery from './ClientGallery.jsx';
 import { API_BASE_URL } from '../../config/env.js';
 import { deliveryFontStyles } from '../../utils/deliveryTypography.js';
 import './PhotoSwapViewer.css';
@@ -35,31 +41,6 @@ function dominantColor(asset) {
   return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : null;
 }
 
-/* ── Palette variations tailored to each image ── */
-const CARD_PALETTES = [
-  { id: 'cobalt', glow: '#173b70', accent: '#60a5fa', border: 'rgba(96, 165, 250, 0.25)' },
-  { id: 'amethyst', glow: '#2b1a3d', accent: '#c084fc', border: 'rgba(192, 132, 252, 0.25)' },
-  { id: 'emerald', glow: '#163328', accent: '#34d399', border: 'rgba(52, 211, 153, 0.25)' },
-  { id: 'amber', glow: '#3d2014', accent: '#fb923c', border: 'rgba(251, 146, 60, 0.25)' },
-  { id: 'coral', glow: '#3a191b', accent: '#fb7185', border: 'rgba(251, 113, 133, 0.25)' },
-  { id: 'teal', glow: '#123130', accent: '#2dd4bf', border: 'rgba(45, 212, 191, 0.25)' },
-  { id: 'rose', glow: '#351b2b', accent: '#f472b6', border: 'rgba(244, 114, 182, 0.25)' },
-  { id: 'ochre', glow: '#352d15', accent: '#eab308', border: 'rgba(234, 179, 8, 0.25)' }
-];
-const CARD_DESIGNS = ['bleed', 'matte', 'paper', 'editorial'];
-
-function getCardPalette(asset, index) {
-  const fallback = CARD_PALETTES[index % CARD_PALETTES.length];
-  const glow = dominantColor(asset) || fallback.glow;
-  const designIndex = (index + Math.floor(index / CARD_PALETTES.length)) % CARD_DESIGNS.length;
-  return {
-    glow,
-    accent: fallback.accent,
-    border: fallback.border,
-    design: CARD_DESIGNS[designIndex]
-  };
-}
-
 export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = false, preview = false }) {
   const assets = useMemo(
     () => [...(delivery?.assets || [])].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)),
@@ -71,9 +52,19 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
   const [muted, setMuted] = useState(false);
   const [soundBlocked, setSoundBlocked] = useState(false);
   const [localLiked, setLocalLiked] = useState(() => new Set());
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const [photoAttempt, setPhotoAttempt] = useState(0);
+  const [deckRegion, setDeckRegion] = useState(null);
+  const [deckSize, setDeckSize] = useState(null);
+  const [photoRatios, setPhotoRatios] = useState(() => new Map());
+  const titleId = useId();
+  const mountedRef = useRef(true);
   const audioRef = useRef(null);
   const soundtrackAttemptRef = useRef(null);
   const advanceLockRef = useRef(false);
+  const navigationPhaseRef = useRef('idle');
+  const queuedKeyboardNavigationRef = useRef(null);
   const pointerGestureRef = useRef(null);
   const pendingArrivalRef = useRef(null);
   const imageReadinessRef = useRef(new Map());
@@ -88,11 +79,33 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
 
   const isEnd = currentIndex >= assets.length;
   const currentAsset = isEnd ? null : assets[currentIndex];
+  const photoRatio = photoRatios.get(currentAsset?.assetId)
+    || (currentAsset?.width > 0 && currentAsset?.height > 0 ? currentAsset.width / currentAsset.height : 0.75);
 
-  const currentPalette = useMemo(
-    () => (currentAsset ? getCardPalette(currentAsset, currentIndex) : CARD_PALETTES[0]),
-    [currentAsset, currentIndex]
-  );
+  useLayoutEffect(() => {
+    if (!deckRegion) return undefined;
+    const fitPrint = () => {
+      const padding = getComputedStyle(deckRegion);
+      const availableWidth = Math.max(1, deckRegion.clientWidth - parseFloat(padding.paddingLeft) - parseFloat(padding.paddingRight));
+      const availableHeight = Math.max(1, deckRegion.clientHeight - parseFloat(padding.paddingTop) - parseFloat(padding.paddingBottom));
+      const photoWidth = Math.min(availableWidth - 12, photoRatio < 1 ? 500 : 800, (Math.min(availableHeight, 680) - 12) * photoRatio);
+      const size = { width: Math.max(1, photoWidth + 12), height: Math.max(1, photoWidth / photoRatio + 12) };
+      setDeckSize(current => current && Math.abs(current.width - size.width) < 1 && Math.abs(current.height - size.height) < 1 ? current : size);
+    };
+    fitPrint();
+    const observer = new ResizeObserver(fitPrint);
+    observer.observe(deckRegion);
+    return () => observer.disconnect();
+  }, [deckRegion, photoRatio]);
+
+  const glow = delivery?.photoswap?.backgroundMode === 'dark' ? '#070709' : dominantColor(currentAsset || assets[0]) || '#31231f';
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; cardOffset.stop(); advanceLockRef.current = false; };
+  }, [cardOffset]);
+
+  useEffect(() => { setPhotoFailed(false); setPhotoAttempt(0); }, [currentIndex]);
 
   const ensurePhotoReady = useCallback(asset => {
     const source = mediaUrl(photoUrl(asset));
@@ -110,9 +123,11 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
 
     const readiness = new Promise(resolve => {
       let settled = false;
+      const timeout = window.setTimeout(() => finish(false), 8000);
       const finish = async loaded => {
         if (settled) return;
         settled = true;
+        window.clearTimeout(timeout);
         if (loaded && typeof image.decode === 'function') {
           try {
             await image.decode();
@@ -147,14 +162,15 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
   );
   const stageStyle = {
     ...fontStyles,
-    '--ps-photo-glow': currentPalette.glow,
-    '--ps-accent-color': currentPalette.accent
+    '--ps-photo-glow': glow
   };
 
   const canLike = delivery?.access?.allowLikes !== false
     && (typeof galleryProps?.onLike === 'function' || demo || preview);
   const canDownloadPhoto = delivery?.access?.allowIndividualDownloads !== false
     && typeof galleryProps?.onDownload === 'function';
+  const canDownloadAll = delivery?.access?.allowDownloadAll === true
+    && typeof galleryProps?.onDownloadAll === 'function';
 
   const requestSoundtrack = useCallback((fromGesture = false) => {
     const audio = audioRef.current;
@@ -192,12 +208,14 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
   }, [requestSoundtrack]);
 
   useEffect(() => {
-    if (!soundtrackUrl) return undefined;
-    const audio = audioRef.current;
-    if (!audio) return undefined;
-    requestSoundtrack();
-    return undefined;
-  }, [requestSoundtrack, soundtrackUrl]);
+    if (!soundtrackUrl || !hasStarted) return undefined;
+    const handleVisibility = () => {
+      if (document.hidden) audioRef.current?.pause();
+      else requestSoundtrack();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [hasStarted, requestSoundtrack, soundtrackUrl]);
 
   useEffect(() => {
     if (!assets.length) return undefined;
@@ -214,6 +232,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
     if (nextIndex < 0 || nextIndex > assets.length) return false;
 
     advanceLockRef.current = true;
+    navigationPhaseRef.current = 'loading';
     setIsAdvancing(true);
     const cardNode = cardElementRef.current;
     const width = cardWidth || cardNode?.offsetWidth || window.innerWidth;
@@ -224,27 +243,32 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
     const launchVelocity = Math.sign(releaseVelocity) === Math.sign(swipeDirection)
       ? Math.max(-1800, Math.min(1800, releaseVelocity))
       : 0;
-    animate(cardOffset, exitX, {
-      type: 'spring',
-      stiffness: reduced ? 500 : 420,
-      damping: reduced ? 46 : 38,
-      velocity: launchVelocity,
-      restDelta: 2,
-      onComplete: () => {
-        if (nextIndex >= assets.length) {
-          advanceLockRef.current = false;
-          setIsAdvancing(false);
-          setCurrentIndex(nextIndex);
-          return;
-        }
+    // Keep the current photograph on screen while a slow connection loads the next.
+    const ready = nextIndex < assets.length ? ensurePhotoReady(assets[nextIndex]) : Promise.resolve(true);
+    ready.then(() => {
+      if (!mountedRef.current || !advanceLockRef.current) return;
+      navigationPhaseRef.current = 'exiting';
+      animate(cardOffset, exitX, {
+        type: 'spring',
+        stiffness: reduced ? 500 : 420,
+        damping: reduced ? 46 : 38,
+        velocity: launchVelocity,
+        restDelta: 2,
+        onComplete: () => {
+          if (nextIndex >= assets.length) {
+            advanceLockRef.current = false;
+            navigationPhaseRef.current = 'idle';
+            setIsAdvancing(false);
+            setCurrentIndex(nextIndex);
+            return;
+          }
 
-        const incomingOffset = swipeDirection < 0 ? 56 : -56;
-        ensurePhotoReady(assets[nextIndex]).then(() => {
-          if (!advanceLockRef.current) return;
+          const incomingOffset = swipeDirection < 0 ? 56 : -56;
+          navigationPhaseRef.current = 'arriving';
           pendingArrivalRef.current = incomingOffset;
           setCurrentIndex(nextIndex);
-        });
-      }
+        }
+      });
     });
     return true;
   }, [assets, currentIndex, reduced, cardOffset, ensurePhotoReady]);
@@ -261,6 +285,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
       restDelta: 0.5,
       onComplete: () => {
         advanceLockRef.current = false;
+        navigationPhaseRef.current = 'idle';
         setIsAdvancing(false);
       }
     });
@@ -271,7 +296,16 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
   }, [cardOffset]);
 
   const handleCardPointerDown = useCallback(event => {
-    if (advanceLockRef.current || !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    // A new gesture can take over from the incoming print's spring animation.
+    if (navigationPhaseRef.current === 'arriving') {
+      cardOffset.stop();
+      advanceLockRef.current = false;
+      navigationPhaseRef.current = 'idle';
+      queuedKeyboardNavigationRef.current = null;
+      setIsAdvancing(false);
+    }
+    if (advanceLockRef.current) return;
     pointerGestureRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -286,7 +320,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
       // Pointer capture is unavailable in a few embedded webviews.
     }
     requestSoundtrack(true);
-  }, [requestSoundtrack]);
+  }, [requestSoundtrack, cardOffset]);
 
   const handleCardPointerMove = useCallback(event => {
     const gesture = pointerGestureRef.current;
@@ -335,6 +369,8 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
     pendingArrivalRef.current = null;
     cardOffset.set(0);
     advanceLockRef.current = false;
+    navigationPhaseRef.current = 'idle';
+    queuedKeyboardNavigationRef.current = null;
     setIsAdvancing(false);
     setCurrentIndex(0);
   }, [cardOffset]);
@@ -356,38 +392,48 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
     setMuted(true);
   }, [muted, soundBlocked]);
 
-  const toggleLike = useCallback(() => {
-    if (!currentAsset || !canLike) return;
+  const toggleAssetLike = useCallback(assetId => {
+    if (!assetId || !canLike) return;
     if (typeof galleryProps?.onLike === 'function') {
-      galleryProps.onLike(currentAsset.assetId);
+      galleryProps.onLike(assetId);
     } else {
       setLocalLiked(current => {
         const next = new Set(current);
-        if (next.has(currentAsset.assetId)) next.delete(currentAsset.assetId);
-        else next.add(currentAsset.assetId);
+        if (next.has(assetId)) next.delete(assetId);
+        else next.add(assetId);
         return next;
       });
     }
-  }, [canLike, currentAsset, galleryProps]);
+  }, [canLike, galleryProps]);
+
+  useEffect(() => {
+    if (isAdvancing || galleryOpen) return;
+    const direction = queuedKeyboardNavigationRef.current;
+    queuedKeyboardNavigationRef.current = null;
+    if (direction !== null) navigateAdjacent(direction);
+  }, [isAdvancing, galleryOpen, navigateAdjacent]);
 
   /* Keyboard users can move in either direction through the photo set. */
   useEffect(() => {
     const handleKey = event => {
       if (event.altKey || event.ctrlKey || event.metaKey) return;
       const target = event.target;
-      if (target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(target.tagName)) return;
-      if (!hasStarted) return;
+      if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      if (target instanceof HTMLElement && target.tagName === 'BUTTON' && !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      if (!hasStarted || galleryOpen) return;
       if (event.key === 'ArrowRight' || event.key === ' ' || event.key === 'Enter') {
         event.preventDefault();
-        navigateAdjacent(-1);
+        if (advanceLockRef.current) queuedKeyboardNavigationRef.current = -1;
+        else navigateAdjacent(-1);
       } else if (event.key === 'ArrowLeft') {
         event.preventDefault();
-        navigateAdjacent(1);
+        if (advanceLockRef.current) queuedKeyboardNavigationRef.current = 1;
+        else navigateAdjacent(1);
       }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [hasStarted, navigateAdjacent]);
+  }, [hasStarted, galleryOpen, navigateAdjacent]);
 
   if (!assets.length) {
     return (
@@ -404,13 +450,10 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
 
   const photoNumber = String(Math.min(currentIndex + 1, assets.length)).padStart(2, '0');
   const totalNumber = String(assets.length).padStart(2, '0');
-  const liked = currentAsset && (
-    galleryProps?.liked instanceof Set
-      ? galleryProps.liked.has(currentAsset.assetId)
-      : Array.isArray(galleryProps?.liked)
-        ? galleryProps.liked.includes(currentAsset.assetId)
-        : localLiked.has(currentAsset.assetId)
-  );
+  const resolvedLiked = galleryProps?.liked instanceof Set ? galleryProps.liked
+    : Array.isArray(galleryProps?.liked) ? new Set(galleryProps.liked) : localLiked;
+  const liked = currentAsset && resolvedLiked.has(currentAsset.assetId);
+  const remainingAssets = assets.slice(currentIndex + 1, currentIndex + 3);
 
   return (
     <div
@@ -422,9 +465,8 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
         <audio
           ref={audioRef}
           src={soundtrackUrl}
-          autoPlay
           loop
-          preload="auto"
+          preload="none"
           playsInline
           muted={muted}
           onPlaying={() => setSoundBlocked(false)}
@@ -432,27 +474,26 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
         />
       )}
       <div className="ps-ambient" aria-hidden="true" />
-      <main className={'ps-stage' + (isEnd ? ' is-complete' : '')} aria-label="Photo Swap">
+      <main className={'ps-stage' + (!hasStarted ? ' is-opening' : isEnd ? ' is-complete' : ' is-browsing')} aria-label="Photo Swap">
         {/* ── Minimal header ── */}
         <header className="ps-header">
           <div className="ps-header-brand">
             <span className="ps-brand-mark"><DeliveryBrandMark branding={delivery?.branding} /></span>
             <span className="ps-header-copy">
               <strong>{studioName}</strong>
-              <span>{title}</span>
+              <span>{hasStarted ? title : 'A collection for ' + (delivery?.clientName || 'you')}</span>
             </span>
           </div>
           <div className="ps-header-tools">
-            <div className="ps-progress-copy" aria-label={isEnd ? 'All photos viewed' : 'Photo ' + (currentIndex + 1) + ' of ' + assets.length}>
-              <strong>{isEnd ? 'DONE' : photoNumber}</strong><span>/ {totalNumber}</span>
-            </div>
+            {hasStarted && <button type="button" className="ps-tool-button ps-gallery-button" onClick={() => setGalleryOpen(true)} aria-label="Open full gallery" title="Open full gallery"><Grid2X2 size={17} /><span>Gallery</span></button>}
             {soundtrackUrl && (
               <button
                 type="button"
-                className="ps-sound-button"
+                className="ps-tool-button ps-sound-button"
                 onClick={toggleSound}
                 aria-label={muted ? 'Play soundtrack' : soundBlocked ? 'Try soundtrack again' : 'Mute soundtrack'}
                 title={muted ? 'Play soundtrack' : soundBlocked ? 'Try soundtrack again' : 'Mute soundtrack'}
+                aria-pressed={!muted && !soundBlocked}
               >
                 {muted || soundBlocked ? <VolumeX size={17} /> : <Volume2 size={17} />}
               </button>
@@ -461,14 +502,18 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
         </header>
 
         {/* ── Segmented progress track ── */}
-        {hasStarted && (
-          <div className="ps-segments" aria-hidden="true">
-            {assets.map((_, i) => (
+        {hasStarted && !isEnd && (
+          <div className="ps-collection-bar">
+            <span>PHOTO SWAP</span>
+            <div className="ps-segments" aria-hidden="true">
+            {assets.length <= 40 ? assets.map((_, i) => (
               <span
                 key={i}
                 className={'ps-segment' + (i < currentIndex ? ' is-done' : i === currentIndex && !isEnd ? ' is-active' : '')}
               />
-            ))}
+            )) : <span className="ps-progress-track"><i style={{ transform: `scaleX(${(currentIndex + 1) / assets.length})` }} /></span>}
+            </div>
+            <span className="ps-progress-copy" aria-label={'Photo ' + (currentIndex + 1) + ' of ' + assets.length}><strong>{photoNumber}</strong> / {totalNumber}</span>
           </div>
         )}
 
@@ -482,36 +527,37 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: reduced ? 0.2 : 0.3, ease: [0.22, 1, 0.36, 1] }}
-              aria-labelledby="ps-start-title"
+              aria-labelledby={titleId + '-start'}
             >
               <div className="ps-start-stack" aria-hidden="true">
+                {assets[2] && <div className="ps-start-card ps-start-third"><img src={mediaUrl(assets[2].thumbnailUrl || photoUrl(assets[2]))} alt="" /></div>}
                 {assets[1] && (
                   <div className="ps-start-card ps-start-back">
-                    <img src={mediaUrl(photoUrl(assets[1]))} alt="" />
+                    <img src={mediaUrl(assets[1].thumbnailUrl || photoUrl(assets[1]))} alt="" />
                   </div>
                 )}
                 <motion.div
                   className="ps-start-card ps-start-front"
-                  animate={assets.length > 1
-                    ? { x: [0, -54, 0, 54, 0], rotate: [0, -4, 0, 4, 0] }
-                    : { x: 0, rotate: 0 }}
-                  transition={{ duration: reduced ? 3.8 : 3.1, repeat: Infinity, repeatDelay: 0.7, ease: 'easeInOut' }}
+                  initial={{ rotate: -5, y: 16, opacity: 0 }}
+                  animate={{ rotate: -3, y: 0, opacity: 1 }}
+                  transition={{ type: 'spring', damping: 25, stiffness: 100 }}
                 >
-                  <img src={mediaUrl(photoUrl(assets[0]))} alt="" />
-                  {assets.length > 1 && <span className="ps-start-gesture"><MoveHorizontal size={23} /></span>}
+                  <img src={mediaUrl(photoUrl(assets[0]))} srcSet={assets[0].srcSet || undefined} sizes="(max-width: 767px) 280px, 350px" alt="" />
                 </motion.div>
+                <div className="ps-cover-stamp"><span>THE COLLECTION</span><strong>{totalNumber}</strong><span>PHOTOGRAPHS</span></div>
               </div>
               <div className="ps-start-copy">
-                <span className="ps-start-eyebrow">PHOTO SWAP · {assets.length} PHOTOS</span>
-                <h1 id="ps-start-title">One photo at a time.</h1>
-                <p>Give every finished photo a closer look.</p>
+                <span className="ps-start-eyebrow">{delivery?.shootType || 'YOUR PHOTO COLLECTION'}</span>
+                <h1 id={titleId + '-start'}>{title}</h1>
+                <p>{delivery?.clientMessage || 'Take your time. Every photograph has its own place here.'}</p>
                 <button type="button" className="ps-start-button" onClick={beginExperience}>
-                  View the photos <ArrowRight size={17} />
+                  Swipe photographs <ArrowRight size={18} />
                 </button>
+                <span className="ps-start-note">{soundtrackUrl ? <><Volume2 size={14} /> A soundtrack accompanies your photos</> : <><MoveHorizontal size={14} /> Swipe through at your own pace</>}</span>
               </div>
             </motion.section>
           ) : isEnd ? (
-            /* ── Mind-blowing Completion Card (No overlap with deck) ── */
+            /* Collection handoff. */
             <motion.section
               key="ps-complete"
               className="ps-complete-card"
@@ -519,17 +565,18 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.94, y: -18 }}
               transition={{ type: 'spring', damping: 25, stiffness: 280 }}
-              aria-labelledby="ps-complete-title"
+              aria-labelledby={titleId + '-complete'}
             >
-              <div className="ps-complete-badge">
-                <DeliveryBrandMark branding={delivery?.branding} />
-              </div>
-              <span className="ps-complete-mark"><Check size={26} strokeWidth={2.4} /></span>
-              <p className="ps-complete-label">PHOTO SWAP COMPLETE</p>
-              <h1 id="ps-complete-title">You’ve seen every photograph.</h1>
+              <div className="ps-finale-stack" aria-hidden="true">{assets.slice(0, 3).map(asset => <img key={asset.assetId} src={mediaUrl(asset.thumbnailUrl || photoUrl(asset))} alt="" />)}</div>
+              <p className="ps-complete-label"><Check size={14} /> THE COMPLETE COLLECTION</p>
+              <h1 id={titleId + '-complete'}>Your photographs.<br />All together.</h1>
               <p className="ps-complete-copy">
-                {title} <span>·</span> {assets.length} finished photographs
+                {assets.length} photographs from {studioName}.<br />Return to a favourite whenever you like.
               </p>
+              <div className="ps-complete-actions">
+                <button type="button" className="ps-start-button" onClick={() => setGalleryOpen(true)}><Grid2X2 size={17} /> View full gallery</button>
+                {canDownloadAll && <button type="button" className="ps-secondary-button" onClick={galleryProps.onDownloadAll} disabled={galleryProps.busy === 'all'}>{galleryProps.busy === 'all' ? <LoaderCircle size={17} className="ps-spin" /> : <ArrowDownToLine size={17} />} Download all photos</button>}
+              </div>
               <button
                 type="button"
                 className="ps-restart-button"
@@ -543,6 +590,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
             /* ── Single-photo swipe viewer ── */
             <motion.section
               key="ps-deck-active"
+              ref={setDeckRegion}
               className="ps-deck-region"
               aria-label="Photograph viewer"
               initial={{ opacity: 0, scale: 0.96 }}
@@ -550,23 +598,21 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
               exit={{ opacity: 0, scale: 0.96 }}
               transition={{ duration: 0.2 }}
             >
-              <div className="ps-deck">
-                {/* Only the active photo is rendered in the swipe stage. */}
+              <div className="ps-deck" style={deckSize || undefined}>
+                {remainingAssets.slice().reverse().map((asset, reverseIndex) => {
+                  const depth = remainingAssets.length - reverseIndex;
+                  return <div key={asset.assetId} className={'ps-print-behind ' + (depth === 1 ? 'ps-print-second' : 'ps-print-third')} aria-hidden="true">
+                    <img src={mediaUrl(asset.thumbnailUrl || photoUrl(asset))} alt="" draggable="false" />
+                  </div>;
+                })}
                 {currentAsset && (
                     <motion.article
                       ref={cardElementRef}
-                      className={'ps-photo-card ps-card-front ps-design-' + currentPalette.design}
+                      className="ps-photo-card ps-card-front ps-print-top"
                       style={{
                         x: cardOffset,
                         rotate: cardRotation,
-                        scale: cardScale,
-                        borderColor: currentPalette.design === 'paper' || currentPalette.design === 'editorial'
-                          ? undefined
-                          : currentPalette.border,
-                        '--ps-card-accent': currentPalette.accent,
-                        boxShadow: currentPalette.design === 'paper'
-                          ? `0 28px 76px -14px color-mix(in srgb, ${currentPalette.glow} 55%, black), 0 4px 18px rgba(0, 0, 0, 0.4), inset 0 0 0 5px rgba(255, 250, 240, 0.92)`
-                          : `0 28px 76px -14px color-mix(in srgb, ${currentPalette.glow} 55%, black), 0 4px 18px rgba(0, 0, 0, 0.4)`
+                        scale: cardScale
                       }}
                       onPointerDown={handleCardPointerDown}
                       onPointerMove={handleCardPointerMove}
@@ -580,7 +626,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
                     >
                       {/* Full-bleed Photo */}
                       <img
-                        key={currentAsset.assetId}
+                        key={currentAsset.assetId + ':' + photoAttempt}
                         className="ps-card-photo"
                         src={mediaUrl(photoUrl(currentAsset))}
                         srcSet={currentAsset.srcSet || undefined}
@@ -589,14 +635,17 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
                         fetchPriority="high"
                         decoding="async"
                         draggable="false"
+                        onError={() => setPhotoFailed(true)}
+                        onLoad={event => {
+                          setPhotoFailed(false);
+                          const image = event.currentTarget;
+                          if (image.naturalWidth && image.naturalHeight) {
+                            const ratio = image.naturalWidth / image.naturalHeight;
+                            setPhotoRatios(current => current.get(currentAsset.assetId) === ratio ? current : new Map(current).set(currentAsset.assetId, ratio));
+                          }
+                        }}
                       />
-
-                      {/* Show the caption only when the photo has one. */}
-                      {(currentAsset.caption || currentAsset.alt) && (
-                        <div className="ps-card-overlay">
-                          <p className="ps-overlay-caption">{currentAsset.caption || currentAsset.alt}</p>
-                        </div>
-                      )}
+                      {photoFailed && <div className="ps-photo-error" role="status" onPointerDown={event => event.stopPropagation()}><ImageIcon size={26} /><p>This photo couldn’t load.</p><button type="button" className="ps-secondary-button" onClick={() => { setPhotoFailed(false); setPhotoAttempt(attempt => attempt + 1); }}>Try again</button></div>}
                     </motion.article>
                 )}
               </div>
@@ -607,22 +656,27 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
         {/* ── Photo Actions ── */}
         {hasStarted && !isEnd && currentAsset && (
           <footer
-            className={'ps-action-area' + (isAdvancing ? ' is-advancing' : '')}
-            aria-hidden={isAdvancing}
+            className="ps-action-area"
           >
-            <div className="ps-tinder-actions" role="toolbar" aria-label="Photo actions">
+            <div className="ps-caption-area">
+              {currentAsset.caption && <p className="ps-overlay-caption">{currentAsset.caption}</p>}
+              <span className="ps-gesture-hint"><MoveHorizontal size={14} /> Swipe left for next, right to go back</span>
+            </div>
+            <div className="ps-photo-controls" role="group" aria-label="Photo actions">
+              <button type="button" className="ps-nav-button" onClick={() => navigateAdjacent(1)} disabled={isAdvancing || currentIndex === 0} aria-label="Previous photograph"><ChevronLeft size={20} /><span>Back</span></button>
+              <div className="ps-save-actions">
               {/* Like Button */}
               {canLike && (
                 <button
                   type="button"
-                  className={'ps-tinder-btn ps-btn-like' + (liked ? ' is-liked' : '')}
-                  onClick={toggleLike}
+                  className={'ps-photo-action ps-btn-like' + (liked ? ' is-liked' : '')}
+                  onClick={() => toggleAssetLike(currentAsset.assetId)}
                   disabled={isAdvancing}
                   aria-pressed={Boolean(liked)}
                   aria-label={liked ? 'Unlike this photo' : 'Like this photo'}
                   title={liked ? 'Liked' : 'Like'}
                 >
-                  <Heart size={26} fill={liked ? 'currentColor' : 'none'} strokeWidth={liked ? 2.2 : 1.9} />
+                  <Heart size={19} fill={liked ? 'currentColor' : 'none'} strokeWidth={1.8} /><span>{liked ? 'Liked' : 'Like'}</span>
                 </button>
               )}
 
@@ -630,22 +684,38 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
               {canDownloadPhoto && (
                 <button
                   type="button"
-                  className="ps-tinder-btn ps-btn-download"
+                  className="ps-photo-action ps-btn-download"
                   onClick={() => galleryProps.onDownload(currentAsset.assetId, currentIndex)}
                   disabled={isAdvancing || galleryProps?.busy === currentAsset.assetId}
                   aria-label="Download this photo"
                   title="Download photo"
                 >
-                  <ArrowDownToLine size={20} strokeWidth={2.1} />
+                  {galleryProps?.busy === currentAsset.assetId ? <LoaderCircle size={19} className="ps-spin" /> : <ArrowDownToLine size={19} strokeWidth={1.8} />}<span>Save</span>
                 </button>
               )}
+              </div>
+              <button type="button" className="ps-nav-button ps-next-button" onClick={() => navigateAdjacent(-1)} disabled={isAdvancing} aria-label={currentIndex === assets.length - 1 ? 'Finish collection' : 'Next photograph'}><span>{currentIndex === assets.length - 1 ? 'Finish' : 'Next'}</span>{isAdvancing ? <LoaderCircle size={19} className="ps-spin" /> : <ChevronRight size={20} />}</button>
             </div>
+            {galleryProps.downloadNotice && <p className="ps-download-notice" role="status">{galleryProps.downloadNotice}</p>}
           </footer>
         )}
       </main>
       <span className="ps-sr-only" aria-live="polite">
         {isEnd ? 'All ' + assets.length + ' photos viewed' : 'Photo ' + (currentIndex + 1) + ' of ' + assets.length}
       </span>
+      {galleryOpen && <ClientGallery
+        photos={assets}
+        title={title}
+        delivery={delivery}
+        fontStyles={fontStyles}
+        demoId={demo ? 'photoswap' : undefined}
+        {...galleryProps}
+        liked={resolvedLiked}
+        onLike={canLike ? toggleAssetLike : undefined}
+        onDownload={canDownloadPhoto ? galleryProps.onDownload : undefined}
+        onDownloadAll={canDownloadAll ? galleryProps.onDownloadAll : undefined}
+        onClose={() => setGalleryOpen(false)}
+      />}
     </div>
   );
 }

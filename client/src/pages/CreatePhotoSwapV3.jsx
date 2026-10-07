@@ -624,7 +624,7 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
                 key={item.id}
                 className={(index === currentStep ? 'is-current ' : '') + (done ? 'is-done' : '')}
                 onClick={() => { if (done && !busy && !captionPreparing) setStage(item.id); }}
-                disabled={captionPreparing || (!done && index !== currentStep)}
+                disabled={!!busy || captionPreparing || (!done && index !== currentStep)}
                 aria-current={index === currentStep ? 'step' : undefined}
               >
                 <span>{done ? <Check size={13} /> : String(index + 1).padStart(2, '0')}</span>
@@ -981,9 +981,17 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
           <aside className="ps-preview-column">
             <div className="ps-preview-heading">
               <span>CLIENT PREVIEW</span>
-              <button type="button" onClick={showPreview} ref={previewTrigger}><Eye size={14} /> Open larger</button>
+              <button type="button" onClick={showPreview} ref={previewTrigger} disabled={!orderedAssets.length}><Eye size={14} /> Open larger</button>
             </div>
-            <ClientPreviewPhoneFrame delivery={previewDelivery} access={access} accessPin="" />
+            {orderedAssets.length ? <ClientPreviewPhoneFrame delivery={previewDelivery} access={access} accessPin="" /> : (
+              <div className="ps-preview-placeholder">
+                <div className="ps-preview-print" aria-hidden="true"><Image size={30} strokeWidth={1} /><span>YOUR FIRST PHOTOGRAPH</span></div>
+                <p className="ps-create-kicker">THE CLIENT’S FIRST LOOK</p>
+                <h2>Your photos.<br />In your order.</h2>
+                <p>Add your finished photographs to see the collection here. You can try the swipes before sending the link.</p>
+                <div><Layers3 size={17} /><span>One photograph at a time</span></div>
+              </div>
+            )}
             <p className="ps-preview-caption">The client opens on your first photo, then swipes through your photos and captions in order.</p>
           </aside>
         </div>

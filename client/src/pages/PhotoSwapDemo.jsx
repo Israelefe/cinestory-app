@@ -37,6 +37,7 @@ const assets = photos.map((photo, index) => ({
   photoColors: photo.photoColors,
   thumbnailUrl: '/veylo/web/demo-sharon-' + (index + 1) + '-480.webp',
   url: '/veylo/web/demo-sharon-' + (index + 1) + '-1440.webp',
+  srcSet: [480, 960, 1440].map(width => '/veylo/web/demo-sharon-' + (index + 1) + '-' + width + '.webp ' + width + 'w').join(', '),
   width: 480,
   height: 640
 }));

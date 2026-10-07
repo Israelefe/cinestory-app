@@ -47,7 +47,7 @@ export function DesktopPhoneFrame({ src, title, message, device = true }) {
     if (!device || !phoneDevice.current) return undefined;
     const element = phoneDevice.current;
     const updateScale = () => {
-      const inCreation = Boolean(element.closest('.v3-create, .pb-create-shell'));
+      const inCreation = Boolean(element.closest('.v3-create, .pb-create-shell, .ps-create-shell'));
       // Creation previews can start below the fold, then become sticky or
       // scroll into view. Their initial page position must not shrink them.
       const pageTop = Math.max(0, element.getBoundingClientRect().top);

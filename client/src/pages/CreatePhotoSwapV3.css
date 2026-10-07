@@ -3,6 +3,38 @@
   box-sizing: border-box;
 }
 
+.ps-preview-placeholder {
+  display: grid;
+  justify-items: center;
+  gap: 20px;
+  padding: 42px 30px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 10px;
+  background: radial-gradient(ellipse at 50% 10%, #ff5a470c, transparent 70%), #0c0c10;
+  text-align: center;
+}
+.ps-preview-print {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  width: 170px;
+  height: 215px;
+  margin: 12px 0 20px;
+  border: 1px solid #ffffff28;
+  outline: 1px solid #ffffff0c;
+  outline-offset: 8px;
+  color: #bdaca0;
+  background: linear-gradient(160deg, #ffffff07, transparent);
+  transform: rotate(-4deg);
+}
+.ps-preview-print span { font-size: 8px; letter-spacing: .12em; }
+.ps-preview-placeholder h2 { margin: 0; font-family: 'Cormorant Garamond', Georgia, serif; font-size: 40px; font-weight: 400; line-height: 1.05; }
+.ps-preview-placeholder > p:not(.ps-create-kicker) { max-width: 290px; margin: 0; font-size: 13px; line-height: 1.7; color: #b5aaa1; }
+.ps-preview-placeholder > .ps-create-kicker { margin: 0; }
+.ps-preview-placeholder > div:last-child { display: flex; align-items: center; gap: 9px; font-size: 11px; color: #ffb2a6; padding-top: 16px; }
+
 .ps-create-shell {
   --ps-bg: #08080b;
   --ps-panel: #101014;
@@ -156,7 +188,7 @@
 
 .ps-step-nav {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   margin-bottom: 30px;
   border-top: 1px solid var(--ps-border);
   border-bottom: 1px solid var(--ps-border);
@@ -297,6 +329,7 @@
 
 .ps-step-card {
   min-width: 0;
+  border-radius: 10px;
   padding: clamp(22px, 3.2vw, 38px);
   border: 1px solid var(--ps-border);
   background:
@@ -354,7 +387,7 @@
   display: grid;
   gap: 8px;
   color: #d7d0ca;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 650;
 }
 
@@ -367,6 +400,7 @@
 }
 
 .ps-fields input,
+.ps-fields select,
 .ps-fields textarea,
 .ps-font-selects select,
 .ps-field-label input,
@@ -398,6 +432,7 @@
 }
 
 .ps-fields input:focus,
+.ps-fields select:focus,
 .ps-fields textarea:focus,
 .ps-font-selects select:focus,
 .ps-field-label input:focus,
@@ -1271,7 +1306,11 @@
   position: sticky;
   top: 88px;
   min-width: 0;
+  width: min(100%, 460px);
+  justify-self: center;
 }
+
+.ps-fields select, .ps-font-selects select { color-scheme: dark; }
 
 .ps-preview-heading {
   display: flex;
@@ -1288,6 +1327,8 @@
   font-weight: 750;
   letter-spacing: .14em;
 }
+
+.ps-preview-heading > button:disabled { opacity: .4; cursor: default; }
 
 .ps-preview-heading > button {
   display: inline-flex;
@@ -1491,8 +1532,8 @@
 
 @media (max-width: 1020px) {
   .ps-create-layout {
-    grid-template-columns: minmax(0, 1fr) minmax(270px, .78fr);
-    gap: 22px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
   }
 
   .ps-create-wrap {
@@ -1752,7 +1793,7 @@
 
 @media (min-width: 761px) and (max-width: 1020px) {
   .ps-create-layout {
-    grid-template-columns: minmax(0, 1fr) minmax(270px, .78fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .ps-photo-grid {
@@ -2019,6 +2060,11 @@
 }
 
 @media (max-width: 640px) {
+  .ps-step-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; border: 1px solid var(--ps-border); border-radius: 8px; overflow: hidden; background: #ffffff0a; }
+  .ps-step-nav button { min-height: 54px; flex-direction: row; justify-content: flex-start; gap: 8px; padding: 10px; background: #0c0c10; }
+  .ps-step-nav button.is-current { background: #ff5a4710; }
+  .ps-step-nav strong { font-size: 10px; }
+  .ps-step-nav button > span { width: 24px; height: 24px; flex-basis: 24px; }
   .ps-caption-step {
     gap: 17px;
   }
