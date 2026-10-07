@@ -21,7 +21,7 @@ export default function ImageLibrary() {
   const reduced = useVeyloReducedMotion();
   const inputRef = useRef(null);
   const [assets, setAssets] = useState([]);
-  const [usage, setUsage] = useState({ usedBytes: 0, limitBytes: 50 * 1024 ** 3 });
+  const [usage, setUsage] = useState({ usedBytes: 0, limitBytes: 100 * 1024 ** 3 });
   const [access, setAccess] = useState('unavailable');
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -147,7 +147,7 @@ export default function ImageLibrary() {
     if (!incoming.length) return;
     const invalid = incoming.find(file => (!ALLOWED.has(file.type) && !isRawPhoto(file)) || file.size > MAX_FILE_BYTES);
     if (invalid) return toast.error('Choose a JPEG, PNG, WebP, or supported camera RAW file that is 100 MB or smaller.');
-    if (incoming.reduce((total, file) => total + file.size, usage.usedBytes) > usage.limitBytes) return toast.error('These files would take your library above 50 GB.');
+    if (incoming.reduce((total, file) => total + file.size, usage.usedBytes) > usage.limitBytes) return toast.error('These files would take your library above 100 GB.');
     try {
       setUploading(true); setProgress(0);
       const saved = await uploadLibraryPhotos(incoming, { folder: uploadFolder.trim() || 'All photographs', onProgress: (value, label) => { setProgress(value); setProgressLabel(label || ''); } });
@@ -198,11 +198,11 @@ export default function ImageLibrary() {
     <div className="v-library-wrap">
       <motion.header className="v-library-head" initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}>
         <div><p>VEYLO PRO · PERSONAL STORAGE</p><h1>Your photographs,<br /><em>ready when you need them.</em></h1><span>Keep client shoots in one place. Reuse photographs in a delivery, ask clients to choose their edits, or send camera originals to your editor.</span></div>
-        <aside><HardDrive size={20} /><div><strong>{bytes(usage.usedBytes)} used</strong><span>of 50 GB</span></div><i><b style={{ transform: `scaleX(${percent / 100})` }} /></i></aside>
+        <aside><HardDrive size={20} /><div><strong>{bytes(usage.usedBytes)} used</strong><span>of 100 GB</span></div><i><b style={{ transform: `scaleX(${percent / 100})` }} /></i></aside>
       </motion.header>
 
       {access === 'read-only' && <div className="v-library-notice"><HardDrive size={18} /><p><strong>Your library is being kept for 30 days.</strong><span>You can download or remove photographs now. Renew Pro to upload and organise them again.</span></p></div>}
-      {access === 'unavailable' && !loading && <section className="v-library-locked"><HardDrive size={28} /><p>PERSONAL IMAGE STORAGE</p><h2>50 GB for the work<br />you want close by.</h2><span>Veylo Pro includes the Image Library for camera originals, previews, and returned edits. Send clients a private link to choose photos, or give your editor a password-protected link to return finished edits. Published client delivery hosting stays separate and does not use this 50 GB.</span><a className="v-button" href="/billing">Pro · <ProPrice /> / month</a></section>}
+      {access === 'unavailable' && !loading && <section className="v-library-locked"><HardDrive size={28} /><p>PERSONAL IMAGE STORAGE</p><h2>100 GB for the work<br />you want close by.</h2><span>Veylo Pro includes the Image Library for camera originals, previews, and returned edits. Send clients a private link to choose photos, or give your editor a password-protected link to return finished edits. Published client delivery hosting stays separate and does not use this 100 GB.</span><a className="v-button" href="/billing">Pro · <ProPrice /> / month</a></section>}
 
       {access !== 'unavailable' && <>
         <nav className="v-library-panels" aria-label="Image library sections">
@@ -259,7 +259,7 @@ export default function ImageLibrary() {
             return <button type="button" key={asset._id} aria-pressed={chosen} disabled={disabled} className={chosen ? 'is-selected' : ''} onClick={() => setSelectedIds(current => chosen ? current.filter(id => id !== asset._id) : [...current, asset._id])}><img src={asset.thumbnailUrl || asset.url} alt="" loading="lazy" /><span>{chosen && <Check size={14} />}{asset.originalFilename || 'Photograph'}</span></button>;
           })}</div>}
           {pickerHasMore && <button type="button" className="v-library-picker-more" disabled={pickerLoading} onClick={() => loadPicker(pickerPage + 1)}>{pickerLoading ? 'Loading photographs…' : 'Load more photographs'}</button>}
-          <footer><span>Uploads and returned edits count toward your 50 GB library.</span><button type="submit" className="v-button" disabled={!selectedIds.length || pickerLoading}>{compose === 'preselection' ? 'Create client link' : 'Create editor link'}<Check size={16} /></button></footer>
+          <footer><span>Uploads and returned edits count toward your 100 GB library.</span><button type="submit" className="v-button" disabled={!selectedIds.length || pickerLoading}>{compose === 'preselection' ? 'Create client link' : 'Create editor link'}<Check size={16} /></button></footer>
         </form>}
       </motion.section>
     </motion.div>}</AnimatePresence>

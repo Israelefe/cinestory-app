@@ -14,7 +14,7 @@ const features = [
   ['Portfolio', 'Included'],
   ['Client photo preselection', 'Private links'],
   ['Editor handoff', 'Password-protected'],
-  ['Personal image storage', '50 GB in the Image Library'],
+  ['Personal image storage', '100 GB in the Image Library'],
   ['Delivery hosting', 'Separate from library storage']
 ];
 

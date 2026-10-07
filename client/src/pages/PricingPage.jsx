@@ -18,8 +18,8 @@ const comparison = [
   ['Brand shown to your client', 'Veylo', 'Your studio'],
   ['Client photo preselection', '—', 'Private selection links'],
   ['Editor handoff', '—', 'Password-protected links'],
-  ['Personal image storage', '—', '50 GB'],
-  ['Delivery hosting', 'Included', 'Included outside your 50 GB']
+  ['Personal image storage', '—', '100 GB'],
+  ['Delivery hosting', 'Included', 'Included outside your 100 GB']
 ];
 
 const faqs = [
@@ -28,8 +28,8 @@ const faqs = [
   { q: 'How many photos can I add?', a: 'Free allows up to 100 finished photographs in one delivery. Pro allows up to 500. Veylo uses the photographs you upload and leaves the original files untouched.' },
   { q: 'Do I pay separately for a Photo Story, Album, GridBoard, or Photo Swap?', a: 'No. GridBoard, Photo Swap, and all eight Showcase formats are included on both plans.' },
   { q: 'What does unlimited under fair use mean?', a: 'Normal client delivery work for one photographer or studio is included. Fair use prevents automated bulk use and unrelated studios sharing one account.' },
-  { q: 'How do client preselection and editor handoff work?', a: 'With Pro, send a private link so a client can choose the photographs they want edited. Give your editor a password-protected link to download camera originals and upload finished edits. The originals, previews, and returned edits use your 50 GB Image Library.' },
-  { q: 'How does the 50 GB Image Library work?', a: 'Pro includes 50 GB for photographs you keep in the Image Library. Camera originals, their paired previews, and returned edits count toward that space. Photos hosted in published client deliveries use separate hosting.' },
+  { q: 'How do client preselection and editor handoff work?', a: 'With Pro, send a private link so a client can choose the photographs they want edited. Give your editor a password-protected link to download camera originals and upload finished edits. The originals, previews, and returned edits use your 100 GB Image Library.' },
+  { q: 'How does the 100 GB Image Library work?', a: 'Pro includes 100 GB for photographs you keep in the Image Library. Camera originals, their paired previews, and returned edits count toward that space. Photos hosted in published client deliveries use separate hosting.' },
   { q: 'What changes when I remove Veylo branding?', a: 'Your photographer or studio name leads the published delivery. Veylo branding can be removed from the experience your client receives.' },
   { q: 'Is Veylo Portfolio included?', a: 'Yes. Pro includes a public portfolio made from selected photographs and completed Veylo projects.' },
   { q: 'What happens if I cancel Pro?', a: 'Your Pro access continues until the end of the month you already paid for. Your personal library and portfolio then stay private for 30 days, giving you time to renew, download, or remove your work.' },
@@ -59,11 +59,11 @@ export default function PricingPage() {
     <section className="v-pricing-plans" id="pricing-plans"><div className="v-wrap">
       <Reveal className="v-pricing-section-intro"><Eyebrow number="01">Choose by volume</Eyebrow><h2 className="v-heading">Three deliveries to begin.<br /><em>Unlimited when you need it.</em></h2><p className="v-copy">Free is enough to send real client work and understand how Veylo fits your studio. Pro is for the month when three deliveries are no longer enough.</p></Reveal>
       <Plans /><Link className="v-fine" to="/refund-policy">Read the refund policy</Link>
-      <Reveal className="v-pricing-fair-use"><ShieldCheck size={19} /><div><strong>Delivery hosting stays separate from your 50 GB.</strong><p>Camera originals, paired previews, and edits returned through editor links use Image Library space. Published client deliveries use separate hosting.</p></div><TextLink to="/fair-use">Read the fair use policy</TextLink></Reveal>
+      <Reveal className="v-pricing-fair-use"><ShieldCheck size={19} /><div><strong>Delivery hosting stays separate from your 100 GB.</strong><p>Camera originals, paired previews, and edits returned through editor links use Image Library space. Published client deliveries use separate hosting.</p></div><TextLink to="/fair-use">Read the fair use policy</TextLink></Reveal>
     </div></section>
 
     <section className="v-section v-pricing-compare"><div className="v-wrap">
-      <Reveal className="v-pricing-section-intro"><Eyebrow number="02">Free and Pro</Eyebrow><h2 className="v-heading">What changes when<br /><em>you move to Pro.</em></h2><p className="v-copy">Photo Swap, GridBoard, and the eight Showcase formats are on both plans. Pro adds more delivery room, your studio branding, a 50 GB Image Library, and private links for client selections and editor handoffs.</p></Reveal>
+      <Reveal className="v-pricing-section-intro"><Eyebrow number="02">Free and Pro</Eyebrow><h2 className="v-heading">What changes when<br /><em>you move to Pro.</em></h2><p className="v-copy">Photo Swap, GridBoard, and the eight Showcase formats are on both plans. Pro adds more delivery room, your studio branding, a 100 GB Image Library, and private links for client selections and editor handoffs.</p></Reveal>
       <Reveal className="v-pricing-table" delay={.08}>
         <header><span>Plan detail</span><strong>Free</strong><strong>Pro</strong></header>
         {comparison.map(([label, free, pro]) => <div className="v-pricing-row" key={label}><span>{label}</span><p>{free === 'Included' && <Check size={15} />}{free}</p><p>{pro === 'Included' && <Check size={15} />}{pro}</p></div>)}

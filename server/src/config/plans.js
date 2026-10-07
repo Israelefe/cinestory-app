@@ -22,7 +22,7 @@ export const PLAN_DEFINITIONS = Object.freeze({
     formats: ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign'],
     branding: 'studio',
     portfolio: true,
-    personalStorageBytes: 50 * 1024 * 1024 * 1024
+    personalStorageBytes: 100 * 1024 * 1024 * 1024
   })
 });
 
