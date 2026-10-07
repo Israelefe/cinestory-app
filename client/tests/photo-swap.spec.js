@@ -83,11 +83,16 @@ for (const width of [320, 390, 640, 768, 834, 1024, 1440]) {
     await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 3, necessary: true, serviceAnalytics: true })));
     await page.goto('/photoswap');
     const hero = page.locator('.v-ps-hero');
-    const demo = hero.getByRole('link', { name: 'Try PhotoSwap', exact: true });
-    await expect(demo).toBeVisible();
-    await inViewport(page, demo);
+    const demo = page.getByRole('link', { name: 'Open the client view', exact: true });
+    await expect(hero.getByRole('link', { name: /^(Try PhotoSwap|Create a PhotoSwap)$/ })).toHaveCount(0);
     await expect(demo).toHaveAttribute('href', '/demo/photoswap');
-    await expect(hero.getByRole('link', { name: 'Create a PhotoSwap', exact: true })).toHaveAttribute('href', '/create?type=photoswap');
+    if (width < 768) {
+      const headline = await hero.locator('h1').boundingBox();
+      const visual = await hero.locator('.v-ps-hero-preview').boundingBox();
+      const description = await hero.locator('.v-ps-hero-support').boundingBox();
+      expect(visual.y).toBeGreaterThanOrEqual(headline.y + headline.height);
+      expect(description.y).toBeGreaterThanOrEqual(visual.y + visual.height);
+    }
     await expect.poll(() => page.locator('.v-ps-hero-front img').evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
     await expect.poll(() => page.locator('.v-ps-preview-link').evaluate(preview => {
       const heading = preview.querySelector('.v-ps-preview-heading').getBoundingClientRect();
@@ -110,6 +115,10 @@ for (const width of [320, 390, 640, 768, 834, 1024, 1440]) {
       expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
     }
     await expect(page.locator('.v-ps-steps li')).toHaveCount(3);
+    await demo.scrollIntoViewIfNeeded();
+    await expect(demo).toBeVisible();
+    await inViewport(page, demo);
+    expect((await demo.boundingBox()).height).toBeGreaterThanOrEqual(56);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
     await page.locator('.v-ps-closeup').scrollIntoViewIfNeeded();
     if ([390, 834, 1440].includes(width)) {

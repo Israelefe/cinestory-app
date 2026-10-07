@@ -18,6 +18,11 @@ import './GridboardMarketing.css';
 import '../styles/homepage.css';
 
 const gridboardArtPhotos = [1, 6, 5, 3, 4, 2].map(number => `/veylo/web/demo-lora-${number}-480.webp`);
+const photoSwapPrints = [
+  { photo: 'demo-sharon-2', design: 'ink', angle: 9, position: 'back' },
+  { photo: 'demo-sharon-3', design: 'folio', angle: -10, position: 'middle' },
+  { photo: 'demo-sharon-1', design: 'paper', angle: -3, position: 'front' }
+];
 
 const direction = [
   [Images, 'Order and hierarchy', 'Chooses the opening, the strongest frames, image groupings, and the order that suits the selected format.'],
@@ -194,7 +199,29 @@ export default function LandingPage() {
         <Reveal className="v-format-after">{i === 0 && <p className="v-formats-intro">Showcase deliveries open with a presentation, then lead to the complete gallery. The original photographs stay as supplied.</p>}<p>{format.line}</p><TextLink to={demoLinks[format.id][0]} onClick={event => keepFormatAsBackDestination(event, format.id)}>{demoLinks[format.id][1]}</TextLink></Reveal>
       </article>)}</div>
       <Reveal className="v-home-pinboard-card"><div className="v-home-pinboard-art" aria-hidden="true">{gridboardArtPhotos.map(photo => <span key={photo}><img src={photo} alt="" loading="lazy" decoding="async" /></span>)}</div><div><Eyebrow>GRIDBOARD DELIVERY</Eyebrow><h3>Put the full gallery first.</h3><p>Clients can find a moment, browse by outfit or backdrop colour, open Similar Shot for close visual matches, or start a slideshow with optional music. You choose the layout they see.</p><div className="v-home-pinboard-actions"><TextLink to="/gridboard">See what GridBoard can do</TextLink><TextLink to="/demo/gridboard">Browse the live demo</TextLink><TextLink to="/create?type=pinboard">Create a GridBoard</TextLink></div></div></Reveal>
-      <Reveal className="v-home-pinboard-card v-home-photoswap-card"><div className="v-home-photoswap-art" aria-hidden="true"><span className="is-back"><img src="/veylo/web/demo-sharon-1-480.webp" alt="" loading="lazy" decoding="async" /></span><span className="is-middle"><img src="/veylo/web/demo-sharon-2-480.webp" alt="" loading="lazy" decoding="async" /></span><span className="is-front"><img src="/veylo/web/demo-sharon-3-480.webp" alt="" loading="lazy" decoding="async" /></span><small>SWIPE THROUGH THE SET <ArrowRight size={12} /></small></div><div><Eyebrow>PHOTO SWAP DELIVERY</Eyebrow><h3>One photo at a time.</h3><p>A swipe-first stack with a caption, like, and individual download for every finished photo. Add a soundtrack that starts when the client opens the set.</p><div className="v-home-pinboard-actions"><TextLink to="/photoswap">See how Photo Swap works</TextLink><TextLink to="/demo/photoswap">Try the live demo</TextLink><TextLink to="/create?type=photoswap">Create a Photo Swap</TextLink></div></div></Reveal>
+      <Reveal className="v-home-photoswap-card" id="photoswap">
+        <div className="v-home-photoswap-heading"><Eyebrow>PhotoSwap delivery</Eyebrow><h3>One photo.<br /><em>A closer look.</em></h3></div>
+        <Link to="/demo/photoswap" className="v-home-photoswap-art" aria-label="Try the PhotoSwap portrait demo">
+          <div className="v-home-photoswap-art-top"><span>SHARON'S PORTRAITS</span><span>04 PHOTOGRAPHS</span></div>
+          <div className="v-home-photoswap-stack">
+            {photoSwapPrints.map((print, index) => <motion.figure
+              key={print.photo}
+              className={`v-home-photoswap-print is-${print.position} is-${print.design}`}
+              initial={reduced ? false : { opacity: 0, y: 22, rotate: print.angle - 5 }}
+              whileInView={{ opacity: 1, y: 0, rotate: print.angle }}
+              viewport={{ once: true, amount: .2 }}
+              transition={{ type: 'spring', stiffness: 110, damping: 22, delay: index * .08 }}
+              aria-hidden={print.position !== 'front' || undefined}
+            ><Photo name={print.photo} alt={print.position === 'front' ? "Sharon's finished studio portrait in a cream print frame" : ''} sizes="(max-width: 640px) 60vw, (max-width: 1024px) 30vw, 330px" /></motion.figure>)}
+          </div>
+          <div className="v-home-photoswap-art-bottom"><span>Open the sample set</span><ArrowUpRight size={19} aria-hidden="true" /></div>
+        </Link>
+        <div className="v-home-photoswap-support">
+          <p>Send your finished photos as a stack your client can swipe through. Each photograph stays whole, with a frame of its own.</p>
+          <p className="v-home-photoswap-options">Review the captions, add music, and choose whether clients can like or download each photo.</p>
+          <div className="v-home-photoswap-actions"><Action to="/demo/photoswap">Open the client view</Action><TextLink to="/photoswap">About PhotoSwap</TextLink></div>
+        </div>
+      </Reveal>
       <Reveal className="v-formats-explore">
         <div><span>All eight Showcase formats</span><p>See what each one does and which shoots it suits.</p></div>
         <Action to="/formats" onClick={event => keepFormatAsBackDestination(event, 'album')}>Explore all formats</Action>

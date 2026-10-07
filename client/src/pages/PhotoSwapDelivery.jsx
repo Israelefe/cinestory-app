@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowRight, ArrowUpRight, Check, Heart, LockKeyhole, Music2, Type } from 'lucide-react';
-import { Action, Eyebrow, Page, Reveal, TextLink } from '../components/PublicDesign.jsx';
+import { Action, Eyebrow, Page, Reveal } from '../components/PublicDesign.jsx';
 import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import './PhotoSwapDelivery.css';
 
@@ -58,12 +58,6 @@ export default function PhotoSwapDelivery() {
         <Reveal className="v-ps-hero-copy">
           <Eyebrow>PhotoSwap · Finished photo delivery</Eyebrow>
           <h1>One photo.<br /><em>A closer look.</em></h1>
-          <p className="v-ps-lead">Hand over the finished shoot as a stack of photographs. Your client swipes through your order, with room to look at each one.</p>
-          <div className="v-actions">
-            <Action to="/demo/photoswap">Try PhotoSwap</Action>
-            <Action to="/create?type=photoswap" secondary>Create a PhotoSwap</Action>
-          </div>
-          <p className="v-ps-link-note"><LockKeyhole size={14} aria-hidden="true" />One link. Opens in their browser.</p>
         </Reveal>
 
         <Reveal className="v-ps-hero-preview" delay={.08}>
@@ -76,6 +70,10 @@ export default function PhotoSwapDelivery() {
             </div>
             <div className="v-ps-preview-bottom"><span>A real set. Try it yourself.</span><span className="v-ps-demo-arrow"><ArrowUpRight size={20} aria-hidden="true" /></span></div>
           </Link>
+        </Reveal>
+        <Reveal className="v-ps-hero-support" delay={.12}>
+          <p className="v-ps-lead">Hand over the finished shoot as a stack of photographs. Your client swipes through your order, with room to look at each one.</p>
+          <p className="v-ps-link-note"><LockKeyhole size={14} aria-hidden="true" />One link. Opens in their browser.</p>
         </Reveal>
       </header>
 
@@ -101,7 +99,7 @@ export default function PhotoSwapDelivery() {
               ))}
               <Reveal className="v-ps-gallery-note" delay={.15}>
                 <p>Reached the last photo? The full gallery is there at the end, so they can find a favourite again.</p>
-                <TextLink to="/demo/photoswap">Open the client view</TextLink>
+                <Action to="/demo/photoswap" className="v-ps-client-view">Open the client view</Action>
               </Reveal>
             </div>
           </div>

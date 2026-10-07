@@ -5,7 +5,7 @@ async function openHome(page, { notice = false, hash = '' } = {}) {
   await page.route('**/api/v1/**', route => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith('/auth/me')) return route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ success: false }) });
-    if (path.endsWith('/billing/plans')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, pricing: { region: 'nigeria', monthlyPriceNaira: 25000 }, billingAvailable: true }) });
+    if (path.endsWith('/billing/plans')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, pricing: { currency: 'NGN', monthlyPriceNaira: 40000 }, billingAvailable: true }) });
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: {} }) });
   });
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -13,6 +13,69 @@ async function openHome(page, { notice = false, hash = '' } = {}) {
 }
 
 const demoPaths = ['/demo?preset=lora', '/demo/editorial', '/demo/reveal', '/demo/canvas', '/demo/chapters', '/demo/album', '/demo/event-coverage', '/demo/campaign'];
+
+for (const width of [320, 640, 768, 834, 1440]) {
+  test(`the homepage PhotoSwap preview and client action fit at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await openHome(page, { hash: '#photoswap' });
+    const section = page.locator('.v-home-photoswap-card');
+    await section.scrollIntoViewIfNeeded();
+    await expect(section.locator('h3')).toHaveText('One photo.A closer look.');
+    const demo = section.getByRole('link', { name: 'Open the client view', exact: true });
+    await expect(demo).toHaveAttribute('href', '/demo/photoswap');
+    await expect(section.getByRole('link', { name: 'About PhotoSwap', exact: true })).toHaveAttribute('href', '/photoswap');
+    await expect.poll(() => section.locator('.is-front img').evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
+    expect(await section.locator('.is-front img').evaluate(image => getComputedStyle(image).objectFit)).toBe('contain');
+    const box = await section.boundingBox();
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(width);
+    if (width < 768) {
+      const [title, visual, copy] = await Promise.all(['.v-home-photoswap-heading', '.v-home-photoswap-art', '.v-home-photoswap-support'].map(selector => section.locator(selector).boundingBox()));
+      expect(visual.y).toBeGreaterThanOrEqual(title.y + title.height);
+      expect(copy.y).toBeGreaterThanOrEqual(visual.y + visual.height);
+    }
+    await expect.poll(() => section.locator('.v-home-photoswap-art').evaluate(art => {
+      const heading = art.querySelector('.v-home-photoswap-art-top').getBoundingClientRect();
+      const caption = art.querySelector('.v-home-photoswap-art-bottom').getBoundingClientRect();
+      return [...art.querySelectorAll('figure')].every(print => {
+        const bounds = print.getBoundingClientRect();
+        return bounds.top >= heading.bottom + 8 && bounds.bottom <= caption.top - 8;
+      });
+    })).toBe(true);
+    await demo.scrollIntoViewIfNeeded();
+    expect((await demo.boundingBox()).height).toBeGreaterThanOrEqual(56);
+    if ([320, 834, 1440].includes(width)) {
+      await page.waitForTimeout(800);
+      await page.screenshot({ path: `../.visual-review/photoswap/home-feature-${width}.png` });
+    }
+    await demo.click();
+    await expect(page).toHaveURL(/\/demo\/photoswap/);
+    const clientView = width > 1024 ? page.frameLocator('.v-phone-screen iframe') : page;
+    await expect(clientView.getByRole('button', { name: 'Swipe photographs', exact: true })).toBeVisible();
+  });
+
+  test(`the lower Pro card shows a readable monthly price at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await openHome(page);
+    const card = page.locator('.v-home-plan-card.is-pro');
+    await card.scrollIntoViewIfNeeded();
+    const price = card.locator('.v-home-plan-price .v-pro-price');
+    await expect(price).toHaveText('₦40,000');
+    const typography = await price.evaluate(element => {
+      const style = getComputedStyle(element);
+      const amount = getComputedStyle(element.closest('strong'));
+      return { size: parseFloat(style.fontSize), amountSize: parseFloat(amount.fontSize), color: style.color, amountColor: amount.color };
+    });
+    expect(typography.size).toBeGreaterThanOrEqual(36);
+    expect(typography.size).toBe(typography.amountSize);
+    expect(typography.color).toBe(typography.amountColor);
+    const box = await price.boundingBox();
+    const cardBox = await card.boundingBox();
+    expect(box.x).toBeGreaterThanOrEqual(cardBox.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(cardBox.x + cardBox.width);
+    if ([320, 834, 1440].includes(width)) await page.screenshot({ path: `../.visual-review/photoswap/home-pricing-${width}.png` });
+  });
+}
 
 for (const width of [320, 390, 768, 834, 1024, 1440]) {
   test('all original formats and sections remain available at ' + width + 'px', async ({ page }) => {
