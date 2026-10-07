@@ -218,7 +218,7 @@ export default function Dashboard({ user }) {
         <aside className="v-studio-quick">
           <div className="v-studio-quick-heading"><p>STUDIO SHORTCUTS</p><span>Keep your library and public work close by.</span></div>
           <div className="v-studio-quick-links">
-            <Link className="v-studio-quick-link" to="/library" onClick={() => trackEvent('dashboard.library.opened', {}, { status: 'opened' })}><span className="v-studio-quick-icon"><Images size={18} /></span><span><strong>Image library</strong><small>Reuse stored photographs</small></span><ArrowRight size={16} /></Link>
+            <Link className="v-studio-quick-link" to="/library" onClick={() => trackEvent('dashboard.library.opened', {}, { status: 'opened' })}><span className="v-studio-quick-icon"><Images size={18} /></span><span><strong>Image library</strong><small>Store originals and share client or editor links</small></span><ArrowRight size={16} /></Link>
             <Link className="v-studio-quick-link" to="/portfolio/manage" onClick={() => trackEvent('dashboard.portfolio.opened', {}, { status: 'opened' })}><span className="v-studio-quick-icon"><Camera size={18} /></span><span><strong>Studio portfolio</strong><small>Choose what prospective clients see</small></span><ArrowRight size={16} /></Link>
           </div>
         </aside>

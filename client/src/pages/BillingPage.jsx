@@ -12,8 +12,10 @@ const features = [
   ['Photos in one delivery', 'Up to 500'],
   ['Client branding', 'Your studio'],
   ['Portfolio', 'Included'],
-  ['Personal image storage', '50 GB'],
-  ['Delivery hosting', 'Kept outside your 50 GB']
+  ['Client photo preselection', 'Private links'],
+  ['Editor handoff', 'Password-protected'],
+  ['Personal image storage', '50 GB in the Image Library'],
+  ['Delivery hosting', 'Separate from library storage']
 ];
 
 function dateLabel(value) {

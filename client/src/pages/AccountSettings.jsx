@@ -186,7 +186,7 @@ export default function AccountSettings({ user, onAccountDeleted, onUserUpdated 
       <Reveal id="account-tools" className="v-account-tools" delay={.1}>
         <header><div><p>STUDIO TOOLS</p><span>Keep the parts of your studio you use between deliveries in one place.</span></div></header>
         <div className="v-account-tool-grid">
-          <Link to="/library"><span className="v-account-tool-icon"><Images size={19} /></span><span><strong>Image library</strong><small>Reuse photographs you have already stored.</small></span><ArrowRight size={17} /></Link>
+          <Link to="/library"><span className="v-account-tool-icon"><Images size={19} /></span><span><strong>Image library</strong><small>Store originals, prepare client selections, and exchange edits with your editor.</small></span><ArrowRight size={17} /></Link>
           <Link to="/portfolio/manage"><span className="v-account-tool-icon"><Camera size={19} /></span><span><strong>Studio portfolio</strong><small>Choose the work prospective clients can see.</small></span><ArrowRight size={17} /></Link>
         </div>
       </Reveal>
