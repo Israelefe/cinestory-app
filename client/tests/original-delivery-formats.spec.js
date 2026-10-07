@@ -4,7 +4,7 @@ const formats = {
   canvas: { root: '.fd-canvas', photos: '.fd-wall-card', detail: '.fd-wall-paths path' },
   chapters: { root: '.fd-chapters', photos: '.fd-chapter-directory-board>button', detail: '.fd-chapter-directory-number' },
   album: { root: '.fd-album', photos: '.fd-album-cover figure', detail: '.fd-album-cover-shade' },
-  'event-coverage': { root: '.vec-event', photos: '.vec-scene-grid figure > button', detail: '.vec-event-scene-nav' },
+  'event-coverage': { root: '.vec-event', photos: '.ec-cover-photo .ec-photo-button', detail: '.ec-scene-nav' },
   campaign: { root: '.vec-campaign', photos: '.vec-campaign-sets article>button', detail: '.vec-campaign-handoff' }
 };
 test.describe.configure({ mode: 'parallel' });

@@ -83,7 +83,7 @@ for (const format of formats) for (const width of [320, 834, 1440]) test(`${form
   await expectFont(caption, 'Manrope');
   if (format === 'canvas') await view.getByRole('button', { name: 'Return to canvas', exact: true }).click();
   await completePresentation(view, format);
-  await expectFont(view.getByRole('button', { name: format === 'photo-story' || format === 'event-coverage' ? 'Open gallery' : 'Open full gallery', exact: true }), 'Outfit');
+  await expectFont(view.getByRole('button', { name: format === 'photo-story' ? 'Open gallery' : 'Open full gallery', exact: true }), 'Outfit');
   await openPresentationGallery(view, format);
   const gallery = view.locator('.client-gallery');
   await expectFont(gallery.locator('h2'), 'Cormorant Garamond');

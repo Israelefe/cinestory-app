@@ -7,7 +7,7 @@ export async function completePresentation(view, format) {
     await expect(button).toBeEnabled();
     return;
   }
-  const galleryButton = view.getByRole('button', { name: format === 'photo-story' || format === 'event-coverage' ? 'Open gallery' : 'Open full gallery', exact: true });
+  const galleryButton = view.getByRole('button', { name: format === 'photo-story' ? 'Open gallery' : 'Open full gallery', exact: true });
   if (await galleryButton.isVisible()) return;
   if (format === 'photo-story') {
     await expect(view.locator('.v-story-cover,.v-story-frame-count').first()).toBeVisible();
@@ -72,15 +72,15 @@ export async function completePresentation(view, format) {
     }
     await view.getByRole('button', { name: 'Complete reveal', exact: true }).click();
   } else {
-    const ending = { editorial: '.ed-closing', 'event-coverage': '.vec-event-close', campaign: '.vec-campaign-handoff' }[format];
+    const ending = { editorial: '.ed-closing', 'event-coverage': '.ec-ending', campaign: '.vec-campaign-handoff' }[format];
     if (ending) {
       await view.locator(ending).scrollIntoViewIfNeeded();
-      await expect(view.getByRole('button', { name: format === 'event-coverage' ? 'Open gallery' : 'Open full gallery', exact: true })).toBeVisible();
+      await expect(view.getByRole('button', { name: 'Open full gallery', exact: true })).toBeVisible();
     }
   }
 }
 
 export async function openPresentationGallery(view, format) {
   await completePresentation(view, format);
-  await view.getByRole('button', { name: format === 'photo-story' || format === 'event-coverage' ? 'Open gallery' : format === 'editorial' ? 'View full gallery' : 'Open full gallery', exact: true }).click();
+  await view.getByRole('button', { name: format === 'photo-story' ? 'Open gallery' : format === 'editorial' ? 'View full gallery' : 'Open full gallery', exact: true }).click();
 }
