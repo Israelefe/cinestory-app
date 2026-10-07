@@ -1,17 +1,17 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, animate, motion, useMotionValue, useTransform } from 'framer-motion';
+import { AnimatePresence, animate, motion, useAnimationControls, useMotionValue, useTransform } from 'framer-motion';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import {
   ArrowRight,
   ArrowDownToLine,
   Check,
-  ChevronLeft,
-  ChevronRight,
   Grid2X2,
   Heart,
   Image as ImageIcon,
   LoaderCircle,
   MoveHorizontal,
+  Pause,
+  Play,
   RotateCcw,
   Volume2,
   VolumeX
@@ -25,6 +25,9 @@ import './DeliveryTypography.css';
 
 const SWIPE_VELOCITY = 560;
 const SWIPE_DISTANCE_RATIO = 0.2;
+const PHOTO_SIZES = '(max-width: 640px) 92vw, (max-width: 1024px) 500px, 800px';
+const PRINT_DESIGNS = ['paper', 'ink', 'folio', 'linen', 'edge', 'portrait'];
+const PRINT_TILTS = [-3, 2.4, -2.6, 2.8, -2.1, 3];
 
 function mediaUrl(value) {
   return typeof value === 'string' && value.startsWith('/api/')
@@ -41,6 +44,87 @@ function dominantColor(asset) {
   return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : null;
 }
 
+function printSignature(asset, index) {
+  return Array.from(String(asset.assetId || index)).reduce((value, character) => (value * 31 + character.charCodeAt(0)) >>> 0, index + 1);
+}
+
+function PhotoSwapPrint({ asset, index, depth, registerActiveCard, onPhotoRatio, pointerHandlers, motionEnabled }) {
+  const element = useRef(null);
+  const offset = useMotionValue(0);
+  const signature = printSignature(asset, index);
+  const restingTilt = Math.max(-3, Math.min(3, PRINT_TILTS[index % PRINT_TILTS.length] + (signature % 51 - 25) / 100));
+  const tilt = useMotionValue(restingTilt + (depth === 1 ? 3 : depth === 2 ? -4 : 0));
+  const rotation = useTransform([offset, tilt], ([x, angle]) => angle + Math.max(-17, Math.min(17, x / 22)));
+  const photoControls = useAnimationControls();
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const active = depth === 0;
+  const visible = depth < 3;
+
+  useLayoutEffect(() => {
+    if (!active) { offset.stop(); offset.set(0); return undefined; }
+    const card = { offset, element: element.current };
+    registerActiveCard(card);
+    return () => registerActiveCard(null, card);
+  }, [active, offset, registerActiveCard]);
+
+  useLayoutEffect(() => {
+    const movement = animate(tilt, restingTilt + (depth === 1 ? 3 : depth === 2 ? -4 : 0), { type: 'spring', stiffness: 240, damping: 30 });
+    return () => movement.stop();
+  }, [depth, restingTilt, tilt]);
+
+  useEffect(() => {
+    if (!motionEnabled || !active || failed) { photoControls.stop(); return undefined; }
+    photoControls.start({
+      x: [0, -2, 2, 0], y: [0, 2, -2, 0], scale: [0.985, 1, 0.985],
+      transition: { duration: 12 + index % 4 * 2, repeat: Infinity, ease: 'easeInOut' }
+    });
+    return () => photoControls.stop();
+  }, [active, failed, index, motionEnabled, photoControls]);
+
+  useEffect(() => () => offset.stop(), [offset]);
+
+  return <motion.article
+    ref={element}
+    className={'ps-photo-card ps-design-' + PRINT_DESIGNS[index % PRINT_DESIGNS.length] + (active ? ' ps-card-front ps-print-top' : depth === 1 ? ' ps-print-behind ps-print-second' : depth === 2 ? ' ps-print-behind ps-print-third' : ' ps-print-behind ps-print-hidden')}
+    data-asset-id={asset.assetId}
+    style={{ x: offset, rotate: rotation, zIndex: active ? 3 : visible ? 3 - depth : 0, '--ps-card-tone': dominantColor(asset) || `hsl(${24 + signature % 20} 24% 34%)`, '--ps-paper-tone': `hsl(${28 + signature % 18} ${18 + signature % 15}% ${86 + signature % 6}%)` }}
+    initial={false}
+    animate={{ scale: active ? 1 : 1 - Math.min(depth, 2) * 0.035, y: active ? 0 : Math.min(depth, 2) * 6, opacity: visible ? 1 : 0 }}
+    transition={{ type: 'spring', stiffness: 240, damping: 30 }}
+    {...(active ? pointerHandlers : {})}
+    aria-hidden={active ? undefined : true}
+    role={active ? 'group' : undefined}
+    aria-roledescription={active ? 'photograph' : undefined}
+    aria-label={active ? pointerHandlers['aria-label'] : undefined}
+    tabIndex={active ? 0 : -1}
+  >
+    <motion.div className="ps-print-photo-window" initial={{ scale: 0.985 }} animate={photoControls}>
+      <img
+        key={attempt}
+        className="ps-card-photo"
+        src={mediaUrl(photoUrl(asset))}
+        srcSet={asset.srcSet || undefined}
+        sizes={PHOTO_SIZES}
+        alt={asset.alt || asset.caption || 'Photograph ' + (index + 1)}
+        fetchPriority={active ? 'high' : 'low'}
+        decoding="async"
+        draggable="false"
+        onError={() => setFailed(true)}
+        onLoad={event => {
+          setFailed(false);
+          const image = event.currentTarget;
+          if (image.naturalWidth && image.naturalHeight) onPhotoRatio(asset.assetId, image.naturalWidth / image.naturalHeight);
+        }}
+      />
+    </motion.div>
+    {failed && active && <div className="ps-photo-error" role="status" onPointerDown={event => event.stopPropagation()}>
+      <ImageIcon size={26} /><p>This photo couldn’t load.</p>
+      <button type="button" className="ps-secondary-button" onClick={() => { setFailed(false); setAttempt(value => value + 1); }}>Try again</button>
+    </div>}
+  </motion.article>;
+}
+
 export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = false, preview = false }) {
   const assets = useMemo(
     () => [...(delivery?.assets || [])].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)),
@@ -53,8 +137,9 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
   const [soundBlocked, setSoundBlocked] = useState(false);
   const [localLiked, setLocalLiked] = useState(() => new Set());
   const [galleryOpen, setGalleryOpen] = useState(false);
-  const [photoFailed, setPhotoFailed] = useState(false);
-  const [photoAttempt, setPhotoAttempt] = useState(0);
+  const [motionPaused, setMotionPaused] = useState(false);
+  const [pageVisible, setPageVisible] = useState(() => !document.hidden);
+  const [peekDirection, setPeekDirection] = useState(-1);
   const [deckRegion, setDeckRegion] = useState(null);
   const [deckSize, setDeckSize] = useState(null);
   const [photoRatios, setPhotoRatios] = useState(() => new Map());
@@ -63,19 +148,25 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
   const audioRef = useRef(null);
   const soundtrackAttemptRef = useRef(null);
   const advanceLockRef = useRef(false);
-  const navigationPhaseRef = useRef('idle');
   const queuedKeyboardNavigationRef = useRef(null);
   const pointerGestureRef = useRef(null);
-  const pendingArrivalRef = useRef(null);
   const imageReadinessRef = useRef(new Map());
-  const cardElementRef = useRef(null);
+  const activeCardRef = useRef(null);
   const viewerElementRef = useRef(null);
   const reduced = useVeyloReducedMotion();
 
-  /* The active photo and its swipe animation share one horizontal position. */
-  const cardOffset = useMotionValue(0);
-  const cardRotation = useTransform(cardOffset, [-340, 0, 340], [-17, 0, 17]);
-  const cardScale = useTransform(cardOffset, [-340, 0, 340], [0.97, 1, 0.97]);
+  const registerActiveCard = useCallback((card, departingCard) => {
+    if (!card) {
+      if (activeCardRef.current === departingCard) activeCardRef.current = null;
+      return;
+    }
+    activeCardRef.current = card;
+    if (document.activeElement?.closest('.ps-photo-card')) card.element?.focus({ preventScroll: true });
+  }, []);
+
+  const onPhotoRatio = useCallback((assetId, ratio) => {
+    setPhotoRatios(current => current.get(assetId) === ratio ? current : new Map(current).set(assetId, ratio));
+  }, []);
 
   const isEnd = currentIndex >= assets.length;
   const currentAsset = isEnd ? null : assets[currentIndex];
@@ -88,7 +179,10 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
       const padding = getComputedStyle(deckRegion);
       const availableWidth = Math.max(1, deckRegion.clientWidth - parseFloat(padding.paddingLeft) - parseFloat(padding.paddingRight));
       const availableHeight = Math.max(1, deckRegion.clientHeight - parseFloat(padding.paddingTop) - parseFloat(padding.paddingBottom));
-      const photoWidth = Math.min(availableWidth - 12, photoRatio < 1 ? 500 : 800, (Math.min(availableHeight, 680) - 12) * photoRatio);
+      const angle = 3 * Math.PI / 180;
+      const widthLimit = availableWidth / (Math.cos(angle) + Math.sin(angle) / photoRatio);
+      const heightLimit = Math.min(availableHeight, 680) / (Math.sin(angle) + Math.cos(angle) / photoRatio);
+      const photoWidth = Math.min(widthLimit - 12, photoRatio < 1 ? 500 : 800, (heightLimit - 12) * photoRatio);
       const size = { width: Math.max(1, photoWidth + 12), height: Math.max(1, photoWidth / photoRatio + 12) };
       setDeckSize(current => current && Math.abs(current.width - size.width) < 1 && Math.abs(current.height - size.height) < 1 ? current : size);
     };
@@ -102,10 +196,14 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
 
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; cardOffset.stop(); advanceLockRef.current = false; };
-  }, [cardOffset]);
+    return () => { mountedRef.current = false; activeCardRef.current?.offset.stop(); advanceLockRef.current = false; };
+  }, []);
 
-  useEffect(() => { setPhotoFailed(false); setPhotoAttempt(0); }, [currentIndex]);
+  useEffect(() => {
+    const updateVisibility = () => setPageVisible(!document.hidden);
+    document.addEventListener('visibilitychange', updateVisibility);
+    return () => document.removeEventListener('visibilitychange', updateVisibility);
+  }, []);
 
   const ensurePhotoReady = useCallback(asset => {
     const source = mediaUrl(photoUrl(asset));
@@ -118,7 +216,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
     const image = new window.Image();
     image.decoding = 'async';
     image.fetchPriority = 'high';
-    image.sizes = '(max-width: 640px) 92vw, (max-width: 1024px) 500px, 460px';
+    image.sizes = PHOTO_SIZES;
     if (asset?.srcSet) image.srcset = asset.srcSet;
 
     const readiness = new Promise(resolve => {
@@ -227,14 +325,16 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
   /* Left advances; right returns to the previous photograph. */
   const navigateAdjacent = useCallback((swipeDirection, cardWidth, releaseVelocity = 0) => {
     if (currentIndex >= assets.length || advanceLockRef.current) return false;
+    const card = activeCardRef.current;
+    if (!card) return false;
     const step = swipeDirection < 0 ? 1 : -1;
     const nextIndex = currentIndex + step;
     if (nextIndex < 0 || nextIndex > assets.length) return false;
 
     advanceLockRef.current = true;
-    navigationPhaseRef.current = 'loading';
     setIsAdvancing(true);
-    const cardNode = cardElementRef.current;
+    setPeekDirection(swipeDirection);
+    const cardNode = card.element;
     const width = cardWidth || cardNode?.offsetWidth || window.innerWidth;
     const height = cardNode?.offsetHeight || width;
     const stageWidth = viewerElementRef.current?.clientWidth || window.innerWidth;
@@ -247,71 +347,39 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
     const ready = nextIndex < assets.length ? ensurePhotoReady(assets[nextIndex]) : Promise.resolve(true);
     ready.then(() => {
       if (!mountedRef.current || !advanceLockRef.current) return;
-      navigationPhaseRef.current = 'exiting';
-      animate(cardOffset, exitX, {
+      animate(card.offset, exitX, {
         type: 'spring',
         stiffness: reduced ? 500 : 420,
         damping: reduced ? 46 : 38,
         velocity: launchVelocity,
         restDelta: 2,
         onComplete: () => {
-          if (nextIndex >= assets.length) {
-            advanceLockRef.current = false;
-            navigationPhaseRef.current = 'idle';
-            setIsAdvancing(false);
-            setCurrentIndex(nextIndex);
-            return;
-          }
-
-          const incomingOffset = swipeDirection < 0 ? 56 : -56;
-          navigationPhaseRef.current = 'arriving';
-          pendingArrivalRef.current = incomingOffset;
+          if (!mountedRef.current) return;
+          advanceLockRef.current = false;
           setCurrentIndex(nextIndex);
+          setIsAdvancing(false);
         }
       });
     });
     return true;
-  }, [assets, currentIndex, reduced, cardOffset, ensurePhotoReady]);
-
-  useLayoutEffect(() => {
-    const incomingOffset = pendingArrivalRef.current;
-    if (incomingOffset === null || isEnd) return;
-    pendingArrivalRef.current = null;
-    cardOffset.set(incomingOffset);
-    animate(cardOffset, 0, {
-      type: 'spring',
-      damping: 38,
-      stiffness: 420,
-      restDelta: 0.5,
-      onComplete: () => {
-        advanceLockRef.current = false;
-        navigationPhaseRef.current = 'idle';
-        setIsAdvancing(false);
-      }
-    });
-  }, [currentIndex, isEnd, reduced, cardOffset]);
+  }, [assets, currentIndex, reduced, ensurePhotoReady]);
 
   const snapCardToCenter = useCallback(() => {
-    animate(cardOffset, 0, { type: 'spring', damping: 28, stiffness: 300 });
-  }, [cardOffset]);
+    const offset = activeCardRef.current?.offset;
+    if (offset) animate(offset, 0, { type: 'spring', damping: 28, stiffness: 300 });
+  }, []);
 
   const handleCardPointerDown = useCallback(event => {
     if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
-    // A new gesture can take over from the incoming print's spring animation.
-    if (navigationPhaseRef.current === 'arriving') {
-      cardOffset.stop();
-      advanceLockRef.current = false;
-      navigationPhaseRef.current = 'idle';
-      queuedKeyboardNavigationRef.current = null;
-      setIsAdvancing(false);
-    }
     if (advanceLockRef.current) return;
+    activeCardRef.current?.offset.stop();
     pointerGestureRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
       startedAt: event.timeStamp,
       axis: null,
+      offset: activeCardRef.current?.offset,
       width: event.currentTarget.getBoundingClientRect().width
     };
     try {
@@ -320,7 +388,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
       // Pointer capture is unavailable in a few embedded webviews.
     }
     requestSoundtrack(true);
-  }, [requestSoundtrack, cardOffset]);
+  }, [requestSoundtrack]);
 
   const handleCardPointerMove = useCallback(event => {
     const gesture = pointerGestureRef.current;
@@ -335,8 +403,10 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
     if (gesture.axis !== 'x') return;
 
     event.preventDefault();
-    cardOffset.set(deltaX);
-  }, [cardOffset]);
+    const direction = deltaX > 0 ? 1 : -1;
+    setPeekDirection(current => current === direction ? current : direction);
+    gesture.offset?.set(deltaX);
+  }, []);
 
   const handleCardPointerUp = useCallback(event => {
     const gesture = pointerGestureRef.current;
@@ -366,14 +436,14 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
 
   const handleRestart = useCallback(() => {
     pointerGestureRef.current = null;
-    pendingArrivalRef.current = null;
-    cardOffset.set(0);
+    activeCardRef.current?.offset.stop();
+    activeCardRef.current?.offset.set(0);
     advanceLockRef.current = false;
-    navigationPhaseRef.current = 'idle';
     queuedKeyboardNavigationRef.current = null;
     setIsAdvancing(false);
+    setPeekDirection(-1);
     setCurrentIndex(0);
-  }, [cardOffset]);
+  }, []);
 
   const toggleSound = useCallback(() => {
     const audio = audioRef.current;
@@ -453,7 +523,11 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
   const resolvedLiked = galleryProps?.liked instanceof Set ? galleryProps.liked
     : Array.isArray(galleryProps?.liked) ? new Set(galleryProps.liked) : localLiked;
   const liked = currentAsset && resolvedLiked.has(currentAsset.assetId);
-  const remainingAssets = assets.slice(currentIndex + 1, currentIndex + 3);
+  const firstPrint = Math.max(0, currentIndex - 1);
+  const prints = assets.slice(firstPrint, currentIndex + 3);
+  const peekPrevious = peekDirection > 0 && currentIndex > 0;
+  const photoMotionEnabled = pageVisible && !motionPaused && !galleryOpen && !isAdvancing
+    && delivery?.photoswap?.photoMotion !== 'still' && currentAsset?.motion !== 'still';
 
   return (
     <div
@@ -485,7 +559,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
             </span>
           </div>
           <div className="ps-header-tools">
-            {hasStarted && <button type="button" className="ps-tool-button ps-gallery-button" onClick={() => setGalleryOpen(true)} aria-label="Open full gallery" title="Open full gallery"><Grid2X2 size={17} /><span>Gallery</span></button>}
+            {hasStarted && !isEnd && delivery?.photoswap?.photoMotion !== 'still' && currentAsset?.motion !== 'still' && <button type="button" className="ps-tool-button" onClick={() => setMotionPaused(value => !value)} aria-label={motionPaused ? 'Resume photo motion' : 'Pause photo motion'} title={motionPaused ? 'Resume photo motion' : 'Pause photo motion'} aria-pressed={motionPaused}>{motionPaused ? <Play size={16} /> : <Pause size={16} />}</button>}
             {soundtrackUrl && (
               <button
                 type="button"
@@ -593,61 +667,34 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
               ref={setDeckRegion}
               className="ps-deck-region"
               aria-label="Photograph viewer"
+              aria-busy={isAdvancing}
               initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.96 }}
               transition={{ duration: 0.2 }}
             >
               <div className="ps-deck" style={deckSize || undefined}>
-                {remainingAssets.slice().reverse().map((asset, reverseIndex) => {
-                  const depth = remainingAssets.length - reverseIndex;
-                  return <div key={asset.assetId} className={'ps-print-behind ' + (depth === 1 ? 'ps-print-second' : 'ps-print-third')} aria-hidden="true">
-                    <img src={mediaUrl(asset.thumbnailUrl || photoUrl(asset))} alt="" draggable="false" />
-                  </div>;
+                {prints.map((asset, index) => {
+                  const photoIndex = firstPrint + index;
+                  const depth = photoIndex === currentIndex ? 0 : photoIndex < currentIndex ? peekPrevious ? 1 : 3 : photoIndex - currentIndex + (peekPrevious ? 1 : 0);
+                  return <PhotoSwapPrint
+                    key={asset.assetId}
+                    asset={asset}
+                    index={photoIndex}
+                    depth={depth}
+                    registerActiveCard={registerActiveCard}
+                    onPhotoRatio={onPhotoRatio}
+                    motionEnabled={photoMotionEnabled}
+                    pointerHandlers={{
+                      onPointerDown: handleCardPointerDown,
+                      onPointerMove: handleCardPointerMove,
+                      onPointerUp: handleCardPointerUp,
+                      onPointerCancel: handleCardPointerCancel,
+                      onLostPointerCapture: handleCardPointerCancel,
+                      'aria-label': 'Photo ' + (currentIndex + 1) + ' of ' + assets.length
+                    }}
+                  />;
                 })}
-                {currentAsset && (
-                    <motion.article
-                      ref={cardElementRef}
-                      className="ps-photo-card ps-card-front ps-print-top"
-                      style={{
-                        x: cardOffset,
-                        rotate: cardRotation,
-                        scale: cardScale
-                      }}
-                      onPointerDown={handleCardPointerDown}
-                      onPointerMove={handleCardPointerMove}
-                      onPointerUp={handleCardPointerUp}
-                      onPointerCancel={handleCardPointerCancel}
-                      onLostPointerCapture={handleCardPointerCancel}
-                      role="group"
-                      aria-roledescription="photograph"
-                      aria-label={'Photo ' + (currentIndex + 1) + ' of ' + assets.length}
-                      tabIndex={0}
-                    >
-                      {/* Full-bleed Photo */}
-                      <img
-                        key={currentAsset.assetId + ':' + photoAttempt}
-                        className="ps-card-photo"
-                        src={mediaUrl(photoUrl(currentAsset))}
-                        srcSet={currentAsset.srcSet || undefined}
-                        sizes="(max-width: 640px) 92vw, (max-width: 1024px) 500px, 460px"
-                        alt={currentAsset.alt || currentAsset.caption || 'Photograph ' + (currentIndex + 1)}
-                        fetchPriority="high"
-                        decoding="async"
-                        draggable="false"
-                        onError={() => setPhotoFailed(true)}
-                        onLoad={event => {
-                          setPhotoFailed(false);
-                          const image = event.currentTarget;
-                          if (image.naturalWidth && image.naturalHeight) {
-                            const ratio = image.naturalWidth / image.naturalHeight;
-                            setPhotoRatios(current => current.get(currentAsset.assetId) === ratio ? current : new Map(current).set(currentAsset.assetId, ratio));
-                          }
-                        }}
-                      />
-                      {photoFailed && <div className="ps-photo-error" role="status" onPointerDown={event => event.stopPropagation()}><ImageIcon size={26} /><p>This photo couldn’t load.</p><button type="button" className="ps-secondary-button" onClick={() => { setPhotoFailed(false); setPhotoAttempt(attempt => attempt + 1); }}>Try again</button></div>}
-                    </motion.article>
-                )}
               </div>
             </motion.section>
           )}
@@ -660,10 +707,8 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
           >
             <div className="ps-caption-area">
               {currentAsset.caption && <p className="ps-overlay-caption">{currentAsset.caption}</p>}
-              <span className="ps-gesture-hint"><MoveHorizontal size={14} /> Swipe left for next, right to go back</span>
             </div>
             <div className="ps-photo-controls" role="group" aria-label="Photo actions">
-              <button type="button" className="ps-nav-button" onClick={() => navigateAdjacent(1)} disabled={isAdvancing || currentIndex === 0} aria-label="Previous photograph"><ChevronLeft size={20} /><span>Back</span></button>
               <div className="ps-save-actions">
               {/* Like Button */}
               {canLike && (
@@ -694,7 +739,6 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
                 </button>
               )}
               </div>
-              <button type="button" className="ps-nav-button ps-next-button" onClick={() => navigateAdjacent(-1)} disabled={isAdvancing} aria-label={currentIndex === assets.length - 1 ? 'Finish collection' : 'Next photograph'}><span>{currentIndex === assets.length - 1 ? 'Finish' : 'Next'}</span>{isAdvancing ? <LoaderCircle size={19} className="ps-spin" /> : <ChevronRight size={20} />}</button>
             </div>
             {galleryProps.downloadNotice && <p className="ps-download-notice" role="status">{galleryProps.downloadNotice}</p>}
           </footer>
