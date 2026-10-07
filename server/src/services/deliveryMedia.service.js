@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import {
-  copyR2Object, createR2Upload, deleteR2Object, deleteR2Prefix, getR2ObjectBuffer,
+  copyR2Object, createR2Upload, deleteR2Object, deleteR2Prefix,
   headR2Object, imageVariantKey, prepareR2Image, presignedR2Get, r2Configured, verifyUploadToken
 } from './r2.service.js';
 
@@ -76,8 +76,7 @@ export async function confirmUploadedAsset({ userId, deliveryId, publicId, objec
     const mime = metadata.contentType.toLowerCase();
     format = ({ 'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/mp4': 'm4a', 'audio/ogg': 'ogg', 'audio/aac': 'aac', 'audio/aiff': 'aiff', 'audio/flac': 'flac' })[mime] || format;
   }
-  const body = resourceType === 'image' ? await getR2ObjectBuffer(key, { maxBytes: Number(claims.maxBytes) }) : null;
-  const contentHash = body ? crypto.createHash('sha256').update(body.buffer).digest('hex') : metadata.etag;
+  const contentHash = resourceType === 'image' ? imageInfo.sha256 : metadata.etag;
   return {
     public_id: key,
     objectKey: key,
@@ -87,7 +86,7 @@ export async function confirmUploadedAsset({ userId, deliveryId, publicId, objec
     width: imageInfo.width,
     height: imageInfo.height,
     etag: contentHash,
-    hashAlgorithm: body ? 'sha256' : 'r2-etag',
+    hashAlgorithm: resourceType === 'image' ? 'sha256' : 'r2-etag',
     contentType: metadata.contentType
   };
 }

@@ -130,10 +130,27 @@ export function createR2Upload({ key, userId, contentType, resourceType = 'image
   return { objectKey: key, uploadUrl: signed.url, uploadHeaders: signed.headers, contentType, uploadToken: createUploadToken({ key, userId, contentType, resourceType, maxBytes }), maxBytes };
 }
 
+function r2NetworkFailure(method, cause) {
+  const rawCauseCode = String(cause?.cause?.code || cause?.cause?.name || cause?.code || '').trim();
+  const causeCode = /^[A-Za-z0-9_-]{1,80}$/.test(rawCauseCode) ? rawCauseCode : '';
+  const detail = causeCode ? ` (${causeCode})` : '';
+  return Object.assign(new Error(`Image storage connection failed during ${method}${detail}.`), {
+    status: 502,
+    code: 'R2_NETWORK_ERROR',
+    operation: method,
+    causeCode
+  });
+}
+
 async function requestR2(key, { method = 'GET', contentType = '', body, query = {}, downloadFilename, expiresIn, timeoutMs = 120_000 } = {}) {
   const signed = presignR2Object(key, { method, contentType, downloadFilename, expiresIn });
   // Listing uses a bucket-level URL and is signed separately below.
-  const response = await fetch(signed.url, { method, headers: contentType ? { 'Content-Type': contentType } : undefined, body, signal: AbortSignal.timeout(timeoutMs) });
+  let response;
+  try {
+    response = await fetch(signed.url, { method, headers: contentType ? { 'Content-Type': contentType } : undefined, body, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (error) {
+    throw r2NetworkFailure(method.toUpperCase(), error);
+  }
   if (!response.ok) {
     const error = Object.assign(new Error(response.status === 404 ? 'File not found.' : 'Image storage could not complete this request.'), { status: response.status === 404 ? 404 : 502, code: response.status === 404 ? 'R2_OBJECT_NOT_FOUND' : 'R2_REQUEST_FAILED' });
     throw error;
@@ -280,13 +297,15 @@ export async function prepareR2Image(key, { maxBytes = MAX_IMAGE_BYTES } = {}) {
   if (!['jpeg', 'png', 'webp'].includes(metadata.format) || (metadata.pages || 1) > 1 || !metadata.width || !metadata.height) throw Object.assign(new Error('Use a still JPEG, PNG, or WebP photograph.'), { status: 400, code: 'UNSUPPORTED_IMAGE' });
   const variants = {};
   const widths = [400, 480, 640, 800, 960, 1024, 1200, 1600];
-  await Promise.all(widths.map(async width => {
-    const variant = String(width);
-    const image = await sharp(source.buffer, { limitInputPixels: 100_000_000, failOn: 'error' }).rotate().resize({ width, fit: 'inside', withoutEnlargement: true }).webp({ quality: 84, effort: 4 }).toBuffer();
-    const variantKey = imageVariantKey(key, variant);
-    await putR2Object(variantKey, image, { contentType: 'image/webp' });
-    variants[variant] = variantKey;
-  }));
+  for (let offset = 0; offset < widths.length; offset += 2) {
+    await Promise.all(widths.slice(offset, offset + 2).map(async width => {
+      const variant = String(width);
+      const image = await sharp(source.buffer, { limitInputPixels: 100_000_000, failOn: 'error' }).rotate().resize({ width, fit: 'inside', withoutEnlargement: true }).webp({ quality: 84, effort: 4 }).toBuffer();
+      const variantKey = imageVariantKey(key, variant);
+      await putR2Object(variantKey, image, { contentType: 'image/webp' });
+      variants[variant] = variantKey;
+    }));
+  }
   const thumb = await sharp(source.buffer, { limitInputPixels: 100_000_000, failOn: 'error' }).rotate().resize({ width: 480, height: 600, fit: 'cover', position: 'attention' }).webp({ quality: 82, effort: 4 }).toBuffer();
   const thumbKey = imageVariantKey(key, 'thumb');
   await putR2Object(thumbKey, thumb, { contentType: 'image/webp' });
@@ -295,7 +314,7 @@ export async function prepareR2Image(key, { maxBytes = MAX_IMAGE_BYTES } = {}) {
   const ogKey = imageVariantKey(key, 'og');
   await putR2Object(ogKey, og, { contentType: 'image/jpeg' });
   variants.og = ogKey;
-  return { ...metadata, contentType: source.contentType, bytes: source.buffer.length, etag: source.etag, variants };
+  return { ...metadata, contentType: source.contentType, bytes: source.buffer.length, etag: source.etag, sha256: crypto.createHash('sha256').update(source.buffer).digest('hex'), variants };
 }
 
 export function presignedR2Get(key, { downloadFilename = '', expiresIn = DEFAULT_DOWNLOAD_SECONDS } = {}) {

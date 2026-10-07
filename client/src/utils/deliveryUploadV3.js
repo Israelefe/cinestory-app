@@ -1,7 +1,7 @@
 import api from '../services/api.js';
 import { uploadR2Object } from './r2Upload.js';
 
-const MAX_SIMULTANEOUS_PHOTO_UPLOADS = 6;
+const MAX_SIMULTANEOUS_PHOTO_UPLOADS = 2;
 
 function uploadErrorMessage(error) {
   const message = error?.response?.data?.message || error?.message || 'The upload could not be completed.';
