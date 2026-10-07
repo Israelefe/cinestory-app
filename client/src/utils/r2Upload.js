@@ -16,7 +16,13 @@ export function uploadR2Object(upload, file, onProgress = () => {}) {
     request.onabort = () => reject(new Error('The upload was cancelled.'));
     request.onload = () => {
       if (request.status < 200 || request.status >= 300) {
-        reject(new Error(request.status === 413 ? 'This file is too large to upload.' : 'The file did not finish uploading. Check your connection and try again.'));
+        if (request.status === 413) {
+          reject(new Error('This file is too large to upload.'));
+          return;
+        }
+        const code = request.responseText?.match(/<Code>([^<]{1,100})<\/Code>/i)?.[1]?.trim();
+        const status = request.status ? `HTTP ${request.status}` : 'an unknown response';
+        reject(new Error(code ? `Storage rejected the upload (${status}: ${code}).` : `Storage rejected the upload (${status}).`));
         return;
       }
       resolve({ objectKey: upload.objectKey, uploadToken: upload.uploadToken, contentType: upload.contentType });

@@ -404,13 +404,18 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     if (assets.length + files.length > limits) { setError('Your plan allows up to ' + limits + ' photographs in one delivery.'); return; }
     await action('upload', async () => {
       setUploadPercent(0);
+      setUploads({});
       const result = await uploadDeliveryPhotosV3(draft._id, files, (percent, item) => {
         setUploadPercent(percent);
-        if (item?.file) setUploads(current => ({ ...current, [item.index]: { name: item.file.name, status: item.status, loaded: item.loaded, total: item.total } }));
+        if (item?.file) setUploads(current => ({ ...current, [item.index]: { name: item.file.name, status: item.status, loaded: item.loaded, total: item.total, attempt: item.attempt, error: item.error } }));
       });
       setFailedFiles(result.errors.map(item => item.file));
       await refresh();
-      if (result.errors.length) setError(result.errors.length + ' photo' + (result.errors.length > 1 ? 's' : '') + ' did not upload. Retry those files.');
+      if (result.errors.length) {
+        const details = result.errors.slice(0, 3).map(({ file, error }) => `${file.name}: ${error?.response?.data?.message || error?.message || 'The upload could not be completed.'}`).join(' ');
+        const remaining = result.errors.length > 3 ? ` ${result.errors.length - 3} more photo${result.errors.length - 3 === 1 ? '' : 's'} failed.` : '';
+        setError(`${result.errors.length} photo${result.errors.length > 1 ? 's' : ''} did not upload. ${details}${remaining} Retry the failed photos.`);
+      }
     });
   }
   async function deletePhoto(id) {
@@ -761,7 +766,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
             <label className="v3-drop"><span className="v3-drop-icon"><Upload size={25} /></span><strong>Add finished photographs</strong><span>Choose as many as you need, up to {limits} total.</span><b>Browse photos</b><input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={event => { uploadFiles(event.target.files); event.target.value = ''; }} disabled={!!busy} /></label>
             <div className="v3-upload-side-note"><span>YOUR ORIGINALS STAY INTACT</span><h2>Full gallery and showcase are separate.</h2><p>Every photo you upload remains available to the client. The smaller showcase is selected after all photos have been reviewed.</p><div><Image size={17} /><span>Only finished JPEG, PNG or WebP photos</span></div></div>
           </div>
-          {busy === 'upload' && <div className="v3-upload-progress" role="status"><span>Uploading photographs · {uploadPercent}%</span><div><i style={{ transform: 'scaleX(' + uploadPercent / 100 + ')' }} /></div></div>}
+          {busy === 'upload' && <div className="v3-upload-progress" role="status"><span>Uploading photographs · {uploadPercent}%</span><div><i style={{ transform: 'scaleX(' + uploadPercent / 100 + ')' }} /></div>{Object.entries(uploads).filter(([, item]) => item.status === 'retrying').map(([index, item]) => <small key={index}>Trying {item.name} again · attempt {item.attempt} of 3. {item.error}</small>)}</div>}
           {failedFiles.length > 0 && <StepButton secondary onClick={() => uploadFiles(failedFiles)} disabled={!!busy}><RefreshCw size={16} /> Retry {failedFiles.length} failed photo{failedFiles.length > 1 ? 's' : ''}</StepButton>}
           {assets.length > 0 ? <div className="v3-photo-grid">{assets.map((asset, index) => <article key={asset.assetId}><button type="button" className="v3-photo-open" onClick={() => window.open(asset.url, '_blank', 'noopener,noreferrer')} aria-label={'Preview photo ' + (index + 1)}><img src={asset.thumbnailUrl || asset.url} alt={asset.originalFilename || 'Uploaded photograph'} loading="lazy" /></button><div><span>{index + 1}. {asset.originalFilename || 'Photograph'}</span><button type="button" onClick={() => deletePhoto(asset.assetId)} disabled={!!busy} aria-label={'Delete ' + (asset.originalFilename || 'photo')}><Trash2 size={16} /></button></div></article>)}</div> : <div className="v3-gallery-empty"><Image size={28} /><div><strong>Your gallery will appear here.</strong><span>You can add more photos any time before analysis.</span></div></div>}
           <div className="v3-actions"><StepButton secondary onClick={() => setStage('format')}><ArrowLeft size={17} /> Back to formats</StepButton><StepButton onClick={prepare} disabled={!!busy || assets.length < bounds[0]}><ArrowRight size={17} /> Review {assets.length} photos</StepButton></div>
