@@ -33,6 +33,7 @@ import { toast } from 'react-toastify';
 import { API_BASE_URL } from '../config/env.js';
 import api, { apiMessage } from '../services/api.js';
 import { uploadDeliveryPhotosV3 } from '../utils/deliveryUploadV3.js';
+import UploadConnectionStatus from '../components/UploadConnectionStatus.jsx';
 import { uploadDeliverySoundtrack } from '../utils/deliveryUpload.js';
 import { SHOOT_TYPES } from '../constants/shootTypes.js';
 import { creationPreviewBranding, mergeDeliveryDraft } from '../utils/deliveryDraft.js';
@@ -129,6 +130,7 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [uploadPercent, setUploadPercent] = useState(0);
+  const [uploadBatch, setUploadBatch] = useState(null);
   const [failedFiles, setFailedFiles] = useState([]);
   const [backgroundMode, setBackgroundMode] = useState(initialDelivery?.photoswap?.backgroundMode || 'auto');
   const [typography, setTypography] = useState(initialDelivery?.photoswap?.typography || { display: 'Cormorant Garamond', body: 'Outfit' });
@@ -388,9 +390,9 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
   async function uploadFiles(list) {
     const files = Array.from(list || []);
     if (!files.length) return;
-    const invalid = files.find(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 50 * 1024 * 1024);
+    const invalid = files.find(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 20_000_000);
     if (invalid) {
-      setError('Use JPEG, PNG, or WebP photographs no larger than 50 MB each.');
+      setError('Use JPEG, PNG, or WebP photographs no larger than 20 MB each.');
       return;
     }
     if (assets.length + files.length > maxPhotos) {
@@ -399,8 +401,9 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
     }
     await action('upload', async () => {
       setUploadPercent(0);
+      setUploadBatch(null);
       setFailedFiles([]);
-      const result = await uploadDeliveryPhotosV3(draft._id, files, percent => setUploadPercent(percent));
+      const result = await uploadDeliveryPhotosV3(draft._id, files, (percent, item) => { setUploadPercent(percent); if (item?.batch) setUploadBatch(item.batch); });
       setFailedFiles(result.errors.map(item => item.file));
       await refresh();
       setPhotoPage(0);
@@ -695,7 +698,7 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
                     The first photo opens the delivery. Your client swipes through the rest in this order.
                   </SectionHeading>
                   <div className="ps-upload-bar">
-                    <div><strong>{orderedAssets.length}<i> / </i>{maxPhotos}</strong><span>{entitlements?.planName || (maxPhotos > 100 ? 'Pro' : 'Free')} photo limit · JPEG, PNG, WebP · 50 MB max each</span></div>
+                    <div><strong>{orderedAssets.length}<i> / </i>{maxPhotos}</strong><span>{entitlements?.planName || (maxPhotos > 100 ? 'Pro' : 'Free')} photo limit · JPEG, PNG, WebP · 20 MB max each</span></div>
                     <label className="ps-upload-button">
                       <Upload size={17} /> Add photos
                       <input type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={!!busy} onChange={event => { void uploadFiles(event.target.files); event.target.value = ''; }} />
@@ -703,10 +706,11 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
                   </div>
                   {busy === 'upload' && (
                     <div className="ps-upload-progress" role="status">
-                      <span style={{ width: uploadPercent + '%' }} />
+                      <span style={{ transform: `scaleX(${uploadPercent / 100})` }} />
                       <strong>Uploading photos · {uploadPercent}%</strong>
                     </div>
                   )}
+                  {busy === 'upload' && <UploadConnectionStatus batch={uploadBatch} />}
                   {failedFiles.length > 0 && (
                     <div className="ps-retry-row">
                       <p>{failedFiles.length} photo{failedFiles.length === 1 ? '' : 's'} still need uploading.</p>

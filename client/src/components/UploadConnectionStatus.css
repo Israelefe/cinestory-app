@@ -1,0 +1,6 @@
+.delivery-upload-connection{display:grid;gap:8px;min-width:0;margin:12px 0 18px;padding:12px 14px;border:1px solid #ffffff18;border-radius:7px;background:#0c0c10;color:#ddd4ce}
+.delivery-upload-connection p{display:flex;align-items:flex-start;gap:9px;margin:0;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.delivery-upload-connection p svg{flex:none;margin-top:2px;color:#ff9b8e}
+.delivery-upload-connection .delivery-upload-count{color:#a69d96;font-size:11px;font-variant-numeric:tabular-nums}
+@media(min-width:640px){.delivery-upload-connection{padding:14px 16px}}
+@media(min-width:768px){.delivery-upload-connection{grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:16px}.delivery-upload-connection .delivery-upload-count{white-space:nowrap}}

@@ -7,6 +7,7 @@ import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
 import { API_BASE_URL, APP_URL } from '../config/env.js';
 import { uploadDeliveryPhotos, uploadDeliverySoundtrack } from '../utils/deliveryUpload.js';
+import UploadConnectionStatus from '../components/UploadConnectionStatus.jsx';
 import { SHOOT_TYPES } from '../constants/shootTypes.js';
 import { FORMAT_REGISTRY, formatName } from '../constants/formatRegistry.jsx';
 import { DEFAULT_NARRATION_VOICE_ID } from '../constants/narrationVoices.js';
@@ -212,6 +213,7 @@ export default function CreateDelivery({ user }) {
   const [selectedFormat, setSelectedFormat] = useState(null);
   const [draggingPhotos, setDraggingPhotos] = useState(false);
   const [uploadQueue, setUploadQueue] = useState([]);
+  const [uploadBatch, setUploadBatch] = useState(null);
   const lastFilesRef = useRef([]);
 
   async function retryFailedUploads() {
@@ -421,12 +423,14 @@ export default function CreateDelivery({ user }) {
     if (tooLarge) toast.error(`${tooLarge.name} is larger than 20 MB and was skipped.`);
     if (valid.length > remaining) return toast.error(`You can add ${remaining} more photograph${remaining === 1 ? '' : 's'} to this delivery.`);
     lastFilesRef.current = [...valid];
+    setUploadBatch(null);
     setUploadQueue(valid.map(file => ({ name: file.name, size: file.size, status: 'starting', progress: 0 })));
     trackEvent('upload.started', { surface: 'delivery', files: valid.length }, { count: valid.length, bytes: valid.reduce((sum, file) => sum + file.size, 0), status: 'started' });
     setBusy('upload'); setError(''); setProgress({ value: 0, stage: `Uploading ${valid.length} finished photograph${valid.length === 1 ? '' : 's'}…` });
     try {
       const uploadResult = await uploadDeliveryPhotos(delivery._id, valid, (value, meta) => {
         setProgress(current => ({ ...current, value }));
+        if (meta?.batch) setUploadBatch(meta.batch);
         if (meta?.index === undefined) return;
         setUploadQueue(current => current.map((item, index) => index === meta.index
           ? { ...item, status: meta.status || item.status, progress: meta.total ? Math.round((meta.loaded / meta.total) * 100) : item.progress }
@@ -797,7 +801,8 @@ export default function CreateDelivery({ user }) {
                 <strong>{busy === 'upload' ? 'Sending your photographs' : 'Upload summary'}</strong>
                 <span>{uploadQueue.filter(item => item.status === 'complete').length} of {uploadQueue.length} confirmed</span>
               </header>
-              <div>{uploadQueue.slice(0, 8).map((item, index) => <article key={`${item.name}-${index}`} className={`is-${item.status}`}><span>{item.status === 'complete' ? <Check size={14} /> : item.status === 'failed' ? <X size={14} /> : <LoaderCircle className="v-spin" size={14} />}</span><div><strong title={item.name}>{item.name}</strong><small>{item.status === 'complete' ? 'Added to this delivery' : item.status === 'failed' ? 'Upload interrupted — tap retry below' : item.status === 'starting' ? 'Preparing upload' : `Uploading ${item.progress}%`}</small></div><b>{item.status === 'complete' ? 'Done' : `${item.progress}%`}</b></article>)}</div>
+              {busy === 'upload' && <UploadConnectionStatus batch={uploadBatch} />}
+              <div>{uploadQueue.slice(0, 8).map((item, index) => <article key={`${item.name}-${index}`} className={`is-${item.status}`}><span>{item.status === 'complete' ? <Check size={14} /> : item.status === 'failed' ? <X size={14} /> : <LoaderCircle className="v-spin" size={14} />}</span><div><strong title={item.name}>{item.name}</strong><small>{item.status === 'complete' ? 'Added to this delivery' : item.status === 'failed' ? 'Upload interrupted — tap retry below' : item.status === 'starting' ? 'Preparing upload' : item.status === 'waiting' ? 'Waiting for your internet connection' : item.status === 'saving' ? 'Adding to the delivery' : item.status === 'retrying' ? 'Retrying upload' : `Uploading ${item.progress}%`}</small></div><b>{item.status === 'complete' ? 'Done' : `${item.progress}%`}</b></article>)}</div>
               {uploadQueue.length > 8 && <small className="v-upload-queue-more">Showing the first 8 files.</small>}
               {busy !== 'upload' && uploadQueue.some(item => item.status === 'failed') && (
                 <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>

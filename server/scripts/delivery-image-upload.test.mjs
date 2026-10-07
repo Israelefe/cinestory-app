@@ -122,3 +122,14 @@ test('R2 uploads retain the existing fallback when no image Worker is configured
   await checkDeliveryImageWorker({ userId, deliveryId });
   assert.equal(createUploadSignature({ userId, deliveryId, uploadId, contentType: 'image/jpeg' }).maxConcurrentUploads, 2);
 });
+
+test('configured delivery photo uploads permit adaptive concurrency up to ten and expose permission expiry', t => {
+  settings(t);
+  const signature = createUploadSignature({ userId, deliveryId, uploadId, contentType: 'image/jpeg' });
+  assert.equal(signature.maxConcurrentUploads, 10);
+  const remaining = new Date(signature.expiresAt).getTime() - Date.now();
+  assert.ok(remaining > 19 * 60_000 && remaining <= 20 * 60_000);
+  assert.equal(signature.maxBytes, 20_000_000);
+  const soundtrack = createUploadSignature({ userId, deliveryId, contentType: 'audio/mpeg', resourceType: 'video' });
+  assert.equal(soundtrack.maxConcurrentUploads, 2);
+});

@@ -143,7 +143,7 @@ export function createUploadSignature({ userId, deliveryId, resourceType = 'imag
   if (resourceType === 'image' && !['image/jpeg', 'image/png', 'image/webp'].includes(type)) throw Object.assign(new Error('Use a JPEG, PNG, or WebP photograph.'), { status: 400 });
   if (resourceType === 'video' && !/^audio\/(mpeg|wav|x-wav|mp4|ogg|aac|aiff|flac)$/.test(type)) throw Object.assign(new Error('Choose an MP3, WAV, M4A, OGG, or AAC music file.'), { status: 400 });
   const maxBytes = resourceType === 'image' ? MAX_DELIVERY_IMAGE_BYTES : 20 * 1024 * 1024;
-  const maxConcurrentUploads = resourceType === 'image' && deliveryImageWorkerConfig() ? 6 : 2;
+  const maxConcurrentUploads = resourceType === 'image' && deliveryImageWorkerConfig() ? 10 : 2;
   return { ...createR2Upload({ key, userId, contentType: type, resourceType, maxBytes }), resourceType, maxConcurrentUploads };
 }
 

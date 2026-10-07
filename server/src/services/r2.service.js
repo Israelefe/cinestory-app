@@ -127,7 +127,7 @@ export function verifyUploadToken(token, { key, userId, resourceType } = {}) {
 
 export function createR2Upload({ key, userId, contentType, resourceType = 'image', maxBytes = MAX_IMAGE_BYTES }) {
   const signed = presignR2Object(key, { method: 'PUT', expiresIn: 20 * 60, contentType });
-  return { objectKey: key, uploadUrl: signed.url, uploadHeaders: signed.headers, contentType, uploadToken: createUploadToken({ key, userId, contentType, resourceType, maxBytes }), maxBytes };
+  return { objectKey: key, uploadUrl: signed.url, uploadHeaders: signed.headers, expiresAt: signed.expiresAt, contentType, uploadToken: createUploadToken({ key, userId, contentType, resourceType, maxBytes }), maxBytes };
 }
 
 function r2NetworkFailure(method, cause) {
