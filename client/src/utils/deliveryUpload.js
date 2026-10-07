@@ -34,7 +34,8 @@ export async function uploadDeliveryPhotos(deliveryId, files, onProgress = () =>
       firstSignature = signed.data.data;
       const serverLimit = Number(firstSignature.maxConcurrentUploads);
       concurrency = Number.isInteger(serverLimit) ? Math.max(1, Math.min(6, serverLimit)) : 2;
-    } catch {
+    } catch (error) {
+      if (error.response?.status === 503) throw error;
       // Let the normal per-file retry path request a fresh signature.
     }
   }

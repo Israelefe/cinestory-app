@@ -7,10 +7,11 @@ import {
 
 export const MAX_DELIVERY_IMAGE_BYTES = 20_000_000;
 const DELIVERY_IMAGE_WIDTHS = [400, 480, 640, 800, 960, 1024, 1200, 1600];
+let workerConnectionCheck;
 
 function deliveryImageWorkerConfig() {
   const baseUrl = String(process.env.R2_IMAGE_WORKER_URL || '').trim();
-  const secret = String(process.env.R2_IMAGE_WORKER_SECRET || '');
+  const secret = String(process.env.R2_IMAGE_WORKER_SECRET || '').trim();
   if (!baseUrl && !secret) return null;
   if (!baseUrl || secret.length < 32) {
     throw Object.assign(new Error('Delivery image previews are not configured correctly.'), { status: 503, code: 'DELIVERY_IMAGE_WORKER_CONFIG' });
@@ -43,20 +44,64 @@ function normalizeImageFormat(value) {
   return ['jpeg', 'png', 'webp'].includes(format) ? format : '';
 }
 
-async function getDeliveryImageInfo(key) {
-  if (!deliveryImageWorkerConfig()) return null;
+async function requestDeliveryImageWorker(key, timeoutMs = 45_000) {
   const url = signedDeliveryImageWorkerUrl(key, 'info', 90);
   let response;
   try {
-    response = await fetch(url, { signal: AbortSignal.timeout(45_000), headers: { Accept: 'application/json' } });
+    response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), headers: { Accept: 'application/json' } });
   } catch {
     throw Object.assign(new Error('Cloudflare could not check this photograph. Retry the upload.'), { status: 502, code: 'DELIVERY_IMAGE_INFO_FAILED' });
   }
   const result = await response.json().catch(() => ({}));
+  return { response, result };
+}
+
+function imageWorkerError(response, result) {
+  // A rejected Worker signature is a service connection failure, not an expired
+  // photographer session. Returning 401 here made the browser rotate its login
+  // and CSRF cookies while the other photo confirmations were still running.
+  if (response.status === 401 || response.status === 403) {
+    return Object.assign(new Error('Photo uploads are temporarily unavailable. Please contact support.'), { status: 503, code: 'DELIVERY_IMAGE_WORKER_AUTH' });
+  }
+  const code = /^[A-Z0-9_]{1,80}$/.test(result?.code || '') ? result.code : 'DELIVERY_IMAGE_INFO_FAILED';
+  const message = typeof result?.message === 'string' ? result.message.slice(0, 180) : 'Cloudflare could not check this photograph. Retry the upload.';
+  return Object.assign(new Error(message), { status: response.status >= 400 && response.status <= 599 ? response.status : 502, code });
+}
+
+export async function checkDeliveryImageWorker({ userId, deliveryId }) {
+  const config = deliveryImageWorkerConfig();
+  if (!config) return;
+  const fingerprint = crypto.createHash('sha256').update(config.baseUrl).update('\0').update(config.secret).digest('hex');
+  if (workerConnectionCheck?.fingerprint === fingerprint) {
+    if (workerConnectionCheck.validUntil > Date.now()) return;
+    if (workerConnectionCheck.pending) return workerConnectionCheck.pending;
+  }
+  const check = { fingerprint, validUntil: 0, pending: null };
+  workerConnectionCheck = check;
+  check.pending = (async () => {
+    // The deployed Worker validates the signature and its bindings before
+    // looking up this deliberately absent object. No photograph is transferred.
+    const key = `${deliveryFolder(userId, deliveryId)}/__connection_${crypto.randomUUID()}`;
+    const { response, result } = await requestDeliveryImageWorker(key, 10_000);
+    if (response.status !== 404 || result.code !== 'IMAGE_NOT_FOUND') {
+      if (response.status === 401 || response.status === 403) throw imageWorkerError(response, result);
+      throw Object.assign(new Error('Photo uploads are temporarily unavailable. Please try again later.'), { status: 503, code: 'DELIVERY_IMAGE_WORKER_UNAVAILABLE' });
+    }
+    check.validUntil = Date.now() + 60_000;
+  })().catch(error => {
+    if (error.code === 'DELIVERY_IMAGE_INFO_FAILED') {
+      throw Object.assign(new Error('Photo uploads are temporarily unavailable. Please try again later.'), { status: 503, code: 'DELIVERY_IMAGE_WORKER_UNAVAILABLE' });
+    }
+    throw error;
+  }).finally(() => { check.pending = null; });
+  return check.pending;
+}
+
+async function getDeliveryImageInfo(key) {
+  if (!deliveryImageWorkerConfig()) return null;
+  const { response, result } = await requestDeliveryImageWorker(key);
   if (!response.ok) {
-    const code = /^[A-Z0-9_]{1,80}$/.test(result?.code || '') ? result.code : 'DELIVERY_IMAGE_INFO_FAILED';
-    const message = typeof result?.message === 'string' ? result.message.slice(0, 180) : 'Cloudflare could not check this photograph. Retry the upload.';
-    throw Object.assign(new Error(message), { status: response.status >= 400 && response.status <= 599 ? response.status : 502, code });
+    throw imageWorkerError(response, result);
   }
   const format = normalizeImageFormat(result.format);
   const width = Number(result.width);

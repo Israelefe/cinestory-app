@@ -13,7 +13,9 @@ const api = axios.create({
   headers: { 'X-Requested-With': 'XMLHttpRequest' }
 });
 
-api.interceptors.request.use(config => {
+api.interceptors.request.use(async config => {
+  // Finish a shared sign-in refresh before reading cookies for another request.
+  if (refreshRequest) await refreshRequest;
   config.metadata = { startedAt: typeof performance !== 'undefined' ? performance.now() : Date.now() };
   const csrf = cookieValue('veylo_csrf');
   if (csrf && !['get', 'head', 'options'].includes(String(config.method).toLowerCase())) config.headers['X-CSRF-Token'] = csrf;
@@ -28,7 +30,19 @@ api.interceptors.response.use(response => {
   trackApiRequest({ path: error.config?.url, status: error.response?.status, durationMs: (typeof performance !== 'undefined' ? performance.now() : Date.now()) - Number(error.config?.metadata?.startedAt || 0), failed: true, errorCode: error.response?.data?.code || (error.code ? String(error.code).slice(0, 80) : 'REQUEST_FAILED') });
   const original = error.config;
   const path = String(original?.url || '');
-  const canRefresh = error.response?.status === 401 && original && !original._retried && !path.includes('/auth/login') && !path.includes('/auth/google') && !path.includes('/auth/refresh') && !path.includes('/storage/public/');
+  const code = error.response?.data?.code;
+  if (error.response?.status === 403 && code === 'CSRF_INVALID' && original && !original._csrfRetried) {
+    const previousCsrf = original.headers?.get?.('X-CSRF-Token') || original.headers?.['X-CSRF-Token'];
+    const pendingRefresh = refreshRequest;
+    if (pendingRefresh) await pendingRefresh;
+    const currentCsrf = cookieValue('veylo_csrf');
+    if (currentCsrf && (pendingRefresh || currentCsrf !== previousCsrf)) {
+      original._csrfRetried = true;
+      return api(original);
+    }
+  }
+  const sessionFailure = code === 'AUTH_REQUIRED' || code === 'SESSION_EXPIRED';
+  const canRefresh = error.response?.status === 401 && sessionFailure && original && !original._retried && !path.includes('/auth/login') && !path.includes('/auth/google') && !path.includes('/auth/refresh') && !path.includes('/storage/public/');
   if (!canRefresh) throw error;
   original._retried = true;
   refreshRequest ||= axios.post(`${API_BASE_URL}/v1/auth/refresh`, {}, { withCredentials: true, headers: { 'X-Requested-With': 'XMLHttpRequest' } }).finally(() => { refreshRequest = null; });

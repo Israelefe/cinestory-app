@@ -20,7 +20,7 @@ import Portfolio from '../models/Portfolio.js';
 import User from '../models/User.js';
 import StorageAsset from '../models/StorageAsset.js';
 import { CREATIVE_DIRECTOR_PROMPT_VERSION, CREATIVE_DIRECTOR_PROVIDER, assistPhotographerBrief, creativeDirectorAllowlist } from '../services/alibabaCreativeDirector.service.js';
-import { confirmUploadedAsset, copyStorageImageToDelivery, createArchiveTokenData, createUploadSignature, deliveryFolder, MAX_DELIVERY_IMAGE_BYTES, recoverImageUpload, removeDeliveryAudio, removeDeliveryImage, removeDeliveryMedia, signedArchiveUrl, signedDeliveryImageUrl, signedImageUrl, signedOgImageUrl } from '../services/deliveryMedia.service.js';
+import { checkDeliveryImageWorker, confirmUploadedAsset, copyStorageImageToDelivery, createArchiveTokenData, createUploadSignature, deliveryFolder, MAX_DELIVERY_IMAGE_BYTES, recoverImageUpload, removeDeliveryAudio, removeDeliveryImage, removeDeliveryMedia, signedArchiveUrl, signedDeliveryImageUrl, signedImageUrl, signedOgImageUrl } from '../services/deliveryMedia.service.js';
 import { streamR2Zip } from '../services/r2Archive.service.js';
 import { reservePublishSlot, resolveEntitlements } from '../services/entitlement.service.js';
 import { tokenDigest } from '../utils/auth.js';
@@ -509,11 +509,13 @@ export async function signDeliveryUpload(req, res) {
     const user = await User.findById(req.user.id);
     const entitlements = await resolveEntitlements(user, { includeUsage: false });
     if (delivery.assets.length >= entitlements.limits.photosPerDelivery) return res.status(403).json({ success: false, code: 'PHOTO_LIMIT_REACHED', message: `${entitlements.planName} allows up to ${entitlements.limits.photosPerDelivery} photographs in one delivery.` });
-    res.json({ success: true, data: createUploadSignature({ userId: req.user.id, deliveryId: delivery._id, resourceType: 'image', uploadId: input.data.uploadId, contentType: input.data.contentType }) });
+    const signature = createUploadSignature({ userId: req.user.id, deliveryId: delivery._id, resourceType: 'image', uploadId: input.data.uploadId, contentType: input.data.contentType });
+    await checkDeliveryImageWorker({ userId: req.user.id, deliveryId: delivery._id });
+    res.json({ success: true, data: signature });
   } catch (error) {
     recordAnalyticsEventAsync({ name: 'upload.failed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'failed', errorCode: error.code || 'DELIVERY_UPLOAD_SIGNATURE_FAILED', metadata: { surface: 'delivery', stage: 'signature' } });
-    console.error('[deliveries/upload-signature]', error.message);
-    res.status(error.status || 500).json({ success: false, message: error.message || 'We could not prepare this upload.' });
+    console.error('[deliveries/upload-signature]', error.code || '', error.message);
+    res.status(error.status || 500).json({ success: false, code: error.code, message: error.message || 'We could not prepare this upload.' });
   }
 }
 
@@ -578,8 +580,8 @@ export async function confirmDeliveryUpload(req, res) {
   } catch (error) {
     if (uploadedPublicId) await removeDeliveryImage(uploadedPublicId).catch(() => {});
     recordAnalyticsEventAsync({ name: 'upload.failed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'failed', errorCode: error.code || 'DELIVERY_UPLOAD_CONFIRM_FAILED', metadata: { surface: 'delivery', stage: 'confirm' } });
-    console.error('[deliveries/upload-confirm]', error.message);
-    res.status(error.status || 500).json({ success: false, message: error.message || 'We could not verify this photograph.' });
+    console.error('[deliveries/upload-confirm]', error.code || '', error.message);
+    res.status(error.status || 500).json({ success: false, code: error.code, message: error.message || 'We could not verify this photograph.' });
   }
 }
 
