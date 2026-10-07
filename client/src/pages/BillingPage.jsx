@@ -161,13 +161,22 @@ export default function BillingPage({ onPlanChanged }) {
 
   const state = data?.subscription?.status || 'free';
   const isPro = data?.plan === 'pro';
+  const paidTimeRemains = isPro && Date.parse(data?.subscription?.paidThrough || '') > Date.now();
+  const canManagePaymentMethod = isPro && ['active', 'past_due'].includes(state)
+    && !data?.cancellationPending && !data?.subscription?.cancelRequestedAt && data?.subscription?.canManageCard;
+  const canResume = state === 'canceling' && paidTimeRemains && !data?.cancellationPending
+    && !data?.canCancel && data?.subscription?.canResume;
   const statusCopy = useMemo(() => {
-    if (state === 'canceling') return isPro && data?.subscription?.paidThrough ? `Pro remains active until ${dateLabel(data.subscription.paidThrough)}.` : 'Your subscription is canceled. The paid access has ended.';
+    if (state === 'canceling') {
+      if (data?.cancellationPending) return `Cancellation is awaiting confirmation.${paidTimeRemains ? ` Pro remains active until ${dateLabel(data.subscription.paidThrough)}.` : ''}`;
+      if (data?.canCancel) return 'This subscription is canceled. Another renewal schedule still needs to be stopped.';
+      return paidTimeRemains ? `Subscription canceled. Future renewals are off. Pro remains active until ${dateLabel(data.subscription.paidThrough)}.` : 'Your subscription is canceled. The paid access has ended.';
+    }
     if (state === 'past_due') return isPro && data?.subscription?.graceEndsAt ? `Your payment needs attention. Pro remains available until ${dateLabel(data.subscription.graceEndsAt)}.` : 'Your payment needs attention. The paid access has ended.';
     if (isPro && !data?.subscription?.paidThrough) return 'Pro access was granted by support. There is no scheduled charge shown here.';
     if (isPro) return `Your next monthly payment is due around ${dateLabel(data?.subscription?.paidThrough)}.`;
     return 'Use Free for three published deliveries each month, with up to 100 photos in each one.';
-  }, [data, isPro, state]);
+  }, [data, isPro, paidTimeRemains, state]);
 
   if (loading) return <div className="v-billing-page"><div className="v-billing-state"><RefreshCw className="v-spin" /><strong>Opening billing…</strong></div></div>;
 
@@ -194,10 +203,11 @@ export default function BillingPage({ onPlanChanged }) {
           {state === 'past_due' && <div className="v-billing-notice"><AlertCircle size={17} /><span>A replacement checkout stops your old renewal schedule first and uses the new price shown alongside this plan. Email payment@veylo.com.ng if you need help recovering a payment.</span></div>}
           <div className="v-billing-actions">
             {(!isPro || state === 'past_due') && <button type="button" className="v-billing-primary" onClick={checkout} disabled={Boolean(working) || !data?.billingAvailable || !data?.pricing?.quote}>{working === 'checkout' ? 'Opening Paystack…' : state === 'past_due' ? 'Renew Pro' : 'Choose Pro'}<ExternalLink size={16} /></button>}
-            {isPro && data?.subscription?.canManageCard && <button type="button" onClick={manageCard} disabled={Boolean(working)}>Manage payment method<ExternalLink size={15} /></button>}
+            {canManagePaymentMethod && <button type="button" onClick={manageCard} disabled={Boolean(working)}>Manage payment method<ExternalLink size={15} /></button>}
             {data?.canCancel && <button type="button" onClick={() => setConfirmCancel(true)} disabled={Boolean(working)}>Cancel subscription</button>}
-            {data?.subscription?.canResume && <button type="button" className="v-billing-primary" onClick={() => changeSubscription('resume')} disabled={Boolean(working)}>{working === 'resume' ? 'Restoring Pro…' : 'Keep my Pro plan'}<RefreshCw size={15} /></button>}
+            {canResume && <button type="button" onClick={() => changeSubscription('resume')} disabled={Boolean(working)}>{working === 'resume' ? 'Resuming…' : 'Resume subscription'}<RefreshCw size={15} /></button>}
           </div>
+          {canResume && <p>Resuming turns monthly renewals back on.</p>}
           {(!isPro || state === 'past_due') && <p className="v-billing-consent">By choosing Pro, you agree to the <Link to="/terms">Terms</Link> and <Link to="/refund-policy">Refund Policy</Link>. Paystack will charge the displayed checkout price in NGN each month until you cancel.</p>}
           {!data?.billingAvailable && <small className="v-billing-unavailable">Checkout is temporarily unavailable. Email payment@veylo.com.ng for help.</small>}
         </motion.article>

@@ -5,7 +5,7 @@ import Payment from '../models/Payment.js';
 import Refund from '../models/Refund.js';
 import BillingEvent from '../models/BillingEvent.js';
 import { publicPlans } from '../config/plans.js';
-import { resolveEntitlements } from '../services/entitlement.service.js';
+import { resolveEntitlements, subscriptionCanManageCard } from '../services/entitlement.service.js';
 import { sendPaymentDisputeEmail, sendPaymentDisputeResolvedEmail, sendPaymentFailedEmail, sendPaymentReceiptEmail, sendProWelcomeEmail, sendRefundFailedEmail, sendRefundProcessedEmail, sendRenewalFailedEmail, sendSubscriptionCancellationEmail, sendSubscriptionResumedEmail } from '../services/email.service.js';
 import { billingConfigured, decryptBillingToken, encryptBillingToken, paystackRequest, storedPlanMatchesProPrice, validateConfiguredPlan, verifyPaystackSignature } from '../services/paystack.service.js';
 import { getRuntimeConfig } from '../services/runtimeConfig.service.js';
@@ -199,7 +199,8 @@ export async function verifyCheckout(req, res) {
   } catch (error) { res.status(error.status || 502).json({ success: false, message: error.status ? error.message : 'We could not confirm payment yet. Please refresh billing shortly.' }); }
 }
 async function currentPaystackSubscription(userId) {
-  return Subscription.findOne({ userId, provider: 'paystack', subscriptionCode: { $exists: true, $ne: '' }, paidThrough: { $gt: new Date() } }).sort({ paidThrough: -1 }).select('+emailTokenEncrypted');
+  const now = new Date();
+  return Subscription.findOne({ userId, provider: 'paystack', subscriptionCode: { $exists: true, $ne: '' }, $or: [{ paidThrough: { $gt: now } }, { status: 'past_due', graceEndsAt: { $gt: now } }] }).sort({ paidThrough: -1 }).select('+emailTokenEncrypted');
 }
 export async function cancelSubscription(req, res) {
   try {
@@ -236,6 +237,7 @@ export async function getManageLink(req, res) {
   try {
     const subscription = await currentPaystackSubscription(req.user.id);
     if (!subscription) throw fail('No paid Paystack subscription was found.', 404);
+    if (!subscriptionCanManageCard(subscription)) throw fail('Payment methods are only available for a renewing Pro subscription.');
     const data = await paystackRequest(`/subscription/${encodeURIComponent(subscription.subscriptionCode)}/manage/link`), url = new URL(data.link);
     if (url.protocol !== 'https:' || !(url.hostname === 'paystack.com' || url.hostname.endsWith('.paystack.com'))) throw fail('Invalid Paystack management link.', 502);
     res.json({ success: true, data: { link: url.toString() } });

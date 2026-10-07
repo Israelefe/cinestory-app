@@ -25,7 +25,7 @@ import { deleteUserAccount } from '../src/services/accountDeletion.service.js';
 import { buildBillingSnapshot } from '../src/services/billingEntitlement.service.js';
 import { migrateBillingRecords } from '../src/services/billingMigration.service.js';
 import { runBillingMaintenance } from '../src/services/billingWorker.service.js';
-import { startCheckout, reconcilePayment, activateSubscription, verifyCheckout, paystackWebhook, processWebhookEvent, addOneMonth, cancelSubscription, resumeSubscription } from '../src/controllers/billing.controller.js';
+import { startCheckout, reconcilePayment, activateSubscription, verifyCheckout, paystackWebhook, processWebhookEvent, addOneMonth, cancelSubscription, resumeSubscription, getManageLink } from '../src/controllers/billing.controller.js';
 import { resolveEntitlements } from '../src/services/entitlement.service.js';
 import { requestReviewedRefund } from '../src/services/billingRefund.service.js';
 import { refundEvidence, recordPaidUsage } from '../src/services/paidUsage.service.js';
@@ -397,9 +397,27 @@ test('cancellation stops all schedules, retains paid time, is repeatable and res
   await Subscription.create({ userId: owner._id, status: 'past_due', subscriptionCode: 'SUB_old', customerCode: 'CUS_owner', planCode: 'PLN_local', paidThrough: new Date(Date.now() + 1000) });
   provider.set('/subscription/SUB_old', { status: 'attention', email_token: 'token2', customer: { customer_code: 'CUS_owner' }, plan: { plan_code: 'PLN_local' } });
   const canceled = await invoke(cancelSubscription); assert.equal(canceled.code, 200); assert.equal(canceled.body.data.plan, 'pro'); assert.equal(canceled.body.data.payments.length, 1);
+  assert.equal(canceled.body.data.subscription.canManageCard, false);
+  assert.equal(canceled.body.data.subscription.canResume, true);
+  const management = await invoke(getManageLink);
+  assert.equal(management.code, 409);
+  assert.equal(calls.filter(call => call.path.endsWith('/manage/link')).length, 0);
   assert.equal(calls.filter(call => call.path === '/subscription/disable').length, 2);
   await invoke(cancelSubscription); assert.equal(calls.filter(call => call.path === '/subscription/disable').length, 2);
   const resumed = await invoke(resumeSubscription); assert.equal(resumed.code, 200); assert.equal((await Subscription.findById(subscription._id)).status, 'active');
+  assert.equal(resumed.body.data.subscription.canManageCard, true);
+  assert.equal(resumed.body.data.subscription.canResume, false);
+  provider.set('/subscription/SUB_owner/manage/link', { link: 'https://paystack.com/manage/test-subscription' });
+  assert.equal((await invoke(getManageLink)).code, 200);
+});
+test('payment management remains available during payment grace for a renewing subscription', async () => {
+  const { subscription } = await paid();
+  await Subscription.updateOne({ _id: subscription._id }, { $set: { status: 'past_due', paidThrough: new Date(Date.now() - 1000), graceEndsAt: new Date(Date.now() + 86400000) } });
+  const entitlement = await resolveEntitlements(owner);
+  assert.equal(entitlement.plan, 'pro');
+  assert.equal(entitlement.subscription.canManageCard, true);
+  provider.set('/subscription/SUB_owner/manage/link', { link: 'https://paystack.com/manage/test-subscription' });
+  assert.equal((await invoke(getManageLink)).code, 200);
 });
 test('expiry and an unsupported User.plan never grant indefinite access', async () => {
   await User.updateOne({ _id: owner._id }, { $set: { plan: 'pro' } });

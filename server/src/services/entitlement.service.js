@@ -26,6 +26,12 @@ export function subscriptionGrantsPro(subscription, now = new Date()) {
   return false;
 }
 
+export function subscriptionCanManageCard(subscription, now = new Date()) {
+  return Boolean(subscription?.provider === 'paystack' && subscription.subscriptionCode
+    && ['active', 'past_due'].includes(subscription.status) && subscriptionGrantsPro(subscription, now)
+    && !subscription.cancelRequestedAt && !subscription.providerCanceledAt && !subscription.cancelPendingAt);
+}
+
 export async function resolveEntitlements(user, { includeUsage = true, now = new Date() } = {}) {
   // Both the paid Pro plan and the legacy Studio plan receive studio branding.
   // Billing writes `pro` to User.plan, so treating only `studio` as paid made
@@ -82,7 +88,7 @@ export async function resolveEntitlements(user, { includeUsage = true, now = new
       graceEndsAt: subscription.graceEndsAt,
       cancelRequestedAt: subscription.cancelRequestedAt,
       canResume: subscription.status === 'canceling' && subscription.paidThrough > now && Boolean(subscription.subscriptionCode) && Boolean(subscription.providerCanceledAt) && !subscription.cancelPendingAt,
-      canManageCard: Boolean(subscription.subscriptionCode)
+      canManageCard: subscriptionCanManageCard(subscription, now)
     } : { status: 'free', canResume: false, canManageCard: false }
   };
 }

@@ -4,8 +4,9 @@ const reference = 'veylo_0123456789abcdef0123456789abcdef';
 const future = new Date(Date.now() + 20 * 86400000).toISOString();
 function price(amountNaira = 40000) { const amountKobo = amountNaira * 100; return { currency: 'NGN', amountKobo, monthlyPriceNaira: amountNaira, quote: `pro:${amountKobo}` }; }
 async function setup(page, options = {}) {
-  const state = { plan: 'pro', status: 'active', verifyCount: 0, verified: true, cancelCount: 0, cancelFailure: false, changePrice: false, pricing: price(), billingAvailable: true, ...options };
-  const data = () => ({ plan: state.plan, subscription: { status: state.status, amountKobo: options.amountKobo || 4000000, currency: 'NGN', paidThrough: future, graceEndsAt: state.status === 'past_due' && state.plan === 'pro' ? future : null, canManageCard: true, canResume: state.status === 'canceling' }, canCancel: state.status !== 'canceling' && state.plan === 'pro', pricing: state.pricing, paymentsNextCursor: options.history && !state.historyDone ? 'payment1' : null, retentionDays: 30, billingAvailable: state.billingAvailable, payments: [{ _id: 'payment1', reference, status: 'success', amountKobo: options.amountKobo || 4000000, paidAt: new Date().toISOString(), refundedAmountKobo: 100000 }] });
+  const state = { plan: 'pro', status: 'active', verifyCount: 0, verified: true, cancelCount: 0, cancelFailure: false, resumeCount: 0, cancellationPending: false, paidThrough: future, changePrice: false, pricing: price(), billingAvailable: true, ...options };
+  // Keep capability flags permissive to catch stale flags after a state change.
+  const data = () => ({ plan: state.plan, subscription: { status: state.status, amountKobo: options.amountKobo || 4000000, currency: 'NGN', paidThrough: state.paidThrough, graceEndsAt: state.status === 'past_due' && state.plan === 'pro' ? future : null, canManageCard: true, canResume: state.status === 'canceling' }, cancellationPending: state.cancellationPending, canCancel: state.status !== 'canceling' && state.plan === 'pro', pricing: state.pricing, paymentsNextCursor: options.history && !state.historyDone ? 'payment1' : null, retentionDays: 30, billingAvailable: state.billingAvailable, payments: [{ _id: 'payment1', reference, status: 'success', amountKobo: options.amountKobo || 4000000, paidAt: new Date().toISOString(), refundedAmountKobo: 100000 }] });
   await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 3, necessary: true, analytics: false, marketing: false })));
   await page.route('**/api/v1/**', async route => {
     const path = new URL(route.request().url()).pathname;
@@ -33,6 +34,10 @@ async function setup(page, options = {}) {
       if (state.cancelFailure) return reply({ success: false, message: 'Cancellation has not been confirmed. Contact payment@veylo.com.ng.' }, 502);
       state.status = 'canceling'; return reply({ success: true, data: data(), message: 'Future renewals have stopped.' });
     }
+    if (path.endsWith('/billing/resume')) {
+      state.resumeCount++; state.status = 'active';
+      return reply({ success: true, data: data(), message: 'Monthly renewals are back on.' });
+    }
     return reply({ success: true, data: {} });
   });
   return state;
@@ -43,6 +48,39 @@ test('the same Pro price appears on every public price surface', async ({ page }
     await page.goto(path); await expect(page.getByText('₦40,000', { exact: true }).first()).toBeAttached();
     await expect(page.locator('.v-pro-price').first()).toContainText('₦40,000');
   }
+});
+
+test('cancellation removes payment management and clearly separates resuming renewal from paid access', async ({ page }) => {
+  const state = await setup(page);
+  await page.goto('/billing');
+  await expect(page.getByRole('button', { name: 'Manage payment method', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel subscription', exact: true }).click();
+  await page.getByRole('button', { name: 'Confirm cancellation', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByText(/Subscription canceled\. Future renewals are off\. Pro remains active until/)).toBeVisible();
+  await expect(page.getByRole('button', { name: /^(Manage payment method|Cancel subscription|Keep my Pro plan)$/ })).toHaveCount(0);
+  await expect(page.getByText('Resuming turns monthly renewals back on.', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Resume subscription', exact: true }).click();
+  expect(state.resumeCount).toBe(1);
+  await expect(page.getByRole('button', { name: 'Manage payment method', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Cancel subscription', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Resume subscription', exact: true })).toHaveCount(0);
+});
+
+test('unconfirmed cancellation does not promise stopped renewals or offer to resume', async ({ page }) => {
+  await setup(page, { status: 'canceling', cancellationPending: true });
+  await page.goto('/billing');
+  await expect(page.getByText(/Cancellation is awaiting confirmation\./)).toBeVisible();
+  await expect(page.getByText(/Future renewals are off/)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^(Manage payment method|Resume subscription)$/ })).toHaveCount(0);
+});
+
+test('ended paid access hides resume even when an older capability flag is true', async ({ page }) => {
+  await setup(page, { plan: 'free', status: 'canceling', paidThrough: new Date(Date.now() - 86400000).toISOString() });
+  await page.goto('/billing');
+  await expect(page.getByText('Your subscription is canceled. The paid access has ended.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^(Manage payment method|Resume subscription)$/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Choose Pro', exact: true })).toBeVisible();
 });
 test('billing offers the fixed price and quote without checking location', async ({ page }) => {
   const state = await setup(page, { plan: 'free' }); await page.goto('/billing');
@@ -59,7 +97,7 @@ test('callback verification survives StrictMode and preserves history and billin
   await page.getByRole('button', { name: 'Confirm cancellation' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByText(reference, { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Keep my Pro plan' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Resume subscription', exact: true })).toBeVisible();
 });
 test('pending callbacks can be retried without pretending payment succeeded', async ({ page }) => {
   const state = await setup(page, { verified: false, plan: 'free' }); await page.goto(`/billing?reference=${reference}`);
