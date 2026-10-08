@@ -66,7 +66,7 @@ async function captionFor(view, format) {
   if (format === 'photo-story') { await beginStory(view); return view.locator('.v-story-caption:not(.is-finale) h2'); }
   if (format === 'photo-reveal') { await view.getByRole('button', { name: 'Begin reveal', exact: true }).click(); return view.locator('.fd-reveal-caption p'); }
   if (format === 'canvas') { await view.locator('.fd-wall-card').first().click(); return view.locator('.fd-canvas-focus-copy p'); }
-  if (format === 'chapters') { await view.locator('.fd-chapter-directory-board>button').first().click(); return view.locator('.fd-chapter-room-photos>button>p').first(); }
+  if (format === 'chapters') { await view.locator('.fd-chapter-library-card').first().click(); return view.locator('.fd-chapter-reading-caption').first(); }
   if (format === 'album') { await view.getByRole('button', { name: 'Open album', exact: true }).click(); return view.locator('.album-note p').first(); }
   return view.locator({ editorial: '.fd-ed-spread figcaption', 'event-coverage': '.vec-photo-caption', campaign: '.vec-photo-caption' }[format]).first();
 }
@@ -83,7 +83,7 @@ for (const format of formats) for (const width of [320, 834, 1440]) test(`${form
   await expectFont(caption, 'Manrope');
   if (format === 'canvas') await view.getByRole('button', { name: 'Return to canvas', exact: true }).click();
   await completePresentation(view, format);
-  await expectFont(view.getByRole('button', { name: format === 'photo-story' ? 'Open gallery' : 'Open full gallery', exact: true }), 'Outfit');
+  await expectFont(view.getByRole('button', { name: format === 'photo-story' ? 'Open gallery' : format === 'chapters' ? 'View full gallery' : 'Open full gallery', exact: true }), 'Outfit');
   await openPresentationGallery(view, format);
   const gallery = view.locator('.client-gallery');
   await expectFont(gallery.locator('h2'), 'Cormorant Garamond');

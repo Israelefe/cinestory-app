@@ -500,7 +500,7 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
   const activeNarrationSectionRef = useRef(null);
   const reduced = useVeyloReducedMotion();
   const photoMotionPaused = reduced || motionPaused || !pageVisible || gallery;
-  const entrance = { duration: .55, ease: [0.22, 1, 0.36, 1] };
+  const entrance = { duration: .42, ease: [0.22, 1, 0.36, 1] };
 
   useEffect(() => {
     const update = () => setPageVisible(!document.hidden);
@@ -666,7 +666,10 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
     <span>{motionPaused ? 'Resume motion' : 'Pause motion'}</span>
   </button>;
   const chapterControlBar = <div className="fd-chapter-view-controls">
-    {openIndex !== null && <button className="fd-chapter-return" type="button" onClick={returnToChapters}><ArrowLeft size={16} aria-hidden="true" /><span>Chapters</span></button>}
+    {openIndex !== null ? <>
+      <button className="fd-chapter-return" type="button" onClick={returnToChapters}><ArrowLeft size={16} aria-hidden="true" /><span>All chapters</span></button>
+      <span className="fd-chapter-position" aria-label={`Chapter ${openIndex + 1} of ${chaptersData.length}`}><strong>{String(openIndex + 1).padStart(2, '0')}</strong><span aria-hidden="true">/</span>{String(chaptersData.length).padStart(2, '0')}</span>
+    </> : <span className="fd-chapter-collection-count"><BookOpen size={15} aria-hidden="true" />{chaptersData.length} {chaptersData.length === 1 ? 'chapter' : 'chapters'}<span aria-hidden="true">·</span>{allPhotos.length} {allPhotos.length === 1 ? 'photo' : 'photos'}</span>}
     {motionControl}
   </div>;
 
@@ -682,7 +685,7 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
         {chapterControlBar}
         <article className="fd-chapter-reading-content" style={{ '--chapter-section-accent': currentChapter.accent || themeStyles['--fd-accent'] }}>
           <header className="fd-chapter-reading-heading">
-            <span className="fd-chapter-reading-studio"><Film size={15} aria-hidden="true" />{studioName || 'Photo collection'}</span>
+            <span className="fd-chapter-reading-studio">{client}</span>
             <h1 ref={headingRef} tabIndex={-1}>{currentChapter.name}</h1>
             {(currentChapter.note || currentChapter.line) && <p>{currentChapter.note || currentChapter.line}</p>}
           </header>
@@ -694,7 +697,7 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
                 type="button"
                 key={photo.assetId || photo.url || photo.name}
                 {...formatFrameAttributes(frame)}
-                style={{ '--chapter-photo-ratio': photo.width && photo.height ? photo.width + ' / ' + photo.height : '4 / 5', ...formatFrameStyle(frame) }}
+                style={{ '--chapter-photo-ratio': photo.width && photo.height ? photo.width + ' / ' + photo.height : '3 / 4', '--chapter-photo-aspect': photo.width && photo.height ? photo.width / photo.height : .75, ...formatFrameStyle(frame) }}
                 className="fd-chapter-reading-photo"
                 onClick={() => openPhoto(photo)}
                 aria-label={caption ? 'View photo: ' + caption : 'View photo from ' + currentChapter.name}
@@ -715,8 +718,8 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
             })}
           </div>
           {(previousChapter >= 0 || nextChapter >= 0) && <nav className="fd-chapter-sequence-nav" aria-label="Chapter navigation">
-            {previousChapter >= 0 && <button type="button" onClick={() => openChapter(previousChapter)}><ChevronLeft size={17} aria-hidden="true" /><span><small>Previous</small><strong>{chaptersData[previousChapter].name}</strong></span></button>}
-            {nextChapter >= 0 && <button type="button" onClick={() => openChapter(nextChapter)}><span><small>Next</small><strong>{chaptersData[nextChapter].name}</strong></span><ChevronRight size={17} aria-hidden="true" /></button>}
+            {previousChapter >= 0 && <button className="is-previous" type="button" onClick={() => openChapter(previousChapter)} aria-label={'Previous chapter: ' + chaptersData[previousChapter].name}><ChevronLeft size={18} aria-hidden="true" /><span><small>Previous chapter</small><strong>{chaptersData[previousChapter].name}</strong></span></button>}
+            {nextChapter >= 0 && <button className="is-next" type="button" onClick={() => openChapter(nextChapter)} aria-label={'Next chapter: ' + chaptersData[nextChapter].name}><span><small>Next chapter</small><strong>{chaptersData[nextChapter].name}</strong></span><ChevronRight size={18} aria-hidden="true" /></button>}
           </nav>}
         </article>
       </motion.main> : <motion.main key="chapter-contents" className="fd-chapter-library" initial={reduced ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={entrance}>
@@ -736,9 +739,9 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
               key={chapter.id || index}
               className="fd-chapter-library-card"
               {...formatFrameAttributes(frame)}
-              style={{ '--chapter-photo-ratio': cover?.width && cover?.height ? cover.width + ' / ' + cover.height : '4 / 3', ...formatFrameStyle(frame) }}
+              style={{ '--chapter-photo-ratio': cover?.width && cover?.height ? cover.width + ' / ' + cover.height : '3 / 4', '--chapter-card-accent': chapter.accent || themeStyles['--fd-accent'], ...formatFrameStyle(frame) }}
               onClick={() => openChapter(index)}
-              aria-label={'Open chapter: ' + chapter.name}
+              aria-label={`Open chapter ${index + 1}: ${chapter.name}`}
               initial={reduced ? false : { opacity: 0, y: 16 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, amount: .12 }}
@@ -746,8 +749,11 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
               whileHover={reduced ? undefined : { y: -3 }}
               whileTap={reduced ? undefined : { scale: .99 }}
             >
-              <span className="fd-chapter-library-cover"><ChapterPhotoMotion frame={frame} index={index} paused={photoMotionPaused}><Photo name={cover.name} url={cover.url} alt="" width={cover.width} height={cover.height} eager={index === 0} sizes="(max-width: 640px) 92vw, (max-width: 1024px) 44vw, 32vw" /></ChapterPhotoMotion></span>
-              <span className="fd-chapter-library-copy"><strong>{chapter.name}</strong>{(chapter.line || chapter.note) && <span>{chapter.line || chapter.note}</span>}<i>Read chapter<ArrowUpRight size={16} aria-hidden="true" /></i></span>
+              <span className="fd-chapter-library-cover">
+                <ChapterPhotoMotion frame={frame} index={index} paused={photoMotionPaused}><Photo name={cover.name} url={cover.url} alt="" width={cover.width} height={cover.height} style={frame.focalPoint ? { objectPosition: frame.focalPoint } : undefined} eager={index === 0} sizes="(max-width: 640px) 92vw, (max-width: 1024px) 44vw, 32vw" /></ChapterPhotoMotion>
+                <span className="fd-chapter-cover-number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
+              </span>
+              <span className="fd-chapter-library-copy"><span className="fd-chapter-card-meta"><span>Chapter {String(index + 1).padStart(2, '0')}</span><span>{chapter.photos.length} {chapter.photos.length === 1 ? 'photograph' : 'photographs'}</span></span><strong data-delivery-font="heading">{chapter.name}</strong>{(chapter.line || chapter.note) && <span className="fd-chapter-card-description" data-delivery-font="caption">{chapter.line || chapter.note}</span>}<i>View chapter<ArrowUpRight size={17} aria-hidden="true" /></i></span>
             </motion.button>;
           })}
         </section> : <p className="fd-chapter-library-empty">The photographs for this collection are not available yet.</p>}

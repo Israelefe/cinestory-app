@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 const formats = {
   canvas: { root: '.fd-canvas', photos: '.fd-wall-card', detail: '.fd-wall-paths path' },
-  chapters: { root: '.fd-chapters', photos: '.fd-chapter-directory-board>button', detail: '.fd-chapter-directory-number' },
+  chapters: { root: '.fd-chapters', photos: '.fd-chapter-library-card', detail: '.fd-chapter-cover-number' },
   album: { root: '.fd-album', photos: '.fd-album-cover figure', detail: '.fd-album-cover-shade' },
   'event-coverage': { root: '.vec-event', photos: '.ec-cover-photo .ec-photo-button', detail: '.ec-scene-nav' },
   campaign: { root: '.vec-campaign', photos: '.vec-campaign-sets article>button', detail: '.vec-campaign-handoff' }

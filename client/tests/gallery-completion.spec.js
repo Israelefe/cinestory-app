@@ -40,8 +40,8 @@ for (const width of [320, 834]) for (const format of ['photo-story', 'editorial'
   await page.setViewportSize({ width, height: width === 320 ? 740 : 1000 });
   await setup(page, fixture(format));
   await page.goto('/d/gallery-completion?phoneView=1');
-  const galleryName = format === 'photo-story' ? 'Open gallery' : 'Open full gallery';
-  await expect(page.getByRole('button', { name: galleryName, exact: true })).toHaveCount(0);
+  const galleryName = format === 'photo-story' ? 'Open gallery' : format === 'chapters' ? 'View full gallery' : 'Open full gallery';
+  await expect(page.getByRole('button', { name: galleryName, exact: true })).toHaveCount(format === 'chapters' ? 1 : 0);
   await expect(page.getByRole('button', { name: /Download all/ })).toHaveCount(0);
   if (format === 'editorial') await expectSinglePhoto(page, page.locator('.ed-cover .ed-image-button'));
   if (format === 'event-coverage' || format === 'campaign') await expectSinglePhoto(page, page.locator(format === 'campaign' ? '.vec-campaign-sets article>button' : '.ec-cover-photo .ec-photo-button').first());
@@ -53,8 +53,8 @@ for (const width of [320, 834]) for (const format of ['photo-story', 'editorial'
     await expect(page.getByRole('button', { name: 'View full gallery', exact: true })).toHaveCount(0);
   }
   if (format === 'chapters') {
-    await page.locator('.fd-chapter-directory-board>button').first().click();
-    await expectSinglePhoto(page, page.locator('.fd-chapter-room-photos>button').first());
+    await page.locator('.fd-chapter-library-card').first().click();
+    await expectSinglePhoto(page, page.locator('.fd-chapter-reading-photo').first());
     await expect(page.getByRole('button', { name: galleryName, exact: true })).toHaveCount(0);
   }
   await openPresentationGallery(page, format);
@@ -71,7 +71,7 @@ for (const [format, route] of [['editorial', '/demo/editorial'], ['album', '/dem
   await page.setViewportSize({ width: 390, height: 844 });
   await setup(page, fixture(format));
   await page.goto(route + '?phoneView=1');
-  await expect(page.getByRole('button', { name: 'Open full gallery', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: format === 'chapters' ? 'View full gallery' : 'Open full gallery', exact: true })).toHaveCount(format === 'chapters' ? 1 : 0);
   await openPresentationGallery(page, format);
   await expect(page.locator('.client-gallery-grid>figure').first()).toBeVisible();
 });
@@ -82,9 +82,9 @@ for (const format of ['photo-story', 'editorial', 'album', 'chapters', 'event-co
   await page.goto('/__phone-preview');
   await expect(page.getByText('Waiting for the preview.', { exact: true })).toBeVisible();
   await page.evaluate(delivery => window.postMessage({ type: 'veylo:phone-preview-data', payload: { delivery, access: delivery.access } }, location.origin), delivery);
-  const root = { 'photo-story': '.v-story-cover', editorial: '.ed-cover', album: '.fd-album-cover', chapters: '.fd-chapter-directory-board', 'event-coverage': '.ec-cover', campaign: '.vec-campaign-hero' }[format];
+  const root = { 'photo-story': '.v-story-cover', editorial: '.ed-cover', album: '.fd-album-cover', chapters: '.fd-chapter-library-grid', 'event-coverage': '.ec-cover', campaign: '.vec-campaign-hero' }[format];
   await expect(page.locator(root)).toBeVisible();
-  await expect(page.getByRole('button', { name: format === 'photo-story' ? 'Open gallery' : 'Open full gallery', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: format === 'photo-story' ? 'Open gallery' : format === 'chapters' ? 'View full gallery' : 'Open full gallery', exact: true })).toHaveCount(format === 'chapters' ? 1 : 0);
   await openPresentationGallery(page, format);
   await expect(page.locator('.client-gallery-grid>figure')).toHaveCount(5);
 });

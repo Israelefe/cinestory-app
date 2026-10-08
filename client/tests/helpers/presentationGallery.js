@@ -1,7 +1,8 @@
 import { expect } from '@playwright/test';
 
 export async function completePresentation(view, format) {
-  if (format === 'editorial') {
+  if (format === 'editorial' || format === 'chapters') {
+    if (format === 'chapters' && await view.locator('.fd-chapter-reading-page').count()) await view.getByRole('button', { name: 'All chapters', exact: true }).click();
     const button = view.getByRole('button', { name: 'View full gallery', exact: true });
     await button.scrollIntoViewIfNeeded();
     await expect(button).toBeEnabled();
@@ -45,20 +46,6 @@ export async function completePresentation(view, format) {
       }
     }
     await expect(view.getByRole('button', { name: 'Open full gallery', exact: true })).toBeVisible();
-  } else if (format === 'chapters') {
-    await expect(view.locator('.fd-chapter-directory-board,.fd-chapter-room').first()).toBeVisible();
-    const directory = view.locator('.fd-chapter-directory-board>button');
-    const count = await directory.count() || await view.locator('.fd-chapter-room-copy nav button').count();
-    if (!await directory.count()) await view.locator('.fd-chapter-room-copy').getByRole('button', { name: 'All chapters', exact: true }).click();
-    for (let at = 0; at < count; at++) {
-      await directory.nth(at).click();
-      await expect(view.locator('.fd-chapter-room-count')).toHaveText(`${String(at + 1).padStart(2, '0')} / ${String(count).padStart(2, '0')}`);
-      await view.locator('.fd-chapter-room-art>footer').scrollIntoViewIfNeeded();
-      await expect(view.locator('.fd-chapter-room')).toHaveAttribute('data-chapter-explored', 'true');
-      await view.locator('.fd-chapter-room-art>footer').getByRole('button', { name: 'All chapters', exact: true }).click();
-      await expect(directory.nth(at)).toHaveClass(/is-visited/);
-    }
-    await expect(view.getByRole('button', { name: 'Open full gallery', exact: true })).toBeVisible();
   } else if (format === 'photo-reveal') {
     await expect(view.locator('.rv-opening,.rv-position').first()).toBeVisible();
     const begin = view.getByRole('button', { name: 'Begin reveal', exact: true });
@@ -82,5 +69,5 @@ export async function completePresentation(view, format) {
 
 export async function openPresentationGallery(view, format) {
   await completePresentation(view, format);
-  await view.getByRole('button', { name: format === 'photo-story' ? 'Open gallery' : format === 'editorial' ? 'View full gallery' : 'Open full gallery', exact: true }).click();
+  await view.getByRole('button', { name: format === 'photo-story' ? 'Open gallery' : ['editorial', 'chapters'].includes(format) ? 'View full gallery' : 'Open full gallery', exact: true }).click();
 }
