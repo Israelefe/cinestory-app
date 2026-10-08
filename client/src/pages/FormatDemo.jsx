@@ -441,7 +441,10 @@ export const chapters = [
     note: 'Folake and Tunde, you arrived in matching bronze and looked completely at home beside each other from the first frame.',
     accent: '#d7a86e',
     photos: [weddingPhotos[0], weddingPhotos[3]],
-    captions: ['The first portrait of you together.', 'A full look at the outfits you chose for the day.']
+    captions: [
+      'Folake, your hand on Tunde\'s shoulder and the smile between you make this portrait feel easy. The bronze embroidery, your gele and his agbada belong in the frame, but it is the way you look at each other that holds it together.',
+      'Standing together gives the outfits their full moment: the embroidery across your dress, the train at your feet and the folds of Tunde\'s agbada. We kept enough of the setting around you to show the whole portrait, right down to the shoes.'
+    ]
   },
   {
     name: 'The Way They Looked',
@@ -450,7 +453,10 @@ export const chapters = [
     note: 'Some of our favourite portraits came when you stopped looking at the camera and looked at each other.',
     accent: '#c89057',
     photos: [weddingPhotos[1], weddingPhotos[2]],
-    captions: ['Tunde, this was the moment you made Folake laugh.', 'You only needed one look at each other.']
+    captions: [
+      'With Tunde standing behind you, the portrait becomes a little closer. Your hands meet at your waist, and you turn towards each other with the same warm smile. The light from the glass doors picks up the detail in the bronze fabric.',
+      'Tunde looks up from the chair while Folake rests a hand on his shoulder. There is room here for the smiles, the jewellery and the detail of both outfits. It is a relaxed portrait of the two of you, with the greenery framing the background.'
+    ]
   },
   {
     name: 'Just Us',
@@ -459,7 +465,7 @@ export const chapters = [
     note: 'After the formal portraits, you held each other close. We saved this frame for the end.',
     accent: '#e0b989',
     photos: [weddingPhotos[4]],
-    captions: ['Folake and Tunde, this quiet moment was the right way to finish.']
+    captions: ['Folake and Tunde, we saved this close portrait for the end. With your arms around each other and your faces almost touching, there is very little distance between you. The bronze fabric catches the light, and the room falls gently into the background.']
   }
 ];
 
@@ -508,10 +514,19 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
     return () => document.removeEventListener('visibilitychange', update);
   }, []);
 
-  const allPhotos = useMemo(() => normalizeDeliveryPhotos(delivery, delivery ? [] : weddingPhotos, true), [delivery]);
+  const allPhotos = useMemo(() => normalizeDeliveryPhotos(delivery, delivery ? [] : weddingPhotos, true).map(photo => {
+    if (delivery) return photo;
+    const chapter = chapters.find(item => item.photos.some(itemPhoto => itemPhoto.name === photo.name));
+    return { ...photo, caption: chapter?.captions[chapter.photos.findIndex(item => item.name === photo.name)] || photo.caption };
+  }), [delivery]);
   const frames = useMemo(() => new Map((delivery?.creativeDirection?.frames || []).map(frame => [String(frame.assetId), frame])), [delivery]);
   const client = delivery ? (delivery.clientName || delivery.title || 'Your photographs') : 'Folake & Tunde';
-  const studioName = delivery ? delivery.branding?.name : 'Mayflower Visuals';
+  const brandedDelivery = useMemo(() => delivery || {
+    format: 'chapters',
+    branding: { type: 'studio', name: 'Mayflower Visuals' },
+    access: { allowIndividualDownloads: true, allowDownloadAll: true, allowLikes: true }
+  }, [delivery]);
+  const studioName = brandedDelivery.branding?.name || 'Veylo';
 
   const chaptersData = useMemo(() => {
     if (delivery) {
@@ -666,19 +681,31 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
     <span>{motionPaused ? 'Resume motion' : 'Pause motion'}</span>
   </button>;
   const chapterControlBar = <div className="fd-chapter-view-controls">
-    {openIndex !== null ? <>
-      <button className="fd-chapter-return" type="button" onClick={returnToChapters}><ArrowLeft size={16} aria-hidden="true" /><span>All chapters</span></button>
-      <span className="fd-chapter-position" aria-label={`Chapter ${openIndex + 1} of ${chaptersData.length}`}><strong>{String(openIndex + 1).padStart(2, '0')}</strong><span aria-hidden="true">/</span>{String(chaptersData.length).padStart(2, '0')}</span>
-    </> : <span className="fd-chapter-collection-count"><BookOpen size={15} aria-hidden="true" />{chaptersData.length} {chaptersData.length === 1 ? 'chapter' : 'chapters'}<span aria-hidden="true">·</span>{allPhotos.length} {allPhotos.length === 1 ? 'photo' : 'photos'}</span>}
+    <button className="fd-chapter-return" type="button" onClick={returnToChapters}><ArrowLeft size={16} aria-hidden="true" /><span>All chapters</span></button>
+    <span className="fd-chapter-position" aria-label={`Chapter ${openIndex + 1} of ${chaptersData.length}`}><strong>{String(openIndex + 1).padStart(2, '0')}</strong><span aria-hidden="true">/</span>{String(chaptersData.length).padStart(2, '0')}</span>
     {motionControl}
+  </div>;
+  const studioCredit = <div className="fd-chapter-studio-credit">
+    <DeliveryBrandMark branding={brandedDelivery.branding} className="fd-chapter-studio-mark" />
+    <span><small>{brandedDelivery.branding?.type === 'studio' ? 'Photographed by' : 'Delivered with'}</small><strong>{studioName}</strong></span>
   </div>;
 
   const currentChapter = openIndex === null ? null : chaptersData[openIndex];
   const previousChapter = openIndex > 0 ? openIndex - 1 : -1;
   const nextChapter = openIndex !== null && openIndex < chaptersData.length - 1 ? openIndex + 1 : -1;
+  const chapterLink = (index, direction) => {
+    const chapter = chaptersData[index];
+    if (!chapter) return null;
+    const cover = chapter.cover || chapter.photos[0];
+    return <button className={'is-' + direction} type="button" onClick={() => openChapter(index)} aria-label={`${direction === 'previous' ? 'Previous' : 'Next'} chapter: ${chapter.name}`}>
+      <span className="fd-chapter-nav-cover" aria-hidden="true"><Photo name={cover.name} url={cover.url} alt="" width={cover.width} height={cover.height} sizes="72px" /></span>
+      <span className="fd-chapter-nav-copy"><small>{direction === 'previous' ? 'Previous chapter' : 'Next chapter'}<span aria-hidden="true">{String(index + 1).padStart(2, '0')}</span></small><strong data-delivery-font="heading">{chapter.name}</strong></span>
+      {direction === 'previous' ? <ChevronLeft size={20} aria-hidden="true" /> : <ChevronRight size={20} aria-hidden="true" />}
+    </button>;
+  };
 
   return <div className="fd-page fd-chapters fd-chapters-refined" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} data-pace={themeStyles['--fd-pace']} style={{ ...themeStyles, '--chapter-accent': currentChapter?.accent || themeStyles['--fd-accent'] }}>
-    <DemoHeader format="Chapters" client={client} sectionId="chapters" delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
+    <DemoHeader format="Chapters" client={client} sectionId="chapters" delivery={brandedDelivery} audioState={audioState} toggleAudio={toggleAudio} />
 
     <>
       {currentChapter ? <motion.main key={'chapter-' + (currentChapter.id || openIndex)} className="fd-chapter-reading-page" initial={reduced ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={entrance}>
@@ -713,21 +740,28 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
                     <Photo name={photo.name} url={photo.url} alt={photo.alt || currentChapter.name} width={photo.width} height={photo.height} style={frame.focalPoint ? { objectPosition: frame.focalPoint } : undefined} eager={photoIndex === 0} sizes="(max-width: 767px) 92vw, (max-width: 1023px) 44vw, 38vw" />
                   </ChapterPhotoMotion>
                 </span>
-                {caption && <span className="fd-chapter-reading-caption" data-delivery-font="caption" data-caption-position={frame.captionPosition || undefined} data-text-background={frame.textBackground || undefined} data-type-style={frame.typographyStyle || undefined} data-text-animation={frame.textAnimation || undefined}>{caption}</span>}
+                {caption && <span className="fd-chapter-reading-caption" data-delivery-font="caption" data-caption-position={frame.captionPosition || undefined} data-text-background={frame.textBackground || undefined} data-type-style={frame.typographyStyle || undefined} data-text-animation={frame.textAnimation || undefined}>
+                  <span className="fd-chapter-caption-number" aria-hidden="true">{String(photoIndex + 1).padStart(2, '0')}</span>
+                  <span className="fd-chapter-caption-text">{caption}</span>
+                </span>}
               </motion.button>;
             })}
           </div>
           {(previousChapter >= 0 || nextChapter >= 0) && <nav className="fd-chapter-sequence-nav" aria-label="Chapter navigation">
-            {previousChapter >= 0 && <button className="is-previous" type="button" onClick={() => openChapter(previousChapter)} aria-label={'Previous chapter: ' + chaptersData[previousChapter].name}><ChevronLeft size={18} aria-hidden="true" /><span><small>Previous chapter</small><strong>{chaptersData[previousChapter].name}</strong></span></button>}
-            {nextChapter >= 0 && <button className="is-next" type="button" onClick={() => openChapter(nextChapter)} aria-label={'Next chapter: ' + chaptersData[nextChapter].name}><span><small>Next chapter</small><strong>{chaptersData[nextChapter].name}</strong></span><ChevronRight size={18} aria-hidden="true" /></button>}
+            {previousChapter >= 0 && chapterLink(previousChapter, 'previous')}
+            {nextChapter >= 0 && chapterLink(nextChapter, 'next')}
           </nav>}
+          <footer className="fd-chapter-reading-footer">{studioCredit}</footer>
         </article>
       </motion.main> : <motion.main key="chapter-contents" className="fd-chapter-library" initial={reduced ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={entrance}>
-        {chapterControlBar}
         <header className="fd-chapter-library-heading">
-          <span className="fd-chapter-reading-studio"><Film size={15} aria-hidden="true" />{studioName || 'Photo collection'}</span>
+          <span className="fd-chapter-reading-studio"><Film size={15} aria-hidden="true" />{delivery ? 'Photo collection' : 'Wedding portraits'}</span>
           <h1>{client}</h1>
           <p>{delivery?.creativeDirection?.openingLine || 'Choose a chapter to see its photographs.'}</p>
+          <div className="fd-chapter-collection-details">
+            <span className="fd-chapter-collection-count"><span><strong>{chaptersData.length}</strong> {chaptersData.length === 1 ? 'chapter' : 'chapters'}</span><span><strong>{allPhotos.length}</strong> {allPhotos.length === 1 ? 'photo' : 'photos'}</span></span>
+            {motionControl}
+          </div>
         </header>
         {chaptersData.length ? <section className="fd-chapter-library-grid" aria-label="Chapters">
           {chaptersData.map((chapter, index) => {
@@ -757,11 +791,11 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
             </motion.button>;
           })}
         </section> : <p className="fd-chapter-library-empty">The photographs for this collection are not available yet.</p>}
-        {!!allPhotos.length && <footer className="fd-chapter-library-footer"><button type="button" onClick={openGallery}>View full gallery<Images size={17} aria-hidden="true" /></button></footer>}
+        <footer className="fd-chapter-library-footer">{studioCredit}{!!allPhotos.length && <button type="button" onClick={openGallery}>View full gallery<Images size={17} aria-hidden="true" /></button>}</footer>
       </motion.main>}
     </>
 
-    <AnimatePresence>{gallery && <DemoGallery photos={allPhotos} title={client} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={delivery} fontStyles={themeStyles} {...demoGalleryProps} {...galleryProps} singlePhoto={galleryIndex !== null} />}</AnimatePresence>
+    <AnimatePresence>{gallery && <DemoGallery photos={allPhotos} title={client} initialIndex={galleryIndex} onClose={() => { setGallery(false); setGalleryIndex(null); }} delivery={brandedDelivery} fontStyles={themeStyles} {...demoGalleryProps} {...galleryProps} singlePhoto={galleryIndex !== null} />}</AnimatePresence>
   </div>;
 }
 export const albumSpreads = [

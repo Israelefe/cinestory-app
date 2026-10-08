@@ -27,7 +27,10 @@ for (const [width, height] of [[320, 568], [390, 844], [768, 1024], [834, 1112],
     await page.goto('/demo/chapters?phoneView=1');
     const cards = page.locator('.fd-chapter-library-card');
     await expect(cards).toHaveCount(3);
-    await expect(page.locator('.fd-chapter-collection-count')).toContainText('3 chapters');
+    await expect(page.locator('.fd-chapter-library-heading .fd-chapter-collection-count')).toContainText('3 chapters');
+    await expect(page.locator('.fd-chapter-library .fd-chapter-view-controls')).toHaveCount(0);
+    await expect(page.locator('.fd-header-brand-copy strong')).toHaveText('Mayflower Visuals');
+    await expect(page.locator('.fd-header .delivery-brand-mark')).toHaveText('MV');
     for (const card of await cards.all()) {
       await card.scrollIntoViewIfNeeded();
       await card.locator('img').evaluate(image => image.decode().catch(() => {}));
@@ -52,11 +55,30 @@ for (const [width, height] of [[320, 568], [390, 844], [768, 1024], [834, 1112],
       const surface = await photo.locator('.fd-chapter-reading-photo-frame').boundingBox();
       const caption = await photo.locator('.fd-chapter-reading-caption').boundingBox();
       expect(caption.y).toBeGreaterThanOrEqual(surface.y + surface.height - 1);
-      expect(parseFloat(await photo.locator('.fd-chapter-reading-caption').evaluate(element => getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(14);
+      expect(parseFloat(await photo.locator('.fd-chapter-reading-caption').evaluate(element => getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(16);
+      await expect(photo.locator('.fd-chapter-caption-number')).toBeVisible();
     }
+    const navigation = page.getByRole('navigation', { name: 'Chapter navigation' });
+    for (const button of await navigation.getByRole('button').all()) {
+      await button.scrollIntoViewIfNeeded();
+      const bounds = await button.boundingBox();
+      expect(bounds.height).toBeGreaterThanOrEqual(100);
+      expect(bounds.x).toBeGreaterThanOrEqual(0);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(width + 1);
+      expect(parseFloat(await button.locator('strong').evaluate(element => getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(22);
+      await expect(button.locator('.fd-chapter-nav-cover img')).toBeVisible();
+    }
+    if (width <= 640) {
+      const previous = await navigation.locator('.is-previous').boundingBox();
+      const next = await navigation.locator('.is-next').boundingBox();
+      expect(next.y).toBeGreaterThanOrEqual(previous.y + previous.height + 12);
+    }
+    await page.evaluate(() => scrollTo(0, 0));
+    await screenshot(page, `reading-pair-${width}`);
     await page.getByRole('button', { name: 'Next chapter: Just Us', exact: true }).click();
     await expect(heading).toHaveText('Just Us');
     await expect(heading).toBeFocused();
+    await expect(page.locator('.fd-chapter-reading-footer')).toContainText('Mayflower Visuals');
     await page.evaluate(() => scrollTo(0, 0));
     await screenshot(page, `reading-${width}`);
     const controls = page.locator('.fd-chapter-view-controls');
@@ -131,6 +153,8 @@ test('a long published collection preserves chosen covers, body, fonts and still
   await expect(page.locator('.fd-chapter-position')).toHaveAttribute('aria-label', 'Chapter 11 of 11');
   await expect(page.locator('.fd-chapter-reading-heading > p')).toHaveText(delivery.creativeDirection.sections[10].body);
   await expect(page.locator('.fd-chapter-reading-caption').first()).toHaveCSS('font-family', /Manrope/);
+  await expect(page.locator('.fd-chapter-caption-text').first()).toHaveText('A finished photograph from the session.');
+  await expect(page.locator('.fd-chapter-reading-footer .fd-chapter-studio-credit strong')).toHaveText(delivery.branding.name);
   const photo = page.locator('.fd-chapter-photo-motion').first();
   await photo.scrollIntoViewIfNeeded();
   await expect.poll(() => photo.evaluate(element => new DOMMatrixReadOnly(getComputedStyle(element).transform).a)).toBe(1);
@@ -141,6 +165,57 @@ test('a long published collection preserves chosen covers, body, fonts and still
   await page.getByRole('button', { name: 'All chapters', exact: true }).click();
   await expect(last).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+for (const width of [320, 834]) test(`demo captions describe each portrait and the studio remains visible in the photo viewer at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: width === 320 ? 568 : 1112 });
+  await page.goto('/demo/chapters?phoneView=1');
+  await page.locator('.fd-chapter-library-card').first().click();
+  const caption = page.locator('.fd-chapter-caption-text').first();
+  const text = await caption.textContent();
+  expect(text.split(/\s+/).length).toBeGreaterThanOrEqual(35);
+  await page.locator('.fd-chapter-reading-photo').first().click();
+  await expect(page.locator('.client-gallery-studio')).toContainText('Mayflower Visuals');
+  await expect(page.locator('.client-gallery-studio .delivery-brand-mark')).toHaveText('MV');
+  await expect(page.locator('.client-gallery-lightbox-caption')).toContainText(text);
+  const name = await page.locator('.client-gallery-chapter-studio strong').boundingBox();
+  const photo = await page.locator('.client-gallery-lightbox-photo').boundingBox();
+  const close = await page.getByRole('button', { name: 'Close gallery', exact: true }).boundingBox();
+  expect(name.x + name.width).toBeLessThanOrEqual(close.x - 8);
+  expect(photo.height).toBeGreaterThanOrEqual(180);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Close gallery', exact: true }).click();
+  await page.getByRole('button', { name: 'All chapters', exact: true }).click();
+  await page.getByRole('button', { name: 'View full gallery', exact: true }).click();
+  await expect(page.locator('.client-gallery-studio')).toContainText('Mayflower Visuals');
+});
+
+for (const width of [320, 834]) test(`saved caption placement, background and line breaks remain intact at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 1112 });
+  const delivery = structuredClone(CHAPTERS_DEMO);
+  const placements = ['top', 'middle', 'left', 'right'];
+  delivery.creativeDirection.sections = [{ id: 'overlays', title: 'The photographs', assetIds: delivery.assets.slice(0, 4).map(asset => asset.assetId), layout: 'pair' }];
+  delivery.creativeDirection.frames.slice(0, 4).forEach((frame, index) => {
+    frame.caption = 'The photographer\'s original caption.\nA second line kept exactly as written.';
+    frame.captionPosition = placements[index]; frame.textBackground = 'frosted_glass';
+  });
+  await publishFixture(page, delivery);
+  await page.locator('.fd-chapter-library-card').first().click();
+  const photos = page.locator('.fd-chapter-reading-photo');
+  for (let index = 0; index < placements.length; index++) {
+    const photo = photos.nth(index); await photo.scrollIntoViewIfNeeded(); await settle(page);
+    const caption = photo.locator('.fd-chapter-reading-caption');
+    await expect(caption).toHaveAttribute('data-caption-position', placements[index]);
+    await expect(caption).toHaveAttribute('data-text-background', 'frosted_glass');
+    await expect(photo.locator('.fd-chapter-caption-text')).toHaveText(delivery.creativeDirection.frames[index].caption);
+    await expect(photo.locator('.fd-chapter-caption-number')).toBeHidden();
+    const imageBounds = await photo.locator('.fd-chapter-reading-photo-frame').boundingBox();
+    const captionBounds = await caption.boundingBox();
+    expect(captionBounds.x).toBeGreaterThanOrEqual(imageBounds.x);
+    expect(captionBounds.x + captionBounds.width).toBeLessThanOrEqual(imageBounds.x + imageBounds.width + 1);
+    expect(captionBounds.y).toBeGreaterThanOrEqual(imageBounds.y);
+    expect(captionBounds.y + captionBounds.height).toBeLessThanOrEqual(imageBounds.y + imageBounds.height + 1);
+  }
 });
 
 test('published photo and full-gallery views preserve disabled download permissions', async ({ page }) => {

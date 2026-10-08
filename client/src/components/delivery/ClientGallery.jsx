@@ -70,6 +70,7 @@ export default function ClientGallery({ photos: collectionPhotos = [], singlePho
   const activeGroup = groups.find(group => group.id === groupId);
   const visibleIndexes = resolvedPhotos.map((_, index) => index).filter(index => (!activeGroup || activeGroup.assetIds.includes(resolvedPhotos[index].assetId)) && (!allowLikes || !favouritesOnly || liked?.has(photoKey(resolvedPhotos[index], index))));
   const activePhoto = selected === null ? null : resolvedPhotos[selected];
+  const showChapterStudio = selected !== null && delivery?.format === 'chapters' && delivery?.branding?.type === 'studio';
   const activeKey = selected === null ? null : photoKey(activePhoto, selected);
   const activeImageUrl = activePhoto ? imageUrl(activePhoto) : '';
   const suggestedTone = activePhoto?.dominantColor || activePhoto?.analysis?.colors?.[0];
@@ -155,7 +156,11 @@ export default function ClientGallery({ photos: collectionPhotos = [], singlePho
   return createPortal(<LayoutGroup id={galleryId}><motion.div className="client-gallery-overlay" initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .2 }} onMouseDown={event => { if (event.target === event.currentTarget) onClose?.(); }}>
     <motion.section ref={panel} className={`client-gallery ${selected === null ? 'is-collection' : 'is-lightbox'}`} style={galleryTheme} role="dialog" aria-modal="true" aria-labelledby={`${galleryId}-title`} tabIndex={-1} initial={reduced ? false : { opacity: 0, y: 28, scale: .985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={reduced ? { opacity: 0 } : { opacity: 0, y: 18 }} transition={reduced ? { duration: 0 } : { type: 'spring', damping: 28, stiffness: 270 }}>
       <header className="client-gallery-header">
-        <div className="client-gallery-heading"><p>{selected === null ? eyebrow : singlePhoto ? title : `${title} · ${selected + 1} of ${photos.length}`}</p><h2 id={`${galleryId}-title`}>{selected === null ? title : `Photograph ${photographNumber(selected)}`}</h2><span className="client-gallery-count">{selected === null ? `${photos.length} ${photos.length === 1 ? 'photograph' : 'photographs'}` : singlePhoto ? 'The photograph you opened' : 'Your complete collection'}</span></div>
+        <div className="client-gallery-heading">
+          {showChapterStudio ? <div className="client-gallery-studio client-gallery-chapter-studio"><DeliveryBrandMark branding={delivery.branding} /><div><span>Photographed by</span><strong>{delivery.branding.name}</strong></div></div> : <p>{selected === null ? eyebrow : singlePhoto ? title : `${title} · ${selected + 1} of ${photos.length}`}</p>}
+          <h2 id={`${galleryId}-title`}>{selected === null ? title : `Photograph ${photographNumber(selected)}`}</h2>
+          {!showChapterStudio && <span className="client-gallery-count">{selected === null ? `${photos.length} ${photos.length === 1 ? 'photograph' : 'photographs'}` : singlePhoto ? 'The photograph you opened' : 'Your complete collection'}</span>}
+        </div>
         <div className="client-gallery-header-actions">
           {selected === null && allowDownloadAll && onDownloadAll && <button className="client-gallery-download-all" type="button" onClick={onDownloadAll} disabled={Boolean(resolvedBusy)}>{resolvedBusy === 'all' ? <LoaderCircle className="client-gallery-spin" size={16} /> : <Download size={16} />}<span>{resolvedBusy === 'all' && downloadProgress ? `Starting ${downloadProgress.current}/${downloadProgress.total}` : resolvedBusy === 'all' ? 'Starting…' : 'Download all photos'}</span></button>}
           <button className="client-gallery-icon" type="button" onClick={onClose} aria-label="Close gallery"><X size={21} /></button>

@@ -24,6 +24,7 @@
 .client-gallery-studio>div{display:flex;flex-direction:column;gap:5px;min-width:0}
 .client-gallery-studio span:not(.delivery-brand-mark){font-size:10px;line-height:1.4;color:#ffffff80}
 .client-gallery-studio strong{font-size:13px;font-weight:600;line-height:1.4;overflow-wrap:anywhere}
+.client-gallery-chapter-studio{margin-bottom:14px}.client-gallery-chapter-studio strong{font-family:var(--delivery-font-ui,'Outfit',system-ui,sans-serif);font-size:14px}
 .client-gallery-filters{display:flex;gap:6px;padding:4px;border:1px solid #ffffff12;border-radius:999px;background:#ffffff02;max-width:100%}
 .client-gallery-filters button{display:flex;align-items:center;justify-content:center;gap:7px;min-height:44px;padding:0 12px;border:1px solid transparent;border-radius:999px;background:transparent;font-size:11px;font-weight:550;color:#ffffffa0}
 .client-gallery-filters button.is-active{background:#ffffff0a;border-color:#ffffff12;color:#fffaf6}
