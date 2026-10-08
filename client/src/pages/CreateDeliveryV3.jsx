@@ -1,6 +1,7 @@
 import { useAssistantWorkflow } from '../components/AssistantContext.jsx';
 import { ProPrice } from '../components/ProPricing.jsx';
 import { deliveryPreparationMessage } from '../utils/deliveryPreparation.js';
+import { pollDeliveryProgress } from '../utils/deliveryProgress.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -321,16 +322,19 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   useEffect(() => {
     if (!draft?._id || !['preparing', 'narration-job'].includes(stage)) return undefined;
     let active = true;
+    let polling = false;
     const poll = async () => {
+      if (polling) return;
+      polling = true;
       try {
-        const { data } = await api.get('/v1/deliveries/' + draft._id);
+        const next = await pollDeliveryProgress(draft._id);
         if (!active) return;
-        const next = data.data;
-        setDraft(next); setJob(next.generationJob || null);
+        setDraft(current => next.progressOnly ? { ...current, status: next.status, generationJob: next.generationJob } : next); setJob(next.generationJob || null);
         if (next.generationJob?.status === 'failed') { setError(['NARRATION_CAPTION_TOO_LONG', 'NARRATION_FITTING_FAILED'].includes(next.generationJob.errorCode) ? 'Retry to prepare the opening and closing voice, or choose Skip voice to continue with text.' : next.generationJob.errorMessage || 'This step failed. Retry it.'); return; }
         if (stage === 'preparing' && next.v3?.step === 'showcase') { syncShowcase(next); setStage('showcase'); }
         if (stage === 'narration-job' && next.v3?.step === 'music' && next.v3?.narrationChoice === 'voice') setStage('music');
       } catch (failure) { if (active) setError(message(failure)); }
+      finally { polling = false; }
     };
     poll();
     const timer = window.setInterval(poll, 2500);

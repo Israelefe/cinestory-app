@@ -1,7 +1,18 @@
 name = "veylo-delivery-images"
 main = "worker.js"
 compatibility_date = "2026-10-07"
+compatibility_flags = ["nodejs_compat"]
 workers_dev = true
+
+[vars]
+VEYLO_API_ORIGIN = "https://veylo-api-ptk3.onrender.com"
+
+# ZIP CRC checks and streaming hashes require Workers Paid, without Containers.
+[limits]
+cpu_ms = 300000
+
+[triggers]
+crons = ["17 * * * *"]
 
 # Uses the existing R2_BUCKET_NAME value from Render.
 [[r2_buckets]]

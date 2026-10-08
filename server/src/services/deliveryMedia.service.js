@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
+import { createCloudflareArchive, mediaOffloadEnabled, mediaWorkerRequest, signedMediaUrl } from './cloudflareMedia.service.js';
 import {
   copyR2Object, createR2Upload, deleteR2Object, deleteR2Prefix,
   headR2Object, imageVariantKey, prepareR2Image, presignedR2Get, r2Configured, verifyUploadToken
@@ -71,7 +72,7 @@ function imageWorkerError(response, result) {
 export async function checkDeliveryImageWorker({ userId, deliveryId }) {
   const config = deliveryImageWorkerConfig();
   if (!config) return;
-  const fingerprint = crypto.createHash('sha256').update(config.baseUrl).update('\0').update(config.secret).digest('hex');
+  const fingerprint = crypto.createHash('sha256').update(config.baseUrl).update('\0').update(config.secret).update(mediaOffloadEnabled() ? 'v2' : 'v1').digest('hex');
   if (workerConnectionCheck?.fingerprint === fingerprint) {
     if (workerConnectionCheck.validUntil > Date.now()) return;
     if (workerConnectionCheck.pending) return workerConnectionCheck.pending;
@@ -79,6 +80,12 @@ export async function checkDeliveryImageWorker({ userId, deliveryId }) {
   const check = { fingerprint, validUntil: 0, pending: null };
   workerConnectionCheck = check;
   check.pending = (async () => {
+    if (mediaOffloadEnabled()) {
+      const health = await mediaWorkerRequest('health', {}, { timeoutMs: 10_000 });
+      if (health.protocol !== 2 || !health.storage || !health.images || !health.authorization) throw Object.assign(new Error('Photo uploads are temporarily unavailable. Please try again later.'), { status: 503, code: 'DELIVERY_IMAGE_WORKER_UNAVAILABLE' });
+      check.validUntil = Date.now() + 60_000;
+      return;
+    }
     // The deployed Worker validates the signature and its bindings before
     // looking up this deliberately absent object. No photograph is transferred.
     const key = `${deliveryFolder(userId, deliveryId)}/__connection_${crypto.randomUUID()}`;
@@ -178,9 +185,10 @@ export async function confirmUploadedAsset({ userId, deliveryId, publicId, objec
   let imageInfo = {};
   let format = metadata.contentType.split('/').at(-1)?.replace('jpeg', 'jpg') || '';
   if (resourceType === 'image') {
-    imageInfo = await getDeliveryImageInfo(key) || await prepareR2Image(key, { maxBytes: Number(claims.maxBytes) });
+    imageInfo = mediaOffloadEnabled() ? await prepareR2Image(key, { maxBytes: Number(claims.maxBytes) }) : await getDeliveryImageInfo(key) || await prepareR2Image(key, { maxBytes: Number(claims.maxBytes) });
     format = imageInfo.format === 'jpeg' ? 'jpg' : imageInfo.format;
   } else {
+    if (mediaOffloadEnabled()) imageInfo = await mediaWorkerRequest('inspect', { key, maxBytes: Number(claims.maxBytes), resourceType: 'audio' });
     const mime = metadata.contentType.toLowerCase();
     format = ({ 'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/mp4': 'm4a', 'audio/ogg': 'ogg', 'audio/aac': 'aac', 'audio/aiff': 'aiff', 'audio/flac': 'flac' })[mime] || format;
   }
@@ -199,10 +207,14 @@ export async function confirmUploadedAsset({ userId, deliveryId, publicId, objec
   };
 }
 
-export function signedImageUrl(publicId, { width = 1600, thumbnail = false, attachment = false, original = false, resourceType = 'image', format, downloadFilename } = {}) {
+export function signedImageUrl(publicId, { width = 1600, thumbnail = false, attachment = false, original = false, resourceType = 'image', format, downloadFilename, access, expiresIn = 6 * 60 * 60 } = {}) {
   if (!r2Configured()) throw unavailable();
   let key = String(publicId || '');
   if (!key) return '';
+  if (mediaOffloadEnabled()) {
+    const preset = resourceType === 'image' && !original && !attachment ? thumbnail ? 'thumb' : String(DELIVERY_IMAGE_WIDTHS.find(candidate => candidate >= Number(width || 1600)) || 1600) : '';
+    return signedMediaUrl(key, { preset, downloadFilename: attachment ? downloadFilename || key.split('/').at(-1) : '', access, expiresIn });
+  }
   if (resourceType === 'image' && !original) {
     const variant = thumbnail ? 'thumb' : DELIVERY_IMAGE_WIDTHS.find(candidate => candidate >= Number(width || 1600));
     if (variant) key = imageVariantKey(key, variant);
@@ -210,7 +222,11 @@ export function signedImageUrl(publicId, { width = 1600, thumbnail = false, atta
   return presignedR2Get(key, { downloadFilename: attachment ? (downloadFilename || key.split('/').at(-1)) : '', expiresIn: 6 * 60 * 60 });
 }
 
-export function signedDeliveryImageUrl(publicId, { width = 1600, thumbnail = false, og = false, attachment = false, original = false, resourceType = 'image', format, downloadFilename } = {}) {
+export function signedDeliveryImageUrl(publicId, { width = 1600, thumbnail = false, og = false, attachment = false, original = false, resourceType = 'image', format, downloadFilename, access } = {}) {
+  if (mediaOffloadEnabled()) {
+    if (og && resourceType === 'image' && !original && !attachment) return signedMediaUrl(publicId, { preset: 'og', access });
+    return signedImageUrl(publicId, { width, thumbnail, attachment, original, resourceType, format, downloadFilename, access });
+  }
   if (resourceType !== 'image' || original || attachment) {
     return signedImageUrl(publicId, { width, thumbnail, attachment, original, resourceType, format, downloadFilename });
   }
@@ -220,19 +236,21 @@ export function signedDeliveryImageUrl(publicId, { width = 1600, thumbnail = fal
   return signedDeliveryImageWorkerUrl(publicId, preset);
 }
 
-export function signedArchiveUrl(publicIds, filename = 'veylo-gallery') {
+export async function signedArchiveUrl(publicIds, filename = 'veylo-gallery', { access } = {}) {
   if (!r2Configured()) throw unavailable();
   if (!Array.isArray(publicIds) || !publicIds.length || publicIds.length > 1000) throw Object.assign(new Error('No photographs are available for download.'), { status: 400 });
   const cleanName = String(filename).replace(/[^a-z0-9_-]/gi, '-').slice(0, 80) || 'veylo-gallery';
   const files = publicIds.map(item => typeof item === 'string'
     ? { key: item, name: item.split('/').at(-1) }
     : { key: String(item.key || item.publicId || ''), name: String(item.name || item.originalFilename || item.key || 'photograph') });
+  if (mediaOffloadEnabled()) return createCloudflareArchive(files, cleanName, { access });
   const token = jwt.sign({ purpose: 'r2-gallery-archive', files, filename: cleanName }, process.env.JWT_SECRET, { expiresIn: '20m', issuer: 'veylo-r2-archive' });
   return `/api/v1/deliveries/public/archive?token=${encodeURIComponent(token)}`;
 }
 
 export function signedPreparedDeliveryImageUrl(publicId) { return signedDeliveryImageUrl(publicId, { width: 1600 }); }
 export function signedOgImageUrl(publicId) {
+  if (mediaOffloadEnabled()) return signedMediaUrl(publicId, { preset: 'og' });
   if (deliveryImageWorkerConfig()) return signedDeliveryImageWorkerUrl(publicId, 'og');
   return presignedR2Get(imageVariantKey(publicId, 'og'), { expiresIn: 6 * 60 * 60 });
 }
@@ -259,7 +277,7 @@ export async function copyStorageImageToDelivery({ sourcePublicId, sourceUrl, us
   const key = `${deliveryFolder(userId, deliveryId)}/${crypto.randomUUID()}`;
   try {
     await copyR2Object(sourceKey, key);
-    const prepared = await getDeliveryImageInfo(key) || await prepareR2Image(key);
+    const prepared = mediaOffloadEnabled() ? await prepareR2Image(key, { maxBytes: MAX_DELIVERY_IMAGE_BYTES }) : await getDeliveryImageInfo(key) || await prepareR2Image(key);
     const copiedMetadata = await headR2Object(key);
     return { public_id: key, format: prepared.format === 'jpeg' ? 'jpg' : prepared.format, width: prepared.width, height: prepared.height, bytes: copiedMetadata.bytes, etag: prepared.sha256 || copiedMetadata.etag, resource_type: 'image' };
   } catch (error) {

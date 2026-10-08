@@ -7,6 +7,7 @@ import GoogleSignIn from '../components/GoogleSignIn.jsx';
 import { Page, Reveal } from '../components/PublicDesign.jsx';
 import api, { apiMessage } from '../services/api.js';
 import StudioBrandField from '../components/StudioBrandField.jsx';
+import { uploadProfileImage } from '../utils/profileUpload.js';
 import useStudioNameAvailability, { cleanBrandName } from '../hooks/useStudioNameAvailability.js';
 import './StudioWorkspace.css';
 
@@ -106,9 +107,7 @@ export default function AccountSettings({ user, onAccountDeleted, onUserUpdated 
     }
     setProfileStatus({ saving: false, uploading: true, error: '' });
     try {
-      const body = new FormData();
-      body.append('logo', file);
-      const { data } = await api.post('/v1/onboarding/logo', body, { timeout: 90000 });
+      const { data } = await uploadProfileImage(file);
       onUserUpdated?.(data.user);
       toast.success('Studio image updated.');
     } catch (error) {

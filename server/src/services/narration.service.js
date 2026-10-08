@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { removeDeliveryAudio, deliveryFolder } from './deliveryMedia.service.js';
 import { putR2Object, r2Configured } from './r2.service.js';
 import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID, narrationVoice } from '../constants/narrationVoices.js';
+import { checkMediaWorker, mediaOffloadEnabled, mediaWorkerRequest } from './cloudflareMedia.service.js';
 
 // V3 reads only the opening and closing. Legacy narration helpers remain below.
 export const NARRATION_RENDER_VERSION = 'flux-captions-v8';
@@ -36,7 +37,7 @@ export function narrationLine(value) {
 }
 
 export async function getNarrationVoiceCatalogue() {
-  const configured = Boolean(String(process.env.DEEPGRAM_API_KEY || '').trim());
+  const configured = mediaOffloadEnabled() ? Boolean((await checkMediaWorker()).narration) : Boolean(String(process.env.DEEPGRAM_API_KEY || '').trim());
   return NARRATION_VOICES.map(voice => ({
     ...voice,
     available: configured,
@@ -152,8 +153,9 @@ export async function synthesizeV3Bookends(delivery, { voiceId = DEFAULT_NARRATI
   const uploaded = [];
   try {
     for (const [key, text] of [['opening', opening], ['closing', closing]]) {
-      const audio = await synthesizeBookendAudio(text, { voiceId: voice.id });
-      const result = await uploadAudio(audio, delivery);
+      const result = mediaOffloadEnabled()
+        ? await recordCloudflareNarration(delivery, { text, voiceId: voice.id })
+        : await uploadAudio(await synthesizeBookendAudio(text, { voiceId: voice.id }), delivery);
       uploaded.push({ key, publicId: result.public_id, text });
     }
     return { voiceId: voice.id, voiceName: voice.name, renderVersion: NARRATION_BOOKEND_RENDER_VERSION, opening: uploaded[0], closing: uploaded[1] };
@@ -324,8 +326,56 @@ function stripLeadingId3(buffer) {
   return buffer.subarray(Math.min(buffer.length, 10 + size));
 }
 
+async function recordCloudflareNarration(delivery, { text, voiceId, speed = VOICE_SETTINGS.speed, timings = false }) {
+  const key = `${deliveryFolder(delivery.userId, delivery._id)}/narration/${crypto.randomUUID()}`;
+  const delays = [1000, 3000, 6000];
+  for (let attempt = 0; ; attempt += 1) {
+    try { return await mediaWorkerRequest('narration', { key, text, voiceId, speed, timings }, { timeoutMs: 5 * 60 * 1000 }); }
+    catch (error) {
+      if (attempt >= delays.length || error.code !== 'NARRATION_REQUEST_FAILED' || error.status !== 503) throw error;
+      await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+    }
+  }
+}
+
+async function generateCloudflareNarration(delivery, { voice, speed, maxSegmentDuration, spokenTexts }) {
+  const approved = captionSegments(delivery);
+  const segments = approved.map(segment => ({ ...segment, text: spokenTexts.get(String(segment.assetIds[0])) || segment.text }));
+  const measuredSegments = [];
+  const chunkKeys = [];
+  let offset = 0;
+  let completedKey;
+  try {
+    for (const chunk of splitNarration(segments)) {
+      const audio = await recordCloudflareNarration(delivery, { text: narrationChunkText(chunk), voiceId: voice.id, speed, timings: true });
+      chunkKeys.push(audio.key);
+      const timing = { words: audio.words, duration: audio.duration };
+      measuredSegments.push(...timedSegments(chunk, timing.words, timing.duration).map(segment => ({ ...segment, startSec: Number((segment.startSec + offset).toFixed(3)), endSec: Number((segment.endSec + offset).toFixed(3)) })));
+      offset += Math.max(Number(timing.words.at(-1)?.end) || 0, Number(timing.duration) || 0);
+    }
+    const tooLong = maxSegmentDuration > 0 ? measuredSegments.filter(segment => segment.endSec - segment.startSec > maxSegmentDuration) : [];
+    if (tooLong.length) throw Object.assign(new Error('Veylo could not finish fitting the spoken captions. Retry the voice, or continue with the written captions.'), {
+      code: 'NARRATION_CAPTION_TOO_LONG', overlongSegments: tooLong.map(segment => ({ assetId: String(segment.assetIds[0]), text: segment.text, duration: segment.endSec - segment.startSec }))
+    });
+    const key = `${deliveryFolder(delivery.userId, delivery._id)}/narration/${crypto.randomUUID()}`;
+    const uploaded = await mediaWorkerRequest('join-narration', { key, keys: chunkKeys }, { timeoutMs: 5 * 60 * 1000 });
+    completedKey = uploaded.key;
+    return {
+      publicId: uploaded.key, resourceType: 'video', format: 'mp3', bytes: uploaded.bytes,
+      contentHash: uploaded.etag, hashAlgorithm: 'r2-etag', hashVerifiedAt: new Date(), duration: Math.max(1, offset),
+      transcript: narrationChunkText(segments), voiceId: voice.id, voiceName: voice.name, provider: 'Deepgram Flux', modelId: voice.id,
+      renderVersion: NARRATION_RENDER_VERSION, settings: { ...VOICE_SETTINGS, speed }, captionsRead: true,
+      captionsAdapted: segments.some((segment, index) => segment.text !== approved[index].text), approvedAt: new Date(),
+      segments: measuredSegments.map((segment, index) => ({ ...segment, text: approved[index].text, spokenText: segment.text }))
+    };
+  } finally {
+    await Promise.all(chunkKeys.filter(key => key !== completedKey).map(key => removeDeliveryAudio(key).catch(() => {})));
+  }
+}
+
 export async function generateNarration(delivery, { voiceId = DEFAULT_NARRATION_VOICE_ID, speed = VOICE_SETTINGS.speed, maxSegmentDuration = 0, spokenTexts = new Map() } = {}) {
   const voice = requiredVoice(voiceId);
+  if (mediaOffloadEnabled()) return generateCloudflareNarration(delivery, { voice, speed, maxSegmentDuration, spokenTexts });
   const apiKey = String(process.env.DEEPGRAM_API_KEY || '').trim();
   if (!apiKey) throw Object.assign(new Error('Deepgram narration is not configured.'), { code: 'NARRATION_NOT_CONFIGURED' });
 

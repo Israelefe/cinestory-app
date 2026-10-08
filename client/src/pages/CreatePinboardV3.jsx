@@ -1,6 +1,7 @@
 import { useAssistantWorkflow } from '../components/AssistantContext.jsx';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { deliveryPreparationMessage } from '../utils/deliveryPreparation.js';
+import { pollDeliveryProgress } from '../utils/deliveryProgress.js';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { ArrowLeft, ArrowRight, BadgeCheck, Check, ChevronDown, ChevronUp, CircleHelp, Clock3, Copy, Download, Eye, Grid2X2, Image, LoaderCircle, LockKeyhole, MessageCircle, Music2, Palette, Pause, Play, RefreshCw, Trash2, Upload, X } from 'lucide-react';
@@ -186,16 +187,20 @@ export default function CreatePinboardV3({ user, initialDelivery }) {
   useEffect(() => {
     if (!draft?._id || stage !== 'preparing') return undefined;
     let active = true;
+    let polling = false;
     const poll = async () => {
+      if (polling) return;
+      polling = true;
       try {
-        const { data } = await api.get('/v1/deliveries/' + draft._id);
+        const next = await pollDeliveryProgress(draft._id);
         if (!active) return;
-        const next = data.data; setDraft(next); setJob(next.generationJob || null);
+        setDraft(current => next.progressOnly ? { ...current, status: next.status, generationJob: next.generationJob } : next); setJob(next.generationJob || null);
         if (next.generationJob?.status === 'failed') { setError(next.generationJob.errorMessage || 'The photo analysis did not finish. Retry it or use a standard board.'); return; }
         if (next.v3?.step === 'pinboard' && next.pinboard?.layouts?.length) {
           setLayouts(next.pinboard.layouts); setSelectedLayoutId(next.pinboard.selectedLayoutId || 'balanced'); setMoments(next.pinboard.moments || []); setPalette(resolvedGridboardPalette(next.pinboard.palette, next.assets || [])); setTypography(next.pinboard.typography || { display: 'Cormorant Garamond', body: 'Outfit' }); setGrid(next.pinboard.grid || { mobileColumns: 2, tabletColumns: 3, desktopColumns: 4, gap: 'regular' }); setAnimation(next.pinboard.animation || 'soft-fade'); setTitle(next.pinboard.title || next.title || ''); setDescription(next.pinboard.description || ''); setBoardReady(true); setUseStandardBoard(next.pinboard.analysisStatus === 'standard'); setStage('design');
         }
       } catch (failure) { if (active) setError(errorText(failure)); }
+      finally { polling = false; }
     };
     poll(); const timer = window.setInterval(poll, 2300);
     return () => { active = false; window.clearInterval(timer); };

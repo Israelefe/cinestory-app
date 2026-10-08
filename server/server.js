@@ -17,6 +17,7 @@ import supportRoutes from './src/routes/support.routes.js';
 import volumeRoutes from './src/routes/volume.routes.js';
 import analyticsRoutes from './src/routes/analytics.routes.js';
 import assistantRoutes from './src/routes/assistant.routes.js';
+import mediaRoutes from './src/routes/media.routes.js';
 import { paystackWebhook } from './src/controllers/billing.controller.js';
 import { resolveEdgeClientIp } from './src/middleware/clientIp.middleware.js';
 import { checkR2Connection } from './src/services/r2.service.js';
@@ -112,6 +113,7 @@ app.use('/api/v1/support', supportRoutes);
 app.use('/api/v1/volume-jobs', volumeRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/assistant', assistantRoutes);
+app.use('/api/v1/media', mediaRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/admin/content-studio', adminAuthMiddleware, requireAdminRoles('superadmin', 'operations', 'admin'), contentStudioRoutes);
 

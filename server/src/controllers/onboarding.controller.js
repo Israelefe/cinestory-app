@@ -4,8 +4,9 @@ import { isStudioNameDuplicate, studioNameSchema, studioNameTaken } from '../uti
 import { studioNameAvailable, studioNameUnavailable } from '../services/studioName.service.js';
 import User from '../models/User.js';
 import { publicUser } from '../utils/auth.js';
-import { deleteR2Object, deleteR2Prefix, prepareR2Image, putR2Object, r2Configured } from '../services/r2.service.js';
+import { createR2Upload, deleteR2Object, deleteR2Prefix, headR2Object, prepareR2Image, putR2Object, r2Configured, verifyUploadToken } from '../services/r2.service.js';
 import { signedImageUrl } from '../services/deliveryMedia.service.js';
+import { mediaOffloadEnabled } from '../services/cloudflareMedia.service.js';
 import { STUDIO_NAME_CHANGE_COOLDOWN_MS, isoDate, nextChangeAt } from '../constants/profilePolicy.js';
 
 const specialties = ['Portraits', 'Weddings', 'Birthdays', 'Fashion and editorial', 'Commercial and branding', 'Maternity', 'Graduation', 'Events', 'Other'];
@@ -115,6 +116,7 @@ function isSupportedImage(file) {
 
 export async function uploadStudioLogo(req, res) {
   try {
+    if (mediaOffloadEnabled()) return res.status(409).json({ success: false, message: 'Refresh this page to continue uploading your profile image.' });
     if (!isSupportedImage(req.file)) return res.status(400).json({ success: false, message: 'Choose a JPEG, PNG or WebP image.' });
     if (!r2Configured()) return res.status(503).json({ success: false, code: 'UPLOAD_CONFIGURATION_ERROR', message: 'Veylo could not connect to image storage. Please try again shortly.' });
     const user = await User.findById(req.user.id);
@@ -137,6 +139,44 @@ export async function uploadStudioLogo(req, res) {
     const unavailable = error.code === 'R2_NOT_CONFIGURED';
     res.status(unavailable ? 503 : 502).json({ success: false, code: unavailable ? 'UPLOAD_CONFIGURATION_ERROR' : 'IMAGE_UPLOAD_FAILED', message: unavailable ? 'Veylo could not connect to image storage. Please try again shortly.' : 'That image could not be processed. Try a different JPEG, PNG or WebP file.' });
   }
+}
+
+export async function signStudioLogoUpload(req, res) {
+  try {
+    const parsed = z.object({ contentType: z.enum(['image/jpeg', 'image/png', 'image/webp']) }).strict().safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ success: false, message: 'Choose a JPEG, PNG or WebP image.' });
+    if (!await User.exists({ _id: req.user.id })) return res.status(404).json({ success: false, message: 'Account not found.' });
+    const key = `veylo/studios/${req.user.id}/profile/${crypto.randomUUID()}`;
+    res.json({ success: true, data: createR2Upload({ key, userId: req.user.id, contentType: parsed.data.contentType, resourceType: 'image', maxBytes: 5 * 1024 * 1024 }) });
+  } catch (error) { res.status(error.status || 503).json({ success: false, message: 'We could not prepare your profile image upload. Please retry.' }); }
+}
+
+export async function confirmStudioLogoUpload(req, res) {
+  try {
+    const parsed = z.object({ objectKey: z.string().min(8).max(900), uploadToken: z.string().min(20).max(4000), contentType: z.string().optional() }).strict().safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ success: false, message: 'That upload could not be checked.' });
+    const key = parsed.data.objectKey;
+    if (!key.startsWith(`veylo/studios/${req.user.id}/profile/`)) return res.status(403).json({ success: false, message: 'That image does not belong to your account.' });
+    const claims = verifyUploadToken(parsed.data.uploadToken, { key, userId: req.user.id, resourceType: 'image' });
+    const head = await headR2Object(key);
+    if (head.bytes < 1 || head.bytes > Math.min(5 * 1024 * 1024, claims.maxBytes)) {
+      await deleteR2Object(key).catch(() => {});
+      return res.status(413).json({ success: false, message: 'Choose a profile image that is 5 MB or smaller.' });
+    }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(head.contentType) || head.contentType !== claims.contentType) return res.status(400).json({ success: false, message: 'Choose a JPEG, PNG or WebP image.' });
+    await prepareR2Image(key, { maxBytes: 5 * 1024 * 1024 });
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
+    const oldKeys = [...new Set([user.studio?.logoPublicId, user.avatarPublicId].filter(Boolean))];
+    const publicUrl = `/api/v1/onboarding/public-logo/${user._id}`;
+    user.studio.logoPublicId = key;
+    user.studio.logoUrl = publicUrl;
+    user.avatarPublicId = key;
+    user.avatar = `/api/v1/onboarding/public-avatar/${user._id}`;
+    await user.save();
+    for (const oldKey of oldKeys) if (oldKey !== key) void Promise.all([deleteR2Prefix(`${oldKey}.__veylo/`), deleteR2Object(oldKey)]).catch(() => {});
+    res.json({ success: true, user: publicUser(user), url: publicUrl });
+  } catch (error) { res.status(error.status || 502).json({ success: false, message: error.status && error.status !== 401 ? error.message : 'We could not save your profile image. Please retry.' }); }
 }
 
 export async function getPublicStudioLogo(req, res) {

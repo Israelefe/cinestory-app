@@ -88,9 +88,10 @@ export async function processProject(project, parentSignal) {
       const cached = version.generatedAssets.find(asset => asset.prompt === scene.generatedImagePrompt);
       if (cached) { scene.assetIds = [cached.id]; continue; }
       update(`Creating supporting image for scene ${i + 1}`, 28 + i / version.plan.scenes.length * 15);
-      const image = await generateImage(scene.generatedImagePrompt, signal);
+      const destination = { projectId: project._id, key: `${version.id}/images/${scene.id}` };
+      const image = await generateImage(scene.generatedImagePrompt, signal, destination);
       const id = `generated-${crypto.randomUUID()}`;
-      const uploaded = await uploadMedia(image.buffer, { projectId: project._id, key: `${version.id}/images/${scene.id}` });
+      const uploaded = image.public_id ? image : await uploadMedia(image.buffer, destination);
       version.generatedAssets.push({ id, publicId: uploaded.public_id, width: image.width, height: image.height, kind: 'generated', prompt: scene.generatedImagePrompt });
       scene.assetIds = [id];
       await checkpoint();
@@ -106,18 +107,18 @@ export async function processProject(project, parentSignal) {
           let record = version.voice[scene.id];
           let audio;
           if (!record) {
-            audio = await narrate(scene.narration, signal);
-            const uploaded = await uploadMedia(audio, { projectId: project._id, key: `${version.id}/voice/${scene.id}`, resourceType: 'video', format: 'mp3' });
+            audio = await narrate(scene.narration, signal, { projectId: project._id, key: `${version.id}/voice/${scene.id}` });
+            const uploaded = audio.public_id ? audio : await uploadMedia(audio, { projectId: project._id, key: `${version.id}/voice/${scene.id}`, resourceType: 'video', format: 'mp3' });
             const wordCount = scene.narration.trim().split(/\s+/).length;
             const estDuration = Math.max(1.5, wordCount / 2.2);
             const duration = uploaded.duration || estDuration;
-            record = { publicId: uploaded.public_id, localPath: uploaded.filePath, duration, words: [] };
+            record = { publicId: uploaded.public_id, localPath: uploaded.filePath, duration, words: (uploaded.words || []).map(word => ({ text: word.word, start: word.start, end: word.end })) };
             version.voice[scene.id] = record;
             await checkpoint();
           }
           if (!record.words?.length) {
             try {
-              if (audio) {
+              if (Buffer.isBuffer(audio)) {
                 record.words = await wordTimings(audio, signal);
                 await checkpoint();
               }

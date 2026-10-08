@@ -1,6 +1,7 @@
 import { useAssistantWorkflow } from '../components/AssistantContext.jsx';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { deliveryPreparationMessage } from '../utils/deliveryPreparation.js';
+import { pollDeliveryProgress } from '../utils/deliveryProgress.js';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import {
@@ -256,12 +257,14 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
   useEffect(() => {
     if (!draft?._id || stage !== 'captions' || !captionPreparing) return undefined;
     let active = true;
+    let polling = false;
     const poll = async () => {
+      if (polling) return;
+      polling = true;
       try {
-        const { data } = await api.get('/v1/deliveries/' + draft._id);
+        const next = await pollDeliveryProgress(draft._id);
         if (!active) return;
-        const next = data.data;
-        setDraft(next);
+        setDraft(current => next.progressOnly ? { ...current, status: next.status, generationJob: next.generationJob } : next);
         setCaptionJob(next.generationJob || null);
         if (next.generationJob?.status === 'failed') {
           setCaptionPreparing(false);
@@ -274,7 +277,7 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
         }
       } catch (failure) {
         if (active) setError(errorText(failure));
-      }
+      } finally { polling = false; }
     };
     void poll();
     const timer = window.setInterval(poll, 2500);

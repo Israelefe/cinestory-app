@@ -12,6 +12,7 @@ import {
   streamStoryMedia
 } from '../controllers/story.controller.js';
 import { authMiddleware } from './auth.routes.js';
+import { mediaOffloadEnabled, signedRemoteAudioUrl } from '../services/cloudflareMedia.service.js';
 
 const router = express.Router();
 
@@ -30,6 +31,10 @@ router.get('/proxy/audio-stream', publicMediaLimit, async (req, res) => {
     try { target = new URL(String(url)); } catch { return res.status(400).send('Audio URL is not valid'); }
     const allowedHosts = new Set(['cdn.pixabay.com', 'pixabay.com', 'www.pixabay.com']);
     if (target.protocol !== 'https:' || !allowedHosts.has(target.hostname.toLowerCase())) return res.status(400).send('Audio source is not approved');
+    if (mediaOffloadEnabled()) {
+      res.set('Cache-Control', 'private, no-store');
+      return res.redirect(302, signedRemoteAudioUrl(target.toString()));
+    }
     const response = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',

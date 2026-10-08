@@ -697,7 +697,7 @@ export async function getPortfolioMedia(req, res) {
     if (!item || publicPage && !visible) return res.status(404).end();
     const owned = await availableAssets(user._id, [item.publicId], [item.publicId]);
     if (!owned.has(item.publicId)) return res.status(404).end();
-    await streamPortfolioMedia(item.publicId, req.query.v, res);
+    await streamPortfolioMedia(item.publicId, req.query.v, res, { access: publicPage ? { type: 'portfolio', portfolioId: String(portfolio._id) } : undefined });
   } catch (error) {
     report(res, error, 'Photograph unavailable.');
   }

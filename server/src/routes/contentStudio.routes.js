@@ -13,6 +13,9 @@ import { presentProject } from '../contentStudio/presentation.js';
 import { allowance } from '../contentStudio/allowance.js';
 import path from 'node:path';
 import fs from 'node:fs';
+import { z } from 'zod';
+import { createR2Upload, headR2Object, verifyUploadToken } from '../services/r2.service.js';
+import { mediaOffloadEnabled, mediaWorkerRequest } from '../services/cloudflareMedia.service.js';
 
 const router = express.Router();
 const upload = multer({
@@ -28,6 +31,7 @@ const upload = multer({
   }
 });
 const limited = rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: 'draft-7', legacyHeaders: false, keyGenerator: req => String(req.admin._id), message: { message: 'Please wait a minute before starting more content actions.' } });
+const uploadLimited = rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: 'draft-7', legacyHeaders: false, keyGenerator: req => String(req.admin._id), message: { message: 'Please wait a minute before uploading more files.' } });
 const action = fn => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
 const owner = req => ({ ownerId: req.admin._id });
 const idle = { 'job.status': { $nin: BUSY } };
@@ -73,10 +77,47 @@ router.get('/media/:projectId/:key(*)', (req, res) => {
   res.sendFile(filePath);
 });
 
-router.post('/projects/:id/assets', limited, (req, res, next) => upload.single('media')(req, res, error => {
+const contentTypes = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime', 'audio/mpeg', 'audio/wav', 'audio/mp3'];
+router.post('/projects/:id/assets/sign', uploadLimited, action(async (req, res) => {
+  const project = await getProject(req);
+  if (!mediaOffloadEnabled()) return res.json({ directUpload: false });
+  if (BUSY.includes(project.job?.status) || project.assets.length >= 24) throw studioError('Wait for the current job or remove an asset before uploading.', 409);
+  const parsed = z.object({ contentType: z.enum(contentTypes) }).strict().parse(req.body);
+  const key = `veylo/content-studio/${project._id}/assets/${crypto.randomUUID()}`;
+  const resourceType = parsed.contentType.startsWith('image/') ? 'image' : parsed.contentType.startsWith('audio/') ? 'audio' : 'video';
+  res.json({ directUpload: true, upload: createR2Upload({ key, userId: req.admin._id, resourceType, contentType: parsed.contentType, maxBytes: 100 * 1024 * 1024 }) });
+}));
+router.post('/projects/:id/assets/confirm', uploadLimited, action(async (req, res) => {
+  if (!mediaOffloadEnabled()) throw studioError('Direct media uploads are not enabled.', 503);
+  await getProject(req);
+  const data = z.object({ objectKey: z.string().min(8).max(900), uploadToken: z.string().min(20).max(4000), name: z.string().max(180), kind: z.enum(['photo', 'screenshot', 'video', 'music']), slotId: z.string().max(100).optional() }).strict().parse(req.body);
+  const prefix = `veylo/content-studio/${req.params.id}/assets/`;
+  if (!data.objectKey.startsWith(prefix) || !/^[a-f0-9-]{36}$/.test(data.objectKey.slice(prefix.length))) throw studioError('This upload does not belong to this campaign.', 403);
+  const claims = verifyUploadToken(data.uploadToken, { key: data.objectKey, userId: req.admin._id });
+  if (!contentTypes.includes(claims.contentType) || !['image', 'audio', 'video'].includes(claims.resourceType)) throw studioError('Choose a supported photo, video, or music file.');
+  const head = await headR2Object(data.objectKey);
+  if (!head.bytes || head.bytes > Math.min(100 * 1024 * 1024, claims.maxBytes) || head.contentType !== claims.contentType) throw studioError('The uploaded file did not match the approved type or size.');
+  const token = crypto.randomUUID();
+  const project = await ContentProject.findOneAndUpdate({ _id: req.params.id, ...owner(req), ...idle, ...unlocked(), 'assets.23': { $exists: false }, 'assets.publicId': { $ne: data.objectKey } }, { $set: { editLock: { token, expiresAt: new Date(Date.now() + 600_000) } } }, { new: true }).lean();
+  if (!project) throw studioError('Wait for the current upload or job to finish. This file may already be added.', 409);
+  try {
+    const info = await mediaWorkerRequest('inspect', { key: data.objectKey, maxBytes: 100 * 1024 * 1024, resourceType: claims.resourceType });
+    if (claims.resourceType === 'image' && (info.width < 320 || info.height < 320 || info.width * info.height > 40_000_000)) throw studioError('Use a photo at least 320 pixels wide and tall, with no more than 40 million pixels.');
+    const kind = claims.resourceType === 'video' ? 'video' : claims.resourceType === 'audio' ? 'music' : data.kind === 'screenshot' ? 'screenshot' : 'photo';
+    const asset = { id: data.objectKey.slice(prefix.length), publicId: data.objectKey, kind, slotId: data.slotId, name: data.name.replace(/[<>\u0000-\u001f]/g, '').slice(0, 120), width: info.width || 1080, height: info.height || 1920, bytes: head.bytes };
+    const result = await ContentProject.findOneAndUpdate({ _id: project._id, 'editLock.token': token }, { $push: { assets: asset }, $unset: { editLock: 1 } }, { new: true }).lean();
+    if (!result) throw studioError('The upload lock expired. Please retry.', 409);
+    res.status(201).json({ project: presentProject(result) });
+  } finally { await ContentProject.updateOne({ _id: project._id, 'editLock.token': token }, { $unset: { editLock: 1 } }); }
+}));
+
+router.post('/projects/:id/assets', limited, (req, res, next) => {
+  if (mediaOffloadEnabled()) return res.status(409).json({ message: 'Refresh this page to continue uploading campaign files.' });
+  return upload.single('media')(req, res, error => {
   if (error) return next(studioError(error.code === 'LIMIT_FILE_SIZE' ? 'Files must be 100 MB or smaller.' : 'Upload one supported photo, video, or audio file at a time.'));
   next();
-}), action(async (req, res) => {
+});
+}, action(async (req, res) => {
   await getProject(req);
   if (!req.file) throw studioError('Choose a valid photo (JPEG, PNG, WebP), video clip (MP4, WebM), or music file.');
   const mime = req.file.mimetype;

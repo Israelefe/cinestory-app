@@ -4,6 +4,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { ArrowLeft, ArrowRight, Check, LogOut, ChevronDown, Clapperboard, Copy, Download, Film, Image as ImageIcon, Layers3, Loader2, Mic2, Music2, Plus, RefreshCw, Settings2, Upload, Volume2, X, AlertCircle, Camera, Monitor, FolderOpen } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api from '../content-studio/api.js';
+import { uploadR2File } from '../utils/r2Upload.js';
 import '../content-studio/studio.css';
 
 const Preview = lazy(() => import('../content-studio/Preview.jsx'));
@@ -155,7 +156,14 @@ export default function ContentStudioPage({ admin, onLogout }) {
         form.append('kind', kind);
         if (currentSlot) form.append('slotId', currentSlot);
         setUploadProgress(`${index + 1} of ${items.length}`);
-        const { data } = await api.post(`${BASE}/projects/${project.id}/assets`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 });
+        const signed = await api.post(`${BASE}/projects/${project.id}/assets/sign`, { contentType: file.type });
+        let response;
+        if (signed.data.directUpload) {
+          const upload = signed.data.upload;
+          await uploadR2File(upload, file);
+          response = await api.post(`${BASE}/projects/${project.id}/assets/confirm`, { objectKey: upload.objectKey, uploadToken: upload.uploadToken, name: file.name, kind, ...(currentSlot ? { slotId: currentSlot } : {}) }, { timeout: 180000 });
+        } else response = await api.post(`${BASE}/projects/${project.id}/assets`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 });
+        const { data } = response;
         applyProject(data.project);
       }
       setUploadProgress('');

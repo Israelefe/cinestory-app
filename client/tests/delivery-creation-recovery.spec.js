@@ -75,13 +75,14 @@ test('oversized or unsupported music is rejected before requesting an upload sig
 test('a lost photo confirmation recovers the saved asset without a second transfer or confirmation', async ({ page }) => {
   await page.goto('/');
   let transfers = 0, confirmations = 0, recoveries = 0;
-  await page.route('https://api.cloudinary.com/v1_1/offline/image/upload', route => { transfers += 1; return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ public_id: 'private/photo', version: 1, signature: 'offline-signature' }) }); });
+  const signature = { uploadUrl: 'https://offline.r2.cloudflarestorage.com/veylo/photo', objectKey: 'veylo/users/owner/deliveries/draft/photo', uploadToken: 'offline-upload-token', contentType: 'image/jpeg', maxConcurrentUploads: 6, uploadExpiresAt: new Date(Date.now() + 20 * 60 * 1000).toISOString() };
+  await page.route('https://offline.r2.cloudflarestorage.com/**', route => { transfers += 1; return route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*' } }); });
   await page.route('**/api/v1/deliveries/*/uploads/*', route => {
     const path = new URL(route.request().url()).pathname;
     const reply = data => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data }) });
-    if (path.endsWith('/sign')) return reply({ cloudName: 'offline', apiKey: 'offline-key', timestamp: 1, signature: 'offline-signature' });
+    if (path.endsWith('/sign')) return reply(signature);
     if (path.endsWith('/confirm')) { confirmations += 1; return route.abort('failed'); }
-    if (path.endsWith('/recover')) { recoveries += 1; return reply({ asset: { assetId: 'saved-photo', publicId: 'private/photo', url: '/veylo/web/demo-lora-1-960.webp' } }); }
+    if (path.endsWith('/recover')) { recoveries += 1; return reply(confirmations ? { asset: { assetId: 'saved-photo', publicId: signature.objectKey, url: '/veylo/web/demo-lora-1-960.webp' } } : { uploaded: null, signature }); }
     return route.abort();
   });
   const result = await page.evaluate(async () => {

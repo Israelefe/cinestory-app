@@ -263,8 +263,7 @@ export async function streamStoryMedia(req, res) {
     }
     const photo = (story.photos || []).find(item => String(item.id) === String(req.params.photoId));
     if (!photo?.storageKey) return res.status(404).end();
-    const key = req.params.kind === 'thumbnail' ? imageVariantKey(photo.storageKey, 'thumb') : imageVariantKey(photo.storageKey, '1600');
-    return res.redirect(302, presignedR2Get(key, { expiresIn: 6 * 60 * 60 }));
+    return res.redirect(302, signedImageUrl(photo.storageKey, { thumbnail: req.params.kind === 'thumbnail' }));
   } catch { return res.status(502).end(); }
 }
 

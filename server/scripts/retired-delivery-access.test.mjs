@@ -6,21 +6,25 @@ import AnalyticsEvent from '../src/models/AnalyticsEvent.js';
 import { getPhotoDownload, getGalleryDownload, streamPhotoDownload, updateDownloadSettings } from '../src/controllers/delivery.controller.js';
 import { v3Access } from '../src/controllers/deliveryV3.controller.js';
 import { cleanDeliveryAccess } from '../src/utils/deliveryAccess.js';
-import { cloudinary, safeProviderError } from '../src/services/cloudinary.service.js';
+import { safeProviderError } from '../src/services/cloudinary.service.js';
+import { verifyMediaWorkerToken } from '../src/services/cloudflareMedia.service.js';
 import { removeDeliveryMedia } from '../src/services/deliveryMedia.service.js';
 
-process.env.CLOUDINARY_CLOUD_NAME = 'veylo-test';
-process.env.CLOUDINARY_API_KEY = 'test-key';
-process.env.CLOUDINARY_API_SECRET = 'test-secret';
 const id = '507f1f77bcf86cd799439011';
 const ownerId = '507f1f77bcf86cd799439012';
 const retired = { downloadsLocked: true, downloadLockNote: 'Old lock', watermarkEnabled: true, watermarkText: 'Old watermark' };
-test.beforeEach(t => t.mock.method(AnalyticsEvent, 'create', async () => ({})));
+test.beforeEach(t => {
+  const settings = { R2_MEDIA_OFFLOAD_ENABLED: 'true', R2_IMAGE_WORKER_URL: 'https://media.example.test', R2_IMAGE_WORKER_SECRET: 'offline-media-signing-key-with-at-least-32-characters', R2_ACCOUNT_ID: 'offline', R2_ACCESS_KEY_ID: 'offline', R2_SECRET_ACCESS_KEY: 'offline', R2_BUCKET_NAME: 'veylo' };
+  const previous = Object.fromEntries(Object.keys(settings).map(name => [name, process.env[name]]));
+  Object.assign(process.env, settings);
+  t.after(() => { for (const [name, value] of Object.entries(previous)) { if (value === undefined) delete process.env[name]; else process.env[name] = value; } });
+  t.mock.method(AnalyticsEvent, 'create', async () => ({}));
+});
 function document() {
-  return { _id: id, publicId: 'same-client-link', userId: { _id: ownerId, name: 'Amara' }, status: 'published', access: { ...retired, allowIndividualDownloads: true, allowDownloadAll: true }, assets: [{ assetId: 'one', publicId: 'private-shoot/one' }, { assetId: 'two', publicId: 'private-shoot/two' }], markModified() {}, async save() { this.saved = true; } };
+  return { _id: id, publicId: 'same-client-link', userId: { _id: ownerId, name: 'Amara' }, status: 'published', access: { ...retired, allowIndividualDownloads: true, allowDownloadAll: true }, assets: [{ assetId: 'one', publicId: `veylo/users/${ownerId}/deliveries/${id}/one` }, { assetId: 'two', publicId: `veylo/users/${ownerId}/deliveries/${id}/two` }], markModified() {}, async save() { this.saved = true; } };
 }
 function response() {
-  return { statusCode: 200, headers: {}, chunks: [], cookie() {}, setHeader(key, value) { this.headers[key] = value; }, write(chunk) { this.chunks.push(chunk); return true; }, end() { this.ended = true; }, status(value) { this.statusCode = value; return this; }, json(value) { this.body = value; return this; } };
+  return { statusCode: 200, headers: {}, chunks: [], cookie() {}, setHeader(key, value) { this.headers[key] = value; }, write(chunk) { this.chunks.push(chunk); return true; }, end() { this.ended = true; }, redirect(code, url) { this.statusCode = code; this.location = url; return this; }, status(value) { this.statusCode = value; return this; }, json(value) { this.body = value; return this; } };
 }
 function stubFind(t, doc, check = () => {}) {
   t.mock.method(Delivery, 'findOne', query => {
@@ -49,26 +53,35 @@ for (const format of ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'cha
     const res = response();
     await getPhotoDownload(request(), res);
     assert.equal(res.statusCode, 200);
-    assert.match(res.body.data.url, /image\/authenticated\//);
+    assert.match(res.body.data.url, /^https:\/\/media\.example\.test\/v2\/file\//);
+    const claims = verifyMediaWorkerToken(new URL(res.body.data.url).pathname.split('/').at(-1));
+    assert.equal(claims.key, doc.assets[0].publicId);
+    assert.equal(claims.access.deliveryId, id);
+    assert.equal(claims.access.mode, 'download');
     assert.doesNotMatch(res.body.data.url, /\/previews\/|\/deliveries\/media\/|l_text|c_limit/);
   });
 }
 
-test('legacy flags do not block the original download stream or complete gallery', async t => {
+test('legacy flags do not block direct original downloads or complete galleries', async t => {
   const doc = document();
   stubFind(t, doc);
   t.mock.method(Delivery, 'updateOne', async () => ({ modifiedCount: 1 }));
-  const original = Buffer.from('offline original photo');
-  t.mock.method(globalThis, 'fetch', async () => new Response(original, { headers: { 'content-type': 'image/jpeg' } }));
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(String(url), 'https://media.example.test/v2/rpc/archive');
+    assert.equal(options.method, 'POST');
+    assert.deepEqual(JSON.parse(options.body).files, doc.assets.map(asset => ({ key: asset.publicId, name: asset.assetId })));
+    return Response.json({ key: 'veylo/system/media-manifests/offline' });
+  });
   const stream = response();
   await streamPhotoDownload(request(), stream);
-  assert.equal(stream.statusCode, 200);
-  assert.equal(stream.ended, true);
-  assert.deepEqual(Buffer.concat(stream.chunks), original);
+  assert.equal(stream.statusCode, 302);
+  assert.match(stream.location, /^https:\/\/media\.example\.test\/v2\/file\//);
+  assert.equal(stream.chunks.length, 0);
+  assert.equal(globalThis.fetch.mock.callCount(), 0, 'Render must not fetch original bytes');
   const gallery = response();
   await getGalleryDownload(request(), gallery);
   assert.equal(gallery.statusCode, 200);
-  assert.ok(gallery.body.data.url);
+  assert.match(gallery.body.data.url, /^https:\/\/media\.example\.test\/v2\/archive\//);
 });
 
 test('PIN, expiry and revoked access still protect photos after feature removal', async t => {
@@ -143,10 +156,19 @@ test('V3 accepts old drafts without restoring retired settings; unrelated fields
   assert.equal(cleanDeliveryAccess(input).allowIndividualDownloads, true);
 });
 
-test('delivery cleanup ignores nested missing-folder errors and never exposes request authentication', async t => {
-  t.mock.method(cloudinary.api, 'delete_resources_by_prefix', async () => ({}));
-  t.mock.method(cloudinary.api, 'delete_folder', async () => { throw { error: { http_code: 404 }, request_options: { auth: 'never-log-this' } }; });
-  await removeDeliveryMedia(ownerId, id);
-  assert.equal(cloudinary.api.delete_folder.mock.callCount(), 4);
+test('delivery cleanup only removes its R2 prefix and accepts an already deleted original', async t => {
+  const key = `veylo/users/${ownerId}/deliveries/${id}/one`;
+  t.mock.method(globalThis, 'fetch', async (value, options = {}) => {
+    const url = new URL(value);
+    if (options.method === 'DELETE') {
+      assert.equal(decodeURIComponent(url.pathname), `/veylo/${key}`);
+      return new Response(null, { status: 404 });
+    }
+    assert.equal(url.searchParams.get('list-type'), '2');
+    assert.equal(url.searchParams.get('prefix'), `veylo/users/${ownerId}/deliveries/${id}/`);
+    return new Response(`<ListBucketResult><Contents><Key>${key}</Key><Size>4</Size></Contents><IsTruncated>false</IsTruncated></ListBucketResult>`);
+  });
+  assert.equal(await removeDeliveryMedia(ownerId, id), 1);
+  assert.equal(globalThis.fetch.mock.callCount(), 2);
   assert.deepEqual(safeProviderError({ error: { http_code: 503 }, request_options: { auth: 'never-log-this' } }), { status: 503, code: 'PROVIDER_REQUEST_FAILED' });
 });

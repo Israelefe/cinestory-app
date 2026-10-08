@@ -6,6 +6,7 @@ import { consumeUnits } from './allowance.js';
 import { mediaUrl, studioError, fetchGeneratedImage } from './media.js';
 import { anyModelProviderConfigured, DEFAULT_ALIBABA_FALLBACK_MODEL, requestModelCompletion } from '../services/modelProvider.service.js';
 import { r2Configured } from '../services/r2.service.js';
+import { mediaOffloadEnabled, mediaWorkerRequest } from '../services/cloudflareMedia.service.js';
 
 function config() {
   const base = process.env.ALIBABA_BASE_URL || (process.env.ALIBABA_WORKSPACE_ID ? `https://${process.env.ALIBABA_WORKSPACE_ID}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1` : '');
@@ -162,7 +163,7 @@ Caption platform keys must be instagram, tiktok, youtube. Max eight hashtags. CT
   return result;
 }
 
-export async function generateImage(prompt, signal) {
+export async function generateImage(prompt, signal, destination) {
   const provider = config();
   await consumeUnits(8);
   const response = await fetch(`${provider.base}/images/generations`, {
@@ -172,10 +173,16 @@ export async function generateImage(prompt, signal) {
   });
   if (!response.ok) throw studioError(`Image generation did not complete (${response.status}). Check model access and region, then retry.`, 502);
   const payload = await response.json();
-  return fetchGeneratedImage(payload?.data?.[0]?.url, AbortSignal.any([signal, AbortSignal.timeout(60_000)]));
+  return fetchGeneratedImage(payload?.data?.[0]?.url, AbortSignal.any([signal, AbortSignal.timeout(60_000)]), destination);
 }
 
-export async function narrate(text, signal) {
+export async function narrate(text, signal, destination) {
+  if (mediaOffloadEnabled() && process.env.CONTENT_STORAGE_LOCAL !== 'true') {
+    signal?.throwIfAborted();
+    if (!destination?.projectId || !destination?.key) throw studioError('The campaign recording destination is missing.', 500);
+    await consumeUnits(2);
+    return mediaWorkerRequest('narration', { key: `veylo/content-studio/${destination.projectId}/${destination.key}`, text, voiceId: process.env.CONTENT_VOICE_MODEL || 'flux-hannah-en', speed: 1, timings: true }, { timeoutMs: 300_000, signal });
+  }
   if (!process.env.DEEPGRAM_API_KEY) throw studioError('Configure Deepgram to create voice-over, or turn voice-over off.', 503);
   await consumeUnits(1);
   const query = new URLSearchParams({ model: process.env.CONTENT_VOICE_MODEL || 'flux-hannah-en', encoding: 'mp3', speed: '1', expressivity: '0' });

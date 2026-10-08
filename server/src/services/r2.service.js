@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import sharp from 'sharp';
+import { mediaOffloadEnabled, prepareCloudflareImage } from './cloudflareMedia.service.js';
 
 const REGION = 'auto';
 const SERVICE = 's3';
@@ -77,7 +78,7 @@ function r2Path(bucket, key) {
   return `/${encode(bucket)}/${encodeKey(key)}`;
 }
 
-export function presignR2Object(key, { method = 'GET', expiresIn = DEFAULT_DOWNLOAD_SECONDS, contentType = '', downloadFilename = '' } = {}) {
+export function presignR2Object(key, { method = 'GET', expiresIn = DEFAULT_DOWNLOAD_SECONDS, contentType = '', downloadFilename = '', signedHeaders: additionalHeaders = {} } = {}) {
   const settings = config();
   const normalizedKey = String(key || '').replace(/^\/+/, '');
   if (!normalizedKey || normalizedKey.includes('..') || normalizedKey.length > 900) throw Object.assign(new Error('That file could not be prepared.'), { status: 400 });
@@ -87,7 +88,8 @@ export function presignR2Object(key, { method = 'GET', expiresIn = DEFAULT_DOWNL
   const date = amzDate.slice(0, 8);
   const scope = `${date}/${REGION}/${SERVICE}/aws4_request`;
   const host = new URL(settings.endpoint).host;
-  const headers = contentType ? { 'content-type': String(contentType).trim().toLowerCase().replace(/\s+/g, ' ') } : {};
+  const headers = Object.fromEntries(Object.entries(additionalHeaders).map(([name, value]) => [name.toLowerCase(), String(value).trim().replace(/\s+/g, ' ')]));
+  if (contentType) headers['content-type'] = String(contentType).trim().toLowerCase().replace(/\s+/g, ' ');
   const signedHeaders = [...Object.keys(headers), 'host'].sort().join(';');
   const query = new URLSearchParams({
     'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
@@ -107,7 +109,7 @@ export function presignR2Object(key, { method = 'GET', expiresIn = DEFAULT_DOWNL
   const signature = hmac(signingKey(settings.secretAccessKey, date), stringToSign, 'hex');
   query.set('X-Amz-Signature', signature);
   const url = `${settings.endpoint}${path}?${sortedQuery(query)}`;
-  return { url, headers: contentType ? { 'Content-Type': contentType } : {}, expiresAt: new Date(now.getTime() + expires * 1000) };
+  return { url, headers, expiresAt: new Date(now.getTime() + expires * 1000) };
 }
 
 export function createUploadToken({ key, userId, contentType, resourceType = 'image', maxBytes = MAX_IMAGE_BYTES }) {
@@ -282,8 +284,17 @@ export async function deleteR2Prefix(prefix) {
 }
 
 export async function copyR2Object(sourceKey, targetKey, { contentType } = {}) {
-  const source = await getR2ObjectBuffer(sourceKey);
-  return putR2Object(targetKey, source.buffer, { contentType: contentType || source.contentType });
+  const head = await headR2Object(sourceKey);
+  const headers = { 'x-amz-copy-source': r2Path(config().bucket, sourceKey), 'x-amz-copy-source-if-match': `"${head.etag}"` };
+  if (contentType) headers['x-amz-metadata-directive'] = 'REPLACE';
+  const signed = presignR2Object(targetKey, { method: 'PUT', contentType: contentType || '', signedHeaders: headers });
+  let response;
+  try { response = await fetch(signed.url, { method: 'PUT', headers: signed.headers, signal: AbortSignal.timeout(120_000) }); }
+  catch (error) { throw r2NetworkFailure('COPY', error); }
+  const result = await response.text();
+  // S3 can report a copy error inside a 200 response.
+  if (!response.ok || /<Error[\s>]/.test(result) || !/<CopyObjectResult[\s>]/.test(result)) throw Object.assign(new Error('This photograph could not be copied. Please retry.'), { status: 502, code: 'R2_COPY_FAILED' });
+  return { key: targetKey, bytes: head.bytes, etag: xmlValue(result.match(/<ETag>([^<]*)<\/ETag>/)?.[1] || '').replace(/^"|"$/g, '') };
 }
 
 export function imageVariantKey(key, variant) {
@@ -291,6 +302,7 @@ export function imageVariantKey(key, variant) {
 }
 
 export async function prepareR2Image(key, { maxBytes = MAX_IMAGE_BYTES } = {}) {
+  if (mediaOffloadEnabled()) return prepareCloudflareImage(key, { maxBytes });
   const source = await getR2ObjectBuffer(key, { maxBytes });
   const base = sharp(source.buffer, { limitInputPixels: 100_000_000, failOn: 'error' });
   const metadata = await base.metadata().catch(() => { throw Object.assign(new Error('This file is not a readable photograph.'), { status: 400, code: 'INVALID_IMAGE' }); });

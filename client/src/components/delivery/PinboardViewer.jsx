@@ -11,6 +11,7 @@ import { useDialogFocus } from '../useDialogFocus.js';
 import { ImageWaiting, useReadyPhotos } from './PresentationShell.jsx';
 import DeliveryBrandMark from './DeliveryBrandMark.jsx';
 import { deliveryFontStyles } from '../../utils/deliveryTypography.js';
+import { renderStatusCard } from '../../utils/statusCard.js';
 import './PinboardViewer.css';
 import './DeliveryTypography.css';
 
@@ -630,7 +631,8 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
     }
     try {
       const response = await api.post(`/v1/deliveries/public/${delivery.publicId}/pinboard/status-card`, { assetIds: statusSelection }, { headers: accessHeaders(delivery.publicId), responseType: 'blob' });
-      setStatusCard({ blob: response.data, url: URL.createObjectURL(response.data), link: privateLink('', '') });
+      const blob = response.data.type.includes('application/json') ? await renderStatusCard((JSON.parse(await response.data.text())).data) : response.data;
+      setStatusCard({ blob, url: URL.createObjectURL(blob), link: privateLink('', '') });
     } catch (error) {
       const fallback = error?.response?.status === 403 ? 'The photographer has turned off downloads for this gallery.' : 'We could not prepare that Status card. Try again.';
       setMessage(fallback);

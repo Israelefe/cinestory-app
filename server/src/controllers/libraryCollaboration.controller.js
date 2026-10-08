@@ -1,6 +1,5 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { Readable } from 'node:stream';
 import { z } from 'zod';
 import LibraryCollaboration from '../models/LibraryCollaboration.js';
 import StorageAsset from '../models/StorageAsset.js';
@@ -10,6 +9,7 @@ import { confirmStorageUpload, createStorageUploadSignature, removeStorageAsset 
 import { signedImageUrl } from '../services/deliveryMedia.service.js';
 import { randomToken } from '../utils/auth.js';
 import { recordPaidUsage } from '../services/paidUsage.service.js';
+import { mediaOffloadEnabled } from '../services/cloudflareMedia.service.js';
 
 const rawFormats = new Set(['arw', 'cr2', 'cr3', 'dng', 'nef', 'nrw', 'orf', 'rw2', 'raf', 'pef', 'srw', '3fr', 'iiq', 'mos', 'mef', 'mrw', 'rwl', 'x3f']);
 const imageFormats = new Set(['jpg', 'jpeg', 'png', 'webp']);
@@ -267,16 +267,11 @@ export async function submitPublicPreselection(req, res) {
 async function streamMedia(req, res, publicId, options = {}) {
   try {
     const url = signedImageUrl(publicId, options);
-    const upstream = await fetch(url, { signal: AbortSignal.timeout(120_000) });
-    if (!upstream.ok || !upstream.body) return res.status(upstream.status === 404 ? 404 : 502).json({ success: false, message: 'That photograph is temporarily unavailable.' });
-    res.status(200);
     res.set('Cache-Control', 'private, no-store, max-age=0');
     res.set('X-Content-Type-Options', 'nosniff');
     res.set('X-Robots-Tag', 'noindex, nofollow');
-    res.set('Content-Type', upstream.headers.get('content-type') || 'application/octet-stream');
-    const size = upstream.headers.get('content-length');
-    if (size) res.set('Content-Length', size);
-    Readable.fromWeb(upstream.body).on('error', () => res.destroy()).pipe(res);
+    res.set('Referrer-Policy', 'no-referrer');
+    return res.redirect(302, url);
   } catch {
     if (!res.headersSent) res.status(502).json({ success: false, message: 'That photograph is temporarily unavailable.' });
     else res.destroy();
@@ -288,9 +283,9 @@ export async function getPublicLibraryMedia(req, res) {
     const { collaboration } = await authorizedPublic(req);
     const asset = await publicSourceAsset(collaboration, req.params.assetId);
     if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
-    // Use the eager 1600px preview for a crisp, reasonably small mobile view.
+    // Use the 1600px preview for a crisp, reasonably small mobile view.
     // The editor's separate download route is the only one that serves originals.
-    await streamMedia(req, res, asset.publicId, { width: 1600 });
+    await streamMedia(req, res, asset.publicId, { width: 1600, access: mediaOffloadEnabled() ? { type: 'library', collaborationId: String(collaboration._id), assetId: String(asset._id), mode: 'view' } : undefined });
   } catch (error) {
     res.status(error.status || 500).json({ success: false, message: error.message || 'We could not open that photograph.' });
   }
@@ -305,7 +300,7 @@ export async function downloadPublicLibraryOriginal(req, res) {
     const originalFilename = String(asset.originalFilename || 'photograph').replace(/[\r\n"\\]/g, '_').slice(0, 150);
     const filename = originalFilename.includes('.') ? originalFilename : `${originalFilename}.${asset.rawFormat || asset.format}`;
     res.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
-    await streamMedia(req, res, asset.rawPublicId || asset.publicId, { resourceType: asset.rawPublicId ? 'raw' : 'image', original: true });
+    await streamMedia(req, res, asset.rawPublicId || asset.publicId, { resourceType: asset.rawPublicId ? 'raw' : 'image', original: true, attachment: true, downloadFilename: filename, expiresIn: 300, access: mediaOffloadEnabled() ? { type: 'library', collaborationId: String(collaboration._id), assetId: String(asset._id), mode: 'download' } : undefined });
   } catch (error) {
     res.status(error.status || 500).json({ success: false, message: error.message || 'We could not prepare that download.' });
   }

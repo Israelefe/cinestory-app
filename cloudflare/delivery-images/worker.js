@@ -1,3 +1,5 @@
+import { cleanMediaManifests, handleMediaRequest } from './media-worker.js';
+
 const MAX_IMAGE_BYTES = 20_000_000;
 const IMAGE_WIDTHS = new Set([400, 480, 640, 800, 960, 1024, 1200, 1600]);
 const IMAGE_FORMATS = new Set(['jpeg', 'jpg', 'png', 'webp']);
@@ -159,7 +161,7 @@ async function handleImage(request, env, ctx) {
   }
 
   try {
-    const resized = await env.IMAGES.input(object.body).transform(transform).output(output).response({
+    const resized = (await env.IMAGES.input(object.body).transform(transform).output(output)).response({
       headers: { 'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800' }
     });
     if (!resized.ok) return originalImageResponse(env, claims.key);
@@ -172,6 +174,9 @@ async function handleImage(request, env, ctx) {
 
 export default {
   async fetch(request, env, ctx) {
-    return handleImage(request, env, ctx);
+    return await handleMediaRequest(request, env, ctx) || handleImage(request, env, ctx);
+  },
+  async scheduled(_event, env, ctx) {
+    ctx.waitUntil(cleanMediaManifests(env));
   }
 };

@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, Camera, Check, Image, MapPin, Upload, Users, Shi
 import { Page, Reveal } from '../components/PublicDesign.jsx';
 import api, { apiMessage } from '../services/api.js';
 import StudioBrandField from '../components/StudioBrandField.jsx';
+import { uploadProfileImage } from '../utils/profileUpload.js';
 import useStudioNameAvailability from '../hooks/useStudioNameAvailability.js';
 import './StudioWorkspace.css';
 
@@ -49,9 +50,7 @@ export default function OnboardingPage({ user, onAuthenticated }) {
     setLogo(previewUrl.current);
     setStatus({ loading: false, upload: true, error: '' });
     try {
-      const body = new FormData();
-      body.append('logo', file, file.name);
-      const { data } = await api.post('/v1/onboarding/logo', body, { timeout: 90000 });
+      const { data } = await uploadProfileImage(file);
       setLogo(data.url);
       onAuthenticated(data.user);
       setStatus({ loading: false, upload: false, error: '' });

@@ -7,7 +7,7 @@ export function compositionProps(project, version, format = 'video', sceneIndex 
     asset.id,
     {
       id: asset.id,
-      src: mediaUrl(asset.publicId) || asset.url,
+      src: mediaUrl(asset.publicId, { resourceType: ['video', 'music'].includes(asset.kind) ? 'video' : 'image' }) || asset.url,
       localPath: asset.localPath,
       kind: asset.kind,
       slotId: asset.slotId,
@@ -60,7 +60,7 @@ export function presentProject(project) {
       slotId: asset.slotId,
       width: asset.width,
       height: asset.height,
-      url: mediaUrl(asset.publicId) || asset.url,
+      url: mediaUrl(asset.publicId, { resourceType: ['video', 'music'].includes(asset.kind) ? 'video' : 'image' }) || asset.url,
       localPath: asset.localPath,
       analysis: asset.analysis
     })),

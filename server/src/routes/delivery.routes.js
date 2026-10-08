@@ -5,7 +5,7 @@ import { aiGenerationLimit, clientDeliveryEmailLimit, mediaSignatureLimit, publi
 import {
   addLibraryAssets, archiveDelivery, assistDeliveryBrief, confirmDeliveryUpload, confirmSoundtrackUpload,
   createDelivery, createShareGrant, deleteDelivery, deleteDeliveryAsset, deleteSoundtrack, emailClientDelivery,
-  getDelivery, getDeliveryJob, getDeliveryQr, getDeliveryShareMeta, getGalleryDownload, getPhotoDownload, streamGalleryArchive,
+  getDelivery, getDeliveryProgress, getDeliveryJob, getDeliveryQr, getDeliveryShareMeta, getGalleryDownload, getPhotoDownload, streamGalleryArchive,
   getPublicDelivery, getPublicSoundtrack, getPinboardStatusCard, listDeliveries, listDeliverySoundtracks, listNarrationVoices,
   listShareGrants, publishDelivery, queueAnalysis, queueDirection, queueNarration, queueRevision,
   restoreDelivery, retryDeliveryJob, recoverDeliveryUpload, revokeShareGrant, selectCuratedSoundtrack, signDeliveryUpload,
@@ -38,6 +38,7 @@ router.post('/brief/assist', aiGenerationLimit, assistDeliveryBrief);
 router.get('/soundtracks', listDeliverySoundtracks);
 router.get('/narration/voices', listNarrationVoices);
 router.get('/:id', getDelivery);
+router.get('/:id/progress', getDeliveryProgress);
 router.patch('/:id/v3/details', v3Details);
 router.patch('/:id/v3/format', v3Format);
 router.post('/:id/v3/prepare', aiGenerationLimit, v3Prepare);

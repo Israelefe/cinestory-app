@@ -1,5 +1,6 @@
 import { Readable } from 'node:stream';
 import sharp from 'sharp';
+import { mediaOffloadEnabled, mediaWorkerRequest, signedMediaUrl } from '../services/cloudflareMedia.service.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -76,6 +77,7 @@ export function mediaUrl(publicId, { resourceType = 'image', format = 'png', dow
   }
   if (/^https:\/\//i.test(String(publicId))) return publicId;
   const filename = `${String(publicId).split('/').at(-1) || 'media'}.${format}`;
+  if (mediaOffloadEnabled()) return signedMediaUrl(publicId, { preset: resourceType === 'image' && !download ? '1600' : '', downloadFilename: download ? filename : '' });
   const key = resourceType === 'image' && !download ? imageVariantKey(publicId, '1600') : publicId;
   return presignedR2Get(key, { downloadFilename: download ? filename : '', expiresIn: 6 * 60 * 60 });
 }
@@ -87,7 +89,12 @@ export async function removeImage(publicId) {
 }
 
 // Only provider-owned object storage can be fetched. Redirects cannot bypass this list.
-export async function fetchGeneratedImage(value, signal) {
+export async function fetchGeneratedImage(value, signal, destination) {
+  if (mediaOffloadEnabled() && process.env.CONTENT_STORAGE_LOCAL !== 'true') {
+    signal?.throwIfAborted();
+    if (!destination?.projectId || !destination?.key) throw studioError('The campaign image destination is missing.', 500);
+    return mediaWorkerRequest('import-image', { url: value, key: `veylo/content-studio/${destination.projectId}/${destination.key}` });
+  }
   let url;
   try { url = new URL(value); } catch { throw studioError('The image provider returned an invalid image URL.', 502); }
   if (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443') ||

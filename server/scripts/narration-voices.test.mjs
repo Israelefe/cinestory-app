@@ -1,19 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { PassThrough } from 'node:stream';
 import { readFile } from 'node:fs/promises';
 import Delivery from '../src/models/Delivery.js';
 import DeliveryJob from '../src/models/DeliveryJob.js';
-import { cloudinary } from '../src/services/cloudinary.service.js';
 import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID } from '../src/constants/narrationVoices.js';
 import { NARRATION_VOICES as clientVoices } from '../../client/src/constants/narrationVoices.js';
 import { getNarrationVoiceCatalogue, synthesizeV3Narration, generateNarration } from '../src/services/narration.service.js';
 import { v3Narration, v3Approve } from '../src/controllers/deliveryV3.controller.js';
 
 process.env.DEEPGRAM_API_KEY = 'offline-test-key';
-process.env.CLOUDINARY_CLOUD_NAME = 'veylo-test';
-process.env.CLOUDINARY_API_KEY = 'offline-test-key';
-process.env.CLOUDINARY_API_SECRET = 'offline-test-secret';
+Object.assign(process.env, { R2_MEDIA_OFFLOAD_ENABLED: 'false', R2_ACCOUNT_ID: 'offline', R2_ACCESS_KEY_ID: 'offline', R2_SECRET_ACCESS_KEY: 'offline', R2_BUCKET_NAME: 'veylo-test' });
 const id = '507f1f77bcf86cd799439011';
 const ownerId = '507f1f77bcf86cd799439012';
 const delivery = { _id: id, userId: ownerId, schemaVersion: 3, status: 'review', format: 'photo-story', v3: { revision: 2 }, assets: [{ assetId: 'photo-one' }], curatedAssetIds: ['photo-one'], creativeDirection: { openingLine: 'Ada, welcome to your birthday story.', closingLine: 'Your whole collection is here for you.', frames: [{ assetId: 'photo-one', caption: 'Ada, take this new year at your own pace.' }] } };
@@ -37,21 +33,19 @@ test('client and server offer the same four male and four female English Flux vo
 
 test('every chosen voice reaches Deepgram for opening and closing only, even for legacy caption requests and is saved in narration metadata', async t => {
   const requests = [];
-  let text = '', counter = 0;
+  let text = '';
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     if (url.includes('/v2/speak')) {
       requests.push(new URL(url).searchParams.get('model'));
       text = JSON.parse(options.body).text;
       return { ok: true, arrayBuffer: async () => Buffer.from('offline-audio') };
     }
+    if (new URL(url).hostname.endsWith('.r2.cloudflarestorage.com')) {
+      assert.equal(options.method, 'PUT');
+      return new Response(null, { headers: { ETag: '"audio-etag"' } });
+    }
     const words = text.split(/\s+/).map((word, index) => ({ punctuated_word: word, start: index * .1, end: index * .1 + .09 }));
     return { ok: true, json: async () => ({ metadata: { duration: words.length * .1 }, results: { channels: [{ alternatives: [{ words }] }] } }) };
-  });
-  t.mock.method(cloudinary.uploader, 'upload_stream', (options, callback) => {
-    const stream = new PassThrough();
-    stream.on('data', () => {});
-    stream.on('finish', () => callback(null, { public_id: `private/narration/${++counter}`, duration: 1, bytes: 100, format: 'mp3' }));
-    return stream;
   });
   for (const voice of NARRATION_VOICES) {
     requests.length = 0;

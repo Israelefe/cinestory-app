@@ -36,6 +36,8 @@ import { recordAnalyticsEventAsync } from '../services/analytics.service.js';
 import { isRuntimeFeatureEnabled } from '../services/runtimeConfig.service.js';
 import { storageProviderError } from '../services/deliveryMedia.service.js';
 import { cleanDeliveryAccess } from '../utils/deliveryAccess.js';
+import { createCloudflareArchive, mediaOffloadEnabled, signedMediaUrl } from '../services/cloudflareMedia.service.js';
+import { catalogueAudioKey, deliveryMediaAccess } from '../services/mediaAuthorization.service.js';
 
 const createSchema = z.object({ clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().min(2).max(80), brief: z.string().trim().min(1).max(3000) }).strict();
 const briefAssistSchema = createSchema.extend({ mode: z.enum(['assess', 'enhance']) }).strict();
@@ -122,15 +124,15 @@ function failValidation(res, parsed) {
   return res.status(400).json({ success: false, code: 'VALIDATION_ERROR', message: parsed.error.issues[0]?.message || 'Check the information you entered.' });
 }
 
-function ownerAsset(asset) {
+function ownerAsset(asset, access) {
   const data = typeof asset.toObject === 'function' ? asset.toObject() : { ...asset };
   delete data.libraryTags;
   delete data.libraryCaption;
   return {
     ...data,
-    url: signedDeliveryImageUrl(asset.publicId),
-    thumbnailUrl: signedDeliveryImageUrl(asset.publicId, { thumbnail: true }),
-    srcSet: [480, 960, 1600].map(width => `${signedDeliveryImageUrl(asset.publicId, { width })} ${width}w`).join(', ')
+    url: signedDeliveryImageUrl(asset.publicId, { access }),
+    thumbnailUrl: signedDeliveryImageUrl(asset.publicId, { thumbnail: true, access }),
+    srcSet: [480, 960, 1600].map(width => `${signedDeliveryImageUrl(asset.publicId, { width, access })} ${width}w`).join(', ')
   };
 }
 
@@ -148,6 +150,12 @@ function curatedPreviewUrl(trackId, token = '') {
 }
 
 async function streamAudioFile(req, res, filePath, cacheControl = 'private, max-age=3600') {
+  if (mediaOffloadEnabled()) {
+    const track = DELIVERY_SOUNDTRACKS.find(item => deliverySoundtrackFile(item.id) === filePath);
+    if (!track) return res.status(404).end();
+    res.set('Cache-Control', 'private, no-store');
+    return res.redirect(302, signedMediaUrl(catalogueAudioKey(track)));
+  }
   const details = await stat(filePath);
   const range = String(req.get('range') || '');
   res.set({
@@ -1096,7 +1104,7 @@ async function publicPayload(delivery, grant = null) {
   const fullAssetIds = new Set(delivery.assets.map(asset => asset.assetId));
   const scoped = visibleAssets.size !== fullAssetIds.size;
   object.assets = visibleDeliveryAssets.map(asset => {
-    const safe = ownerAsset(asset);
+    const safe = ownerAsset(asset, mediaOffloadEnabled() ? deliveryMediaAccess(delivery, grant) : undefined);
     const photoColors = (asset.analysis?.colors || []).filter(color => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color)).slice(0, 4);
     const dominantColor = photoColors[0];
     if (typeof dominantColor === 'string' && /^#[0-9a-f]{6}$/i.test(dominantColor)) safe.dominantColor = dominantColor;
@@ -1144,13 +1152,14 @@ async function publicPayload(delivery, grant = null) {
     object.access.allowLikes = false;
     object.viewer = { role: grant.role, label: grant.label, usageTerms: grant.usageTerms || '' };
   }
-  if (object.narration?.publicId) object.narration.url = signedImageUrl(object.narration.publicId, { resourceType: 'video' });
+  const audioAccess = mediaOffloadEnabled() ? deliveryMediaAccess(delivery, grant, 'audio') : undefined;
+  if (object.narration?.publicId) object.narration.url = signedImageUrl(object.narration.publicId, { resourceType: 'video', access: audioAccess });
   if (object.schemaVersion === 3 && object.narration) {
-    if (object.narration.opening?.publicId) object.narration.opening.url = signedImageUrl(object.narration.opening.publicId, { resourceType: 'video' });
-    if (object.narration.closing?.publicId) object.narration.closing.url = signedImageUrl(object.narration.closing.publicId, { resourceType: 'video' });
+    if (object.narration.opening?.publicId) object.narration.opening.url = signedImageUrl(object.narration.opening.publicId, { resourceType: 'video', access: audioAccess });
+    if (object.narration.closing?.publicId) object.narration.closing.url = signedImageUrl(object.narration.closing.publicId, { resourceType: 'video', access: audioAccess });
     delete object.narration.captions;
   }
-  if (object.soundtrack?.publicId) object.soundtrack.url = signedImageUrl(object.soundtrack.publicId, { resourceType: 'video' });
+  if (object.soundtrack?.publicId) object.soundtrack.url = signedImageUrl(object.soundtrack.publicId, { resourceType: 'video', access: audioAccess });
   if (object.soundtrack?.catalogId && object.soundtrack?.source === 'curated') {
     const mediaToken = jwt.sign(
       { deliveryId: String(delivery._id), catalogId: object.soundtrack.catalogId, scope: 'soundtrack' },
@@ -1179,6 +1188,15 @@ export async function getPinboardStatusCard(req, res) {
     const owner = delivery.userId;
     const entitlement = await resolveEntitlements(owner, { includeUsage: false });
     const studioName = entitlement.features.branding === 'studio' ? owner.studio?.name || owner.name : 'Veylo';
+    if (mediaOffloadEnabled()) {
+      const privateUrl = new URL(`/d/${encodeURIComponent(delivery.publicId)}`, String(process.env.CLIENT_URL || 'https://veylo.com.ng'));
+      const grantToken = String(req.get('x-delivery-grant') || '');
+      if (grant && /^[A-Za-z0-9_-]{30,100}$/.test(grantToken)) privateUrl.searchParams.set('share', grantToken);
+      const qrDataUrl = await QRCode.toDataURL(privateUrl.toString(), { width: 206, margin: 2, color: { dark: '#111115', light: '#ffffff' }, errorCorrectionLevel: 'M' });
+      res.set('Cache-Control', 'private, no-store');
+      recordAnalyticsEventAsync({ name: 'client.pinboard.status_card.created', source: 'server', actorType: grant ? 'guest' : 'client', deliveryId: delivery._id, format: 'pinboard', status: 'requested', count: assets.length });
+      return res.json({ success: true, data: { title: delivery.title || `${delivery.clientName || 'Client'}'s photographs`, studioName, gallerySize: allowed.size, palette: delivery.pinboard?.palette, qrDataUrl, photos: assets.map(asset => signedDeliveryImageUrl(asset.publicId, { width: 1600, access: deliveryMediaAccess(delivery, grant) })) } });
+    }
     const sources = await Promise.all(assets.map(async asset => {
       const url = signedDeliveryImageUrl(asset.publicId, { width: 1600 });
       const upstream = await fetch(url, { signal: AbortSignal.timeout(30_000) });
@@ -1222,6 +1240,10 @@ export async function getPublicSoundtrack(req, res) {
     }
     const filePath = deliverySoundtrackFile(delivery.soundtrack.catalogId);
     if (!filePath) return res.status(404).json({ success: false, message: 'Soundtrack not found.' });
+    if (mediaOffloadEnabled()) {
+      res.set('Cache-Control', 'private, no-store');
+      return res.redirect(302, signedMediaUrl(catalogueAudioKey(deliverySoundtrack(delivery.soundtrack.catalogId)), { access: deliveryMediaAccess(delivery, null, 'audio') }));
+    }
     recordAnalyticsEventAsync({ name: 'soundtrack.playback.started', source: 'server', actorType: 'client', deliveryId: delivery._id, status: 'started', metadata: { trackId: delivery.soundtrack.catalogId } });
     res.once('finish', () => recordAnalyticsEventAsync({ name: 'soundtrack.playback.completed', source: 'server', actorType: 'client', deliveryId: delivery._id, status: 'completed', metadata: { trackId: delivery.soundtrack.catalogId } }));
     return await streamAudioFile(req, res, filePath);
@@ -1341,7 +1363,7 @@ export async function getPhotoDownload(req, res) {
     const asset = grantAssets(delivery, grant).find(item => item.assetId === req.params.assetId);
     if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
     recordAnalyticsEventAsync({ name: 'client.delivery.download_requested', source: 'server', actorType: grant ? 'guest' : 'client', deliveryId: delivery._id, sessionDigest: tokenDigest(visitorId(req, res)), format: delivery.format, status: 'requested', route: req.originalUrl, metadata: { downloadType: 'individual', role: grant?.role || null } });
-    res.json({ success: true, data: { url: signedImageUrl(asset.publicId, { original: true, attachment: true, downloadFilename: asset.originalFilename }) } });
+    res.json({ success: true, data: { url: signedImageUrl(asset.publicId, { original: true, attachment: true, downloadFilename: asset.originalFilename, access: mediaOffloadEnabled() ? deliveryMediaAccess(delivery, grant, 'download') : undefined }) } });
   } catch (error) { res.status(500).json({ success: false, message: 'We could not prepare that download.' }); }
 }
 
@@ -1355,28 +1377,12 @@ export async function streamPhotoDownload(req, res) {
     if (!individualAllowed) return res.status(403).json({ success: false, message: 'Downloads are turned off for this link.' });
     const asset = grantAssets(delivery, grant).find(item => item.assetId === req.params.assetId);
     if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
-    // Fetch the original from private object storage after checking gallery access.
-    const imageUrl = signedImageUrl(asset.publicId, { original: true, downloadFilename: asset.originalFilename });
-    const upstream = await fetch(imageUrl, { signal: AbortSignal.timeout(60_000) });
-    if (!upstream.ok) return res.status(502).json({ success: false, message: 'Could not fetch the photograph from storage.' });
-    // Build a clean filename from the asset
-    const ext = (upstream.headers.get('content-type') || 'image/jpeg').includes('png') ? 'png' : 'jpg';
+    // Render approves the download; Cloudflare sends the original bytes.
+    const ext = ['png', 'webp'].includes(asset.format) ? asset.format : 'jpg';
     const safeName = String(asset.originalFilename || asset.assetId || 'photo').replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 80);
     const filename = safeName.includes('.') ? safeName : `${safeName}.${ext}`;
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'image/jpeg');
-    if (upstream.headers.get('content-length')) res.setHeader('Content-Length', upstream.headers.get('content-length'));
     res.setHeader('Cache-Control', 'private, no-store');
-    // Stream the response body directly
-    const reader = upstream.body.getReader();
-    const pump = async () => {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) { res.end(); return; }
-        if (!res.write(value)) await new Promise(r => res.once('drain', r));
-      }
-    };
-    await pump();
+    res.redirect(302, signedImageUrl(asset.publicId, { original: true, attachment: true, downloadFilename: filename, access: mediaOffloadEnabled() ? deliveryMediaAccess(delivery, grant, 'download') : undefined }));
     // Track download and notify on first download
     if (delivery.downloadsCount === 0 && delivery.userId?.email) {
       sendDeliveryDownloadedEmail({
@@ -1390,7 +1396,7 @@ export async function streamPhotoDownload(req, res) {
     }
     await Delivery.updateOne({ _id: delivery._id }, { $inc: { downloadsCount: 1 } });
     if (grant) await DeliveryShareGrant.updateOne({ _id: grant._id }, { $inc: { downloadCount: 1 }, $set: { lastDownloadAt: new Date() } });
-    recordAnalyticsEventAsync({ name: 'client.delivery.download_completed', source: 'server', actorType: grant ? 'guest' : 'client', deliveryId: delivery._id, sessionDigest: tokenDigest(visitorId(req, res)), format: delivery.format, status: 'completed', route: req.originalUrl, metadata: { downloadType: 'stream', role: grant?.role || null } });
+    recordAnalyticsEventAsync({ name: 'client.delivery.download_requested', source: 'server', actorType: grant ? 'guest' : 'client', deliveryId: delivery._id, sessionDigest: tokenDigest(visitorId(req, res)), format: delivery.format, status: 'requested', route: req.originalUrl, metadata: { downloadType: 'direct', role: grant?.role || null } });
   } catch (error) {
     if (!res.headersSent) res.status(500).json({ success: false, message: 'We could not download that photograph.' });
   }
@@ -1431,7 +1437,7 @@ export async function getGalleryDownload(req, res) {
     if (grant ? !grant.allowDownloadAll : !delivery.access?.allowDownloadAll) return res.status(403).json({ success: false, message: 'Full gallery download is turned off for this link.' });
     const selectedAssets = grantAssets(delivery, grant);
     if (!selectedAssets.length) return res.status(404).json({ success: false, message: 'No photographs are available on this link.' });
-    const url = signedArchiveUrl(selectedAssets.map(asset => ({ key: asset.publicId, name: asset.originalFilename || asset.assetId })), `${delivery.clientName || 'client'}-photographs`);
+    const url = await signedArchiveUrl(selectedAssets.map(asset => ({ key: asset.publicId, name: asset.originalFilename || asset.assetId })), `${delivery.clientName || 'client'}-photographs`, { access: mediaOffloadEnabled() ? deliveryMediaAccess(delivery, grant, 'archive') : undefined });
     if (delivery.downloadsCount === 0 && delivery.userId?.email) {
       sendDeliveryDownloadedEmail({
         to: delivery.userId.email,
@@ -1491,9 +1497,22 @@ export async function getDeliveryQr(req, res) {
   } catch { res.status(500).json({ success: false, message: 'We could not create that QR code.' }); }
 }
 
+export async function getDeliveryProgress(req, res) {
+  try {
+    const delivery = await Delivery.findOne({ _id: req.params.id, userId: req.user.id }).select('_id status').lean();
+    if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    const job = await DeliveryJob.findOne({ deliveryId: delivery._id, userId: req.user.id }).sort({ createdAt: -1 }).select('_id type status stage progress counts modelQueue errorCode errorMessage attempts').lean();
+    res.set('Cache-Control', 'private, no-store').json({ success: true, data: { _id: delivery._id, status: delivery.status, generationJob: job && ['queued', 'running', 'failed'].includes(job.status) ? job : null } });
+  } catch { res.status(404).json({ success: false, message: 'We could not check delivery progress. Please retry.' }); }
+}
+
 export async function streamGalleryArchive(req, res) {
   try {
     const archive = await createArchiveTokenData(req.query.token);
+    if (mediaOffloadEnabled()) {
+      res.set('Cache-Control', 'private, no-store');
+      return res.redirect(302, await createCloudflareArchive(archive.files, archive.filename));
+    }
     await streamR2Zip(archive.files, res, archive.filename);
   } catch (error) {
     console.error('[deliveries/gallery-archive]', error.code || error.name || 'error');

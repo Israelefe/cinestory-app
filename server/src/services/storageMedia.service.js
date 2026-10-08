@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
-import { createR2Upload, deleteR2Object, deleteR2Prefix, getR2ObjectBuffer, headR2Object, prepareR2Image, presignedR2Get, r2Configured, verifyUploadToken, MAX_IMAGE_BYTES } from './r2.service.js';
+import { createR2Upload, deleteR2Object, deleteR2Prefix, headR2Object, prepareR2Image, presignedR2Get, r2Configured, verifyUploadToken, MAX_IMAGE_BYTES } from './r2.service.js';
 import { signedImageUrl } from './deliveryMedia.service.js';
+import { mediaOffloadEnabled, mediaWorkerRequest } from './cloudflareMedia.service.js';
 
 export const STORAGE_RAW_FORMATS = ['arw', 'cr2', 'cr3', 'dng', 'nef', 'nrw', 'orf', 'rw2', 'raf', 'pef', 'srw', '3fr', 'iiq', 'mos', 'mef', 'mrw', 'rwl', 'x3f'];
 
@@ -43,8 +44,11 @@ export async function confirmStorageUpload(userId, data, { resourceType = data.r
   let hashAlgorithm = head.etag ? 'r2-etag' : undefined;
   if (resourceType === 'image') {
     image = await prepareR2Image(key, { maxBytes: Number(claims.maxBytes || MAX_IMAGE_BYTES) });
-    const source = await getR2ObjectBuffer(key, { maxBytes: Number(claims.maxBytes || MAX_IMAGE_BYTES) });
-    etag = crypto.createHash('sha256').update(source.buffer).digest('hex');
+    etag = image.sha256;
+    hashAlgorithm = 'sha256';
+  } else if (mediaOffloadEnabled()) {
+    const inspected = await mediaWorkerRequest('inspect', { key, maxBytes: Number(claims.maxBytes || MAX_IMAGE_BYTES), resourceType: 'raw' });
+    etag = inspected.sha256;
     hashAlgorithm = 'sha256';
   }
   return { public_id: key, objectKey: key, format, rawFormat: resourceType === 'raw' ? format : undefined, bytes: head.bytes, width: image.width, height: image.height, etag, hashAlgorithm, contentType: head.contentType };
