@@ -103,7 +103,7 @@ for (const width of [320, 390, 640, 768, 834, 1024, 1440]) for (const mode of ['
   });
 }
 
-for (const width of [320, 768, 834, 1440]) test(`saved studio and photographer branding fits the opening and closing at ${width}px`, async ({ page }) => {
+for (const width of [320, 768, 834, 1440]) test(`saved studio and photographer branding fills a circular mark at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 1000 });
   const name = width < 800 ? 'Chukwudi Nwankwo Photography & Films' : 'Osagie Okunbor';
   await page.route('**/test-studio-logo.svg', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="280" height="80"><rect width="280" height="80" fill="#f4efe8"/><text x="16" y="54" fill="#070709" font-size="36">STUDIO</text></svg>' }));
@@ -127,10 +127,11 @@ for (const width of [320, 768, 834, 1440]) test(`saved studio and photographer b
     return {
       fits: bounds.left >= 0 && bounds.right <= innerWidth && name.scrollWidth <= name.clientWidth + 1,
       separated: markBounds.right <= nameBounds.left || markBounds.bottom <= nameBounds.top,
-      logoFit: getComputedStyle(mark).objectFit
+      logoFit: getComputedStyle(mark).objectFit,
+      circular: Math.abs(markBounds.width - markBounds.height) < 1 && getComputedStyle(mark).borderRadius === '50%'
     };
   }));
-  expect(geometry.every(brand => brand.fits && brand.separated && brand.logoFit === 'contain')).toBe(true);
+  expect(geometry.every(brand => brand.fits && brand.separated && brand.logoFit === 'cover' && brand.circular)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
 });
 
