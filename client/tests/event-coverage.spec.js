@@ -68,6 +68,9 @@ for (const width of [320, 390, 640, 768, 834, 1024, 1440]) for (const mode of ['
     const ids = await page.locator('.ec-photo-card').evaluateAll(cards => cards.map(card => card.dataset.photoId));
     expect(ids).toHaveLength(16);
     expect(new Set(ids).size).toBe(16);
+    // Display words must remain intact at every size, rather than breaking a
+    // word such as "programme" across two lines to fit a narrow column.
+    await expect.poll(() => page.locator('.ec-heading-word,.ec-title-accent').evaluateAll(words => Math.max(...words.map(word => word.getBoundingClientRect().height / parseFloat(getComputedStyle(word).lineHeight))))).toBeLessThanOrEqual(1.05);
     await expect(page.locator('.vec-event-highlights,.vec-event-manifesto,.vec-event-summary')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Open full gallery', exact: true })).toHaveCount(0);
     if ([320, 834, 1440].includes(width)) await page.screenshot({ path: `../.visual-review/event-redesign/${mode}-cover-${width}.png` });
@@ -161,6 +164,36 @@ test('long titles and still photographs fit a short phone without clipping', asy
   await photo.scrollIntoViewIfNeeded(); await photo.hover();
   await expect(photo).toHaveCSS('transform', 'none');
   await expect(photo.locator('img')).toHaveCSS('transform', 'none');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+});
+
+for (const palette of [
+  { background: '#090b10', surface: '#161820', text: '#f3ece1', accent: '#d39873' },
+  { background: '#f3ece1', surface: '#e4daca', text: '#17120f', accent: '#854833' }
+]) test(`the editorial spread keeps readable text with a ${palette.background === '#090b10' ? 'dark' : 'light'} saved palette`, async ({ page }) => {
+  await page.setViewportSize({ width: 834, height: 1000 });
+  await published(page, item => { item.creativeDirection.palette = palette; });
+  const spread = page.locator('.ec-scene[data-treatment="feature"]');
+  await spread.scrollIntoViewIfNeeded();
+  await expect(spread.locator('h2')).toHaveText('The programme');
+  const contrast = await spread.evaluate(element => {
+    const context = document.createElement('canvas').getContext('2d');
+    context.canvas.width = context.canvas.height = 1;
+    const luminance = color => {
+      context.clearRect(0, 0, 1, 1); context.fillStyle = color; context.fillRect(0, 0, 1, 1);
+      const [r, g, b] = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3).map(channel => {
+        const value = channel / 255;
+        return value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4;
+      });
+      return r * .2126 + g * .7152 + b * .0722;
+    };
+    const background = luminance(getComputedStyle(element, '::before').backgroundColor);
+    return [...element.querySelectorAll('h2,p,figcaption')].map(copy => {
+      const foreground = luminance(getComputedStyle(copy).color);
+      return (Math.max(background, foreground) + .05) / (Math.min(background, foreground) + .05);
+    });
+  });
+  expect(Math.min(...contrast)).toBeGreaterThanOrEqual(4.5);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
 });
 

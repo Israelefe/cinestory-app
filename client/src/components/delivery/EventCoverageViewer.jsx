@@ -16,6 +16,12 @@ const reveal = {
 };
 const filters = [['all', 'All moments'], ['people', 'People'], ['programme', 'Programme'], ['networking', 'Networking'], ['details', 'Details']];
 
+function EditorialHeading({ title }) {
+  const words = title.trim().split(/\s+/);
+  if (words.length < 2 || title.length > 35) return title;
+  return <><span className="ec-heading-prefix">{words.slice(0, -1).join(' ')} </span><span className="ec-heading-word">{words.at(-1)}</span></>;
+}
+
 function PhotoMotion({ photo, index, paused, children }) {
   const ref = useRef(null);
   const visible = useInView(ref);
@@ -65,12 +71,12 @@ function SceneSpread({ section, paused, onOpen, photoPositions, showNotes, regis
     if (moving && visible && !paused) depth.set((.5 - value) * 28);
   });
   useEffect(() => { if (!moving) depth.set(0); }, [moving, depth]);
-  return <article id={section.anchorId} ref={register} tabIndex={-1} aria-labelledby={`${section.anchorId}-title`} className="ec-scene" data-layout={section.layout} data-scene-index={section.sceneIndex} data-single-photo={support.length === 0} data-long-title={section.title.length > 35} style={section.accent ? { '--ec-scene-accent': section.accent } : undefined}>
+  return <article id={section.anchorId} ref={register} tabIndex={-1} aria-labelledby={`${section.anchorId}-title`} className="ec-scene" data-layout={section.layout} data-scene-index={section.sceneIndex} data-treatment={['opening', 'feature', 'interlude', 'closing'][section.sceneIndex % 4]} data-single-photo={support.length === 0} data-long-title={section.title.length > 35} style={section.accent ? { '--ec-scene-accent': section.accent } : undefined}>
     <div className="ec-scene-grid" data-count={section.photos.length}>
       <div className="ec-scene-opening">
         <motion.header className="ec-scene-copy" {...reveal}>
           <span className="ec-scene-number" aria-hidden="true">{String(section.sceneIndex + 1).padStart(2, '0')}</span>
-          <div className="ec-scene-heading"><h2 id={`${section.anchorId}-title`}>{section.title}</h2><span className="ec-scene-count">{section.photos.length} {section.photos.length === 1 ? 'photograph' : 'photographs'}</span></div>
+          <div className="ec-scene-heading"><h2 id={`${section.anchorId}-title`}><EditorialHeading title={section.title} /></h2></div>
           {showNotes && section.copy && <p>{section.copy}</p>}
         </motion.header>
         <motion.div ref={leadRef} className="ec-scene-lead-wrap" style={{ y: depth }}>
@@ -212,7 +218,7 @@ export default function EventCoverageViewer({ delivery, galleryProps, audioState
         <div className="ec-cover-stage">
           <PhotoCard photo={openingPhoto} position={photoPositions.get(eventPhotoKey(openingPhoto))} paused={pausePhotos} onOpen={openPhoto} eager lead label="Open the cover photograph" className="ec-cover-photo" showCaption={openingPhoto?.caption !== opening} sizes="(max-width: 767px) 100vw, 1360px" />
           <motion.div className="ec-cover-copy" initial={reduced ? false : { opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .1 }} transition={{ duration: .9, ease, delay: .15 }}>
-            <span className="ec-eyebrow"><i aria-hidden="true" />Event Coverage</span>
+            <span className="ec-eyebrow">Event Coverage</span>
             <h1 id={`${instance}-title`}>{accentTitle ? <><span className="ec-title-main">{titleWords.slice(0, -1).join(' ')} </span><span className="ec-title-accent">{titleWords.at(-1)}</span></> : title}</h1>
           </motion.div>
         </div>
