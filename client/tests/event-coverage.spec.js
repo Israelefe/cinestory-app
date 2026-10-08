@@ -70,7 +70,13 @@ for (const width of [320, 390, 640, 768, 834, 1024, 1440]) for (const mode of ['
     expect(new Set(ids).size).toBe(16);
     // Display words must remain intact at every size, rather than breaking a
     // word such as "programme" across two lines to fit a narrow column.
-    await expect.poll(() => page.locator('.ec-heading-word,.ec-title-accent').evaluateAll(words => Math.max(...words.map(word => word.getBoundingClientRect().height / parseFloat(getComputedStyle(word).lineHeight))))).toBeLessThanOrEqual(1.05);
+    await expect.poll(() => page.locator('.ec-heading-word,.ec-title-accent').evaluateAll(words => {
+      const lines = words.map(word => {
+        const range = document.createRange(); range.selectNodeContents(word);
+        return new Set([...range.getClientRects()].filter(rect => rect.width > 0).map(rect => Math.round(rect.top))).size;
+      });
+      return Math.max(...lines);
+    })).toBe(1);
     await expect(page.locator('.vec-event-highlights,.vec-event-manifesto,.vec-event-summary')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Open full gallery', exact: true })).toHaveCount(0);
     if ([320, 834, 1440].includes(width)) await page.screenshot({ path: `../.visual-review/event-redesign/${mode}-cover-${width}.png` });
@@ -100,11 +106,13 @@ for (const width of [320, 834]) {
     await page.setViewportSize({ width, height: 1000 });
     const delivery = await published(page, item => item.creativeDirection.sections.forEach(section => { section.id = 'scene'; }));
     const original = await page.locator('.ec-scene-nav a').evaluateAll(links => links.map(link => link.getAttribute('href')));
+    const originalDesign = await page.locator('.ec-scene').nth(2).getAttribute('data-design');
     expect(new Set(original).size).toBe(4);
     await filterBy(page, 'Networking');
     await expect(page.locator('.ec-filter summary')).toHaveClass('is-filtered');
     await expect(page.locator('.ec-filter')).toHaveJSProperty('open', false);
     await expect(page.locator('.ec-scene')).toHaveCount(1);
+    await expect(page.locator('.ec-scene')).toHaveAttribute('data-design', originalDesign);
     await expect(page.getByRole('status')).toHaveText('3 photographs across 1 scene, filtered by Networking');
     const link = page.locator('.ec-scene-nav a');
     await expect(link).toHaveAttribute('href', original[2]);
@@ -165,6 +173,75 @@ test('long titles and still photographs fit a short phone without clipping', asy
   await expect(photo).toHaveCSS('transform', 'none');
   await expect(photo.locator('img')).toHaveCSS('transform', 'none');
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+});
+
+for (const width of [320, 834, 1440]) test(`each scene has a distinct composition at ${width}px even with the same saved layout`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 1000 });
+  await published(page, item => item.creativeDirection.sections.forEach(section => { section.layout = 'hero'; }));
+  const scenes = page.locator('.ec-scene');
+  const rect = locator => locator.evaluate(element => {
+    const { left, top, right, bottom } = element.getBoundingClientRect();
+    return { left, top, right, bottom };
+  });
+  const arrival = scenes.nth(0);
+  await arrival.scrollIntoViewIfNeeded();
+  await expect.poll(() => arrival.locator('.ec-scene-copy').evaluate(element => Number(getComputedStyle(element).opacity))).toBe(1);
+  const arrivalHeading = await rect(arrival.locator('.ec-scene-copy'));
+  const arrivalPhoto = await rect(arrival.locator('.ec-scene-lead-wrap'));
+  if (width < 1024) expect(arrivalPhoto.top - arrivalHeading.bottom).toBeGreaterThanOrEqual(24);
+  else expect(arrivalPhoto.left - arrivalHeading.right).toBeGreaterThanOrEqual(24);
+
+  const feature = scenes.nth(1);
+  await feature.scrollIntoViewIfNeeded();
+  const featurePhoto = await rect(feature.locator('.ec-scene-lead-wrap'));
+  const featureHeading = await rect(feature.locator('.ec-scene-copy'));
+  expect(featureHeading.top - featurePhoto.bottom).toBeGreaterThanOrEqual(24);
+
+  const conversation = scenes.nth(2);
+  await conversation.scrollIntoViewIfNeeded();
+  const first = await rect(conversation.locator('.ec-scene-lead-wrap'));
+  const second = await rect(conversation.locator('.ec-conversation-layout > .ec-photo-card').first());
+  const conversationHeading = await rect(conversation.locator('.ec-scene-copy'));
+  expect(conversationHeading.top - first.bottom).toBeGreaterThanOrEqual(24);
+  if (width < 640) expect(second.top - conversationHeading.bottom).toBeGreaterThanOrEqual(24);
+  else {
+    expect(second.left - first.right).toBeGreaterThanOrEqual(24);
+    expect(conversationHeading.top - second.bottom).toBeGreaterThanOrEqual(24);
+  }
+
+  const contact = scenes.nth(3);
+  await contact.scrollIntoViewIfNeeded();
+  const photographs = contact.locator('.ec-photo-button');
+  await expect(photographs).toHaveCount(4);
+  await expect.poll(() => contact.locator('.ec-photo-card').first().evaluate(element => Number(getComputedStyle(element).opacity))).toBe(1);
+  const contactFirst = await rect(photographs.nth(0));
+  const contactSecond = await rect(photographs.nth(1));
+  if (width < 640) expect(contactSecond.top - contactFirst.bottom).toBeGreaterThanOrEqual(24);
+  else {
+    expect(contactSecond.left - contactFirst.right).toBeGreaterThanOrEqual(24);
+    expect(Math.abs(contactSecond.top - contactFirst.top)).toBeLessThanOrEqual(24);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+});
+
+for (const width of [320, 834]) test(`a six-scene event preserves every photograph and reaches the closing gallery at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 1000 });
+  await published(page, item => {
+    const photographs = item.assets.filter(asset => ![item.v3.openingAssetId, item.v3.closingAssetId].includes(asset.assetId));
+    item.creativeDirection.sections = ['The welcome', 'On stage', 'The conversations', 'The guests', 'A closer look', 'The evening'].map((title, index) => ({ id: `session-${index}`, title, layout: 'hero', assetIds: photographs.slice(Math.floor(index * photographs.length / 6), Math.floor((index + 1) * photographs.length / 6)).map(asset => asset.assetId) }));
+  });
+  await expect(page.locator('.ec-scene')).toHaveCount(6);
+  const ids = await page.locator('.ec-photo-card').evaluateAll(photos => photos.map(photo => photo.dataset.photoId));
+  expect(ids).toHaveLength(16); expect(new Set(ids).size).toBe(16);
+  for (const scene of await page.locator('.ec-scene').all()) {
+    await scene.scrollIntoViewIfNeeded();
+    const widths = await scene.locator('.ec-photo-button').evaluateAll(photos => photos.map(photo => photo.getBoundingClientRect().width));
+    expect(Math.min(...widths)).toBeGreaterThan(250);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+  await complete(page);
+  await page.getByRole('button', { name: 'Open full gallery', exact: true }).click();
+  await expect(page.locator('.client-gallery-grid > figure')).toHaveCount(16);
 });
 
 for (const palette of [

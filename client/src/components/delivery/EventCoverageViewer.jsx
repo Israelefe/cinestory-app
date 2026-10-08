@@ -37,7 +37,7 @@ function PhotoMotion({ photo, index, paused, children }) {
   return <motion.div ref={ref} className="ec-photo-motion" initial={false} animate={controls}>{children}</motion.div>;
 }
 
-function PhotoCard({ photo, index = 0, position, paused, onOpen, label, eager = false, className = '', showCaption = true, sizes, lead = false }) {
+function PhotoCard({ photo, index = 0, position, paused, onOpen, label, eager = false, className = '', showCaption = true, sizes, lead = false, entrance = 'down' }) {
   const [loadedDimensions, setLoadedDimensions] = useState(null);
   if (!photo) return null;
   const dimensions = photo.width && photo.height ? photo : DELIVERY_DEMO_DIMENSIONS[photo.name] || {};
@@ -53,7 +53,7 @@ function PhotoCard({ photo, index = 0, position, paused, onOpen, label, eager = 
       <PhotoMotion photo={photo} index={index} paused={paused}>
         <Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || photo.caption || ''} eager={eager} sizes={sizes} style={photo.focalPoint ? { objectPosition: photo.focalPoint } : undefined} />
       </PhotoMotion>
-      {lead && photo.motion !== 'still' && <motion.span className="ec-photo-reveal" aria-hidden="true" initial={{ scaleY: 1 }} whileInView={{ scaleY: 0 }} viewport={{ once: true, amount: .1 }} transition={{ duration: .9, ease }} />}
+      {lead && entrance !== 'fade' && photo.motion !== 'still' && <motion.span className="ec-photo-reveal" aria-hidden="true" style={{ transformOrigin: entrance === 'across' ? 'left' : entrance === 'up' ? 'bottom' : 'top' }} initial={entrance === 'across' ? { scaleX: 1 } : { scaleY: 1 }} whileInView={entrance === 'across' ? { scaleX: 0 } : { scaleY: 0 }} viewport={{ once: true, amount: .1 }} transition={{ duration: .9, ease }} />}
       <span className="ec-photo-open" aria-hidden="true"><Maximize2 size={16} /></span>
     </button>
     {showCaption && photo.caption && <figcaption className="vec-photo-caption">{position && <span className="ec-photo-index" aria-hidden="true">{String(position).padStart(2, '0')}</span>}<span>{photo.caption}</span></figcaption>}
@@ -66,27 +66,29 @@ function SceneSpread({ section, paused, onOpen, photoPositions, showNotes, regis
   const { scrollYProgress } = useScroll({ target: leadRef, offset: ['start end', 'end start'] });
   const visible = useInView(leadRef);
   const [leadPhoto, ...support] = section.photos;
-  const moving = leadPhoto.motion !== 'still';
+  const design = ['arrival', 'feature', 'conversation', 'contact', 'essay', 'panorama'][section.sceneIndex % 6];
+  const moving = design !== 'contact' && leadPhoto.motion !== 'still';
   useMotionValueEvent(scrollYProgress, 'change', value => {
     if (moving && visible && !paused) depth.set((.5 - value) * 28);
   });
   useEffect(() => { if (!moving) depth.set(0); }, [moving, depth]);
-  return <article id={section.anchorId} ref={register} tabIndex={-1} aria-labelledby={`${section.anchorId}-title`} className="ec-scene" data-layout={section.layout} data-scene-index={section.sceneIndex} data-treatment={['opening', 'feature', 'interlude', 'closing'][section.sceneIndex % 4]} data-single-photo={support.length === 0} data-long-title={section.title.length > 35} style={section.accent ? { '--ec-scene-accent': section.accent } : undefined}>
-    <div className="ec-scene-grid" data-count={section.photos.length}>
-      <div className="ec-scene-opening">
-        <motion.header className="ec-scene-copy" {...reveal}>
-          <span className="ec-scene-number" aria-hidden="true">{String(section.sceneIndex + 1).padStart(2, '0')}</span>
-          <div className="ec-scene-heading"><h2 id={`${section.anchorId}-title`}><EditorialHeading title={section.title} /></h2></div>
-          {showNotes && section.copy && <p>{section.copy}</p>}
-        </motion.header>
-        <motion.div ref={leadRef} className="ec-scene-lead-wrap" style={{ y: depth }}>
-          <PhotoCard photo={leadPhoto} position={photoPositions.get(eventPhotoKey(leadPhoto))} paused={paused} onOpen={onOpen} lead label={`Open ${section.title} photograph 1`} className="ec-scene-lead" sizes="(max-width: 767px) 100vw, (max-width: 1279px) 92vw, 1200px" />
-        </motion.div>
-      </div>
-      {support.length > 0 && <div className="ec-scene-support" data-count={support.length}>
-        {support.map((photo, index) => <PhotoCard key={eventPhotoKey(photo)} photo={photo} index={index + 1} position={photoPositions.get(eventPhotoKey(photo))} paused={paused} onOpen={onOpen} label={`Open ${section.title} photograph ${index + 2}`} sizes="(max-width: 639px) 92vw, (max-width: 1023px) 44vw, 46vw" />)}
-      </div>}
-    </div>
+  const heading = <motion.header className="ec-scene-copy" {...reveal}>
+    <span className="ec-scene-number" aria-hidden="true">{String(section.sceneIndex + 1).padStart(2, '0')}</span>
+    <div className="ec-scene-heading"><h2 id={`${section.anchorId}-title`}><EditorialHeading title={section.title} /></h2></div>
+    {showNotes && section.copy && <p>{section.copy}</p>}
+  </motion.header>;
+  const lead = <motion.div ref={leadRef} className="ec-scene-lead-wrap" style={{ y: depth }}>
+    <PhotoCard photo={leadPhoto} position={photoPositions.get(eventPhotoKey(leadPhoto))} paused={paused} onOpen={onOpen} lead={design !== 'contact'} entrance={design === 'arrival' ? 'across' : design === 'feature' ? 'up' : 'fade'} label={`Open ${section.title} photograph 1`} className="ec-scene-lead" sizes={design === 'contact' ? '(max-width: 639px) 92vw, 46vw' : '(max-width: 767px) 100vw, (max-width: 1279px) 92vw, 1200px'} />
+  </motion.div>;
+  const supportingPhotos = support.map((photo, index) => <PhotoCard key={eventPhotoKey(photo)} photo={photo} index={index + 1} position={photoPositions.get(eventPhotoKey(photo))} paused={paused} onOpen={onOpen} label={`Open ${section.title} photograph ${index + 2}`} sizes="(max-width: 639px) 92vw, (max-width: 1023px) 44vw, 46vw" />);
+  const supportingSpread = support.length > 0 && <div className="ec-scene-support" data-count={support.length}>{supportingPhotos}</div>;
+  let spread;
+  if (design === 'conversation') spread = <div className="ec-conversation-layout" data-count={section.photos.length}>{lead}{heading}{supportingPhotos}</div>;
+  else if (design === 'contact') spread = <>{heading}<div className="ec-contact-sheet" data-count={section.photos.length}>{lead}{supportingPhotos}</div></>;
+  else if (design === 'feature') spread = <><div className="ec-scene-opening">{lead}{heading}</div>{supportingSpread}</>;
+  else spread = <><div className="ec-scene-opening">{heading}{lead}</div>{supportingSpread}</>;
+  return <article id={section.anchorId} ref={register} tabIndex={-1} aria-labelledby={`${section.anchorId}-title`} className="ec-scene" data-design={design} data-layout={section.layout} data-scene-index={section.sceneIndex} data-treatment={design === 'feature' ? 'feature' : design === 'conversation' ? 'interlude' : 'dark'} data-single-photo={support.length === 0} data-long-title={section.title.length > 35} style={section.accent ? { '--ec-scene-accent': section.accent } : undefined}>
+    <div className="ec-scene-grid" data-count={section.photos.length}>{spread}</div>
   </article>;
 }
 
@@ -214,7 +216,7 @@ export default function EventCoverageViewer({ delivery, galleryProps, audioState
   return <div ref={viewerRef} className="fd-page vec-event ec-viewer" data-motion-paused={motionPaused} data-composition={styles['--fd-composition']} data-heading-kind={serifHeading ? 'serif' : 'sans'} style={styles}>
     <DemoHeader format="Event Coverage" client={title} sectionId="event-coverage" delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     <main>
-      <section className="ec-cover" data-title-size={title.length > 70 ? 'long' : title.length > 45 ? 'medium' : 'short'} data-has-photo={Boolean(openingPhoto)} aria-labelledby={`${instance}-title`}>
+      <section className="ec-cover" data-design="cover" data-title-size={title.length > 70 ? 'long' : title.length > 45 ? 'medium' : 'short'} data-has-photo={Boolean(openingPhoto)} aria-labelledby={`${instance}-title`}>
         <div className="ec-cover-stage">
           <PhotoCard photo={openingPhoto} position={photoPositions.get(eventPhotoKey(openingPhoto))} paused={pausePhotos} onOpen={openPhoto} eager lead label="Open the cover photograph" className="ec-cover-photo" showCaption={openingPhoto?.caption !== opening} sizes="(max-width: 767px) 100vw, 1360px" />
           <motion.div className="ec-cover-copy" initial={reduced ? false : { opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .1 }} transition={{ duration: .9, ease, delay: .15 }}>
@@ -251,7 +253,7 @@ export default function EventCoverageViewer({ delivery, galleryProps, audioState
         {visibleSections.map(section => <SceneSpread key={section.anchorId} section={section} paused={pausePhotos} onOpen={openPhoto} photoPositions={photoPositions} showNotes={settings.showSceneNotes !== false} register={element => { if (element) sceneRefs.current.set(section.anchorId, element); else sceneRefs.current.delete(section.anchorId); }} />)}
       </section>
 
-      <footer ref={closingRef} className={`ec-ending${closingPhoto ? ' has-photo' : ''}`}>
+      <footer ref={closingRef} className={`ec-ending${closingPhoto ? ' has-photo' : ''}`} data-design="colophon">
         {closingPhoto && <PhotoCard photo={closingPhoto} position={photoPositions.get(eventPhotoKey(closingPhoto))} paused={pausePhotos} onOpen={openPhoto} label="Open the closing photograph" showCaption={closingPhoto.caption !== closing} sizes="(max-width: 767px) 92vw, 52vw" />}
         <motion.div className="ec-ending-copy" data-long-copy={closing.length > 80} {...reveal}>
           <span className="ec-eyebrow">Photographed by {studio}</span>
