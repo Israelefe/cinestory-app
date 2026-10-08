@@ -2,7 +2,14 @@ import React from 'react';
 import { ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-const HELP_PATHS = new Set(['/dashboard', '/create', '/formats', '/library', '/portfolio/manage', '/billing', '/settings', '/contact', '/privacy', '/terms', '/pricing', '/signup', '/signin']);
+const HELP_PATHS = new Set([
+  '/dashboard', '/create', '/formats', '/gridboard', '/photoswap', '/library',
+  '/portfolio', '/portfolio/manage', '/portfolio/enquiries', '/billing', '/settings',
+  '/contact', '/privacy', '/terms', '/refund-policy', '/fair-use', '/pricing',
+  '/signup', '/signin', '/forgot-password', '/changelog', '/demo', '/demo/gridboard',
+  '/demo/photoswap', '/demo/editorial', '/demo/reveal', '/demo/canvas', '/demo/chapters',
+  '/demo/album', '/demo/event-coverage', '/demo/campaign'
+]);
 
 function safeHref(rawHref) {
   const href = String(rawHref || '').trim();

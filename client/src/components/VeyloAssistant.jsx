@@ -13,13 +13,13 @@ const STARTERS = {
     { icon: MessageCircle, label: 'Read captions', question: 'How do I open the captions?' }
   ],
   studio: [
-    { icon: Clapperboard, label: 'Choose a format', question: 'Which format fits a large event?' },
+    { icon: Clapperboard, label: 'Choose a delivery type', question: 'Which delivery type should I choose?' },
     { icon: Send, label: 'Publish & share', question: 'How do I publish a delivery?' },
-    { icon: Image, label: 'Upload help', question: 'Why did one upload fail?' }
+    { icon: BadgeCheck, label: 'Your Pro subscription', question: 'What happens when I cancel or resume Pro?' }
   ],
   public: [
     { icon: CircleHelp, label: 'Getting started', question: 'What is Veylo?' },
-    { icon: Image, label: 'Client deliveries', question: 'How does a client delivery work?' },
+    { icon: Image, label: 'Compare deliveries', question: 'How do Showcase, GridBoard and Photo Swap differ?' },
     { icon: BadgeCheck, label: 'Plans & pricing', question: 'What is included with Pro?' }
   ]
 };
@@ -223,7 +223,7 @@ function AssistantChat({ chatKey, surface, pathname }) {
       <button type="button" className="veylo-assistant-backdrop" onClick={close} aria-label="Close Veylo Help backdrop" tabIndex={-1} />
       <aside ref={panelRef} id="veylo-assistant-panel" className={`veylo-assistant-panel${pathname === '/portfolio/manage' ? ' is-portfolio-editor' : ''}`} style={panelStyle} role="dialog" aria-modal="true" aria-labelledby="veylo-assistant-title" aria-describedby="veylo-assistant-description">
         <header className="veylo-assistant-header">
-          <div className="veylo-assistant-heading"><span className="veylo-assistant-mark"><MessageCircle size={21} aria-hidden="true" /></span><div><h2 id="veylo-assistant-title">Veylo Help</h2><p id="veylo-assistant-description">Your AI guide to Veylo</p></div></div>
+          <div className="veylo-assistant-heading"><span className="veylo-assistant-mark"><MessageCircle size={21} aria-hidden="true" /></span><div><h2 id="veylo-assistant-title">Veylo Help</h2><p id="veylo-assistant-description">Delivery and account help</p></div></div>
           <div className="veylo-assistant-header-actions">
             <button type="button" className="veylo-assistant-icon-button" onClick={startNewChat} disabled={!hasConversation} aria-label="Start a new Veylo Help chat" title="New chat"><RotateCcw size={18} aria-hidden="true" /></button>
             <button ref={closeRef} type="button" className="veylo-assistant-icon-button" onClick={close} aria-label="Close Veylo Help"><X size={20} aria-hidden="true" /></button>

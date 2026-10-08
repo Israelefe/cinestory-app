@@ -180,6 +180,21 @@ test('copy feedback works and internal answer links close the chat without losin
   await expect(panel.locator('.is-assistant')).toContainText(text.replace('[Formats](/formats)', 'Formats'));
 });
 
+test('current delivery and billing help links remain clickable while unsupported destinations stay blocked', async ({ page }) => {
+  await setup(page);
+  const text = '[Photo Swap](/photoswap) · [Create Photo Swap](/create?type=photoswap) · [Try Photo Swap](/demo/photoswap) · [GridBoard](/gridboard) · [Refund policy](/refund-policy) · [Unknown](/admin)';
+  await page.route('**/assistant/chat', route => reply(route, text));
+  const panel = await openChat(page);
+  await ask(page, 'How does Photo Swap work?');
+  for (const [name, href] of [['Photo Swap', '/photoswap'], ['Create Photo Swap', '/create?type=photoswap'], ['Try Photo Swap', '/demo/photoswap'], ['GridBoard', '/gridboard'], ['Refund policy', '/refund-policy']]) {
+    await expect(panel.getByRole('link', { name, exact: true })).toHaveAttribute('href', href);
+  }
+  await expect(panel.getByRole('link', { name: 'Unknown', exact: true })).toHaveCount(0);
+  await panel.getByRole('link', { name: 'Photo Swap', exact: true }).click();
+  await expect(page).toHaveURL(/\/photoswap$/);
+  await expect(panel).toHaveCount(0);
+});
+
 test('mobile Enter creates a newline and a resized visual viewport keeps the composer visible', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await setup(page);

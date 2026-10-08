@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import User from '../models/User.js';
+import Subscription from '../models/Subscription.js';
 import { answerVeyloQuestion, REFUSAL } from '../services/alibabaAssistant.service.js';
 import { assistantSuggestedQuestions } from '../knowledge/veyloAssistantKnowledge.js';
-import { isRuntimeFeatureEnabled } from '../services/runtimeConfig.service.js';
+import { FORMAT_LABELS, getRuntimeConfig } from '../services/runtimeConfig.service.js';
 import { resolveEntitlements } from '../services/entitlement.service.js';
 
 // Answers can be longer than questions; accept the same bound as the provider.
@@ -73,12 +74,25 @@ async function safeAccountContext(req) {
   const user = await User.findById(req.user.id).select('plan planOverride proRetentionUntil onboardingCompletedAt').lean();
   if (!user) return '';
   const entitlements = await resolveEntitlements(user, { includeUsage: false });
-  const available = Object.entries(entitlements.features || {}).filter(([, enabled]) => enabled === true).map(([name]) => name).slice(0, 12).join(', ');
-  return `Signed-in studio account. Current plan: ${entitlements.planName}. Onboarding complete: ${user.onboardingCompletedAt ? 'yes' : 'no'}. Available product features: ${available || 'standard Veylo delivery features'}.`;
+  const schedules = await Subscription.find({ userId: user._id, provider: 'paystack', providerCanceledAt: null, $or: [{ subscriptionCode: { $exists: true, $ne: '' } }, { customerCode: { $exists: true } }] }).select('cancelPendingAt resumePendingAt').lean();
+  return formatSafeAccountContext(user, entitlements, { canCancel: schedules.length > 0, cancellationPending: schedules.some(item => item.cancelPendingAt), resumptionPending: schedules.some(item => item.resumePendingAt) });
+}
+
+export function formatSafeAccountContext(user, entitlements, billingState = {}) {
+  const available = ['portfolio', 'music', 'narration', 'accessControls', 'clientLikes', 'downloads'].filter(name => entitlements.features?.[name] === true).join(', ');
+  const formats = (entitlements.features?.formats || []).map(id => FORMAT_LABELS[id]).filter(Boolean).join(', ');
+  const subscription = entitlements.subscription || {};
+  const state = ['free', 'checkout_pending', 'active', 'canceling', 'past_due', 'expired', 'refunded', 'disputed'].includes(subscription.status) ? subscription.status : 'not available';
+  const paidThrough = subscription.paidThrough ? new Date(subscription.paidThrough) : null;
+  const paidDate = paidThrough && !Number.isNaN(paidThrough.getTime()) ? new Intl.DateTimeFormat('en-NG', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Africa/Lagos' }).format(paidThrough) : 'not shown';
+  const canResume = entitlements.plan === 'pro' && state === 'canceling' && paidThrough > new Date() && subscription.canResume && !billingState.canCancel && !billingState.cancellationPending;
+  const canManage = entitlements.plan === 'pro' && ['active', 'past_due'].includes(state) && subscription.canManageCard && !billingState.cancellationPending;
+  return `Signed-in studio account. Current plan: ${entitlements.plan === 'pro' ? 'Veylo Pro' : 'Veylo Free'}. Onboarding complete: ${user.onboardingCompletedAt ? 'yes' : 'no'}. Available product features: ${available || 'standard Veylo delivery features'}. Available Showcase formats: ${formats || 'none shown'}. Image Library access: ${['read-write', 'read-only', 'unavailable'].includes(entitlements.features?.storageMode) ? entitlements.features.storageMode : 'not available'}. Subscription status: ${state}. Paid access end date (Lagos time): ${paidDate}. Cancellation awaiting confirmation: ${billingState.cancellationPending ? 'yes' : 'no'}. Renewal setup awaiting confirmation: ${billingState.resumptionPending ? 'yes' : 'no'}. Resume subscription currently available: ${canResume ? 'yes' : 'no'}. Check renewal status currently available: ${billingState.resumptionPending && !billingState.cancellationPending ? 'yes' : 'no'}. Manage payment method currently available: ${canManage ? 'yes' : 'no'}. This does not confirm a pending payment, canceled renewal, or successful resumption; direct the user to Billing for those confirmations.`;
 }
 
 export async function chatWithVeyloAssistant(req, res) {
-  if (!await isRuntimeFeatureEnabled('veyloAssistant', true)) return res.status(404).json({ success: false, code: 'ASSISTANT_DISABLED', message: 'Veylo Help is not available right now.' });
+  const runtimeConfig = await getRuntimeConfig();
+  if (runtimeConfig.featureFlags?.veyloAssistant === false) return res.status(404).json({ success: false, code: 'ASSISTANT_DISABLED', message: 'Veylo Help is not available right now.' });
   const parsed = chatSchema.safeParse(req.body || {});
   if (!parsed.success) return res.status(400).json({ success: false, code: 'ASSISTANT_INPUT_INVALID', message: 'Please send a shorter Veylo question.' });
   const messages = safeMessages(parsed.data.messages);
@@ -96,6 +110,7 @@ export async function chatWithVeyloAssistant(req, res) {
       surface: parsed.data.surface,
       authenticated: Boolean(req.user?.id),
       safeContext,
+      runtimeConfig,
       signal: controller.signal
     });
     return res.json({ success: true, data });
