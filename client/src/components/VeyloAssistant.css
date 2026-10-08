@@ -8,6 +8,30 @@
 .veylo-assistant-launch:hover { transform: translateY(-2px); background: #25191c; }
 .veylo-assistant-launch:active { transform: scale(.97); }
 .veylo-assistant-launch.is-open { opacity: 0; pointer-events: none; }
+.veylo-assistant-entry-row { display: flex; justify-content: flex-end; max-width: 1400px; margin: auto; padding: .8rem 1rem 0; }
+.veylo-assistant-entry { display: inline-flex; align-items: center; gap: .5rem; min-height: 44px; padding: .65rem .9rem; border: 1px solid #ff9b8e40; border-radius: .7rem; color: #ffe0da; background: #ff5a4708; font-size: .8rem; transition: transform .18s ease, background .18s ease; }
+.veylo-assistant-entry:hover { transform: translateY(-1px); background: #ff5a4715; }
+.veylo-assistant-entry:active { transform: scale(.97); }
+.veylo-assistant-entry:focus-visible { outline: 2px solid #ff9b8e; outline-offset: 3px; }
+.veylo-assistant-context, .veylo-assistant-workspace { margin-bottom: .8rem; padding: .65rem .8rem; border: 1px solid #ffffff16; border-radius: .8rem; background: #ffffff03; font-size: .76rem; }
+.veylo-assistant-context { flex: 0 0 auto; max-height: min(180px, 28dvh); overflow: auto; margin: .6rem 1.25rem 0; }
+.veylo-assistant-context summary, .veylo-assistant-workspace summary { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 32px; cursor: pointer; color: #e8d9df; }
+.veylo-assistant-context p, .veylo-assistant-workspace p { margin: .7rem 0; color: #bcb2bb; line-height: 1.65; }
+.veylo-assistant-context ol { margin: .7rem 0; padding-left: 1.1rem; color: #bcb2bb; line-height: 1.7; }
+.veylo-assistant-context > div, .veylo-assistant-tool-buttons, .veylo-assistant-proposal > div { display: flex; flex-wrap: wrap; gap: .5rem; }
+.veylo-assistant-tools { margin: .6rem 0 1.4rem; }
+.veylo-assistant-context button, .veylo-assistant-tools button { display: inline-flex; align-items: center; justify-content: center; gap: .45rem; min-height: 44px; padding: .6rem .7rem; border: 1px solid #ffffff20; border-radius: .65rem; background: #ffffff05; color: #f3e8ed; font-size: .75rem; line-height: 1.5; text-align: left; }
+.veylo-assistant-tools button:hover, .veylo-assistant-context button:hover { transform: translateY(-1px); border-color: #ff9b8e55; background: #ff5a4710; }
+.veylo-assistant-tools button:disabled { opacity: .45; cursor: wait; }
+.veylo-assistant-workspace > button { display: flex; width: 100%; margin-top: .5rem; justify-content: space-between; overflow-wrap: anywhere; }
+.veylo-assistant-writing, .veylo-assistant-proposal { display: grid; gap: .85rem; margin-top: 1rem; padding: 1rem; border: 1px solid #ff9b8e26; border-radius: .9rem; background: #ff5a4705; }
+.veylo-assistant-writing label { display: grid; gap: .45rem; font-size: .76rem; color: #e4d9df; }
+.veylo-assistant-writing select, .veylo-assistant-writing textarea { min-width: 0; width: 100%; min-height: 44px; padding: .65rem; border: 1px solid #ffffff25; border-radius: .6rem; background: #101014; color: #fff; font-size: 16px; }
+.veylo-assistant-writing textarea { resize: vertical; }
+.veylo-assistant-writing p, .veylo-assistant-proposal p { margin: 0; font-size: .8rem; line-height: 1.7; color: #c6bac3; white-space: pre-wrap; overflow-wrap: anywhere; }
+.veylo-assistant-proposal strong { font-size: .8rem; color: #ffb3a9; }
+.veylo-assistant-tool-error { margin-top: .8rem; color: #ffb3a9; font-size: .8rem; line-height: 1.6; }
+.veylo-assistant-answer-context { margin: -.3rem 0 .6rem; color: #a99da7; font-size: .68rem; }
 .veylo-assistant-backdrop { position: fixed; z-index: 79; inset: 0; border: 0; background: rgba(3,3,5,.64); animation: veylo-assistant-fade .18s ease both; }
 .veylo-assistant-panel {
   position: fixed; z-index: 81; right: max(1rem, env(safe-area-inset-right));

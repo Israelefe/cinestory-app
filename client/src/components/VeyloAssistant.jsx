@@ -5,6 +5,9 @@ import api, { apiMessage } from '../services/api.js';
 import { trackEvent } from '../services/analytics.js';
 import VeyloMarkdown from './VeyloMarkdown.jsx';
 import './VeyloAssistant.css';
+import { useAssistantContext } from './AssistantContext.jsx';
+import AssistantTools from './AssistantTools.jsx';
+import { contextLabel, trimActivity, ASSISTANT_PAGES } from '../utils/assistantContext.mjs';
 
 const STARTERS = {
   delivery: [
@@ -54,6 +57,7 @@ export default function VeyloAssistant({ user }) {
 }
 
 function AssistantChat({ chatKey, surface, pathname }) {
+  const { session, state: contextState } = useAssistantContext();
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState(() => loadMessages(chatKey));
@@ -72,7 +76,19 @@ function AssistantChat({ chatKey, surface, pathname }) {
   const controllerRef = useRef(null);
   const copyTimerRef = useRef(null);
   const stickToBottomRef = useRef(true);
-  const starters = STARTERS[surface] || STARTERS.public;
+  const starters = surface === 'studio' && pathname === '/library' ? [
+    { icon: Image, label: 'Your storage', question: 'How much storage do I have left?' },
+    { icon: Send, label: 'Client and editor links', question: 'How do client selection and editor links work?' }
+  ] : surface === 'studio' && pathname === '/billing' ? [
+    { icon: BadgeCheck, label: 'Your subscription', question: 'Explain my current subscription status and next steps.' },
+    { icon: RefreshCw, label: 'Resume Pro', question: 'Can I resume my subscription before it expires?' }
+  ] : surface === 'studio' && pathname === '/create' ? [
+    { icon: Check, label: 'Check this draft', question: 'Check my current delivery before publishing.' },
+    { icon: CircleHelp, label: 'This step', question: 'What should I do on my current step?' }
+  ] : surface === 'studio' && pathname === '/portfolio/manage' ? [
+    { icon: Image, label: 'Your Portfolio', question: 'Explain my current Portfolio status.' },
+    { icon: Send, label: 'Publish your work', question: 'What should I check before publishing my Portfolio?' }
+  ] : STARTERS[surface] || STARTERS.public;
   const hasConversation = messages.length > 0;
   const lastMessage = messages[messages.length - 1];
   const canRetry = lastMessage?.role === 'user' && ['failed', 'stopped'].includes(lastMessage.state);
@@ -81,7 +97,7 @@ function AssistantChat({ chatKey, surface, pathname }) {
   const scrollToLatest = (smooth = false) => {
     const element = scrollRef.current;
     if (!element) return;
-    element.scrollTo({ top: element.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+    element.scrollTo({ top: messagesRef.current.length ? element.scrollHeight : 0, behavior: smooth ? 'smooth' : 'auto' });
     stickToBottomRef.current = true;
     setAwayFromBottom(false);
   };
@@ -89,6 +105,11 @@ function AssistantChat({ chatKey, surface, pathname }) {
     setOpen(false);
     window.requestAnimationFrame(() => launchRef.current?.focus());
   };
+  useEffect(() => {
+    const openFromPage = event => { if (event.detail instanceof HTMLElement) launchRef.current = event.detail; setOpen(true); };
+    window.addEventListener('veylo:assistant-open', openFromPage);
+    return () => window.removeEventListener('veylo:assistant-open', openFromPage);
+  }, []);
 
   useEffect(() => { saveMessages(chatKey, messages); }, [chatKey, messages]);
   useEffect(() => () => {
@@ -126,7 +147,7 @@ function AssistantChat({ chatKey, surface, pathname }) {
     const onKeyDown = event => {
       if (event.key === 'Escape') { event.preventDefault(); close(); return; }
       if (event.key !== 'Tab') return;
-      const focusable = [...(panelRef.current?.querySelectorAll('button:not([disabled]), textarea:not([disabled]), a[href], summary') || [])]
+      const focusable = [...(panelRef.current?.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], summary') || [])]
         .filter(element => element.getClientRects().length && !element.closest('[inert]'));
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -167,17 +188,18 @@ function AssistantChat({ chatKey, surface, pathname }) {
     setError(''); setSuggestions([]); setStatus('sending');
     stickToBottomRef.current = true;
     const startedAt = performance.now();
+    const questionContext = session?.requestContext();
     trackEvent('assistant.question.sent', { surface });
     try {
       const response = await api.post('/v1/assistant/chat', {
-        surface, messages: history.map(({ role, content }) => ({ role, content }))
+        surface, messages: history.map(({ role, content }) => ({ role, content })), context: questionContext
       }, { signal: controller.signal, timeout: 50000 });
       if (controllerRef.current !== controller || controller.signal.aborted) return;
       const data = response.data?.data;
       if (typeof data?.answer !== 'string' || !data.answer.trim()) throw new Error('The answer was empty.');
       updateMessages([
         ...messagesRef.current.map(message => message.id === question.id ? { ...message, state: 'complete' } : message),
-        newMessage('assistant', data.answer.trim().slice(0, 6000))
+        { ...newMessage('assistant', data.answer.trim().slice(0, 6000)), fromPage: questionContext ? contextLabel(questionContext) : '' }
       ]);
       setSuggestions(Array.isArray(data.suggestions) ? [...new Set(data.suggestions.filter(item => typeof item === 'string' && item.trim() && item.length <= 200))].slice(0, 3) : []);
       setStatus('idle');
@@ -216,25 +238,30 @@ function AssistantChat({ chatKey, surface, pathname }) {
   const panelStyle = viewport ? { '--assistant-viewport-height': `${viewport.height}px`, '--assistant-keyboard-inset': `${viewport.inset}px` } : undefined;
 
   return <>
-    <button ref={launchRef} type="button" className={`veylo-assistant-launch${open ? ' is-open' : ''}${pathname === '/portfolio/manage' ? ' is-portfolio-editor' : ''}`} onClick={() => { setOpen(true); trackEvent('assistant.opened', { surface }); }} aria-label="Open Veylo Help" aria-expanded={open} aria-controls={open ? 'veylo-assistant-panel' : undefined} tabIndex={open ? -1 : 0}>
-      <MessageCircle size={20} aria-hidden="true" /><span>Veylo Help</span>
-    </button>
+    {!['/create', '/portfolio/manage'].includes(pathname) && <button ref={launchRef} type="button" className={`veylo-assistant-launch${open ? ' is-open' : ''}`} onClick={() => { setOpen(true); trackEvent('assistant.opened', { surface }); }} aria-label="Open Veylo Assistant" aria-expanded={open} aria-controls={open ? 'veylo-assistant-panel' : undefined} tabIndex={open ? -1 : 0}>
+      <MessageCircle size={20} aria-hidden="true" /><span>Ask Veylo</span>
+    </button>}
     {open && <>
-      <button type="button" className="veylo-assistant-backdrop" onClick={close} aria-label="Close Veylo Help backdrop" tabIndex={-1} />
+      <button type="button" className="veylo-assistant-backdrop" onClick={close} aria-label="Close Veylo Assistant backdrop" tabIndex={-1} />
       <aside ref={panelRef} id="veylo-assistant-panel" className={`veylo-assistant-panel${pathname === '/portfolio/manage' ? ' is-portfolio-editor' : ''}`} style={panelStyle} role="dialog" aria-modal="true" aria-labelledby="veylo-assistant-title" aria-describedby="veylo-assistant-description">
         <header className="veylo-assistant-header">
-          <div className="veylo-assistant-heading"><span className="veylo-assistant-mark"><MessageCircle size={21} aria-hidden="true" /></span><div><h2 id="veylo-assistant-title">Veylo Help</h2><p id="veylo-assistant-description">Delivery and account help</p></div></div>
+          <div className="veylo-assistant-heading"><span className="veylo-assistant-mark"><MessageCircle size={21} aria-hidden="true" /></span><div><h2 id="veylo-assistant-title">Veylo Assistant</h2><p id="veylo-assistant-description">Delivery and account help</p></div></div>
           <div className="veylo-assistant-header-actions">
-            <button type="button" className="veylo-assistant-icon-button" onClick={startNewChat} disabled={!hasConversation} aria-label="Start a new Veylo Help chat" title="New chat"><RotateCcw size={18} aria-hidden="true" /></button>
-            <button ref={closeRef} type="button" className="veylo-assistant-icon-button" onClick={close} aria-label="Close Veylo Help"><X size={20} aria-hidden="true" /></button>
+            <button type="button" className="veylo-assistant-icon-button" onClick={startNewChat} disabled={!hasConversation} aria-label="Start a new Veylo Assistant chat" title="New chat"><RotateCcw size={18} aria-hidden="true" /></button>
+            <button ref={closeRef} type="button" className="veylo-assistant-icon-button" onClick={close} aria-label="Close Veylo Assistant"><X size={20} aria-hidden="true" /></button>
           </div>
         </header>
+            {session && <details className="veylo-assistant-context"><summary>{contextState.enabled ? `Using ${contextLabel(contextState)}` : 'Page context is off'}</summary><p>Automatic page context uses page and workflow facts from this Veylo tab. Typed fields, passwords and payment details are excluded.</p>
+              <ol>{trimActivity(contextState.recent).slice(-5).map((event, index) => <li key={`${event.at}-${index}`}>{ASSISTANT_PAGES[event.page]} · {event.event.replaceAll('-', ' ')}</li>)}</ol>
+              <div><button type="button" onClick={() => session.clear()}>Clear recent activity</button><button type="button" onClick={() => session.setEnabled(!contextState.enabled)}>{contextState.enabled ? 'Turn page context off' : 'Turn page context on'}</button></div>
+            </details>}
         <div className="veylo-assistant-conversation">
           <div ref={scrollRef} className="veylo-assistant-messages" onScroll={event => {
             const element = event.currentTarget;
             const away = element.scrollHeight - element.scrollTop - element.clientHeight > 64;
             stickToBottomRef.current = !away; setAwayFromBottom(away);
           }}>
+            <AssistantTools session={session} state={contextState} surface={surface} onClose={close} onMessage={content => { updateMessages([...messagesRef.current, newMessage('assistant', content)]); stickToBottomRef.current = true; }} />
             {!hasConversation && <section className="veylo-assistant-welcome">
               <span className="veylo-assistant-eyebrow">A little help, right here</span>
               <h3>{surface === 'studio' ? 'What are you working on?' : surface === 'delivery' ? 'Need a hand with your photos?' : 'What would you like to know?'}</h3>
@@ -247,7 +274,8 @@ function AssistantChat({ chatKey, surface, pathname }) {
               if (event.target.closest('a')?.getAttribute('href')?.startsWith('/')) close();
             }}>
               {messages.map(message => <article className={`veylo-assistant-message is-${message.role}`} key={message.id}>
-                <div className="veylo-assistant-message-label">{message.role === 'assistant' ? <><span className="veylo-assistant-answer-mark"><MessageCircle size={13} aria-hidden="true" /></span>Veylo Help</> : 'You'}</div>
+                <div className="veylo-assistant-message-label">{message.role === 'assistant' ? <><span className="veylo-assistant-answer-mark"><MessageCircle size={13} aria-hidden="true" /></span>Veylo Assistant</> : 'You'}</div>
+                {message.fromPage && <p className="veylo-assistant-answer-context">Asked from {message.fromPage}</p>}
                 {message.role === 'assistant' ? <VeyloMarkdown>{message.content}</VeyloMarkdown> : <p className="veylo-assistant-user-content">{message.content}</p>}
                 {message.role === 'assistant' && <div className="veylo-assistant-message-actions"><button type="button" onClick={() => copyAnswer(message)} aria-label={copiedId === message.id ? 'Answer copied' : 'Copy answer'}>{copiedId === message.id ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}<span>{copiedId === message.id ? 'Copied' : 'Copy answer'}</span></button></div>}
               </article>)}
@@ -261,7 +289,7 @@ function AssistantChat({ chatKey, surface, pathname }) {
         {suggestions.length > 0 && status === 'idle' && <details className="veylo-assistant-followups"><summary>Related questions<ChevronDown size={15} aria-hidden="true" /></summary><div className="veylo-assistant-suggestions" aria-label="Related questions">{suggestions.map(question => <button type="button" key={question} onClick={() => send(question)}>{question}<ArrowUpRight size={14} aria-hidden="true" /></button>)}</div></details>}
         <footer className="veylo-assistant-footer">
           <form className="veylo-assistant-form" onSubmit={event => { event.preventDefault(); send(); }}>
-            <label className="sr-only" htmlFor="veylo-assistant-input">Ask Veylo Help</label>
+            <label className="sr-only" htmlFor="veylo-assistant-input">Ask Veylo Assistant</label>
             <textarea ref={inputRef} id="veylo-assistant-input" rows={1} maxLength={MAX_QUESTION} value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => {
               if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && window.matchMedia('(min-width: 768px)').matches) { event.preventDefault(); send(); }
             }} placeholder={status === 'sending' ? 'Write your next question…' : 'Ask a question about Veylo…'} aria-describedby="veylo-assistant-footnote" />

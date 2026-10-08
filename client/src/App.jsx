@@ -9,6 +9,8 @@ import Navbar from './components/Navbar.jsx';
 import ProductHeader from './components/ProductHeader.jsx';
 import CookiePreferences from './components/CookiePreferences.jsx';
 import VeyloAssistant from './components/VeyloAssistant.jsx';
+import { AssistantContextProvider } from './components/AssistantContext.jsx';
+import AssistantEntry from './components/AssistantEntry.jsx';
 import LandingPage from './pages/LandingPage.jsx';
 import api from './services/api.js';
 import { installAnalyticsListeners, trackEvent } from './services/analytics.js';
@@ -145,18 +147,14 @@ function DeliveryChrome({ user }) {
   const { pathname } = useLocation();
   // Client delivery pages are deliberately quiet: the photographs own the
   // screen. Necessary session and analytics cookies still work in the
-  // background, but neither the privacy notice nor Veylo Help is rendered on
+  // background, but neither the privacy notice nor Veylo Assistant is rendered on
   // a delivery or delivery demo.
   const isDeliverySurface = /^\/(?:d|story|volume|select|edit)(?:\/|$)/.test(pathname)
     || pathname === '/demo'
     || pathname.startsWith('/demo/')
     || pathname === '/__phone-preview';
   if (isDeliverySurface) return null;
-  const hideAssistant = pathname === '/create'
-    || pathname === '/portfolio'
-    || pathname === '/portfolio/manage'
-    || pathname === '/portfolio/enquiries'
-    || Boolean(publicPortfolioHandle(pathname));
+  const hideAssistant = Boolean(publicPortfolioHandle(pathname));
   return <><CookiePreferences compactPortfolio={Boolean(publicPortfolioHandle(pathname))} />{!hideAssistant && <VeyloAssistant user={user} />}</>;
 }
 
@@ -183,7 +181,7 @@ function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountD
     <main id="main-content"><Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/dashboard" element={<ProtectedRoute user={user} loading={authLoading}><Dashboard user={user} onLogout={onLogout} /></ProtectedRoute>} />
-      <Route path="/create" element={<ProtectedRoute user={user} loading={authLoading}><CreateDelivery user={user} /></ProtectedRoute>} />
+      <Route path="/create" element={<ProtectedRoute user={user} loading={authLoading}><div className="veylo-assistant-entry-row"><AssistantEntry /></div><CreateDelivery user={user} /></ProtectedRoute>} />
       <Route path="/sharing" element={<ProtectedRoute user={user} loading={authLoading}><DeliverySharing /></ProtectedRoute>} />
       <Route path="/formats" element={<DeliveryFormats />} /><Route path="/gridboard" element={<GridboardDelivery />} /><Route path="/photoswap" element={<PhotoSwapDelivery />} /><Route path="/portfolio" element={<PortfolioPage user={user} />} /><Route path="/pricing" element={<PricingPage />} />
       <Route path="/signup" element={<GuestOnlyRoute user={user} loading={authLoading}><SignupPage onAuthenticated={onAuthenticated} /></GuestOnlyRoute>} />
@@ -239,7 +237,7 @@ export default function App() {
     window.location.assign('/');
   };
   const handlePlanChanged = useCallback(plan => setUser(current => current ? { ...current, plan } : current), []);
-  return <ProPricingProvider><MotionConfig {...VEYLO_MOTION_CONFIG}><BrowserRouter><RoutePosition /><DeliveryChrome user={user} /><ToastContainer position="top-right" theme="dark" autoClose={3000} /><Suspense fallback={<div className="v-page-loading" role="status">Opening Veylo…</div>}><Routes>
+  return <ProPricingProvider><MotionConfig {...VEYLO_MOTION_CONFIG}><BrowserRouter><AssistantContextProvider user={user}><RoutePosition /><DeliveryChrome user={user} /><ToastContainer position="top-right" theme="dark" autoClose={3000} /><Suspense fallback={<div className="v-page-loading" role="status">Opening Veylo…</div>}><Routes>
     <Route path="/select/:publicId" element={<LibraryCollaborationPage kind="preselection" />} />
     <Route path="/edit/:publicId" element={<LibraryCollaborationPage kind="editor-handoff" />} />
     <Route path="/story/:storyId" element={<PhonePresentationRoute title="Photo Story demo"><StoryViewer /></PhonePresentationRoute>} />
@@ -253,5 +251,5 @@ export default function App() {
     <Route path="/demo/photoswap" element={<PhonePresentationRoute title="Photo Swap delivery demo"><PhotoSwapDemo /></PhonePresentationRoute>} />
     <Route path="/demo/:formatId" element={<PhonePresentationRoute title="Delivery format demo"><FormatDemo /></PhonePresentationRoute>} />
     <Route path="*" element={<WebsiteShell user={user} authLoading={authLoading} onAuthenticated={handleAuthenticated} onLogout={handleLogout} onAccountDeleted={handleAccountDeleted} onPlanChanged={handlePlanChanged} />} />
-  </Routes></Suspense></BrowserRouter></MotionConfig></ProPricingProvider>;
+  </Routes></Suspense></AssistantContextProvider></BrowserRouter></MotionConfig></ProPricingProvider>;
 }

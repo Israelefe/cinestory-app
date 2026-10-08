@@ -42,6 +42,12 @@ function formatHelp(runtimeConfig = {}) {
 
 const DOCUMENTS = [
   {
+    id: 'assistant-workspace', title: 'Veylo Assistant and your current task',
+    keywords: ['assistant', 'ask veylo', 'current page', 'recent activity', 'writing help', 'check delivery', 'support request'],
+    audiences: ['studio', 'visitor'],
+    text: `Ask Veylo opens Veylo Assistant. It can use the current Veylo page, a short history of page changes and explicit workflow facts from this tab when page context is enabled. Expand the context label to inspect or clear recent activity, or turn page context off. Account allowance and storage answers use server-checked account data. Check delivery reviews saved publishing requirements and distinguishes browser-reported unsaved changes and uploads. Writing help proposes a title, selected caption, Portfolio introduction, or a WhatsApp message for an already published delivery. Confirming an edit applies only that field to the open form; use the normal save controls and check the save status. It does not publish, change a subscription, delete work, or send a client message automatically. Prepare support request opens a reviewable support form; the user submits it. Original photographs are not altered. Passwords, PINs, payment details, typed fields, and private media URLs are excluded from automatic page context.`
+  },
+  {
     id: 'what-veylo-is',
     title: 'What Veylo is',
     keywords: ['veylo', 'delivery', 'gallery', 'photo story', 'client', 'photographer', 'finished shoot'],
@@ -250,6 +256,7 @@ export function assistantTopicLabels({ query = '', audience = 'visitor' } = {}) 
 }
 
 const RELATED_QUESTIONS = {
+  'assistant-workspace': ['What page am I on?', 'How do I turn page context off?', 'How do I check a delivery before publishing?'],
   'what-veylo-is': ['How does a client delivery work?'],
   'account-and-profile': ['How do I update my studio profile?', 'How do I reset my password?'],
   'plans-and-storage': ['What is included with Pro?', 'What happens when I cancel Pro?', 'Where can I check my delivery allowance?'],

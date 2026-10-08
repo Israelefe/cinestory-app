@@ -23,12 +23,12 @@ assert.match(service, /CONVERSATION DISCIPLINE & SCOPE/);
 assert.match(service, /Do not discuss source code, databases/);
 assert.match(service, /appearsSensitive/);
 assert.match(service, /response\.ok/);
-assert.match(controller, /safeAccountContext/);
+assert.match(controller, /loadAssistantAccount/);
 assert.match(controller, /safeMessages/);
 assert.match(controller, /provider messages, model names, request payloads/);
 
 const turns = safeMessages([
-  { role: 'assistant', content: 'Welcome to Veylo Help!' },
+  { role: 'assistant', content: 'Welcome to Veylo Assistant!' },
   { role: 'user', content: 'What is Veylo?' },
   { role: 'assistant', content: 'Veylo delivers client photo stories.' },
   { role: 'user', content: 'How much is Pro?' }
@@ -44,13 +44,13 @@ assert.match(route, /assistantChatLimit/);
 assert.match(client, /VeyloMarkdown/);
 assert.match(client, /AbortController/);
 assert.match(client, /sessionStorage/);
-assert.match(client, /Start a new Veylo Help chat/);
+assert.match(client, /Start a new Veylo Assistant chat/);
 assert.match(client, /Do not send passwords/);
 assert.match(markdown, /safeHref/);
 assert.match(markdown, /veylo-markdown-table/);
 assert.match(styles, /@media \(max-width: 560px\)/);
 assert.doesNotMatch(styles, /prefers-reduced-motion/);
-assert.match(admin, /Veylo Help/);
+assert.match(admin, /Veylo Assistant/);
 assert.match(admin, /veyloAssistant/);
 
 const previousFetch = globalThis.fetch;
