@@ -31,9 +31,9 @@ async function complete(page) {
 }
 
 async function navigateScene(page, anchor) {
-  const picker = page.getByRole('combobox', { name: 'Choose an event scene' });
-  if (await picker.isVisible()) await picker.selectOption(anchor.slice(1));
-  else await page.locator(`.ec-scene-nav a[href="${anchor}"]`).click();
+  const menu = page.locator('.ec-scenes-menu');
+  if (await menu.getAttribute('open') === null) await menu.locator('summary').click();
+  await page.locator(`.ec-scene-nav a[href="${anchor}"]`).click();
 }
 
 for (const mode of ['demo', 'client']) test(`${mode} event opens with photography and follows natural scrolling`, async ({ page }) => {
@@ -136,8 +136,12 @@ for (const reducedMotion of ['no-preference', 'reduce']) {
     await page.getByRole('button', { name: 'Pause photo motion', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Resume photo motion', exact: true })).toHaveAttribute('aria-pressed', 'true');
     const paused = await transform();
+    const lead = page.locator('.ec-scene-lead-wrap').first();
+    const pausedDepth = await lead.evaluate(element => getComputedStyle(element).transform);
+    await page.mouse.wheel(0, 120);
     await page.waitForTimeout(250);
     expect(await transform()).toBe(paused);
+    expect(await lead.evaluate(element => getComputedStyle(element).transform)).toBe(pausedDepth);
     await page.getByRole('button', { name: 'Resume photo motion', exact: true }).click();
     await expect.poll(transform).not.toBe(paused);
   });
@@ -192,6 +196,19 @@ for (const savedDimensions of [true, false]) test(`photographer notes, date, ven
   await portrait.scrollIntoViewIfNeeded();
   await expect.poll(() => portrait.locator('img').evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
   await expect.poll(() => portrait.locator('button').evaluate(element => element.getBoundingClientRect().width / element.getBoundingClientRect().height)).toBeCloseTo(dimensions.width / dimensions.height, 2);
+  expect(await portrait.locator('button').evaluate(element => element.getBoundingClientRect().height)).toBeLessThan(800);
+});
+
+test('long scene headings leave room for the lead photograph on a tablet', async ({ page }) => {
+  await page.setViewportSize({ width: 834, height: 1000 });
+  await published(page, item => { item.creativeDirection.sections[0].title = 'Guests arriving and catching up before the opening address'; });
+  const scene = page.locator('.ec-scene').first();
+  await scene.scrollIntoViewIfNeeded();
+  const heading = scene.locator('h2');
+  await expect(heading).toHaveText('Guests arriving and catching up before the opening address');
+  const photo = scene.locator('.ec-scene-lead');
+  await expect.poll(() => photo.evaluate(element => element.getBoundingClientRect().top - element.closest('.ec-scene').querySelector('.ec-scene-copy').getBoundingClientRect().bottom)).toBeGreaterThanOrEqual(24);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
 });
 
 test('filter controls can open and close from the keyboard', async ({ page }) => {
@@ -204,6 +221,32 @@ test('filter controls can open and close from the keyboard', async ({ page }) =>
   await page.locator('.ec-filter-options button').first().press('Escape');
   await expect(page.locator('.ec-filter')).toHaveJSProperty('open', false);
   await expect(summary).toBeFocused();
+});
+
+test('scene navigation stays tucked away and works from the keyboard', async ({ page }) => {
+  await page.setViewportSize({ width: 834, height: 1000 });
+  await published(page);
+  const menu = page.locator('.ec-scenes-menu');
+  const summary = menu.locator('summary');
+  await expect(menu).toHaveJSProperty('open', false);
+  await expect(page.getByRole('navigation', { name: 'Event scenes' })).not.toBeVisible();
+  await summary.focus();
+  await summary.press('Enter');
+  await expect(menu).toHaveJSProperty('open', true);
+  await summary.press('Tab');
+  const first = menu.locator('a').first();
+  await expect(first).toBeFocused();
+  await first.press('Escape');
+  await expect(menu).toHaveJSProperty('open', false);
+  await expect(summary).toBeFocused();
+  await summary.press('Enter');
+  const second = menu.locator('a').nth(1);
+  const anchor = await second.getAttribute('href');
+  await second.focus();
+  await second.press('Enter');
+  await expect(menu).toHaveJSProperty('open', false);
+  await expect(page.locator(anchor)).toBeFocused();
+  await expect(second).toHaveAttribute('aria-current', 'location');
 });
 
 test('a one-photo delivery has one photograph and a usable ending gallery', async ({ page }) => {
