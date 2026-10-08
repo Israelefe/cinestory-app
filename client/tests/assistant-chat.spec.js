@@ -16,11 +16,11 @@ async function setup(page, { user = null } = {}) {
   if (user) await expect.poll(() => page.evaluate(() => Object.keys(sessionStorage).some(key => key.includes('studio-a_studio')))).toBe(true);
 }
 async function openChat(page) {
-  await page.getByRole('button', { name: 'Open Veylo Help', exact: true }).click();
-  return page.getByRole('dialog', { name: 'Veylo Help', exact: true });
+  await page.getByRole('button', { name: 'Open Veylo Assistant', exact: true }).click();
+  return page.getByRole('dialog', { name: 'Veylo Assistant', exact: true });
 }
 async function ask(page, question) {
-  await page.getByRole('textbox', { name: 'Ask Veylo Help', exact: true }).fill(question);
+  await page.getByRole('textbox', { name: 'Ask Veylo Assistant', exact: true }).fill(question);
   await page.getByRole('button', { name: 'Send question', exact: true }).click();
 }
 
@@ -40,8 +40,8 @@ test('chat fits phone, tablet and desktop and retains animation with device redu
     expect(send.y + send.height).toBeLessThanOrEqual(height);
     expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     await expect(panel).toHaveCSS('animation-name', 'veylo-assistant-rise');
-    await panel.getByRole('button', { name: 'Close Veylo Help', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Open Veylo Help', exact: true })).toBeFocused();
+    await panel.getByRole('button', { name: 'Close Veylo Assistant', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Open Veylo Assistant', exact: true })).toBeFocused();
   }
 });
 
@@ -54,7 +54,7 @@ test('successful turns retain context and survive reload, and related questions 
   await ask(page, 'How do I change my profile?');
   await expect(panel.locator('.is-assistant')).toContainText('Save your changes');
   await expect(panel.locator('.veylo-markdown ol')).toHaveCSS('list-style-type', 'decimal');
-  await panel.locator('summary').click();
+  await panel.locator('.veylo-assistant-followups summary').click();
   await expect(panel.getByRole('button', { name: 'How do I publish a delivery?' })).toBeVisible();
   await ask(page, 'Where do I find that?');
   await expect(panel.locator('.is-assistant')).toHaveCount(2);
@@ -104,7 +104,7 @@ test('stop and reset isolate cancelled requests from a new request', async ({ pa
   await expect.poll(() => count).toBe(1);
   await panel.getByRole('button', { name: 'Stop response' }).click();
   await expect(panel.getByText('This question has no answer yet.')).toBeVisible();
-  await panel.getByRole('button', { name: 'Start a new Veylo Help chat' }).click();
+  await panel.getByRole('button', { name: 'Start a new Veylo Assistant chat' }).click();
   await ask(page, 'Second question');
   await expect.poll(() => count).toBe(2);
   releaseFirst();
@@ -199,7 +199,7 @@ test('mobile Enter creates a newline and a resized visual viewport keeps the com
   await page.setViewportSize({ width: 390, height: 844 });
   await setup(page);
   const panel = await openChat(page);
-  await expect(panel.getByRole('button', { name: 'Close Veylo Help', exact: true })).toBeFocused();
+  await expect(panel.getByRole('button', { name: 'Close Veylo Assistant', exact: true })).toBeFocused();
   await panel.getByRole('textbox').fill('First line');
   await page.keyboard.press('Enter');
   await expect(panel.getByRole('textbox')).toHaveValue('First line\n');
@@ -222,17 +222,17 @@ test('modal traps focus, restores page access and never steals focus when an ans
   expect(await page.locator('#main-content').evaluate(element => !!element.closest('[inert]'))).toBe(true);
   await panel.getByRole('textbox').fill('Profile help');
   await page.keyboard.press('Enter');
-  await panel.getByRole('button', { name: 'Close Veylo Help', exact: true }).focus();
+  await panel.getByRole('button', { name: 'Close Veylo Assistant', exact: true }).focus();
   release();
   await expect(panel.locator('.is-assistant')).toHaveCount(1);
-  await expect(panel.getByRole('button', { name: 'Close Veylo Help', exact: true })).toBeFocused();
+  await expect(panel.getByRole('button', { name: 'Close Veylo Assistant', exact: true })).toBeFocused();
   await panel.getByRole('textbox').focus();
   await page.keyboard.press('Tab');
   await page.keyboard.press('Tab');
   expect(await panel.evaluate(element => element.contains(document.activeElement))).toBe(true);
   await page.keyboard.press('Escape');
   await expect(panel).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Open Veylo Help', exact: true })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Open Veylo Assistant', exact: true })).toBeFocused();
   expect(await page.locator('#main-content').evaluate(element => !!element.closest('[inert]'))).toBe(false);
 });
 
@@ -282,11 +282,13 @@ test('capture the starting screen and conversation at mobile, tablet and desktop
   for (const width of [390, 768, 834, 1440]) {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
     const panel = await openChat(page);
+    await panel.evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished.catch(() => {}))));
     await page.screenshot({ path: `../.visual-review/assistant/start-${width}.png` });
     await ask(page, 'How do I change my profile?');
     await expect(panel.locator('.is-assistant')).toHaveCount(1);
+    await panel.locator('.is-assistant').evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished.catch(() => {}))));
     await page.screenshot({ path: `../.visual-review/assistant/chat-${width}.png` });
-    await panel.getByRole('button', { name: 'Start a new Veylo Help chat' }).click();
-    await panel.getByRole('button', { name: 'Close Veylo Help', exact: true }).click();
+    await panel.getByRole('button', { name: 'Start a new Veylo Assistant chat' }).click();
+    await panel.getByRole('button', { name: 'Close Veylo Assistant', exact: true }).click();
   }
 });
