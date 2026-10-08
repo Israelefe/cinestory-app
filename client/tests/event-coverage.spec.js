@@ -67,6 +67,9 @@ for (const width of [320, 390, 640, 768, 834, 1024, 1440]) for (const mode of ['
     await expect(page.getByRole('button', { name: 'View the event', exact: true })).toHaveCount(0);
     await expect.poll(() => page.locator('.ec-cover-photo img').evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
     await expect.poll(() => page.locator('.ec-cover-copy').evaluate(element => getComputedStyle(element).opacity)).toBe('1');
+    // The cover title belongs to the photograph's lower edge, rather than
+    // taking an entire screen above the opening photograph.
+    expect(await page.locator('.ec-cover-copy').evaluate(element => element.getBoundingClientRect().top < document.querySelector('.ec-cover-photo button').getBoundingClientRect().bottom)).toBe(true);
     const ids = await page.locator('.ec-photo-card').evaluateAll(cards => cards.map(card => card.dataset.photoId));
     expect(ids).toHaveLength(16);
     expect(new Set(ids).size).toBe(16);
@@ -259,7 +262,7 @@ for (const width of [320, 834, 1440]) test(`each scene has a distinct compositio
   await expect.poll(() => arrival.locator('.ec-scene-copy').evaluate(element => Number(getComputedStyle(element).opacity))).toBe(1);
   const arrivalHeading = await rect(arrival.locator('.ec-scene-copy'));
   const arrivalPhoto = await rect(arrival.locator('.ec-scene-lead-wrap'));
-  if (width < 1024) expect(arrivalPhoto.top - arrivalHeading.bottom).toBeGreaterThanOrEqual(24);
+  if (width < 768) expect(arrivalPhoto.top - arrivalHeading.bottom).toBeGreaterThanOrEqual(24);
   else expect(arrivalPhoto.left - arrivalHeading.right).toBeGreaterThanOrEqual(24);
 
   const feature = scenes.nth(1);
