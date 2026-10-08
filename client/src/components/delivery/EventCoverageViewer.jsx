@@ -15,6 +15,14 @@ const reveal = {
   initial: { opacity: 0, y: 18 }, whileInView: { opacity: 1, y: 0 },
   viewport: { once: true, amount: .12 }, transition: { duration: .6, ease }
 };
+const copySequence = {
+  hidden: { opacity: 0, y: 18 },
+  visible: { opacity: 1, y: 0, transition: { duration: .7, ease, staggerChildren: .12 } }
+};
+const copyPiece = {
+  hidden: { opacity: 0, y: 16 },
+  visible: { opacity: 1, y: 0, transition: { duration: .7, ease } }
+};
 const filters = [['all', 'All moments'], ['people', 'People'], ['programme', 'Programme'], ['networking', 'Networking'], ['details', 'Details']];
 const demoBranding = { type: 'studio', name: 'Mayflower Visuals', logoUrl: '' };
 
@@ -38,7 +46,22 @@ function EditorialHeading({ title }) {
   return <><span className="ec-heading-prefix">{words.slice(0, -1).join(' ')} </span><span className="ec-heading-word">{words.at(-1)}</span></>;
 }
 
-function PhotoMotion({ photo, index, paused, children }) {
+function CaptionCopy({ text }) {
+  const sentenceEnd = text.search(/[.!?]\s+/);
+  const hasLead = sentenceEnd >= 12 && sentenceEnd < 90;
+  return <span className="ec-caption-copy">{hasLead ? <><strong className="ec-caption-lede">{text.slice(0, sentenceEnd + 1)}</strong>{text.slice(sentenceEnd + 1)}</> : text}</span>;
+}
+
+function PhotoDrift({ target, visible, paused, children }) {
+  const drift = useMotionValue('0%');
+  const { scrollYProgress } = useScroll({ target, offset: ['start end', 'end start'] });
+  const update = value => drift.set(`${(.5 - Math.max(0, Math.min(1, value))) * 6}%`);
+  useMotionValueEvent(scrollYProgress, 'change', value => { if (visible && !paused) update(value); });
+  useEffect(() => { if (visible && !paused) update(scrollYProgress.get()); }, [visible, paused, drift, scrollYProgress]);
+  return <motion.div className="ec-photo-drift" style={{ y: drift, scale: 1.08 }}>{children}</motion.div>;
+}
+
+function PhotoMotion({ photo, index, paused, lead, children }) {
   const ref = useRef(null);
   const visible = useInView(ref);
   const controls = useAnimationControls();
@@ -50,29 +73,40 @@ function PhotoMotion({ photo, index, paused, children }) {
     else controls.stop();
     return () => controls.stop();
   }, [controls, visible, paused, reduced, motionName, index]);
-  return <motion.div ref={ref} className="ec-photo-motion" initial={false} animate={controls}>{children}</motion.div>;
+  return <motion.div ref={ref} className="ec-photo-motion" initial={false} animate={controls}>{lead && !reduced && motionName !== 'still' ? <PhotoDrift target={ref} visible={visible} paused={paused}>{children}</PhotoDrift> : children}</motion.div>;
+}
+
+function PhotoReveal({ entrance, paused, delay }) {
+  const horizontal = entrance === 'across' || entrance === 'split';
+  const closed = horizontal ? { scaleX: 0 } : { scaleY: 0 };
+  const panels = entrance === 'split' ? ['left', 'right'] : [entrance === 'across' ? 'left' : entrance === 'up' ? 'bottom' : 'top'];
+  return panels.map(side => <motion.span key={side} className={`ec-photo-reveal${entrance === 'split' ? ` ec-photo-reveal-${side}` : ''}`} aria-hidden="true" style={{ transformOrigin: side }} initial={horizontal ? { scaleX: 1 } : { scaleY: 1 }} animate={paused ? closed : undefined} whileInView={closed} viewport={{ once: true, amount: .1 }} transition={{ duration: paused ? 0 : entrance === 'split' ? 1.15 : .95, ease, delay: paused ? 0 : delay }} />);
 }
 
 function PhotoCard({ photo, index = 0, position, paused, onOpen, label, eager = false, className = '', showCaption = true, sizes, lead = false, entrance = 'down', slant = 0 }) {
   const [loadedDimensions, setLoadedDimensions] = useState(null);
+  const reduced = useVeyloReducedMotion();
   if (!photo) return null;
   const dimensions = photo.width && photo.height ? photo : DELIVERY_DEMO_DIMENSIONS[photo.name] || {};
   const hasDimensions = Number(dimensions.width) > 0 && Number(dimensions.height) > 0;
   const source = photo.url || photo.name;
   const ratio = hasDimensions ? dimensions.width / dimensions.height : loadedDimensions?.source === source ? loadedDimensions.ratio : 3 / 2;
+  const still = reduced || photo.motion === 'still';
+  const delay = Math.min(index % 3, 2) * .1;
+  const settled = { opacity: 1, x: 0, y: 0, scale: 1, rotate: slant };
   const readDimensions = event => {
     const image = event.target;
     if (!hasDimensions && image.tagName === 'IMG' && image.naturalWidth > 0 && image.naturalHeight > 0) setLoadedDimensions({ source, ratio: image.naturalWidth / image.naturalHeight });
   };
-  return <motion.figure className={`ec-photo-card ${className}`} data-photo-id={eventPhotoKey(photo)} data-orientation={ratio < 1 ? 'portrait' : 'landscape'} {...formatFrameAttributes(photo)} style={{ ...formatFrameStyle(photo), '--ec-photo-ratio': ratio, rotate: slant }} onLoadCapture={readDimensions} initial={{ opacity: 0, y: photo.motion === 'still' ? 0 : lead ? 36 : 20, scale: photo.motion === 'still' ? 1 : lead ? .985 : 1 }} whileInView={{ opacity: 1, y: 0, scale: 1 }} viewport={reveal.viewport} transition={{ duration: lead ? .95 : .7, ease, delay: Math.min(index % 3, 2) * .09 }}>
+  return <motion.figure className={`ec-photo-card ${className}`} data-photo-id={eventPhotoKey(photo)} data-orientation={ratio < 1 ? 'portrait' : 'landscape'} data-entrance={still ? 'still' : entrance} {...formatFrameAttributes(photo)} style={{ ...formatFrameStyle(photo), '--ec-photo-ratio': ratio }} onLoadCapture={readDimensions} initial={{ opacity: 0, x: !still && entrance === 'across' ? 18 : 0, y: still || entrance === 'fade' || entrance === 'across' ? 0 : lead ? 36 : 24, scale: !still && lead ? .985 : 1, rotate: !still && slant ? slant * 3 : slant }} animate={paused ? settled : undefined} whileInView={settled} viewport={reveal.viewport} transition={{ duration: paused ? 0 : lead ? 1.05 : .85, ease, delay: paused ? 0 : delay }}>
     <button type="button" className="ec-photo-button" onClick={() => onOpen(photo)} aria-label={label}>
-      <PhotoMotion photo={photo} index={index} paused={paused}>
+      <PhotoMotion photo={photo} index={index} paused={paused} lead={lead}>
         <Photo name={photo.name} url={photo.url} srcSet={photo.srcSet} alt={photo.alt || photo.caption || ''} eager={eager} sizes={sizes} style={photo.focalPoint ? { objectPosition: photo.focalPoint } : undefined} />
       </PhotoMotion>
-      {lead && entrance !== 'fade' && photo.motion !== 'still' && <motion.span className="ec-photo-reveal" aria-hidden="true" style={{ transformOrigin: entrance === 'across' ? 'left' : entrance === 'up' ? 'bottom' : 'top' }} initial={entrance === 'across' ? { scaleX: 1 } : { scaleY: 1 }} whileInView={entrance === 'across' ? { scaleX: 0 } : { scaleY: 0 }} viewport={{ once: true, amount: .1 }} transition={{ duration: .9, ease }} />}
+      {!still && entrance !== 'fade' && (lead || entrance === 'across' || entrance === 'up') && <PhotoReveal entrance={entrance} paused={paused} delay={delay} />}
       <span className="ec-photo-open" aria-hidden="true"><Maximize2 size={16} /></span>
     </button>
-    {showCaption && photo.caption && <figcaption className="vec-photo-caption">{position && <span className="ec-photo-index" aria-hidden="true">{String(position).padStart(2, '0')}</span>}<span>{photo.caption}</span></figcaption>}
+    {showCaption && photo.caption && <motion.figcaption className="vec-photo-caption" initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={reveal.viewport} transition={{ duration: .6, ease, delay: delay + .12 }}>{position && <span className="ec-photo-index" aria-hidden="true">{String(position).padStart(2, '0')}</span>}<CaptionCopy text={photo.caption} /></motion.figcaption>}
   </motion.figure>;
 }
 
@@ -88,15 +122,15 @@ function SceneSpread({ section, paused, onOpen, photoPositions, showNotes, regis
     if (moving && visible && !paused) depth.set((.5 - value) * 40);
   });
   useEffect(() => { if (!moving) depth.set(0); }, [moving, depth]);
-  const heading = <motion.header className="ec-scene-copy" {...reveal}>
-    <span className="ec-scene-number" aria-hidden="true">{String(section.sceneIndex + 1).padStart(2, '0')}</span>
-    <div className="ec-scene-heading"><h2 id={`${section.anchorId}-title`}><EditorialHeading title={section.title} /></h2></div>
-    {showNotes && section.copy && <p>{section.copy}</p>}
+  const heading = <motion.header className="ec-scene-copy" variants={copySequence} initial="hidden" whileInView="visible" viewport={reveal.viewport}>
+    <motion.span className="ec-scene-number" aria-hidden="true" variants={copyPiece}>{String(section.sceneIndex + 1).padStart(2, '0')}</motion.span>
+    <motion.div className="ec-scene-heading" variants={copyPiece}><h2 id={`${section.anchorId}-title`}><EditorialHeading title={section.title} /></h2></motion.div>
+    {showNotes && section.copy && <motion.p variants={copyPiece}>{section.copy}</motion.p>}
   </motion.header>;
   const lead = <motion.div ref={leadRef} className="ec-scene-lead-wrap" style={{ y: depth }}>
     <PhotoCard photo={leadPhoto} position={photoPositions.get(eventPhotoKey(leadPhoto))} paused={paused} onOpen={onOpen} lead={design !== 'contact'} slant={design === 'conversation' ? -1.25 : 0} entrance={design === 'arrival' ? 'across' : design === 'feature' ? 'up' : 'fade'} label={`Open ${section.title} photograph 1`} className="ec-scene-lead" sizes={design === 'contact' ? '(max-width: 639px) 92vw, 46vw' : '(max-width: 767px) 100vw, (max-width: 1279px) 92vw, 1200px'} />
   </motion.div>;
-  const supportingPhotos = support.map((photo, index) => <PhotoCard key={eventPhotoKey(photo)} photo={photo} index={index + 1} position={photoPositions.get(eventPhotoKey(photo))} paused={paused} onOpen={onOpen} slant={design === 'conversation' && index === 0 ? 1.25 : 0} label={`Open ${section.title} photograph ${index + 2}`} sizes="(max-width: 639px) 92vw, (max-width: 1023px) 44vw, 46vw" />);
+  const supportingPhotos = support.map((photo, index) => <PhotoCard key={eventPhotoKey(photo)} photo={photo} index={index + 1} position={photoPositions.get(eventPhotoKey(photo))} paused={paused} onOpen={onOpen} slant={design === 'conversation' && index === 0 ? 1.25 : 0} entrance={design === 'feature' ? index % 2 ? 'across' : 'up' : design === 'contact' ? 'fade' : 'down'} label={`Open ${section.title} photograph ${index + 2}`} sizes="(max-width: 639px) 92vw, (max-width: 1023px) 44vw, 46vw" />);
   const supportingSpread = support.length > 0 && <div className="ec-scene-support" data-count={support.length}>{supportingPhotos}</div>;
   let spread;
   if (design === 'conversation') spread = <div className="ec-conversation-layout" data-count={section.photos.length}>{lead}{heading}{supportingPhotos}</div>;
@@ -104,6 +138,7 @@ function SceneSpread({ section, paused, onOpen, photoPositions, showNotes, regis
   else if (design === 'feature') spread = <><div className="ec-scene-opening">{lead}{heading}</div>{supportingSpread}</>;
   else spread = <><div className="ec-scene-opening">{heading}{lead}</div>{supportingSpread}</>;
   return <article id={section.anchorId} ref={register} tabIndex={-1} aria-labelledby={`${section.anchorId}-title`} className="ec-scene" data-design={design} data-layout={section.layout} data-scene-index={section.sceneIndex} data-treatment={design === 'feature' ? 'feature' : design === 'conversation' ? 'interlude' : 'dark'} data-single-photo={support.length === 0} data-long-title={section.title.length > 35} style={section.accent ? { '--ec-scene-accent': section.accent } : undefined}>
+    <motion.span className="ec-scene-rule" aria-hidden="true" initial={{ scaleX: 0 }} whileInView={{ scaleX: 1 }} viewport={{ once: true, amount: .1 }} transition={{ duration: 1.1, ease }} />
     <div className="ec-scene-grid" data-count={section.photos.length}>{spread}</div>
   </article>;
 }
@@ -237,11 +272,11 @@ export default function EventCoverageViewer({ delivery, galleryProps, audioState
     <main>
       <section className="ec-cover" data-design="cover" data-title-size={title.length > 70 ? 'long' : title.length > 45 ? 'medium' : 'short'} data-has-photo={Boolean(openingPhoto)} aria-labelledby={`${instance}-title`}>
         <div className="ec-cover-stage">
-          <PhotoCard photo={openingPhoto} position={photoPositions.get(eventPhotoKey(openingPhoto))} paused={pausePhotos} onOpen={openPhoto} eager lead label="Open the cover photograph" className="ec-cover-photo" showCaption={false} sizes="(max-width: 1480px) 100vw, 1480px" />
+          <PhotoCard photo={openingPhoto} position={photoPositions.get(eventPhotoKey(openingPhoto))} paused={pausePhotos} onOpen={openPhoto} eager lead entrance="split" label="Open the cover photograph" className="ec-cover-photo" showCaption={false} sizes="(max-width: 1480px) 100vw, 1480px" />
           <motion.div className="ec-cover-copy" initial={reduced ? false : { opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .1 }} transition={{ duration: .9, ease, delay: .15 }}>
             <span className="ec-eyebrow">Event Coverage</span>
-            <h1 id={`${instance}-title`}>{accentTitle ? <><motion.span className="ec-title-main" initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={reveal.viewport} transition={{ duration: .8, ease }}>{titleWords.slice(0, -1).join(' ')} </motion.span><motion.span className="ec-title-accent" initial={{ opacity: 0, y: 28 }} whileInView={{ opacity: 1, y: 0 }} viewport={reveal.viewport} transition={{ duration: .9, ease, delay: .12 }}>{titleWords.at(-1)}</motion.span></> : title}</h1>
-            {openingPhoto?.caption && openingPhoto.caption !== opening && <p className="ec-cover-caption vec-photo-caption"><span className="ec-photo-index" aria-hidden="true">{String(photoPositions.get(eventPhotoKey(openingPhoto))).padStart(2, '0')}</span><span>{openingPhoto.caption}</span></p>}
+            <h1 id={`${instance}-title`}>{accentTitle ? <><motion.span className="ec-title-main" initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={reveal.viewport} transition={{ duration: .9, ease, delay: .18 }}>{titleWords.slice(0, -1).join(' ')} </motion.span><motion.span className="ec-title-accent" initial={{ opacity: 0, y: 36 }} whileInView={{ opacity: 1, y: 0 }} viewport={reveal.viewport} transition={{ duration: 1.05, ease, delay: .35 }}>{titleWords.at(-1)}</motion.span></> : title}</h1>
+            {openingPhoto?.caption && openingPhoto.caption !== opening && <motion.p className="ec-cover-caption vec-photo-caption" initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={reveal.viewport} transition={{ duration: .7, ease, delay: .45 }}><span className="ec-photo-index" aria-hidden="true">{String(photoPositions.get(eventPhotoKey(openingPhoto))).padStart(2, '0')}</span><CaptionCopy text={openingPhoto.caption} /></motion.p>}
           </motion.div>
         </div>
         <motion.div className="ec-cover-details" {...reveal}>
@@ -253,7 +288,7 @@ export default function EventCoverageViewer({ delivery, galleryProps, audioState
       {(sections.length > 0 || hasPhotoMotion) && <section ref={toolsRef} className="ec-tools" aria-label="Event navigation and actions">
         <div className="ec-tools-inner">
           {visibleSections.length > 0 && <details ref={scenesMenuRef} className="ec-scenes-menu" onToggle={event => { if (event.currentTarget.open && filterRef.current) filterRef.current.open = false; }} onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary').focus(); } }}>
-            <summary aria-label="Browse event scenes"><span className="ec-current-number" aria-hidden="true">{String(visibleSections[activePosition].sceneIndex + 1).padStart(2, '0')}</span><span className="ec-current-title">{visibleSections[activePosition].title}</span><ChevronDown size={15} aria-hidden="true" /></summary>
+            <summary aria-label="Browse event scenes"><span className="ec-current-number" aria-hidden="true">{String(visibleSections[activePosition].sceneIndex + 1).padStart(2, '0')}</span><motion.span key={visibleSections[activePosition].anchorId} className="ec-current-title" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .25, ease }}>{visibleSections[activePosition].title}</motion.span><ChevronDown size={15} aria-hidden="true" /></summary>
             <nav className="ec-scene-nav" aria-label="Event scenes">{visibleSections.map(section => <a key={section.anchorId} href={`#${section.anchorId}`} onClick={event => browseScene(event, section.anchorId)} aria-current={activeScene === section.anchorId ? 'location' : undefined}><span className="ec-nav-number" aria-hidden="true">{String(section.sceneIndex + 1).padStart(2, '0')}</span><span>{section.title}</span><small>{section.photos.length} {section.photos.length === 1 ? 'photo' : 'photos'}</small></a>)}</nav>
           </details>}
           <div className="ec-tools-actions">
@@ -274,10 +309,10 @@ export default function EventCoverageViewer({ delivery, galleryProps, audioState
       </section>
 
       <footer ref={closingRef} className={`ec-ending${closingPhoto ? ' has-photo' : ''}`} data-design="colophon">
-        {closingPhoto && <PhotoCard photo={closingPhoto} position={photoPositions.get(eventPhotoKey(closingPhoto))} paused={pausePhotos} onOpen={openPhoto} label="Open the closing photograph" showCaption={closingPhoto.caption !== closing} sizes="(max-width: 767px) 92vw, 52vw" />}
-        <motion.div className="ec-ending-copy" data-long-copy={closing.length > 80} {...reveal}>
-          <h2>{closing}</h2>
-          {galleryPhotos.length > 0 && <button className="ec-gallery-link" type="button" disabled={!galleryUnlocked} onClick={openGallery} aria-label={galleryUnlocked ? 'Open full gallery' : 'View gallery after the presentation'}><Images size={19} /><span>View {galleryPhotos.length === 1 ? 'the photograph' : `all ${galleryPhotos.length} photographs`}</span><span className="ec-action-arrow" aria-hidden="true"><ArrowRight size={20} /></span></button>}
+        {closingPhoto && <PhotoCard photo={closingPhoto} position={photoPositions.get(eventPhotoKey(closingPhoto))} paused={pausePhotos} onOpen={openPhoto} lead entrance="up" label="Open the closing photograph" showCaption={closingPhoto.caption !== closing} sizes="(max-width: 767px) 92vw, 52vw" />}
+        <motion.div className="ec-ending-copy" data-long-copy={closing.length > 80} variants={copySequence} initial="hidden" whileInView="visible" viewport={reveal.viewport}>
+          <motion.h2 variants={copyPiece}>{closing}</motion.h2>
+          {galleryPhotos.length > 0 && <motion.button className="ec-gallery-link" type="button" variants={copyPiece} whileHover={galleryUnlocked ? { y: -2 } : undefined} whileTap={galleryUnlocked ? { scale: .97 } : undefined} disabled={!galleryUnlocked} onClick={openGallery} aria-label={galleryUnlocked ? 'Open full gallery' : 'View gallery after the presentation'}><Images size={19} /><span>View {galleryPhotos.length === 1 ? 'the photograph' : `all ${galleryPhotos.length} photographs`}</span><span className="ec-action-arrow" aria-hidden="true"><ArrowRight size={20} /></span></motion.button>}
           <EventBrandIdentity branding={branding} />
         </motion.div>
       </footer>

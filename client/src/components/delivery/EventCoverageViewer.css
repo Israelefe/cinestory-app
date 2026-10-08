@@ -47,7 +47,9 @@
 .ec-cover[data-title-size="long"] h1 { font-size: clamp(38px, 9.5vw, 64px); line-height: 1.04; }
 .ec-cover[data-title-size="long"] .ec-cover-copy { margin-top: -32px; }
 .ec-viewer[data-heading-kind="sans"] .ec-cover[data-title-size="short"] h1 { font-size: clamp(42px, 10.8vw, 70px); line-height: 1.02; }
-.ec-cover-caption { display: flex; align-items: baseline; gap: 14px; max-width: 48ch; margin: 24px 0 0; color: #f4efe8; font-size: 11px; line-height: 1.7; }
+.ec-cover-caption { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 18px; max-width: 56ch; margin: 28px 0 0; color: #cfc8be; font-size: 13px; line-height: 1.8; }
+.ec-cover-caption .ec-caption-copy { border-color: #f4efe840; }
+.ec-cover-caption .ec-caption-lede { color: #f4efe8; font-size: 18px; }
 .ec-cover-caption .ec-photo-index { color: inherit; }
 .ec-cover-details { display: grid; min-width: 0; gap: 24px; margin: 32px var(--ec-gutter) 0; }
 .ec-opening { max-width: 46ch; margin: 0; color: var(--fd-text); font-size: 15px; line-height: 1.8; }
@@ -56,15 +58,21 @@
 
 .ec-photo-card { min-width: 0; margin: 0; }
 .ec-photo-button { position: relative; isolation: isolate; display: block; width: 100%; aspect-ratio: var(--ec-photo-ratio, 1.5); overflow: hidden; border: 0; border-radius: 0; background: var(--fd-surface); text-align: left; cursor: zoom-in; }
-.ec-photo-motion { position: absolute; inset: 0; }
+.ec-photo-motion, .ec-photo-drift { position: absolute; inset: 0; }
 .ec-photo-reveal { position: absolute; z-index: 1; inset: 0; background: var(--ec-page); transform-origin: top; pointer-events: none; }
+.ec-photo-reveal-left { right: 50%; }
+.ec-photo-reveal-right { left: 50%; }
+.ec-cover-photo .ec-photo-reveal { background: #070709; }
 .ec-photo-button :is(img, .v-photo) { display: block; width: 100%; height: 100%; object-fit: cover; filter: none; }
 .ec-photo-open { position: absolute; z-index: 2; right: 14px; bottom: 14px; display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid #ffffff40; border-radius: 50%; background: #070709a8; color: white; opacity: .65; transition: opacity .25s ease, transform .25s ease; }
 .ec-photo-button:hover .ec-photo-open, .ec-photo-button:focus-visible .ec-photo-open { opacity: 1; transform: translateY(-2px); }
 .ec-photo-button:active .ec-photo-open { transform: scale(.93); }
-.ec-photo-card > figcaption { display: flex; align-items: baseline; gap: 12px; margin: 16px 0 0; padding: 0; border: 0; color: var(--ec-muted); font-size: 12px; font-weight: 400; line-height: 1.7; }
-.ec-photo-index { flex: 0 0 auto; color: var(--ec-ink); font: italic 400 16px/1.3 var(--delivery-font-heading); font-variant-numeric: tabular-nums; }
-.ec-photo-index::after { content: ' /'; color: var(--ec-muted); }
+.ec-photo-card > figcaption { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 16px; margin: 20px 0 0; padding: 0; border: 0; color: var(--ec-muted); font-size: 13px; font-weight: 400; line-height: 1.8; }
+.ec-caption-copy { display: block; min-width: 0; max-width: 52ch; padding-left: 16px; border-left: 1px solid var(--ec-rule); }
+.ec-caption-lede { display: block; margin-bottom: 6px; color: var(--ec-ink); font-size: 16px; font-weight: 500; line-height: 1.45; letter-spacing: -.025em; }
+.ec-photo-index { color: var(--ec-ink); font: italic 400 28px/1.1 var(--delivery-font-heading); font-variant-numeric: tabular-nums; letter-spacing: -.04em; }
+.ec-scene-lead .ec-caption-lede { font-size: 20px; }
+.ec-scene-lead > figcaption { font-size: 14px; }
 .ec-cover-photo { width: 100%; margin: 0; }
 .ec-cover-photo .ec-photo-button::after { content: ''; position: absolute; z-index: 1; inset: 0; background: linear-gradient(180deg, transparent 45%, #07070918 65%, #070709eb); pointer-events: none; }
 .ec-cover-photo .ec-photo-open { top: 16px; bottom: auto; }
@@ -116,6 +124,7 @@
 
 .ec-scenes { max-width: 1480px; margin-inline: auto; padding-inline: var(--ec-gutter); }
 .ec-scene { position: relative; isolation: isolate; padding-block: 64px 80px; scroll-margin-top: var(--ec-scroll-offset); }
+.ec-scene-rule { position: absolute; top: 0; left: calc(50% - 50vw); width: 100vw; height: 1px; background: var(--ec-rule); transform-origin: left; pointer-events: none; }
 .ec-scene:focus-visible { outline: 1px solid var(--fd-accent); outline-offset: 8px; }
 .ec-scene-grid { display: grid; gap: 48px; min-width: 0; }
 .ec-scene-opening { display: grid; align-items: start; gap: 40px; min-width: 0; }
@@ -153,6 +162,8 @@
 .ec-scene[data-design="feature"] .ec-scene-opening { gap: 44px; }
 .ec-scene[data-design="feature"] .ec-scene-copy { padding-top: 4px; }
 .ec-scene[data-design="feature"] .ec-scene-number { font-style: normal; font-family: var(--delivery-font-ui); }
+.ec-scene[data-design="feature"] .ec-caption-copy { padding: 12px 0 0; border-left: 0; border-top: 1px solid var(--ec-rule); }
+.ec-scene[data-design="feature"] .ec-photo-index { padding-top: 12px; font: 500 18px/1.45 var(--delivery-font-ui); letter-spacing: -.03em; }
 
 /* The conversation puts two photographs around a quieter, centred heading. */
 .ec-conversation-layout { display: grid; align-items: start; gap: 48px; min-width: 0; }
@@ -170,6 +181,9 @@
 .ec-scene[data-design="conversation"] { --ec-page: color-mix(in srgb, var(--fd-accent) 9%, var(--fd-bg)); }
 .ec-scene[data-design="conversation"]::before { content: ''; position: absolute; z-index: -1; inset-block: 0; left: calc(50% - 50vw); width: 100vw; background: var(--ec-page); }
 .ec-conversation-layout > .ec-scene-lead-wrap, .ec-conversation-layout > .ec-photo-card { width: calc(100% - 24px); margin-inline: auto; }
+.ec-conversation-layout .ec-caption-copy { border: 0; padding-left: 0; }
+.ec-conversation-layout .ec-photo-card > figcaption { column-gap: 20px; }
+.ec-conversation-layout .ec-caption-lede { font-weight: 400; font-style: italic; }
 
 /* A contact sheet ends the scenes with a smaller masthead and even photo sizes. */
 .ec-scene[data-design="contact"] { padding-block: 56px 72px; }
@@ -184,6 +198,11 @@
 .ec-contact-sheet .ec-scene-lead > figcaption { margin-inline: 0; }
 .ec-contact-sheet > .ec-photo-card:nth-child(even) { width: calc(100% - 12px); justify-self: end; }
 .ec-contact-sheet { padding-block: 24px; border-top: 1px solid var(--ec-rule); border-bottom: 1px solid var(--ec-rule); }
+.ec-contact-sheet .ec-photo-card > figcaption { grid-template-columns: minmax(0, 1fr) auto; padding-top: 16px; border-top: 1px solid var(--ec-rule); }
+.ec-contact-sheet .ec-caption-copy { grid-column: 1; grid-row: 1; padding-left: 0; border: 0; }
+.ec-contact-sheet .ec-photo-index { grid-column: 2; grid-row: 1; font: 400 12px/1.8 var(--delivery-font-ui); letter-spacing: .04em; }
+.ec-contact-sheet .ec-caption-lede { font-size: 16px; }
+.ec-contact-sheet .ec-scene-lead > figcaption { font-size: 13px; }
 
 /* Additional saved scenes can use an essay or a wide photographic spread. */
 .ec-scene[data-design="essay"] .ec-scene-copy { justify-items: center; text-align: center; }
@@ -218,7 +237,7 @@
 @media (min-width: 640px) {
   .fd-page.ec-viewer { --ec-gutter: 28px; }
   .ec-cover h1 { font-size: clamp(104px, 19vw, 156px); }
-  .ec-photo-card > figcaption { font-size: 13px; }
+  .ec-photo-card > figcaption { column-gap: 20px; }
   .ec-tools { top: 12px; }
   .ec-tools-inner { padding-inline: 14px; }
   .ec-current-number { display: block; }
@@ -269,8 +288,11 @@
   .ec-cover[data-title-size="long"] h1 { font-size: clamp(52px, 7vw, 90px); max-width: 25ch; }
   .ec-viewer[data-heading-kind="sans"] .ec-cover[data-title-size="short"] h1 { font-size: clamp(66px, 8.5vw, 116px); }
   .ec-cover-photo[data-orientation="landscape"] .ec-photo-button { height: min(72svh, 820px); aspect-ratio: auto; }
-  .ec-cover-caption { margin-top: 32px; font-size: 12px; }
-  .ec-cover-caption .ec-photo-index { font-size: 20px; }
+  .ec-cover-caption { margin-top: 36px; font-size: 14px; }
+  .ec-cover-caption .ec-caption-lede { font-size: 21px; }
+  .ec-cover-caption .ec-photo-index { font-size: 32px; }
+  .ec-scene-lead .ec-caption-lede { font-size: 23px; }
+  .ec-contact-sheet .ec-scene-lead .ec-caption-lede { font-size: 16px; }
   .ec-cover-details { grid-template-columns: minmax(0, 1.3fr) minmax(0, .7fr); align-items: end; gap: 32px; margin-top: 36px; padding-top: 28px; border-top: 1px solid var(--ec-rule); }
   .ec-opening { font-size: 17px; }
   .ec-event-meta { justify-content: flex-end; text-align: right; }

@@ -213,24 +213,93 @@ for (const reducedMotion of ['no-preference', 'reduce']) {
     await page.setViewportSize({ width: 834, height: 1000 });
     await page.emulateMedia({ reducedMotion });
     await published(page, item => item.creativeDirection.frames.forEach(frame => { frame.motion = 'slow-push'; }));
+    const curtains = page.locator('.ec-cover-photo .ec-photo-reveal');
+    await expect(curtains).toHaveCount(2);
+    await expect.poll(() => curtains.evaluateAll(panels => panels.every(panel => new DOMMatrixReadOnly(getComputedStyle(panel).transform).a === 0))).toBe(true);
     const photograph = page.locator('.ec-scene-grid .ec-photo-motion').first();
     await photograph.scrollIntoViewIfNeeded();
     const transform = () => photograph.evaluate(element => getComputedStyle(element).transform);
+    const drift = photograph.locator('.ec-photo-drift');
+    const driftTransform = () => drift.evaluate(element => getComputedStyle(element).transform);
     const initial = await transform();
     await expect.poll(transform).not.toBe(initial);
+    const initialDrift = await driftTransform();
+    await page.mouse.wheel(0, 90);
+    await expect.poll(driftTransform).not.toBe(initialDrift);
     await page.getByRole('button', { name: 'Pause photo motion', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Resume photo motion', exact: true })).toHaveAttribute('aria-pressed', 'true');
     const paused = await transform();
+    const pausedDrift = await driftTransform();
     const lead = page.locator('.ec-scene-lead-wrap').first();
     const pausedDepth = await lead.evaluate(element => getComputedStyle(element).transform);
     await page.mouse.wheel(0, 120);
     await page.waitForTimeout(250);
     expect(await transform()).toBe(paused);
+    expect(await driftTransform()).toBe(pausedDrift);
     expect(await lead.evaluate(element => getComputedStyle(element).transform)).toBe(pausedDepth);
     await page.getByRole('button', { name: 'Resume photo motion', exact: true }).click();
     await expect.poll(transform).not.toBe(paused);
+    await expect.poll(driftTransform).not.toBe(pausedDrift);
   });
 }
+
+test('photo movement stops in the gallery and when the page is hidden', async ({ page }) => {
+  await page.setViewportSize({ width: 834, height: 1000 });
+  await published(page, item => item.creativeDirection.frames.forEach(frame => { frame.motion = 'slow-push'; }));
+  const photograph = page.locator('.ec-scene-grid .ec-photo-motion').first();
+  await photograph.scrollIntoViewIfNeeded();
+  const transform = () => photograph.evaluate(element => getComputedStyle(element).transform);
+  const initial = await transform();
+  await expect.poll(transform).not.toBe(initial);
+  await page.locator('.ec-scene-grid .ec-photo-button').first().click();
+  await expect(page.locator('.client-gallery-lightbox-main')).toBeVisible();
+  const inGallery = await transform();
+  await page.waitForTimeout(250);
+  expect(await transform()).toBe(inGallery);
+  await page.getByRole('button', { name: 'Return to presentation' }).press('Escape');
+  await expect.poll(transform).not.toBe(inGallery);
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.waitForTimeout(100);
+  const hidden = await transform();
+  await page.waitForTimeout(250);
+  expect(await transform()).toBe(hidden);
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect.poll(transform).not.toBe(hidden);
+});
+
+for (const width of [320, 834, 1440]) test(`detailed demo captions remain readable and separated at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 1000 });
+  await page.goto('/demo/event-coverage?phoneView=1');
+  const captions = page.locator('.ec-caption-copy');
+  await expect(captions).toHaveCount(16);
+  for (const caption of await captions.all()) {
+    await caption.scrollIntoViewIfNeeded();
+    await expect.poll(() => caption.evaluate(element => Number(getComputedStyle(element.parentElement).opacity))).toBe(1);
+    const geometry = await caption.evaluate(element => {
+      const bounds = element.getBoundingClientRect();
+      const number = element.parentElement.querySelector('.ec-photo-index').getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return { fits: bounds.left >= 0 && bounds.right <= innerWidth + 1, unclipped: element.scrollHeight <= element.clientHeight + 1, gap: Math.max(bounds.left - number.right, number.left - bounds.right), fontSize: parseFloat(style.fontSize), text: element.textContent };
+    });
+    expect(geometry.fits && geometry.unclipped).toBe(true);
+    expect(geometry.gap).toBeGreaterThanOrEqual(12);
+    expect(geometry.fontSize).toBeGreaterThanOrEqual(13);
+    expect(EVENT_COVERAGE_DEMO_PHOTOS.some(photo => photo.caption === geometry.text)).toBe(true);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+});
+
+test('caption styling preserves the photographer’s saved words', async ({ page }) => {
+  const caption = 'Dr. Ade greets the guests. A welcome at the registration desk, exactly as written by the photographer.';
+  await published(page, item => { item.creativeDirection.frames[0].caption = caption; });
+  await expect(page.locator('.ec-cover-caption .ec-caption-copy')).toHaveText(caption);
+});
 
 test('long titles and still photographs fit a short phone without clipping', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
@@ -240,6 +309,7 @@ test('long titles and still photographs fit a short phone without clipping', asy
     item.creativeDirection.openingLine = 'Guests, speakers, conversations and celebrations from our annual gathering, photographed throughout the day for everyone who was part of it.';
   });
   await expect(page.getByRole('button', { name: 'Pause photo motion', exact: true })).toHaveCount(0);
+  await expect(page.locator('.ec-photo-drift,.ec-photo-reveal')).toHaveCount(0);
   const copy = page.locator('.ec-cover-copy');
   expect(await copy.evaluate(element => element.scrollHeight <= element.parentElement.scrollHeight)).toBe(true);
   const photo = page.locator('.ec-scene-grid .ec-photo-motion').first();
