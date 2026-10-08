@@ -28,7 +28,9 @@ export function subscriptionGrantsPro(subscription, now = new Date()) {
 
 export function subscriptionCanManageCard(subscription, now = new Date()) {
   return Boolean(subscription?.provider === 'paystack' && subscription.subscriptionCode
-    && ['active', 'past_due'].includes(subscription.status) && subscriptionGrantsPro(subscription, now)
+    && ['active', 'past_due'].includes(subscription.status)
+    && (subscriptionGrantsPro(subscription, now) || (subscription.resumesSubscriptionId && subscription.renewalStartsAt > now))
+    && !subscription.resumePendingAt
     && !subscription.cancelRequestedAt && !subscription.providerCanceledAt && !subscription.cancelPendingAt);
 }
 
@@ -38,7 +40,9 @@ export async function resolveEntitlements(user, { includeUsage = true, now = new
   // current Pro deliveries fall back to the Veylo mark.
   const subscriptions = await Subscription.find({ userId: user._id }).sort({ paidThrough: -1, createdAt: -1 }).lean();
   const paidSubscription = subscriptions.find(item => subscriptionGrantsPro(item, now));
-  const subscription = paidSubscription || (manualProGrantIsActive(user, now) ? null : subscriptions[0]);
+  const renewalSubscription = paidSubscription && subscriptions.find(item => String(item.resumesSubscriptionId || '') === String(paidSubscription._id)
+    && item.status === 'active' && !item.resumePendingAt && !item.cancelRequestedAt && !item.providerCanceledAt && !item.cancelPendingAt);
+  const subscription = renewalSubscription || paidSubscription || (manualProGrantIsActive(user, now) ? null : subscriptions[0]);
   const pro = manualProGrantIsActive(user, now) || subscriptions.some(item => subscriptionGrantsPro(item, now));
   const runtime = await getRuntimeConfig();
   const plan = (pro ? runtime.plans?.pro : runtime.plans?.free) || (pro ? PLAN_DEFINITIONS.pro : PLAN_DEFINITIONS.free);
@@ -84,7 +88,8 @@ export async function resolveEntitlements(user, { includeUsage = true, now = new
       amountKobo: subscription.amountKobo || (subscription.provider === 'paystack' ? 2500000 : 0),
       currency: subscription.currency || 'NGN',
       pricingRegion: subscription.pricingRegion,
-      paidThrough: subscription.paidThrough,
+      paidThrough: subscription.paidThrough || (renewalSubscription ? paidSubscription.paidThrough : undefined),
+      renewalStartsAt: subscription.renewalStartsAt,
       graceEndsAt: subscription.graceEndsAt,
       cancelRequestedAt: subscription.cancelRequestedAt,
       canResume: subscription.status === 'canceling' && subscription.paidThrough > now && Boolean(subscription.subscriptionCode) && Boolean(subscription.providerCanceledAt) && !subscription.cancelPendingAt,

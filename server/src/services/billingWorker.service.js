@@ -7,7 +7,7 @@ import PaidUsage from '../models/PaidUsage.js';
 import { processStoredBillingEvent, processWebhookEvent, reconcilePayment, syncBillingPlan } from '../controllers/billing.controller.js';
 import { billingConfigured, paystackRequest } from './paystack.service.js';
 import { retryBillingEmails } from './email.service.js';
-import { stopRecurringSubscription, recoverSubscriptionLink } from './billingCancellation.service.js';
+import { stopRecurringSubscription, recoverSubscriptionLink, confirmScheduledResumption } from './billingCancellation.service.js';
 let running = false, timer;
 export async function runBillingMaintenance() {
   if (running) return;
@@ -31,6 +31,11 @@ export async function runBillingMaintenance() {
       try { await withBillingLock(item.userId, async () => { const current = await Subscription.findById(item._id); if (!current) return; await recoverSubscriptionLink(current); if (current.cancelPendingAt) await stopRecurringSubscription(current); }); }
       finally { await Subscription.updateOne({ _id: item._id }, { $set: { updatedAt: new Date() } }); }
     });
+    const resumptions = await Subscription.find({ resumePendingAt: { $ne: null }, subscriptionCode: { $exists: true, $ne: '' }, providerCanceledAt: null, cancelPendingAt: null, accountDeletedAt: null }).limit(10);
+    for (const item of resumptions) await attempt(() => withBillingLock(item.userId, async () => {
+      const current = await Subscription.findById(item._id).select('+emailTokenEncrypted');
+      if (current?.resumePendingAt && !current.cancelPendingAt && !current.providerCanceledAt) await confirmScheduledResumption(current);
+    }));
     const cancellations = await Subscription.find({ cancelPendingAt: { $ne: null }, subscriptionCode: { $exists: true, $ne: '' } }).select('+emailTokenEncrypted').sort({ updatedAt: 1 }).limit(10);
     for (const subscription of cancellations) await attempt(async () => {
       try { await withBillingLock(subscription.userId, async () => { const current = await Subscription.findById(subscription._id).select('+emailTokenEncrypted'); if (current?.cancelPendingAt) await stopRecurringSubscription(current); }); }

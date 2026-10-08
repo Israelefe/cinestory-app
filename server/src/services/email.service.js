@@ -312,8 +312,8 @@ export function sendSubscriptionResumedEmail({ to, name, paidThrough, userId, ev
     to,
     userId,
     subject: 'Your Veylo Pro subscription will continue',
-    text: `Hi ${name}, your Veylo Pro subscription will continue and Pro access remains active. Your current period ends ${displayDate(paidThrough)}.`,
-    html: shell(`<p style="margin:0 0 14px;color:#ff9b8e;font-size:11px;font-weight:700;letter-spacing:1.6px">SUBSCRIPTION RESUMED</p><h1 style="margin:0 0 16px;font-size:30px;font-weight:500">Your Pro subscription will continue.</h1>${paragraph(`Hi ${firstName(name)}, your cancellation has been reversed. Pro access remains active.`)}${paragraph(`Your current paid period ends <strong style="color:#fff">${escapeHtml(displayDate(paidThrough))}</strong>.`)}`, { preheader: 'Your Veylo Pro subscription will continue.' })
+    text: `Hi ${name}, monthly renewals are back on for Veylo Pro. Your first payment is due ${displayDate(paidThrough)}. No payment was taken today, and your existing paid access continues.`,
+    html: shell(`<p style="margin:0 0 14px;color:#ff9b8e;font-size:11px;font-weight:700;letter-spacing:1.6px">SUBSCRIPTION RESUMED</p><h1 style="margin:0 0 16px;font-size:30px;font-weight:500">Your Pro subscription will continue.</h1>${paragraph(`Hi ${firstName(name)}, monthly renewals are back on. No payment was taken today, and your existing paid access continues.`)}${paragraph(`Your first payment is due <strong style="color:#fff">${escapeHtml(displayDate(paidThrough))}</strong>.`)}`, { preheader: 'Your Veylo Pro subscription will continue.' })
   });
 }
 

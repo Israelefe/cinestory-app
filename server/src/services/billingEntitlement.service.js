@@ -58,6 +58,9 @@ function subscriptionSummary(subscription, now) {
     currency: subscription.currency || 'NGN',
     cancelPendingAt: subscription.cancelPendingAt || null,
     providerCanceledAt: subscription.providerCanceledAt || null,
+    resumesSubscriptionId: subscription.resumesSubscriptionId || null,
+    renewalStartsAt: subscription.renewalStartsAt || null,
+    resumePendingAt: subscription.resumePendingAt || null,
     status: subscription.status || 'unknown',
     paidThrough: subscription.paidThrough || null,
     graceEndsAt: subscription.graceEndsAt || null,
@@ -138,7 +141,7 @@ export function buildBillingSnapshot(user, subscriptions = [], { billingEvents =
   for (const subscription of orderedSubscriptions.slice(0, 5)) {
     const paidThrough = asDate(subscription.paidThrough);
     const graceEndsAt = asDate(subscription.graceEndsAt);
-    if (PAID_SUBSCRIPTION_STATUSES.has(subscription.status) && !paidThrough) {
+    if (PAID_SUBSCRIPTION_STATUSES.has(subscription.status) && !paidThrough && !(subscription.resumesSubscriptionId && asDate(subscription.renewalStartsAt) > now)) {
       issues.push(issue('subscription_missing_paid_through', 'high', 'The subscription is active but has no paid-through date.', subscription));
     } else if (PAID_SUBSCRIPTION_STATUSES.has(subscription.status) && paidThrough && paidThrough <= now) {
       issues.push(issue(subscription.status === 'canceling' ? 'canceled_subscription_still_active' : 'active_subscription_expired', 'high', subscription.status === 'canceling' ? 'The cancellation date has passed but the subscription is still marked canceling.' : 'The subscription is marked active even though its paid-through date has passed.', subscription));
@@ -173,6 +176,7 @@ export function buildBillingSnapshot(user, subscriptions = [], { billingEvents =
   const recurringSchedules = orderedSubscriptions.filter(item => item.provider === 'paystack' && item.subscriptionCode && !item.providerCanceledAt);
   if (recurringSchedules.length > 1) issues.push(issue('duplicate_recurring_schedules', 'high', 'More than one provider schedule can renew. Stop the extra schedules before taking another payment.'));
   if (orderedSubscriptions.some(item => item.cancelPendingAt)) issues.push(issue('cancellation_pending', 'high', 'A cancellation is awaiting provider confirmation. Recovery will retry it.'));
+  if (orderedSubscriptions.some(item => item.resumePendingAt && !item.providerCanceledAt)) issues.push(issue('resumption_pending', 'high', 'A renewal setup is awaiting provider confirmation. Recovery will check it.'));
 
   const uniqueIssues = [...new Map(issues.map(item => [`${item.code}:${String(item.subscriptionId || '')}`, item])).values()];
   const state = effectivePro
@@ -209,7 +213,7 @@ export function buildBillingSnapshot(user, subscriptions = [], { billingEvents =
 export async function loadBillingSnapshot(userId, now = new Date()) {
   const [user, subscriptions, billingEvents, payments] = await Promise.all([
     User.findById(userId).select('name email plan planOverride proRetentionUntil studio accountStatus').lean(),
-    Subscription.find({ userId }).sort({ createdAt: -1 }).select('provider status amountKobo currency pricingRegion cancelPendingAt providerCanceledAt customerCode subscriptionCode planCode checkoutReference paidFrom paidThrough graceEndsAt cancelRequestedAt canceledAt lastPaymentAt lastPaymentReference createdAt updatedAt').lean(),
+    Subscription.find({ userId }).sort({ createdAt: -1 }).select('provider status amountKobo currency pricingRegion cancelPendingAt providerCanceledAt resumesSubscriptionId renewalStartsAt resumePendingAt customerCode subscriptionCode planCode checkoutReference paidFrom paidThrough graceEndsAt cancelRequestedAt canceledAt lastPaymentAt lastPaymentReference createdAt updatedAt').lean(),
     BillingEvent.find({ userId }).sort({ createdAt: -1 }).limit(100).select('eventType provider status attempts processedAt failure createdAt').lean(),
     Payment.find({ userId }).sort({ createdAt: -1 }).limit(25).select('reference status amountKobo refundedAmountKobo refundPendingAmountKobo currency channel paidAt createdAt updatedAt').lean()
   ]);

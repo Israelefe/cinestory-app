@@ -22,7 +22,7 @@ import { adminAuthMiddleware, requireAdminRoles } from '../src/routes/admin.rout
 import { tokenDigest } from '../src/utils/auth.js';
 import { getFinanceOverview, getAdminAnalytics, reconcileFinanceWithPaystack, exportFinance } from '../src/controllers/admin.controller.js';
 import { deleteUserAccount } from '../src/services/accountDeletion.service.js';
-import { buildBillingSnapshot } from '../src/services/billingEntitlement.service.js';
+import { buildBillingSnapshot, loadBillingSnapshot } from '../src/services/billingEntitlement.service.js';
 import { migrateBillingRecords } from '../src/services/billingMigration.service.js';
 import { runBillingMaintenance } from '../src/services/billingWorker.service.js';
 import { startCheckout, reconcilePayment, activateSubscription, verifyCheckout, paystackWebhook, processWebhookEvent, addOneMonth, cancelSubscription, resumeSubscription, getManageLink } from '../src/controllers/billing.controller.js';
@@ -53,7 +53,7 @@ async function paid(amountKobo = 2500000, overrides = {}) {
   await Payment.create({ userId: owner._id, subscriptionId: subscription._id, reference, amountKobo, currency: 'NGN' });
   const data = { id: 401, reference, status: 'success', domain: 'test', amount: amountKobo, currency: 'NGN', paid_at: new Date().toISOString(), customer: { id: 8, email: owner.email, customer_code: 'CUS_owner' }, plan: { plan_code: subscription.planCode }, subscription: { subscription_code: 'SUB_owner', email_token: 'private_provider_token' }, fees: 5000 };
   provider.set(`/transaction/verify/${reference}`, data);
-  provider.set('/subscription/SUB_owner', { status: 'active', email_token: 'private_provider_token', plan: { plan_code: subscription.planCode }, customer: data.customer });
+  provider.set('/subscription/SUB_owner', { status: 'active', email_token: 'private_provider_token', plan: { plan_code: subscription.planCode }, customer: data.customer, authorization: { authorization_code: 'AUTH_owner', reusable: true } });
   await activateSubscription({ data, user: owner, subscription });
   return { data, subscription: await Subscription.findById(subscription._id), payment: await Payment.findOne({ reference }) };
 }
@@ -82,10 +82,25 @@ before(async () => {
     }
     if (url.pathname === '/subscription/disable' || url.pathname === '/subscription/enable') {
       const current = provider.get(`/subscription/${body.code}`);
+      if (url.pathname.endsWith('enable') && ['non-renewing', 'cancelled', 'canceled', 'complete', 'completed'].includes(current?.status)) return new Response(JSON.stringify({ status: false, message: 'Subscription has been cancelled, and cannot be reactivated' }), { status: 400 });
       if (current) current.status = url.pathname.endsWith('disable') ? 'non-renewing' : 'active';
       return new Response(JSON.stringify({ status: true, data: {} }));
     }
+    if (url.pathname === '/subscription' && init.method === 'POST') {
+      const rejection = provider.get('/subscription:create-error');
+      if (rejection instanceof Response) return rejection.clone();
+      if (rejection instanceof Error) throw rejection;
+      const index = calls.filter(call => call.path === '/subscription' && call.method === 'POST').length;
+      const created = { id: 900 + index, subscription_code: `SUB_restart${index}`, status: 'active', domain: 'test', amount: 4000000, currency: 'NGN', start: Math.floor(Date.parse(body.start_date) / 1000), next_payment_date: body.start_date, email_token: `restart_token_${index}`, customer: { id: 8, customer_code: body.customer, email: owner.email }, plan: { id: 3, plan_code: body.plan, currency: 'NGN' }, authorization: { authorization_code: body.authorization, reusable: true }, ...provider.get('/subscription:create-overrides') };
+      provider.set(`/subscription/${created.subscription_code}`, created);
+      if (provider.get('/subscription:create-after-error')) throw provider.get('/subscription:create-after-error');
+      return new Response(JSON.stringify({ status: true, data: created }));
+    }
     const value = provider.get(url.pathname + url.search) ?? provider.get(url.pathname);
+    if (url.pathname === '/subscription' && value === undefined) {
+      const rows = [...provider.entries()].filter(([key, item]) => /^\/subscription\/SUB_/.test(key) && item.customer?.id === Number(url.searchParams.get('customer'))).map(([, item]) => item);
+      return new Response(JSON.stringify({ status: true, data: rows }));
+    }
     if (value instanceof Error) throw value;
     if (value === undefined) throw new Error(`Unexpected mock provider request: ${url.pathname}${url.search}`);
     return new Response(JSON.stringify({ status: true, data: value }), { headers: { 'content-type': 'application/json' } });
@@ -135,7 +150,7 @@ test('failed cancellation remains pending and the worker retries it without remo
 test('expired schedules cannot resume and unsupported provider links never grant access', async () => {
   const { subscription } = await paid();
   await Subscription.updateOne({ _id: subscription._id }, { $set: { status: 'canceling', paidThrough: new Date(Date.now() - 1), providerCanceledAt: new Date() } });
-  const result = await invoke(resumeSubscription);
+  const result = await invoke(resumeSubscription, { body: { quote: proPricing().quote } });
   assert.equal(result.code, 409);
   assert.equal(calls.filter(call => call.path === '/subscription/enable').length, 0);
   assert.equal((await resolveEntitlements(owner)).plan, 'free');
@@ -404,10 +419,16 @@ test('cancellation stops all schedules, retains paid time, is repeatable and res
   assert.equal(calls.filter(call => call.path.endsWith('/manage/link')).length, 0);
   assert.equal(calls.filter(call => call.path === '/subscription/disable').length, 2);
   await invoke(cancelSubscription); assert.equal(calls.filter(call => call.path === '/subscription/disable').length, 2);
-  const resumed = await invoke(resumeSubscription); assert.equal(resumed.code, 200); assert.equal((await Subscription.findById(subscription._id)).status, 'active');
+  const resumed = await invoke(resumeSubscription, { body: { quote: proPricing().quote } }); assert.equal(resumed.code, 200); assert.equal((await Subscription.findById(subscription._id)).status, 'canceling');
+  const renewal = await Subscription.findOne({ resumesSubscriptionId: subscription._id });
+  assert.equal(renewal.status, 'active');
+  assert.equal(renewal.paidThrough, undefined);
+  assert.equal(renewal.subscriptionCode, 'SUB_restart1');
+  assert.equal(calls.filter(call => call.path === '/subscription/enable').length, 0);
+  assert.equal(resumed.body.data.subscription.paidThrough.getTime(), subscription.paidThrough.getTime());
   assert.equal(resumed.body.data.subscription.canManageCard, true);
   assert.equal(resumed.body.data.subscription.canResume, false);
-  provider.set('/subscription/SUB_owner/manage/link', { link: 'https://paystack.com/manage/test-subscription' });
+  provider.set('/subscription/SUB_restart1/manage/link', { link: 'https://paystack.com/manage/test-subscription' });
   assert.equal((await invoke(getManageLink)).code, 200);
 });
 test('payment management remains available during payment grace for a renewing subscription', async () => {
@@ -418,6 +439,144 @@ test('payment management remains available during payment grace for a renewing s
   assert.equal(entitlement.subscription.canManageCard, true);
   provider.set('/subscription/SUB_owner/manage/link', { link: 'https://paystack.com/manage/test-subscription' });
   assert.equal((await invoke(getManageLink)).code, 200);
+});
+
+test('resuming a permanently canceled schedule defers its first charge and repeated requests create only one schedule', async () => {
+  const { subscription, payment } = await paid();
+  await invoke(cancelSubscription);
+  provider.get('/subscription/SUB_owner').status = 'cancelled';
+  const options = { body: { quote: proPricing().quote } };
+  const result = await invoke(resumeSubscription, options);
+  assert.equal(result.code, 200, result.body.message);
+  const request = calls.find(call => call.path === '/subscription' && call.method === 'POST');
+  assert.equal(request.body.authorization, 'AUTH_owner');
+  assert.equal(request.body.plan, 'PLN_pro');
+  assert.equal(request.body.customer, 'CUS_owner');
+  assert.ok(Date.parse(request.body.start_date) >= subscription.paidThrough.getTime());
+  assert.equal(await Payment.countDocuments(), 1, 'resume does not make or fabricate a payment');
+  assert.equal((await Payment.findById(payment._id)).subscriptionId.toString(), subscription._id.toString());
+  const again = await invoke(resumeSubscription, options);
+  assert.equal(again.code, 200);
+  assert.equal(calls.filter(call => call.path === '/subscription' && call.method === 'POST').length, 1);
+  await processWebhookEvent({ event: 'subscription.disable', data: { subscription_code: 'SUB_owner', customer: { customer_code: 'CUS_owner' }, plan: { plan_code: subscription.planCode } } });
+  assert.equal((await resolveEntitlements(owner)).subscription.status, 'active', 'old cancellation events cannot cancel the new schedule');
+  assert.equal(await reconcilePayment(payment), true, 'old paid transactions still reconcile against their original record');
+  const canceledAgain = await invoke(cancelSubscription);
+  assert.equal(canceledAgain.code, 200);
+  assert.equal(provider.get('/subscription/SUB_restart1').status, 'non-renewing');
+  assert.equal(canceledAgain.body.data.subscription.status, 'canceling');
+  const restartedAgain = await invoke(resumeSubscription, options);
+  assert.equal(restartedAgain.code, 200, restartedAgain.body.message);
+  assert.equal(calls.filter(call => call.path === '/subscription' && call.method === 'POST').length, 2);
+});
+
+test('resume recovers a schedule created before a network timeout without submitting a second creation', async () => {
+  const { subscription } = await paid();
+  await invoke(cancelSubscription);
+  provider.set('/subscription:create-after-error', new Error('Connection lost after provider accepted the schedule'));
+  const options = { body: { quote: proPricing().quote } };
+  const uncertain = await invoke(resumeSubscription, options);
+  assert.equal(uncertain.code, 502);
+  assert.equal(uncertain.body.data.resumptionPending, true);
+  assert.equal(uncertain.body.data.subscription.status, 'canceling');
+  assert.equal((await Subscription.findById(subscription._id)).status, 'canceling');
+  provider.delete('/subscription:create-after-error');
+  const recovered = await invoke(resumeSubscription, options);
+  assert.equal(recovered.code, 200, recovered.body.message);
+  assert.equal(recovered.body.data.resumptionPending, false);
+  assert.equal(recovered.body.data.subscription.status, 'active');
+  assert.equal(calls.filter(call => call.path === '/subscription' && call.method === 'POST').length, 1);
+});
+
+test('an uncertain resume with no provider schedule never blindly repeats the creation', async () => {
+  await paid(); await invoke(cancelSubscription);
+  provider.set('/subscription:create-error', new Error('Mock provider outage'));
+  const options = { body: { quote: proPricing().quote } };
+  assert.equal((await invoke(resumeSubscription, options)).code, 502);
+  provider.delete('/subscription:create-error');
+  const retry = await invoke(resumeSubscription, options);
+  assert.equal(retry.code, 409);
+  assert.equal(retry.body.data.resumptionPending, true);
+  assert.equal(calls.filter(call => call.path === '/subscription' && call.method === 'POST').length, 1);
+});
+
+test('resume checks price consent and reusable payment details before contacting subscription creation', async () => {
+  await paid(); await invoke(cancelSubscription);
+  const changed = await invoke(resumeSubscription, { body: { quote: 'pro:2500000' } });
+  assert.equal(changed.code, 409);
+  assert.equal(changed.body.code, 'PRICE_CHANGED');
+  provider.get('/subscription/SUB_owner').authorization.reusable = false;
+  const unavailable = await invoke(resumeSubscription, { body: { quote: proPricing().quote } });
+  assert.equal(unavailable.code, 409);
+  assert.match(unavailable.body.message, /cannot be reused/);
+  assert.equal(calls.filter(call => call.path === '/subscription' && call.method === 'POST').length, 0);
+  assert.equal(unavailable.body.data.plan, 'pro');
+});
+
+test('a rejected resume leaves cancellation and paid access intact without an uncertain schedule', async () => {
+  await paid(); await invoke(cancelSubscription);
+  provider.set('/subscription:create-error', new Response(JSON.stringify({ status: false, message: 'The customer specified has no active authorizations' }), { status: 400 }));
+  const result = await invoke(resumeSubscription, { body: { quote: proPricing().quote } });
+  assert.equal(result.code, 409);
+  assert.equal(result.body.data.plan, 'pro');
+  assert.equal(result.body.data.resumptionPending, false);
+  assert.equal(result.body.data.canCancel, false);
+  assert.equal(await Subscription.countDocuments({ resumesSubscriptionId: { $exists: true } }), 0);
+});
+
+test('a resumed schedule grants no access after a refund or expiry until its first successful charge', async () => {
+  const { data, subscription } = await paid();
+  await invoke(cancelSubscription);
+  assert.equal((await invoke(resumeSubscription, { body: { quote: proPricing().quote } })).code, 200);
+  const renewal = await Subscription.findOne({ resumesSubscriptionId: subscription._id });
+  assert.equal((await resolveEntitlements(owner, { now: new Date(renewal.renewalStartsAt.getTime() + 1000) })).plan, 'free');
+  await processWebhookEvent({ event: 'refund.processed', data: { id: 981, transaction_reference: data.reference, amount: 2500000, currency: 'NGN' } });
+  assert.equal((await resolveEntitlements(owner)).plan, 'free', 'the new schedule does not duplicate refunded paid access');
+  const charged = { ...data, reference: 'first-restarted-renewal', id: 982, amount: 4000000, plan: { plan_code: 'PLN_pro' }, subscription: { subscription_code: renewal.subscriptionCode }, paid_at: new Date().toISOString() };
+  await processWebhookEvent({ event: 'charge.success', data: charged });
+  assert.equal((await resolveEntitlements(owner)).plan, 'pro');
+  assert.equal((await Payment.findOne({ reference: charged.reference })).subscriptionId.toString(), renewal._id.toString());
+});
+
+test('a matching external renewal schedule blocks creation instead of risking duplicate charges', async () => {
+  await paid(); await invoke(cancelSubscription);
+  provider.set('/subscription/SUB_external', { status: 'active', customer: { id: 8, customer_code: 'CUS_owner' }, plan: { plan_code: 'PLN_pro' } });
+  const result = await invoke(resumeSubscription, { body: { quote: proPricing().quote } });
+  assert.equal(result.code, 409);
+  assert.match(result.body.message, /already exists/);
+  assert.equal(calls.filter(call => call.path === '/subscription' && call.method === 'POST').length, 0);
+});
+
+test('a provider schedule with an earlier debit is stopped instead of reported as a successful resume', async () => {
+  await paid(); await invoke(cancelSubscription);
+  provider.set('/subscription:create-overrides', { start: Math.floor(Date.now() / 1000) });
+  const result = await invoke(resumeSubscription, { body: { quote: proPricing().quote } });
+  assert.equal(result.code, 409);
+  assert.match(result.body.message, /different renewal schedule/);
+  assert.equal(provider.get('/subscription/SUB_restart1').status, 'non-renewing');
+  assert.equal(result.body.data.plan, 'pro');
+  assert.equal(result.body.data.subscription.status, 'canceling');
+  assert.equal(result.body.data.resumptionPending, false);
+});
+
+test('a signed creation webhook can confirm a resume after the API response was lost', async () => {
+  await paid(); await invoke(cancelSubscription);
+  provider.set('/subscription:create-after-error', new Error('Lost provider response'));
+  assert.equal((await invoke(resumeSubscription, { body: { quote: proPricing().quote } })).code, 502);
+  await processWebhookEvent({ event: 'subscription.create', data: provider.get('/subscription/SUB_restart1') });
+  const resumed = await Subscription.findOne({ subscriptionCode: 'SUB_restart1' });
+  assert.equal(resumed.resumePendingAt, null);
+  assert.equal((await resolveEntitlements(owner)).subscription.status, 'active');
+});
+
+test('account deletion also stops a resumed schedule before its first charge', async () => {
+  await paid(); await invoke(cancelSubscription);
+  assert.equal((await invoke(resumeSubscription, { body: { quote: proPricing().quote } })).code, 200);
+  const health = await loadBillingSnapshot(owner._id);
+  assert.equal(health.snapshot.issues.some(item => item.code === 'subscription_missing_paid_through'), false);
+  await deleteUserAccount({ userId: owner._id });
+  assert.equal(provider.get('/subscription/SUB_restart1').status, 'non-renewing');
+  assert.equal(await User.findById(owner._id), null);
 });
 test('expiry and an unsupported User.plan never grant indefinite access', async () => {
   await User.updateOne({ _id: owner._id }, { $set: { plan: 'pro' } });

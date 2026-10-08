@@ -6,7 +6,7 @@ function price(amountNaira = 40000) { const amountKobo = amountNaira * 100; retu
 async function setup(page, options = {}) {
   const state = { plan: 'pro', status: 'active', verifyCount: 0, verified: true, cancelCount: 0, cancelFailure: false, resumeCount: 0, cancellationPending: false, paidThrough: future, changePrice: false, pricing: price(), billingAvailable: true, ...options };
   // Keep capability flags permissive to catch stale flags after a state change.
-  const data = () => ({ plan: state.plan, subscription: { status: state.status, amountKobo: options.amountKobo || 4000000, currency: 'NGN', paidThrough: state.paidThrough, graceEndsAt: state.status === 'past_due' && state.plan === 'pro' ? future : null, canManageCard: true, canResume: state.status === 'canceling' }, cancellationPending: state.cancellationPending, canCancel: state.status !== 'canceling' && state.plan === 'pro', pricing: state.pricing, paymentsNextCursor: options.history && !state.historyDone ? 'payment1' : null, retentionDays: 30, billingAvailable: state.billingAvailable, payments: [{ _id: 'payment1', reference, status: 'success', amountKobo: options.amountKobo || 4000000, paidAt: new Date().toISOString(), refundedAmountKobo: 100000 }] });
+  const data = () => ({ plan: state.plan, subscription: { status: state.status, amountKobo: options.amountKobo || 4000000, currency: 'NGN', paidThrough: state.paidThrough, graceEndsAt: state.status === 'past_due' && state.plan === 'pro' ? future : null, canManageCard: true, canResume: state.status === 'canceling' }, cancellationPending: state.cancellationPending, resumptionPending: state.resumptionPending, canCancel: state.resumptionPending || (state.status !== 'canceling' && state.plan === 'pro'), pricing: state.pricing, paymentsNextCursor: options.history && !state.historyDone ? 'payment1' : null, retentionDays: 30, billingAvailable: state.billingAvailable, payments: [{ _id: 'payment1', reference, status: 'success', amountKobo: options.amountKobo || 4000000, paidAt: new Date().toISOString(), refundedAmountKobo: 100000 }] });
   await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 3, necessary: true, analytics: false, marketing: false })));
   await page.route('**/api/v1/**', async route => {
     const path = new URL(route.request().url()).pathname;
@@ -35,7 +35,11 @@ async function setup(page, options = {}) {
       state.status = 'canceling'; return reply({ success: true, data: data(), message: 'Future renewals have stopped.' });
     }
     if (path.endsWith('/billing/resume')) {
-      state.resumeCount++; state.status = 'active';
+      state.resumeCount++; state.resumeBody = route.request().postDataJSON();
+      if (state.resumeFailure) return reply({ success: false, message: 'The saved payment method cannot be reused. You keep your paid access.', data: data() }, 409);
+      if (state.resumeUncertain) { state.resumptionPending = true; return reply({ success: false, code: 'RESUMPTION_PENDING', message: 'Renewal setup is awaiting confirmation.', data: data() }, 502); }
+      if (state.changePrice) { state.pricing = price(41000); return reply({ success: false, code: 'PRICE_CHANGED', pricing: state.pricing, message: 'Your renewal price has updated. Review it before continuing.' }, 409); }
+      state.resumptionPending = false; state.status = 'active';
       return reply({ success: true, data: data(), message: 'Monthly renewals are back on.' });
     }
     return reply({ success: true, data: {} });
@@ -59,13 +63,61 @@ test('cancellation removes payment management and clearly separates resuming ren
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByText(/Subscription canceled\. Future renewals are off\. Pro remains active until/)).toBeVisible();
   await expect(page.getByRole('button', { name: /^(Manage payment method|Cancel subscription|Keep my Pro plan)$/ })).toHaveCount(0);
-  await expect(page.getByText('Resuming turns monthly renewals back on.', { exact: true })).toBeVisible();
+  await expect(page.getByText(/Monthly renewals restart at ₦40,000 from/)).toBeVisible();
+  await expect(page.getByText(/You won’t be charged today\./)).toBeVisible();
   await page.getByRole('button', { name: 'Resume subscription', exact: true }).click();
   expect(state.resumeCount).toBe(1);
+  expect(state.resumeBody.quote).toBe('pro:4000000');
   await expect(page.getByRole('button', { name: 'Manage payment method', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Cancel subscription', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Resume subscription', exact: true })).toHaveCount(0);
 });
+
+test('failed resume keeps cancellation visible and does not show renewing controls', async ({ page }) => {
+  await setup(page, { status: 'canceling', resumeFailure: true });
+  await page.goto('/billing');
+  await page.getByRole('button', { name: 'Resume subscription', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('cannot be reused');
+  await expect(page.getByText(/Subscription canceled\. Future renewals are off/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Manage payment method', exact: true })).toHaveCount(0);
+  await expect(page.getByText(reference, { exact: true })).toBeVisible();
+});
+
+test('an uncertain resume offers a status check and recovers without claiming an early success', async ({ page }) => {
+  const state = await setup(page, { status: 'canceling', resumeUncertain: true });
+  await page.goto('/billing');
+  await page.getByRole('button', { name: 'Resume subscription', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Check renewal status', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Manage payment method', exact: true })).toHaveCount(0);
+  await expect(page.getByText('Renewal setup is awaiting confirmation. Check renewal status before trying again.', { exact: true })).toBeVisible();
+  state.resumeUncertain = false;
+  await page.getByRole('button', { name: 'Check renewal status', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Manage payment method', exact: true })).toBeVisible();
+  expect(state.resumeCount).toBe(2);
+});
+
+test('a changed renewal price must be reviewed before the resume request can succeed', async ({ page }) => {
+  const state = await setup(page, { status: 'canceling', changePrice: true });
+  await page.goto('/billing');
+  await page.getByRole('button', { name: 'Resume subscription', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Review it');
+  await expect(page.getByText(/Monthly renewals restart at ₦41,000 from/)).toBeVisible();
+  expect(state.resumeBody.quote).toBe('pro:4000000');
+  state.changePrice = false;
+  await page.getByRole('button', { name: 'Resume subscription', exact: true }).click();
+  expect(state.resumeBody.quote).toBe('pro:4100000');
+});
+
+for (const width of [320, 768, 834]) {
+  test(`resume price and first charge explanation fit ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await setup(page, { status: 'canceling' });
+    await page.goto('/billing');
+    await expect(page.getByText(/Monthly renewals restart at ₦40,000 from/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Resume subscription', exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+}
 
 test('unconfirmed cancellation does not promise stopped renewals or offer to resume', async ({ page }) => {
   await setup(page, { status: 'canceling', cancellationPending: true });

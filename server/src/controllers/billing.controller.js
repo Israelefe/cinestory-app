@@ -11,7 +11,8 @@ import { billingConfigured, decryptBillingToken, encryptBillingToken, paystackRe
 import { getRuntimeConfig } from '../services/runtimeConfig.service.js';
 import { billingEventIdentity, LEGACY_PRO_PRICES_KOBO, PRO_PRICING, proPlanCode, proPricing, redactBillingSnapshot } from '../services/billingPricing.service.js';
 import { withBillingLock } from '../services/billingLock.service.js';
-import { stopRecurringSubscription, subscriptionCredentials, recoverSubscriptionLink } from '../services/billingCancellation.service.js';
+import { stopRecurringSubscription, subscriptionCredentials, recoverSubscriptionLink, confirmScheduledResumption } from '../services/billingCancellation.service.js';
+import { restartSubscriptionRenewals } from '../services/billingResumption.service.js';
 
 export function addOneMonth(value = new Date()) {
   const result = new Date(value), day = result.getUTCDate();
@@ -39,9 +40,9 @@ export async function billingStatusData(user, req = {}) {
   const [entitlements, paymentRows, runtime, refunds] = await Promise.all([resolveEntitlements(user), Payment.find({ userId: user._id, ...(cursor ? { _id: { $lt: cursor } } : {}) }).sort({ _id: -1 }).limit(25).lean(), getRuntimeConfig(), Refund.find({ userId: user._id }).select('paymentId amountKobo currency status createdAt updatedAt').sort({ createdAt: -1 }).limit(100).lean()]);
   const payments = paymentRows.slice(0, 24);
   const pricing = proPricing();
-  const recurring = await Subscription.find({ userId: user._id, provider: 'paystack', subscriptionCode: { $exists: true, $ne: '' }, providerCanceledAt: null }).select('status paidThrough cancelPendingAt').lean();
-  const unlinked = await Subscription.find({ userId: user._id, provider: 'paystack', subscriptionCode: { $exists: false }, customerCode: { $exists: true }, providerCanceledAt: null }).select('cancelPendingAt').lean();
-  return { ...entitlements, payments, refunds, paymentsNextCursor: paymentRows.length > 24 ? payments.at(-1)._id : null, pricing, billingAvailable: billingConfigured(), retentionDays: Math.max(1, Number(runtime.retention?.proRetentionDays) || 30), recurringSchedules: recurring.length, cancellationPending: [...recurring, ...unlinked].some(item => item.cancelPendingAt), canCancel: recurring.length + unlinked.length > 0, duplicateSchedules: recurring.length > 1 };
+  const recurring = await Subscription.find({ userId: user._id, provider: 'paystack', subscriptionCode: { $exists: true, $ne: '' }, providerCanceledAt: null }).select('status paidThrough cancelPendingAt resumePendingAt').lean();
+  const unlinked = await Subscription.find({ userId: user._id, provider: 'paystack', subscriptionCode: { $exists: false }, customerCode: { $exists: true }, providerCanceledAt: null }).select('cancelPendingAt resumePendingAt').lean();
+  return { ...entitlements, payments, refunds, paymentsNextCursor: paymentRows.length > 24 ? payments.at(-1)._id : null, pricing, billingAvailable: billingConfigured(), retentionDays: Math.max(1, Number(runtime.retention?.proRetentionDays) || 30), recurringSchedules: recurring.length, cancellationPending: [...recurring, ...unlinked].some(item => item.cancelPendingAt), resumptionPending: [...recurring, ...unlinked].some(item => item.resumePendingAt), canCancel: recurring.length + unlinked.length > 0, duplicateSchedules: recurring.length > 1 };
 }
 export async function activateSubscription({ data, user, subscription }) {
   if (!user || !subscription || subscription.accountDeletedAt) return null;
@@ -200,7 +201,7 @@ export async function verifyCheckout(req, res) {
 }
 async function currentPaystackSubscription(userId) {
   const now = new Date();
-  return Subscription.findOne({ userId, provider: 'paystack', subscriptionCode: { $exists: true, $ne: '' }, $or: [{ paidThrough: { $gt: now } }, { status: 'past_due', graceEndsAt: { $gt: now } }] }).sort({ paidThrough: -1 }).select('+emailTokenEncrypted');
+  return Subscription.findOne({ userId, provider: 'paystack', subscriptionCode: { $exists: true, $ne: '' }, $or: [{ paidThrough: { $gt: now } }, { status: 'past_due', graceEndsAt: { $gt: now } }, { status: 'active', resumesSubscriptionId: { $exists: true }, renewalStartsAt: { $gt: now }, providerCanceledAt: null, resumePendingAt: null }] }).sort({ renewalStartsAt: -1, paidThrough: -1 }).select('+emailTokenEncrypted');
 }
 export async function cancelSubscription(req, res) {
   try {
@@ -220,18 +221,15 @@ export async function cancelSubscription(req, res) {
 }
 export async function resumeSubscription(req, res) {
   try {
+    const pricing = proPricing();
+    if (req.body?.quote !== pricing.quote) return res.status(409).json({ success: false, code: 'PRICE_CHANGED', pricing, message: 'Your renewal price has updated. Review it before continuing.' });
     await withBillingLock(req.user.id, async () => {
-      const subscription = await currentPaystackSubscription(req.user.id);
-      if (!subscription || subscription.status !== 'canceling' || !subscription.providerCanceledAt || subscription.cancelPendingAt) throw fail('There is no paid subscription available to resume.');
-      const { data, token } = await subscriptionCredentials(subscription);
-      if (!token || ['completed', 'cancelled', 'canceled'].includes(data.status)) throw fail('This Paystack schedule has ended. Start a new checkout after your paid access ends.');
-      await paystackRequest('/subscription/enable', { method: 'POST', body: { code: subscription.subscriptionCode, token } });
-      subscription.status = 'active'; subscription.cancelRequestedAt = null; subscription.providerCanceledAt = null; await subscription.save();
       const owner = await User.findById(req.user.id);
-      await notify(sendSubscriptionResumedEmail({ to: owner.email, name: owner.name, paidThrough: subscription.paidThrough, userId: owner._id, eventKey: `billing:subscription:${subscription._id}:resumed:${subscription.updatedAt.toISOString()}` }));
+      const subscription = await restartSubscriptionRenewals(owner);
+      await notify(sendSubscriptionResumedEmail({ to: owner.email, name: owner.name, paidThrough: subscription.renewalStartsAt, userId: owner._id, eventKey: `billing:subscription:${subscription._id}:resumed` }));
     });
-    res.json({ success: true, message: 'Your Veylo Pro subscription will continue.', data: await billingStatusData(await User.findById(req.user.id), req) });
-  } catch (error) { res.status(error.status || 502).json({ success: false, message: error.status ? error.message : 'We could not resume your subscription. Contact payment@veylo.com.ng.' }); }
+    res.json({ success: true, message: 'Monthly renewals are back on. No payment was taken today.', data: await billingStatusData(await User.findById(req.user.id), req) });
+  } catch (error) { res.status(error.status || 502).json({ success: false, code: error.code, message: error.status ? error.message : 'We could not confirm renewal setup. Check renewal status before trying again.', data: await billingStatusData(await User.findById(req.user.id), req) }); }
 }
 export async function getManageLink(req, res) {
   try {
@@ -271,6 +269,7 @@ export async function processWebhookEvent(event, eventKey = '', accountLocked = 
     if (data.email_token) subscription.emailTokenEncrypted = encryptBillingToken(data.email_token);
     subscription.providerSnapshot = redactBillingSnapshot(data); await subscription.save();
     if (subscription.cancelRequestedAt || subscription.cancelPendingAt || subscription.accountDeletedAt) await stopRecurringSubscription(subscription);
+    else if (subscription.resumesSubscriptionId && subscription.resumePendingAt) await confirmScheduledResumption(subscription);
     return subscription;
   }
   if (event.event === 'invoice.payment_failed') {

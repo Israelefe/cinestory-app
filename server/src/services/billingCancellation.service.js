@@ -3,13 +3,33 @@ import Payment from '../models/Payment.js';
 import { paystackRequest, decryptBillingToken, encryptBillingToken } from './paystack.service.js';
 import { redactBillingSnapshot } from './billingPricing.service.js';
 
+export function matchesScheduledResumption(subscription, data, requireActive = true) {
+  const start = typeof data.start === 'number' ? new Date(data.start * 1000) : new Date(data.start_date || data.start || data.next_payment_date);
+  return (!requireActive || ['active', 'attention'].includes(data.status))
+    && data.customer?.customer_code === subscription.customerCode
+    && data.plan?.plan_code === subscription.planCode
+    && Number(data.amount) === subscription.amountKobo
+    && (data.currency || data.plan?.currency) === subscription.currency
+    && data.domain === (process.env.PAYSTACK_SECRET_KEY?.startsWith('sk_live_') ? 'live' : 'test')
+    && Math.abs(start.getTime() - subscription.renewalStartsAt.getTime()) < 1000;
+}
+
+export async function confirmScheduledResumption(subscription) {
+  const { data } = await subscriptionCredentials(subscription);
+  if (!matchesScheduledResumption(subscription, data)) throw Object.assign(new Error('Paystack has not confirmed the expected renewal schedule. Check renewal status before trying again.'), { status: 502, code: 'SCHEDULE_MISMATCH' });
+  subscription.resumePendingAt = null;
+  await subscription.save();
+  return subscription;
+}
+
 export async function recoverSubscriptionLink(subscription) {
   if (subscription.subscriptionCode || !subscription.customerProviderId) return subscription;
   const matches = [];
   for (let page = 1; page <= 10; page++) {
     const rows = await paystackRequest(`/subscription?customer=${encodeURIComponent(subscription.customerProviderId)}&perPage=100&page=${page}`);
     if (!Array.isArray(rows)) throw new Error('Invalid provider subscription list.');
-    matches.push(...rows.filter(item => item.customer?.customer_code === subscription.customerCode && item.plan?.plan_code === subscription.planCode && !['completed', 'cancelled', 'canceled'].includes(item.status)));
+    matches.push(...rows.filter(item => subscription.resumesSubscriptionId ? matchesScheduledResumption(subscription, item, !subscription.cancelPendingAt)
+      : item.customer?.customer_code === subscription.customerCode && item.plan?.plan_code === subscription.planCode && !['complete', 'completed', 'cancelled', 'canceled'].includes(item.status)));
     if (rows.length < 100) break;
     if (page === 10) throw Object.assign(new Error('Subscription recovery needs support review.'), { status: 409 });
   }
@@ -19,6 +39,7 @@ export async function recoverSubscriptionLink(subscription) {
   subscription.subscriptionCode = match.subscription_code;
   subscription.emailTokenEncrypted = encryptBillingToken(match.email_token);
   subscription.providerSnapshot = redactBillingSnapshot(match); await subscription.save();
+  if (subscription.resumesSubscriptionId && !subscription.cancelPendingAt) await confirmScheduledResumption(subscription);
   return subscription;
 }
 
@@ -42,13 +63,14 @@ export async function stopRecurringSubscription(subscription) {
   subscription.cancelPendingAt ||= new Date();
   await subscription.save();
   const { data, token } = await subscriptionCredentials(subscription);
-  if (!['non-renewing', 'cancelled', 'canceled', 'completed'].includes(data.status)) {
+  if (!['non-renewing', 'cancelled', 'canceled', 'complete', 'completed'].includes(data.status)) {
     if (!token) throw Object.assign(new Error('Cancellation needs provider support. Email payment@veylo.com.ng; renewal has not been confirmed as stopped.'), { status: 409 });
     await paystackRequest('/subscription/disable', { method: 'POST', body: { code: subscription.subscriptionCode, token } });
   }
   subscription.cancelRequestedAt ||= new Date();
   subscription.providerCanceledAt = new Date();
   subscription.cancelPendingAt = null;
+  subscription.resumePendingAt = null;
   if (!['refunded', 'disputed'].includes(subscription.status)) subscription.status = subscription.paidThrough > new Date() ? 'canceling' : 'expired';
   await subscription.save();
 }
