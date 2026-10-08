@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion, useAnimationControls, useInView } from 'framer-motion';
-import { ArrowDown, ArrowRight, ChevronDown, Images, Maximize2, Pause, Play, SlidersHorizontal } from 'lucide-react';
+import { AnimatePresence, motion, useAnimationControls, useInView, useScroll } from 'framer-motion';
+import { ArrowRight, ChevronDown, Images, Maximize2, Pause, Play, SlidersHorizontal } from 'lucide-react';
 import { Photo } from '../PublicDesign.jsx';
 import { DELIVERY_DEMO_DIMENSIONS } from '../../constants/deliveryDemoMetadata.js';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
@@ -64,6 +64,7 @@ export default function EventCoverageViewer({ delivery, galleryProps, audioState
   const reduced = useVeyloReducedMotion();
   const instance = `event-${useId().replace(/:/g, '')}`;
   const viewerRef = useRef(null);
+  const { scrollYProgress } = useScroll({ target: viewerRef, offset: ['start start', 'end end'] });
   const toolsRef = useRef(null);
   const filterRef = useRef(null);
   const sceneRefs = useRef(new Map());
@@ -176,24 +177,19 @@ export default function EventCoverageViewer({ delivery, galleryProps, audioState
   };
   const openGallery = () => { if (galleryUnlocked) { setGalleryIndex(null); setGallery(true); } };
   const closeGallery = () => { setGallery(false); setGalleryIndex(null); };
-  const begin = () => visibleSections.length
-    ? scrollToScene(visibleSections[0].anchorId, true)
-    : viewerRef.current?.querySelector('.ec-ending')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
   return <div ref={viewerRef} className="fd-page vec-event ec-viewer" data-motion-paused={motionPaused} data-composition={styles['--fd-composition']} data-heading-kind={serifHeading ? 'serif' : 'sans'} style={styles}>
     <DemoHeader format="Event Coverage" client={title} sectionId="event-coverage" delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     <main>
-      <section className="ec-cover" aria-labelledby={`${instance}-title`}>
+      <section className="ec-cover" data-title-size={title.length > 70 ? 'long' : title.length > 45 ? 'medium' : 'short'} aria-labelledby={`${instance}-title`}>
         <motion.div className="ec-cover-copy" initial={reduced ? false : { opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .7, ease }}>
           <span className="ec-eyebrow"><i aria-hidden="true" />Event Coverage</span>
           <h1 id={`${instance}-title`}>{accentTitle ? <>{titleWords.slice(0, -1).join(' ')} <span className="ec-title-accent">{titleWords.at(-1)}</span></> : title}</h1>
-          <div className="ec-cover-details">
-            {opening && <p className="ec-opening">{opening}</p>}
-            <div className="ec-event-meta">{eventDate && <time dateTime={settings.eventDate}>{eventDate}</time>}{settings.venue && <span>{settings.venue}</span>}<span>{galleryPhotos.length} {galleryPhotos.length === 1 ? 'photograph' : 'photographs'}</span></div>
-            {openingPhoto && <button className="ec-begin" type="button" onClick={begin}><span>View the event</span><span className="ec-action-arrow" aria-hidden="true"><ArrowDown size={20} /></span></button>}
-          </div>
         </motion.div>
-        <PhotoCard photo={openingPhoto} position={photoPositions.get(eventPhotoKey(openingPhoto))} paused={pausePhotos} onOpen={openPhoto} eager label="Open the cover photograph" className="ec-cover-photo" showCaption={openingPhoto?.caption !== opening} sizes="(max-width: 767px) 92vw, (max-width: 1439px) 90vw, 1248px" />
+        <PhotoCard photo={openingPhoto} position={photoPositions.get(eventPhotoKey(openingPhoto))} paused={pausePhotos} onOpen={openPhoto} eager label="Open the cover photograph" className="ec-cover-photo" showCaption={openingPhoto?.caption !== opening} sizes="(max-width: 767px) 100vw, (max-width: 1439px) 68vw, 900px" />
+        <motion.div className="ec-cover-details" {...reveal}>
+          {opening && <p className="ec-opening">{opening}</p>}
+          <div className="ec-event-meta">{eventDate && <time dateTime={settings.eventDate}>{eventDate}</time>}{settings.venue && <span>{settings.venue}</span>}<span>{galleryPhotos.length} {galleryPhotos.length === 1 ? 'photograph' : 'photographs'}</span></div>
+        </motion.div>
       </section>
 
       {(sections.length > 0 || hasPhotoMotion) && <section ref={toolsRef} className="ec-tools" aria-label="Event navigation and actions">
@@ -211,6 +207,7 @@ export default function EventCoverageViewer({ delivery, galleryProps, audioState
             {hasPhotoMotion && <button className="ec-motion-toggle" type="button" onClick={() => setMotionPaused(value => !value)} aria-label={motionPaused ? 'Resume photo motion' : 'Pause photo motion'} aria-pressed={motionPaused}>{motionPaused ? <Play size={16} /> : <Pause size={16} />}</button>}
           </div>
         </div>
+        <motion.div className="ec-reading-progress" style={{ scaleX: scrollYProgress }} aria-hidden="true" />
         <p className="ec-sr-only" role="status" aria-live="polite">{visiblePhotoCount} {visiblePhotoCount === 1 ? 'photograph' : 'photographs'} across {visibleSections.length} {visibleSections.length === 1 ? 'scene' : 'scenes'}{activeFilter !== 'all' ? `, filtered by ${filters.find(([value]) => value === activeFilter)?.[1]}` : ''}</p>
       </section>}
 
@@ -222,7 +219,7 @@ export default function EventCoverageViewer({ delivery, galleryProps, audioState
             <div className="ec-scene-heading"><h2 id={`${section.anchorId}-title`}>{section.title}</h2><span className="ec-scene-count">{section.photos.length} {section.photos.length === 1 ? 'photograph' : 'photographs'}</span></div>
             {settings.showSceneNotes !== false && section.copy && <p>{section.copy}</p>}
           </motion.header>
-          <div className="ec-scene-grid" data-count={section.photos.length} data-support-columns={section.photos.length > 3 && (section.photos.length - 1) % 3 === 0 ? 3 : 2}>
+          <div className="ec-scene-grid" data-count={section.photos.length} data-support-columns={section.photos.length > 3 && (section.photos.length - 1) % 3 === 0 ? 3 : 2} data-lead-spread={section.layout === 'hero' && section.photos.length >= 5}>
             {section.photos.map((photo, index) => <PhotoCard key={eventPhotoKey(photo)} photo={photo} index={index} position={photoPositions.get(eventPhotoKey(photo))} paused={pausePhotos} onOpen={openPhoto} label={`Open ${section.title} photograph ${index + 1}`} sizes={index === 0 && section.layout === 'hero' ? '(max-width: 1439px) 92vw, 1248px' : '(max-width: 639px) 92vw, (max-width: 1023px) 44vw, 46vw'} />)}
           </div>
         </article>)}

@@ -36,6 +36,24 @@ async function navigateScene(page, anchor) {
   else await page.locator(`.ec-scene-nav a[href="${anchor}"]`).click();
 }
 
+for (const mode of ['demo', 'client']) test(`${mode} event opens with photography and follows natural scrolling`, async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  if (mode === 'demo') await page.goto('/demo/event-coverage?phoneView=1');
+  else await published(page);
+  const photo = page.locator('.ec-cover-photo .ec-photo-button');
+  await expect(photo).toBeInViewport();
+  expect(await photo.evaluate(element => element.getBoundingClientRect().bottom <= document.querySelector('.ec-cover-details').getBoundingClientRect().top)).toBe(true);
+  await expect(page.locator('.ec-cover button')).toHaveCount(1);
+  await page.mouse.wheel(0, 900);
+  await expect(page.locator('.ec-tools')).toBeInViewport();
+  const progress = () => page.locator('.ec-reading-progress').evaluate(element => new DOMMatrixReadOnly(getComputedStyle(element).transform).a);
+  await expect.poll(progress).toBeGreaterThan(0);
+  const initial = await progress();
+  await page.mouse.wheel(0, 1000);
+  await expect.poll(progress).toBeGreaterThan(initial);
+  await expect(photo).not.toBeInViewport();
+});
+
 for (const width of [320, 390, 640, 768, 834, 1024, 1440]) for (const mode of ['demo', 'client']) {
   test(`${mode} event presentation fits and navigates at ${width}px without repeated photos`, async ({ page }) => {
     await page.setViewportSize({ width, height: width === 320 ? 568 : 1000 });
@@ -44,7 +62,7 @@ for (const width of [320, 390, 640, 768, 834, 1024, 1440]) for (const mode of ['
     if (mode === 'demo') await page.goto('/demo/event-coverage?phoneView=1');
     else await published(page);
     await expect(page.locator('.ec-cover h1')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'View the event', exact: true })).toBeInViewport();
+    await expect(page.getByRole('button', { name: 'View the event', exact: true })).toHaveCount(0);
     await expect.poll(() => page.locator('.ec-cover-photo img').evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
     await expect.poll(() => page.locator('.ec-cover-copy').evaluate(element => getComputedStyle(element).opacity)).toBe('1');
     const ids = await page.locator('.ec-photo-card').evaluateAll(cards => cards.map(card => card.dataset.photoId));
@@ -53,8 +71,7 @@ for (const width of [320, 390, 640, 768, 834, 1024, 1440]) for (const mode of ['
     await expect(page.locator('.vec-event-highlights,.vec-event-manifesto,.vec-event-summary')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Open full gallery', exact: true })).toHaveCount(0);
     if ([320, 834, 1440].includes(width)) await page.screenshot({ path: `../.visual-review/event-redesign/${mode}-cover-${width}.png` });
-    await page.getByRole('button', { name: 'View the event', exact: true }).click();
-    await expect(page.locator('.ec-scene').first()).toBeFocused();
+    await page.locator('.ec-scene').first().evaluate(element => element.scrollIntoView({ behavior: 'instant', block: 'start' }));
     await expect.poll(() => page.locator('.ec-scene').first().evaluate(element => Math.round(element.getBoundingClientRect().top))).toBeLessThan(120);
     const first = page.locator('.ec-scene').first();
     await expect.poll(() => first.locator('.ec-photo-card').first().evaluate(element => getComputedStyle(element).opacity)).toBe('1');
@@ -111,7 +128,6 @@ for (const reducedMotion of ['no-preference', 'reduce']) {
     await page.setViewportSize({ width: 834, height: 1000 });
     await page.emulateMedia({ reducedMotion });
     await published(page, item => item.creativeDirection.frames.forEach(frame => { frame.motion = 'slow-push'; }));
-    await page.getByRole('button', { name: 'View the event', exact: true }).click();
     const photograph = page.locator('.ec-scene-grid .ec-photo-motion').first();
     await photograph.scrollIntoViewIfNeeded();
     const transform = () => photograph.evaluate(element => getComputedStyle(element).transform);
@@ -137,7 +153,6 @@ test('long titles and still photographs fit a short phone without clipping', asy
   await expect(page.getByRole('button', { name: 'Pause photo motion', exact: true })).toHaveCount(0);
   const copy = page.locator('.ec-cover-copy');
   expect(await copy.evaluate(element => element.scrollHeight <= element.parentElement.scrollHeight)).toBe(true);
-  await page.getByRole('button', { name: 'View the event', exact: true }).click();
   const photo = page.locator('.ec-scene-grid .ec-photo-motion').first();
   await photo.scrollIntoViewIfNeeded(); await photo.hover();
   await expect(photo).toHaveCSS('transform', 'none');
@@ -201,7 +216,7 @@ test('a one-photo delivery has one photograph and a usable ending gallery', asyn
   });
   await expect(page.locator('.ec-photo-card')).toHaveCount(1);
   await expect(page.locator('.ec-scene')).toHaveCount(0);
-  await page.getByRole('button', { name: 'View the event', exact: true }).click();
+  await complete(page);
   await expect(page.getByRole('button', { name: 'Open full gallery', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Open full gallery', exact: true }).click();
   await expect(page.locator('.client-gallery-grid > figure')).toHaveCount(1);
