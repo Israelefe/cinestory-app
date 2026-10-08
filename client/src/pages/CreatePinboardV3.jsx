@@ -1,3 +1,4 @@
+import { useAssistantWorkflow } from '../components/AssistantContext.jsx';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { deliveryPreparationMessage } from '../utils/deliveryPreparation.js';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -132,6 +133,12 @@ export default function CreatePinboardV3({ user, initialDelivery }) {
   function openPreview(event) { previewTrigger.current = event.currentTarget; setShowDesktopPreview(true); }
   const [published, setPublished] = useState(initialDelivery?.status === 'published' ? { publicId: initialDelivery.publicId, url: `${window.location.origin}/d/${initialDelivery.publicId}` } : null);
   const assets = draft?.assets || [];
+  const assistantUnsaved = descriptionDirty || title !== (draft?.pinboard?.title || draft?.title || '') || clientName !== (draft?.clientName || '')
+    || (stage === 'design' && (selectedLayoutId !== (draft?.pinboard?.selectedLayoutId || 'balanced') || JSON.stringify(layouts) !== JSON.stringify(draft?.pinboard?.layouts || []) || JSON.stringify(typography) !== JSON.stringify(draft?.pinboard?.typography || { display: 'Cormorant Garamond', body: 'Outfit' }) || JSON.stringify(grid) !== JSON.stringify(draft?.pinboard?.grid || { mobileColumns: 2, tabletColumns: 3, desktopColumns: 4, gap: 'regular' }) || animation !== (draft?.pinboard?.animation || 'soft-fade')))
+    || (stage === 'access' && (Boolean(pin) || removePin || JSON.stringify(access) !== JSON.stringify({ ...DEFAULT_ACCESS, ...draft?.access, expiresAt: localDeliveryExpiry(draft?.access?.expiresAt) })));
+  useAssistantWorkflow({ kind: 'pinboard', deliveryId: draft?._id, step: stage, photoCount: assets.length, failedUploads: failedFiles.length, uploadPercent: Math.round(uploadPercent), uploading: busy === 'upload', busy: Boolean(busy), hasError: Boolean(error), previewOpen: showDesktopPreview, unsaved: assistantUnsaved }, {
+    'delivery-title': proposal => { setTitle(proposal.text); return 'Title added to your open draft form. Save the board design before publishing.'; }
+  });
   const maxPhotos = entitlements?.limits?.photosPerDelivery || (user?.plan === 'pro' || user?.plan === 'studio' ? 500 : 100);
   const quotaReached = reachedQuota(entitlements);
   const previewBranding = creationPreviewBranding(user, entitlements);

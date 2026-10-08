@@ -1,3 +1,4 @@
+import { useAssistantWorkflow } from '../components/AssistantContext.jsx';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { deliveryPreparationMessage } from '../utils/deliveryPreparation.js';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -162,6 +163,16 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
   const assetIdentity = assets.map(asset => asset.assetId).join('|');
   const captionIdentity = assets.map(asset => `${asset.assetId}:${asset.caption || ''}`).join('|');
   const actualShootType = shootType === 'Other' ? customShoot.trim() : shootType;
+  const assistantUnsaved = title !== (draft?.title || '') || clientName !== (draft?.clientName || '')
+    || (stage === 'details' && (actualShootType !== (draft?.shootType || '') || purpose !== (draft?.brief === 'Photo Swap delivery' ? '' : draft?.brief || '')))
+    || photoOrder.join('|') !== assets.map(asset => asset.assetId).join('|')
+    || assets.some(asset => (captions[asset.assetId] || '') !== (asset.caption || ''))
+    || (stage === 'style' && (backgroundMode !== (draft?.photoswap?.backgroundMode || 'auto') || JSON.stringify(typography) !== JSON.stringify(draft?.photoswap?.typography || { display: 'Cormorant Garamond', body: 'Outfit' })))
+    || (stage === 'access' && (Boolean(pin) || removePin || JSON.stringify(access) !== JSON.stringify({ ...DEFAULT_ACCESS, ...draft?.access, expiresAt: localDeliveryExpiry(draft?.access?.expiresAt) })));
+  useAssistantWorkflow({ kind: 'photoswap', deliveryId: draft?._id, step: stage, photoCount: assets.length, failedUploads: failedFiles.length, uploadPercent: Math.round(uploadPercent), uploading: busy === 'upload', busy: Boolean(busy) || captionPreparing, hasError: Boolean(error), previewOpen: showDesktopPreview, unsaved: assistantUnsaved }, {
+    'delivery-title': proposal => { setTitle(proposal.text); return 'Title added to your open draft form. Save it in Details before publishing.'; },
+    caption: proposal => { setCaptions(current => ({ ...current, [proposal.assetId]: proposal.text })); return 'Caption added to your open draft form. Save your captions before publishing.'; }
+  });
   useEffect(() => {
     const available = new Set(assets.map(asset => asset.assetId));
     setPhotoOrder(current => {

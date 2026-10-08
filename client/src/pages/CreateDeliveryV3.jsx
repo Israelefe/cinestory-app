@@ -1,3 +1,4 @@
+import { useAssistantWorkflow } from '../components/AssistantContext.jsx';
 import { ProPrice } from '../components/ProPricing.jsx';
 import { deliveryPreparationMessage } from '../utils/deliveryPreparation.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -255,6 +256,15 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const bounds = BOUNDS[format] || [5, 10];
   const recommendedFormat = DELIVERY_FORMATS.find(item => item.value === recommendation?.format);
   const assets = draft?.assets || [];
+  const assistantUnsaved = title !== (draft?.creativeDirection?.title || '')
+    || (stage === 'details' && (clientName !== (draft?.clientName || '') || purpose !== (draft?.brief || '') || (shootType === 'Other' ? customShoot : shootType) !== (draft?.shootType || '')))
+    || (draft?.creativeDirection?.frames || []).some(frame => (captions[frame.assetId] || '') !== (frame.caption || '') || (headlines[frame.assetId] || '') !== (frame.headline || ''))
+    || openingLine !== (draft?.creativeDirection?.openingLine || '') || closingLine !== (draft?.creativeDirection?.closingLine || '')
+    || (stage === 'design' && (JSON.stringify(palette) !== JSON.stringify(draft?.creativeDirection?.palette || defaultPalette) || JSON.stringify(typography) !== JSON.stringify(draft?.creativeDirection?.typography || { display: 'Playfair Display', body: 'Outfit' })));
+  useAssistantWorkflow({ kind: 'showcase', deliveryId: draft?._id, step: stage === 'upload' ? 'photos' : stage, photoCount: assets.length, failedUploads: failedFiles.length, uploadPercent: Math.round(uploadPercent), uploading: busy === 'upload', busy: Boolean(busy), hasError: Boolean(error), unsaved: assistantUnsaved }, {
+    'delivery-title': proposal => { setTitle(proposal.text); return 'Title added to your open draft form. Save the Showcase writing before publishing.'; },
+    caption: proposal => { setCaptions(current => ({ ...current, [proposal.assetId]: proposal.text })); return 'Caption added to your open draft form. Save the Showcase writing before publishing.'; }
+  });
   const assetById = useMemo(() => new Map(assets.map(asset => [asset.assetId, asset])), [assets]);
   const unselected = assets.filter(asset => !selected.includes(asset.assetId));
   const activeShowcaseIndex = Math.min(activePhotoIndex, Math.max(0, selected.length - 1));

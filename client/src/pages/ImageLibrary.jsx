@@ -1,3 +1,4 @@
+import { useAssistantWorkflow } from '../components/AssistantContext.jsx';
 import { ProPrice } from '../components/ProPricing.jsx';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -47,6 +48,7 @@ export default function ImageLibrary() {
   const [pickerLoading, setPickerLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
   const [createdCollaboration, setCreatedCollaboration] = useState(null);
+  useAssistantWorkflow({ uploading, busy: uploading || loading, uploadPercent: Math.round(progress), unsaved: Boolean(active && (activeCaption !== (active.caption || '') || activeFolder !== (active.folder || ''))) });
 
   async function load(nextPage = 1) {
     try {

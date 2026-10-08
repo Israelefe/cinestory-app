@@ -1,14 +1,22 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AlertCircle, ArrowUpRight, Check, Mail, Send } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { Eyebrow, Intro, Page, Photo, Reveal, TextLink } from '../components/PublicDesign.jsx';
 import api, { apiMessage } from '../services/api.js';
+import { consumeAssistantSupport, clearAssistantSupportDraft } from '../services/assistantSupport.js';
 
 const subjects = ['Delivery support', 'Upload problem', 'Delivery formats', 'Veylo Portfolio', 'Veylo Pro', 'Account help', 'Privacy or deletion request', 'Something else'];
 
 export default function ContactSupport() {
   const [params] = useSearchParams();
-  const [form, setForm] = useState({ name: '', email: '', subject: subjects.includes(params.get('subject')) ? params.get('subject') : subjects[0], deliveryPublicId: '', message: '' });
+  const { key: locationKey } = useLocation();
+  const [assistantDraft] = useState(consumeAssistantSupport);
+  const [form, setForm] = useState({ name: '', email: '', subject: subjects.includes(params.get('subject')) ? params.get('subject') : subjects[0], deliveryPublicId: '', message: '', ...assistantDraft });
+  useEffect(() => {
+    const prepared = consumeAssistantSupport();
+    if (prepared) setForm(current => ({ ...current, ...prepared }));
+    clearAssistantSupportDraft();
+  }, [locationKey]);
   const [state, setState] = useState({ submitting: false, success: '', error: '' });
   const update = event => setForm(current => ({ ...current, [event.target.name]: event.target.value }));
   const submit = async event => {

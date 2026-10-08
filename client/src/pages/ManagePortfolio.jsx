@@ -8,6 +8,8 @@ import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import api, { apiMessage } from '../services/api.js';
 import { contactErrors } from '../services/portfolio.js';
 import { usePortfolioDraft } from '../hooks/usePortfolioDraft.js';
+import { useAssistantWorkflow } from '../components/AssistantContext.jsx';
+import AssistantEntry from '../components/AssistantEntry.jsx';
 import { useDialogFocus } from '../components/useDialogFocus.js';
 import PortfolioPhotoPicker from '../components/PortfolioPhotoPicker.jsx';
 import PortfolioDesignPicker from '../components/PortfolioDesignPicker.jsx';
@@ -130,6 +132,9 @@ export default function ManagePortfolio() {
   const undoTimer = useRef(null);
   const aiUndo = useRef(null);
   const photo = form.items.find(item => item.id === detail);
+  useAssistantWorkflow({ kind: 'portfolio', step: tab.toLowerCase().replaceAll(' ', '-'), unsaved: Boolean(draft.dirty), busy: draft.loading || draft.saveState === 'saving' || Boolean(busy), hasError: Boolean(draft.error || actionError), previewOpen: preview }, {
+    'portfolio-intro': proposal => { setForm(current => ({ ...current, bio: proposal.text })); return 'Introduction added to your private Portfolio form. Check the save status before publishing.'; }
+  });
   const project = form.projects.find(item => item.id === projectId);
   const categories = portfolioCategories(form);
   const errors = contactErrors(form);
@@ -388,7 +393,7 @@ export default function ManagePortfolio() {
   }
   if (draft.loading) return <main className="v-pedit"><p role="status">Opening your portfolio…</p></main>;
   if (draft.error) return <main className="v-pedit"><h1>Your portfolio</h1><p role="alert">{draft.error}</p><button onClick={draft.load}>Try again</button></main>;
-  return <main className="v-pedit"><header className="v-pedit-header"><div><Link to="/dashboard" className="v-pedit-back"><ArrowLeft size={16} />Studio dashboard</Link><p className="v-pedit-eyebrow">YOUR PUBLIC WORK</p><h1>Portfolio</h1><p>A place for new clients to see your work and ask about a shoot.</p></div><div className="v-pedit-header-actions"><span className={`v-pedit-save ${draft.saveState}`} role="status">{draft.saveState === 'saving' ? 'Saving private draft…' : draft.saveState === 'failed' ? 'Changes not saved' : draft.dirty ? 'Unsaved changes' : 'Private draft saved'}</span><button onClick={() => setPreview(true)}><Monitor size={16} />Preview</button>{canEdit && <button className="v-pedit-primary" onClick={() => {
+  return <main className="v-pedit"><header className="v-pedit-header"><div><Link to="/dashboard" className="v-pedit-back"><ArrowLeft size={16} />Studio dashboard</Link><p className="v-pedit-eyebrow">YOUR PUBLIC WORK</p><h1>Portfolio</h1><p>A place for new clients to see your work and ask about a shoot.</p></div><div className="v-pedit-header-actions"><span className={`v-pedit-save ${draft.saveState}`} role="status">{draft.saveState === 'saving' ? 'Saving private draft…' : draft.saveState === 'failed' ? 'Changes not saved' : draft.dirty ? 'Unsaved changes' : 'Private draft saved'}</span><AssistantEntry /><button onClick={() => setPreview(true)}><Monitor size={16} />Preview</button>{canEdit && <button className="v-pedit-primary" onClick={() => {
           setPermission(false);
           setConfirmation('publish');
         }} disabled={busy || Boolean(draft.conflict)}>Publish{profile.status === 'published' ? ' changes' : ' portfolio'}</button>}</div></header>

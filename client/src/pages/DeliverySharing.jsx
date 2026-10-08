@@ -1,3 +1,4 @@
+import { useAssistantWorkflow } from '../components/AssistantContext.jsx';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Check, Copy, Image, Link2, LoaderCircle, ShieldCheck, Trash2, Users } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -29,6 +30,7 @@ export default function DeliverySharing() {
   const [photoScope, setPhotoScope] = useState('all');
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState('');
+  useAssistantWorkflow({ deliveryId: delivery?._id || deliveryId, kind: delivery?.kind, busy, hasError: Boolean(error) });
 
   const photographs = useMemo(
     () => (delivery?.assets || []).filter(asset => asset.resourceType !== 'video'),
