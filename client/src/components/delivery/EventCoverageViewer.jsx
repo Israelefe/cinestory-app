@@ -31,7 +31,7 @@ function PhotoMotion({ photo, index, paused, children }) {
   return <motion.div ref={ref} className="ec-photo-motion" initial={false} animate={controls}>{children}</motion.div>;
 }
 
-function PhotoCard({ photo, index = 0, paused, onOpen, label, eager = false, className = '', showCaption = true, sizes }) {
+function PhotoCard({ photo, index = 0, position, paused, onOpen, label, eager = false, className = '', showCaption = true, sizes }) {
   const [loadedDimensions, setLoadedDimensions] = useState(null);
   if (!photo) return null;
   const dimensions = photo.width && photo.height ? photo : DELIVERY_DEMO_DIMENSIONS[photo.name] || {};
@@ -49,7 +49,7 @@ function PhotoCard({ photo, index = 0, paused, onOpen, label, eager = false, cla
       </PhotoMotion>
       <span className="ec-photo-open" aria-hidden="true"><Maximize2 size={16} /></span>
     </button>
-    {showCaption && photo.caption && <figcaption className="vec-photo-caption">{photo.caption}</figcaption>}
+    {showCaption && photo.caption && <figcaption className="vec-photo-caption">{position && <span className="ec-photo-index" aria-hidden="true">{String(position).padStart(2, '0')}</span>}<span>{photo.caption}</span></figcaption>}
   </motion.figure>;
 }
 
@@ -97,6 +97,10 @@ export default function EventCoverageViewer({ delivery, galleryProps, audioState
   const closing = delivery?.creativeDirection?.closingLine || 'Your photographs are ready to keep.';
   const styles = getFormatThemeStyles(delivery, { bg: '#070709', surface: '#0c0c10', text: '#f4efe8', accent: '#ff9b8e', fontDisplay: "'Cormorant Garamond', Georgia, serif", fontBody: "'Manrope', sans-serif" });
   const eventDate = dateLabel(settings.eventDate);
+  const titleWords = title.trim().split(/\s+/);
+  const accentTitle = titleWords.length >= 4 && title.length < 70;
+  const serifHeading = styles['--delivery-font-heading'].includes('Georgia');
+  const photoPositions = useMemo(() => new Map(galleryPhotos.map((photo, index) => [eventPhotoKey(photo), index + 1])), [galleryPhotos]);
 
   useEffect(() => {
     setGallery(false); setGalleryIndex(null); setActiveFilter('all'); setMotionPaused(false);
@@ -112,7 +116,8 @@ export default function EventCoverageViewer({ delivery, galleryProps, audioState
     const tools = toolsRef.current;
     if (!tools) return undefined;
     const measure = () => {
-      const offset = Math.ceil(tools.getBoundingClientRect().height + 24);
+      const inset = parseFloat(getComputedStyle(tools).top) || 0;
+      const offset = Math.ceil(inset + tools.getBoundingClientRect().height + 24);
       viewerRef.current?.style.setProperty('--ec-scroll-offset', `${offset}px`);
       setNavigationOffset(offset); setViewportHeight(window.innerHeight);
     };
@@ -175,18 +180,20 @@ export default function EventCoverageViewer({ delivery, galleryProps, audioState
     ? scrollToScene(visibleSections[0].anchorId, true)
     : viewerRef.current?.querySelector('.ec-ending')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  return <div ref={viewerRef} className="fd-page vec-event ec-viewer" data-motion-paused={motionPaused} data-composition={styles['--fd-composition']} style={styles}>
+  return <div ref={viewerRef} className="fd-page vec-event ec-viewer" data-motion-paused={motionPaused} data-composition={styles['--fd-composition']} data-heading-kind={serifHeading ? 'serif' : 'sans'} style={styles}>
     <DemoHeader format="Event Coverage" client={title} sectionId="event-coverage" delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
     <main>
       <section className="ec-cover" aria-labelledby={`${instance}-title`}>
         <motion.div className="ec-cover-copy" initial={reduced ? false : { opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .7, ease }}>
           <span className="ec-eyebrow"><i aria-hidden="true" />Event Coverage</span>
-          <h1 id={`${instance}-title`}>{title}</h1>
-          {opening && <p className="ec-opening">{opening}</p>}
-          <div className="ec-event-meta">{eventDate && <time dateTime={settings.eventDate}>{eventDate}</time>}{settings.venue && <span>{settings.venue}</span>}<span>{galleryPhotos.length} {galleryPhotos.length === 1 ? 'photograph' : 'photographs'}</span></div>
-          {openingPhoto && <button className="ec-begin" type="button" onClick={begin}>View the event<ArrowDown size={17} /></button>}
+          <h1 id={`${instance}-title`}>{accentTitle ? <>{titleWords.slice(0, -1).join(' ')} <span className="ec-title-accent">{titleWords.at(-1)}</span></> : title}</h1>
+          <div className="ec-cover-details">
+            {opening && <p className="ec-opening">{opening}</p>}
+            <div className="ec-event-meta">{eventDate && <time dateTime={settings.eventDate}>{eventDate}</time>}{settings.venue && <span>{settings.venue}</span>}<span>{galleryPhotos.length} {galleryPhotos.length === 1 ? 'photograph' : 'photographs'}</span></div>
+            {openingPhoto && <button className="ec-begin" type="button" onClick={begin}><span>View the event</span><span className="ec-action-arrow" aria-hidden="true"><ArrowDown size={20} /></span></button>}
+          </div>
         </motion.div>
-        <PhotoCard photo={openingPhoto} paused={pausePhotos} onOpen={openPhoto} eager label="Open the cover photograph" className="ec-cover-photo" showCaption={openingPhoto?.caption !== opening} sizes="(max-width: 767px) 92vw, (max-width: 1023px) 52vw, 58vw" />
+        <PhotoCard photo={openingPhoto} position={photoPositions.get(eventPhotoKey(openingPhoto))} paused={pausePhotos} onOpen={openPhoto} eager label="Open the cover photograph" className="ec-cover-photo" showCaption={openingPhoto?.caption !== opening} sizes="(max-width: 767px) 92vw, (max-width: 1439px) 90vw, 1248px" />
       </section>
 
       {(sections.length > 0 || hasPhotoMotion) && <section ref={toolsRef} className="ec-tools" aria-label="Event navigation and actions">
@@ -194,7 +201,7 @@ export default function EventCoverageViewer({ delivery, galleryProps, audioState
           {visibleSections.length > 0 && <span className="ec-scene-progress" aria-label={`Scene ${activePosition + 1} of ${visibleSections.length}`}><b>{String(activePosition + 1).padStart(2, '0')}</b><span>/ {String(visibleSections.length).padStart(2, '0')}</span></span>}
           {visibleSections.length > 0 && <div className="ec-mobile-scenes"><select aria-label="Choose an event scene" value={visibleSections[activePosition].anchorId} onChange={event => { setActiveScene(event.target.value); scrollToScene(event.target.value, true); }}>{visibleSections.map(section => <option key={section.anchorId} value={section.anchorId}>{section.title}</option>)}</select><ChevronDown size={15} aria-hidden="true" /></div>}
           <nav className="ec-scene-nav" aria-label="Event scenes">
-            {visibleSections.map(section => <a key={section.anchorId} href={`#${section.anchorId}`} onClick={event => browseScene(event, section.anchorId)} aria-current={activeScene === section.anchorId ? 'location' : undefined}>{section.title}</a>)}
+            {visibleSections.map(section => <a key={section.anchorId} href={`#${section.anchorId}`} onClick={event => browseScene(event, section.anchorId)} aria-current={activeScene === section.anchorId ? 'location' : undefined}><span className="ec-nav-number" aria-hidden="true">{String(section.sceneIndex + 1).padStart(2, '0')}</span><span>{section.title}</span></a>)}
           </nav>
           <div className="ec-tools-actions">
             {availableFilters.length > 2 && <details ref={filterRef} className="ec-filter" onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary').focus(); } }}>
@@ -211,22 +218,22 @@ export default function EventCoverageViewer({ delivery, galleryProps, audioState
         {!visibleSections.length && sections.length > 0 && <div className="ec-empty"><p>No photographs in this view.</p><button type="button" onClick={() => setActiveFilter('all')}>Show all moments<ArrowRight size={16} /></button></div>}
         {visibleSections.map(section => <article id={section.anchorId} key={section.anchorId} ref={element => { if (element) sceneRefs.current.set(section.anchorId, element); else sceneRefs.current.delete(section.anchorId); }} tabIndex={-1} aria-labelledby={`${section.anchorId}-title`} className="ec-scene" data-layout={section.layout} data-scene-index={section.sceneIndex} style={section.accent ? { '--ec-scene-accent': section.accent } : undefined}>
           <motion.header className="ec-scene-copy" {...reveal}>
-            <span className="ec-scene-number">{String(section.sceneIndex + 1).padStart(2, '0')}<i aria-hidden="true" /></span>
-            <h2 id={`${section.anchorId}-title`}>{section.title}</h2>
+            <span className="ec-scene-number" aria-hidden="true">{String(section.sceneIndex + 1).padStart(2, '0')}</span>
+            <div className="ec-scene-heading"><h2 id={`${section.anchorId}-title`}>{section.title}</h2><span className="ec-scene-count">{section.photos.length} {section.photos.length === 1 ? 'photograph' : 'photographs'}</span></div>
             {settings.showSceneNotes !== false && section.copy && <p>{section.copy}</p>}
           </motion.header>
-          <div className="ec-scene-grid" data-count={section.photos.length}>
-            {section.photos.map((photo, index) => <PhotoCard key={eventPhotoKey(photo)} photo={photo} index={index} paused={pausePhotos} onOpen={openPhoto} label={`Open ${section.title} photograph ${index + 1}`} sizes={index === 0 && ['hero', 'triptych'].includes(section.layout) ? '(max-width: 767px) 92vw, (max-width: 1023px) 90vw, 68vw' : '(max-width: 767px) 92vw, (max-width: 1023px) 44vw, 34vw'} />)}
+          <div className="ec-scene-grid" data-count={section.photos.length} data-support-columns={section.photos.length > 3 && (section.photos.length - 1) % 3 === 0 ? 3 : 2}>
+            {section.photos.map((photo, index) => <PhotoCard key={eventPhotoKey(photo)} photo={photo} index={index} position={photoPositions.get(eventPhotoKey(photo))} paused={pausePhotos} onOpen={openPhoto} label={`Open ${section.title} photograph ${index + 1}`} sizes={index === 0 && section.layout === 'hero' ? '(max-width: 1439px) 92vw, 1248px' : '(max-width: 639px) 92vw, (max-width: 1023px) 44vw, 46vw'} />)}
           </div>
         </article>)}
       </section>
 
       <footer ref={closingRef} className={`ec-ending${closingPhoto ? ' has-photo' : ''}`}>
-        {closingPhoto && <PhotoCard photo={closingPhoto} paused={pausePhotos} onOpen={openPhoto} label="Open the closing photograph" showCaption={closingPhoto.caption !== closing} sizes="(max-width: 767px) 92vw, 52vw" />}
+        {closingPhoto && <PhotoCard photo={closingPhoto} position={photoPositions.get(eventPhotoKey(closingPhoto))} paused={pausePhotos} onOpen={openPhoto} label="Open the closing photograph" showCaption={closingPhoto.caption !== closing} sizes="(max-width: 767px) 92vw, 52vw" />}
         <motion.div className="ec-ending-copy" data-long-copy={closing.length > 80} {...reveal}>
           <span className="ec-eyebrow">Photographed by {studio}</span>
           <h2>{closing}</h2>
-          {galleryPhotos.length > 0 && <button className="ec-gallery-link" type="button" disabled={!galleryUnlocked} onClick={openGallery} aria-label={galleryUnlocked ? 'Open full gallery' : 'View gallery after the presentation'}><Images size={18} /><span>View photographs</span><ArrowRight size={18} /></button>}
+          {galleryPhotos.length > 0 && <button className="ec-gallery-link" type="button" disabled={!galleryUnlocked} onClick={openGallery} aria-label={galleryUnlocked ? 'Open full gallery' : 'View gallery after the presentation'}><Images size={19} /><span>View {galleryPhotos.length === 1 ? 'the photograph' : `all ${galleryPhotos.length} photographs`}</span><span className="ec-action-arrow" aria-hidden="true"><ArrowRight size={20} /></span></button>}
         </motion.div>
       </footer>
     </main>

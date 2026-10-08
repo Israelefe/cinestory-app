@@ -218,3 +218,23 @@ test('overlapping published scene assignments show every photograph exactly once
   expect(new Set(ids).size).toBe(16);
   await expect(page.getByRole('heading', { name: 'More from the event', exact: true })).toBeVisible();
 });
+
+for (const mode of ['demo', 'client']) test(`${mode} event typography loads when external font requests fail`, async ({ page }) => {
+  await page.route('**/fonts.googleapis.com/**', route => route.abort());
+  await page.route('**/fonts.gstatic.com/**', route => route.abort());
+  const fontResponses = [];
+  page.on('response', response => { if (response.url().includes('/veylo/fonts/event-coverage/') && response.url().endsWith('.woff2')) fontResponses.push(response); });
+  if (mode === 'demo') await page.goto('/demo/event-coverage?phoneView=1');
+  else await published(page, item => { item.creativeDirection.typography = { display: 'Outfit', body: 'Manrope' }; });
+  const loaded = await page.evaluate(async () => {
+    const requests = ['500 48px "Cormorant Garamond"', 'italic 400 48px "Cormorant Garamond"', '400 16px Manrope', '500 14px Outfit'];
+    const faces = await Promise.all(requests.map(request => document.fonts.load(request)));
+    return faces.every(group => group.length > 0 && group.every(face => face.status === 'loaded'));
+  });
+  expect(loaded).toBe(true);
+  expect(fontResponses.length).toBeGreaterThanOrEqual(4);
+  expect(fontResponses.every(response => response.ok())).toBe(true);
+  const headingFont = await page.locator('.ec-cover h1').evaluate(element => getComputedStyle(element).fontFamily.split(',')[0].replaceAll('"', '').replaceAll("'", ''));
+  expect(headingFont).toBe(mode === 'demo' ? 'Cormorant Garamond' : 'Outfit');
+  if (mode === 'client') await expect(page.locator('.ec-title-accent')).toHaveCSS('font-style', 'normal');
+});
