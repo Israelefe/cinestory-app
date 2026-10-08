@@ -2,6 +2,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useAnimationControls, useInView, useMotionValue, useMotionValueEvent, useScroll } from 'framer-motion';
 import { ArrowRight, ChevronDown, Images, Maximize2, Pause, Play, SlidersHorizontal } from 'lucide-react';
 import { Photo } from '../PublicDesign.jsx';
+import DeliveryBrandMark from './DeliveryBrandMark.jsx';
 import { DELIVERY_DEMO_DIMENSIONS } from '../../constants/deliveryDemoMetadata.js';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import { useClosingGallery } from '../../utils/useClosingGallery.js';
@@ -15,6 +16,21 @@ const reveal = {
   viewport: { once: true, amount: .12 }, transition: { duration: .6, ease }
 };
 const filters = [['all', 'All moments'], ['people', 'People'], ['programme', 'Programme'], ['networking', 'Networking'], ['details', 'Details']];
+const demoBranding = { type: 'studio', name: 'Mayflower Visuals', logoUrl: '' };
+
+function EventBrandIdentity({ branding }) {
+  const [failedLogo, setFailedLogo] = useState('');
+  const studio = branding?.type === 'studio';
+  const name = branding?.name || (studio ? 'Your photographer' : 'Veylo');
+  const logoUrl = branding?.logoUrl || '';
+  const mark = { ...branding, name, logoUrl: failedLogo === logoUrl ? '' : logoUrl };
+  return <motion.div className="ec-brand" data-brand-type={studio ? 'studio' : 'veylo'} {...reveal} onErrorCapture={event => {
+    if (studio && event.target.tagName === 'IMG') setFailedLogo(logoUrl);
+  }}>
+    <DeliveryBrandMark branding={mark} className="ec-brand-mark" />
+    <div className="ec-brand-copy"><span>{studio ? 'Photography by' : 'Delivered with'}</span><strong>{name}</strong></div>
+  </motion.div>;
+}
 
 function EditorialHeading({ title }) {
   const words = title.trim().split(/\s+/);
@@ -133,7 +149,7 @@ export default function EventCoverageViewer({ delivery, galleryProps, audioState
   const visiblePhotoCount = visibleSections.reduce((total, section) => total + section.photos.length, 0);
   const settings = delivery?.formatConfig?.eventCoverage || {};
   const title = delivery?.title || delivery?.clientName || 'A day at the conference';
-  const studio = delivery?.branding?.name || 'Veylo Studio';
+  const branding = delivery ? delivery.branding : demoBranding;
   const opening = delivery?.creativeDirection?.openingLine || delivery?.brief || (delivery ? '' : 'The programme, the conversations, and everyone who was there.');
   const closing = delivery?.creativeDirection?.closingLine || 'Your photographs are ready to keep.';
   const styles = getFormatThemeStyles(delivery, { bg: '#070709', surface: '#0c0c10', text: '#f4efe8', accent: '#ff9b8e', fontDisplay: "'Cormorant Garamond', Georgia, serif", fontBody: "'Manrope', sans-serif" });
@@ -214,7 +230,10 @@ export default function EventCoverageViewer({ delivery, galleryProps, audioState
   const openGallery = () => { if (galleryUnlocked) { setGalleryIndex(null); setGallery(true); } };
   const closeGallery = () => { setGallery(false); setGalleryIndex(null); };
   return <div ref={viewerRef} className="fd-page vec-event ec-viewer" data-motion-paused={motionPaused} data-composition={styles['--fd-composition']} data-heading-kind={serifHeading ? 'serif' : 'sans'} style={styles}>
-    <DemoHeader format="Event Coverage" client={title} sectionId="event-coverage" delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
+    <div className="ec-masthead">
+      <EventBrandIdentity branding={branding} />
+      <DemoHeader format="Event Coverage" client={title} sectionId="event-coverage" delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />
+    </div>
     <main>
       <section className="ec-cover" data-design="cover" data-title-size={title.length > 70 ? 'long' : title.length > 45 ? 'medium' : 'short'} data-has-photo={Boolean(openingPhoto)} aria-labelledby={`${instance}-title`}>
         <div className="ec-cover-stage">
@@ -256,7 +275,7 @@ export default function EventCoverageViewer({ delivery, galleryProps, audioState
       <footer ref={closingRef} className={`ec-ending${closingPhoto ? ' has-photo' : ''}`} data-design="colophon">
         {closingPhoto && <PhotoCard photo={closingPhoto} position={photoPositions.get(eventPhotoKey(closingPhoto))} paused={pausePhotos} onOpen={openPhoto} label="Open the closing photograph" showCaption={closingPhoto.caption !== closing} sizes="(max-width: 767px) 92vw, 52vw" />}
         <motion.div className="ec-ending-copy" data-long-copy={closing.length > 80} {...reveal}>
-          <span className="ec-eyebrow">Photographed by {studio}</span>
+          <EventBrandIdentity branding={branding} />
           <h2>{closing}</h2>
           {galleryPhotos.length > 0 && <button className="ec-gallery-link" type="button" disabled={!galleryUnlocked} onClick={openGallery} aria-label={galleryUnlocked ? 'Open full gallery' : 'View gallery after the presentation'}><Images size={19} /><span>View {galleryPhotos.length === 1 ? 'the photograph' : `all ${galleryPhotos.length} photographs`}</span><span className="ec-action-arrow" aria-hidden="true"><ArrowRight size={20} /></span></button>}
         </motion.div>

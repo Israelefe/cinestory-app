@@ -62,6 +62,8 @@ for (const width of [320, 390, 640, 768, 834, 1024, 1440]) for (const mode of ['
     if (mode === 'demo') await page.goto('/demo/event-coverage?phoneView=1');
     else await published(page);
     await expect(page.locator('.ec-cover h1')).toBeVisible();
+    await expect(page.locator('.ec-masthead .ec-brand-copy strong')).toHaveText(mode === 'demo' ? 'Mayflower Visuals' : EVENT_DEMO.branding.name);
+    await expect(page.locator('.ec-masthead .ec-brand')).toBeInViewport();
     await expect(page.getByRole('button', { name: 'View the event', exact: true })).toHaveCount(0);
     await expect.poll(() => page.locator('.ec-cover-photo img').evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
     await expect.poll(() => page.locator('.ec-cover-copy').evaluate(element => getComputedStyle(element).opacity)).toBe('1');
@@ -100,6 +102,74 @@ for (const width of [320, 390, 640, 768, 834, 1024, 1440]) for (const mode of ['
     expect(errors).toEqual([]);
   });
 }
+
+for (const width of [320, 768, 834, 1440]) test(`saved studio and photographer branding fits the opening and closing at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 1000 });
+  const name = width < 800 ? 'Chukwudi Nwankwo Photography & Films' : 'Osagie Okunbor';
+  await page.route('**/test-studio-logo.svg', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="280" height="80"><rect width="280" height="80" fill="#f4efe8"/><text x="16" y="54" fill="#070709" font-size="36">STUDIO</text></svg>' }));
+  await published(page, item => { item.branding = { type: 'studio', name, logoUrl: '/test-studio-logo.svg' }; });
+  const masthead = page.locator('.ec-masthead .ec-brand');
+  await expect(masthead.locator('strong')).toHaveText(name);
+  await expect(masthead).toBeInViewport();
+  await expect.poll(() => masthead.locator('img').evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
+  await complete(page);
+  const credit = page.locator('.ec-ending .ec-brand');
+  await expect(credit.locator('strong')).toHaveText(name);
+  await expect(credit.locator('.ec-brand-copy > span')).toHaveText('Photography by');
+  await expect(credit.locator('img')).toHaveAttribute('src', '/test-studio-logo.svg');
+  await expect.poll(() => credit.evaluate(element => getComputedStyle(element).opacity)).toBe('1');
+  const geometry = await page.locator('.ec-brand').evaluateAll(brands => brands.map(brand => {
+    const mark = brand.querySelector('.ec-brand-mark');
+    const name = brand.querySelector('strong');
+    const bounds = brand.getBoundingClientRect();
+    const markBounds = mark.getBoundingClientRect();
+    const nameBounds = name.getBoundingClientRect();
+    return {
+      fits: bounds.left >= 0 && bounds.right <= innerWidth && name.scrollWidth <= name.clientWidth + 1,
+      separated: markBounds.right <= nameBounds.left || markBounds.bottom <= nameBounds.top,
+      logoFit: getComputedStyle(mark).objectFit
+    };
+  }));
+  expect(geometry.every(brand => brand.fits && brand.separated && brand.logoFit === 'contain')).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+});
+
+test('a missing studio logo keeps the photographer identity at both ends', async ({ page }) => {
+  await page.route('**/missing-studio-logo.png', route => route.fulfill({ status: 404, body: '' }));
+  await published(page, item => { item.branding = { type: 'studio', name: 'Lens Notes', logoUrl: '/missing-studio-logo.png' }; });
+  await expect(page.locator('.ec-masthead .delivery-brand-mark-initials')).toHaveText('LN');
+  await expect(page.locator('.ec-masthead .ec-brand-copy strong')).toHaveText('Lens Notes');
+  await complete(page);
+  await expect(page.locator('.ec-ending .delivery-brand-mark-initials')).toHaveText('LN');
+  await expect(page.locator('.ec-ending .ec-brand-copy strong')).toHaveText('Lens Notes');
+});
+
+test('Veylo branding is a delivery credit and does not claim the photography', async ({ page }) => {
+  await published(page, item => { item.branding = { type: 'veylo', name: 'Veylo', logoUrl: '/veylo/veylo-mark.svg' }; });
+  await expect(page.locator('.ec-masthead .ec-brand-copy > span')).toHaveText('Delivered with');
+  await expect(page.locator('.ec-masthead .ec-brand-copy strong')).toHaveText('Veylo');
+  await complete(page);
+  await expect(page.locator('.ec-ending .ec-brand-copy > span')).toHaveText('Delivered with');
+  await expect(page.locator('.ec-ending .ec-brand-copy strong')).toHaveText('Veylo');
+});
+
+test('demo studio branding keeps the return link available', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  await page.goto('/demo/event-coverage?from=formats');
+  await expect(page.locator('.ec-masthead .ec-brand-copy strong')).toHaveText('Mayflower Visuals');
+  const back = page.getByRole('link', { name: 'Back to the Event Coverage section on the formats page' });
+  await expect(back).toBeVisible();
+  await expect(back).toHaveAttribute('href', '/formats#event-coverage');
+  const geometry = await back.evaluate(element => {
+    const bounds = element.getBoundingClientRect();
+    const brand = document.querySelector('.ec-masthead .ec-brand').getBoundingClientRect();
+    return { width: bounds.width, height: bounds.height, gap: bounds.left - brand.right, right: bounds.right };
+  });
+  expect(geometry.width).toBeGreaterThanOrEqual(44);
+  expect(geometry.height).toBeGreaterThanOrEqual(44);
+  expect(geometry.gap).toBeGreaterThanOrEqual(16);
+  expect(geometry.right).toBeLessThanOrEqual(320);
+});
 
 for (const width of [320, 834]) {
   test(`filtered scenes preserve identities and single photo access at ${width}px`, async ({ page }) => {
