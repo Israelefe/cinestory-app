@@ -5,7 +5,7 @@ const formats = {
   chapters: { root: '.fd-chapters', photos: '.fd-chapter-library-card', detail: '.fd-chapter-cover-number' },
   album: { root: '.fd-album', photos: '.fd-album-cover figure', detail: '.fd-album-cover-shade' },
   'event-coverage': { root: '.vec-event', photos: '.ec-cover-photo .ec-photo-button', detail: '.ec-scene-nav' },
-  campaign: { root: '.vec-campaign', photos: '.vec-campaign-sets article>button', detail: '.vec-campaign-handoff' }
+  campaign: { root: '.vec-campaign', photos: '.cp-sets .cp-photo-button', detail: '.cp-ending-actions' }
 };
 test.describe.configure({ mode: 'parallel' });
 for (const [format, selectors] of Object.entries(formats)) for (const [width, height] of [[320,568],[390,844],[768,1024],[834,1194],[1440,900]]) {

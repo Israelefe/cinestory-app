@@ -1,5 +1,6 @@
 import { DELIVERY_DEMO_DIMENSIONS } from './deliveryDemoMetadata.js';
 import { campaignPhotos, eventCoveragePhotos } from './deliveryDemoPhotos.js';
+import { CAMPAIGN_DEMO_PHOTOS } from './campaignDemo.js';
 const uuid = (series, index) => `d000000${series}-0000-4000-8000-${String(index + 1).padStart(12, '0')}`;
 const birthdayCaptions = [
   'Lora, your birthday portraits begin here. Take your time with them.',
@@ -53,7 +54,7 @@ EVENT_DEMO.creativeDirection.openingLine = 'The guests, the programme and the co
 EVENT_DEMO.creativeDirection.sections = groups(EVENT_DEMO, [['Arrivals', 'The welcome and check-in before the programme.', [0, 5, 13]], ['The programme', 'Speakers and performers share the stage.', [1, 3, 6, 7, 11, 15]], ['Between sessions', 'Conversations continue away from the stage.', [2, 9, 12]], ['The room', 'Audience photographs and the details around the gathering.', [4, 8, 10, 14]]]);
 EVENT_DEMO.formatConfig.eventCoverage = { version: 1, showSceneNotes: true, highlightAssetIds: [0, 6, 9, 14].map(index => EVENT_DEMO.assets[index].assetId), eventDate: '', venue: '' };
 
-export const CAMPAIGN_DEMO = base('campaign', campaignPhotos, 5, 'The carry collection', 'The campaign team', 'Fashion', 'Finished product photographs: lead frames, close details and the bag in everyday settings.');
+export const CAMPAIGN_DEMO = base('campaign', CAMPAIGN_DEMO_PHOTOS, 5, 'The carry collection', 'The campaign team', 'Fashion', 'Finished product photographs: lead frames, close details and the bag in everyday settings.');
 CAMPAIGN_DEMO.creativeDirection.openingLine = 'A product collection with lead photographs, close details and everyday settings.';
 CAMPAIGN_DEMO.creativeDirection.sections = groups(CAMPAIGN_DEMO, [['Lead photographs', 'The pieces together, with room to see their shape.', [0, 3, 8, 9]], ['Close details', 'The clasp and stitching in closer view.', [1, 5]], ['In use', 'The bag photographed across several settings.', [2, 4, 6, 7, 10, 11]]]);
 CAMPAIGN_DEMO.formatConfig.usageTerms = 'Sample terms: contact the studio to confirm the agreed uses before publishing these photographs.';
@@ -65,5 +66,5 @@ GRIDBOARD_DEMO.pinboard = { title: GRIDBOARD_DEMO.title, description: 'Lora, you
 GRIDBOARD_DEMO.pinboard.palette = { background: '#23170f', surface: '#342319', text: '#f8ede3', accent: '#d0997c' };
 
 const productCaptions = ['The handbag and wallet together in the opening frame.', 'A close view of the stitching and hardware.', 'The bag photographed in the lobby.', 'The pieces and packaging arranged together.', 'A seated photograph with the bag at the table.', 'The clasp and card holder in closer view.', 'A photograph from the courtyard setting.', 'The bag beside the desk.', 'The collection arranged on the shelf.', 'The bag and its packaging together.', 'A photograph from the travel setting.', 'The bag at the cafe.'];
-for (const record of [CANVAS_DEMO, CAMPAIGN_DEMO]) record.creativeDirection.frames = record.creativeDirection.frames.map((frame, index) => ({ ...frame, caption: productCaptions[index], headline: CAMPAIGN_DEMO.formatConfig.campaign.assetLabels[index].label }));
+for (const record of [CANVAS_DEMO, CAMPAIGN_DEMO]) record.creativeDirection.frames = record.creativeDirection.frames.map((frame, index) => ({ ...frame, caption: record === CAMPAIGN_DEMO ? CAMPAIGN_DEMO_PHOTOS[index].caption : productCaptions[index], headline: CAMPAIGN_DEMO.formatConfig.campaign.assetLabels[index].label }));
 for (const index of [0, 3]) Object.assign(GRIDBOARD_DEMO.assets[index], { photoColors: ['#bf562a', '#114639', '#eee0c8'], dominantColor: '#bf562a', visualTags: ['birthday portrait'], similarityTags: ['orange studio backdrop', 'green off-shoulder dress', 'birthday studio portrait'], colorGroups: [{ area: 'outfit', color: 'green' }, { area: 'backdrop', color: 'orange' }] });

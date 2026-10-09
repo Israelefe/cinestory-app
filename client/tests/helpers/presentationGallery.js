@@ -59,7 +59,7 @@ export async function completePresentation(view, format) {
     }
     await view.getByRole('button', { name: 'Complete reveal', exact: true }).click();
   } else {
-    const ending = { editorial: '.ed-closing', 'event-coverage': '.ec-ending', campaign: '.vec-campaign-handoff' }[format];
+    const ending = { editorial: '.ed-closing', 'event-coverage': '.ec-ending', campaign: '.cp-ending-actions' }[format];
     if (ending) {
       await view.locator(ending).scrollIntoViewIfNeeded();
       await expect(view.getByRole('button', { name: 'Open full gallery', exact: true })).toBeVisible();

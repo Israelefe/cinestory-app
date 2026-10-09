@@ -44,7 +44,7 @@ for (const width of [320, 834]) for (const format of ['photo-story', 'editorial'
   await expect(page.getByRole('button', { name: galleryName, exact: true })).toHaveCount(format === 'chapters' ? 1 : 0);
   await expect(page.getByRole('button', { name: /Download all/ })).toHaveCount(0);
   if (format === 'editorial') await expectSinglePhoto(page, page.locator('.ed-cover .ed-image-button'));
-  if (format === 'event-coverage' || format === 'campaign') await expectSinglePhoto(page, page.locator(format === 'campaign' ? '.vec-campaign-sets article>button' : '.ec-cover-photo .ec-photo-button').first());
+  if (format === 'event-coverage' || format === 'campaign') await expectSinglePhoto(page, page.locator(format === 'campaign' ? '.cp-cover .cp-photo-button' : '.ec-cover-photo .ec-photo-button').first());
   if (format === 'album') {
     await page.getByRole('button', { name: 'Open album', exact: true }).click();
     await page.getByRole('button', { name: /^Open album page \d+$/ }).last().click();
@@ -82,7 +82,7 @@ for (const format of ['photo-story', 'editorial', 'album', 'chapters', 'event-co
   await page.goto('/__phone-preview');
   await expect(page.getByText('Waiting for the preview.', { exact: true })).toBeVisible();
   await page.evaluate(delivery => window.postMessage({ type: 'veylo:phone-preview-data', payload: { delivery, access: delivery.access } }, location.origin), delivery);
-  const root = { 'photo-story': '.v-story-cover', editorial: '.ed-cover', album: '.fd-album-cover', chapters: '.fd-chapter-library-grid', 'event-coverage': '.ec-cover', campaign: '.vec-campaign-hero' }[format];
+  const root = { 'photo-story': '.v-story-cover', editorial: '.ed-cover', album: '.fd-album-cover', chapters: '.fd-chapter-library-grid', 'event-coverage': '.ec-cover', campaign: '.cp-cover' }[format];
   await expect(page.locator(root)).toBeVisible();
   await expect(page.getByRole('button', { name: format === 'photo-story' ? 'Open gallery' : format === 'chapters' ? 'View full gallery' : 'Open full gallery', exact: true })).toHaveCount(format === 'chapters' ? 1 : 0);
   await openPresentationGallery(page, format);
