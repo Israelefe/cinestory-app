@@ -11,12 +11,12 @@ import ClientGallery from './ClientGallery.jsx';
 import EditorialArtwork, { editorialArtworkKind } from './EditorialArtwork.jsx';
 import { editorialFromDelivery, editorialPhotos, editorialReadingSections, editorialTheme } from '../../utils/editorial.js';
 import { useClosingGallery } from '../../utils/useClosingGallery.js';
+import { romanPhotoNumber } from '../../utils/deliveryNumbering.js';
 import './EditorialViewer.css';
 
-const number = value => String(value).padStart(2, '0');
 const ease = [.22, 1, .36, 1];
 
-function EditorialImage({ photo, index, onOpen, eager = false, cover = false, showCaption = !cover, nextPhoto, slant = 2.2, delay = 0, motionPaused = false }) {
+function EditorialImage({ photo, index, position, onOpen, eager = false, cover = false, showCaption = !cover, nextPhoto, slant = 2.2, delay = 0, motionPaused = false }) {
   const reduced = useVeyloReducedMotion();
   const ref = useRef(null);
   const captionId = useId();
@@ -68,7 +68,7 @@ function EditorialImage({ photo, index, onOpen, eager = false, cover = false, sh
     </div>
     </motion.div>
     </div>
-    {showCaption && <figcaption id={captionId}><span className="ed-photo-number">{number(index + 1)}</span><div>{photo.headline && <strong>{photo.headline}</strong>}{photo.caption && <p>{photo.caption}</p>}</div></figcaption>}
+    {showCaption && <figcaption id={captionId} data-numbered={Boolean(position)}>{position && <span className="ed-photo-number">{romanPhotoNumber(position)}</span>}<div>{photo.headline && <strong>{photo.headline}</strong>}{photo.caption && <p>{photo.caption}</p>}</div></figcaption>}
   </motion.figure>;
 }
 
@@ -80,7 +80,7 @@ function Contents({ items, active, theme, onClose, onChoose, motionPaused, onTog
     <motion.section id="ed-contents" ref={ref} role="dialog" aria-modal="true" aria-labelledby="ed-contents-title" tabIndex={-1} className="ed-contents-dialog" initial={reduced ? false : { x: 48, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={reduced ? { opacity: 0 } : { x: 48, opacity: 0 }} transition={reduced ? { duration: 0 } : { type: 'spring', damping: 28, stiffness: 280 }}>
       <header><div><span>THE FEATURE</span><h2 id="ed-contents-title">Contents</h2></div><button type="button" onClick={onClose} aria-label="Close contents"><X size={22} /></button></header>
       <div className="ed-motion-control"><button type="button" aria-pressed={motionPaused} onClick={onToggleMotion}>{motionPaused ? <Play size={18} /> : <Pause size={18} />}{motionPaused ? 'Resume photo motion' : 'Pause photo motion'}</button><p>{motionPaused ? 'Photo motion is paused.' : 'Photos move gently as you scroll.'}</p></div>
-      <nav aria-label="Editorial contents">{items.map((item, index) => <button type="button" key={item.id} aria-current={active === item.id ? 'location' : undefined} onClick={() => onChoose(item.id)}><span>{number(index + 1)}</span><strong>{item.title}</strong><ArrowUpRight size={18} /></button>)}</nav>
+      <nav aria-label="Editorial contents">{items.map(item => <button type="button" key={item.id} aria-current={active === item.id ? 'location' : undefined} onClick={() => onChoose(item.id)}><span>{item.number}</span><strong>{item.title}</strong><ArrowUpRight size={18} /></button>)}</nav>
       <p>Take your time with the photographs.</p>
     </motion.section>
   </motion.div>, document.body);
@@ -119,7 +119,7 @@ export default function EditorialViewer({ delivery, galleryProps = {}, demo = fa
   const title = direction.title || delivery.title || 'Your photographs';
   const titleBreak = title.lastIndexOf(' ');
   const titleSize = title.length > 45 ? 'long' : title.length > 24 ? 'medium' : 'short';
-  const items = useMemo(() => [{ id: 'editorial-cover', title: 'Cover' }, ...sections.map(section => ({ id: `ed-${section.id}`, title: section.title || 'Selected photographs' })), ...(editorial.note || editorial.credits.length ? [{ id: 'editorial-notes', title: 'Notes and credits' }] : []), { id: 'editorial-close', title: 'The full collection' }], [editorial, sections]);
+  const items = useMemo(() => [{ id: 'editorial-cover', title: 'Cover' }, ...sections.map((section, index) => ({ id: `ed-${section.id}`, title: section.title || 'Selected photographs', number: index + 1 })), ...(editorial.note || editorial.credits.length ? [{ id: 'editorial-notes', title: 'Notes and credits' }] : []), { id: 'editorial-close', title: 'The full collection' }], [editorial, sections]);
   const reveal = delay => reduced ? {} : { initial: { opacity: 0, y: 16 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, amount: .15 }, transition: { duration: .55, delay: delay || 0, ease } };
   useEffect(() => {
     if (!('IntersectionObserver' in window)) return undefined;
@@ -168,7 +168,7 @@ export default function EditorialViewer({ delivery, galleryProps = {}, demo = fa
           <div className="ed-cover-copy"><motion.p className="ed-eyebrow" {...reveal(.06)}>{delivery.shootType || 'The finished photographs'}</motion.p><motion.h1 {...reveal(.12)}>{titleBreak > 0 ? <>{title.slice(0, titleBreak)} <em>{title.slice(titleBreak + 1)}</em></> : title}</motion.h1><div className="ed-cover-note"><motion.p className="ed-deck" {...reveal(.2)}>{direction.openingLine}</motion.p><EditorialArtwork kind={artworkKind} className="ed-cover-illustration" paused={pausePhotos} /></div></div>
           <div className="ed-cover-art"><EditorialImage photo={cover} index={order.get(cover?.assetId) ?? 0} onOpen={openPhoto} eager cover showCaption slant={-2.6} motionPaused={pausePhotos} nextPhoto={featurePhotos[0] || (showClosingPhoto ? closing : undefined)} /></div>
         </div>
-        <motion.div className="ed-cover-footer" {...reveal(.25)}><span>{number(photos.length)} selected photographs</span></motion.div>
+        <motion.div className="ed-cover-footer" {...reveal(.25)}><span>{photos.length} selected photographs</span></motion.div>
       </section>
       {editorial.introduction && <motion.section className="ed-introduction" {...reveal()}><span className="ed-eyebrow">ABOUT THE FEATURE</span><p>{editorial.introduction}</p></motion.section>}
       {sections.map((section, sectionIndex) => {
@@ -177,12 +177,12 @@ export default function EditorialViewer({ delivery, galleryProps = {}, demo = fa
         const pullLine = section.pullLine && [section.body, ...sectionPhotos.map(photo => photo.caption || '')].some(text => text.replace(/\s+/g, ' ').includes(section.pullLine.replace(/\s+/g, ' '))) ? section.pullLine : '';
         return <section key={section.id} id={`ed-${section.id}`} className="fd-ed-spread ed-section" data-section-layout={layout} data-flow={sectionIndex % 2 ? 'image-right' : 'image-left'}>
           <div className="ed-section-copy">
-          <motion.header className="ed-section-heading" {...reveal()}><div><span className="ed-eyebrow">{number(sectionIndex + 1)} / THE FEATURE</span><h2>{section.title || sectionPhotos[0]?.headline || 'Selected photographs'}</h2></div>{section.body && <p>{section.body}</p>}</motion.header>
+          <motion.header className="ed-section-heading" {...reveal()}><div><span className="ed-eyebrow"><span className="ed-feature-number">{sectionIndex + 1}</span> / THE FEATURE</span><h2>{section.title || sectionPhotos[0]?.headline || 'Selected photographs'}</h2></div>{section.body && <p>{section.body}</p>}</motion.header>
           {pullLine && <motion.aside className="ed-pull-line" {...reveal(.05)}>{pullLine}</motion.aside>}
           {section.mergedCopy.map(copy => <motion.div key={copy.id} className="ed-merged-copy" {...reveal()}>{copy.title && <h3>{copy.title}</h3>}<p>{copy.body}</p></motion.div>)}
           <EditorialArtwork kind={artworkKind} className={`ed-section-illustration ${sectionIndex % 2 ? 'is-reversed' : ''}`} paused={pausePhotos} />
           </div>
-          {sectionPhotos.length > 0 && <div className="ed-section-grid" data-layout={layout}>{sectionPhotos.map((photo, photoIndex) => <EditorialImage key={photo.assetId} photo={photo} index={order.get(photo.assetId) ?? 0} onOpen={openPhoto} slant={photoIndex % 2 ? 2.8 : -2.3} delay={(photoIndex % 3) * .12} motionPaused={pausePhotos} nextPhoto={featurePhotos[featurePhotos.indexOf(photo) + 1] || (showClosingPhoto ? closing : undefined)} />)}</div>}
+          {sectionPhotos.length > 0 && <div className="ed-section-grid" data-layout={layout}>{sectionPhotos.map((photo, photoIndex) => <EditorialImage key={photo.assetId} photo={photo} index={order.get(photo.assetId) ?? 0} position={photoIndex + 1} onOpen={openPhoto} slant={photoIndex % 2 ? 2.8 : -2.3} delay={(photoIndex % 3) * .12} motionPaused={pausePhotos} nextPhoto={featurePhotos[featurePhotos.indexOf(photo) + 1] || (showClosingPhoto ? closing : undefined)} />)}</div>}
         </section>;
       })}
       {(editorial.note || editorial.credits.length > 0) && <motion.section id="editorial-notes" className="ed-notes" {...reveal()}>{editorial.note && <div><span className="ed-eyebrow">FROM THE PHOTOGRAPHER</span><h2>A note from {delivery.branding?.name || 'your photographer'}</h2><p>{editorial.note}</p></div>}{editorial.credits.length > 0 && <div className="ed-credits"><span className="ed-eyebrow">CREDITS</span><dl>{editorial.credits.map((credit, index) => <div key={index}><dt>{credit.role}</dt><dd>{credit.name}</dd></div>)}</dl></div>}</motion.section>}

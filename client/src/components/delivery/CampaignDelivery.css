@@ -56,7 +56,8 @@
 .cp-photo-open { position: absolute; z-index: 3; right: 14px; bottom: 14px; display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid #ffffff65; border-radius: 50%; background: #090d137a; color: #fff; transition: opacity .2s ease, transform .2s ease; }
 .cp-photo-button:hover .cp-photo-open, .cp-photo-button:focus-visible .cp-photo-open { opacity: 1; transform: translateY(-2px); }
 .cp-photo-button:active .cp-photo-open { transform: scale(.94); }
-.cp-photo-card > figcaption { display: grid; grid-template-columns: 24px minmax(0,1fr); align-items: start; gap: 12px; margin: 18px 0 0; padding: 14px 0 0; border: 0; border-top: 1px solid var(--cp-rule); color: var(--cp-muted); font-size: 13px; font-weight: 400; line-height: 1.8; }
+.cp-photo-card > figcaption { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: start; gap: 12px; margin: 18px 0 0; padding: 14px 0 0; border: 0; border-top: 1px solid var(--cp-rule); color: var(--cp-muted); font-size: 13px; font-weight: 400; line-height: 1.8; }
+.cp-photo-card > figcaption[data-numbered="false"] { grid-template-columns: minmax(0,1fr); }
 .cp-photo-number { padding-top: 2px; color: var(--fd-accent); font: 400 11px/1.8 var(--delivery-font-ui); font-variant-numeric: tabular-nums; }
 .cp-caption-copy { display: block; min-width: 0; max-width: 52ch; }
 .cp-caption-copy > strong { display: block; margin-bottom: 6px; color: var(--fd-text); font-size: 16px; font-weight: 600; line-height: 1.5; letter-spacing: -.02em; }
@@ -109,7 +110,7 @@
 .cp-sequence .cp-set-lead[data-orientation="portrait"] { margin-inline: 0; }
 .cp-sequence-controls { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding-top: 16px; }
 .cp-sequence-position { color: var(--fd-text); font: 400 12px/1.6 var(--delivery-font-ui); font-variant-numeric: tabular-nums; }
-.cp-sequence-position > span { margin-left: 12px; color: var(--cp-muted); }
+.cp-sequence-position > span + span { margin-left: 12px; color: var(--cp-muted); }
 .cp-sequence-controls > div { display: flex; gap: 12px; }
 .cp-sequence-controls button { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1px solid var(--cp-rule); border-radius: 50%; color: var(--fd-text); transition: transform .2s ease, color .2s ease, border-color .2s ease; }
 .cp-sequence-controls button:hover:not(:disabled) { color: var(--fd-accent); border-color: var(--fd-accent); transform: translateY(-2px); }

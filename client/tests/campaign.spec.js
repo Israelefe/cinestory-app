@@ -98,15 +98,16 @@ for (const width of [320,834,1440]) test(`the location sequence works by keyboar
   await track.scrollIntoViewIfNeeded(); await expect(previous).toBeDisabled();
   expect(await track.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
   await track.focus(); await track.press('ArrowRight');
-  await expect(set.locator('.cp-sequence-position')).toHaveText('02 / 04');
-  await next.click(); await expect(set.locator('.cp-sequence-position')).toHaveText('03 / 04');
-  await next.click(); await expect(set.locator('.cp-sequence-position')).toHaveText('04 / 04');
+  await expect(set.locator('.cp-sequence-position')).toHaveText('ii / iv');
+  await expect(set.locator('.cp-sequence-position')).toHaveAttribute('aria-label', 'Photograph 2 of 4');
+  await next.click(); await expect(set.locator('.cp-sequence-position')).toHaveText('iii / iv');
+  await next.click(); await expect(set.locator('.cp-sequence-position')).toHaveText('iv / iv');
   await expect(next).toBeDisabled();
   await expect.poll(async () => {
     const [lastBox, trackBox] = await Promise.all([track.locator('.cp-photo-card').last().boundingBox(), track.boundingBox()]);
     return lastBox.x + lastBox.width - trackBox.x - trackBox.width;
   }).toBeLessThanOrEqual(2);
-  await previous.click(); await expect(set.locator('.cp-sequence-position')).toHaveText('03 / 04');
+  await previous.click(); await expect(set.locator('.cp-sequence-position')).toHaveText('iii / iv');
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
 });
 

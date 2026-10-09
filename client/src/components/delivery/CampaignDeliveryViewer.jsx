@@ -7,6 +7,7 @@ import DeliveryBrandMark from './DeliveryBrandMark.jsx';
 import { CAMPAIGN_DEMO_PHOTOS } from '../../constants/campaignDemo.js';
 import { DELIVERY_DEMO_DIMENSIONS } from '../../constants/deliveryDemoMetadata.js';
 import { campaignPhotoKey, campaignPresentation, campaignSetAnchor } from '../../utils/campaignPresentation.js';
+import { romanPhotoNumber } from '../../utils/deliveryNumbering.js';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import { useClosingGallery } from '../../utils/useClosingGallery.js';
 import { DemoGallery, DemoHeader, formatFrameAttributes, formatFrameStyle, frameMotionTransition, frameMotionValues, getFormatThemeStyles, imageSrc, normalizeDeliveryPhotos } from '../../pages/FormatDemo.jsx';
@@ -94,8 +95,8 @@ function PhotoCard({ photo, position, paused, onOpen, label, index = 0, lead = f
       {revealPhoto && (entrance === 'split' ? ['left', 'right'] : [entrance === 'across' ? 'left' : 'bottom']).map(side => <motion.span key={side} className={`cp-photo-curtain${entrance === 'split' ? ` cp-curtain-${side}` : ''}`} aria-hidden="true" style={{ transformOrigin: side }} initial={horizontal ? { scaleX: 1 } : { scaleY: 1 }} animate={paused ? uncovered : undefined} whileInView={uncovered} viewport={viewport} transition={{ duration: paused ? 0 : 1.1, ease, delay: paused ? 0 : delay }} />)}
       <span className="cp-photo-open" aria-hidden="true"><Maximize2 size={16} /></span>
     </button>
-    {showCaption && caption && <motion.figcaption className="vec-photo-caption" initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={viewport} transition={{ duration: .7, delay: .12, ease }}>
-      <span className="cp-photo-number" aria-hidden="true">{String(position).padStart(2, '0')}</span><CaptionCopy text={caption} label={photo.campaignLabel} />
+    {showCaption && caption && <motion.figcaption className="vec-photo-caption" data-numbered={Boolean(position)} initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={viewport} transition={{ duration: .7, delay: .12, ease }}>
+      {position && <span className="cp-photo-number" aria-hidden="true">{romanPhotoNumber(position)}</span>}<CaptionCopy text={caption} label={photo.campaignLabel} />
     </motion.figcaption>}
   </motion.figure>;
 }
@@ -133,20 +134,20 @@ function CampaignSequence({ cards, title }) {
     <div ref={track} className="cp-sequence" role="region" aria-label={`${title} photographs`} tabIndex={0} onScroll={update} onKeyDown={event => {
       if (event.target === event.currentTarget && ['ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); move(event.key === 'ArrowRight' ? 1 : -1); }
     }}>{cards}</div>
-    {cards.length > 1 && scrollable && <div className="cp-sequence-controls"><span className="cp-sequence-position" aria-live="polite">{String(active + 1).padStart(2, '0')} <span>/ {String(cards.length).padStart(2, '0')}</span></span><div>
+    {cards.length > 1 && scrollable && <div className="cp-sequence-controls"><span className="cp-sequence-position" role="status" aria-live="polite" aria-label={`Photograph ${active + 1} of ${cards.length}`}><span aria-hidden="true">{romanPhotoNumber(active + 1)}</span> <span aria-hidden="true">/ {romanPhotoNumber(cards.length)}</span></span><div>
       <button type="button" onClick={() => move(-1)} disabled={active === 0} aria-label={`Previous photograph in ${title}`}><ArrowLeft size={18} /></button>
       <button type="button" onClick={() => move(1)} disabled={active === cards.length - 1} aria-label={`Next photograph in ${title}`}><ArrowRight size={18} /></button>
     </div></div>}
   </div>;
 }
 
-function SetSpread({ set, paused, onOpen, positions, highlights, register, anchor }) {
+function SetSpread({ set, paused, onOpen, highlights, register, anchor }) {
   const heading = <motion.header className="cp-set-copy" variants={sequence} initial="hidden" whileInView="visible" viewport={viewport}>
-    <motion.span className="cp-set-number" variants={piece} aria-hidden="true">{String(set.index + 1).padStart(2, '0')}</motion.span>
+    <motion.span className="cp-set-number" variants={piece} aria-hidden="true">{set.index + 1}</motion.span>
     <motion.div variants={piece}>{set.label && <span className="cp-set-label">{set.label}</span>}<h2 id={`${anchor}-title`}>{set.title}</h2></motion.div>
     {set.copy && <motion.p variants={piece}>{set.copy}</motion.p>}
   </motion.header>;
-  const cards = set.photos.map((photo, index) => <PhotoCard key={campaignPhotoKey(photo)} photo={photo} index={index} position={positions.get(campaignPhotoKey(photo))} highlight={highlights.has(campaignPhotoKey(photo))} paused={paused} onOpen={onOpen} lead={index === 0} entrance={set.design === 'detail' ? index === 0 ? 'across' : 'up' : set.design === 'collection' ? 'up' : 'fade'} className={index === 0 ? 'cp-set-lead' : ''} label={`Open ${set.title} photograph ${index + 1}`} />);
+  const cards = set.photos.map((photo, index) => <PhotoCard key={campaignPhotoKey(photo)} photo={photo} index={index} position={index + 1} highlight={highlights.has(campaignPhotoKey(photo))} paused={paused} onOpen={onOpen} lead={index === 0} entrance={set.design === 'detail' ? index === 0 ? 'across' : 'up' : set.design === 'collection' ? 'up' : 'fade'} className={index === 0 ? 'cp-set-lead' : ''} label={`Open ${set.title} photograph ${index + 1}`} />);
   const sequenceLayout = (set.design === 'lifestyle' && set.layout !== 'triptych') || set.layout === 'strip';
   let spread;
   if (sequenceLayout) spread = <div className="cp-location-stage">{heading}<CampaignSequence cards={cards} title={set.title} /></div>;
@@ -177,7 +178,6 @@ export function CampaignDeliveryViewer({ delivery, galleryProps: suppliedGallery
   const { openingPhoto, closingPhoto, sets, galleryPhotos, highlights } = useMemo(() => campaignPresentation(delivery, photos, collection), [delivery, photos, collection]);
   const identity = `${delivery?.publicId || delivery?._id || 'campaign-demo'}:${photos.map(campaignPhotoKey).join('|')}`;
   const { galleryUnlocked, closingRef } = useClosingGallery(identity);
-  const positions = useMemo(() => new Map(galleryPhotos.map((photo, index) => [campaignPhotoKey(photo), index + 1])), [galleryPhotos]);
   const title = delivery?.title || delivery?.clientName || 'Carry it forward';
   const opening = delivery?.creativeDirection?.openingLine || delivery?.brief || (delivery ? '' : 'A handbag, its details, and the places it goes.');
   const closing = delivery?.creativeDirection?.closingLine || 'The collection is yours.';
@@ -260,29 +260,29 @@ export function CampaignDeliveryViewer({ delivery, galleryProps: suppliedGallery
           <motion.h1 id={`${instance}-title`} variants={piece}>{splitTitle ? <><span className="cp-title-prefix">{titleWords.slice(0, -1).join(' ')} </span><span className="cp-title-word">{titleWords.at(-1)}</span></> : title}</motion.h1>
           {opening && <motion.p className="cp-cover-intro" variants={piece}>{opening}</motion.p>}
         </motion.div>
-        <PhotoCard photo={openingPhoto} position={positions.get(campaignPhotoKey(openingPhoto))} paused={paused} onOpen={openPhoto} label="Open the campaign cover photograph" eager lead entrance="split" highlight={highlights.has(campaignPhotoKey(openingPhoto))} className="cp-cover-photo" sizes="(max-width: 767px) 100vw, (max-width: 1480px) 60vw, 880px" /></div>
-        <motion.div className="cp-cover-note" variants={sequence} initial="hidden" whileInView="visible" viewport={viewport}><motion.span variants={piece}>The campaign photographs</motion.span><motion.span variants={piece}>{String(galleryPhotos.length).padStart(2, '0')} {galleryPhotos.length === 1 ? 'photograph' : 'photographs'}</motion.span></motion.div>
+        <PhotoCard photo={openingPhoto} paused={paused} onOpen={openPhoto} label="Open the campaign cover photograph" eager lead entrance="split" highlight={highlights.has(campaignPhotoKey(openingPhoto))} className="cp-cover-photo" sizes="(max-width: 767px) 100vw, (max-width: 1480px) 60vw, 880px" /></div>
+        <motion.div className="cp-cover-note" variants={sequence} initial="hidden" whileInView="visible" viewport={viewport}><motion.span variants={piece}>The campaign photographs</motion.span><motion.span variants={piece}>{galleryPhotos.length} {galleryPhotos.length === 1 ? 'photograph' : 'photographs'}</motion.span></motion.div>
       </section>
 
       {(sets.length > 0 || hasPhotoMotion) && <section ref={navigation} className="cp-tools" aria-label="Campaign navigation and actions">
         <div className="cp-tools-inner">
           {currentSet && <details ref={menu} className="cp-set-menu" onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary').focus(); } }}>
-            <summary aria-label="Browse campaign sets"><span className="cp-current-number" aria-hidden="true">{String(currentSet.index + 1).padStart(2, '0')}</span><motion.span key={currentSet.id + currentSet.index} className="cp-current-title" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .25 }}>{currentSet.title}</motion.span><ChevronDown size={15} aria-hidden="true" /></summary>
-            <nav aria-label="Campaign asset sets" className="cp-set-nav">{sets.map(set => <a key={campaignSetAnchor(set)} href={`#${instance}-${campaignSetAnchor(set)}`} onClick={event => browseSet(event, set)} aria-current={activeSet === campaignSetAnchor(set) ? 'location' : undefined}><span aria-hidden="true">{String(set.index + 1).padStart(2, '0')}</span><span>{set.title}</span><small>{set.photos.length} {set.photos.length === 1 ? 'photo' : 'photos'}</small></a>)}</nav>
+            <summary aria-label="Browse campaign sets"><span className="cp-current-number" aria-hidden="true">{currentSet.index + 1}</span><motion.span key={currentSet.id + currentSet.index} className="cp-current-title" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .25 }}>{currentSet.title}</motion.span><ChevronDown size={15} aria-hidden="true" /></summary>
+            <nav aria-label="Campaign asset sets" className="cp-set-nav">{sets.map(set => <a key={campaignSetAnchor(set)} href={`#${instance}-${campaignSetAnchor(set)}`} onClick={event => browseSet(event, set)} aria-current={activeSet === campaignSetAnchor(set) ? 'location' : undefined}><span aria-hidden="true">{set.index + 1}</span><span>{set.title}</span><small>{set.photos.length} {set.photos.length === 1 ? 'photo' : 'photos'}</small></a>)}</nav>
           </details>}
           {hasPhotoMotion && <button className="cp-motion-toggle" type="button" onClick={() => setMotionPaused(value => !value)} aria-label={motionPaused ? 'Resume photo motion' : 'Pause photo motion'} aria-pressed={motionPaused}>{motionPaused ? <Play size={16} /> : <Pause size={16} />}</button>}
         </div>
         <motion.span className="cp-progress" style={{ scaleX: scrollYProgress }} aria-hidden="true" />
       </section>}
 
-      <section className="cp-sets" aria-label="The campaign photographs">{sets.map(set => <SetSpread key={campaignSetAnchor(set)} set={set} paused={paused} onOpen={openPhoto} positions={positions} highlights={highlights} anchor={`${instance}-${campaignSetAnchor(set)}`} register={element => {
+      <section className="cp-sets" aria-label="The campaign photographs">{sets.map(set => <SetSpread key={campaignSetAnchor(set)} set={set} paused={paused} onOpen={openPhoto} highlights={highlights} anchor={`${instance}-${campaignSetAnchor(set)}`} register={element => {
         const key = campaignSetAnchor(set);
         if (element) { element.dataset.setAnchor = key; setElements.current.set(key, element); } else setElements.current.delete(key);
       }} />)}</section>
 
       <footer className="cp-ending" data-design="closing">
         <motion.div className="cp-ending-heading" variants={sequence} initial="hidden" whileInView="visible" viewport={viewport}><motion.p variants={piece}>The complete<br />campaign.</motion.p><motion.span variants={piece}>{galleryPhotos.length} {galleryPhotos.length === 1 ? 'photograph' : 'photographs'}<br />{delivery?.clientName ? `For ${delivery.clientName}` : 'Ready to keep and share'}</motion.span></motion.div>
-        {closingPhoto && <PhotoCard photo={closingPhoto} position={positions.get(campaignPhotoKey(closingPhoto))} paused={paused} onOpen={openPhoto} label="Open the closing campaign photograph" lead entrance="up" className="cp-closing-photo" highlight={highlights.has(campaignPhotoKey(closingPhoto))} />}
+        {closingPhoto && <PhotoCard photo={closingPhoto} paused={paused} onOpen={openPhoto} label="Open the closing campaign photograph" lead entrance="up" className="cp-closing-photo" highlight={highlights.has(campaignPhotoKey(closingPhoto))} />}
         <div ref={closingRef} className="cp-ending-actions">
           <motion.div className="cp-ending-copy" variants={sequence} initial="hidden" whileInView="visible" viewport={viewport} data-long-copy={closing.length > 65}>
             <motion.h2 variants={piece}>{closing}</motion.h2>

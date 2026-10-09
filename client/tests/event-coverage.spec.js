@@ -192,7 +192,7 @@ for (const width of [320, 834]) {
     await expect(link).toHaveAttribute('href', original[2]);
     await navigateScene(page, original[2]);
     await expect(link).toHaveAttribute('aria-current', 'location');
-    await expect(page.locator('.ec-scene-number')).toHaveText('03');
+    await expect(page.locator('.ec-scene-number')).toHaveText('3');
     const button = page.locator('.ec-scene-grid .ec-photo-button').first();
     await button.click();
     await expect(page.locator('.client-gallery-lightbox-main')).toHaveAttribute('src', delivery.assets[2].url);
@@ -283,12 +283,12 @@ for (const width of [320, 834, 1440]) test(`detailed demo captions remain readab
     await expect.poll(() => caption.evaluate(element => Number(getComputedStyle(element.parentElement).opacity))).toBe(1);
     const geometry = await caption.evaluate(element => {
       const bounds = element.getBoundingClientRect();
-      const number = element.parentElement.querySelector('.ec-photo-index').getBoundingClientRect();
+      const number = element.parentElement.querySelector('.ec-photo-index')?.getBoundingClientRect();
       const style = getComputedStyle(element);
-      return { fits: bounds.left >= 0 && bounds.right <= innerWidth + 1, unclipped: element.scrollHeight <= element.clientHeight + 1, gap: Math.max(bounds.left - number.right, number.left - bounds.right), fontSize: parseFloat(style.fontSize), text: element.textContent };
+      return { fits: bounds.left >= 0 && bounds.right <= innerWidth + 1, unclipped: element.scrollHeight <= element.clientHeight + 1, gap: number ? Math.max(bounds.left - number.right, number.left - bounds.right) : null, fontSize: parseFloat(style.fontSize), text: element.textContent };
     });
     expect(geometry.fits && geometry.unclipped).toBe(true);
-    expect(geometry.gap).toBeGreaterThanOrEqual(12);
+    if (geometry.gap !== null) expect(geometry.gap).toBeGreaterThanOrEqual(12);
     expect(geometry.fontSize).toBeGreaterThanOrEqual(13);
     expect(EVENT_COVERAGE_DEMO_PHOTOS.some(photo => photo.caption === geometry.text)).toBe(true);
   }

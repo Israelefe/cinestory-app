@@ -42,7 +42,7 @@ export function eventCoveragePresentation(delivery, photographs, collection = ph
   };
   const sections = source.map((section, index) => ({
     id: section.id || `section-${index + 1}`,
-    title: section.title || section.name || section.headline || `Scene ${String(index + 1).padStart(2, '0')}`,
+    title: section.title || section.name || section.headline || `Scene ${index + 1}`,
     copy: section.copy || section.subtitle || section.body || section.caption || section.description || '',
     layout: section.layout || ['pair', 'hero', 'triptych', 'cluster'][index % 4],
     accent: section.accent || '',
@@ -58,7 +58,7 @@ export function eventCoveragePresentation(delivery, photographs, collection = ph
       const size = Math.ceil(remaining.length / Math.min(4, remaining.length));
       for (let index = 0; index < remaining.length; index += size) {
         const at = sections.length;
-        sections.push({ id: `section-${at + 1}`, title: `Scene ${String(at + 1).padStart(2, '0')}`, copy: '', layout: ['hero', 'pair', 'triptych', 'cluster'][at % 4], sceneIndex: at, photos: remaining.slice(index, index + size) });
+        sections.push({ id: `section-${at + 1}`, title: `Scene ${at + 1}`, copy: '', layout: ['hero', 'pair', 'triptych', 'cluster'][at % 4], sceneIndex: at, photos: remaining.slice(index, index + size) });
       }
     }
   }
