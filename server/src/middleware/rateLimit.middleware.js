@@ -204,6 +204,13 @@ export const supportTicketLimit = limiter({
   identifier: 'support-tickets'
 });
 
+export const supportMessageLimit = limiter({
+  windowMs: 60 * 60 * 1000,
+  limit: 180,
+  message: 'Many support updates were sent from this account. Please wait before trying again.',
+  identifier: 'support-messages'
+});
+
 // Chat is a help surface, not a product quota. Keep a generous short burst
 // guard so a public page cannot be used to run an unattended model loop. The
 // key is the signed-in account where available and the connection otherwise.

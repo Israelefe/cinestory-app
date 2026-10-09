@@ -4,7 +4,7 @@ export const ADMIN_READ_ACCESS = Object.freeze({
   analytics: roles('superadmin', 'finance', 'analyst', 'read-only'),
   accounts: roles('superadmin', 'operations', 'support', 'finance'),
   deliveries: roles('superadmin', 'operations', 'support'),
-  support: roles('superadmin', 'operations', 'support'),
+  support: roles('superadmin', 'operations', 'support', 'finance'),
   finance: roles('superadmin', 'finance'),
   jobs: roles('superadmin', 'operations', 'read-only'),
   storage: roles('superadmin', 'operations'),

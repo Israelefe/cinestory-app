@@ -29,6 +29,7 @@ import { startDeliveryWorker, stopDeliveryWorker } from './src/services/delivery
 import { modelRequestContextMiddleware } from './src/services/modelRequestContext.service.js';
 import { startRetentionWorker } from './src/services/retention.service.js';
 import { startBillingWorker } from './src/services/billingWorker.service.js';
+import { startSupportWorker } from './src/services/supportMail.service.js';
 import { startPortfolioWorker } from './src/services/portfolioWorker.service.js';
 import { seedAdminFromEnv } from './src/utils/seedAdmin.js';
 import { maintenanceMiddleware } from './src/middleware/maintenance.middleware.js';
@@ -160,6 +161,7 @@ connectDB().then(async connection => {
     }
     startRetentionWorker();
     startBillingWorker();
+    startSupportWorker();
     void startOperationalMonitoring();
   });
   const shutdown = async () => {

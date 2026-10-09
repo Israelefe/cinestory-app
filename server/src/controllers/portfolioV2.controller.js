@@ -523,6 +523,7 @@ export async function publishMyPortfolio(req, res) {
         revision: saved.publishedRevision
       }
     });
+    await recordPaidUsage(user._id, 'portfolio', `publish:${saved._id}`);
     res.json(envelope(saved, user, access));
   } catch (error) {
     if (/Transaction numbers|replica set/i.test(error.message)) return fail(res, 503, 'TRANSACTIONS_REQUIRED', 'Publishing is temporarily unavailable. Your draft is saved.');

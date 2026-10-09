@@ -6,6 +6,10 @@ const ticketMessageSchema = new mongoose.Schema({
   adminId: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminUser' },
   message: { type: String, required: true, trim: true, maxlength: 4000 },
   internal: { type: Boolean, default: false },
+  requestKey: { type: String, maxlength: 80 },
+  channel: { type: String, enum: ['web', 'assistant', 'email'], default: 'web' },
+  emailMessageId: { type: String, maxlength: 300 },
+  deliveryStatus: { type: String, enum: ['queued', 'sending', 'sent', 'failed', 'uncertain'] },
   createdAt: { type: Date, default: Date.now }
 }, { _id: true });
 
@@ -33,6 +37,16 @@ const supportTicketSchema = new mongoose.Schema({
   resourceType: { type: String, enum: ['delivery', 'portfolio', 'account', 'none'], default: 'none' },
   resourceId: { type: String, trim: true, maxlength: 160 },
   assignedAdminId: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminUser', index: true },
+  requestKey: { type: String, unique: true, sparse: true, maxlength: 80 },
+  channel: { type: String, enum: ['web', 'assistant', 'email'], default: 'web' },
+  mailbox: { type: String, enum: ['general', 'billing'], default: 'general', index: true },
+  context: { type: mongoose.Schema.Types.Mixed },
+  paymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment' },
+  refundRequestId: { type: mongoose.Schema.Types.ObjectId, ref: 'RefundRequest' },
+  lastRequesterAt: { type: Date, default: Date.now },
+  customerReadAt: Date,
+  staffReadAt: Date,
+  attachments: [{ name: String, contentType: String, bytes: Number, key: { type: String, select: false } }],
   messages: { type: [ticketMessageSchema], default: [] },
   moderationActions: { type: [moderationActionSchema], default: [] },
   lastResponseAt: Date,

@@ -152,6 +152,7 @@ export async function createLibraryCollaboration(req, res) {
       passwordDigest,
       expiresAt: new Date(Date.now() + parsed.data.expiresInDays * 24 * 60 * 60 * 1000)
     });
+    await recordPaidUsage(req.user.id, 'storage', `share:${collaboration._id}`);
     res.status(201).json({ success: true, data: ownerRecord(collaboration), access: entitlements.features.storageMode });
   } catch (error) {
     res.status(error.status || 500).json({ success: false, message: error.message || 'We could not create that sharing link.' });

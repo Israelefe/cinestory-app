@@ -106,7 +106,7 @@ test('support preparation fills a reviewable form and does not send a ticket', a
   await panel.getByRole('button', { name: 'Prepare support request' }).click();
   await expect(page).toHaveURL(/\/contact$/);
   await expect(page.getByLabel('Your message', { exact: true })).toHaveValue(/I need help in About Photo Swap/);
-  await expect(page.getByRole('button', { name: 'Send to support' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Send to a person' })).toBeVisible();
   await page.getByLabel('Your message', { exact: true }).fill('Replace this with the prepared context.');
   const supportPanel = await open(page);
   await supportPanel.getByRole('button', { name: 'Prepare support request' }).click();

@@ -168,3 +168,8 @@
 .veylo-assistant-panel .veylo-markdown th, .veylo-assistant-panel .veylo-markdown td { min-width: 7rem; padding: .45rem .55rem; border-bottom: 1px solid rgba(255, 255, 255, .08); text-align: left; vertical-align: top; }
 .veylo-assistant-panel .veylo-markdown th { color: #fff; background: rgba(255, 255, 255, .06); font-weight: 700; }
 .veylo-assistant-panel .veylo-markdown tr:last-child td { border-bottom: 0; }
+.veylo-assistant-human{display:flex;gap:12px;justify-content:space-between;flex-wrap:wrap;padding:12px 20px;border-bottom:1px solid #ffffff12;background:#ff9b8e05;flex-shrink:0}
+.veylo-assistant-human button,.veylo-assistant-support-offer{display:inline-flex;align-items:center;gap:8px;min-height:38px;border:0;background:none;font-size:11px;color:#ffb3a7;cursor:pointer;transition:transform .18s}
+.veylo-assistant-human button:hover,.veylo-assistant-support-offer:hover{transform:translateY(-2px)}.veylo-assistant-human button:active{transform:scale(.97)}
+.veylo-assistant-support-offer{padding:10px 12px;border:1px solid #ff9b8e35;border-radius:9px;margin-top:16px;line-height:1.6;text-align:left}
+.veylo-assistant-support-form{border:1px solid #ff9b8e33;border-radius:14px;padding:22px 18px;margin:20px 0;background:#101014;animation:vs-arrive .3s both}.veylo-assistant-support-form>h3{font-size:21px;line-height:1.3;font-weight:500;color:#fff;margin-bottom:22px;letter-spacing:-.025em}.veylo-assistant-support-form .vs-form-grid{grid-template-columns:1fr}.veylo-assistant-support-form .vs-compose{gap:20px}.veylo-assistant-support-form .vs-compose textarea{font-size:13px}

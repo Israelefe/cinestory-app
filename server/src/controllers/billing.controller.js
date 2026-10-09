@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { sendRefundProgressEmail } from '../services/email.service.js';
 import User from '../models/User.js';
 import Subscription from '../models/Subscription.js';
 import Payment from '../models/Payment.js';
@@ -380,6 +381,7 @@ export async function processWebhookEvent(event, eventKey = '', accountLocked = 
       if (payment.status === 'refunded' && subscription?.lastPaymentReference === reference) { await Subscription.updateOne({ _id: subscription._id }, { $set: { status: 'refunded' } }); await syncBillingPlan(payment.userId); }
       if (user && refund.status === 'processed') await notify(sendRefundProcessedEmail({ to: user.email, name: user.name, amountKobo, reference, userId: user._id, eventKey: `billing:refund:${refund._id}:processed` }));
       if (user && refund.status === 'failed') await notify(sendRefundFailedEmail({ to: user.email, name: user.name, reference, userId: user._id, eventKey: `billing:refund:${refund._id}:failed` }));
+      if (user && ['pending', 'processing', 'needs-attention'].includes(refund.status)) await notify(sendRefundProgressEmail({ to: user.email, name: user.name, reference, status: refund.status, userId: user._id, eventKey: `billing:refund:${refund._id}:${refund.status}` }));
       return payment;
     });
   }

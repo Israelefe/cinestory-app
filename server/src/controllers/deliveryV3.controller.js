@@ -522,7 +522,7 @@ export async function v3Publish(req, res) {
       { new: true }
     );
     if (!published) { const error = new Error('This delivery changed. Preview it again before publishing.'); error.status = 409; throw error; }
-    if (reservation.entitlements.plan === 'pro') await recordPaidUsage(req.user.id, 'delivery', delivery._id);
+    if (reservation.entitlements.plan === 'pro') await recordPaidUsage(req.user.id, 'delivery', delivery._id, delivery.publishedAt);
     res.json({ success: true, data: { publicId: delivery.publicId, url: `${String(process.env.CLIENT_URL || 'https://veylo.com.ng').replace(/\/$/, '')}/d/${delivery.publicId}`, entitlements: reservation.entitlements } });
   } catch (error) { await reservation?.release().catch(() => {}); fail(res, error); }
 }

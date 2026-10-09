@@ -61,6 +61,7 @@ export async function subscriptionCredentials(subscription) {
 export async function stopRecurringSubscription(subscription) {
   if (!subscription.subscriptionCode) return;
   subscription.cancelPendingAt ||= new Date();
+  subscription.cancelRequestedAt ||= new Date();
   await subscription.save();
   const { data, token } = await subscriptionCredentials(subscription);
   if (!['non-renewing', 'cancelled', 'canceled', 'complete', 'completed'].includes(data.status)) {
@@ -77,7 +78,10 @@ export async function stopRecurringSubscription(subscription) {
 
 export async function stopAccountRenewals(userId) {
   const linking = await Subscription.find({ userId, provider: 'paystack', subscriptionCode: { $exists: false }, customerCode: { $exists: true } });
-  for (const item of linking) await recoverSubscriptionLink(item);
+  for (const item of linking) {
+    item.cancelPendingAt ||= new Date(); item.cancelRequestedAt ||= new Date(); await item.save();
+    await recoverSubscriptionLink(item);
+  }
   const unlinked = await Subscription.exists({ userId, provider: 'paystack', status: { $in: ['active', 'past_due', 'canceling'] }, subscriptionCode: { $exists: false }, customerCode: { $exists: true } });
   if (unlinked) throw Object.assign(new Error('Your recurring schedule is still being linked. Refresh billing shortly or email payment@veylo.com.ng before changing the account.'), { status: 409 });
   // Check historical schedules too: a locally expired record can still renew at Paystack.

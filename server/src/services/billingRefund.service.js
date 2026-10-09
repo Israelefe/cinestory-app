@@ -1,14 +1,14 @@
 import Payment from '../models/Payment.js';
 import Refund from '../models/Refund.js';
-import Subscription from '../models/Subscription.js';
+import RefundRequest, { REFUND_REASONS } from '../models/RefundRequest.js';
 import AdminAudit from '../models/AdminAudit.js';
 import { paystackRequest } from './paystack.service.js';
 import { withBillingLock } from './billingLock.service.js';
-import { stopRecurringSubscription } from './billingCancellation.service.js';
+import { stopAccountRenewals } from './billingCancellation.service.js';
 import { refundEvidence } from './paidUsage.service.js';
 import { redactBillingSnapshot } from './billingPricing.service.js';
 const fail = (message, status = 409) => Object.assign(new Error(message), { status });
-export async function requestReviewedRefund({ paymentId, amountKobo, reason, requestKey, cancelRenewal = false, adminId }) {
+export async function requestReviewedRefund({ paymentId, amountKobo, reason, customerNote, policyReason, refundRequestId, requestKey, cancelRenewal = false, adminId }) {
   const initial = await Payment.findById(paymentId);
   if (!initial) throw fail('Payment not found.', 404);
   if (typeof requestKey !== 'string' || !/^[a-f0-9-]{36}$/i.test(requestKey)) throw fail('Refresh the refund form before submitting.', 400);
@@ -18,16 +18,25 @@ export async function requestReviewedRefund({ paymentId, amountKobo, reason, req
     const prior = await Refund.findOne({ requestKey });
     if (prior) { if (String(prior.paymentId) !== String(paymentId)) throw fail('Refund request mismatch.'); return prior.toObject(); }
     const payment = await Payment.findById(paymentId);
+    const review = refundRequestId ? await RefundRequest.findOne({ _id: refundRequestId, paymentId, userId: payment.userId }) : null;
+    if (refundRequestId && (!review || review.status === 'declined')) throw fail('Open a valid customer refund request before approving.');
+    if (review?.refundId) {
+      const recorded = await Refund.findById(review.refundId);
+      if (recorded && recorded.status !== 'failed') return recorded.toObject();
+    }
+    if (policyReason && !REFUND_REASONS.includes(policyReason)) throw fail('Choose a refund reason.', 400);
+    customerNote = String(customerNote || 'Your payment has been approved for a refund. We will update you when processing is confirmed.').trim().slice(0, 1000);
     if (!['success', 'partially_refunded'].includes(payment.status)) throw fail('This payment is not refundable.');
     if (payment.refundPendingAmountKobo > 0 || await Refund.exists({ paymentId, status: { $nin: ['failed', 'processed'] } })) throw fail('A refund already needs review or is processing.');
     const amount = amountKobo === undefined ? payment.amountKobo - payment.refundedAmountKobo : Number(amountKobo);
     if (!Number.isSafeInteger(amount) || amount < 100 || amount > payment.amountKobo - payment.refundedAmountKobo) throw fail('Enter an amount within the remaining payment balance.', 400);
-    const evidence = await refundEvidence(payment);
-    const refund = await Refund.create({ paymentId, userId: payment.userId, requestKey, amountKobo: amount, currency: payment.currency, reason, evidence });
+    const evidence = await refundEvidence(payment, new Date(), { requestedAt: review?.receivedAt });
+    const refund = await Refund.create({ paymentId, userId: payment.userId, requestKey, amountKobo: amount, currency: payment.currency, reason, customerNote, policyReason: policyReason || review?.reason || 'other', refundRequestId: review?._id, evidence });
+    if (review) await RefundRequest.updateOne({ _id: review._id }, { $set: { status: 'approved', refundId: refund._id, evidence, decidedBy: adminId, decidedAt: new Date(), decisionNote: reason, customerNote } });
     payment.refundPendingAmountKobo = amount; await payment.save();
     await AdminAudit.create({ adminId, userId: payment.userId, action: 'payment.refund_reviewed', resourceType: 'Refund', resourceId: String(refund._id), details: { reason, evidence, amountKobo: amount, cancelRenewal } });
     try {
-      const result = await paystackRequest('/refund', { method: 'POST', body: { transaction: payment.reference, amount, currency: payment.currency, customer_note: reason.slice(0, 240), merchant_note: `Veylo refund ${requestKey}; approved by ${adminId}` } });
+      const result = await paystackRequest('/refund', { method: 'POST', body: { transaction: payment.reference, amount, currency: payment.currency, customer_note: customerNote.slice(0, 240), merchant_note: `Veylo refund ${requestKey}; approved by ${adminId}` } });
       if (!result.id) throw new Error('Refund provider identity missing.');
       refund.providerId = String(result.id);
       // Completion is reconciled through the same idempotent event handler.
@@ -40,10 +49,7 @@ export async function requestReviewedRefund({ paymentId, amountKobo, reason, req
     }
     let cancellationPending = false;
     if (cancelRenewal) {
-      const subscription = await Subscription.findById(payment.subscriptionId).select('+emailTokenEncrypted');
-      if (subscription?.subscriptionCode) {
-        try { await stopRecurringSubscription(subscription); } catch { cancellationPending = true; }
-      }
+      try { await stopAccountRenewals(payment.userId); } catch { cancellationPending = true; }
     }
     return { ...refund.toObject(), cancellationPending };
   });

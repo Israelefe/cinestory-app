@@ -2009,116 +2009,7 @@ function supportSummary(ticket) {
   };
 }
 
-export async function createSupportTicket(req, res) {
-  try {
-    const parsed = supportCreateSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ success: false, message: parsed.error.issues[0]?.message || 'Please check the support form.' });
-    const body = parsed.data;
-    const signedInUser = req.user?.id ? await User.findById(req.user.id).select('_id name email') : null;
-    const delivery = body.deliveryPublicId ? await Delivery.findOne({ publicId: body.deliveryPublicId }).select('_id publicId userId title status').lean() : null;
-    const associatedDelivery = delivery && (!signedInUser || String(delivery.userId) === String(signedInUser._id)) ? delivery : null;
-    const ticket = await SupportTicket.create({
-      userId: signedInUser?._id,
-      requesterName: supportText(signedInUser?.name || body.name, 100),
-      requesterEmail: String(signedInUser?.email || body.email).trim().toLowerCase().slice(0, 254),
-      subject: supportText(body.subject, 160),
-      category: supportCategory(body.subject),
-      deliveryId: associatedDelivery?._id,
-      deliveryPublicId: supportText(body.deliveryPublicId, 120),
-      resourceType: body.resourceType,
-      resourceId: supportText(body.resourceId, 160),
-      messages: [{ authorType: 'requester', message: supportText(body.message), internal: false }]
-    });
-    res.status(201).json({ success: true, data: { ticketNumber: ticket.ticketNumber, status: ticket.status }, message: 'Your support request is with the Veylo team.' });
-  } catch (error) {
-    console.error('[support/create]', error.message);
-    res.status(500).json({ success: false, message: 'We could not send your support request. Please email info@veylo.com.ng.' });
-  }
-}
-
-export async function getSupportOverview(req, res) {
-  try {
-    const status = ['open', 'pending', 'resolved', 'closed'].includes(String(req.query.status || '')) ? String(req.query.status) : 'all';
-    const category = ['delivery', 'upload', 'billing', 'privacy', 'abuse', 'copyright', 'account', 'format', 'portfolio', 'other'].includes(String(req.query.category || '')) ? String(req.query.category) : 'all';
-    const priority = ['low', 'normal', 'high', 'urgent'].includes(String(req.query.priority || '')) ? String(req.query.priority) : 'all';
-    const search = String(req.query.search || '').trim().slice(0, 100);
-    const query = {};
-    if (status !== 'all') query.status = status;
-    if (category !== 'all') query.category = category;
-    if (priority !== 'all') query.priority = priority;
-    if (search) {
-      const pattern = { $regex: escaped(search), $options: 'i' };
-      query.$or = [{ ticketNumber: pattern }, { requesterName: pattern }, { requesterEmail: pattern }, { subject: pattern }, { deliveryPublicId: pattern }, { resourceId: pattern }];
-    }
-    const limit = Math.min(500, Math.max(1, Number.parseInt(req.query.limit, 10) || 250));
-    const [tickets, total, grouped] = await Promise.all([
-      SupportTicket.find(query).populate('userId', 'name email studio.name').populate('assignedAdminId', 'name username role').populate('deliveryId', 'publicId title status').sort({ priority: -1, updatedAt: -1 }).limit(limit).lean(),
-      SupportTicket.countDocuments(query),
-      SupportTicket.aggregate([{ $group: { _id: { status: '$status', category: '$category' }, count: { $sum: 1 } } }, { $sort: { count: -1 } }])
-    ]);
-    const summary = { total, open: 0, pending: 0, resolved: 0, closed: 0, urgent: 0, high: 0, privacy: 0, abuse: 0, copyright: 0 };
-    for (const ticket of tickets) {
-      summary[ticket.status] = (summary[ticket.status] || 0) + 1;
-      if (ticket.priority === 'urgent') summary.urgent += 1;
-      if (ticket.priority === 'high') summary.high += 1;
-      if (['privacy', 'abuse', 'copyright'].includes(ticket.category)) summary[ticket.category] += 1;
-    }
-    res.json({ success: true, data: { generatedAt: new Date(), summary, grouped, tickets: tickets.map(supportSummary), total } });
-  } catch (error) {
-    console.error('[admin/support-overview]', error.message);
-    res.status(500).json({ success: false, message: 'We could not load support requests.' });
-  }
-}
-
-export async function getSupportTicketDetail(req, res) {
-  try {
-    const ticketId = validId(req.params.id);
-    if (!ticketId) return res.status(400).json({ success: false, message: 'That support request identifier is invalid.' });
-    const ticket = await SupportTicket.findById(ticketId).populate('userId', 'name email studio.name plan accountStatus').populate('assignedAdminId', 'name username role').populate('deliveryId', 'publicId title clientName status format').lean();
-    if (!ticket) return res.status(404).json({ success: false, message: 'Support request not found.' });
-    res.json({ success: true, data: { ...supportSummary(ticket), messages: ticket.messages || [], moderationActions: ticket.moderationActions || [] } });
-  } catch (error) {
-    console.error('[admin/support-detail]', error.message);
-    res.status(500).json({ success: false, message: 'We could not open this support request.' });
-  }
-}
-
-export async function updateSupportTicket(req, res) {
-  try {
-    const ticketId = validId(req.params.id);
-    if (!ticketId) return res.status(400).json({ success: false, message: 'That support request identifier is invalid.' });
-    const parsed = supportUpdateSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ success: false, message: parsed.error.issues[0]?.message || 'That support update is not valid.' });
-    const ticket = await SupportTicket.findById(ticketId);
-    if (!ticket) return res.status(404).json({ success: false, message: 'Support request not found.' });
-    const before = { status: ticket.status, priority: ticket.priority, category: ticket.category, assignedAdminId: ticket.assignedAdminId || null };
-    if (parsed.data.assignedAdminId !== undefined) {
-      const assignedId = validId(parsed.data.assignedAdminId);
-      if (!assignedId) return res.status(400).json({ success: false, message: 'That administrator identifier is invalid.' });
-      const assigned = await AdminUser.findOne({ _id: assignedId, accountStatus: 'active' }).select('_id').lean();
-      if (!assigned) return res.status(404).json({ success: false, message: 'That administrator is not active.' });
-      ticket.assignedAdminId = assigned._id;
-    }
-    if (parsed.data.status) {
-      ticket.status = parsed.data.status;
-      if (parsed.data.status === 'resolved') ticket.resolvedAt = new Date();
-      if (parsed.data.status === 'closed') ticket.closedAt = new Date();
-      if (parsed.data.status === 'open' || parsed.data.status === 'pending') { ticket.resolvedAt = undefined; ticket.closedAt = undefined; }
-    }
-    if (parsed.data.priority) ticket.priority = parsed.data.priority;
-    if (parsed.data.category) ticket.category = parsed.data.category;
-    if (parsed.data.message) {
-      ticket.messages.push({ authorType: 'admin', adminId: adminId(req), message: supportText(parsed.data.message), internal: Boolean(parsed.data.internal) });
-      if (!parsed.data.internal) ticket.lastResponseAt = new Date();
-    }
-    await ticket.save();
-    await AdminAudit.create({ adminId: adminId(req), userId: ticket.userId, action: 'support.ticket_updated', resourceType: 'SupportTicket', resourceId: String(ticket._id), details: { before, after: { status: ticket.status, priority: ticket.priority, category: ticket.category, assignedAdminId: ticket.assignedAdminId || null }, messageAdded: Boolean(parsed.data.message), internal: Boolean(parsed.data.internal) } });
-    res.json({ success: true, data: supportSummary(ticket), message: 'Support request updated.' });
-  } catch (error) {
-    console.error('[admin/support-update]', error.message);
-    res.status(500).json({ success: false, message: 'We could not update this support request.' });
-  }
-}
+export { createSupportTicket, listAdminSupport as getSupportOverview, readAdminSupport as getSupportTicketDetail, editAdminSupport as updateSupportTicket } from './support.controller.js';
 
 export async function moderateSupportTicket(req, res) {
   try {
@@ -2226,7 +2117,7 @@ export async function updateRuntimeConfiguration(req, res) {
 
 export async function refundPayment(req, res) {
   try {
-    const data = await requestReviewedRefund({ paymentId: req.params.id, amountKobo: req.body?.amountKobo, reason: req.body?.note, requestKey: req.body?.requestKey, cancelRenewal: req.body?.cancelRenewal === true, adminId: adminId(req) });
+    const data = await requestReviewedRefund({ paymentId: req.params.id, amountKobo: req.body?.amountKobo, reason: req.body?.note, customerNote: req.body?.customerNote, requestKey: req.body?.requestKey, cancelRenewal: req.body?.cancelRenewal === true, adminId: adminId(req) });
     res.status(202).json({ success: true, message: data.status === 'failed' ? 'Paystack rejected this refund. The failed request is saved; no completed refund has been recorded.' : data.status === 'uncertain' ? 'The provider result is uncertain. Review this refund before submitting another.' : 'The refund request was recorded. Check its status before submitting another.', data });
   } catch (error) {
     res.status(error.status || 502).json({ success: false, message: error.status ? error.message : 'The refund result is uncertain. Review its record before retrying.' });

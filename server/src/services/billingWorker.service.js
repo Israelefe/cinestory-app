@@ -3,6 +3,7 @@ import BillingEvent from '../models/BillingEvent.js';
 import Payment from '../models/Payment.js';
 import Subscription from '../models/Subscription.js';
 import Refund from '../models/Refund.js';
+import RefundRequest from '../models/RefundRequest.js';
 import { withBillingLock } from './billingLock.service.js';
 import PaidUsage from '../models/PaidUsage.js';
 import { processStoredBillingEvent, processWebhookEvent, reconcilePayment, syncBillingPlan } from '../controllers/billing.controller.js';
@@ -19,7 +20,7 @@ export async function runBillingMaintenance() {
   const now = new Date();
   const attempt = async operation => { try { await operation(); } catch (error) { failures++; console.error('[billing/recovery]', error.message); } };
   try {
-    for (const model of [Payment, Subscription, Refund, BillingEvent, PaidUsage]) await model.deleteMany({ accountDeletedAt: { $ne: null }, retainUntil: { $lte: now } });
+    for (const model of [Payment, Subscription, Refund, RefundRequest, BillingEvent, PaidUsage]) await model.deleteMany({ accountDeletedAt: { $ne: null }, retainUntil: { $lte: now } });
     if (!billingConfigured()) return;
     // A crash before creating the payment cannot have contacted Paystack.
     const orphaned = await Subscription.find({ status: 'checkout_pending', createdAt: { $lt: new Date(Date.now() - 120000) }, accountDeletedAt: null }).limit(20);

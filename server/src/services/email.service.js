@@ -336,6 +336,15 @@ export function sendPaymentDisputeResolvedEmail({ to, name, reference, paymentSu
     html: shell(`<h1 style="margin:0 0 16px;font-size:30px;font-weight:500">Your payment review has an update.</h1>${paragraph(`Hi ${firstName(name)}, ${message}`)}${paragraph(`Payment reference: ${escapeHtml(reference)}`)}${paragraph('For help, email <a href="mailto:payment@veylo.com.ng" style="color:#ff9b8e">payment@veylo.com.ng</a>.')}`, { preheader: 'Check Billing for your current access and renewal status.' }) });
 }
 
+export function sendRefundProgressEmail({ to, name, reference, status, userId, eventKey }) {
+  const needsDetails = status === 'needs-attention';
+  const url = `${appUrl()}/contact?tab=inbox`;
+  const message = needsDetails ? 'Paystack needs more information to continue your refund. Open your support conversation for the protected bank-details form. If no conversation is linked, contact payment@veylo.com.ng with your reference.' : 'Paystack is processing your approved refund. It has not been confirmed as completed yet.';
+  return sendOnce({ eventKey, kind: 'refund-progress', to, userId,
+    subject: needsDetails ? 'Your Veylo refund needs more information' : 'Your Veylo refund is processing',
+    text: `Hi ${name}, ${message} Payment reference: ${reference}. Support inbox: ${url}`,
+    html: shell(`<h1 style="margin:0 0 18px;font-size:28px;font-weight:500">${needsDetails ? 'Your refund needs more information.' : 'Your refund is processing.'}</h1>${paragraph(escapeHtml(message))}${paragraph(`Payment reference: ${escapeHtml(reference)}`)}${button('Open support inbox', url)}`) });
+}
 export function sendRefundProcessedEmail({ to, name, amountKobo, reference, userId, eventKey }) {
   return sendOnce({
     eventKey: eventKey || `billing:refund-processed:${reference || userId}:${amountKobo}`,

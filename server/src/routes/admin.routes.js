@@ -60,6 +60,8 @@ import {
   getRefundReview
 } from '../controllers/admin.controller.js';
 import { adminLogin, getAdminMe, adminLogout, verifyAdminSessionMfa } from '../controllers/adminAuth.controller.js';
+import { listAdminSupport, readAdminSupport, editAdminSupport, retrySupportEmail, syncAdminSupport, downloadSupportAttachment } from '../controllers/support.controller.js';
+import { listRefundRequests, readRefundRequest, decideRefundRequest, cancelAdminRenewals, retryAdminBillingEvent, refreshAdminRefund, linkSupportRefund } from '../controllers/refundSupport.controller.js';
 import {
   getSecurityOverview,
   setupAdminTwoFactor,
@@ -73,7 +75,7 @@ import {
 import AdminUser from '../models/AdminUser.js';
 import AdminSession from '../models/AdminSession.js';
 import { ADMIN_READ_ACCESS, adminMfaRequired } from '../utils/adminAccess.js';
-import { authAttemptLimit, billingActionLimit, monitorCheckInLimit } from '../middleware/rateLimit.middleware.js';
+import { authAttemptLimit, billingActionLimit, monitorCheckInLimit, supportMessageLimit } from '../middleware/rateLimit.middleware.js';
 import { tokenDigest } from '../utils/auth.js';
 import { getProductAnalytics, getVisitorTrafficAnalytics } from '../controllers/adminAnalytics.controller.js';
 
@@ -189,9 +191,12 @@ router.post('/storage/scan', requireAdminRoles('superadmin', 'operations'), scan
 router.get('/music-narration', requireAdminRoles(ADMIN_READ_ACCESS.storage), getMusicNarrationOverview);
 router.get('/portfolios', requireAdminRoles(ADMIN_READ_ACCESS.deliveries), getPortfolioOverview);
 router.post('/portfolios/:id/unpublish', requireAdminRoles('superadmin', 'operations'), adminUnpublishPortfolio);
-router.get('/support/tickets', requireAdminRoles(ADMIN_READ_ACCESS.support), getSupportOverview);
-router.get('/support/tickets/:id', requireAdminRoles(ADMIN_READ_ACCESS.support), getSupportTicketDetail);
-router.patch('/support/tickets/:id', requireAdminRoles('superadmin', 'operations', 'support'), updateSupportTicket);
+router.get('/support/tickets', requireAdminRoles(ADMIN_READ_ACCESS.support), listAdminSupport);
+router.get('/support/tickets/:id', requireAdminRoles(ADMIN_READ_ACCESS.support), readAdminSupport);
+router.patch('/support/tickets/:id', supportMessageLimit, requireAdminRoles('superadmin', 'operations', 'support', 'finance'), editAdminSupport);
+router.post('/support/sync', billingActionLimit, requireAdminRoles(ADMIN_READ_ACCESS.support), syncAdminSupport);
+router.post('/support/tickets/:id/retry-email', billingActionLimit, requireAdminRoles(ADMIN_READ_ACCESS.support), retrySupportEmail);
+router.get('/support/tickets/:id/attachments/:attachmentId', requireAdminRoles(ADMIN_READ_ACCESS.support), downloadSupportAttachment);
 router.post('/support/tickets/:id/moderate', requireAdminRoles('superadmin', 'operations', 'support'), moderateSupportTicket);
 router.get('/configuration', requireAdminRoles(ADMIN_READ_ACCESS.configuration), getRuntimeConfiguration);
 router.patch('/configuration', requireAdminRoles('superadmin'), updateRuntimeConfiguration);
@@ -203,6 +208,13 @@ router.get('/finance/export', requireAdminRoles('superadmin', 'finance'), export
 router.delete('/stories/:id', requireAdminRoles('superadmin', 'operations'), adminDeleteStory);
 router.post('/payments/:id/refund', billingActionLimit, requireAdminRoles('superadmin', 'finance'), refundPayment);
 router.get('/payments/:id/refund-review', requireAdminRoles('superadmin', 'finance'), getRefundReview);
+router.get('/refund-requests', requireAdminRoles('superadmin', 'finance'), listRefundRequests);
+router.post('/support/tickets/:id/refund-review', billingActionLimit, requireAdminRoles('superadmin', 'finance'), linkSupportRefund);
+router.get('/refund-requests/:id', requireAdminRoles('superadmin', 'finance'), readRefundRequest);
+router.post('/refund-requests/:id/decision', billingActionLimit, requireAdminRoles('superadmin', 'finance'), decideRefundRequest);
+router.post('/refunds/:id/refresh', billingActionLimit, requireAdminRoles('superadmin', 'finance'), refreshAdminRefund);
+router.post('/billing/events/:id/retry', billingActionLimit, requireAdminRoles('superadmin', 'finance'), retryAdminBillingEvent);
+router.post('/users/:id/billing/cancel-renewal', billingActionLimit, requireAdminRoles('superadmin', 'finance'), cancelAdminRenewals);
 
 // Security centre. The audit trail and network history are intentionally
 // restricted to superadmins; each managed admin can set up their own

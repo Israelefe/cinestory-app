@@ -176,4 +176,8 @@ test('support draft is reviewable, excludes typed fields, and is cleared on iden
   assert.equal(first.subject, 'Upload problem'); assert.equal(first.message, second.message);
   assert.doesNotMatch(JSON.stringify(first), /private-password/);
   clearAssistantSupportDraft(); assert.deepEqual(consumeAssistantSupport(), {});
+  prepareAssistantSupport(context(), { ownerId: 'first-account', messages: [{ role: 'user', content: 'My private support question.' }] });
+  assert.match(consumeAssistantSupport('first-account').message, /private support question/);
+  assert.deepEqual(consumeAssistantSupport('another-account'), {}); assert.deepEqual(consumeAssistantSupport(), {});
+  clearAssistantSupportDraft();
 });

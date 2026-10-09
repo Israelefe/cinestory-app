@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUpRight, BadgeCheck, Check, CheckCheck, ChevronDown, CircleHelp, Clapperboard, Copy, Download, ExternalLink, Headphones, Image, LoaderCircle, MessageCircle, RefreshCw, RotateCcw, Send, ShieldCheck, Square, Upload, X } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import SupportComposer from './SupportComposer.jsx';
+import { prepareAssistantSupport, clearAssistantSupportDraft } from '../services/assistantSupport.js';
 import api, { apiMessage } from '../services/api.js';
 import { trackEvent } from '../services/analytics.js';
 import VeyloMarkdown from './VeyloMarkdown.jsx';
@@ -53,10 +55,12 @@ export default function VeyloAssistant({ user }) {
   // Changing identity remounts the chat, isolating history and cancelling old work.
   const identity = user?.id || user?._id || (user ? 'signed-in' : 'guest');
   const chatKey = `${CHAT_STORAGE_PREFIX}${identity}_${surface}`;
-  return <AssistantChat key={chatKey} chatKey={chatKey} surface={surface} pathname={pathname} />;
+  return <AssistantChat key={chatKey} user={user} chatKey={chatKey} surface={surface} pathname={pathname} />;
 }
 
-function AssistantChat({ chatKey, surface, pathname }) {
+function AssistantChat({ user, chatKey, surface, pathname }) {
+  const navigate = useNavigate();
+  const [supportDraft, setSupportDraft] = useState(null);
   const { session, state: contextState } = useAssistantContext();
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
@@ -108,6 +112,11 @@ function AssistantChat({ chatKey, surface, pathname }) {
   const close = () => {
     setOpen(false);
     window.requestAnimationFrame(() => launchRef.current?.focus());
+  };
+  const prepareSupport = () => {
+    setSupportDraft(prepareAssistantSupport(session?.requestContext(), { messages: messagesRef.current, ownerId: user?.id || user?._id || 'guest' }));
+    stickToBottomRef.current = true;
+    window.requestAnimationFrame(() => scrollToLatest(true));
   };
   useEffect(() => {
     const openFromPage = event => { if (event.detail instanceof HTMLElement) launchRef.current = event.detail; setOpen(true); };
@@ -203,8 +212,10 @@ function AssistantChat({ chatKey, surface, pathname }) {
       if (typeof data?.answer !== 'string' || !data.answer.trim()) throw new Error('The answer was empty.');
       updateMessages([
         ...messagesRef.current.map(message => message.id === question.id ? { ...message, state: 'complete' } : message),
-        { ...newMessage('assistant', data.answer.trim().slice(0, 6000)), fromPage: questionContext ? contextLabel(questionContext) : '' }
+        { ...newMessage('assistant', data.answer.trim().slice(0, 6000)), fromPage: questionContext ? contextLabel(questionContext) : '', supportOffer: data.actions?.some(action => action.kind === 'support') }
       ]);
+      if (data.actions?.some(action => action.kind === 'support' && action.reason === 'requested')) prepareSupport();
+      if (data.actions?.some(action => action.kind === 'support' && action.reason === 'open-inbox')) { close(); navigate('/contact?tab=inbox'); }
       setSuggestions(Array.isArray(data.suggestions) ? [...new Set(data.suggestions.filter(item => typeof item === 'string' && item.trim() && item.length <= 200))].slice(0, 3) : []);
       setStatus('idle');
       trackEvent('assistant.answer.completed', { surface }, { durationMs: Math.round(performance.now() - startedAt), status: 'completed' });
@@ -228,7 +239,7 @@ function AssistantChat({ chatKey, surface, pathname }) {
   const startNewChat = () => {
     controllerRef.current?.abort(); controllerRef.current = null;
     window.clearTimeout(copyTimerRef.current);
-    updateMessages([]); setStatus('idle'); setError(''); setInput(''); setSuggestions([]); setCopiedId('');
+    updateMessages([]); setStatus('idle'); setError(''); setInput(''); setSuggestions([]); setCopiedId(''); setSupportDraft(null); clearAssistantSupportDraft();
     stickToBottomRef.current = true;
   };
   const copyAnswer = async message => {
@@ -255,6 +266,7 @@ function AssistantChat({ chatKey, surface, pathname }) {
             <button ref={closeRef} type="button" className="veylo-assistant-icon-button" onClick={close} aria-label="Close Veylo Assistant"><X size={20} aria-hidden="true" /></button>
           </div>
         </header>
+        <div className="veylo-assistant-human"><button type="button" onClick={prepareSupport}><Headphones size={16} />Message a person</button><button type="button" onClick={() => { close(); navigate('/contact?tab=inbox'); }}><MessageCircle size={15} />Support inbox<ArrowUpRight size={14} /></button></div>
             {session && <details className="veylo-assistant-context"><summary>{contextState.enabled ? `Using ${contextLabel(contextState)}` : 'Page context is off'}</summary><p>Automatic page context uses page and workflow facts from this Veylo tab. Typed fields, passwords and payment details are excluded.</p>
               <ol>{trimActivity(contextState.recent).slice(-5).map((event, index) => <li key={`${event.at}-${index}`}>{ASSISTANT_PAGES[event.page]} · {event.event.replaceAll('-', ' ')}</li>)}</ol>
               <div><button type="button" onClick={() => session.clear()}>Clear recent activity</button><button type="button" onClick={() => session.setEnabled(!contextState.enabled)}>{contextState.enabled ? 'Turn page context off' : 'Turn page context on'}</button></div>
@@ -281,11 +293,13 @@ function AssistantChat({ chatKey, surface, pathname }) {
                 <div className="veylo-assistant-message-label">{message.role === 'assistant' ? <><span className="veylo-assistant-answer-mark"><MessageCircle size={13} aria-hidden="true" /></span>Veylo Assistant</> : 'You'}</div>
                 {message.fromPage && <p className="veylo-assistant-answer-context">Asked from {message.fromPage}</p>}
                 {message.role === 'assistant' ? <VeyloMarkdown>{message.content}</VeyloMarkdown> : <p className="veylo-assistant-user-content">{message.content}</p>}
+                {message.supportOffer && !supportDraft && <button className="veylo-assistant-support-offer" type="button" onClick={prepareSupport}><Headphones size={16} />Let the Veylo team look into this<ArrowUpRight size={15} /></button>}
                 {message.role === 'assistant' && <div className="veylo-assistant-message-actions"><button type="button" onClick={() => copyAnswer(message)} aria-label={copiedId === message.id ? 'Answer copied' : 'Copy answer'}>{copiedId === message.id ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}<span>{copiedId === message.id ? 'Copied' : 'Copy answer'}</span></button></div>}
               </article>)}
             </div>
+            {supportDraft && <section className="veylo-assistant-support-form" aria-label="Message a person"><h3>Send this to the Veylo team.</h3><SupportComposer key={supportDraft.preparedAt} compact user={user} draft={supportDraft} onSent={clearAssistantSupportDraft} onOpenInbox={close} onCancel={() => { setSupportDraft(null); clearAssistantSupportDraft(); }} /></section>}
             {status === 'sending' && <div className="veylo-assistant-thinking" role="status"><LoaderCircle size={17} className="veylo-assistant-spin" aria-hidden="true" /><span>Finding an answer…</span></div>}
-            {error && <div className="veylo-assistant-error" role="alert"><p>{error}</p><div>{canRetry && <button type="button" onClick={() => send(lastMessage.content, { retryId: lastMessage.id })}><RefreshCw size={15} aria-hidden="true" />Try again</button>}<a href="/contact?subject=Something%20else"><ExternalLink size={15} aria-hidden="true" />Contact support</a></div></div>}
+            {error && <div className="veylo-assistant-error" role="alert"><p>{error}</p><div>{canRetry && <button type="button" onClick={() => send(lastMessage.content, { retryId: lastMessage.id })}><RefreshCw size={15} aria-hidden="true" />Try again</button>}<button type="button" onClick={prepareSupport}><Headphones size={15} />Message a person</button></div></div>}
             {canRetry && !error && <div className="veylo-assistant-stopped"><p>This question has no answer yet.</p><button type="button" onClick={() => send(lastMessage.content, { retryId: lastMessage.id })}><RefreshCw size={15} aria-hidden="true" />Try again</button></div>}
           </div>
           {awayFromBottom && <button type="button" className="veylo-assistant-latest" onClick={() => scrollToLatest(true)}><ArrowDown size={15} aria-hidden="true" />Latest message</button>}

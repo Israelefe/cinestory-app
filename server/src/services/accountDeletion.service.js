@@ -32,6 +32,9 @@ import VolumeAccessCode from '../models/VolumeAccessCode.js';
 import AdminAccountNote from '../models/AdminAccountNote.js';
 import SupportAccessGrant from '../models/SupportAccessGrant.js';
 import SupportTicket from '../models/SupportTicket.js';
+import SupportOutbox from '../models/SupportOutbox.js';
+import SupportInbound from '../models/SupportInbound.js';
+import RefundRequest from '../models/RefundRequest.js';
 import AnalyticsEvent from '../models/AnalyticsEvent.js';
 import { deleteR2Prefix, r2Configured } from './r2.service.js';
 import Refund from '../models/Refund.js';
@@ -87,7 +90,8 @@ async function removeMedia({ user, stories, contentProjects, hasDeliveries, hasS
     story.soundtrack?.storageKey,
     ...(story.photos || []).map(photo => photo.storageKey)
   ].some(key => String(key || '').startsWith(`${userPrefix}/`)));
-  const hasUserMedia = storyUsesUserFolder || hasDeliveries || hasStorageAssets;
+  const hasSupportMedia = await SupportTicket.exists({ userId: user._id, 'attachments.0': { $exists: true } });
+  const hasUserMedia = storyUsesUserFolder || hasDeliveries || hasStorageAssets || Boolean(hasSupportMedia);
   const hasStudioAsset = [user.studio?.logoPublicId, user.avatarPublicId].some(key => String(key || '').startsWith(`veylo/studios/${user._id}/`));
   const contentMediaProjects = (contentProjects || []).filter(hasR2ContentMedia);
   if (!hasUserMedia && !hasStudioAsset && !contentMediaProjects.length) return;
@@ -135,7 +139,7 @@ async function deleteOwnedRecords({ accountId, deliveryIds, storyIds, volumeJobI
   // Retain a restricted ledger without the studio, email, payment credentials or raw provider payloads.
   const accountDeletedAt = new Date();
   const retainUntil = new Date(accountDeletedAt.getTime() + 6 * 365.25 * 86400000);
-  for (const model of [Subscription, Payment, Refund, BillingEvent, PaidUsage]) {
+  for (const model of [Subscription, Payment, Refund, RefundRequest, BillingEvent, PaidUsage]) {
     await model.updateMany({ userId: accountId }, { $set: { accountDeletedAt, retainUntil }, $unset: { providerSnapshot: 1, payload: 1, emailTokenEncrypted: 1, checkoutUrl: 1 } }, options);
   }
   await BillingEvent.updateMany({ userId: accountId, status: { $in: ['processed', 'ignored'] } }, { $unset: { payloadEncrypted: 1 } }, options);
@@ -170,6 +174,11 @@ async function deleteOwnedRecords({ accountId, deliveryIds, storyIds, volumeJobI
   const supportFilter = deliveryIds.length
     ? { $or: [{ userId: accountId }, { deliveryId: { $in: deliveryIds } }] }
     : { userId: accountId };
+  const supportIds = (await SupportTicket.find(supportFilter).select('_id').session(session || null).lean()).map(ticket => ticket._id);
+  await deleteMany('supportOutbox', SupportOutbox, { ticketId: { $in: supportIds } });
+  await deleteMany('supportInbound', SupportInbound, { ticketId: { $in: supportIds } });
+  await RefundRequest.updateMany({ userId: accountId }, { $unset: { decisionNote: 1, customerNote: 1 } }, options);
+  await Refund.updateMany({ userId: accountId }, { $unset: { reason: 1, customerNote: 1 } }, options);
   await deleteMany('supportTickets', SupportTicket, supportFilter);
   const analyticsFilter = deliveryIds.length
     ? { $or: [{ userId: accountId }, { deliveryId: { $in: deliveryIds } }] }

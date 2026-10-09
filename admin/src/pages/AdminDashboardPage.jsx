@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import AdminShell, { sectionLabel } from '../components/AdminShell.jsx';
+import SupportWorkspace from '../components/SupportWorkspace.jsx';
+import RefundWorkspace, { RefundEvidence } from '../components/RefundWorkspace.jsx';
 import { AdminOverview, AdminOperations, AdminIssues, WorkspaceHeading, checkedTime } from '../components/OperationsWorkspace.jsx';
 import { motion } from 'framer-motion';
 import {
@@ -397,6 +399,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const [issueStatus, setIssueStatus] = useState('open');
   const [issuePage, setIssuePage] = useState(1);
   const [updatedAt, setUpdatedAt] = useState({});
+  const [supportRefresh, setSupportRefresh] = useState(0);
+  const supportLoaded = useCallback(value => setUpdatedAt(previous => ({ ...previous, support: value })), []);
   const requestRef = useRef({ sequence: 0, controller: null });
   const [operations, setOperations] = useState(null);
   const [deliveries, setDeliveries] = useState([]);
@@ -499,7 +503,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
     const sectionRequests = {
       overview: sections.includes('operations') ? ['system', 'operations'] : [],
       operations: ['system', 'operations'], issues: ['issues'], payments: ['finance', 'billingHealth'],
-      deliveries: ['deliveries'], users: ['users'], portfolio: ['portfolio'], support: ['support'],
+      deliveries: ['deliveries'], users: ['users'], portfolio: ['portfolio'], support: [],
       aiJobs: ['aiJobs'], access: ['access'], volume: ['volume'], storage: ['storage'], musicNarration: ['musicNarration'],
       configuration: ['configuration'], security: ['security'], productAnalytics: ['productAnalytics'], visitorTraffic: ['visitorTraffic']
     };
@@ -906,7 +910,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       setSubmitting(true);
       const response = await api.post(`/v1/admin/payments/${refund._id}/refund`, {
         amountKobo,
-        note: refundNote.trim(), requestKey: refundRequestKey, cancelRenewal: cancelRefundRenewal
+        note: refundNote.trim(), customerNote: 'Your payment has been approved for a refund. We will update you when Paystack confirms its status.', requestKey: refundRequestKey, cancelRenewal: cancelRefundRenewal
       });
       toast.info(response.data.message);
       setRefund(null);
@@ -1227,13 +1231,13 @@ export default function AdminDashboardPage({ admin, onLogout }) {
     overview: 'What needs your attention, and what Veylo can currently tell you.',
     operations: 'Check service availability, API load and background work.',
     issues: 'Investigate server errors and recent browser reports.',
-    support: 'Find the customer?s request, inspect the account and record the next step.',
+    support: 'Find the customer request, inspect the account and record the next step.',
     users: 'Find a photographer, check access and help with account problems.',
     payments: 'Review subscription access, payment records and billing issues.'
   };
   return (
     <AdminShell admin={admin} sections={sections} tab={tab} onNavigate={setTab} onLogout={onLogout}>
-      <WorkspaceHeading eyebrow={['overview', 'operations', 'issues'].includes(tab) ? 'Veylo / Platform desk' : 'Veylo / Administration'} title={tab === 'overview' ? 'A clear view of today.' : sectionLabel(tab)} description={descriptions[tab] || 'Current records and the tools to manage them.'} loading={loading} onRefresh={fetchAdminData} updatedAt={activeUpdatedAt} />
+      <WorkspaceHeading eyebrow={['overview', 'operations', 'issues'].includes(tab) ? 'Veylo / Platform desk' : 'Veylo / Administration'} title={tab === 'overview' ? 'A clear view of today.' : sectionLabel(tab)} description={descriptions[tab] || 'Current records and the tools to manage them.'} loading={loading} onRefresh={tab === 'support' ? () => setSupportRefresh(value => value + 1) : fetchAdminData} updatedAt={activeUpdatedAt} />
       {activeError.length > 0 && <div className="aw-load-state aw-warning" role="alert"><TriangleAlert size={18} /><div><strong>Some data is unavailable.</strong>{activeError.map(({ key, message }) => <p key={key}>{key}: {message}{updatedAt[key] ? ` Last successful load ${checkedTime(updatedAt[key])}; displayed records may be out of date.` : ' No current data was loaded.'}</p>)}</div><button type="button" onClick={fetchAdminData} disabled={loading}>Try again</button></div>}
       {tab === 'overview' && <AdminOverview system={visibleSystem} operations={visibleOperations} sections={sections} onNavigate={setTab} canOperate={['superadmin', 'operations'].includes(admin?.role)} onRefresh={fetchAdminData} />}
       {tab === 'operations' && <AdminOperations system={visibleSystem} operations={visibleOperations} onRefresh={fetchAdminData} canOperate={['superadmin', 'operations'].includes(admin?.role)} />}
@@ -1337,16 +1341,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
             </div>
           )}
 
-          {/* Support and moderation tab */}
-          {!loading && tab === 'support' && (
-            <div className="mt-6 grid gap-4">
-              {panelErrors.support && !supportOverview && <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-5 text-sm text-amber-100">Support data is unavailable. {panelErrors.support}</div>}
-              {supportOverview && <>
-                <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><MetricCard icon={MessageCircle} label="All requests" value={number(supportOverview.summary?.total)} note="Support, privacy, and moderation queue" /><MetricCard icon={AlertCircle} label="Open" value={number(supportOverview.summary?.open)} note={`${number(supportOverview.summary?.urgent)} urgent requests`} /><MetricCard icon={Clock3} label="Pending" value={number(supportOverview.summary?.pending)} note={`${number(supportOverview.summary?.high)} high-priority requests`} /><MetricCard icon={ShieldCheck} label="Privacy" value={number(supportOverview.summary?.privacy)} note="Deletion and privacy requests" /><MetricCard icon={TriangleAlert} label="Reports" value={number(Number(supportOverview.summary?.abuse || 0) + Number(supportOverview.summary?.copyright || 0))} note={`${number(supportOverview.summary?.abuse)} abuse · ${number(supportOverview.summary?.copyright)} copyright`} /></section>
-                <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Support and moderation</p><h2 className="mt-1 text-xl font-medium">Requests that need a human reply</h2><p className="mt-2 text-xs leading-5 text-white/45">Every request has an owner, status, priority, response history, and moderation trail. Open one to reply, assign it, or make a reported delivery or portfolio private.</p></div><span className="text-xs text-white/35">Updated {shortDate(supportOverview.generatedAt)}</span></div><div className="mt-5 space-y-2">{(supportOverview.tickets || []).map(ticket => <button key={ticket.id} type="button" onClick={() => openSupportTicket(ticket)} className="w-full rounded-2xl border border-white/10 bg-white/[.025] p-4 text-left transition-colors hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff9b8e]/70"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><Status value={ticket.status} /><Status value={ticket.priority} /><span className="text-[10px] font-semibold uppercase tracking-[.12em] text-[#ff9b8e]">{ticket.category}</span><span className="font-mono text-[10px] text-white/35">{ticket.ticketNumber}</span></div><h3 className="mt-2 truncate text-sm font-semibold text-white">{ticket.subject}</h3><p className="mt-1 truncate text-xs text-white/40">{ticket.requester?.name || 'Requester'} · {ticket.requester?.email || 'No reply email'}{ticket.account?.studio ? ` · ${ticket.account.studio}` : ''}</p></div><span className="shrink-0 text-xs text-white/35">{shortDate(ticket.updatedAt)}</span></div><div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-white/40"><span>{number(ticket.messageCount)} messages</span><span>{number(ticket.internalNoteCount)} internal notes</span><span>{ticket.assignedAdmin?.name ? `Assigned to ${ticket.assignedAdmin.name}` : 'Unassigned'}</span>{ticket.delivery?.publicId && <span>Delivery {ticket.delivery.publicId}</span>}</div></button>)}{!supportOverview.tickets?.length && <p className="py-12 text-center text-sm text-white/45">No support requests match this search.</p>}</div></section>
-              </>}
-            </div>
-          )}
+          {tab === 'support' && <SupportWorkspace admin={admin} search={search} refreshKey={supportRefresh} onLoaded={supportLoaded} onAccount={email => { setTab('users'); setSearch(email); }} />}
 
           {/* Product analytics tab */}
           {!loading && tab === 'visitorTraffic' && (
@@ -1419,6 +1414,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
           {/* Payments Tab */}
           {!loading && tab === 'payments' && (
             <div className="mt-6 grid gap-4">
+              <RefundWorkspace />
               <BillingHealthPanel data={billingHealth} loading={billingHealthLoading || !billingHealth} error={panelErrors.billingHealth} actionLoading={billingActionLoading} onRefresh={fetchBillingHealth} onResync={resyncBillingAccount} onVerifyPayment={verifyBillingPayment} onProviderRefresh={refreshBillingFromPaystack} canRepair={canBillingRepair} canProviderRefresh={canProviderRefresh} />
               {panelErrors.finance && !financeOverview && <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-5 text-sm text-amber-100">Finance data is unavailable. {panelErrors.finance}</div>}
               {financeOverview && <>
@@ -1578,17 +1574,6 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         </section>
 
 
-      {/* Support ticket detail drawer */}
-      {selectedSupportTicket && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="support-ticket-title" onMouseDown={(event) => { if (event.target === event.currentTarget && !accountActionLoading) setSelectedSupportTicket(null); }}>
-          <motion.aside initial={{ opacity: 0, x: 28 }} animate={{ opacity: 1, x: 0 }} className="ml-auto flex h-full w-full max-w-3xl flex-col overflow-y-auto border-l border-white/10 bg-[#0c0c10] shadow-2xl">
-            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-white/10 bg-[#0c0c10]/95 p-5 backdrop-blur sm:p-7"><div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Support request</p><h2 id="support-ticket-title" className="mt-1 truncate text-2xl font-medium">{selectedSupportTicket.subject || selectedSupportTicket.summary?.subject || 'Support request'}</h2><p className="mt-2 truncate font-mono text-xs text-white/40">{selectedSupportTicket.ticketNumber || selectedSupportTicket.summary?.ticketNumber || ''}</p></div><button type="button" aria-label="Close support request" onClick={() => setSelectedSupportTicket(null)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/10 text-white/60 transition-colors hover:border-white/25 hover:text-white"><X size={18} /></button></div>
-            {supportDetailLoading && <div className="p-7 text-sm text-white/45">Loading the request history…</div>}
-            {!supportDetailLoading && <div className="space-y-6 p-5 sm:p-7"><section className="grid gap-3 sm:grid-cols-2"><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Requester</p><p className="mt-2 text-sm font-semibold text-white">{selectedSupportTicket.requester?.name || 'Unknown requester'}</p><p className="mt-1 break-all text-xs text-white/45">{selectedSupportTicket.requester?.email || 'No reply email'}</p>{selectedSupportTicket.account?.name && <p className="mt-2 text-xs text-white/40">Account: {selectedSupportTicket.account.name} · {selectedSupportTicket.account.plan || 'unknown plan'}</p>}</div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Related work</p><p className="mt-2 text-sm font-semibold text-white">{selectedSupportTicket.delivery?.title || selectedSupportTicket.delivery?.publicId || selectedSupportTicket.resourceId || 'No delivery attached'}</p><p className="mt-1 text-xs text-white/45">{selectedSupportTicket.delivery?.status || selectedSupportTicket.resourceType || 'General support request'}</p></div></section><section className="grid gap-3 sm:grid-cols-3"><label className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/40">Status<select value={selectedSupportTicket.status || 'open'} onChange={(event) => updateSupportTicket({ status: event.target.value })} className="mt-2 min-h-10 w-full rounded-xl border border-white/10 bg-[#141419] px-3 text-xs normal-case tracking-normal text-white outline-none focus:border-[#ff9b8e]/60"><option value="open">Open</option><option value="pending">Pending</option><option value="resolved">Resolved</option><option value="closed">Closed</option></select></label><label className="text-[10px] font-semibold uppercase tracking-[.14em] text-white/40">Priority<select value={selectedSupportTicket.priority || 'normal'} onChange={(event) => updateSupportTicket({ priority: event.target.value })} className="mt-2 min-h-10 w-full rounded-xl border border-white/10 bg-[#141419] px-3 text-xs normal-case tracking-normal text-white outline-none focus:border-[#ff9b8e]/60"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></label><div className="flex items-end"><button type="button" disabled={accountActionLoading} onClick={() => updateSupportTicket({ assignedAdminId: admin?._id || admin?.id }, 'Assigned to you.')} className="min-h-10 w-full rounded-xl border border-white/15 px-3 text-xs font-semibold text-white/70 transition-colors hover:border-[#ff9b8e]/50 hover:text-white disabled:opacity-50">{selectedSupportTicket.assignedAdmin?.name ? `Assigned to ${selectedSupportTicket.assignedAdmin.name}` : 'Assign to me'}</button></div></section><section><div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">Conversation and internal notes</h3><span className="text-xs text-white/35">{number(selectedSupportTicket.messages?.length)} entries</span></div><div className="mt-3 space-y-2">{(selectedSupportTicket.messages || []).map(message => <article key={message._id || `${message.createdAt}-${message.message}`} className={`rounded-2xl border p-4 ${message.internal ? 'border-amber-300/15 bg-amber-300/[.05]' : 'border-white/10 bg-white/[.025]'}`}><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-[10px] font-semibold uppercase tracking-[.12em] text-white/45">{message.internal ? 'Internal note' : message.authorType === 'admin' ? 'Reply from Veylo' : 'Requester'}</span><span className="text-[10px] text-white/30">{shortDate(message.createdAt)}</span></div><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white/75">{message.message}</p></article>)}</div><form onSubmit={(event) => { event.preventDefault(); if (supportReply.trim()) updateSupportTicket({ message: supportReply.trim(), internal: supportInternal }, supportInternal ? 'Internal note added.' : 'Reply recorded.'); }} className="mt-4 space-y-3"><textarea value={supportReply} onChange={(event) => setSupportReply(event.target.value)} rows={4} maxLength={4000} placeholder="Write a clear reply or internal note…" className="w-full resize-y rounded-2xl border border-white/10 bg-white/[.025] p-4 text-sm leading-6 text-white outline-none placeholder:text-white/25 focus:border-[#ff9b8e]/60" /><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><label className="flex items-center gap-2 text-xs text-white/55"><input type="checkbox" checked={supportInternal} onChange={(event) => setSupportInternal(event.target.checked)} />Keep this as an internal note</label><button type="submit" disabled={accountActionLoading || !supportReply.trim()} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-white px-4 text-xs font-bold text-black disabled:opacity-40"><Send size={14} />{supportInternal ? 'Add note' : 'Record reply'}</button></div></form></section><section className="rounded-2xl border border-red-300/15 bg-red-300/[.04] p-4"><div className="flex items-center gap-2"><TriangleAlert size={15} className="text-amber-200" /><h3 className="text-sm font-semibold">Moderation actions</h3></div><p className="mt-2 text-xs leading-5 text-white/45">Use a specific reason. A takedown archives the related delivery or makes the related portfolio private, revokes its public link, and writes an audit record.</p><textarea value={moderationReason} onChange={(event) => setModerationReason(event.target.value)} rows={3} maxLength={1000} placeholder="Why should this item be taken down or reviewed?" className="mt-3 w-full resize-y rounded-xl border border-white/10 bg-black/20 p-3 text-xs leading-5 text-white outline-none placeholder:text-white/25 focus:border-[#ff9b8e]/60" /><div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={accountActionLoading || moderationReason.trim().length < 8 || !selectedSupportTicket.delivery?.publicId} onClick={() => moderateSupport('takedown', 'delivery')} className="min-h-10 rounded-xl border border-red-300/25 px-3 text-xs font-semibold text-red-200 disabled:opacity-40">Take down delivery</button><button type="button" disabled={accountActionLoading || moderationReason.trim().length < 8 || selectedSupportTicket.resourceType !== 'portfolio'} onClick={() => moderateSupport('takedown', 'portfolio')} className="min-h-10 rounded-xl border border-red-300/25 px-3 text-xs font-semibold text-red-200 disabled:opacity-40">Make portfolio private</button><button type="button" disabled={accountActionLoading || moderationReason.trim().length < 8} onClick={() => moderateSupport('copyright_hold', selectedSupportTicket.resourceType === 'portfolio' ? 'portfolio' : 'delivery')} className="min-h-10 rounded-xl border border-amber-300/25 px-3 text-xs font-semibold text-amber-200 disabled:opacity-40">Record copyright hold</button></div></section></div>}
-          </motion.aside>
-        </div>
-      )}
-
       {/* Volume delivery detail drawer */}
       {selectedVolume && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="volume-detail-title" onMouseDown={(event) => { if (event.target === event.currentTarget && !accountActionLoading) setSelectedVolume(null); }}>
@@ -1704,8 +1689,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
               Refunds return through Paystack. Review the reason and service usage before approving. A full refund removes access paid for by that payment. Stopping future renewal is a separate choice.
             </p>
             <div className="mt-4 rounded-xl border border-white/10 p-4 text-xs leading-6 text-white/70">
-              <p>{refundReview?.evidence?.eligibleForChangeOfMind ? 'Within the seven-day unused first-payment window.' : 'Routine change-of-mind refund is not eligible. Record the payment error, service failure, or other reason for approval.'}</p>
-              <p>Recorded paid activity: {refundReview?.evidence?.usageCounts?.recorded || 0}; published deliveries: {(refundReview?.evidence?.usageCounts?.deliveries || 0) + (refundReview?.evidence?.usageCounts?.stories || 0)}.</p>
+              <RefundEvidence evidence={refundReview?.evidence} />
               {refundReview?.refunds?.map(item => <p key={item._id}>Earlier refund: {item.status} · {nairaFromKobo(item.amountKobo)}</p>)}
               <label className="mt-3 flex gap-3"><input type="checkbox" checked={cancelRefundRenewal} onChange={event => setCancelRefundRenewal(event.target.checked)} />Also stop renewal on this payment’s subscription</label>
             </div>

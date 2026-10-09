@@ -72,6 +72,15 @@ export function safeMessages(messages) {
   return history;
 }
 
+export function supportHandoffActions(messages, answer = '') {
+  const latest = messages.at(-1)?.content || '';
+  if (/\b(?:open|show|view|go to|take me to|check)\b.{0,35}\bsupport\b.{0,15}\b(?:inbox|messages|conversations|tickets)\b/i.test(latest)) return [{ kind: 'support', label: 'Open support inbox', href: '/contact?tab=inbox', reason: 'open-inbox' }];
+  const requested = /\b(human|real person|someone from|support inbox|support ticket|contact support|message support|send.{0,35}(?:support|team)|prepare.{0,35}(?:support|message))\b/i.test(latest);
+  const unresolved = /(?:still.{0,20}(?:not|won.t|can.t|fail|stuck)|did(?:n.t| not) (?:work|help)|(?:can.t|cannot|couldn.t) (?:solve|fix)|not enough information)/i.test(latest);
+  const insufficient = /(?:not (?:sure|able)|cannot (?:confirm|verify|resolve)|contact (?:Veylo )?support|human support)/i.test(answer);
+  return requested || unresolved || insufficient ? [{ kind: 'support', label: 'Message a person', href: '/contact', reason: requested ? 'requested' : 'needs-human-review' }] : [];
+}
+
 export async function loadAssistantAccount(req) {
   if (!req.user?.id) return null;
   const user = await User.findById(req.user.id).select('plan planOverride proRetentionUntil onboardingCompletedAt storageUsedBytes').lean();
@@ -130,6 +139,8 @@ export async function chatWithVeyloAssistant(req, res) {
     const facts = workspace?.facts || (browserContext ? { browserReported: { ...browserContext, label: ASSISTANT_PAGES[browserContext.page] } } : null);
     const factual = factualAssistantAnswer(messages.at(-1).content, facts);
     const contextActions = workspace?.delivery ? [{ kind: 'navigate', label: 'Open this draft', href: `/create?draft=${workspace.delivery._id}` }, { kind: 'check', label: 'Check this delivery', deliveryId: String(workspace.delivery._id) }] : [];
+    const supportActions = supportHandoffActions(messages);
+    if (supportActions.some(action => ['requested', 'open-inbox'].includes(action.reason))) return res.json({ success: true, data: { answer: supportActions[0].reason === 'open-inbox' ? 'Opening your support inbox. Sign in to read and reply to your conversations with the team.' : 'I can help prepare a message for the Veylo team. Review the message below, add anything missing, then send it. You can follow the conversation in your support inbox after signing in.', topics: [], suggestions: [], actions: supportActions } });
     if (factual) return res.json({ success: true, data: { answer: factual, topics: [], suggestions: [], actions: contextActions } });
     const data = await answerVeyloQuestion({
       messages,
@@ -140,7 +151,7 @@ export async function chatWithVeyloAssistant(req, res) {
       runtimeConfig,
       signal: controller.signal
     });
-    return res.json({ success: true, data: { ...data, actions: contextActions } });
+    return res.json({ success: true, data: { ...data, actions: [...contextActions, ...supportHandoffActions(messages, data.answer)] } });
   } catch (error) {
     if (controller.signal.aborted) return;
     // Never send provider messages, model names, request payloads, or stack

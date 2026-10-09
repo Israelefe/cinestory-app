@@ -103,6 +103,7 @@ export async function editStorageAsset(req, res) {
     if (!parsed.success) return res.status(400).json({ success: false, message: parsed.error.issues[0].message });
     const asset = await StorageAsset.findOneAndUpdate({ _id: req.params.id, userId: req.user.id }, { folder: parsed.data.folder, tags: [...new Set(parsed.data.tags.map(tag => tag.toLowerCase()))], caption: parsed.data.caption }, { new: true });
     if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
+    await recordPaidUsage(req.user.id, 'storage', `edit:${asset._id}`);
     res.json({ success: true, data: output(asset) });
   } catch { res.status(500).json({ success: false, message: 'We could not update that photograph.' }); }
 }
@@ -136,6 +137,7 @@ export async function downloadStorageAsset(req, res) {
     if (entitlements.features.storageMode === 'unavailable') return res.status(403).json({ success: false, message: 'This personal image library is no longer available.' });
     const asset = await StorageAsset.findOne({ _id: req.params.id, userId: req.user.id });
     if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
+    if (entitlements.plan === 'pro') await recordPaidUsage(req.user.id, 'storage', `download:${asset._id}`);
     res.json({ success: true, data: { url: storageAssetUrls(asset.publicId, { rawPublicId: asset.rawPublicId, originalFilename: asset.originalFilename, format: asset.format, rawFormat: asset.rawFormat }).downloadUrl } });
   } catch { res.status(500).json({ success: false, message: 'We could not prepare that download.' }); }
 }
