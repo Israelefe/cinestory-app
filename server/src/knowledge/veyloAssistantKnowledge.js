@@ -1,7 +1,7 @@
 import { PLAN_DEFINITIONS } from '../config/plans.js';
 import { PRO_PRICING } from '../services/billingPricing.service.js';
 
-export const VEYLO_HELP_KNOWLEDGE_VERSION = '2026-10-08';
+export const VEYLO_HELP_KNOWLEDGE_VERSION = '2026-10-09';
 const naira = value => `₦${Number(value).toLocaleString('en-NG')}`;
 const positive = (value, fallback) => Number.isSafeInteger(value) && value > 0 ? value : fallback;
 
@@ -42,6 +42,12 @@ function formatHelp(runtimeConfig = {}) {
 
 const DOCUMENTS = [
   {
+    id: 'product-overview', title: 'The Veylo product page and shoot workflow',
+    keywords: ['product', 'product page', 'product overview', 'whole workflow', 'all features'],
+    audiences: ['studio', 'visitor'],
+    text: `The public Product page at /product explains Veylo from client choices to finished delivery. Client preselection at /product#client-preselection lets clients choose photographs for editing from marked previews, with an optional six-digit PIN and no download controls. Editor handoff at /product#editor-handoff uses a password-protected link to download source files and upload finished JPEG, PNG or WebP edits to the same link. Both are Pro Image Library workflows, separate from final delivery; Veylo does not edit or retouch the files itself. /product#image-library explains personal storage for originals, previews and returned edits; published delivery hosting is separate. /product#delivery compares Showcase, GridBoard and Photo Swap and links to live demos of the eight Showcase formats. /product#review explains AI preparation and photographer approval, /product#client-view explains viewing, permitted downloads, PINs and expiry, /product#portfolio introduces the public Portfolio, /product#assistant explains optional page context and assistance, and /product#plans summarises Free and Pro with a link to /pricing. Selection and editor handoff are optional; photographers can begin directly with their finished photographs. Use /product for an overview, /formats for delivery comparisons, and /portfolio for the dedicated Portfolio guide. Product examples are illustrative; choosing a sample photo or changing a preview does not save a project, submit client choices, or upload files. Product appears in the public navigation menu and footer.`
+  },
+  {
     id: 'assistant-workspace', title: 'Veylo Assistant and your current task',
     keywords: ['assistant', 'ask veylo', 'current page', 'recent activity', 'writing help', 'check delivery', 'support request'],
     audiences: ['studio', 'visitor'],
@@ -72,7 +78,7 @@ const DOCUMENTS = [
     id: 'image-library-sharing',
     title: 'Pro Image Library, client choices and editor handoff',
     keywords: ['image library', 'raw', 'camera file', 'client selection', 'preselection', 'editor', 'handoff', 'PIN', 'password', '100 GB', 'preview'],
-    audiences: ['studio', 'recipient'],
+    audiences: ['studio', 'recipient', 'visitor'],
     text: runtime => `The Pro Image Library includes ${Math.round(currentPlans(runtime).pro.personalStorageBytes / 1024 ** 3)} GB of personal storage, separate from published delivery hosting. Open Image Library, then Client and editor links. Client preselection lets a client choose from up to 500 shared photographs for editing. It can have a six-digit PIN and shows marked previews without download controls. A submitted selection can be reopened with Ask them to choose again. Editor handoff requires a password; editors can download the source files and upload finished JPEG, PNG, or WebP edits to the same link. JPEG, PNG, WebP, supported camera RAW originals, and returned edits are limited to 100 MB per file. RAW originals stay unchanged beside a browser-made JPEG preview; both use storage. Saved folders, tags, and caption notes help organise and reuse the photographs. Sharing links close on expiry, revocation, or loss of Pro access. Keep separate backups of every original.`
   },
   {
@@ -223,7 +229,7 @@ function scoreDocument(document, queryTerms, audience, query = '', runtimeConfig
 }
 
 export function buildMarketingKnowledge() {
-  const topics = new Set(['what-veylo-is', 'delivery-formats', 'photo-swap', 'gridboard', 'create-delivery', 'review-captions-and-design', 'music-and-narration', 'publish-and-access', 'portfolio', 'analytics']);
+  const topics = new Set(['product-overview', 'what-veylo-is', 'image-library-sharing', 'delivery-formats', 'photo-swap', 'gridboard', 'create-delivery', 'review-captions-and-design', 'music-and-narration', 'publish-and-access', 'portfolio', 'analytics']);
   return DOCUMENTS.filter(document => topics.has(document.id)).map(document => `${document.title}\n${documentText(document)}`).join('\n\n');
 }
 
@@ -256,6 +262,7 @@ export function assistantTopicLabels({ query = '', audience = 'visitor' } = {}) 
 }
 
 const RELATED_QUESTIONS = {
+  'product-overview': ['How does client preselection work?', 'Can my editor download originals and return finished edits?', 'How do Showcase, GridBoard and Photo Swap differ?'],
   'assistant-workspace': ['What page am I on?', 'How do I turn page context off?', 'How do I check a delivery before publishing?'],
   'what-veylo-is': ['How does a client delivery work?'],
   'account-and-profile': ['How do I update my studio profile?', 'How do I reset my password?'],

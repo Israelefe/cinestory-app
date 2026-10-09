@@ -6,12 +6,13 @@ export const formatNaira = value => new Intl.NumberFormat('en-NG', { style: 'cur
 const basePricing = Object.freeze({ currency: 'NGN', amountKobo: 4_000_000, monthlyPriceNaira: PRO_PRICE_NAIRA, quote: 'pro:4000000' });
 export function ProPricingProvider({ children }) {
   const [pricing, setPricing] = useState(null);
+  const [plans, setPlans] = useState([]);
   const refresh = useCallback(async () => {
-    try { const response = await api.get('/v1/billing/plans'); setPricing({ ...basePricing, ...response.data.pricing, billingAvailable: response.data.billingAvailable }); }
+    try { const response = await api.get('/v1/billing/plans'); setPricing({ ...basePricing, ...response.data.pricing, billingAvailable: response.data.billingAvailable }); setPlans(Array.isArray(response.data.data) ? response.data.data : []); }
     catch { setPricing(basePricing); }
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
-  return <PricingContext.Provider value={{ pricing, refresh, setPricing }}>{children}</PricingContext.Provider>;
+  return <PricingContext.Provider value={{ pricing, plans, refresh, setPricing }}>{children}</PricingContext.Provider>;
 }
 export function useProPricing() { return useContext(PricingContext) || { pricing: null, refresh: () => {} }; }
 export function ProPrice() {

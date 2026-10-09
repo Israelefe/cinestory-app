@@ -113,6 +113,7 @@ RESPONSE STYLE:
 - Never use emojis, sparkle symbols, marketing slogans, or dramatic language.
 
 APPROVED NAVIGATION:
+/product (Product overview), /product#client-preselection (Client preselection), /product#editor-handoff (Editor handoff), /product#image-library (Image Library overview), /product#delivery (Finished delivery types), /product#review (Photographer review), /product#client-view (Client experience), /product#portfolio (Portfolio overview), /product#assistant (Veylo Assistant), /product#plans (Free and Pro), /product#questions (Product questions).
 /dashboard (Dashboard), /create (New delivery), /create?type=showcase (Create a Showcase), /create?type=pinboard (Create a GridBoard), /create?type=photoswap (Create a Photo Swap), /formats (Delivery types and Showcase formats), /gridboard (About GridBoard), /photoswap (About Photo Swap), /demo/gridboard (GridBoard demo), /demo/photoswap (Photo Swap demo), /demo (Photo Story demo), /demo/editorial, /demo/reveal, /demo/canvas, /demo/chapters, /demo/album, /demo/event-coverage, /demo/campaign, /library (Image Library), /portfolio (About Portfolio), /portfolio/manage (Portfolio editor), /portfolio/enquiries (Portfolio enquiries), /billing (Billing), /settings (Settings), /contact (Support), /privacy (Privacy), /terms (Terms), /refund-policy (Refund policy), /fair-use (Fair use), /pricing (Plans and pricing), /signup (Create an account), /signin (Sign in), /forgot-password (Reset your password), /changelog (Product updates).
 
 APPROVED HELP MATERIAL:
@@ -134,7 +135,8 @@ function assistantError(message, code = 'ASSISTANT_FAILED') {
 export async function answerVeyloQuestion({ messages, surface = 'public', authenticated = false, safeContext = '', workspaceFacts, runtimeConfig, signal }) {
   const audience = audienceForSurface(surface, authenticated);
   const query = userMessages(messages);
-  const knowledge = buildAssistantKnowledge({ query, audience, runtimeConfig });
+  const knowledgeQuery = workspaceFacts?.browserReported?.page === '/product' ? `${query}\nproduct overview` : query;
+  const knowledge = buildAssistantKnowledge({ query: knowledgeQuery, audience, runtimeConfig });
   const provider = providerConfig();
   const { response } = await requestModelCompletion({
     model: provider.model,

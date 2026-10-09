@@ -34,6 +34,7 @@ const AboutUs = lazyWithRecovery(() => import('./pages/AboutUs.jsx'), 'about');
 const NichePage = lazyWithRecovery(() => import('./pages/NichePage.jsx'), 'photographer-page');
 const ClientExperience = lazyWithRecovery(() => import('./pages/ClientExperience.jsx'), 'client-experience');
 const PricingPage = lazyWithRecovery(() => import('./pages/PricingPage.jsx'), 'pricing');
+const ProductPage = lazyWithRecovery(() => import('./pages/ProductPage.jsx'), 'product');
 const SignupPage = lazyWithRecovery(() => import('./pages/SignupPage.jsx'), 'signup');
 const SigninPage = lazyWithRecovery(() => import('./pages/SigninPage.jsx'), 'signin');
 const VerifyEmailPage = lazyWithRecovery(() => import('./pages/VerifyEmailPage.jsx'), 'verify-email');
@@ -105,6 +106,7 @@ function RoutePosition() {
   useEffect(() => {
     const names = { '/': 'Photo delivery for finished shoots', '/formats': 'Three delivery types | Eight Showcase formats', '/gridboard': 'GridBoard delivery', '/photoswap': 'Photo Swap delivery', '/portfolio': 'Veylo Portfolio', '/pricing': 'Plans and pricing', '/signup': 'Create your account', '/signin': 'Sign in', '/verify-email': 'Verify your email', '/forgot-password': 'Reset your password', '/reset-password': 'Choose a new password', '/onboarding': 'Set up your studio', '/settings': 'Account settings', '/about': 'About us', '/client-experience': 'The client experience', '/contact': 'Get in touch', '/privacy': 'Privacy policy', '/refund-policy': 'Refund policy', '/terms': 'Terms of use', '/fair-use': 'Fair use', '/changelog': 'Product updates', '/create': 'Create a delivery', '/demo': 'Watch a Photo Story', '/demo/gridboard': 'Browse a GridBoard delivery', '/demo/pinboard': 'Browse a GridBoard delivery', '/demo/photoswap': 'Swipe through a Photo Swap', '/demo/editorial': 'Explore an Editorial Page', '/demo/reveal': 'Begin a Photo Reveal', '/demo/canvas': 'Explore a Canvas', '/demo/chapters': 'Choose a chapter', '/demo/album': 'Turn through an Album', '/demo/event-coverage': 'Browse Event Coverage', '/demo/campaign': 'Open a Campaign Delivery' };
     names['/formats'] = 'Three delivery types | Eight Showcase formats';
+    names['/product'] = 'Client selection, editor handoff and photo delivery';
     names['/demo/event-coverage'] = 'Browse Event Coverage';
     names['/demo/campaign'] = 'Open a Campaign Delivery';
     if (pathname === '/billing') names[pathname] = 'Plan and billing';
@@ -180,6 +182,7 @@ function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountD
     {productRoutes.has(pathname) && pathname !== '/create' && <ProductHeader user={user} onLogout={onLogout} />}
     <main id="main-content"><Routes>
       <Route path="/" element={<LandingPage />} />
+      <Route path="/product" element={<ProductPage user={user} />} />
       <Route path="/dashboard" element={<ProtectedRoute user={user} loading={authLoading}><Dashboard user={user} onLogout={onLogout} /></ProtectedRoute>} />
       <Route path="/create" element={<ProtectedRoute user={user} loading={authLoading}><div className="veylo-assistant-entry-row"><AssistantEntry /></div><CreateDelivery user={user} /></ProtectedRoute>} />
       <Route path="/sharing" element={<ProtectedRoute user={user} loading={authLoading}><DeliverySharing /></ProtectedRoute>} />

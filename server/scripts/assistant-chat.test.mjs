@@ -86,6 +86,31 @@ test('recipient knowledge and topic suggestions exclude studio-only material', (
   assert.ok(questions.every(question => !/upload|publish/.test(question)));
 });
 
+test('visitors can learn about the Product page, client preselection and editor handoff', () => {
+  const product = buildAssistantKnowledge({ query: 'Product overview', audience: 'visitor' });
+  for (const section of ['client-preselection', 'editor-handoff', 'image-library', 'delivery', 'portfolio', 'assistant', 'plans']) assert.ok(product.includes(`/product#${section}`));
+  assert.match(product, /optional; photographers can begin directly/);
+  assert.match(product, /does not save a project, submit client choices, or upload files/);
+  for (const query of ['How does client preselection work?', 'Can my editor download originals and return finished edits?']) {
+    const knowledge = buildAssistantKnowledge({ query, audience: 'visitor' });
+    assert.match(knowledge, /Pro Image Library/);
+    assert.match(knowledge, /without download controls/);
+    assert.match(knowledge, /Editor handoff requires a password/);
+    assert.match(knowledge, /same link/);
+    assert.match(knowledge, /Published delivery hosting is separate/);
+  }
+  assert.ok(assistantSuggestedQuestions('public', { query: 'product overview' }).some(question => question.includes('preselection')));
+});
+
+test('the Product page supplies relevant knowledge for a vague question and approved section links', async t => {
+  let prompt;
+  configure(t, async (_url, options) => { prompt = JSON.parse(options.body).messages[0].content; return providerReply('Read [Editor handoff](/product#editor-handoff).'); });
+  const result = await answerVeyloQuestion({ surface: 'public', messages: [{ role: 'user', content: 'What can I do here?' }], workspaceFacts: { browserReported: { page: '/product' } } });
+  assert.match(prompt, /## The Veylo product page and shoot workflow/);
+  assert.match(prompt, /APPROVED NAVIGATION:\n\/product/);
+  assert.match(result.answer, /\/product#editor-handoff/);
+});
+
 test('Help describes the three current delivery types and separates Photo Swap from Photo Reveal', () => {
   const knowledge = buildAssistantKnowledge({ query: 'What delivery type can I choose?', audience: 'visitor' });
   for (const label of ['Showcase', 'GridBoard', 'Photo Swap', 'Photo Reveal']) assert.match(knowledge, new RegExp(label));

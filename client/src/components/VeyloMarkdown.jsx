@@ -3,7 +3,7 @@ import { ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const HELP_PATHS = new Set([
-  '/dashboard', '/create', '/formats', '/gridboard', '/photoswap', '/library',
+  '/dashboard', '/create', '/product', '/formats', '/gridboard', '/photoswap', '/library',
   '/portfolio', '/portfolio/manage', '/portfolio/enquiries', '/billing', '/settings',
   '/contact', '/privacy', '/terms', '/refund-policy', '/fair-use', '/pricing',
   '/signup', '/signin', '/forgot-password', '/changelog', '/demo', '/demo/gridboard',

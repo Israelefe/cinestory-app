@@ -51,6 +51,7 @@ function model(t, text = 'A quiet birthday portrait.') {
 test('context rejects typed content, URLs, unknown routes, forged instructions and unbounded activity', () => {
   assert.equal(readFileSync(new URL('../src/constants/assistantContext.mjs', import.meta.url), 'utf8'), readFileSync(new URL('../../client/src/utils/assistantContext.mjs', import.meta.url), 'utf8'), 'Client and server context contracts must match across separate deployment roots');
   assert.equal(assistantContextSchema.safeParse(context()).success, true);
+  assert.equal(assistantContextSchema.safeParse({ ...context(), page: '/product', workflow: {}, recent: [{ event: 'page-opened', page: '/product', at: Date.now() }] }).success, true);
   for (const value of [{ ...context(), token: 'secret' }, { ...context(), page: '/admin' }, { ...context(), workflow: { ...context().workflow, caption: 'private' } }, { ...context(), recent: Array(21).fill({ event: 'page-opened', page: '/create', at: Date.now() }) }]) assert.equal(assistantContextSchema.safeParse(value).success, false);
   assert.equal(freshAssistantContext({ ...context(), capturedAt: Date.now() - 301000 }), null);
   assert.equal(freshAssistantContext({ ...context(), capturedAt: Date.now() + 6000 }), null);

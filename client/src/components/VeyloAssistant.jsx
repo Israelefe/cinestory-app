@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUpRight, BadgeCheck, Check, ChevronDown, CircleHelp, Clapperboard, Copy, Download, ExternalLink, Headphones, Image, LoaderCircle, MessageCircle, RefreshCw, RotateCcw, Send, ShieldCheck, Square, X } from 'lucide-react';
+import { ArrowDown, ArrowUpRight, BadgeCheck, Check, CheckCheck, ChevronDown, CircleHelp, Clapperboard, Copy, Download, ExternalLink, Headphones, Image, LoaderCircle, MessageCircle, RefreshCw, RotateCcw, Send, ShieldCheck, Square, Upload, X } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import api, { apiMessage } from '../services/api.js';
 import { trackEvent } from '../services/analytics.js';
@@ -76,7 +76,11 @@ function AssistantChat({ chatKey, surface, pathname }) {
   const controllerRef = useRef(null);
   const copyTimerRef = useRef(null);
   const stickToBottomRef = useRef(true);
-  const starters = surface === 'studio' && pathname === '/library' ? [
+  const starters = pathname === '/product' ? [
+    { icon: CheckCheck, label: 'Client preselection', question: 'How does client preselection work?' },
+    { icon: Upload, label: 'Editor handoff', question: 'Can my editor download originals and return finished edits?' },
+    { icon: Image, label: 'Choose a delivery', question: 'How do Showcase, GridBoard and Photo Swap differ?' }
+  ] : surface === 'studio' && pathname === '/library' ? [
     { icon: Image, label: 'Your storage', question: 'How much storage do I have left?' },
     { icon: Send, label: 'Client and editor links', question: 'How do client selection and editor links work?' }
   ] : surface === 'studio' && pathname === '/billing' ? [

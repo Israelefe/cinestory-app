@@ -9,7 +9,7 @@ export const ASSISTANT_PAGES = Object.freeze({
   '/signin': 'Sign in', '/onboarding': 'Studio setup', '/changelog': 'Product updates',
   '/forgot-password': 'Reset password', '/verify-email': 'Verify email', '/reset-password': 'Choose a password',
   '/privacy': 'Privacy', '/terms': 'Terms', '/refund-policy': 'Refund policy', '/fair-use': 'Fair use',
-  '/about': 'About Veylo', '/client-experience': 'Client experience'
+  '/about': 'About Veylo', '/client-experience': 'Client experience', '/product': 'Veylo product'
 });
 export const ASSISTANT_STEPS = ['details', 'format', 'photos', 'preparing', 'captions', 'showcase', 'narration', 'narration-job', 'music', 'design', 'style', 'access', 'publish', 'published', 'work', 'studio', 'projects', 'appearance', 'categories', 'services', 'client-feedback', 'faqs', 'publishing'];
 export const ASSISTANT_EVENTS = ['page-opened', 'step-opened', 'upload-started', 'upload-ended', 'upload-failed', 'draft-edited', 'form-clean', 'preview-opened', 'request-failed', 'writing-applied'];
