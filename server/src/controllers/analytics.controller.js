@@ -1,3 +1,4 @@
+import ActiveSession from '../models/ActiveSession.js';
 import crypto from 'crypto';
 import { z } from 'zod';
 import { recordAnalyticsEvent } from '../services/analytics.service.js';
@@ -84,4 +85,15 @@ export async function collectClientAnalytics(req, res) {
     console.error('[analytics/collect]', error.message);
     return res.status(500).json({ success: false, message: 'We could not record product analytics.' });
   }
+}
+
+export async function recordPresence(req, res) {
+  const parsed = z.object({ sessionId: z.string().regex(/^[a-zA-Z0-9_-]{8,160}$/), visible: z.boolean() }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ success: false });
+  const sessionDigest = digestIdentity(parsed.data.sessionId, 'presence');
+  try {
+    if (!parsed.data.visible) await ActiveSession.deleteOne({ sessionDigest });
+    else await ActiveSession.updateOne({ sessionDigest }, { $set: { actorType: req.user?.id ? 'photographer' : 'anonymous', lastSeenAt: new Date(), expiresAt: new Date(Date.now() + 120000) } }, { upsert: true });
+    return res.status(202).json({ success: true });
+  } catch { return res.status(503).json({ success: false }); }
 }

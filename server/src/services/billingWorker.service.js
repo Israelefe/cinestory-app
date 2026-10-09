@@ -1,3 +1,4 @@
+import { recordWorkerHeartbeat } from './workerHeartbeat.service.js';
 import BillingEvent from '../models/BillingEvent.js';
 import Payment from '../models/Payment.js';
 import Subscription from '../models/Subscription.js';
@@ -12,8 +13,11 @@ let running = false, timer;
 export async function runBillingMaintenance() {
   if (running) return;
   running = true;
+  await recordWorkerHeartbeat('billing', { status: 'busy', stage: 'maintenance' });
+  const heartbeatTimer = setInterval(() => void recordWorkerHeartbeat('billing', { status: 'busy', stage: 'maintenance' }), 30000); heartbeatTimer.unref();
+  let failures = 0;
   const now = new Date();
-  const attempt = async operation => { try { await operation(); } catch (error) { console.error('[billing/recovery]', error.message); } };
+  const attempt = async operation => { try { await operation(); } catch (error) { failures++; console.error('[billing/recovery]', error.message); } };
   try {
     for (const model of [Payment, Subscription, Refund, BillingEvent, PaidUsage]) await model.deleteMany({ accountDeletedAt: { $ne: null }, retainUntil: { $lte: now } });
     if (!billingConfigured()) return;
@@ -62,7 +66,7 @@ export async function runBillingMaintenance() {
       } finally { await Refund.updateOne({ _id: refund._id }, { $set: { updatedAt: new Date() } }); }
     });
     await retryBillingEmails();
-  } finally { running = false; }
+  } catch (error) { failures++; throw error; } finally { clearInterval(heartbeatTimer); running = false; await recordWorkerHeartbeat('billing', { status: failures ? 'error' : 'idle', stage: failures ? 'maintenance-failed' : 'waiting', details: { failures } }); }
 }
 export function startBillingWorker() {
   if (timer) return;

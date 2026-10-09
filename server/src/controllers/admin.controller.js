@@ -1,3 +1,4 @@
+import { operationalWorkerHealth } from '../services/operationalMonitoring.service.js';
 import { resolveEntitlements } from '../services/entitlement.service.js';
 import Refund from '../models/Refund.js';
 import { recordPaidUsage, refundEvidence } from '../services/paidUsage.service.js';
@@ -204,24 +205,13 @@ async function databaseHealth() {
   }
 }
 
-async function workerHealth() {
-  const pipelineEnabled = process.env.DELIVERY_PIPELINE_ENABLED === 'true';
-  const definitions = [
-    { name: 'retention', enabled: true, staleAfterMs: 7 * 60 * 60 * 1000 },
-    { name: 'delivery', enabled: pipelineEnabled, staleAfterMs: 30 * 1000 },
-    { name: 'portfolio', enabled: pipelineEnabled, staleAfterMs: 30 * 1000 }
-  ];
-  const records = await WorkerHeartbeat.find({ workerName: { $in: definitions.map(item => item.name) } }).sort({ heartbeatAt: -1 }).lean();
-  return definitions.map(definition => {
-    const record = records.find(item => item.workerName === definition.name);
-    if (!definition.enabled) return { workerName: definition.name, status: 'disabled', enabled: false, heartbeatAt: record?.heartbeatAt || null };
-    const heartbeatAt = record?.heartbeatAt || null;
-    const alive = heartbeatAt && Date.now() - new Date(heartbeatAt).getTime() <= definition.staleAfterMs;
-    return { workerName: definition.name, enabled: true, status: alive ? (record.status || 'idle') : 'stale', stage: record?.stage || 'not started', heartbeatAt, instance: record?.instance || null };
-  });
-}
+async function workerHealth() { return operationalWorkerHealth(); }
+let operationsCache, operationsPending;
 
 export async function getOperationsOverview(req, res) {
+  if (operationsCache && Date.now() - operationsCache.at < 30000) return res.json(operationsCache.response);
+  if (operationsPending) { await operationsPending; if (operationsCache && Date.now() - operationsCache.at < 30000) return res.json(operationsCache.response); }
+  let release; operationsPending = new Promise(resolve => { release = resolve; });
   const now = new Date();
   const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -286,11 +276,11 @@ export async function getOperationsOverview(req, res) {
     const storageBytes = Number(storageAgg[0]?.bytes || 0);
     const providerAiConfigured = process.env.DELIVERY_PIPELINE_ENABLED === 'true' && anyModelProviderConfigured() && Boolean(process.env.DEEPGRAM_API_KEY);
 
-    res.json({
+    const response = {
       success: true,
       data: {
         generatedAt: now,
-        telemetry: { eventStore: 'ready', startedAt: now },
+        telemetry: { eventStore: 'ready' },
         metrics: {
           accounts: { total: totalUsers, newLast30Days: newAccounts, verified: verifiedAccounts, onboardingCompleted, activePro: activeProAccounts },
           deliveries: { active: activeDeliveries + activeLegacyStories + activeVolumeJobs, published: publishedDeliveries + publishedLegacyStories + publishedVolumeJobs, current: activeDeliveries, legacy: activeLegacyStories, volume: activeVolumeJobs },
@@ -301,18 +291,20 @@ export async function getOperationsOverview(req, res) {
         },
         providers: {
           database,
-          r2: health(r2.ok, r2.reason),
-          ai: health(providerAiConfigured && analyticsFailures === 0, providerAiConfigured ? (analyticsFailures ? `${analyticsFailures} AI jobs failed in the last 24 hours.` : '') : 'Delivery AI configuration or narration provider is disabled or incomplete.', { configured: providerAiConfigured, failuresLast24Hours: analyticsFailures }),
-          email: health(Boolean(process.env.RESEND_API_KEY) && emailFailures === 0, process.env.RESEND_API_KEY ? (emailFailures ? `${emailFailures} email sends failed in the last 24 hours.` : '') : 'RESEND_API_KEY is not configured.', { configured: Boolean(process.env.RESEND_API_KEY), sentLast24Hours: emailSuccesses, failuresLast24Hours: emailFailures }),
-          paystack: health(billingConfigured() && failedPayments === 0, billingConfigured() ? (failedPayments ? `${failedPayments} payment failures or disputes were recorded in the last 24 hours.` : '') : 'Paystack billing is disabled or incomplete.', { configured: billingConfigured(), failuresLast24Hours: failedPayments })
+          r2: { ...health(r2.ok, r2.reason), checkedAt: now },
+          ai: { status: providerAiConfigured ? 'configured' : 'disabled', configured: providerAiConfigured, failuresLast24Hours: analyticsFailures, message: 'Configuration only. Job outcomes appear separately; no live provider probe.' },
+          email: { status: process.env.RESEND_API_KEY ? 'configured' : 'disabled', configured: Boolean(process.env.RESEND_API_KEY), sentLast24Hours: emailSuccesses, failuresLast24Hours: emailFailures, message: 'Provider acceptance is recorded; inbox delivery is not yet tracked.' },
+          paystack: { status: billingConfigured() ? 'configured' : 'disabled', configured: billingConfigured(), failuresLast24Hours: failedPayments, message: 'Configuration only. Declined payments do not establish a provider outage.' }
         },
         workers
       }
-    });
+    };
+    operationsCache = { at: Date.now(), response };
+    res.json(response);
   } catch (error) {
     console.error('[admin/operations]', error.message);
     res.status(500).json({ success: false, message: 'We could not load the operations overview.' });
-  }
+  } finally { release(); operationsPending = null; }
 }
 
 export async function getAdminAnalytics(req, res) {

@@ -2,7 +2,7 @@ import { maintenanceState } from '../services/runtimeConfig.service.js';
 
 export async function maintenanceMiddleware(req, res, next) {
   try {
-    if (String(req.path || '') === '/health') return next();
+    if (['/health', '/ready'].includes(String(req.path || ''))) return next();
     const state = await maintenanceState();
     const path = String(req.path || '');
     const allowedDuringMaintenance = path === '/health' || path.startsWith('/api/v1/admin') || path.startsWith('/api/v1/auth') || path.startsWith('/api/v1/support');

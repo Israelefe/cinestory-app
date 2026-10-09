@@ -1,3 +1,7 @@
+import crypto from 'node:crypto';
+import { requestMetricsMiddleware, captureOperationalError, metricRoute } from './src/services/operationalMetrics.service.js';
+import { startOperationalMonitoring } from './src/services/operationalMonitoring.service.js';
+import { readiness } from './src/controllers/adminOperations.controller.js';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -31,6 +35,7 @@ import { maintenanceMiddleware } from './src/middleware/maintenance.middleware.j
 import { prepareStudioNames } from './src/services/studioName.service.js';
 
 dotenv.config();
+process.on('uncaughtExceptionMonitor', error => { void captureOperationalError(error, { route: 'process-crash' }); });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -68,6 +73,8 @@ app.set('trust proxy', 1);
 // Must run before anything that reads `req.ip` — the rate limiters, the
 // Turnstile check and the session audit trail all depend on it.
 app.use(resolveEdgeClientIp);
+app.use((req, res, next) => { req.requestId = crypto.randomUUID(); res.set('X-Request-Id', req.requestId); next(); });
+app.use(requestMetricsMiddleware);
 app.disable('x-powered-by');
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 // Paystack signs the exact request bytes. This route must stay above express.json().
@@ -99,6 +106,7 @@ app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 app.use(maintenanceMiddleware);
 app.use(modelRequestContextMiddleware);
 
+app.get('/ready', readiness);
 app.get('/health', (req, res) => res.json({
   status: 'healthy', app: 'Veylo API Server', revision: process.env.RENDER_GIT_COMMIT || null
 }));
@@ -120,8 +128,9 @@ app.use('/api/v1/admin/content-studio', adminAuthMiddleware, requireAdminRoles('
 app.use((error, req, res, next) => {
   if (error?.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ success: false, message: 'The image must be 5 MB or smaller.' });
   if (error?.message === 'Origin is not allowed.' || /^Origin .+ is not allowed\.$/.test(error?.message || '')) return res.status(403).json({ success: false, message: 'This request origin is not allowed.' });
-  console.error('[server]', error.message);
-  res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+  if (!req.path.includes('/content-studio')) { req.operationalErrorCaptured = true; void captureOperationalError(error, { route: `${req.method} ${metricRoute(req)}` }); }
+  else console.error('[server]', error.message);
+  res.status(500).json({ success: false, message: 'Something went wrong. Please try again.', requestId: req.requestId });
 });
 
 connectDB().then(async connection => {
@@ -151,6 +160,7 @@ connectDB().then(async connection => {
     }
     startRetentionWorker();
     startBillingWorker();
+    void startOperationalMonitoring();
   });
   const shutdown = async () => {
     server.close();

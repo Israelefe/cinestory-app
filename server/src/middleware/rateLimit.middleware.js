@@ -43,7 +43,7 @@ function publicResourceKey(req) {
 
 function analyticsKey(req) {
   const firstEvent = Array.isArray(req.body?.events) ? req.body.events[0] : null;
-  const session = firstEvent?.sessionId || firstEvent?.visitorId;
+  const session = firstEvent?.sessionId || firstEvent?.visitorId || (req.path === '/presence' ? req.body?.sessionId : undefined);
   return session ? `analytics:${digest(session)}` : `analytics:${clientIp(req)}`;
 }
 
@@ -224,3 +224,8 @@ export const clientAnalyticsLimit = limiter({
   keyGenerator: analyticsKey,
   identifier: 'client-analytics'
 });
+
+// Presence has no product-side effect. An IP cap bounds writes even when a caller rotates session IDs.
+export const presenceLimit = limiter({ windowMs: 15 * 60 * 1000, limit: 6000, message: 'Activity reporting is temporarily busy.', keyGenerator: clientIp, identifier: 'activity-presence' });
+
+export const monitorCheckInLimit = limiter({ windowMs: 60000, limit: 12, message: 'Monitor check-in is temporarily rate limited.', keyGenerator: clientIp, identifier: 'operations-monitor' });

@@ -1,3 +1,4 @@
+import AdminMfaGate from './components/AdminMfaGate.jsx';
 import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { BrowserRouter, Route, Routes, Navigate } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
@@ -64,6 +65,8 @@ export default function App() {
       </div>
     );
   }
+
+  if (admin?.mfaRequired) return <AdminMfaGate admin={admin} onVerified={setAdmin} onLogout={handleLogout} />;
 
   return (
     <BrowserRouter>

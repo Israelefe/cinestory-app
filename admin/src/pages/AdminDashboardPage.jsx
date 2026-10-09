@@ -1,5 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import AdminShell, { sectionLabel } from '../components/AdminShell.jsx';
+import { AdminOverview, AdminOperations, AdminIssues, WorkspaceHeading, checkedTime } from '../components/OperationsWorkspace.jsx';
 import { motion } from 'framer-motion';
 import {
   Activity,
@@ -385,8 +387,17 @@ function BillingHealthPanel({ data, loading, error, actionLoading, onRefresh, on
 }
 
 export default function AdminDashboardPage({ admin, onLogout }) {
-  const [tab, setTab] = useState('deliveries');
-  const [analytics, setAnalytics] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const sections = useMemo(() => admin?.sections || ['overview'], [admin?.sections]);
+  const requestedTab = searchParams.get('section') || 'overview';
+  const tab = sections.includes(requestedTab) ? requestedTab : 'overview';
+  const setTab = key => { setSearch(''); setSearchParams(key === 'overview' ? {} : { section: key }); };
+  const [system, setSystem] = useState(null);
+  const [issues, setIssues] = useState(null);
+  const [issueStatus, setIssueStatus] = useState('open');
+  const [issuePage, setIssuePage] = useState(1);
+  const [updatedAt, setUpdatedAt] = useState({});
+  const requestRef = useRef({ sequence: 0, controller: null });
   const [operations, setOperations] = useState(null);
   const [deliveries, setDeliveries] = useState([]);
   const [users, setUsers] = useState([]);
@@ -459,35 +470,52 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const [aiJobTypeFilter, setAiJobTypeFilter] = useState('all');
 
   const fetchAdminData = useCallback(async () => {
+    requestRef.current.controller?.abort();
+    const controller = new AbortController();
+    const sequence = ++requestRef.current.sequence;
+    requestRef.current.controller = controller;
     setLoading(true);
+    const request = (path, config = {}) => api.get(path, { ...config, signal: controller.signal, timeout: 20000 });
     const requests = {
-      operations: api.get('/v1/admin/operations'),
-      analytics: api.get('/v1/admin/analytics'),
-      deliveries: api.get('/v1/admin/deliveries', { params: { search, status: deliveryStatusFilter, format: deliveryFormatFilter } }),
-      users: api.get('/v1/admin/users', { params: { search, plan: accountPlanFilter, status: accountStatusFilter, acquisitionSource: accountSourceFilter } }),
-      finance: api.get('/v1/admin/finance', { params: { search } }),
-      billingHealth: api.get('/v1/admin/billing/health', { params: { search, filter: 'all', limit: 250 } }),
-      aiJobs: api.get('/v1/admin/ai/jobs', { params: { search, status: aiJobStatusFilter, type: aiJobTypeFilter } }),
-      access: api.get('/v1/admin/client-access', { params: { search } }),
-      volume: api.get('/v1/admin/volume', { params: { search, category: volumeCategoryFilter, status: volumeStatusFilter } }),
-      storage: api.get('/v1/admin/storage', { params: { search } }),
-      musicNarration: api.get('/v1/admin/music-narration', { params: { search } }),
-      portfolio: api.get('/v1/admin/portfolios', { params: { search } }),
-      support: api.get('/v1/admin/support/tickets', { params: { search } }),
-      configuration: api.get('/v1/admin/configuration'),
-      security: api.get('/v1/admin/security'),
-      productAnalytics: api.get('/v1/admin/product-analytics', { params: { days: productAnalyticsDays, format: productAnalyticsFormat, actorType: productAnalyticsActor } }),
-      visitorTraffic: api.get('/v1/admin/visitor-traffic', { params: { days: visitorTrafficDays } })
+      system: () => request('/v1/admin/system'),
+      issues: () => request('/v1/admin/issues', { params: { status: issueStatus, page: issuePage } }),
+      operations: () => request('/v1/admin/operations'),
+      deliveries: () => request('/v1/admin/deliveries', { params: { search, status: deliveryStatusFilter, format: deliveryFormatFilter } }),
+      users: () => request('/v1/admin/users', { params: { search, plan: accountPlanFilter, status: accountStatusFilter, acquisitionSource: accountSourceFilter } }),
+      finance: () => request('/v1/admin/finance', { params: { search } }),
+      billingHealth: () => request('/v1/admin/billing/health', { params: { search, filter: 'all', limit: 250 } }),
+      aiJobs: () => request('/v1/admin/ai/jobs', { params: { search, status: aiJobStatusFilter, type: aiJobTypeFilter } }),
+      access: () => request('/v1/admin/client-access', { params: { search } }),
+      volume: () => request('/v1/admin/volume', { params: { search, category: volumeCategoryFilter, status: volumeStatusFilter } }),
+      storage: () => request('/v1/admin/storage', { params: { search } }),
+      musicNarration: () => request('/v1/admin/music-narration', { params: { search } }),
+      portfolio: () => request('/v1/admin/portfolios', { params: { search } }),
+      support: () => request('/v1/admin/support/tickets', { params: { search } }),
+      configuration: () => request('/v1/admin/configuration'),
+      security: () => request('/v1/admin/security'),
+      productAnalytics: () => request('/v1/admin/product-analytics', { params: { days: productAnalyticsDays, format: productAnalyticsFormat, actorType: productAnalyticsActor } }),
+      visitorTraffic: () => request('/v1/admin/visitor-traffic', { params: { days: visitorTrafficDays } })
     };
-    const entries = Object.entries(requests);
-    const results = await Promise.allSettled(entries.map(([, request]) => request));
+    const sectionRequests = {
+      overview: sections.includes('operations') ? ['system', 'operations'] : [],
+      operations: ['system', 'operations'], issues: ['issues'], payments: ['finance', 'billingHealth'],
+      deliveries: ['deliveries'], users: ['users'], portfolio: ['portfolio'], support: ['support'],
+      aiJobs: ['aiJobs'], access: ['access'], volume: ['volume'], storage: ['storage'], musicNarration: ['musicNarration'],
+      configuration: ['configuration'], security: ['security'], productAnalytics: ['productAnalytics'], visitorTraffic: ['visitorTraffic']
+    };
+    const entries = (sectionRequests[tab] || []).map(key => [key, requests[key]]);
+    const results = await Promise.allSettled(entries.map(([, factory]) => factory()));
+    if (controller.signal.aborted || sequence !== requestRef.current.sequence) return;
     const nextErrors = {};
+    const times = {};
     results.forEach((result, index) => {
       const [key] = entries[index];
       if (result.status === 'fulfilled' && result.value.data?.success !== false) {
         const data = result.value.data?.data;
+        times[key] = data?.generatedAt || new Date().toISOString();
+        if (key === 'system') setSystem(data || null);
+        if (key === 'issues') setIssues(data || null);
         if (key === 'operations') setOperations(data || null);
-        if (key === 'analytics') setAnalytics(data || null);
         if (key === 'deliveries') setDeliveries(Array.isArray(data) ? data : []);
         if (key === 'users') setUsers(Array.isArray(data) ? data : []);
         if (key === 'finance') { setFinanceOverview(data || null); setPayments(Array.isArray(data?.payments) ? data.payments : []); }
@@ -506,20 +534,25 @@ export default function AdminDashboardPage({ admin, onLogout }) {
         return;
       }
       const error = result.status === 'rejected' ? result.reason : new Error(result.value?.data?.message || 'This panel is unavailable.');
-      if (key === 'productAnalytics') setProductAnalytics(null);
-      if (key === 'visitorTraffic') setVisitorTraffic(null);
-      if (key === 'billingHealth') setBillingHealth(null);
       nextErrors[key] = error.response?.data?.message || error.message || 'This panel is unavailable.';
     });
     setPanelErrors(nextErrors);
-    if (Object.keys(nextErrors).length === entries.length) toast.error('The administration service is unavailable. Try again shortly.');
+    setUpdatedAt(previous => ({ ...previous, ...times }));
     setLoading(false);
-  }, [accountPlanFilter, accountSourceFilter, accountStatusFilter, aiJobStatusFilter, aiJobTypeFilter, deliveryFormatFilter, deliveryStatusFilter, productAnalyticsActor, productAnalyticsDays, productAnalyticsFormat, search, visitorTrafficDays, volumeCategoryFilter, volumeStatusFilter]);
+  }, [tab, sections, issueStatus, issuePage, accountPlanFilter, accountSourceFilter, accountStatusFilter, aiJobStatusFilter, aiJobTypeFilter, deliveryFormatFilter, deliveryStatusFilter, productAnalyticsActor, productAnalyticsDays, productAnalyticsFormat, search, visitorTrafficDays, volumeCategoryFilter, volumeStatusFilter]);
 
   useEffect(() => {
     const timer = window.setTimeout(fetchAdminData, 300);
-    return () => window.clearTimeout(timer);
+    return () => { window.clearTimeout(timer); requestRef.current.controller?.abort(); requestRef.current.sequence++; };
   }, [fetchAdminData]);
+
+  useEffect(() => {
+    if (!['overview', 'operations', 'issues'].includes(tab) || !sections.includes('operations')) return;
+    const refreshVisible = () => { if (!document.hidden) void fetchAdminData(); };
+    const interval = window.setInterval(refreshVisible, 30000);
+    document.addEventListener('visibilitychange', refreshVisible);
+    return () => { window.clearInterval(interval); document.removeEventListener('visibilitychange', refreshVisible); };
+  }, [fetchAdminData, tab, sections]);
 
   const updatePlan = async (userId, plan) => {
     try {
@@ -725,7 +758,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const focusAccountDeletion = () => {
     const section = document.getElementById('account-deletion-section');
     if (!section) return;
-    const behavior = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+    const behavior = 'smooth';
     section.scrollIntoView({ behavior, block: 'center' });
   };
 
@@ -884,26 +917,6 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       setSubmitting(false);
     }
   };
-
-  const tabCount = useMemo(
-    () => ({
-      deliveries: deliveries.length,
-      users: users.length,
-      payments: payments.length,
-      aiJobs: aiJobs.length,
-      access: accessOverview?.deliveries?.length || 0,
-      volume: volumeJobs.length,
-      storage: storageOverview?.accounts?.length || 0,
-      musicNarration: musicOverview?.catalogue?.filtered || 0,
-      portfolio: portfolioOverview?.portfolios?.length || 0,
-      support: supportOverview?.tickets?.length || 0,
-      configuration: runtimeConfig ? 1 : 0,
-      security: securityOverview?.summary?.adminCount || 0,
-      productAnalytics: productAnalytics?.totals?.events || 0,
-      visitorTraffic: visitorTraffic?.totals?.visitors || 0
-    }),
-    [accessOverview, aiJobs, deliveries, users, payments, volumeJobs, storageOverview, musicOverview, portfolioOverview, supportOverview, runtimeConfig, securityOverview, productAnalytics, visitorTraffic]
-  );
 
   const runStorageScan = async () => {
     setStorageScanLoading(true);
@@ -1205,189 +1218,29 @@ export default function AdminDashboardPage({ admin, onLogout }) {
     }
   };
 
+  const staleSystem = system && (panelErrors.system || Date.now() - new Date(system.generatedAt).getTime() > 90000);
+  const visibleSystem = staleSystem ? { ...system, externalMonitor: { ...system.externalMonitor, checks: system.externalMonitor.checks.map(check => ({ ...check, status: 'stale' })) } } : system;
+  const visibleOperations = operations && (panelErrors.operations || Date.now() - new Date(operations.generatedAt).getTime() > 90000) ? { ...operations, providers: Object.fromEntries(Object.entries(operations.providers || {}).map(([key, service]) => [key, { ...service, status: service.status === 'healthy' ? 'stale' : service.status }])) } : operations;
+  const activeError = Object.entries(panelErrors).map(([key, message]) => ({ key, message }));
+  const activeUpdatedAt = ['overview', 'operations'].includes(tab) ? updatedAt.system : updatedAt[tab === 'payments' ? 'finance' : tab];
+  const descriptions = {
+    overview: 'What needs your attention, and what Veylo can currently tell you.',
+    operations: 'Check service availability, API load and background work.',
+    issues: 'Investigate server errors and recent browser reports.',
+    support: 'Find the customer?s request, inspect the account and record the next step.',
+    users: 'Find a photographer, check access and help with account problems.',
+    payments: 'Review subscription access, payment records and billing issues.'
+  };
   return (
-    <div className="min-h-screen bg-[#070709] text-white">
-      {/* Top Admin Navigation */}
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#070709]/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3.5 sm:px-6 md:px-8">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[.04]">
-              <img src="/veylo/veylo-mark.svg" alt="Veylo" className="h-5 w-5" />
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="font-medium tracking-tight text-white">veylo</span>
-              <span className="rounded-full border border-white/10 bg-white/[.04] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#ff9b8e]">
-                Admin
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4">
-            {['admin', 'superadmin', 'operations'].includes(admin?.role) && <Link to="/content-studio" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#ff9b8e]/25 bg-[#ff9b8e]/5 px-3 text-xs font-medium text-[#ffb7aa] transition-transform motion-safe:hover:-translate-y-0.5 motion-safe:active:scale-95"><Film size={15} /><span className="hidden sm:inline">Content Studio</span><span className="sm:hidden">Studio</span></Link>}
-            <div className="hidden text-right sm:block">
-              <p className="text-xs font-medium text-white">{admin?.name || admin?.username}</p>
-              <p className="text-[10px] uppercase tracking-wider text-white/40">{admin?.role || 'superadmin'}</p>
-            </div>
-            <button
-              type="button"
-              onClick={onLogout}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[.03] px-3.5 py-2 text-xs font-medium text-white/70 transition-colors hover:bg-white/[.08] hover:text-white"
-            >
-              <LogOut size={14} />
-              <span>Sign out</span>
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Workspace Body */}
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 md:px-8">
-        {/* Hero banner */}
-        <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#0c0c10] p-6 sm:p-8 md:p-10">
-          <div className="pointer-events-none absolute -right-20 -top-20 h-72 w-72 rounded-full bg-[#ff5a47]/10 blur-3xl" />
-          <div className="relative flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-            <div className="max-w-2xl">
-              <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[.18em] text-[#ff9b8e]">
-                <ShieldCheck size={16} /> Central Management
-              </p>
-              <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">
-                Veylo Administrative Workspace
-              </h1>
-              <p className="mt-3 text-sm leading-6 text-white/50 sm:text-base">
-                Monitor live deliveries, manage photographer accounts, review revenue, and process refunds.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={fetchAdminData}
-              className="inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-full border border-white/15 bg-white/[.05] px-5 text-sm font-semibold transition-transform hover:-translate-y-0.5 active:scale-95 md:self-auto"
-            >
-              <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-              <span>Refresh data</span>
-            </button>
-          </div>
-        </section>
-
-        {/* Operations overview */}
-        {panelErrors.operations && !operations && (
-          <section className="mt-6 rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-5 text-sm text-amber-100">
-            <div className="flex items-start gap-3"><TriangleAlert size={18} className="mt-0.5 shrink-0" /><div><strong>Operations data is unavailable.</strong><p className="mt-1 text-xs leading-5 text-amber-100/70">{panelErrors.operations}</p></div></div>
-          </section>
-        )}
-        {operations && (
-          <>
-            <section className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <MetricCard icon={Users} label="Accounts" value={number(operations.metrics?.accounts?.total)} note={`${number(operations.metrics?.accounts?.newLast30Days)} joined in the last 30 days`} />
-              <MetricCard icon={ShieldCheck} label="Verified" value={number(operations.metrics?.accounts?.verified)} note={`${number(operations.metrics?.accounts?.onboardingCompleted)} finished studio setup`} />
-              <MetricCard icon={Film} label="Active deliveries" value={number(operations.metrics?.deliveries?.active)} note={`${number(operations.metrics?.deliveries?.published)} published live`} />
-              <MetricCard icon={HardDrive} label="Stored media" value={bytes(operations.metrics?.storage?.usedBytes)} note={`${number(operations.metrics?.storage?.nearLimitAccounts)} Pro accounts near their limit`} />
-              <MetricCard icon={Bot} label="Failed jobs" value={number(operations.metrics?.jobs?.failedLast24Hours)} note={`${number(operations.metrics?.jobs?.queueDepth)} jobs currently queued or running`} />
-              <MetricCard icon={Cloud} label="Failed uploads" value={number(operations.metrics?.uploads?.failedLast24Hours)} note="Recorded in the last 24 hours" />
-              <MetricCard icon={Banknote} label="Payment issues" value={number(operations.metrics?.payments?.failedOrDisputedLast24Hours)} note={`${number(operations.metrics?.payments?.pastDueSubscriptions)} subscriptions past due`} />
-              <MetricCard icon={Activity} label="Active Pro" value={number(operations.metrics?.accounts?.activePro)} note="Current plan or support grant" />
-            </section>
-
-            <section className="mt-6 rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6">
-              <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Service health</p><h2 className="mt-1 text-xl font-medium">Can the platform do its work right now?</h2></div><span className="text-xs text-white/35">Updated {shortDate(operations.generatedAt)}</span></div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                <HealthCard icon={Database} label="Database" health={operations.providers?.database} />
-                <HealthCard icon={Cloud} label="Cloudflare R2" health={operations.providers?.r2} />
-                <HealthCard icon={Bot} label="Delivery AI" health={operations.providers?.ai} />
-                <HealthCard icon={Mail} label="Email" health={operations.providers?.email} />
-                <HealthCard icon={Server} label="Paystack" health={operations.providers?.paystack} />
-              </div>
-            </section>
-
-            <section className="mt-4 grid gap-4 md:grid-cols-3">
-              {(operations.workers || []).map(worker => <HealthCard key={worker.workerName} icon={Activity} label={`${worker.workerName} worker`} health={worker} />)}
-            </section>
-          </>
-        )}
-
-        {/* Platform Metrics */}
-        {analytics && (
-          <section className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <MetricCard
-              icon={Users}
-              label="Accounts"
-              value={analytics.totalUsers.toLocaleString()}
-              note={`${analytics.proUsers.toLocaleString()} currently on Pro`}
-            />
-            <MetricCard
-              icon={Film}
-              label="Deliveries"
-              value={analytics.totalDeliveries.toLocaleString()}
-              note={`${analytics.publishedDeliveries.toLocaleString()} published live`}
-            />
-            <MetricCard
-              icon={Eye}
-              label="Client Views"
-              value={analytics.totalViews.toLocaleString()}
-              note={`${analytics.totalDownloads.toLocaleString()} gallery downloads`}
-            />
-            <MetricCard
-              icon={Banknote}
-              label="Monthly Revenue"
-              value={nairaFromKobo(analytics.monthlyRecurringRevenueKobo)}
-              note={`${analytics.activeSubscriptions.toLocaleString()} active paid subscriptions`}
-            />
-          </section>
-        )}
-
-        {/* Section Tabs & Search */}
-        <section className="mt-10">
-          <div className="flex flex-col gap-4 border-b border-white/10 pb-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-1.5 sm:grid-cols-4 lg:grid-cols-7">
-              {[
-                ['deliveries', Film, 'Deliveries'],
-                ['users', Users, 'Accounts'],
-                ['portfolio', Globe2, 'Portfolio'],
-                ['support', MessageCircle, 'Support'],
-                ['configuration', Settings2, 'Config'],
-                ['payments', ReceiptText, 'Payments'],
-                ['aiJobs', Bot, 'AI jobs'],
-                ['access', Eye, 'Client access'],
-                ['volume', Users, 'Volume'],
-                ['storage', HardDrive, 'Storage'],
-                ['musicNarration', Music2, 'Music & voice'],
-                ['productAnalytics', Activity, 'Product data'],
-                ['visitorTraffic', Globe2, 'Visitors & traffic'],
-                ['security', LockKeyhole, 'Security']
-              ].map(([key, Icon, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setTab(key)}
-                  className={`flex min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-xs font-semibold transition-all active:scale-95 sm:px-5 ${
-                    tab === key
-                      ? 'bg-white text-black'
-                      : 'text-white/50 hover:bg-white/[.06] hover:text-white'
-                  }`}
-                >
-                  <Icon size={15} />
-                  <span className="hidden sm:inline">{label}</span>
-                  <span className="text-[10px] opacity-60">{tabCount[key]}</span>
-                </button>
-              ))}
-            </div>
-
-            <label className="relative block w-full lg:w-80">
-              <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/35" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search records…"
-                className="min-h-11 w-full rounded-2xl border border-white/10 bg-white/[.03] pl-11 pr-4 text-sm text-white outline-none transition-colors placeholder:text-white/30 focus:border-[#ff9b8e]/60"
-              />
-            </label>
-          </div>
-
-          {loading && (
-            <div className="py-20 text-center text-sm text-white/45">
-              Loading current records…
-            </div>
-          )}
-
+    <AdminShell admin={admin} sections={sections} tab={tab} onNavigate={setTab} onLogout={onLogout}>
+      <WorkspaceHeading eyebrow={['overview', 'operations', 'issues'].includes(tab) ? 'Veylo / Platform desk' : 'Veylo / Administration'} title={tab === 'overview' ? 'A clear view of today.' : sectionLabel(tab)} description={descriptions[tab] || 'Current records and the tools to manage them.'} loading={loading} onRefresh={fetchAdminData} updatedAt={activeUpdatedAt} />
+      {activeError.length > 0 && <div className="aw-load-state aw-warning" role="alert"><TriangleAlert size={18} /><div><strong>Some data is unavailable.</strong>{activeError.map(({ key, message }) => <p key={key}>{key}: {message}{updatedAt[key] ? ` Last successful load ${checkedTime(updatedAt[key])}; displayed records may be out of date.` : ' No current data was loaded.'}</p>)}</div><button type="button" onClick={fetchAdminData} disabled={loading}>Try again</button></div>}
+      {tab === 'overview' && <AdminOverview system={visibleSystem} operations={visibleOperations} sections={sections} onNavigate={setTab} canOperate={['superadmin', 'operations'].includes(admin?.role)} onRefresh={fetchAdminData} />}
+      {tab === 'operations' && <AdminOperations system={visibleSystem} operations={visibleOperations} onRefresh={fetchAdminData} canOperate={['superadmin', 'operations'].includes(admin?.role)} />}
+      {tab === 'issues' && <AdminIssues data={issues} status={issueStatus} setStatus={value => { setIssueStatus(value); setIssuePage(1); }} onPage={setIssuePage} loading={loading} onRefresh={fetchAdminData} canOperate={['superadmin', 'operations'].includes(admin?.role)} />}
+      <section>
+        {!['overview', 'operations', 'issues', 'configuration', 'security', 'productAnalytics', 'visitorTraffic'].includes(tab) && <label className="aw-search"><Search size={16} /><input aria-label="Search this section" value={search} onChange={event => setSearch(event.target.value)} placeholder={`Search ${sectionLabel(tab).toLowerCase()}?`} /></label>}
+        {loading && !['overview', 'operations', 'issues'].includes(tab) && <div className="aw-load-state" role="status">Loading current records?</div>}
           {/* Deliveries Tab */}
           {!loading && tab === 'deliveries' && (
             <div className="mt-6">
@@ -1723,7 +1576,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
             </div>
           )}
         </section>
-      </main>
+
 
       {/* Support ticket detail drawer */}
       {selectedSupportTicket && (
@@ -1905,6 +1758,6 @@ export default function AdminDashboardPage({ admin, onLogout }) {
           </motion.form>
         </div>
       )}
-    </div>
+    </AdminShell>
   );
 }

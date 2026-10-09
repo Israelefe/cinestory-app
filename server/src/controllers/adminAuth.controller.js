@@ -1,3 +1,4 @@
+import { adminSections, adminMfaRequired, ADMIN_READ_ACCESS } from '../utils/adminAccess.js';
 import jwt from 'jsonwebtoken';
 import AdminUser from '../models/AdminUser.js';
 import AdminSession from '../models/AdminSession.js';
@@ -11,7 +12,7 @@ function adminSecret() {
   return process.env.JWT_SECRET;
 }
 
-function publicAdmin(admin) {
+function publicAdmin(admin, session) {
   return {
     id: admin._id,
     username: admin.username,
@@ -19,6 +20,8 @@ function publicAdmin(admin) {
     role: admin.role,
     accountStatus: admin.accountStatus,
     twoFactorEnabled: Boolean(admin.twoFactorEnabled),
+    sections: adminSections(admin.role),
+    mfaRequired: adminMfaRequired() && (!admin.twoFactorEnabled || !session?.twoFactorVerified),
     lastLoginAt: admin.lastLoginAt
   };
 }
@@ -77,18 +80,10 @@ export async function adminLogin(req, res) {
         admin = new AdminUser({ username: normalized, name: process.env.ADMIN_NAME || 'Veylo Administrator', password: envPassword, role: 'superadmin', accountStatus: 'active' });
         await admin.save();
         console.info(`[admin] Created admin "${normalized}" from environment credentials on login.`);
-      } else {
-        const isMatch = await admin.comparePassword(password);
-        if (!isMatch) {
-          admin.password = envPassword;
-          admin.accountStatus = 'active';
-          await admin.save();
-          console.info(`[admin] Updated admin password for "${normalized}" to match environment credentials.`);
-        }
       }
     }
 
-    if (!admin || admin.accountStatus !== 'active') {
+    if (!admin || admin.accountStatus !== 'active' || !Object.values(ADMIN_READ_ACCESS).some(roles => roles.includes(admin.role))) {
       await recordLoginAttempt({ admin, username: normalized, success: false, reason: 'invalid_account', req });
       return res.status(401).json({ success: false, message: 'Invalid username or password.' });
     }
@@ -121,9 +116,9 @@ export async function adminLogin(req, res) {
       ipAddress: requestIp(req),
       deviceLabel: requestDeviceLabel(req),
       twoFactorVerified,
-      expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
+      expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000)
     });
-    const token = jwt.sign({ id: String(admin._id), username: admin.username, role: admin.role, type: 'admin', sid: String(session._id) }, adminSecret(), { expiresIn: '14d', issuer: 'veylo-api', audience: 'veylo-admin' });
+    const token = jwt.sign({ id: String(admin._id), username: admin.username, role: admin.role, type: 'admin', sid: String(session._id) }, adminSecret(), { expiresIn: '8h', issuer: 'veylo-api', audience: 'veylo-admin' });
     session.tokenDigest = tokenDigest(token);
     admin.lastLoginAt = new Date();
     await Promise.all([admin.save(), session.save()]);
@@ -134,11 +129,11 @@ export async function adminLogin(req, res) {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: 14 * 24 * 60 * 60 * 1000,
+      maxAge: 8 * 60 * 60 * 1000,
       path: '/'
     });
 
-    return res.json({ success: true, token, admin: publicAdmin(admin) });
+    return res.json({ success: true, token, admin: publicAdmin(admin, session) });
   } catch (error) {
     console.error('[admin/login]', error.message);
     return res.status(500).json({ success: false, message: 'Unable to sign in. Please try again.' });
@@ -147,7 +142,7 @@ export async function adminLogin(req, res) {
 
 export async function getAdminMe(req, res) {
   try {
-    return res.json({ success: true, admin: publicAdmin(req.admin) });
+    return res.json({ success: true, admin: publicAdmin(req.admin, req.adminSession) });
   } catch (error) {
     console.error('[admin/me]', error.message);
     return res.status(500).json({ success: false, message: 'Could not load admin profile.' });
@@ -172,4 +167,14 @@ export async function adminLogout(req, res) {
     console.error('[admin/logout]', error.message);
     return res.status(500).json({ success: false, message: 'Error signing out.' });
   }
+}
+
+export async function verifyAdminSessionMfa(req, res) {
+  try {
+    const admin = await AdminUser.findById(req.admin._id).select('+twoFactorSecretEncrypted');
+    if (!admin?.twoFactorEnabled || !verifyTotp(decryptAdminSecret(admin.twoFactorSecretEncrypted), req.body?.code)) return res.status(400).json({ success: false, message: 'Enter a valid current authenticator code.' });
+    await AdminSession.updateOne({ _id: req.adminSession._id, revokedAt: null }, { $set: { twoFactorVerified: true } });
+    await recordAdminAudit({ adminId: admin._id, action: 'admin.session.mfa_verified', resourceType: 'AdminSession', resourceId: String(req.adminSession._id), details: {}, req });
+    return res.json({ success: true });
+  } catch { return res.status(500).json({ success: false, message: 'Could not verify your authenticator. Try again.' }); }
 }

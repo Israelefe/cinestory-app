@@ -31,7 +31,9 @@
     "verify:assistant": "node scripts/verify-assistant.mjs && node --test scripts/assistant-chat.test.mjs scripts/assistant-workspace.test.mjs",
     "verify:content-studio": "node scripts/verify-content-studio.mjs",
     "verify:security": "node scripts/security-audit-delivery-v2.mjs",
-    "verify:smoke": "node scripts/verify-production-smoke.mjs"
+    "verify:smoke": "node scripts/verify-production-smoke.mjs",
+    "verify:operations": "node --test scripts/operations.test.mjs",
+    "operations:monitor": "node scripts/operations-monitor.mjs"
   },
   "dependencies": {
     "@remotion/bundler": "4.0.527",

@@ -25,15 +25,7 @@ export async function seedAdminFromEnv() {
       await admin.save();
       console.info(`[admin] Auto-created administrator "${normalized}" from environment variables.`);
     } else {
-      const isMatch = await admin.comparePassword(password);
-      if (!isMatch) {
-        admin.password = password;
-        admin.accountStatus = 'active';
-        await admin.save();
-        console.info(`[admin] Synchronized administrator password for "${normalized}" from environment variables.`);
-      } else {
-        console.info(`[admin] Administrator "${normalized}" verified and ready.`);
-      }
+      console.info('[admin] Existing administrator retained. Environment credentials only provision new accounts.');
     }
   } catch (error) {
     console.error('[admin/seed]', error.message);

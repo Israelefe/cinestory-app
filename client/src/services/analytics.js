@@ -167,6 +167,21 @@ export function trackApiRequest({ path, status, durationMs, failed = false, erro
 export function installAnalyticsListeners() {
   if (typeof window === 'undefined' || installed) return;
   installed = true;
+  let presenceInFlight = false;
+  const reportPresence = async () => {
+    if (presenceInFlight) return;
+    presenceInFlight = true;
+    try {
+      await fetch(`${API_BASE_URL.replace(/\/$/, '')}/v1/analytics/presence`, {
+        method: 'POST', credentials: 'include', keepalive: true,
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', ...(csrfCookie() ? { 'X-CSRF-Token': csrfCookie() } : {}) },
+        body: JSON.stringify({ sessionId: sessionId(), visible: !document.hidden }), signal: AbortSignal.timeout(8000)
+      });
+    } catch {} finally { presenceInFlight = false; }
+  };
+  void reportPresence();
+  window.setInterval(() => { if (!document.hidden) void reportPresence(); }, 30000);
+  document.addEventListener('visibilitychange', () => { void reportPresence(); });
   const delegatedClick = event => {
     const element = event.target?.closest?.('[data-analytics-event]');
     if (!element) return;

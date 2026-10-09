@@ -115,6 +115,7 @@ export async function enableAdminTwoFactor(req, res) {
     admin.twoFactorPendingSecretEncrypted = undefined;
     admin.twoFactorEnabled = true;
     await admin.save();
+    if (req.adminSession) await AdminSession.updateOne({ _id: req.adminSession._id }, { $set: { twoFactorVerified: true } });
     await audit(req, 'admin.2fa.enabled', 'AdminUser', String(admin._id), {}, before, snapshotAdmin(admin));
     return res.json({ success: true, data: { enabled: true }, message: 'Two-factor authentication is now required for your next sign-in.' });
   } catch (error) {
