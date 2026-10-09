@@ -66,6 +66,10 @@ test('Canvas header gives long client and studio names room and keeps the galler
 test('Courage demo uses the same saved checkpoints as preview, with working responsive loading and real touch scroll',async({page})=>{
   await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:'reduce'});await init(page);
   await page.goto('/demo/canvas?phoneView=1');await expect(page.locator('.cv-board')).toBeVisible();
+  const brand=page.locator('.cv-header .fd-header-brand');
+  await expect(brand).toContainText('Photographed by');await expect(brand).toContainText(CANVAS_DEMO_DELIVERY.branding.name);
+  await expect(brand.locator('.delivery-brand-mark')).toHaveAttribute('aria-label',CANVAS_DEMO_DELIVERY.branding.name);
+  const demoBrand=await brand.textContent();
   await page.locator('.cv-photo-open').first().scrollIntoViewIfNeeded();
   await expect(page.locator('.fd-header-title>span,.cv-intro-bar,.fd-header .fd-gallery-button,.cv-directory')).toHaveCount(0);
   await expect(page.locator('.fd-header-title strong')).toHaveText('Courage');
@@ -76,6 +80,7 @@ test('Courage demo uses the same saved checkpoints as preview, with working resp
   await page.waitForTimeout(350);await expect(page.locator('.cv-focus .pv-image-waiting')).toHaveCount(0);
   expect(await page.locator('.cv-focus figure img').evaluate(image=>image.complete&&image.naturalWidth>0)).toBe(true);
   await page.keyboard.press('Escape');await preview(page,structuredClone(CANVAS_DEMO_DELIVERY));expect(await signature()).toEqual(demo);
+  await expect(brand).toHaveText(demoBrand);
   await page.getByRole('button',{name:'Checkpoint 4',exact:true}).click();
   await expect(page.locator('.cv-checkpoint').last()).toHaveClass(/is-jumped/);await expect.poll(()=>page.locator('.cv-checkpoint').last().evaluate(node=>Math.abs(node.getBoundingClientRect().top-32)<2)).toBe(true);
 });
@@ -290,6 +295,7 @@ test('Canvas respects separate bookend choices and reflows long group copy when 
   const data=record(12,'mixed',true);data.v3.openingAssetId=data.assets[12].assetId;data.v3.closingAssetId=data.assets[13].assetId;
   data.creativeDirection.sections[0].title='Graduation portraits to keep with your family photographs';
   data.creativeDirection.sections[0].subtitle='Courage, these portraits belong together in your album. Keep a copy for yourself and share them with the people who have supported you.';
+  data.creativeDirection.frames.forEach(frame=>{frame.headline='Your graduation portraits, kept with the photographs that matter to you';});
   await page.setViewportSize({width:320,height:740});await preview(page,data);
   await expect(page.locator('.cv-bookend.is-opening img')).toHaveAttribute('src',data.assets[12].url);
   await expect(page.locator('.cv-bookend.is-closing img')).toHaveAttribute('src',data.assets[13].url);

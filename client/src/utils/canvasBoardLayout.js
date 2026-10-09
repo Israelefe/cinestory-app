@@ -64,6 +64,7 @@ export function canvasBoardLayout({ width, points, photos, introHeight, closingH
         top = bottom + 84;
       }
     } else if (group) {
+      const smallPrintShare = tablet ? .40 : .36;
       let top = headingHeight + (tablet ? 40 : 32);
       for (let start = 0; start < point.assetIds.length; start += 2) {
         let bottom = top;
@@ -73,8 +74,8 @@ export function canvasBoardLayout({ width, points, photos, introHeight, closingH
           const firstPhoto = photos.get(point.assetIds[start]), secondPhoto = photos.get(point.assetIds[start + 1]);
           const wideFirst = firstPhoto?.width > firstPhoto?.height && !(secondPhoto?.width > secondPhoto?.height);
           const right = !ordered && pair.length > 1 && (secondMotif ? col === 0 : col === 1);
-          const w = ordered ? regionWidth * .43 : regionWidth * (pair.length === 1 ? .68 : right ? .36 : wideFirst ? .56 : .52);
-          const fx = ordered ? col * regionWidth * .55 : pair.length === 1 ? regionWidth * .14 : right ? regionWidth * .64 : 0;
+          const w = ordered ? regionWidth * .43 : regionWidth * (pair.length === 1 ? .68 : right ? smallPrintShare : wideFirst ? .56 : .52);
+          const fx = ordered ? col * regionWidth * .55 : pair.length === 1 ? regionWidth * .14 : right ? regionWidth * (1 - smallPrintShare) : 0;
           const fy = top + (ordered ? 0 : col * (tablet ? 105 : 130) * scale);
           const height = frameHeight(id, w);
           localFrames.push({ id, x: fx, y: fy, width: w, height, right: ordered ? col === 1 : right });
