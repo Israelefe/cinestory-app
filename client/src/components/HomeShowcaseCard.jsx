@@ -45,7 +45,7 @@ export default function HomeShowcaseCard({ format }) {
     <PreviewPhoto className="v-sc-story-image" name={photos[0]} alt="Lora smiling with her birthday cake" />
     <div className="v-sc-story-shade" />
     <div className="v-sc-story-copy"><span className="v-sc-kicker">LORA'S BIRTHDAY</span><strong>A smile to<br /><em>start with.</em></strong><p>The first frame says it all.</p></div>
-    <footer className="v-sc-story-footer"><span>01 <i>/ 06</i></span><div className="v-sc-story-progress" aria-hidden="true"><i /><i /><i /><i /><i /><i /></div><span>Photo Story</span></footer>
+    <footer className="v-sc-story-footer"><span>01 <i>/ 06</i></span><span>Photo Story</span></footer>
   </>;
 
   if (format.id === 'editorial-page') content = <>
@@ -113,6 +113,7 @@ export default function HomeShowcaseCard({ format }) {
   </>;
 
   return <div ref={cardRef} role="group" aria-label={`${format.name} preview`} className={`v-showcase-card is-${format.id}${visible && !paused && !reduced ? ' is-playing' : ''}`}>
+    {format.id === 'photo-story' && <div className="v-sc-story-progress" aria-hidden="true"><i /><i /><i /><i /><i /><i /></div>}
     <header className="v-sc-masthead"><span className="v-sc-studio"><Camera size={14} strokeWidth={1.5} aria-hidden="true" />VEYLO STUDIO</span><button type="button" className="v-sc-pause" aria-label={`${paused ? 'Play' : 'Pause'} ${format.name} preview`} aria-pressed={paused} onClick={() => setPaused(value => !value)}>{paused ? <Play size={14} aria-hidden="true" /> : <Pause size={14} aria-hidden="true" />}</button></header>
     {content}
   </div>;

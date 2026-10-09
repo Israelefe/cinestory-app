@@ -57,10 +57,10 @@
 .v-sc-story-copy > strong { display: block; margin-top: 12px; font-family: 'Playfair Display', Georgia, serif; font-size: clamp(38px, 9cqi, 66px); font-weight: 500; line-height: 1.04; letter-spacing: -.035em; }
 .v-sc-story-copy em { font-weight: 400; }
 .v-sc-story-copy p { margin-top: 16px; color: #e5d4c7; font-size: 12px; line-height: 1.6; }
-.v-sc-story-footer { display: flex; align-items: center; gap: 14px; padding-top: 18px; border-top: 1px solid #ffffff30; font-size: 11px; }
+.v-sc-story-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 11px; }
 .v-sc-story-footer > span { white-space: nowrap; }
 .v-sc-story-footer i { color: #ddc9b6; font-style: normal; }
-.v-sc-story-progress { display: flex; flex: 1; gap: 5px; }
+.v-sc-story-progress { display: flex; flex-shrink: 0; gap: 5px; width: 100%; height: 2px; margin-block: 6px; }
 .v-sc-story-progress i { height: 2px; flex: 1; background: #ffffff35; }
 .v-sc-story-progress i:first-child { position: relative; overflow: hidden; }
 .v-sc-story-progress i:first-child::after { content: ''; position: absolute; inset: 0; background: #fff2df; transform-origin: left; animation: v-sc-progress 11s ease-in-out infinite alternate; animation-play-state: paused; }
