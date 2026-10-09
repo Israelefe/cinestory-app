@@ -9,7 +9,7 @@ This release adds the detection and permissions layer of the approved admin work
 - Seven days of process samples, with an hour shown in the charts. Recent replica samples are returned by the API; request totals and charts belong to the responding instance. This is not a fleet-wide infrastructure dashboard.
 - Worker reporting for delivery, portfolios, retention and billing. Missing heartbeats and explicit worker errors can open incidents.
 - Server error groups with sanitized call stacks, sampled occurrences, ownership, acknowledgement, fix notes and recurrence reopening. Groups expire after 90 days. Raw error messages, customer photo links and request bodies are not stored here.
-- Recent JavaScript and media-error counters. Browser crash traces, source-map symbolication and session replay are not implemented.
+- Recent JavaScript and media-error counters, plus detailed browser error groups, affected account links and private source-map symbolication. See [product insights](admin-product-insights.md) for setup and data coverage. Session replay is not implemented.
 - Role checks on admin reads as well as writes. Photographer sessions and the legacy `admin` role no longer grant managed admin access. Environment credentials provision new administrators without changing an existing password or reactivating a suspended account.
 - Eight-hour administrator sessions and mandatory authenticator verification in production. Non-production can enable the same requirement with `ADMIN_REQUIRE_MFA=true`. Enrollment remains available before access to customer records.
 - Sections fetched independently, cancellable searches, URL navigation, visible refresh errors and stale status. Operational sections refresh every 30 seconds while visible.
@@ -62,7 +62,7 @@ These items remain required for the broader operating plan; they are not implied
 | --- | --- |
 | Customer assistance | Customer-visible support replies and conversation history; SLA timers; safe account recovery; payment, upload and delivery diagnostics in the account view |
 | Email | Delivery/bounce/complaint webhooks, searchable outbox, safe retries and alerting for failed transactional sends |
-| Crashes | Browser crash reporting with source maps, release correlation and affected-session counts; hosting OOM/restart events |
+| Crashes | Deploy private source maps for production code resolution; hosting OOM/restart events; session replay |
 | Infrastructure | Independent monitor deployment, paging/escalation, database connection/slow-query metrics, host CPU/disk/network metrics and fleet-wide request aggregation |
 | Queues | Oldest waiting job, processing-time percentiles, dead-letter review, worker capacity and safe incident-wide retry controls |
 | Media | Missing-original and derivative checks, upload failure diagnostics, storage reconciliation and link/download synthetic tests |

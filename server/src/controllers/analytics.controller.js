@@ -5,6 +5,11 @@ import { recordAnalyticsEvent } from '../services/analytics.service.js';
 import { CLIENT_ANALYTICS_EVENT_SET } from '../constants/analyticsEvents.js';
 
 const eventSchema = z.object({
+  accountHint: z.string().regex(/^(?:[a-f0-9]{24})?$/i).optional(),
+  eventId: z.string().uuid().optional(),
+  occurredAt: z.string().datetime().optional(),
+  sequence: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+  diagnostic: z.object({ type: z.string().max(40), mechanism: z.enum(['window', 'promise', 'react']), release: z.string().max(80), frames: z.array(z.object({ asset: z.string().max(160), line: z.number().min(0).max(10000000), column: z.number().min(0).max(10000000) }).strict()).max(8) }).strict().optional(),
   name: z.string().trim().min(1).max(120),
   version: z.number().int().min(1).max(20).optional(),
   actorType: z.enum(['photographer', 'client', 'guest', 'anonymous']).optional(),
@@ -38,7 +43,8 @@ const batchSchema = z.object({ events: z.array(eventSchema).min(1).max(50) }).st
 
 function digestIdentity(value, purpose) {
   if (!value) return undefined;
-  const secret = process.env.OTP_SECRET || process.env.JWT_SECRET || 'veylo-anonymous-analytics';
+  const secret = process.env.OTP_SECRET || process.env.JWT_SECRET;
+  if (!secret) return undefined;
   return crypto.createHmac('sha256', secret).update(`${purpose}:${String(value)}`).digest('hex');
 }
 
@@ -53,8 +59,9 @@ function edgeLocation(req) {
 
 function inferredActor(req, event) {
   if (req.user?.role === 'admin') return 'admin';
-  if (req.user?.id) return 'photographer';
-  return event.actorType || (String(event.name).startsWith('client.') || String(event.name).startsWith('volume.') ? 'client' : 'anonymous');
+  if (String(event.name).startsWith('client.') || String(event.name).startsWith('volume.recipient.')) return 'client';
+  if (req.user?.id && (event.accountHint === undefined || event.accountHint === String(req.user.id))) return 'photographer';
+  return 'anonymous';
 }
 
 export async function collectClientAnalytics(req, res) {
@@ -67,8 +74,10 @@ export async function collectClientAnalytics(req, res) {
     await Promise.all(events.map(event => recordAnalyticsEvent({
       ...event,
       source: 'client',
+      occurredAt: event.occurredAt && Math.abs(Date.now() - Date.parse(event.occurredAt)) <= 86400000 ? new Date(Math.min(Date.now(), Date.parse(event.occurredAt))) : new Date(),
       actorType: inferredActor(req, event),
-      userId: req.user?.id,
+      userId: inferredActor(req, event) === 'photographer' ? req.user.id : undefined,
+      eventKey: event.eventId ? `client:${req.user?.id || event.sessionId || event.visitorId || 'anonymous'}:${event.eventId}` : undefined,
       sessionDigest: digestIdentity(event.sessionId, 'session'),
       visitorDigest: digestIdentity(event.visitorId, 'visitor'),
       trafficSource: event.acquisitionSource || event.utmSource,

@@ -11,7 +11,7 @@ const OPEN_EVENT = 'veylo:open-cookie-settings';
 function hasSavedChoice() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    return saved?.version === 3;
+    return saved?.version === 4;
   } catch { return false; }
 }
 
@@ -34,7 +34,7 @@ export default function CookiePreferences({ compactPortfolio = false }) {
 
   function acknowledgeNotice() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 3, necessary: true, serviceAnalytics: true, savedAt: new Date().toISOString() }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 4, necessary: true, serviceAnalytics: true, savedAt: new Date().toISOString() }));
     } catch {}
     setAnalyticsConsent(true);
     setAcknowledged(true);
@@ -66,7 +66,7 @@ export default function CookiePreferences({ compactPortfolio = false }) {
         </div>
         <div className="v-cookie-category">
           <div><SlidersHorizontal size={18} /><span><strong>First-party service analytics</strong><small>Active by default</small></span></div>
-          <p>Veylo measures visits, page paths, device type, delivery opens, downloads, failures, and other product outcomes so the studio and Veylo team can understand what is working. Identifiers are hashed before they reach the database. Veylo does not store passwords, PINs, contact details, captions, photographs, audio, messages, or keystrokes.</p>
+          <p>Veylo measures visits, page paths, device type, delivery opens, downloads, failures, and other product outcomes so the studio and Veylo team can understand what is working. Identifiers are hashed before they reach the database. Veylo does not store passwords, PINs, contact details, captions, photographs, audio, messages, or keystrokes in analytics. When enabled, PostHog receives selected sanitised events from our server, with pseudonymous identifiers. It does not record your screen. See the privacy policy for provider and retention details.</p>
         </div>
         <p className="v-cookie-more">Read the <Link to="/privacy" onClick={() => setOpen(false)}>privacy policy</Link> for retention, provider, and data-use details.</p>
         <button type="button" className="v-button" onClick={acknowledgeNotice}>Acknowledge and close<Check size={16} /></button>

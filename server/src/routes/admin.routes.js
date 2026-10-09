@@ -78,6 +78,7 @@ import { ADMIN_READ_ACCESS, adminMfaRequired } from '../utils/adminAccess.js';
 import { authAttemptLimit, billingActionLimit, monitorCheckInLimit, supportMessageLimit } from '../middleware/rateLimit.middleware.js';
 import { tokenDigest } from '../utils/auth.js';
 import { getProductAnalytics, getVisitorTrafficAnalytics } from '../controllers/adminAnalytics.controller.js';
+import { getProductInsights, getAccountActivity, getTicketActivity, getBrowserErrors, getCohortAccounts } from '../controllers/productInsights.controller.js';
 
 const router = express.Router();
 
@@ -150,6 +151,11 @@ router.post('/alerts/:id/acknowledge', requireAdminRoles('superadmin', 'operatio
 router.get('/operations', requireAdminRoles(ADMIN_READ_ACCESS.operations), getOperationsOverview);
 router.get('/analytics', requireAdminRoles(ADMIN_READ_ACCESS.analytics), getAdminAnalytics);
 router.get('/product-analytics', requireAdminRoles('superadmin', 'operations', 'analyst', 'read-only'), getProductAnalytics);
+router.get('/product-insights', requireAdminRoles('superadmin', 'operations', 'analyst', 'read-only'), getProductInsights);
+router.get('/product-cohorts/:key', requireAdminRoles(ADMIN_READ_ACCESS.accounts), getCohortAccounts);
+router.get('/browser-errors', requireAdminRoles('superadmin', 'operations', 'read-only'), getBrowserErrors);
+router.get('/users/:id/activity', requireAdminRoles(ADMIN_READ_ACCESS.accounts), getAccountActivity);
+router.get('/support/tickets/:id/activity', requireAdminRoles(ADMIN_READ_ACCESS.support), getTicketActivity);
 router.get('/visitor-traffic', requireAdminRoles('superadmin', 'operations', 'analyst', 'read-only'), getVisitorTrafficAnalytics);
 router.get('/users', requireAdminRoles(ADMIN_READ_ACCESS.accounts), getAllUsers);
 router.patch('/users/:id/plan', requireAdminRoles('superadmin', 'operations'), updateUserPlan);

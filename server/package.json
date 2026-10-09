@@ -4,6 +4,7 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
+    "verify:product-insights": "node --test scripts/product-insights.test.mjs",
     "studio-names:audit": "node scripts/studio-names.mjs",
     "studio-names:migrate": "node scripts/studio-names.mjs --apply",
     "storage:migrate-cloudinary": "node scripts/migrate-cloudinary-to-r2.mjs",
@@ -37,6 +38,7 @@
     "operations:monitor": "node scripts/operations-monitor.mjs"
   },
   "dependencies": {
+    "@jridgewell/trace-mapping": "0.3.31",
     "@remotion/bundler": "4.0.527",
     "@remotion/renderer": "4.0.527",
     "bcryptjs": "^2.4.3",

@@ -1,5 +1,9 @@
 import AnalyticsEvent from '../models/AnalyticsEvent.js';
+import mongoose from 'mongoose';
 import { CLIENT_ANALYTICS_EVENT_NAMES } from '../constants/analyticsEvents.js';
+function reportExclusions() {
+  return { excluded: { $ne: true }, actorType: { $ne: 'admin' }, userId: { $nin: String(process.env.ANALYTICS_EXCLUDED_USER_IDS || '').split(',').map(value => value.trim()).filter(value => mongoose.isValidObjectId(value)).map(value => new mongoose.Types.ObjectId(value)) } };
+}
 
 function boundedDays(value) {
   const parsed = Number.parseInt(value, 10);
@@ -10,7 +14,7 @@ export async function getProductAnalytics(req, res) {
   try {
     const days = boundedDays(req.query.days);
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-    const match = { occurredAt: { $gte: since } };
+    const match = { ...reportExclusions(), occurredAt: { $gte: since } };
     if (req.query.format && req.query.format !== 'all') match.format = String(req.query.format).slice(0, 60);
     if (req.query.actorType && req.query.actorType !== 'all') match.actorType = String(req.query.actorType).slice(0, 30);
     const formatsMatch = { ...match };
@@ -69,7 +73,7 @@ export async function getProductAnalytics(req, res) {
 }
 
 function windowMatch(start, end) {
-  return { source: 'client', occurredAt: { $gte: start, $lt: end } };
+  return { ...reportExclusions(), source: 'client', occurredAt: { $gte: start, $lt: end } };
 }
 
 function sessionSummaryPipeline(match) {
@@ -101,7 +105,7 @@ function sessionSummaryPipeline(match) {
 
 function visitorSummaryPipeline(start, end) {
   return [
-    { $match: { source: 'client', occurredAt: { $lt: end }, visitorDigest: { $exists: true, $ne: '' } } },
+    { $match: { ...reportExclusions(), source: 'client', occurredAt: { $lt: end }, visitorDigest: { $exists: true, $ne: '' } } },
     { $group: {
       _id: '$visitorDigest',
       firstSeenAt: { $min: '$occurredAt' },

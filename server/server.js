@@ -33,6 +33,8 @@ import { startSupportWorker } from './src/services/supportMail.service.js';
 import { startPortfolioWorker } from './src/services/portfolioWorker.service.js';
 import { seedAdminFromEnv } from './src/utils/seedAdmin.js';
 import { maintenanceMiddleware } from './src/middleware/maintenance.middleware.js';
+import { startPosthogWorker } from './src/services/posthog.service.js';
+import AnalyticsEvent from './src/models/AnalyticsEvent.js';
 import { prepareStudioNames } from './src/services/studioName.service.js';
 
 dotenv.config();
@@ -145,6 +147,7 @@ connectDB().then(async connection => {
     }
   }
   if (connection) {
+    await AnalyticsEvent.collection.createIndex({ eventKey: 1 }, { unique: true, sparse: true });
     try { await prepareStudioNames(); }
     catch (error) { console.error('[studio-names]', error.message); }
   }
@@ -162,6 +165,7 @@ connectDB().then(async connection => {
     startRetentionWorker();
     startBillingWorker();
     startSupportWorker();
+    startPosthogWorker();
     void startOperationalMonitoring();
   });
   const shutdown = async () => {

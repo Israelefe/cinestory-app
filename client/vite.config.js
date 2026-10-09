@@ -1,8 +1,11 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { privateSourceMaps, buildRevision } from './scripts/private-source-maps.mjs';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), privateSourceMaps()],
+  define: { 'import.meta.env.VITE_APP_REVISION': JSON.stringify(buildRevision()) },
+  build: { sourcemap: process.env.VEYLO_PRIVATE_SOURCE_MAPS === 'true' ? 'hidden' : false },
   resolve: {
     dedupe: ['react', 'react-dom']
   },

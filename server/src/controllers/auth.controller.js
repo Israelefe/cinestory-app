@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { recordAnalyticsEventAsync } from '../services/analytics.service.js';
 import { OAuth2Client } from 'google-auth-library';
 import { z } from 'zod';
 import { isStudioNameDuplicate, studioNameSchema, studioNameTaken } from '../utils/studioName.js';
@@ -115,6 +116,7 @@ export async function verifyEmail(req, res) {
     await user.save();
     await createSession(user, req, res);
     sendWelcomeEmail({ to: user.email, name: user.name }).catch(error => console.error('[email/welcome]', error.message));
+    recordAnalyticsEventAsync({ name: 'account.activated', source: 'server', actorType: 'photographer', userId: user._id, eventKey: `activation:${user._id}` });
     res.json({ success: true, user: publicUser(user), next: '/onboarding' });
   } catch (error) {
     console.error('[auth/verify-email]', error.message);
@@ -196,6 +198,7 @@ export async function googleLogin(req, res) {
         user = sameEmail;
       } else {
         user = await User.create({ name: String(profile.name || profile.given_name || 'Photographer').slice(0, 100), email: normalizeEmail(profile.email), googleId: profile.sub, providers: ['google'], emailVerifiedAt: new Date(), accountStatus: 'active', avatar: profile.picture || '' });
+        recordAnalyticsEventAsync({ name: 'account.activated', source: 'server', actorType: 'photographer', userId: user._id, eventKey: `activation:${user._id}` });
         sendWelcomeEmail({ to: user.email, name: user.name }).catch(error => console.error('[email/welcome]', error.message));
       }
     }

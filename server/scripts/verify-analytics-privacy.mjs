@@ -43,7 +43,7 @@ assert.match(clientAnalytics, /utmSource/);
 assert.match(clientAnalytics, /utmMedium/);
 assert.match(clientAnalytics, /referrerHost/);
 assert.match(clientAnalytics, /page\.scrolled/);
-assert.match(cookiePreferences, /saved\?\.version === 3/);
+assert.match(cookiePreferences, /saved\?\.version === 4/);
 assert.match(cookiePreferences, /First-party service analytics/);
 assert.match(cookiePreferences, /Got it/);
 assert.match(privacyPolicy, /first-party service analytics/);

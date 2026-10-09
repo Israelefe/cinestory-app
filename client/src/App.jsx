@@ -13,7 +13,7 @@ import { AssistantContextProvider } from './components/AssistantContext.jsx';
 import AssistantEntry from './components/AssistantEntry.jsx';
 import LandingPage from './pages/LandingPage.jsx';
 import api from './services/api.js';
-import { installAnalyticsListeners, trackEvent } from './services/analytics.js';
+import { installAnalyticsListeners, trackEvent, setAnalyticsAccount } from './services/analytics.js';
 import lazyWithRecovery from './utils/lazyWithRecovery.jsx';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -223,11 +223,12 @@ export default function App() {
   useEffect(() => {
     let active = true;
     const version = authVersion.current;
-    api.get('/v1/auth/me', { timeout: 8000 }).then(({ data }) => { if (active && version === authVersion.current) setUser(data.user); }).catch(() => { if (active && version === authVersion.current) setUser(null); }).finally(() => { if (active) setAuthLoading(false); });
+    api.get('/v1/auth/me', { timeout: 8000 }).then(({ data }) => { if (active && version === authVersion.current) { setAnalyticsAccount(data.user?.id || data.user?._id); setUser(data.user); } }).catch(() => { if (active && version === authVersion.current) { setAnalyticsAccount(); setUser(null); } }).finally(() => { if (active) setAuthLoading(false); });
     return () => { active = false; };
   }, []);
-  const handleAuthenticated = nextUser => { authVersion.current += 1; setUser(nextUser); setAuthLoading(false); };
+  const handleAuthenticated = nextUser => { authVersion.current += 1; setAnalyticsAccount(nextUser?.id || nextUser?._id); setUser(nextUser); setAuthLoading(false); };
   const handleLogout = async () => {
+    setAnalyticsAccount();
     try { await api.post('/v1/auth/logout'); } catch {}
     for (const key of Object.keys(sessionStorage)) if (key.startsWith('veylo_portfolio_draft:')) sessionStorage.removeItem(key);
     authVersion.current += 1;
@@ -235,6 +236,7 @@ export default function App() {
     window.location.assign('/');
   };
   const handleAccountDeleted = () => {
+    setAnalyticsAccount();
     authVersion.current += 1;
     setUser(null);
     window.location.assign('/');

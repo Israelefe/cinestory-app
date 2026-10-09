@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom';
 import AdminShell, { sectionLabel } from '../components/AdminShell.jsx';
 import SupportWorkspace from '../components/SupportWorkspace.jsx';
+import ProductInsights, { ActivityTimeline, BrowserErrors } from '../components/ProductInsights.jsx';
 import RefundWorkspace, { RefundEvidence } from '../components/RefundWorkspace.jsx';
 import { AdminOverview, AdminOperations, AdminIssues, WorkspaceHeading, checkedTime } from '../components/OperationsWorkspace.jsx';
 import { motion } from 'framer-motion';
@@ -287,7 +288,7 @@ function TrafficAnalyticsPanel({ data, days, onDaysChange, error }) {
   const durationLabel = duration >= 60 ? `${Math.floor(duration / 60)}m ${duration % 60}s` : `${duration}s`;
   const changeLabel = value => `${Number(value || 0) > 0 ? '+' : ''}${number(value || 0)}% vs previous window`;
   const funnel = data.funnel || [];
-  const firstFunnel = Math.max(1, Number(funnel[0]?.events || 0));
+  const firstFunnel = Math.max(1, ...funnel.map(item => Number(item.events || 0)));
 
   return <div className="mt-6 space-y-5">
     <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6">
@@ -316,7 +317,7 @@ function TrafficAnalyticsPanel({ data, days, onDaysChange, error }) {
 
     <section className="grid gap-5 xl:grid-cols-[.9fr_1.1fr]">
       <div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Audience technology</p><h2 className="mt-1 text-xl font-medium">Devices and browsers</h2></div><div className="mt-5 space-y-2">{(data.devices || []).slice(0, 12).map((item, index) => <div key={`${item.deviceType}-${item.browser}-${index}`} className="rounded-2xl border border-white/10 bg-white/[.025] p-3"><div className="flex items-center justify-between gap-3"><span className="text-xs font-semibold text-white">{item.deviceType} · {item.browser}</span><span className="text-xs text-white/45">{number(item.pageViews)} views</span></div><p className="mt-1 text-[11px] text-white/40">{item.operatingSystem} · {item.viewport} · {item.connection} · {number(item.sessions)} sessions</p></div>)}{!data.devices?.length && <p className="py-8 text-sm text-white/45">No device details recorded yet.</p>}</div></div>
-      <div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Conversion paths</p><h2 className="mt-1 text-xl font-medium">From first visit to delivery action</h2><p className="mt-2 text-xs leading-5 text-white/45">These are event counts and anonymised session counts, not individual identities.</p></div><div className="mt-5 space-y-3">{funnel.map(item => <div key={item.name}><div className="flex items-center justify-between gap-3 text-xs"><span className="truncate text-white/65">{item.name}</span><span className="shrink-0 text-white/40">{number(item.events)} events · {number(item.sessions)} sessions</span></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-[#ff7867]" style={{ width: `${Math.max(0, Math.min(100, Number(item.events || 0) / firstFunnel * 100))}%` }} /></div></div>)}</div></div>
+      <div className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Event activity</p><h2 className="mt-1 text-xl font-medium">Recorded actions</h2><p className="mt-2 text-xs leading-5 text-white/45">Independent action totals. Ordered conversion reports are available in Product analytics.</p></div><div className="mt-5 space-y-3">{funnel.map(item => <div key={item.name}><div className="flex items-center justify-between gap-3 text-xs"><span className="truncate text-white/65">{item.name}</span><span className="shrink-0 text-white/40">{number(item.events)} events · {number(item.sessions)} sessions</span></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-[#ff7867]" style={{ width: `${Math.max(0, Math.min(100, Number(item.events || 0) / firstFunnel * 100))}%` }} /></div></div>)}</div></div>
     </section>
 
     <section className="rounded-3xl border border-white/10 bg-[#0c0c10] p-5 sm:p-6"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#ff9b8e]">Location</p><h2 className="mt-1 text-xl font-medium">Coarse country totals</h2><p className="mt-2 text-xs leading-5 text-white/45">Shown only when the hosting edge supplies a country code. Veylo never stores a raw IP address.</p></div><div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{(data.countries || []).filter(item => item.country !== 'unknown').slice(0, 12).map(item => <div key={item.country} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[.025] p-3"><span className="text-xs font-semibold text-white">{item.country}</span><span className="text-xs text-white/45">{number(item.visitors)} visitors</span></div>)}{!(data.countries || []).some(item => item.country !== 'unknown') && <p className="py-5 text-sm text-white/45">Country data is not supplied by the current hosting edge.</p>}</div></section>
@@ -497,7 +498,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       support: () => request('/v1/admin/support/tickets', { params: { search } }),
       configuration: () => request('/v1/admin/configuration'),
       security: () => request('/v1/admin/security'),
-      productAnalytics: () => request('/v1/admin/product-analytics', { params: { days: productAnalyticsDays, format: productAnalyticsFormat, actorType: productAnalyticsActor } }),
+      productAnalytics: () => request('/v1/admin/product-insights', { params: { days: productAnalyticsDays } }),
       visitorTraffic: () => request('/v1/admin/visitor-traffic', { params: { days: visitorTrafficDays } })
     };
     const sectionRequests = {
@@ -1232,6 +1233,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
     operations: 'Check service availability, API load and background work.',
     issues: 'Investigate server errors and recent browser reports.',
     support: 'Find the customer request, inspect the account and record the next step.',
+    productAnalytics: 'Ordered journeys, repeat publishing and accounts that may need help.',
     users: 'Find a photographer, check access and help with account problems.',
     payments: 'Review subscription access, payment records and billing issues.'
   };
@@ -1241,6 +1243,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       {activeError.length > 0 && <div className="aw-load-state aw-warning" role="alert"><TriangleAlert size={18} /><div><strong>Some data is unavailable.</strong>{activeError.map(({ key, message }) => <p key={key}>{key}: {message}{updatedAt[key] ? ` Last successful load ${checkedTime(updatedAt[key])}; displayed records may be out of date.` : ' No current data was loaded.'}</p>)}</div><button type="button" onClick={fetchAdminData} disabled={loading}>Try again</button></div>}
       {tab === 'overview' && <AdminOverview system={visibleSystem} operations={visibleOperations} sections={sections} onNavigate={setTab} canOperate={['superadmin', 'operations'].includes(admin?.role)} onRefresh={fetchAdminData} />}
       {tab === 'operations' && <AdminOperations system={visibleSystem} operations={visibleOperations} onRefresh={fetchAdminData} canOperate={['superadmin', 'operations'].includes(admin?.role)} />}
+      {tab === 'issues' && <BrowserErrors fingerprint={searchParams.get("error") || ""} onAccount={['superadmin', 'operations'].includes(admin?.role) ? openAccount : undefined} refreshKey={updatedAt.issues} />}
       {tab === 'issues' && <AdminIssues data={issues} status={issueStatus} setStatus={value => { setIssueStatus(value); setIssuePage(1); }} onPage={setIssuePage} loading={loading} onRefresh={fetchAdminData} canOperate={['superadmin', 'operations'].includes(admin?.role)} />}
       <section>
         {!['overview', 'operations', 'issues', 'configuration', 'security', 'productAnalytics', 'visitorTraffic'].includes(tab) && <label className="aw-search"><Search size={16} /><input aria-label="Search this section" value={search} onChange={event => setSearch(event.target.value)} placeholder={`Search ${sectionLabel(tab).toLowerCase()}?`} /></label>}
@@ -1341,7 +1344,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
             </div>
           )}
 
-          {tab === 'support' && <SupportWorkspace admin={admin} search={search} refreshKey={supportRefresh} onLoaded={supportLoaded} onAccount={email => { setTab('users'); setSearch(email); }} />}
+          {tab === 'support' && <SupportWorkspace onError={["superadmin", "operations"].includes(admin?.role) ? fingerprint => setSearchParams({ section: "issues", error: fingerprint }) : undefined} admin={admin} search={search} refreshKey={supportRefresh} onLoaded={supportLoaded} onAccount={email => { setTab('users'); setSearch(email); }} />}
 
           {/* Product analytics tab */}
           {!loading && tab === 'visitorTraffic' && (
@@ -1355,7 +1358,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
 
           {/* Product analytics tab */}
           {!loading && tab === 'productAnalytics' && (
-            <ProductAnalyticsPanel
+            <ProductInsights
+              onAccount={['superadmin', 'operations'].includes(admin?.role) ? openAccount : undefined}
               data={productAnalytics}
               days={productAnalyticsDays}
               format={productAnalyticsFormat}
@@ -1635,6 +1639,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
                   <div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><p className="text-[10px] uppercase tracking-[.14em] text-white/35">Storage</p><p className="mt-2 text-xl font-medium">{bytes(selectedAccount.storage?.bytes || selectedAccount.account.storageUsedBytes)}</p><p className="mt-1 text-xs text-white/45">{number(selectedAccount.storage?.count)} library assets · {selectedAccount.account.studio?.name || 'Independent photographer'}</p></div>
                 </section>
 
+                <ActivityTimeline onError={["superadmin", "operations"].includes(admin?.role) ? fingerprint => { setSelectedAccount(null); setSearchParams({ section: "issues", error: fingerprint }); } : undefined} endpoint={`/v1/admin/users/${accountId}/activity`} />
                 {selectedAccount.billing && <section className={`rounded-2xl border p-4 sm:p-5 ${selectedAccount.billing.issues?.length ? 'border-red-300/20 bg-red-300/[.035]' : 'border-white/10 bg-white/[.025]'}`}><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-semibold">Billing access</h3><Status value={selectedAccount.billing.state} />{selectedAccount.billing.issues?.length ? <Status value="attention" /> : <Status value="active" />}</div><p className="mt-2 text-xs leading-5 text-white/45">Effective access is {selectedAccount.billing.effectivePlan === 'pro' ? 'Pro' : 'Free'} because of {selectedAccount.billing.accessReasons?.length ? selectedAccount.billing.accessReasons.map(reason => reason.replaceAll('_', ' ')).join(', ') : 'no active Pro entitlement'}.</p></div><div className="flex flex-wrap gap-2"><button type="button" disabled={!canBillingRepair || accountActionLoading || billingActionLoading} onClick={() => resyncBillingAccount({ id: accountId, name: selectedAccount.account.name })} className="min-h-9 rounded-xl border border-white/15 px-3 text-[11px] font-semibold text-white/70 disabled:opacity-35">Resync access</button>{selectedAccount.billing.subscription?.hasProviderSubscription && <button type="button" disabled={!canProviderRefresh || accountActionLoading || billingActionLoading} onClick={() => refreshBillingFromPaystack({ id: accountId, name: selectedAccount.account.name })} className="min-h-9 rounded-xl border border-[#ff9b8e]/25 px-3 text-[11px] font-semibold text-[#ffb1a7] disabled:opacity-35">Check Paystack</button>}</div></div><div className="mt-4 grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4"><p><span className="block text-[10px] uppercase tracking-[.12em] text-white/30">Stored plan</span><span className="mt-1 block text-white/75">{selectedAccount.billing.storedPlan}</span></p><p><span className="block text-[10px] uppercase tracking-[.12em] text-white/30">Subscription</span><span className="mt-1 block text-white/75">{selectedAccount.billing.subscription?.status || 'None'}</span></p><p><span className="block text-[10px] uppercase tracking-[.12em] text-white/30">Paid through</span><span className="mt-1 block text-white/75">{selectedAccount.billing.subscription?.paidThrough ? shortDate(selectedAccount.billing.subscription.paidThrough) : '—'}</span></p><p><span className="block text-[10px] uppercase tracking-[.12em] text-white/30">Grace ends</span><span className="mt-1 block text-white/75">{selectedAccount.billing.subscription?.graceEndsAt ? shortDate(selectedAccount.billing.subscription.graceEndsAt) : '—'}</span></p></div>{selectedAccount.billing.issues?.length > 0 && <div className="mt-4 space-y-1 rounded-xl border border-red-300/15 bg-red-300/[.04] p-3">{selectedAccount.billing.issues.map(issue => <p key={`${issue.code}-${issue.subscriptionId || ''}`} className="text-xs leading-5 text-red-100/80"><span className="font-semibold text-red-100">{issue.code.replaceAll('_', ' ')}:</span> {issue.message}</p>)}</div>}<div className="mt-4 border-t border-white/10 pt-4"><p className="text-[10px] uppercase tracking-[.12em] text-white/30">Recent billing records</p><div className="mt-2 space-y-2">{(selectedAccount.billing.subscriptions || []).slice(0, 4).map(subscription => <div key={subscription.id} className="flex flex-col gap-1 rounded-xl border border-white/10 bg-black/10 p-3 sm:flex-row sm:items-center sm:justify-between"><span className="text-xs text-white/70">{subscription.status} · {subscription.state}</span><span className="text-[11px] text-white/40">{subscription.paidThrough ? `paid through ${shortDate(subscription.paidThrough)}` : subscription.graceEndsAt ? `grace ends ${shortDate(subscription.graceEndsAt)}` : 'No end date'}</span></div>)}{!selectedAccount.billing.subscriptions?.length && <p className="text-xs text-white/35">No subscription records.</p>}</div></div></section>}
 
                 <section className="flex flex-wrap gap-2">

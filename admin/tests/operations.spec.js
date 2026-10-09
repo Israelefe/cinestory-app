@@ -74,7 +74,7 @@ test('mobile navigation traps focus, closes with Escape and restores trigger', a
 test('issue status filters and fix notes work without unrelated requests', async ({ page }) => {
   const { requested } = await setup(page); await page.goto('/?section=issues');
   await expect(page.getByText('HTTP_500', { exact: true })).toBeVisible();
-  expect(requested.every(path => ['auth/me', 'issues'].includes(path))).toBe(true);
+  expect(requested.every(path => ['auth/me', 'issues', 'browser-errors'].includes(path))).toBe(true);
   await page.getByRole('button', { name: 'Record a fix' }).click(); await expect(page.getByRole('button', { name: 'Mark resolved' })).toBeDisabled();
   await page.getByLabel('What fixed this error?').fill('Fixed a request timeout.'); await page.getByRole('button', { name: 'Mark resolved' }).click();
   await expect.poll(() => requested.includes('issues/issue-1')).toBe(true);

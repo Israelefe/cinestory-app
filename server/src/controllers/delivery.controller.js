@@ -1025,6 +1025,7 @@ export async function publishDelivery(req, res) {
     delivery.status = 'published';
     delivery.publishedAt = new Date();
     await delivery.save();
+    recordAnalyticsEventAsync({ name: 'delivery.publish.succeeded', source: 'server', actorType: 'photographer', userId: user._id, deliveryId: delivery._id, format: delivery.format, status: 'completed', eventKey: `publication:${delivery._id}:${delivery.publishedAt.toISOString()}` });
     if (reservation.entitlements.plan === 'pro') await recordPaidUsage(user._id, 'delivery', delivery._id, delivery.publishedAt);
     res.json({ success: true, data: { publicId: delivery.publicId, url: `${String(process.env.CLIENT_URL).replace(/\/$/, '')}/d/${delivery.publicId}`, entitlements: reservation.entitlements } });
   } catch (error) {

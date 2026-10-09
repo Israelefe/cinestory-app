@@ -1,15 +1,26 @@
 import { API_BASE_URL } from '../config/env.js';
+import { browserDiagnostic } from './browserDiagnostics.js';
 
 export const ANALYTICS_CONSENT_KEY = 'veylo_cookie_preferences_v1';
 const SESSION_KEY = 'veylo_analytics_session_v1';
 const VISITOR_KEY = 'veylo_analytics_visitor_v1';
 const LANDING_PATH_KEY = 'veylo_analytics_landing_path_v1';
 const CONSENT_EVENT = 'veylo:analytics-consent-changed';
-const blockedKey = /password|passcode|pin|token|secret|credential|email|phone|client.?name|studio.?name|full.?name|caption|brief|message|content|signed.?url|original.?filename|filename|photo|pixel|audio|keystroke/i;
+const blockedKey = /password|passcode|pin|token|secret|credential|email|phone|client.?name|studio.?name|full.?name|caption|brief|message|content|signed.?url|original.?filename|filename|photo|pixel|audio|keystroke|__proto__|constructor|prototype/i;
 
 let queue = [];
 let flushTimer = null;
 let installed = false;
+let analyticsAccount = '';
+let sequence = 0;
+export function setAnalyticsAccount(value = '') {
+  const next = String(value || '');
+  if (analyticsAccount !== next) {
+    queue = [];
+    try { safeStorage('session')?.removeItem(SESSION_KEY); } catch {}
+  }
+  analyticsAccount = next;
+}
 
 function safeStorage(kind) {
   try { return kind === 'session' ? window.sessionStorage : window.localStorage; } catch { return null; }
@@ -27,7 +38,7 @@ export function setAnalyticsConsent(enabled) {
   try {
     const storage = safeStorage('local');
     const current = JSON.parse(storage?.getItem(ANALYTICS_CONSENT_KEY) || '{}');
-    storage?.setItem(ANALYTICS_CONSENT_KEY, JSON.stringify({ ...current, necessary: true, analytics: true, serviceAnalytics: true, version: 3, savedAt: new Date().toISOString() }));
+    storage?.setItem(ANALYTICS_CONSENT_KEY, JSON.stringify({ ...current, necessary: true, analytics: true, serviceAnalytics: true, version: 4, savedAt: new Date().toISOString() }));
   } catch {}
   window.dispatchEvent(new Event(CONSENT_EVENT));
 }
@@ -145,13 +156,16 @@ export function trackEvent(name, metadata = {}, fields = {}) {
   const currentSessionId = sessionId();
   const currentVisitorId = visitorId();
   const event = {
+    occurredAt: new Date().toISOString(), sequence: ++sequence,
+    accountHint: analyticsAccount,
+    ...(globalThis.crypto?.randomUUID ? { eventId: crypto.randomUUID() } : {}),
     name: safeName,
     version: 1,
     ...(currentSessionId ? { sessionId: currentSessionId } : {}),
     ...(currentVisitorId ? { visitorId: currentVisitorId } : {}),
     route: routePath(),
     ...context,
-    ...Object.fromEntries(Object.entries(fields || {}).filter(([key]) => ['actorType', 'format', 'status', 'errorCode', 'durationMs', 'count', 'bytes'].includes(key))),
+    ...Object.fromEntries(Object.entries(fields || {}).filter(([key]) => ['actorType', 'format', 'status', 'errorCode', 'durationMs', 'count', 'bytes', 'diagnostic'].includes(key))),
     metadata: cleanValue({ ...context, ...metadata }) || {}
   };
   queue.push(event);
@@ -189,8 +203,8 @@ export function installAnalyticsListeners() {
     for (const [key, value] of Object.entries(element.dataset || {})) if (key !== 'analyticsEvent' && !blockedKey.test(key)) metadata[key] = String(value).slice(0, 100);
     trackEvent(element.dataset.analyticsEvent, metadata);
   };
-  const reportError = () => trackEvent('javascript.error', { source: 'window' }, { errorCode: 'UNCAUGHT_ERROR', status: 'failed' });
-  const reportRejection = () => trackEvent('javascript.error', { source: 'promise' }, { errorCode: 'UNHANDLED_REJECTION', status: 'failed' });
+  const reportError = event => { if (event.error || event.filename) reportBrowserError(event.error, { mechanism: 'window', filename: event.filename, lineno: event.lineno, colno: event.colno }); };
+  const reportRejection = event => reportBrowserError(event.reason, { mechanism: 'promise' });
   const reportMediaError = event => {
     const tag = String(event.target?.tagName || '').toLowerCase();
     if (tag === 'img') trackEvent('media.image.failed', { surface: event.target?.closest?.('[data-media-surface]')?.dataset?.mediaSurface || 'viewer' }, { status: 'failed', errorCode: 'IMAGE_LOAD_FAILED' });
@@ -233,4 +247,12 @@ export function installAnalyticsListeners() {
 
 export function flushAnalytics() {
   return flush();
+}
+
+let errorWindow = 0, errorCount = 0;
+export function reportBrowserError(error, options = {}) {
+  if (Date.now() - errorWindow > 60000) { errorWindow = Date.now(); errorCount = 0; }
+  if (++errorCount > 10) return;
+  const release = /^[A-Za-z0-9._-]{1,80}$/.test(import.meta.env.VITE_APP_REVISION || '') ? import.meta.env.VITE_APP_REVISION : 'unknown';
+  trackEvent('javascript.error', {}, { status: 'failed', errorCode: 'BROWSER_EXCEPTION', diagnostic: browserDiagnostic(error, { ...options, release }) });
 }

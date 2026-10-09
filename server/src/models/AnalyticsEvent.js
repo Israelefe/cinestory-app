@@ -2,6 +2,18 @@ import mongoose from 'mongoose';
 
 const analyticsEventSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, maxlength: 120, index: true },
+  eventKey: { type: String, maxlength: 128 },
+  sequence: Number,
+  flowDigest: { type: String, maxlength: 128 },
+  resourceDigest: { type: String, maxlength: 128 },
+  excluded: { type: Boolean, default: false },
+  diagnostic: { type: mongoose.Schema.Types.Mixed },
+  fingerprint: { type: String, maxlength: 64 },
+  forwardState: { type: String, enum: ['pending', 'sending', 'sent', 'failed', 'skipped'] },
+  forwardAttempts: { type: Number, default: 0 },
+  forwardAfter: Date,
+  forwardedAt: Date,
+  forwardCode: { type: String, maxlength: 50 },
   version: { type: Number, default: 1, min: 1 },
   source: { type: String, enum: ['client', 'server', 'system'], default: 'server', index: true },
   actorType: { type: String, enum: ['photographer', 'client', 'guest', 'admin', 'system', 'anonymous'], default: 'system', index: true },
@@ -35,6 +47,9 @@ const analyticsEventSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 analyticsEventSchema.index({ name: 1, occurredAt: -1 });
+analyticsEventSchema.index({ eventKey: 1 }, { unique: true, sparse: true });
+analyticsEventSchema.index({ forwardState: 1, forwardAfter: 1 });
+analyticsEventSchema.index({ fingerprint: 1, occurredAt: -1 });
 analyticsEventSchema.index({ userId: 1, occurredAt: -1 });
 analyticsEventSchema.index({ deliveryId: 1, occurredAt: -1 });
 analyticsEventSchema.index({ sessionDigest: 1, occurredAt: 1 });

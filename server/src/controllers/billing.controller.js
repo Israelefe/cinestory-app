@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { recordAnalyticsEventAsync } from '../services/analytics.service.js';
 import { sendRefundProgressEmail } from '../services/email.service.js';
 import User from '../models/User.js';
 import Subscription from '../models/Subscription.js';
@@ -97,6 +98,7 @@ export async function activateSubscription({ data, user, subscription }) {
       const emailData = { to: user.email, name: user.name, amountKobo: expected, paidAt, paidThrough: periodEnd, reference, userId: user._id };
       await notify(previous ? sendPaymentReceiptEmail(emailData) : sendProWelcomeEmail(emailData));
       payment.fulfilledAt = new Date(); await payment.save();
+      recordAnalyticsEventAsync({ name: 'billing.payment.confirmed', source: 'server', actorType: 'photographer', userId: user._id, status: 'confirmed', flowKey: String(subscription._id), eventKey: `payment:${payment._id}` });
     }
     return Subscription.findById(subscription._id);
   });
@@ -146,6 +148,7 @@ export async function startCheckout(req, res) {
         if (initialized.reference && initialized.reference !== reference) throw fail('Paystack returned a different payment reference. Contact payment@veylo.com.ng before retrying.', 502);
         if (!/^https:\/\/checkout\.paystack\.com\//.test(initialized.authorization_url || '')) throw fail('Paystack returned an invalid checkout address.', 502);
         subscription.checkoutUrl = initialized.authorization_url; subscription.checkoutExpiresAt = new Date(Date.now() + 3600000); await subscription.save();
+        recordAnalyticsEventAsync({ name: 'billing.checkout.started', source: 'server', actorType: 'photographer', userId: user._id, status: 'opened', flowKey: String(subscription._id), eventKey: `checkout:${subscription._id}` });
         return { authorizationUrl: initialized.authorization_url, reference, amountKobo: pricing.amountKobo };
       } catch (error) {
         if (error.providerStatus >= 400 && error.providerStatus < 500) { await Payment.updateOne({ reference }, { $set: { status: 'failed' } }); await Subscription.updateOne({ _id: subscription._id }, { $set: { status: 'expired' } }); }
