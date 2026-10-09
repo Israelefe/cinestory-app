@@ -9,7 +9,7 @@ import {
   ShieldCheck, Type
 } from 'lucide-react';
 import { Page, Reveal as PublicReveal, Photo, Action, Eyebrow, EndNote, Questions, TextLink } from '../components/PublicDesign.jsx';
-import DeliveryFormatVisual from '../components/DeliveryFormatVisual.jsx';
+import HomeShowcaseCard from '../components/HomeShowcaseCard.jsx';
 import HeroFormatStage from '../components/HeroFormatStage.jsx';
 import StudioReviewStage from '../components/StudioReviewStage.jsx';
 import { DELIVERY_FORMATS, DELIVERY_PROCESS } from '../constants/deliveryFormats.js';
@@ -195,7 +195,7 @@ export default function LandingPage() {
       <Reveal className="v-section-head"><div><Eyebrow number="02">Eight Showcase formats</Eyebrow><h2 className="v-heading">Give the shoot<br /><em>a designed first viewing.</em></h2></div></Reveal>
       <div className="v-format-ledger">{DELIVERY_FORMATS.map((format, i) => <article className={'v-format-row format-' + format.id} id={format.id} key={format.id}>
         <Reveal className="v-format-copy"><div className="v-format-tag"><span className="v-index">{format.roman || format.number}</span><span className="v-format-sep" aria-hidden="true">·</span><span className="v-format-verb">{format.verb}</span></div><h3>{format.name}</h3></Reveal>
-        <Reveal className="v-format-art" delay={Math.min(i * .03, .12)}><DeliveryFormatVisual format={format} /></Reveal>
+        <Reveal className="v-format-art" delay={Math.min(i * .03, .12)}><HomeShowcaseCard format={format} /></Reveal>
         <Reveal className="v-format-after">{i === 0 && <p className="v-formats-intro">Showcase deliveries open with a presentation, then lead to the complete gallery. The original photographs stay as supplied.</p>}<p>{format.line}</p><TextLink to={demoLinks[format.id][0]} onClick={event => keepFormatAsBackDestination(event, format.id)}>{demoLinks[format.id][1]}</TextLink></Reveal>
       </article>)}</div>
       <Reveal className="v-home-pinboard-card"><div className="v-home-pinboard-art" aria-hidden="true">{gridboardArtPhotos.map(photo => <span key={photo}><img src={photo} alt="" loading="lazy" decoding="async" /></span>)}</div><div><Eyebrow>GRIDBOARD DELIVERY</Eyebrow><h3>Put the full gallery first.</h3><p>Clients can find a moment, browse by outfit or backdrop colour, open Similar Shot for close visual matches, or start a slideshow with optional music. You choose the layout they see.</p><div className="v-home-pinboard-actions"><TextLink to="/gridboard">See what GridBoard can do</TextLink><TextLink to="/demo/gridboard">Browse the live demo</TextLink><TextLink to="/create?type=pinboard">Create a GridBoard</TextLink></div></div></Reveal>
