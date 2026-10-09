@@ -133,6 +133,10 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
   const [activeLayoutId, setActiveLayoutId] = useState(delivery?.pinboard?.selectedLayoutId || 'balanced');
   const [activePhoto, setActivePhoto] = useState('');
   useDialogFocus(!!activePhoto, lightboxRef, () => closePhoto());
+  React.useLayoutEffect(() => {
+    const content = lightboxRef.current?.querySelector('figure');
+    if (content) content.scrollTop = 0;
+  }, [activePhoto]);
   const [showSlideshowSetup, setShowSlideshowSetup] = useState(false);
   const [slideshowOpening, setSlideshowOpening] = useState('');
   const [slideshow, setSlideshow] = useState(null);
@@ -491,6 +495,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
 
   function showRelatedPhoto(asset) {
     setActiveMoment(''); setActiveColour(''); setActivePhoto(asset.assetId); setPhotoDirection(1);
+    lightboxRef.current?.querySelector('figure')?.focus({ preventScroll: true });
   }
 
   function onPhotoPointerStart(event) {
@@ -721,7 +726,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
     {modalAsset && <div ref={lightboxRef} className="pb-lightbox" role="dialog" aria-modal="true" aria-label="Photograph" onMouseDown={event => { if (event.target === event.currentTarget) setActivePhoto(''); }}>
       <button type="button" className="pb-lightbox-close" onClick={() => setActivePhoto('')} aria-label="Close photograph"><X size={23} /></button>
       <button type="button" className="pb-lightbox-nav is-left" onClick={() => navigatePhoto(-1)} disabled={modalIndex <= 0} aria-label="Previous photograph"><ChevronLeft size={26} /></button>
-      <figure>
+      <figure tabIndex={-1}>
         <div className="pb-lightbox-photo" style={{ backgroundColor: modalTone }} onPointerDown={onPhotoPointerStart} onPointerMove={onPhotoPointerMove} onPointerUp={onPhotoPointerEnd} onPointerCancel={clearPhotoGesture} onLostPointerCapture={clearPhotoGesture}>
           <img className="pb-lightbox-photo-ambient" src={shownPhoto?.url || photoUrl(modalAsset)} alt="" aria-hidden="true" draggable="false" />
           <img key={shownPhoto?.assetId || modalAsset.assetId} className={'pb-lightbox-photo-main ' + (photoDirection > 0 ? 'is-next' : 'is-previous')} src={shownPhoto?.url || photoUrl(modalAsset)} alt={shownPhoto?.alt || modalAsset.alt || 'Finished photograph'} draggable="false" />
