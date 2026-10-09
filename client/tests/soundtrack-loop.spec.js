@@ -16,7 +16,7 @@ for (const webAudio of [true, false]) test(`soundtrack loops overlap and respect
     if (!enabled) { window.AudioContext = undefined; window.webkitAudioContext = undefined; return; }
     const createGain = AudioContext.prototype.createGain;
     window.__loopGains = [];
-    AudioContext.prototype.createGain = function (...args) { const gain = createGain.apply(this, args); window.__loopGains.push(gain); return gain; };
+    AudioContext.prototype.createGain = function (...args) { const gain = createGain.apply(this, args); window.__loopGains.push(gain); window.__loopContext = this; return gain; };
   }, webAudio);
   await page.route('**/test-loop.wav', route => route.fulfill({ contentType: 'audio/wav', body: toneWav() }));
   await page.goto('/demo/gridboard?phoneView=1');
@@ -43,7 +43,9 @@ for (const webAudio of [true, false]) test(`soundtrack loops overlap and respect
   expect(await page.evaluate(() => window.__incoming.paused)).toBe(true);
   expect(await page.evaluate(() => window.__player.volume)).toBe(.16);
   await expect.poll(() => page.evaluate(() => window.__loopGains?.length === 2 ? window.__loopGains.reduce((sum, node) => sum + node.gain.value, 0) : Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'volume').get.call(window.__player) + window.__incoming.volume)).toBeCloseTo(.16, 4);
+  if (webAudio) await page.evaluate(() => window.__loopContext.suspend());
   await page.evaluate(() => window.__player.play());
+  if (webAudio) await expect.poll(() => page.evaluate(() => window.__loopContext.state)).toBe('running');
   await expect.poll(() => page.evaluate(() => !window.__player.paused && window.__player.currentTime < 2), { timeout: 6000 }).toBe(true);
   await page.evaluate(() => { window.__player.muted = true; });
   await expect.poll(() => page.evaluate(() => window.__incoming.muted)).toBe(true);

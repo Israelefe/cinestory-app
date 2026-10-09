@@ -1,6 +1,13 @@
 import { useEffect } from 'react';
 
 const audioGraphs = new WeakMap();
+const soundtrackUnlockers = new WeakMap();
+
+// Call from the playback button as well as the media event. Safari can require
+// the context to resume in the user's interaction, before an async play event.
+export function prepareSoundtrackPlayback(player) {
+  soundtrackUnlockers.get(player)?.();
+}
 
 // Keep the format's existing audio element as its transport and volume control.
 // A second player carries the beginning of the track over the end of each loop.
@@ -27,6 +34,7 @@ export function attachSmoothSoundtrackLoop(player) {
   let incomingSource = null;
   let incomingGain = null;
   let graphPending = false;
+  let pendingContext = null;
   player.loop = false;
 
   const applyVolume = () => {
@@ -44,13 +52,19 @@ export function attachSmoothSoundtrackLoop(player) {
   };
   const enableAudioGraph = () => {
     const Context = window.AudioContext || window.webkitAudioContext;
-    if (!Context || graph || graphPending) return;
+    if (!Context || disposed) return;
+    if (graph || graphPending) {
+      const context = graph?.context || pendingContext;
+      if (context && context.state !== 'running') void context.resume().catch(() => {});
+      return;
+    }
     // A remote media source needs CORS permission before it can enter Web Audio.
     if (!player.crossOrigin && new URL(player.currentSrc || player.src, location.href).origin !== location.origin) return;
     let existing = audioGraphs.get(player);
     let context;
     try { context = existing?.context || new Context(); } catch { return; }
     graphPending = true;
+    pendingContext = context;
     context.resume().then(() => {
       if (disposed) { if (!existing) void context.close(); return; }
       if (!existing) {
@@ -65,8 +79,9 @@ export function attachSmoothSoundtrackLoop(player) {
       incomingSource.connect(incomingGain); incomingGain.connect(context.destination);
       graph = existing;
       applyVolume();
-    }).catch(() => { if (!existing) void context.close(); }).finally(() => { graphPending = false; });
+    }).catch(() => { if (!existing) void context.close(); }).finally(() => { graphPending = false; pendingContext = null; });
   };
+  soundtrackUnlockers.set(player, enableAudioGraph);
   // Format fades and narration ducking set the master volume, independently of the loop blend.
   Object.defineProperty(player, 'volume', { configurable: true,
     get: () => volume,
@@ -162,6 +177,7 @@ export function attachSmoothSoundtrackLoop(player) {
 
   return () => {
     disposed = true; generation += 1;
+    if (soundtrackUnlockers.get(player) === enableAudioGraph) soundtrackUnlockers.delete(player);
     window.cancelAnimationFrame(frame);
     player.removeEventListener('play', onPlay);
     player.removeEventListener('pause', onPause);

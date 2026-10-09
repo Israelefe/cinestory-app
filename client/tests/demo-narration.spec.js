@@ -63,6 +63,7 @@ for (const width of [320, 834, 1440]) test(`Hannah's introduction matches demo, 
     await expect.poll(() => closingFor(view).evaluate(el => new URL(el.src).pathname)).toBe(ada.narration.closing.url);
     expect(await view.locator('audio').count()).toBe(3); // Music plus two bookends; no caption voice.
     expect(await openingFor(view).evaluate(el => el.paused)).toBe(true);
+    if (source === 'preview') await page.locator('.v3-design-preview iframe').scrollIntoViewIfNeeded();
     await view.getByRole('button', { name: 'Begin the story', exact: true }).click();
     await expect(view.getByRole('button', { name: 'Reading the introduction…', exact: true })).toBeDisabled();
     await expect.poll(() => musicFor(view).evaluate(el => el.volume)).toBeGreaterThan(.1);

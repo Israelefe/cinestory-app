@@ -13,7 +13,7 @@ import { StoryCaptionContent, StoryCaptionDialog } from '../components/delivery/
 import { photoStoryDemoDelivery } from '../utils/photoStoryDemo.js';
 import ClientGallery from '../components/delivery/ClientGallery.jsx';
 import DeliveryBrandMark from '../components/delivery/DeliveryBrandMark.jsx';
-import { useSmoothSoundtrackLoop } from '../utils/smoothSoundtrackLoop.js';
+import { prepareSoundtrackPlayback, useSmoothSoundtrackLoop } from '../utils/smoothSoundtrackLoop.js';
 import { usePreparedStoryPhotos } from '../utils/usePreparedStoryPhotos.js';
 import { photoStoryChrome } from '../utils/photoStoryChrome.js';
 import { deliveryFontStyles } from '../utils/deliveryTypography.js';
@@ -208,6 +208,7 @@ export default function StoryViewer({ demoMode = false, delivery: suppliedDelive
  const [muted, setMuted] = useState(false);
  const [audioPlaying, setAudioPlaying] = useState(false);
  const [audioLoading, setAudioLoading] = useState(false);
+ const [audioIssue, setAudioIssue] = useState('');
  const [narrationPlaying, setNarrationPlaying] = useState(false);
  const [narrationLoading, setNarrationLoading] = useState(false);
  const [captions, setCaptions] = useState(true);
@@ -223,6 +224,7 @@ export default function StoryViewer({ demoMode = false, delivery: suppliedDelive
  const [hidden, setHidden] = useState(document.hidden);
  const audio = useRef(null);
  const audioPlayPending = useRef(false);
+ const audioPlayGeneration = useRef(0);
  const narrationRef = useRef(null);
  const v3OpeningRef = useRef(null);
  const v3ClosingRef = useRef(null);
@@ -266,9 +268,14 @@ export default function StoryViewer({ demoMode = false, delivery: suppliedDelive
   if (audio.current) fadeAudioVolume(audio.current, 1, 800, () => fadeV3FinaleMusic(900));
   else fadeV3FinaleMusic(0);
  };
- const startStorySoundtrack = onStarted => {
+ const startStorySoundtrack = (onStarted, soundEnabled = !muted) => {
   const element = audio.current;
-  if (!element || muted || audioPlayPending.current) return;
+  if (!element || !soundEnabled) return;
+  prepareSoundtrackPlayback(element);
+  if (audioPlayPending.current) return;
+  element.muted = false;
+  if (element.error) element.load();
+  setAudioIssue('');
   if (!element.paused) {
    setAudioLoading(false);
    setAudioPlaying(true);
@@ -276,13 +283,15 @@ export default function StoryViewer({ demoMode = false, delivery: suppliedDelive
    return;
   }
   audioPlayPending.current = true;
+  const generation = ++audioPlayGeneration.current;
   setAudioLoading(true);
   let playback;
   try { playback = element.play(); }
-  catch {
+  catch (error) {
    audioPlayPending.current = false;
    setAudioPlaying(false);
    setAudioLoading(false);
+   if (error.name !== 'AbortError') setAudioIssue(error.name === 'NotAllowedError' ? 'blocked' : 'load');
    return;
   }
   if (!playback?.then) {
@@ -293,6 +302,7 @@ export default function StoryViewer({ demoMode = false, delivery: suppliedDelive
    return;
   }
   playback.then(() => {
+   if (generation !== audioPlayGeneration.current) return;
    audioPlayPending.current = false;
    if (!element.paused && !element.muted) {
     setAudioLoading(false);
@@ -301,11 +311,17 @@ export default function StoryViewer({ demoMode = false, delivery: suppliedDelive
    } else {
     setAudioLoading(false);
    }
-  }).catch(() => {
+  }).catch(error => {
+   if (generation !== audioPlayGeneration.current) return;
    audioPlayPending.current = false;
    setAudioPlaying(false);
    setAudioLoading(false);
+   if (error.name !== 'AbortError') setAudioIssue(error.name === 'NotAllowedError' ? 'blocked' : 'load');
   });
+ };
+ const toggleStoryPause = () => {
+  if (paused) startStorySoundtrack();
+  setPaused(value => !value);
  };
 
  useEffect(() => {
@@ -456,25 +472,26 @@ export default function StoryViewer({ demoMode = false, delivery: suppliedDelive
   const element = audio.current;
   if (!element) return;
   element.muted = muted;
-  const v3SoundtrackDuringBookend = deliveryProp?.schemaVersion === 3 && !gallery && !muted && (v3OpeningNarrating || (started && finished));
+  const v3SoundtrackDuringBookend = deliveryProp?.schemaVersion === 3 && !gallery && !hidden && !muted && (v3OpeningNarrating || (started && finished));
   if ((running || v3SoundtrackDuringBookend) && !muted) {
    startStorySoundtrack();
   } else {
    element.pause();
+   audioPlayGeneration.current += 1;
    audioPlayPending.current = false;
    setAudioPlaying(false);
    setAudioLoading(false);
   }
- }, [running, muted, story, v3OpeningNarrating, finished, gallery, deliveryProp?.schemaVersion]);
+ }, [running, muted, story, v3OpeningNarrating, finished, gallery, hidden, deliveryProp?.schemaVersion]);
  useEffect(() => {
   const handle = e => {
    if (gallery || captionExpanded || /INPUT|TEXTAREA|SELECT|BUTTON|A/.test(e.target.tagName)) return;
    if (e.key === 'ArrowRight' && started) { e.preventDefault(); go(1); }
    if (e.key === 'ArrowLeft' && started) { e.preventDefault(); go(-1); }
-   if (e.code === 'Space' && started) { e.preventDefault(); setPaused(p => !p); }
+   if (e.code === 'Space' && started) { e.preventDefault(); toggleStoryPause(); }
   };
   document.addEventListener('keydown', handle); return () => document.removeEventListener('keydown', handle);
- }, [gallery, captionExpanded, started, go]);
+ }, [gallery, captionExpanded, started, paused, go]);
  const handleNarrationEnded = () => {
     if (narrationLeadTimer.current) window.clearTimeout(narrationLeadTimer.current);
     narrationLeadRef.current = false;
@@ -728,6 +745,25 @@ export default function StoryViewer({ demoMode = false, delivery: suppliedDelive
     }
     beginFrames();
   };
+  const retrySoundtrack = () => {
+   const element = audio.current;
+   if (!element) return;
+   audioPlayGeneration.current += 1;
+   audioPlayPending.current = false;
+   element.load();
+   element.volume = v3OpeningNarrating || narrationPlaying ? .16 : 1;
+   startStorySoundtrack();
+  };
+  const toggleSound = () => {
+   const nextMuted = !muted;
+   setMuted(nextMuted);
+   if (audio.current) audio.current.muted = nextMuted;
+   if (!nextMuted && !hidden && (running || v3OpeningNarrating || (started && finished))) {
+    if (audio.current) audio.current.volume = v3OpeningNarrating || narrationPlaying ? .16 : 1;
+    startStorySoundtrack(undefined, true);
+   }
+  };
+  const retryAudio = Boolean(audioIssue && !muted && !paused && (started || v3OpeningNarrating));
   const share = async () => {
    const url = window.location.href;
    try { if (navigator.share) await navigator.share({ title: story.title || 'A Veylo Photo Story', url }); else { await navigator.clipboard.writeText(url); toast.success('Story link copied.'); } } catch (e) { if (e.name !== 'AbortError') toast.info('Copy the link from your browser’s address bar to share this story.'); }
@@ -776,7 +812,7 @@ export default function StoryViewer({ demoMode = false, delivery: suppliedDelive
    <div className="v-story-progress" role="progressbar" aria-label="Photo Story progress" aria-valuemin={1} aria-valuemax={photos.length} aria-valuenow={finished ? photos.length : shownIndex + 1}>{photos.map((_, i) => <span key={i} className={finished || i < shownIndex ? 'is-done' : i === shownIndex ? 'is-current' : ''}><i ref={!finished && i === shownIndex ? progress : null} /></span>)}</div>
    <header className="v-story-top">
     <div className="v-story-studio">{demo && embeddedPhone ? <span className="v-story-mark" aria-hidden="true"><DeliveryBrandMark branding={story.branding} /></span> : <Link to={backDestination} onClick={handleBack} className="v-story-mark" aria-label={demo ? (isFromFormats ? 'Back to Photo Story on the formats page' : isFromNiche ? 'Back to the page you opened this story from' : 'Back to the Photo Story section on the homepage') : `${story.studioName || 'Studio'} home`}><DeliveryBrandMark branding={story.branding} /></Link>}<div><strong>{story.studioName || story.occasion}</strong><span>{story.clientName || story.title}</span></div></div>
-    <div className="v-story-top-actions">{(story.soundtrack?.audioUrl || hasNarration || deliveryProp?.narration?.opening?.url || deliveryProp?.narration?.closing?.url) && <button type="button" onClick={() => setMuted(value => !value)} aria-label={muted ? 'Turn sound on' : 'Turn sound off'}>{muted ? <VolumeX size={17} /> : <Volume2 size={17} />}</button>}<button type="button" onClick={share} aria-label="Share story"><Share2 size={17} /></button></div>
+    <div className="v-story-top-actions">{(story.soundtrack?.audioUrl || hasNarration || deliveryProp?.narration?.opening?.url || deliveryProp?.narration?.closing?.url) && <button type="button" className={retryAudio ? 'v-story-audio-retry' : undefined} onClick={retryAudio ? retrySoundtrack : toggleSound} aria-label={retryAudio ? audioIssue === 'blocked' ? 'Play music' : 'Retry music' : muted ? 'Turn sound on' : 'Turn sound off'}>{retryAudio ? <><RotateCcw size={16} /><span>{audioIssue === 'blocked' ? 'Play music' : 'Retry music'}</span></> : muted ? <VolumeX size={17} /> : <Volume2 size={17} />}</button>}<button type="button" onClick={share} aria-label="Share story"><Share2 size={17} /></button></div>
    </header>
    <AnimatePresence>
     {!started && <motion.section className="v-story-cover" initial={reduced ? false : { opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -14 }} transition={{ duration: reduced ? 0 : .4, delay: reduced ? 0 : .1 }}>
@@ -807,14 +843,14 @@ export default function StoryViewer({ demoMode = false, delivery: suppliedDelive
    </div>}
    {started && <footer className={'v-story-controls ' + (finished ? 'is-finished' : '')}>
     {!finished && <button type="button" onClick={() => setCaptions(value => !value)} aria-label={captions ? 'Hide captions' : 'Show captions'} aria-pressed={captions}>{captions ? <Eye size={17} /> : <EyeOff size={17} />}</button>}
-    <button className="v-story-play" type="button" onClick={finished ? start : () => setPaused(value => !value)} aria-label={finished ? 'Replay story' : paused ? 'Resume story' : 'Pause story'}>{finished ? <RotateCcw size={18} /> : paused ? <Play size={18} fill="currentColor" /> : <Pause size={18} fill="currentColor" />}</button>
+    <button className="v-story-play" type="button" onClick={finished ? start : toggleStoryPause} aria-label={finished ? 'Replay story' : paused ? 'Resume story' : 'Pause story'}>{finished ? <RotateCcw size={18} /> : paused ? <Play size={18} fill="currentColor" /> : <Pause size={18} fill="currentColor" />}</button>
     <span className="v-story-frame-count" aria-label={`Photograph ${shownIndex + 1} of ${photos.length}`}>{String(shownIndex + 1).padStart(2, '0')}<span> / {String(photos.length).padStart(2, '0')}</span></span>
     {finished && <button type="button" onClick={() => setGallery(true)} aria-label="Open gallery"><Grid size={17} /></button>}
    </footer>}
    {(story.soundtrack?.audioUrl || hasNarration) && <div className={`v-story-sound ${audioLoading || narrationLoading ? 'is-loading' : ''}`} role="status" aria-live="polite"><span className={audioLoading || narrationLoading ? 'is-loading' : audioPlaying || narrationPlaying ? 'is-playing' : ''} /><p>{audioLoading && narrationLoading ? 'Loading music and narration…' : narrationLoading ? 'Loading narration…' : audioLoading ? 'Loading soundtrack…' : audioPlaying ? `Now playing · ${story.soundtrack?.title || 'Selected track'}` : narrationPlaying ? 'Narration playing' : muted ? 'Sound off' : `Soundtrack · ${story.soundtrack?.title || 'Selected track'}`}</p></div>}
   </main>
 
-  {story.soundtrack?.audioUrl && <audio ref={audio} crossOrigin="anonymous" src={mediaUrl(story.soundtrack.audioUrl)} loop preload="metadata" onWaiting={() => { if (started && !muted) setAudioLoading(true); }} onStalled={() => { if (started && !muted) setAudioLoading(true); }} onPlaying={() => { audioPlayPending.current = false; setAudioLoading(false); setAudioPlaying(true); }} onPause={() => { audioPlayPending.current = false; setAudioLoading(false); }} onError={() => { audioPlayPending.current = false; setAudioPlaying(false); setAudioLoading(false); toast.info('The soundtrack could not load. The story will continue without it.'); }} />}
+  {story.soundtrack?.audioUrl && <audio ref={audio} crossOrigin="anonymous" src={mediaUrl(story.soundtrack.audioUrl)} loop preload="metadata" onWaiting={() => { if (started && !muted) setAudioLoading(true); }} onStalled={() => { if (started && !muted) setAudioLoading(true); }} onPlaying={() => { audioPlayPending.current = false; setAudioIssue(''); setAudioLoading(false); setAudioPlaying(true); }} onPause={() => { audioPlayPending.current = false; setAudioLoading(false); setAudioPlaying(false); }} onError={() => { audioPlayGeneration.current += 1; audioPlayPending.current = false; setAudioIssue('load'); setAudioPlaying(false); setAudioLoading(false); }} />}
   {captionNarrationUrl && <audio ref={narrationRef} src={mediaUrl(captionNarrationUrl)} preload="metadata" onWaiting={() => { if (started && !muted) setNarrationLoading(true); }} onStalled={() => { if (started && !muted) setNarrationLoading(true); }} onPlaying={() => { setNarrationLoading(false); setNarrationPlaying(true); if (deliveryProp?.schemaVersion === 3) fadeAudioVolume(audio.current, .16, 450); }} onPause={() => { if (deliveryProp?.schemaVersion === 3) { setNarrationPlaying(false); setNarrationLoading(false); fadeAudioVolume(audio.current, 1, 600); } }} onEnded={handleNarrationEnded} onError={() => { setNarrationPlaying(false); setNarrationLoading(false); fadeAudioVolume(audio.current, 1); toast.info('The narration could not load. The story will continue without it.'); }} />}
   {deliveryProp?.schemaVersion === 3 && deliveryProp?.narration?.opening?.url && <audio ref={v3OpeningRef} src={mediaUrl(deliveryProp.narration.opening.url)} preload="metadata" onEnded={() => beginFrames(true)} onError={() => { if (v3OpeningPlayed.current) beginFrames(true); }} />}
   {deliveryProp?.schemaVersion === 3 && deliveryProp?.narration?.closing?.url && <audio ref={v3ClosingRef} src={mediaUrl(deliveryProp.narration.closing.url)} preload="metadata" onEnded={finishV3ClosingNarration} onError={finishV3ClosingNarration} />}

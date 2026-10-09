@@ -2,7 +2,7 @@ const frame = (url, direction) => ({ duration: 6.4, ...direction, url });
 const photoStoryDemoSoundtrack = {
   id: 'pixabay_183350',
   title: 'Rheme - Afrobeat x african instrumental x reggae beat',
-  audioUrl: '/api/v1/deliveries/demo/photo-story/soundtrack',
+  audioUrl: '/veylo/audio/demo-photo-story-rheme-f6f51f784741.mp3',
   genre: 'Afrobeat',
   durationSec: 186
 };
