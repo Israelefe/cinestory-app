@@ -57,8 +57,8 @@
 .album-cover-stamp { flex: none; width: 100%; text-align: center; }
 .album-cover-stamp>span { display: block; font-size: 7px; letter-spacing: .2em; color: #d4b38b; }
 .album-cover-stamp>b { display: block; margin-top: 5px; font-family: var(--delivery-font-heading, 'Playfair Display', Georgia, serif); font-size: clamp(13px, 4vw, 18px); font-weight: 400; line-height: 1.15; }
-.album-cover-photo { display: grid; place-items: center; flex: 1 1 auto; align-self: stretch; min-width: 0; min-height: 0; padding: 5px; background: #e7ddcb; box-shadow: 0 2px 14px #0006; }
-.album-cover-photo .v-photo { display: block; width: 100%; height: 100%; object-fit: contain; background: #e7ddcb; }
+.album-cover-photo { position: relative; display: grid; place-items: center; flex: 1 1 auto; align-self: stretch; min-width: 0; min-height: 0; padding: 5px; background: #e7ddcb; box-shadow: 0 2px 14px #0006; }
+.album-cover-photo .v-photo { position: absolute; inset: 5px; display: block; width: calc(100% - 10px); height: calc(100% - 10px); object-fit: contain; background: #e7ddcb; }
 .album-cover-book>figcaption { flex: none; font-size: 8px; letter-spacing: .08em; text-align: center; color: #d7cab6; }
 .fd-album-cover>section { align-self: start; width: 100%; max-width: 540px; text-align: center; }
 .fd-album-cover>section>.album-eyebrow { color: var(--fd-accent); font-size: 8px; }
@@ -118,12 +118,12 @@
 .album-turn-leaf, .album-turn-stationary { display: none; }
 
 /* Captions have a place beside the page. Long notes open in a labelled panel. */
-.album-note { box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; max-width: 1160px; min-width: 0; margin: 0 auto; padding: 7px 16px 8px; }
+.album-note { box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; max-width: 1160px; min-width: 0; margin: 0 auto; padding: 10px 16px 12px; }
 .album-note-copy { min-width: 0; }
-.album-note h2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin: 0; font-family: var(--delivery-font-heading, 'Playfair Display', Georgia, serif); font-size: clamp(16px, 4.7vw, 21px); font-weight: 400; letter-spacing: -.02em; line-height: 1.18; text-wrap: balance; }
-.album-note p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin: 4px 0 0; color: color-mix(in srgb, var(--fd-text) 67%, transparent); font-size: 11px; line-height: 1.4; }
+.album-note h2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin: 0; font-family: var(--delivery-font-heading, 'Playfair Display', Georgia, serif); font-size: clamp(18px, 4.7vw, 21px); font-weight: 400; letter-spacing: -.02em; line-height: 1.25; text-wrap: balance; }
+.album-note p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin: 6px 0 0; color: color-mix(in srgb, var(--fd-text) 78%, transparent); font-size: 13px; line-height: 1.55; text-wrap: pretty; }
 .album-note-actions { display: flex; flex: none; align-items: center; justify-content: flex-end; gap: 7px; }
-.album-read-note, .album-gallery-link { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 8px 10px; border: 1px solid #ffffff28; border-radius: 2px; color: var(--fd-text); font-size: 10px; white-space: nowrap; transition: background .2s, transform .2s; }
+.album-read-note, .album-gallery-link { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 8px 10px; border: 1px solid #ffffff28; border-radius: 2px; color: var(--fd-text); font-size: 12px; white-space: nowrap; transition: background .2s, transform .2s; }
 .album-read-note:hover, .album-gallery-link:hover { background: #88888818; transform: translateY(-1px); }
 .album-read-note:active, .album-gallery-link:active { transform: scale(.97); }
 .album-gallery-link { border-color: color-mix(in srgb, var(--fd-accent) 55%, #ffffff20); }
@@ -206,8 +206,8 @@
   .album-paper-right .album-folio { display: flex; }
   .album-note { gap: 22px; padding: 10px 32px 12px; }
   .album-note h2 { font-size: clamp(19px, 2.1vw, 26px); }
-  .album-note p { max-width: 76ch; margin-top: 5px; font-size: 12px; line-height: 1.5; }
-  .album-read-note, .album-gallery-link { min-height: 44px; padding-inline: 13px; font-size: 11px; }
+  .album-note p { max-width: 76ch; margin-top: 6px; font-size: 14px; line-height: 1.6; }
+  .album-read-note, .album-gallery-link { min-height: 44px; padding-inline: 13px; font-size: 12px; }
   .fd-album-spine { position: absolute; z-index: 2; inset: 0 auto 0 50%; display: block; width: 22px; transform: translateX(-50%); background: linear-gradient(90deg, transparent, #00000012 42%, #00000025 50%, #ffffff16 55%, transparent); pointer-events: none; }
   .album-turn-leaf { display: block; position: absolute; z-index: 4; top: 0; bottom: 0; width: 50%; transform-style: preserve-3d; pointer-events: none; }
   .album-turn-stationary { display: block; position: absolute; z-index: 3; top: 0; bottom: 0; width: 50%; pointer-events: none; }
@@ -250,7 +250,7 @@
   .album-paper { padding: 14px 20px; }
   .album-note { padding-block: 6px 8px; }
   .album-note h2 { font-size: 20px; }
-  .album-note p { font-size: 11px; line-height: 1.4; }
+  .album-note p { font-size: 13px; line-height: 1.5; }
   .fd-album-controls { min-height: 56px; }
 }
 
@@ -265,8 +265,12 @@
   .album-paper { padding: 7px; }
   .fd-album-controls { padding-inline: 8px; }
   .fd-album-dots-wrap>button { width: 26px; }
-  .album-note { padding-inline: 12px; gap: 6px; }
-  .album-note h2 { font-size: 15px; }
-  .album-note p { font-size: 10px; }
-  .album-read-note, .album-gallery-link { min-height: 44px; padding-inline: 7px; font-size: 9px; }
+  .album-note { padding-inline: 12px; gap: 10px; }
+  .album-note h2 { font-size: 18px; }
+  .album-read-note, .album-gallery-link { min-height: 44px; padding-inline: 9px; }
+}
+
+@media (max-width: 767px) {
+  .album-note:has(.album-gallery-link) { grid-template-columns: minmax(0, 1fr); }
+  .album-note:has(.album-gallery-link) .album-note-actions { justify-content: flex-start; flex-wrap: wrap; }
 }

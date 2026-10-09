@@ -50,6 +50,7 @@ export const revealPhotos = Array.from({ length: 4 }, (_, index) => ({ name: `de
 export const couragePhotos = Array.from({ length: 6 }, (_, index) => ({ name: `demo-courage-${index + 1}`, alt: `Courage's graduation portrait ${index + 1}` }));
 export const weddingPhotos = Array.from({ length: 5 }, (_, index) => ({ name: `demo-wedding-${index + 1}`, alt: `Folake and Tunde's wedding portrait ${index + 1}` }));
 export const albumPhotos = ['demo-album-fa-source', 'demo-album-fa-2', 'demo-album-fa-3', 'demo-album-fa-4', 'demo-album-fa-5'].map((name, index) => ({ name, width: 960, height: index === 2 ? 640 : index === 0 ? 1286 : 1285, alt: `The Adeyemi family album portrait ${index + 1}` }));
+const ALBUM_DEMO_BRANDING = { type: 'studio', name: 'Veylo Studio' };
 export const eventCoveragePhotos = EVENT_COVERAGE_DEMO_PHOTOS;
 export const campaignPhotos = [
   { name: '/veylo/demo/campaign/campaign-01-hero.webp', alt: 'Tan leather handbag and wallet on an indigo pedestal', caption: 'The campaign opens with the pieces together: warm leather, clean shape, and a confident point of view.', assetType: 'CAMPAIGN HERO', deliveryLabel: 'MASTER / WEB', campaignType: 'hero' },
@@ -177,7 +178,7 @@ export function normalizeDeliveryPhotos(delivery, fallbackPhotos, includeAll = f
   return fallbackPhotos.map(photo => ({ ...photo, caption: photo.caption || '' }));
 }
 
-export function DemoHeader({ format, client, sectionId, onGallery, light = false, delivery, audioState, toggleAudio, hideSoundtrack = false }) {
+export function DemoHeader({ format, client, sectionId, onGallery, light = false, delivery, demoBranding, audioState, toggleAudio, hideSoundtrack = false }) {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -208,16 +209,17 @@ export function DemoHeader({ format, client, sectionId, onGallery, light = false
     }
   };
 
-  const brandName = delivery?.branding?.name || 'Veylo';
+  const branding = delivery?.branding || demoBranding;
+  const brandName = branding?.name || 'Veylo';
   const capabilities = getDeliveryCapabilities(delivery?.format);
   const soundtrackLoading = audioState?.loading === 'soundtrack';
   const narrationLoading = audioState?.loading === 'narration';
 
   return <header className={'fd-header ' + (light ? 'is-light' : '')}>
-    {delivery ? (
+    {delivery || demoBranding ? (
       <div className="fd-header-brand">
-        <DeliveryBrandMark branding={delivery.branding} className="fd-header-logo" />
-        <span className="fd-header-brand-copy">{delivery.branding?.type === 'studio' && <small>Photographed by</small>}<strong>{brandName}</strong></span>
+        <DeliveryBrandMark branding={branding} className="fd-header-logo" />
+        <span className="fd-header-brand-copy">{branding?.type === 'studio' && <small>Photographed by</small>}<strong>{brandName}</strong></span>
       </div>
     ) : embeddedPhone ? (
       <span className="fd-header-brand">Veylo</span>
@@ -231,6 +233,7 @@ export function DemoHeader({ format, client, sectionId, onGallery, light = false
     <div className="fd-header-title"><span>{format}</span><strong>{client}</strong></div>
 
     <div className="fd-header-actions">
+      {!delivery && demoBranding && !embeddedPhone && <Link className="fd-back" to={backDestination} aria-label={backAria}><ArrowLeft size={17} /><span>Leave the demo</span></Link>}
       {audioState && toggleAudio && capabilities.music && delivery?.soundtrack?.url && !hideSoundtrack && (
         <button
           type="button"
@@ -848,7 +851,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
 
   const client = delivery ? (delivery.clientName ? `${delivery.clientName} / Album` : delivery.title) : 'The Adeyemi Family';
   const clientName = delivery?.clientName || delivery?.title || 'The Adeyemi Family';
-  const studioName = delivery?.branding?.name || 'Veylo';
+  const studioName = delivery ? delivery.branding?.name || 'Veylo' : ALBUM_DEMO_BRANDING.name;
   const albumTitle = delivery?.creativeDirection?.title || (delivery ? 'Photo Album' : 'Family Album');
   const demoOnly = !delivery;
   const audioTrack = delivery?.soundtrack?.url || (demoOnly ? '/audio/soundtrack-1.mp3' : '');
@@ -1042,7 +1045,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
 
   return <div className={`fd-page fd-album ${audioTrack ? 'has-music' : ''}`} data-paper-tone={paperTone} style={{ ...themeStyles, '--album-paper': paperChoice === 'theme' ? themeStyles['--fd-surface'] : paperTone === 'dark' ? '#1c1c20' : '#f0e8da' }}>
     {audioTrack && <audio ref={audio} crossOrigin="anonymous" src={audioTrack} loop preload="none" muted={muted} onWaiting={() => setAudioLoading(true)} onStalled={() => setAudioLoading(true)} onPlaying={() => { setAudioLoading(false); setAudioFailed(false); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioLoading(false); setAudioFailed(true); }} />}
-    <DemoHeader format="Album" client={client} sectionId="album" onGallery={galleryUnlocked ? openGallery : undefined} delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} hideSoundtrack />
+    <DemoHeader format="Album" client={client} sectionId="album" onGallery={galleryUnlocked ? openGallery : undefined} delivery={delivery} demoBranding={!delivery ? ALBUM_DEMO_BRANDING : undefined} audioState={audioState} toggleAudio={toggleAudio} hideSoundtrack />
     {!started ? <main className="fd-album-cover">
       <motion.figure className={`album-cover-book${albumCoverShape(v3OpeningPhoto) === 'landscape' ? ' is-landscape' : ''}`} style={{ '--album-cover-ratio': albumCoverRatio(v3OpeningPhoto) }} initial={reduced ? false : { opacity: 0, y: 20, rotate: -2 }} animate={{ opacity: 1, y: 0, rotate: -1 }} transition={{ duration: .9, ease: [.22, 1, .36, 1] }}>
         <div className="album-cover-binding" aria-hidden="true" />
@@ -1052,7 +1055,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
       </motion.figure>
       <div className="fd-album-cover-shade" aria-hidden="true" />
       <motion.section initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .7, delay: .12 }}>
-        <span className="album-eyebrow">{delivery?.branding?.name ? `PHOTOGRAPHED BY ${studioName}` : 'YOUR PHOTO ALBUM'}</span>
+        <span className="album-eyebrow">{demoOnly || delivery?.branding?.name ? `PHOTOGRAPHED BY ${studioName}` : 'YOUR PHOTO ALBUM'}</span>
         <h1>{clientName}</h1><h2>{albumTitle}</h2>
         <p>{delivery?.creativeDirection?.openingLine || `${photos.length} finished photographs. Take your time with each page.`}</p>
         <button type="button" onClick={openAlbum}>Open album<BookOpen size={18} /></button>
