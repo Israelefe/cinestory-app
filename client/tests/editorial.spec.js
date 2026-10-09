@@ -104,6 +104,33 @@ test('opening a photograph selects its actual gallery image and returns to the a
   await page.getByRole('button', { name: 'Close gallery' }).click(); await expect(photo).toBeFocused(); expect(Math.abs((await page.evaluate(() => scrollY)) - scroll)).toBeLessThan(3);
 });
 
+for (const [width, height] of [[320, 568], [834, 600], [844, 390]]) test(`Contents keeps its controls reachable in a long collection at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height });
+  const delivery = fixture(32);
+  delivery.creativeDirection.editorial.sections.forEach(section => { section.title += ' from the finished studio portrait collection'; });
+  await setup(page, delivery); await page.goto('/d/editorial-test');
+  const trigger = page.getByRole('button', { name: 'Open contents' });
+  await trigger.click(); await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  const dialog = page.getByRole('dialog', { name: 'Contents', exact: true });
+  const list = dialog.getByRole('navigation', { name: 'Editorial contents' });
+  const before = await page.evaluate(() => scrollY);
+  await list.evaluate(element => { element.scrollTop = element.scrollHeight; });
+  await expect(list.getByRole('button').last()).toBeInViewport();
+  await expect(dialog.getByRole('button', { name: 'Close contents' })).toBeInViewport();
+  await expect(dialog.getByRole('button', { name: 'Pause photo motion' })).toBeInViewport();
+  expect(await dialog.evaluate(element => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
+  expect(await page.evaluate(() => scrollY)).toBe(before);
+  await dialog.getByRole('button', { name: 'Pause photo motion' }).click();
+  await expect(page.locator('.ed-publication')).toHaveAttribute('data-motion-paused', 'true');
+  await page.keyboard.press('Escape'); await expect(trigger).toBeFocused();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await trigger.click();
+  const lastSection = delivery.creativeDirection.editorial.sections.at(-1);
+  await dialog.getByRole('button', { name: new RegExp(lastSection.title) }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(async () => Math.abs((await page.locator(`#ed-${lastSection.id}`).boundingBox()).y - 100)).toBeLessThan(5);
+});
+
 test('demo uses the same publication structure and offers local favourites', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await setup(page, fixture()); await page.goto('/demo/editorial'); await expect(page.locator('.ed-cover h1')).toHaveText(EDITORIAL_DEMO_DELIVERY.creativeDirection.title); await expect(page.locator('.ed-section .ed-photo')).toHaveCount(3); await expect(page.locator('.ed-photo')).toHaveCount(5); await expect(page.locator('.fd-v3-bookend')).toHaveCount(0);
   await openPresentationGallery(page, 'editorial'); await page.getByRole('button', { name: 'Add to favourites' }).first().click(); await page.getByRole('button', { name: /Favourites/ }).click(); await expect(page.locator('.client-gallery-grid>figure')).toHaveCount(1);

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useScroll, useSpring, useTransform } from 'framer-motion';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
@@ -19,6 +19,7 @@ const ease = [.22, 1, .36, 1];
 function EditorialImage({ photo, index, onOpen, eager = false, cover = false, showCaption = !cover, nextPhoto, slant = 2.2, delay = 0, motionPaused = false }) {
   const reduced = useVeyloReducedMotion();
   const ref = useRef(null);
+  const captionId = useId();
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -55,7 +56,7 @@ function EditorialImage({ photo, index, onOpen, eager = false, cover = false, sh
     <motion.div className="ed-photo-arrival" initial={animated ? { rotate: -slant * 1.3 } : false} whileInView={{ rotate: 0 }} viewport={{ once: true, amount: .1 }} transition={{ duration: animated ? .85 : 0, delay: animated ? delay : 0, ease }}>
     <div className="ed-photo-frame">
     <div className="ed-image-wrap" style={{ aspectRatio: fit === 'cover' ? ratio > 1 ? 1.5 : .8 : ratio }}>
-      <button type="button" className="ed-image-button" onClick={() => onOpen(photo.assetId)} aria-label={`View photograph ${index + 1}`}>
+      <button type="button" className="ed-image-button" onClick={() => onOpen(photo.assetId)} aria-label={`View photograph ${index + 1}`} aria-describedby={showCaption && (photo.headline || photo.caption) ? captionId : undefined} aria-haspopup="dialog">
         <img className="ed-image-thumbnail" src={photo.thumbnailUrl || photo.url} alt="" aria-hidden="true" loading={eager ? 'eager' : 'lazy'} style={{ objectFit: fit, objectPosition: photo.focalPoint || '50% 50%' }} />
         <motion.img key={`${photo.url}-${attempt}`} className="ed-image-main" src={photo.url} srcSet={photo.srcSet} sizes={cover ? '(max-width: 767px) 92vw, 48vw' : '(max-width: 767px) 92vw, (max-width: 1024px) 46vw, 680px'} alt={photo.alt} loading={eager ? 'eager' : 'lazy'} fetchPriority={eager ? 'high' : 'auto'} decoding="async" animate={{ opacity: ready ? 1 : 0 }} transition={{ duration: animated ? .55 : 0, ease }} style={{ objectFit: fit, objectPosition: photo.focalPoint || '50% 50%' }} onLoad={async event => { const img = event.currentTarget; const source = photo.url; try { await img.decode(); } catch { /* A loaded image can still be displayed. */ } if (currentSource.current === source) setReady(true); }} onError={() => setFailed(true)} />
         <span className="ed-image-open" aria-hidden="true"><ArrowUpRight size={20} /></span>
@@ -67,7 +68,7 @@ function EditorialImage({ photo, index, onOpen, eager = false, cover = false, sh
     </div>
     </motion.div>
     </div>
-    {showCaption && <figcaption><span className="ed-photo-number">{number(index + 1)}</span><div>{photo.headline && <strong>{photo.headline}</strong>}{photo.caption && <p>{photo.caption}</p>}</div></figcaption>}
+    {showCaption && <figcaption id={captionId}><span className="ed-photo-number">{number(index + 1)}</span><div>{photo.headline && <strong>{photo.headline}</strong>}{photo.caption && <p>{photo.caption}</p>}</div></figcaption>}
   </motion.figure>;
 }
 
@@ -76,7 +77,7 @@ function Contents({ items, active, theme, onClose, onChoose, motionPaused, onTog
   const ref = useRef(null);
   useDialogFocus(true, ref, onClose);
   return createPortal(<motion.div className="ed-contents-backdrop" style={theme} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-    <motion.section ref={ref} role="dialog" aria-modal="true" aria-labelledby="ed-contents-title" tabIndex={-1} className="ed-contents-dialog" initial={reduced ? false : { x: 48, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={reduced ? { opacity: 0 } : { x: 48, opacity: 0 }} transition={reduced ? { duration: 0 } : { type: 'spring', damping: 28, stiffness: 280 }}>
+    <motion.section id="ed-contents" ref={ref} role="dialog" aria-modal="true" aria-labelledby="ed-contents-title" tabIndex={-1} className="ed-contents-dialog" initial={reduced ? false : { x: 48, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={reduced ? { opacity: 0 } : { x: 48, opacity: 0 }} transition={reduced ? { duration: 0 } : { type: 'spring', damping: 28, stiffness: 280 }}>
       <header><div><span>THE FEATURE</span><h2 id="ed-contents-title">Contents</h2></div><button type="button" onClick={onClose} aria-label="Close contents"><X size={22} /></button></header>
       <div className="ed-motion-control"><button type="button" aria-pressed={motionPaused} onClick={onToggleMotion}>{motionPaused ? <Play size={18} /> : <Pause size={18} />}{motionPaused ? 'Resume photo motion' : 'Pause photo motion'}</button><p>{motionPaused ? 'Photo motion is paused.' : 'Photos move gently as you scroll.'}</p></div>
       <nav aria-label="Editorial contents">{items.map((item, index) => <button type="button" key={item.id} aria-current={active === item.id ? 'location' : undefined} onClick={() => onChoose(item.id)}><span>{number(index + 1)}</span><strong>{item.title}</strong><ArrowUpRight size={18} /></button>)}</nav>
@@ -156,7 +157,7 @@ export default function EditorialViewer({ delivery, galleryProps = {}, demo = fa
       <div className="ed-nav-title"><span>EDITORIAL</span><strong>{delivery.clientName || title}</strong></div>
       <nav aria-label="Publication controls">
         {!inPreview && (parentDesktop || wide) && <button type="button" className="ed-reader-switch" onClick={toggleReadingView} aria-label={wide ? 'Show phone view' : 'Read Editorial at full width'}>{wide ? <Smartphone size={19} /> : <Monitor size={19} />}<span>{wide ? 'Phone view' : 'Read Editorial'}</span></button>}
-        <button type="button" onClick={() => setContents(true)} aria-label="Open contents"><List size={20} /><span>Contents</span></button>
+        <button type="button" onClick={() => setContents(true)} aria-label="Open contents" aria-haspopup="dialog" aria-expanded={contents} aria-controls="ed-contents"><List size={20} /><span>Contents</span></button>
       </nav>
     </header>
     <motion.div className="ed-progress" style={{ scaleX: scrollYProgress }} aria-hidden="true" />
