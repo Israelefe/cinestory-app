@@ -146,6 +146,24 @@ test('expired and altered confirmation tokens are rejected without changing reco
     const res = response(); await validateAssistantWriting({ user: { id: userId }, body: { confirmation } }, res); assert.equal(res.statusCode, 409);
   }
 });
+for (const format of ['chapters', 'editorial', 'event-coverage', 'campaign']) test(`${format} assistant captions use format guidance, preserve longer writing and protect private context`, async t => {
+  const delivery = { ...draft(), kind: 'showcase', format, shootType: 'Fashion', brief: 'Finished product photographs for a linen jacket collection.', creativeDirection: { title: 'Linen jacket collection', frames: [{ assetId, headline: 'Front jacket view', caption: 'A linen jacket from the collection.' }] } };
+  fixtures(t, { delivery });
+  const caption = 'The front view shows the linen jacket from the clothing collection. This photograph provides a complete view of the garment for the clothing team, alongside the separate detail photographs in the finished set.';
+  const calls = model(t, caption); const res = response();
+  await proposeAssistantWriting({ user: { id: userId }, body: { kind: 'caption', deliveryId, assetId, instruction: 'Add useful detail using the supplied collection brief.' } }, res);
+  assert.equal(res.statusCode, 200); assert.equal(res.body.data.text, caption); assert.ok(caption.length > 180);
+  assert.match(calls[0].messages[0].content, new RegExp(`FORMAT GUIDANCE \\(${format}\\)`));
+  assert.match(calls[0].messages[0].content, /320 characters/);
+  assert.match(calls[0].messages[1].content, /drafts to improve, never sources/);
+  assert.doesNotMatch(JSON.stringify(calls), /private-client|private-image|image_url/);
+});
+test('detailed assistant captions reject unsupported product claims', async t => {
+  const delivery = { ...draft(), kind: 'showcase', format: 'campaign', shootType: 'Fashion', brief: 'Linen jacket collection.', creativeDirection: { title: 'Linen jacket', frames: [{ assetId, caption: 'The linen jacket.' }] } };
+  fixtures(t, { delivery }); model(t, 'The waterproof leather jacket is ready for the summer campaign.');
+  const res = response(); await proposeAssistantWriting({ user: { id: userId }, body: { kind: 'caption', deliveryId, assetId, instruction: 'Write a useful product caption.' } }, res);
+  assert.equal(res.statusCode, 400); assert.equal(res.body.data, undefined);
+});
 test('private media URLs and provider details cannot become writing suggestions', async t => {
   fixtures(t); model(t, 'Download https://private.example/photo?token=secret');
   const res = response(); await proposeAssistantWriting({ user: { id: userId }, body: { kind: 'delivery-title', deliveryId, instruction: 'Use a short title.' } }, res);

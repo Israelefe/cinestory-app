@@ -679,20 +679,14 @@ test('review retries repeated headings and captions while preserving the photo s
   } finally { restore(); }
 });
 
-test('a persistently repeated birthday draft still supplies distinct complete copy for the largest showcase', async () => {
+test('persistently repeated Event Coverage writing fails safely instead of publishing generic birthday fallbacks', async () => {
   const selected = ids.slice(0, 24);
   const repeated = selected.map(assetId => ({ assetId, headline: narrativeHeadlines[0], caption: narrativeCaptions[0] }));
   const restore = mockModel([{ frames: repeated }, { frames: repeated }, { frames: repeated }, { palette: {} }, { sections: [{ title: 'First set', assetIds: selected.slice(0, 12) }, { title: 'Second set', assetIds: selected.slice(12) }] }], []);
   try {
-    const result = await directV3({ clientName: 'Ada', brief: "Ada's 25th birthday", format: 'event-coverage' }, selected.map(assetId => ({ assetId, score: 8 })));
-    assert.equal(new Set(result.direction.frames.map(frame => frame.headline)).size, 24);
-    assert.equal(new Set(result.direction.frames.map(frame => frame.caption)).size, 24);
-    for (const frame of result.direction.frames) {
-      assert.ok(frame.headline.split(/\s+/).length <= 7);
-      assert.ok(frame.caption.length >= 5 && frame.caption.length <= 180);
-      assert.ok(frame.caption.length <= 180);
-      assert.match(frame.caption, /[.!?]$/);
-    }
+    const delivery = { clientName: 'Ada', brief: "Ada's 25th birthday", format: 'event-coverage' };
+    await assert.rejects(directV3(delivery, selected.map(assetId => ({ assetId, score: 8 }))), error => error.code === 'V3_WRITING_INCOMPLETE');
+    assert.equal(delivery.creativeDirection, undefined);
   } finally { restore(); }
 });
 
@@ -790,7 +784,7 @@ test('the other seven Showcase formats retain the purpose-led writing and review
     const frames = selected.map((assetId, index) => ({ assetId, headline: narrativeHeadlines[index], caption: narrativeCaptions[index] }));
     const calls = [];
     const midpoint = Math.floor(selected.length / 2);
-    const restore = mockModel([{ frames }, { palette: {} }, { sections: [{ title: 'The birthday', assetIds: selected.slice(0, midpoint) }, { title: 'The celebration', assetIds: selected.slice(midpoint) }] }], calls);
+    const restore = mockModel([{ frames }, { palette: {} }, { sections: [{ title: 'The birthday', subtitle: '', body: 'These portraits mark your birthday, Ada. This part of the collection brings photographs from the birthday session together.', assetIds: selected.slice(0, midpoint) }, { title: 'The celebration', subtitle: '', body: 'Your birthday portrait collection continues in this group. The photographs belong to the same session and occasion.', assetIds: selected.slice(midpoint) }] }], calls);
     try {
       const delivery = { clientName: 'Ada', brief: "Ada's 25th birthday", shootType: 'Birthday', format };
       const insights = selected.map(assetId => ({ assetId, score: 8, summary: 'A portrait in green velvet and pearl earrings.' }));
@@ -804,7 +798,10 @@ test('the other seven Showcase formats retain the purpose-led writing and review
       const writing = calls.filter(call => /SHARED DELIVERY WRITING RULES/.test(call.messages[0].content) && !/selected photographs into/.test(call.messages[0].content));
       assert.ok(writing.length >= 4);
       for (const call of writing) {
-        if (!/Group/.test(call.messages[0].content)) assert.doesNotMatch(call.messages[1].content[0].text, /green velvet|pearl earrings/);
+        if (!/Group/.test(call.messages[0].content)) {
+          if (['chapters', 'event-coverage', 'campaign'].includes(format)) assert.match(call.messages[1].content[0].text, /green velvet|pearl earrings/);
+          else assert.doesNotMatch(call.messages[1].content[0].text, /green velvet|pearl earrings/);
+        }
         assert.match(call.messages[0].content, /SHOOT GUIDANCE \(birthday\)/);
       }
     } finally { restore(); }

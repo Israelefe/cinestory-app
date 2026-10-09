@@ -2,6 +2,9 @@ import { z } from 'zod';
 import { DELIVERY_SOUNDTRACKS, recommendSoundtracks } from '../constants/deliverySoundtracks.js';
 import { supportsDeliveryMusic, supportsDeliveryNarration } from '../constants/deliveryCapabilities.js';
 import { deliveryWritingPolicy, supportsVisualWriting, shootWritingIssues, FORMAT_WRITING_PROFILES } from '../constants/deliveryWriting.js';
+import { hasDetailedWriting, DELIVERY_WRITING_VERSION } from '../constants/deliveryWritingLimits.js';
+import { SECTION_BODY_LIMITS } from '../constants/deliveryPresentationCore.js';
+import { detailedFrameIssues, repeatsWriting } from '../utils/deliveryWritingQuality.js';
 import { anyModelProviderConfigured, DEFAULT_ALIBABA_FALLBACK_MODEL, requestModelCompletion } from './modelProvider.service.js';
 
 const FORMATS = ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign'];
@@ -383,6 +386,7 @@ const directionSchema = z.object({
     id: z.preprocess(val => String(val || '').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 32) || 'section-1', z.string().regex(/^[a-z0-9-]{1,32}$/)),
     title: z.preprocess(val => safeString(val, 60, 1, 'Chapter'), z.string().min(1).max(60)),
     subtitle: z.preprocess(val => String(val || '').trim().slice(0, 120), z.string().max(120)),
+    body: z.string().trim().max(700).optional(),
     label: z.preprocess(val => String(val || '').trim().slice(0, 40), z.string().max(40)).default(''),
     delivery: z.preprocess(val => String(val || '').trim().slice(0, 40), z.string().max(40)).default(''),
     layout: z.preprocess(val => LAYOUTS.includes(val) ? val : 'single', z.enum(LAYOUTS)),
@@ -973,6 +977,7 @@ export async function createGlobalDirection({ format, brief, shootType, clientNa
   const provider = config();
   const formatProfile = FORMAT_DIRECTION_PROFILES[format] || FORMAT_DIRECTION_PROFILES['photo-story'];
   const audioCapabilities = { music: supportsDeliveryMusic(format), narration: supportsDeliveryNarration(format) };
+  const bodyLimit = format === 'editorial' ? 700 : SECTION_BODY_LIMITS[format];
   const compact = imageInsights.map(item => ({ assetId: item.assetId, summary: item.summary || '', subjects: item.subjects || [], setting: item.setting || '', expression: item.expression || '', clothing: item.clothing || '', weight: item.visualWeight, moment: item.moment, orientation: item.orientation, photographerCaption: item.photographerCaption || '', photographerTags: item.photographerTags || [] }));
   const schemaInstructions = `Return a JSON object matching this schema:
 {
@@ -988,7 +993,7 @@ export async function createGlobalDirection({ format, brief, shootType, clientNa
   "music": ${audioCapabilities.music ? '{ "trackId": "<one approved track id>", "mood": "<mood title, 2-80 chars>", "genre": "<genre title, 2-80 chars>", "tempo": "slow" | "mid" | "upbeat" }' : 'omit this field'},
   "narrationRecommended": ${audioCapabilities.narration ? 'boolean' : 'false'},
   "sections": [
-    { "id": "<kebab-case-id>", "title": "<section title>", "subtitle": "<section subtitle>", "label": "<short scene label>", "delivery": "<short purpose label>", "layout": "${formatProfile.sectionLayouts.join('" | "')}", "accent": "<#hex>" }
+    { "id": "<kebab-case-id>", "title": "<specific section title, max 60 chars>", "subtitle": "<short section subtitle, max 120 chars>", ${hasDetailedWriting(format) ? '"body": "<useful section context, max ' + bodyLimit + ' chars>", ' : ''}"label": "<short scene label>", "delivery": "<short purpose label>", "layout": "${formatProfile.sectionLayouts.join('" | "')}", "accent": "<#hex>" }
   ]
 }`;
 
@@ -1019,7 +1024,7 @@ Do not choose the generic quiet/rules/balanced combination unless the photograph
     model: provider.creativeModel,
     messages: [
       { role: 'system', content: `You are Veylo’s senior creative director. Design one ${format} presentation around the actual finished shoot. ${deliveryWritingPolicy({ format, brief, shootType, clientName })}\n\n${schemaInstructions}` },
-      { role: 'system', content: formatDirectionRules },
+      { role: 'system', content: formatDirectionRules + (hasDetailedWriting(format) ? ` Give each section a specific heading and a developed paragraph explaining this part of the shoot, using only the brief and saved observations. The subtitle is a short label; body holds the paragraph up to ${bodyLimit} characters. Use two or three sentences when supported, fewer when facts are limited. Do not repeat the subtitle as the paragraph, copy another section, or invent names, roles, chronology, feelings, product claims or usage rights. Earlier direction and revision wording are drafts, never additional factual sources.` : '') },
       { role: 'system', content: designContract },
       { role: 'user', content: JSON.stringify({
         task: revisionInstruction ? 'Revise the complete art direction and section plan' : 'Create the complete art direction and section plan',
@@ -1038,7 +1043,13 @@ Do not choose the generic quiet/rules/balanced combination unless the photograph
         photographs: compact
       }) }
     ],
-    schema: directionSchema,
+    schema: directionSchema.superRefine((value, context) => {
+      if (!hasDetailedWriting(format)) return;
+      value.sections.forEach((section, index) => {
+        const body = section.body || '';
+        if (body.length > bodyLimit || (format !== 'editorial' && body.length < 5) || repeatsWriting(body, [section.subtitle, ...value.sections.filter(other => other !== section).map(other => other.body)]) || shootWritingIssues(body, { format, brief, shootType, clientName }, { observation: compact.map(photo => photo.summary).join(' ') }).length) context.addIssue({ code: z.ZodIssueCode.custom, path: ['sections', index, 'body'], message: `Write distinct, factual section context within ${bodyLimit} characters.` });
+      });
+    }),
     repairLabel: 'creative direction',
     schemaHint: schemaInstructions
   });
@@ -1050,18 +1061,20 @@ Do not choose the generic quiet/rules/balanced combination unless the photograph
     result.format = format;
   }
   if (!audioCapabilities.music) result.music = undefined;
+  if (!hasDetailedWriting(format)) result.sections.forEach(section => { delete section.body; });
+  else result.writingVersion = DELIVERY_WRITING_VERSION;
   result.narrationRecommended = audioCapabilities.narration;
   return result;
 }
 
-export async function createFrameBatch({ format, brief, shootType, clientName, direction, imageInsights, collectionAnalysis = null, revisionInstruction = '', currentFrames = [] }) {
+export async function createFrameBatch({ format, brief, shootType, clientName, direction, imageInsights, collectionAnalysis = null, revisionInstruction = '', currentFrames = [], avoidFrames = [] }) {
   if (imageInsights.length > 18) {
     const frames = [];
     for (let offset = 0; offset < imageInsights.length; offset += 18) {
       const batch = imageInsights.slice(offset, offset + 18);
       const result = await createFrameBatch({
         format, brief, shootType, clientName, direction, imageInsights: batch,
-        collectionAnalysis, revisionInstruction,
+        collectionAnalysis, revisionInstruction, avoidFrames: [...avoidFrames, ...frames],
         currentFrames: currentFrames.filter(frame => batch.some(item => item.assetId === frame.assetId))
       });
       frames.push(...result.frames);
@@ -1121,7 +1134,7 @@ Return one frame per photograph in the supplied order.`;
     title: direction?.title || 'Photo Story',
     openingLine: direction?.openingLine || '',
     closingLine: direction?.closingLine || '',
-    sections: (direction?.sections || []).map(s => ({ id: s.id, title: s.title, subtitle: s.subtitle || '', label: s.label || '', delivery: s.delivery || '', layout: s.layout || 'single', accent: s.accent || '' })),
+    sections: (direction?.sections || []).map(s => ({ id: s.id, title: s.title, subtitle: s.subtitle || '', ...(hasDetailedWriting(format) ? { body: s.body || '' } : {}), label: s.label || '', delivery: s.delivery || '', layout: s.layout || 'single', accent: s.accent || '' })),
     variation: direction?.variation || {},
     typography: direction?.typography || {},
     pace: direction?.pace || 'warm'
@@ -1234,7 +1247,7 @@ Return one frame per photograph in the supplied order.`;
         throw Object.assign(new Error(`Caption for photograph ${id} must focus on the shoot type and brief instead of describing the photograph or its production.`), { code: 'GENERIC_CAPTION', assetId: id, rejectedCaption: caption });
       }
       const normalizedCaption = caption.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-      if (caption.length < 5 || caption.length > (FORMAT_WRITING_PROFILES[format]?.caption || 180) || /^(a finished|a final|this frame|a photograph|photograph from the shoot)\b/i.test(caption) || seenCaptions.has(normalizedCaption)) {
+      if (caption.length < 5 || caption.length > (FORMAT_WRITING_PROFILES[format]?.caption || 180) || /^(a finished|a final|this frame|a photograph|photograph from the shoot)\b/i.test(caption) || seenCaptions.has(normalizedCaption) || detailedFrameIssues({ ...frame, caption }, format, [...(direction?.sections || []).map(section => section.body), ...avoidFrames.map(other => other.caption)]).length) {
         throw Object.assign(new Error(`The creative director returned an unusable caption for photograph ${id}.`), { code: 'INVALID_MODEL_OUTPUT' });
       }
       seenCaptions.add(normalizedCaption);
@@ -1297,6 +1310,7 @@ Assign every photograph to one existing section (${validSectionIds.join(', ')}).
             deliveryDirection: minimalDirection,
             photographerRevision: revisionInstruction,
             currentFrames: (currentFrames || []).slice(0, 20),
+            ...(hasDetailedWriting(format) ? { otherPhotoWritingToAvoidRepeatingNotFacts: avoidFrames.slice(-40).map(frame => ({ headline: frame.headline, caption: frame.caption })) } : {}),
             photographCount: photographInputs.length,
             qualityFeedback: attempt && lastError?.code === 'GENERIC_CAPTION'
               ? `${lastError.message} The rejected caption for this asset was ${JSON.stringify(lastError.rejectedCaption || '')}. Rewrite it using the shared shoot and format rules above. Preserve the actual purpose and supplied facts; avoid inventing a personal occasion or commercial claim.`

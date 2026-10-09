@@ -2,6 +2,7 @@ import Delivery from '../models/Delivery.js';
 import DeliveryJob from '../models/DeliveryJob.js';
 import { withModelRequestContext } from './modelRequestContext.service.js';
 import { analyzeAllV3, directV3, directV3PhotoSwapCaptions, directV3Pinboard } from './deliveryV3AI.service.js';
+import { hasDetailedWriting, DELIVERY_WRITING_VERSION } from '../constants/deliveryWritingLimits.js';
 import { synthesizeV3Narration } from './narration.service.js';
 import { CREATIVE_DIRECTOR_PROVIDER, CREATIVE_DIRECTOR_PROMPT_VERSION, FORMAT_DIRECTION_PROFILES, analyzeImageBatch, createFrameBatch, createGlobalDirection, recommendFormats, selectCuratedPhotos } from './alibabaCreativeDirector.service.js';
 import { removeDeliveryAudio, signedDeliveryImageUrl } from './deliveryMedia.service.js';
@@ -255,6 +256,7 @@ async function direct(job, delivery) {
 
   let direction = job.result?.direction;
   let frames = Array.isArray(job.result?.frames) ? job.result.frames : [];
+  if (hasDetailedWriting(format) && direction?.writingVersion !== DELIVERY_WRITING_VERSION) { direction = null; frames = []; }
   if (!direction) {
     const directionStartedAt = Date.now();
     try {
@@ -282,7 +284,7 @@ async function direct(job, delivery) {
   const captionsStartedAt = Date.now();
   try {
     await mapConcurrent(pending, effectiveAiBatchConcurrency, async batch => {
-      const result = await withAiRequestSlot(() => createFrameBatch({ format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction, imageInsights: batch, collectionAnalysis: delivery.collectionAnalysis, revisionInstruction: job.input?.instruction || '', currentFrames: job.type === 'revise' ? (delivery.creativeDirection?.frames || []).filter(frame => batch.some(item => item.assetId === frame.assetId)) : [] }));
+      const result = await withAiRequestSlot(() => createFrameBatch({ format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction, imageInsights: batch, collectionAnalysis: delivery.collectionAnalysis, revisionInstruction: job.input?.instruction || '', currentFrames: job.type === 'revise' ? (delivery.creativeDirection?.frames || []).filter(frame => batch.some(item => item.assetId === frame.assetId)) : [], avoidFrames: hasDetailedWriting(format) ? [...frameById.values()].filter(frame => !batch.some(item => item.assetId === frame.assetId)) : [] }));
       const frameMap = new Map((result.frames || []).map(frame => [String(frame.assetId), frame]));
       for (const item of batch) {
         const frame = frameMap.get(String(item.assetId));
@@ -301,6 +303,18 @@ async function direct(job, delivery) {
   }
   frames = insights.map(item => frameById.get(String(item.assetId))).filter(Boolean);
   if (frames.length !== insights.length) throw Object.assign(new Error('The creative director did not return a caption for every photograph.'), { code: 'CAPTIONS_REQUIRED' });
+  if (hasDetailedWriting(delivery.format)) {
+    const seen = new Set(), duplicates = new Set();
+    for (const frame of frames) {
+      const key = String(frame.caption || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      if (seen.has(key)) duplicates.add(frame.assetId);
+      seen.add(key);
+    }
+    if (duplicates.size) {
+      await saveJob(job, { result: { ...job.result, direction, frames: frames.filter(frame => !duplicates.has(frame.assetId)) } });
+      throw Object.assign(new Error('Some photo captions repeat. Retry to rewrite the affected photographs.'), { code: 'CAPTIONS_REPEATED' });
+    }
+  }
   const captionKeys = new Set();
   for (const frame of frames) {
     let key = String(frame.caption || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -380,7 +394,7 @@ async function revise(job, delivery) {
   if (insights.length !== selected.size) throw Object.assign(new Error('One of the selected photographs has no analysis.'), { code: 'ANALYSIS_REQUIRED' });
   const currentFrames = delivery.creativeDirection.frames.filter(frame => selected.has(frame.assetId));
   await saveJob(job, { stage: 'revising-selected-photographs', progress: 20 });
-  const result = await withAiRequestSlot(() => createFrameBatch({ format: delivery.format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction: delivery.creativeDirection, imageInsights: insights, revisionInstruction: instruction, currentFrames }));
+  const result = await withAiRequestSlot(() => createFrameBatch({ format: delivery.format, brief: delivery.brief, shootType: delivery.shootType, clientName: delivery.clientName, direction: delivery.creativeDirection, imageInsights: insights, revisionInstruction: instruction, currentFrames, avoidFrames: hasDetailedWriting(delivery.format) ? delivery.creativeDirection.frames.filter(frame => !selected.has(frame.assetId)) : [] }));
   if (result.frames.some((frame, index) => frame.assetId !== insights[index]?.assetId)) throw Object.assign(new Error('The creative model changed the selected photograph order.'), { code: 'INVALID_FRAME_SEQUENCE' });
   const sectionIds = new Set(delivery.creativeDirection.sections.map(section => section.id));
   if (result.frames.some(frame => !sectionIds.has(frame.sectionId))) throw Object.assign(new Error('The creative model returned an unknown section.'), { code: 'INVALID_FRAME_SECTION' });
@@ -462,7 +476,8 @@ async function run(job) {
         await saveJob(job, { status: 'review', stage: 'captions-ready', progress: 100, completedAt: new Date(), result: { captions: frames.length, analyzed: insights.length } });
       } else {
         await saveJob(job, { stage: 'writing-showcase', progress: 82 });
-        const result = job.result?.preparedShowcase || await directV3(latest, insights, { resume: job.result?.writing || {}, checkpoint: async writing => {
+        const prepared = job.result?.preparedShowcase;
+        const result = (prepared && (!hasDetailedWriting(latest.format) || prepared.direction?.writingVersion === DELIVERY_WRITING_VERSION) ? prepared : null) || await directV3(latest, insights, { resume: job.result?.writing || {}, checkpoint: async writing => {
           await saveJob(job, { result: { ...job.result, writing }, counts: { analysis: { done: insights.length, total: latest.assets.length }, writing: { done: (writing.writing?.captions || writing.editorial?.frames || []).length, total: writing.selected?.length || 0 } } });
         } });
         await saveJob(job, { result: { ...job.result, preparedShowcase: result } });

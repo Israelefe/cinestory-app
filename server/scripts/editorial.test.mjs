@@ -19,7 +19,7 @@ function model(t, replies, calls = []) {
   const key = process.env.ALIBABA_MODEL_STUDIO_API_KEY, base = process.env.ALIBABA_BASE_URL;
   process.env.ALIBABA_MODEL_STUDIO_API_KEY = 'test-key'; process.env.ALIBABA_BASE_URL = 'https://test.aliyuncs.com/compatible-mode/v1';
   t.after(() => { if (key === undefined) delete process.env.ALIBABA_MODEL_STUDIO_API_KEY; else process.env.ALIBABA_MODEL_STUDIO_API_KEY = key; if (base === undefined) delete process.env.ALIBABA_BASE_URL; else process.env.ALIBABA_BASE_URL = base; });
-  t.mock.method(globalThis, 'fetch', async (_url, options) => { calls.push(JSON.parse(options.body)); const value = replies.shift(); assert.ok(value, 'Unexpected model call'); return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(value) } }] }) }; });
+  t.mock.method(globalThis, 'fetch', async (_url, options) => { calls.push(JSON.parse(options.body)); const value = replies.shift(); assert.ok(value, 'Unexpected model call'); return Response.json({ usage: { total_tokens: 1 }, choices: [{ message: { content: JSON.stringify(value) } }] }); });
 }
 
 test('client and server use identical Editorial limits', () => assert.deepEqual(clientLimits, EDITORIAL_LIMITS));

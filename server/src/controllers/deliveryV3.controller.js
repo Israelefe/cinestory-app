@@ -16,6 +16,7 @@ import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID } from '../constants/narra
 import { cleanDeliveryAccess } from '../utils/deliveryAccess.js';
 import { revealSchema } from '../constants/photoReveal.js';
 import { presentationSchema, sectionWritingSchema, presentationIssues, sectionIssues, PRESENTATION_KEYS } from '../constants/deliveryPresentation.js';
+import { photoCaptionLimit } from '../constants/deliveryWritingLimits.js';
 import { canvasSettings } from '../constants/canvas.js';
 
 const details = z.object({ kind: z.enum(['showcase', 'pinboard', 'photoswap']).default('showcase'), clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().max(80).default(''), purpose: z.string().trim().max(3000).default(''), title: z.string().trim().max(120).default(''), originalPurpose: z.string().trim().max(3000).default(''), clarificationAnswers: z.array(z.object({ question: z.string().trim().max(180), answer: z.string().trim().min(1).max(300) }).strict()).max(3).default([]) }).strict();
@@ -203,7 +204,7 @@ export async function v3Showcase(req, res) {
     const input = showcaseInput.safeParse(req.body); if (!input.success) return bad(res, input);
     const delivery = await owned(req); if (!editable(delivery) || delivery.kind === 'pinboard' || !delivery.collectionAnalysis || !delivery.creativeDirection) return res.status(409).json({ success: false, message: 'Analyse the photographs first.' });
     const assetIds = new Set(delivery.assets.map(asset => asset.assetId));
-    if (delivery.format !== 'editorial' && (input.data.editorial || input.data.openingLine.length > 140 || input.data.closingLine.length > 160 || input.data.frames.some(frame => frame.caption.length > 180 || frame.imageFit || frame.focalPoint))) return res.status(400).json({ success: false, message: 'Keep the text and design choices within the limits for this format.' });
+    if (delivery.format !== 'editorial' && (input.data.editorial || input.data.openingLine.length > 140 || input.data.closingLine.length > 160 || input.data.frames.some(frame => frame.caption.length > Math.max(180, photoCaptionLimit(delivery.format)) || frame.imageFit || frame.focalPoint))) return res.status(400).json({ success: false, message: 'Keep the text and design choices within the limits for this format.' });
     if (input.data.editorial && (!validEditorialOrder(input.data.editorial, input.data.assetIds) || new Set(input.data.editorial.sections.map(section => section.id)).size !== input.data.editorial.sections.length)) return res.status(400).json({ success: false, message: 'Keep each showcase photograph in one section, in the selected order.' });
     if (input.data.editorial?.sections.some(section => !editorialExcerptMatches(section, input.data.frames))) return res.status(400).json({ success: false, message: 'Choose a pull line from the section text or one of its captions.' });
     if (!validShowcase(delivery.format, input.data.assetIds, assetIds)) return res.status(400).json({ success: false, message: 'Choose the allowed number of showcase photographs from this delivery.' });
@@ -340,7 +341,7 @@ export async function v3Caption(req, res) {
   try {
     const input = z.object({ instruction: z.string().trim().max(400).default(''), previous: z.object({ headline: z.string().trim().max(70), caption: z.string().trim().max(320) }).strict().optional(), editorialBlock: z.enum(['summary', 'introduction', 'section', 'closing']).optional(), sectionAssetIds: idList.optional(), previousText: z.string().trim().max(700).optional(), writingBlocks: writingBlocksSchema.optional() }).strict().safeParse(req.body); if (!input.success) return bad(res, input);
     const delivery = await owned(req); if (!editable(delivery) || !delivery.collectionAnalysis) return res.status(409).json({ success: false, message: 'Analyse the photographs first.' });
-    if (delivery.format !== 'editorial' && (input.data.editorialBlock || input.data.sectionAssetIds || input.data.previousText !== undefined || (input.data.previous?.caption.length || 0) > 180)) return res.status(400).json({ success: false, message: 'Use the caption limits for this format.' });
+    if (delivery.format !== 'editorial' && (input.data.editorialBlock || input.data.sectionAssetIds || input.data.previousText !== undefined || (input.data.previous?.caption.length || 0) > Math.max(180, photoCaptionLimit(delivery.kind === 'photoswap' ? 'photoswap' : delivery.format)))) return res.status(400).json({ success: false, message: 'Use the caption limits for this format.' });
     const insight = delivery.collectionAnalysis.images?.find(row => row.assetId === req.params.assetId);
     if (!insight || !delivery.assets.some(asset => asset.assetId === req.params.assetId)) return res.status(404).json({ success: false, message: 'Photograph not found.' });
     if (input.data.writingBlocks) {

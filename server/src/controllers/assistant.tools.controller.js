@@ -5,6 +5,9 @@ import Delivery from '../models/Delivery.js';
 import { loadAssistantAccount } from './assistant.controller.js';
 import { assistantContextSchema, freshAssistantContext, assistantWorkspaceContext, ownedAssistantDelivery, inspectAssistantDelivery } from '../services/assistantWorkspace.service.js';
 import { suggestAssistantWriting } from '../services/alibabaAssistant.service.js';
+import { photoCaptionLimit, hasDetailedWriting } from '../constants/deliveryWritingLimits.js';
+import { deliveryWritingPolicy, shootWritingIssues } from '../constants/deliveryWriting.js';
+import { detailedFrameIssues } from '../utils/deliveryWritingQuality.js';
 
 const id = z.string().regex(/^[a-f0-9]{24}$/i);
 const writingSchema = z.object({ kind: z.enum(['delivery-title', 'caption', 'client-message', 'portfolio-intro']), deliveryId: id.optional(), assetId: z.string().uuid().optional(), instruction: z.string().trim().min(3).max(800) }).strict();
@@ -65,7 +68,7 @@ export async function proposeAssistantWriting(req, res) {
       if (input.kind !== 'client-message' && !['draft', 'review'].includes(delivery.status)) throw toolError('Writing changes require an editable draft.');
       if (input.kind === 'client-message' && delivery.status !== 'published') throw toolError('Publish the delivery before preparing its delivery message.');
       source = { title: delivery.creativeDirection?.title || delivery.pinboard?.title || delivery.title, shootType: delivery.shootType, purpose: String(delivery.brief || '').slice(0, 1600) };
-      maxLength = input.kind === 'delivery-title' ? delivery.kind === 'showcase' ? 80 : 120 : input.kind === 'caption' ? delivery.kind === 'showcase' && delivery.format === 'editorial' ? 320 : 180 : 600;
+      maxLength = input.kind === 'delivery-title' ? delivery.kind === 'showcase' ? 80 : 120 : input.kind === 'caption' ? delivery.kind === 'showcase' && hasDetailedWriting(delivery.format) ? photoCaptionLimit(delivery.format) : 180 : 600;
       if (input.kind === 'caption') {
         const asset = delivery.assets?.find(item => item.assetId === input.assetId);
         if (!asset) throw toolError('Choose a photograph from this delivery.', 404);
@@ -75,7 +78,9 @@ export async function proposeAssistantWriting(req, res) {
         if (!source.caption && input.instruction.length < 15) throw toolError('Describe what this photograph shows so the caption uses real details.', 400);
       }
     }
-    const text = await suggestAssistantWriting({ kind: input.kind, source, instruction: input.instruction, maxLength, signal: controller.signal });
+    const writingPolicy = delivery?.kind === 'showcase' && hasDetailedWriting(delivery.format) && ['caption', 'delivery-title'].includes(input.kind) ? deliveryWritingPolicy({ format: delivery.format, brief: source.purpose, shootType: delivery.shootType }) : '';
+    const text = await suggestAssistantWriting({ kind: input.kind, source, instruction: input.instruction, maxLength, writingPolicy, signal: controller.signal });
+    if (writingPolicy && (shootWritingIssues(text, { format: delivery.format, brief: source.purpose, shootType: delivery.shootType }, { caption: input.kind === 'caption' }).length || input.kind === 'caption' && detailedFrameIssues({ headline: '', caption: text }, delivery.format, [source.title]).length)) throw toolError('The suggestion needs more supported detail. Add it to the delivery brief and try again.', 400);
     if (text.length < (input.kind === 'delivery-title' ? 2 : input.kind === 'caption' ? 5 : 10)) throw toolError('The suggestion is too short for this field. Try a more specific instruction.', 400);
     if (controller.signal.aborted) return;
     if (!process.env.JWT_SECRET) throw toolError('Writing confirmation is unavailable right now.', 503);

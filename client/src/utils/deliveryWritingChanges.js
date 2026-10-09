@@ -1,5 +1,6 @@
 import { reconcileEditorial } from './editorial.js';
 import { reconcileCanvas, canvasCheckpoints } from './canvas.js';
+import { hasDetailedWriting } from './deliveryWritingLimits.js';
 
 export function initialWritingOverrides(delivery) {
   const direction = delivery?.creativeDirection || {};
@@ -14,6 +15,7 @@ export function writingText(state, key) {
   if (key === 'editorial.introduction') return state.editorial?.introduction || '';
   const [, id, field] = key.split(':');
   if (state.format === 'canvas' && field === 'body') { const section = state.sections.find(section => section.id === id); return section?.subtitle || section?.body || ''; }
+  if (hasDetailedWriting(state.format) && state.format !== 'editorial' && field === 'body') { const section = state.sections.find(section => section.id === id); return section?.body ?? section?.subtitle ?? ''; }
   return state.format === 'editorial' ? state.editorial.sections.find(section => section.id === id)?.[field] || '' : state.sections.find(section => section.id === id)?.[field === 'body' ? 'subtitle' : 'title'] || '';
 }
 
@@ -22,6 +24,7 @@ export function setWritingText(state, key, text) {
   if (key === 'editorial.introduction') return { ...state, editorial: { ...state.editorial, introduction: text } };
   const [, id, field] = key.split(':');
   if (state.format === 'editorial') return { ...state, editorial: { ...state.editorial, sections: state.editorial.sections.map(section => section.id === id ? { ...section, [field]: text } : section) } };
+  if (hasDetailedWriting(state.format)) return { ...state, sections: state.sections.map(section => section.id === id ? { ...section, [field]: text } : section) };
   return { ...state, sections: state.sections.map(section => section.id === id ? { ...section, [field === 'body' ? 'subtitle' : 'title']: text, ...(state.format === 'canvas' && field === 'body' && section.body !== undefined ? { body: text } : {}) } : section) };
 }
 
@@ -56,7 +59,7 @@ export function planPhotoWritingChange(state, { mode, assetId, index, order, edi
     const after = state.format === 'editorial' ? editorial.sections : sections;
     for (const section of after) {
       if (JSON.stringify(before.find(item => item.id === section.id)?.assetIds) === JSON.stringify(section.assetIds)) continue;
-      const body = state.format === 'editorial' ? section.body : section.subtitle || (state.format === 'canvas' ? section.body : '');
+      const body = state.format === 'editorial' || hasDetailedWriting(state.format) ? section.body ?? section.subtitle : section.subtitle || (state.format === 'canvas' ? section.body : '');
       if (section.title && section.id !== 'showcase') blocks.push({ key: `section:${section.id}:title`, kind: 'section-title', assetIds: section.assetIds, text: section.title });
       if (body) blocks.push({ key: `section:${section.id}:body`, kind: 'section-body', assetIds: section.assetIds, text: body });
     }

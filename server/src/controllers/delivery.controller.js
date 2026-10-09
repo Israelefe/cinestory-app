@@ -38,6 +38,8 @@ import { storageProviderError } from '../services/deliveryMedia.service.js';
 import { cleanDeliveryAccess } from '../utils/deliveryAccess.js';
 import { createCloudflareArchive, mediaOffloadEnabled, signedMediaUrl } from '../services/cloudflareMedia.service.js';
 import { catalogueAudioKey, deliveryMediaAccess } from '../services/mediaAuthorization.service.js';
+import { photoCaptionLimit, hasDetailedWriting } from '../constants/deliveryWritingLimits.js';
+import { SECTION_BODY_LIMITS } from '../constants/deliveryPresentationCore.js';
 
 const createSchema = z.object({ clientName: z.string().trim().min(2).max(100), shootType: z.string().trim().min(2).max(80), brief: z.string().trim().min(1).max(3000) }).strict();
 const briefAssistSchema = createSchema.extend({ mode: z.enum(['assess', 'enhance']) }).strict();
@@ -72,11 +74,11 @@ const reviewSchema = z.object({
     captionTreatment: z.enum(['quiet', 'editorial', 'bold']),
     accentPlacement: z.enum(['corners', 'rules', 'labels', 'type'])
   }).strict().optional(),
-  sections: z.array(z.object({ id: z.string().regex(/^[a-z0-9-]{1,32}$/), title: z.string().trim().min(1).max(60), subtitle: z.string().trim().max(120), label: z.string().trim().max(40).default(''), delivery: z.string().trim().max(40).default(''), layout: z.enum(['hero', 'single', 'pair', 'triptych', 'grid', 'strip', 'spread', 'cluster', 'chapter-cover']), accent: z.string().regex(/^#[0-9a-f]{6}$/i).optional() }).strict()).min(1).max(12),
+  sections: z.array(z.object({ id: z.string().regex(/^[a-z0-9-]{1,32}$/), title: z.string().trim().min(1).max(60), subtitle: z.string().trim().max(120), body: z.string().trim().max(700).optional(), label: z.string().trim().max(40).default(''), delivery: z.string().trim().max(40).default(''), layout: z.enum(['hero', 'single', 'pair', 'triptych', 'grid', 'strip', 'spread', 'cluster', 'chapter-cover']), accent: z.string().regex(/^#[0-9a-f]{6}$/i).optional() }).strict()).min(1).max(12),
   frames: z.array(z.object({
     assetId: z.string().min(1).max(100),
     headline: z.string().trim().max(70),
-    caption: z.string().trim().min(18).max(180),
+    caption: z.string().trim().min(18).max(320),
     eventType: z.enum(['people', 'programme', 'networking', 'details', '']).default(''),
     campaignType: z.enum(['hero', 'detail', 'lifestyle', 'kit', 'context', '']).default(''),
     layout: z.enum(creativeDirectorAllowlist.frameLayouts).optional(),
@@ -907,6 +909,9 @@ export async function updateDeliveryReview(req, res) {
     const delivery = await ownedDelivery(req.params.id, req.user.id);
     if (delivery?.schemaVersion === 3) return res.status(409).json({ success: false, message: 'Use the V3 showcase step for this draft.' });
     if (!delivery || delivery.status !== 'review' || !delivery.creativeDirection) return res.status(409).json({ success: false, message: 'This delivery is not ready for edits.' });
+    const captionLimit = hasDetailedWriting(delivery.format) ? photoCaptionLimit(delivery.format) : 180;
+    const bodyLimit = delivery.format === 'editorial' ? 700 : SECTION_BODY_LIMITS[delivery.format] || 120;
+    if (parsed.data.frames.some(frame => frame.caption.length > captionLimit) || parsed.data.sections.some(section => section.body !== undefined && (!hasDetailedWriting(delivery.format) || section.body.length > bodyLimit))) return res.status(400).json({ success: false, message: 'Check the caption and section paragraph lengths for this format.' });
     const known = new Set(delivery.assets.map(asset => asset.assetId));
     if (!parsed.data.assetOrder.length || new Set(parsed.data.assetOrder).size !== parsed.data.assetOrder.length || parsed.data.assetOrder.some(id => !known.has(id))) return res.status(400).json({ success: false, message: 'The photograph order is invalid or contains unknown photographs.' });
     const frameEdits = new Map(parsed.data.frames.map(frame => [frame.assetId, frame]));
@@ -951,7 +956,7 @@ export async function updateDeliveryReview(req, res) {
     delivery.creativeDirection.sections = parsed.data.sections.map(section => {
       const existing = existingSections.get(section.id);
       const assetIds = (existing?.assetIds || []).filter(assetId => positions.has(assetId)).sort((left, right) => positions.get(left) - positions.get(right));
-      return { ...section, accent: section.accent || existing?.accent, assetIds };
+      return { ...section, ...(hasDetailedWriting(delivery.format) && section.body === undefined && existing?.body !== undefined ? { body: existing.body } : {}), accent: section.accent || existing?.accent, assetIds };
     }).filter(section => section.assetIds.length);
     // Captions and order are the narration source of truth. Any review save makes old audio unsafe to reuse.
     delivery.narration = undefined;

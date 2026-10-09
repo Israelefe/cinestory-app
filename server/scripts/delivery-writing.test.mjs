@@ -47,10 +47,12 @@ test('the receiving studio is not addressed as the person photographed', () => {
   assert.equal(requiresDirectAddress({ ...personal, format: 'photo-story', clientName: 'Amara' }), false);
   assert.doesNotMatch(writingFallback({ ...personal, clientName: 'Apex Imagery Studio' }).caption, /your birthday|you turned/i);
 });
-test('visual description fits fashion but does not take over birthday writing', () => {
+test('detailed captions can use supplied photo details while other personal formats retain their writing rules', () => {
   const caption = 'Ada wears an emerald suit beside an ivory telephone in this portrait.';
   assert.ok(shootWritingIssues(caption, personal, { caption: true }).length);
-  assert.deepEqual(shootWritingIssues(caption, { ...personal, shootType: 'Fashion' }, { caption: true }), []);
+  assert.deepEqual(shootWritingIssues(caption, { ...personal, shootType: 'Fashion' }, { caption: true, observation: 'Ada wears an emerald suit beside an ivory telephone.' }), []);
+  assert.deepEqual(shootWritingIssues(caption, personal, { caption: true, observation: 'Ada wears an emerald suit beside an ivory telephone.' }), []);
+  assert.ok(shootWritingIssues(caption, { ...personal, format: 'photo-story' }, { caption: true }).length);
   assert.deepEqual(shootWritingIssues('Ada, keep holding onto what matters to you.', personal, { caption: true }), []);
   assert.ok(shootWritingIssues('A waterproof sustainable bag.', { shootType: 'Fashion' }).length);
   assert.deepEqual(shootWritingIssues('A handmade bag.', { shootType: 'Fashion', brief: 'Handmade bags.' }), []);
@@ -66,12 +68,12 @@ test('short meaningful captions survive generation and automatic review without 
   model(t, call => call.messages[0].content.startsWith('Review the delivery wording') ? { frames: [{ assetId: 'selected-photo', ...words }] } : words);
   assert.deepEqual(await regenerateV3Caption({ ...personal, format: 'photo-story' }, { assetId: ids[0] }), words);
 });
-test('birthday Editorial automatically repairs outfit-dominated writing but keeps useful short text', async () => {
+test('birthday Editorial repairs unsupported outfit details but keeps useful short text', async () => {
   const invalid = { title: 'Ada at thirty', openingLine: 'Birthday portraits for Ada.', closingLine: 'Your collection is ready.', frames: [{ assetId: ids[0], headline: 'Birthday portraits', caption: 'Ada wears an emerald suit beside an ivory telephone.' }], sections: [{ title: 'Marking thirty', body: '', assetIds: [ids[0]] }] };
   const fixed = { ...invalid, frames: [{ assetId: ids[0], headline: 'Hello, thirty', caption: 'Ada, keep these from the year you turned thirty.' }] };
   const prompts = [];
   const result = await writeEditorialDirection(async (system, prompt) => { prompts.push({ system, prompt }); return prompts.length === 1 ? invalid : fixed; }, personal, [{ assetId: ids[0] }], [ids[0]], () => false);
-  assert.equal(prompts.length, 2); assert.match(prompts[1].prompt, /dominated by visual description/); assert.equal(result.frames[0].caption, fixed.frames[0].caption); assert.deepEqual(result.writingOverrides, []);
+  assert.equal(prompts.length, 2); assert.match(prompts[1].prompt, /unsupported photo detail/); assert.equal(result.frames[0].caption, fixed.frames[0].caption); assert.deepEqual(result.writingOverrides, []);
 });
 test('photo wording review repairs oversized or memorial-inappropriate text with bounded attempts', async t => {
   let calls = 0; model(t, () => ({ blocks: [{ key: 'closingLine', text: ++calls === 1 ? 'Happy birthday, your year ahead starts here.' : 'The full memorial collection is available below.' }] }));
@@ -181,7 +183,7 @@ test('grouped formats repair invalid section wording instead of clipping it or a
     const system = call.messages[0].content;
     if (system.includes('Group every supplied asset ID')) {
       groupingCalls++;
-      return { sections: [{ title: groupingCalls === 1 ? 'x'.repeat(61) : 'Birthday portraits', subtitle: 'Ada, keep these photographs.', assetIds: assetIds.slice(0, 4) }, { title: 'Your birthday collection', subtitle: '', assetIds: assetIds.slice(4) }] };
+      return { sections: [{ title: groupingCalls === 1 ? 'x'.repeat(61) : 'Birthday portraits', subtitle: 'Ada, keep these photographs.', body: 'These birthday portraits mark the occasion for you, Ada. The photographs in this chapter belong to the same birthday session.', assetIds: assetIds.slice(0, 4) }, { title: 'Your birthday collection', subtitle: '', body: 'This chapter continues your birthday portrait collection. It keeps the photographs from the session together.', assetIds: assetIds.slice(4) }] };
     }
     if (system.startsWith('Return JSON {"palette"')) return { palette: {} };
     return { title: 'Birthday portraits', openingLine: 'Ada, your birthday portraits are here.', closingLine: 'Your full birthday collection follows.', frames };

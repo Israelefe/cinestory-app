@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { FORMAT_WRITING_PROFILES } from './deliveryWriting.js';
+import { SECTION_BODY_LIMITS } from './deliveryPresentationCore.js';
+import { hasDetailedWriting } from './deliveryWritingLimits.js';
 
 export const writingOverridesSchema = z.array(z.string().regex(/^(?:openingLine|closingLine|editorial\.introduction|section:[a-z0-9-]{1,60}:(?:title|body)|frame:[a-z0-9-]{1,60}:(?:headline|caption))$/)).max(80);
 export const writingBlocksSchema = z.array(z.object({
@@ -11,7 +13,7 @@ export const writingBlocksSchema = z.array(z.object({
 
 export function writingBlockLimit(block, format) {
   const limits = FORMAT_WRITING_PROFILES[format] || FORMAT_WRITING_PROFILES['photo-story'];
-  return ({ opening: limits.opening, closing: limits.closing, introduction: format === 'editorial' ? 650 : 0, 'section-title': format === 'editorial' ? 70 : 60, 'section-body': format === 'editorial' ? 700 : 120 })[block.kind] || 0;
+  return ({ opening: limits.opening, closing: limits.closing, introduction: format === 'editorial' ? 650 : 0, 'section-title': format === 'editorial' ? 70 : 60, 'section-body': format === 'editorial' ? 700 : hasDetailedWriting(format) ? SECTION_BODY_LIMITS[format] : 120 })[block.kind] || 0;
 }
 
 export function validWritingBlock(block, format) {
