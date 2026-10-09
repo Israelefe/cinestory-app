@@ -16,8 +16,8 @@ export const CAMPAIGN_DEMO_PHOTOS = [
 ];
 
 export const CAMPAIGN_DEMO_SETS = [
-  { id: 'details', title: 'Made to be noticed', copy: 'The grain, the stitching and the hardware. A closer look at the pieces.', design: 'detail', indexes: [1, 5] },
-  { id: 'in-use', title: 'Out in the day', copy: 'From the lobby to the courtyard, and the moments in between.', design: 'lifestyle', indexes: [2, 6, 7, 10] },
-  { id: 'collection', title: 'The whole collection', copy: 'The pieces and their packaging, photographed together.', design: 'collection', indexes: [3, 8, 9] },
-  { id: 'pause', title: 'A quieter moment', copy: 'A portrait, a table, and a little room to pause.', design: 'portrait', indexes: [4] }
+  { id: 'details', title: 'Up close', copy: 'The grain, the stitching and the hardware. A closer look at the pieces.', design: 'detail', indexes: [1, 5] },
+  { id: 'in-use', title: 'On location', copy: 'From the lobby to the courtyard, and the moments in between.', design: 'lifestyle', indexes: [2, 6, 7, 10] },
+  { id: 'collection', title: 'The collection', copy: 'The pieces and their packaging, photographed together.', design: 'collection', indexes: [3, 8, 9] },
+  { id: 'pause', title: 'At the table', copy: 'A portrait, a table, and a little room to pause.', design: 'portrait', indexes: [4] }
 ];

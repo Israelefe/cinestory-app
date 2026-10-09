@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useAnimationControls, useInView, useMotionValue, useMotionValueEvent, useScroll } from 'framer-motion';
-import { ArrowRight, ChevronDown, Download, FileCheck2, Maximize2, Pause, Play } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronDown, Download, FileCheck2, Maximize2, Pause, Play } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Photo } from '../PublicDesign.jsx';
 import DeliveryBrandMark from './DeliveryBrandMark.jsx';
@@ -14,8 +14,8 @@ import './CampaignDelivery.css';
 
 const ease = [.22, 1, .36, 1];
 const viewport = { once: true, amount: .12 };
-const sequence = { hidden: { opacity: 0, y: 18 }, visible: { opacity: 1, y: 0, transition: { duration: .7, ease, staggerChildren: .12 } } };
-const piece = { hidden: { opacity: 0, y: 18 }, visible: { opacity: 1, y: 0, transition: { duration: .8, ease } } };
+const sequence = { hidden: { opacity: 0, x: 18 }, visible: { opacity: 1, x: 0, transition: { duration: .7, ease, staggerChildren: .12 } } };
+const piece = { hidden: { opacity: 0, x: 18 }, visible: { opacity: 1, x: 0, transition: { duration: .8, ease } } };
 const demoBranding = { type: 'studio', name: 'Mayflower Visuals', logoUrl: '' };
 const driftPosition = value => `${(.5 - Math.max(0, Math.min(1, value))) * 5}%`;
 
@@ -100,6 +100,46 @@ function PhotoCard({ photo, position, paused, onOpen, label, index = 0, lead = f
   </motion.figure>;
 }
 
+function CampaignSequence({ cards, title }) {
+  const track = useRef(null);
+  const offsets = useRef([]);
+  const [active, setActive] = useState(0);
+  const [scrollable, setScrollable] = useState(false);
+  const update = () => {
+    const element = track.current;
+    if (!element) return;
+    const maximum = element.scrollWidth - element.clientWidth;
+    const distances = offsets.current.map(left => Math.abs(left - element.scrollLeft));
+    setScrollable(maximum > 2);
+    setActive(maximum <= 2 ? 0 : element.scrollLeft >= maximum - 2 ? cards.length - 1 : Math.max(0, distances.indexOf(Math.min(...distances))));
+  };
+  useEffect(() => {
+    const element = track.current;
+    if (!element) return undefined;
+    // Cache positions when the layout changes; scrolling never measures every photograph.
+    const measure = () => { offsets.current = [...element.children].map(card => card.offsetLeft); update(); };
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    [...element.children].forEach(card => observer.observe(card));
+    measure();
+    return () => observer.disconnect();
+  }, [cards.length]);
+  const move = direction => {
+    const element = track.current;
+    const next = Math.max(0, Math.min(cards.length - 1, active + direction));
+    if (element) element.scrollTo({ left: offsets.current[next] || 0, behavior: 'smooth' });
+  };
+  return <div className="cp-sequence-wrap">
+    <div ref={track} className="cp-sequence" role="region" aria-label={`${title} photographs`} tabIndex={0} onScroll={update} onKeyDown={event => {
+      if (event.target === event.currentTarget && ['ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); move(event.key === 'ArrowRight' ? 1 : -1); }
+    }}>{cards}</div>
+    {cards.length > 1 && scrollable && <div className="cp-sequence-controls"><span className="cp-sequence-position" aria-live="polite">{String(active + 1).padStart(2, '0')} <span>/ {String(cards.length).padStart(2, '0')}</span></span><div>
+      <button type="button" onClick={() => move(-1)} disabled={active === 0} aria-label={`Previous photograph in ${title}`}><ArrowLeft size={18} /></button>
+      <button type="button" onClick={() => move(1)} disabled={active === cards.length - 1} aria-label={`Next photograph in ${title}`}><ArrowRight size={18} /></button>
+    </div></div>}
+  </div>;
+}
+
 function SetSpread({ set, paused, onOpen, positions, highlights, register, anchor }) {
   const heading = <motion.header className="cp-set-copy" variants={sequence} initial="hidden" whileInView="visible" viewport={viewport}>
     <motion.span className="cp-set-number" variants={piece} aria-hidden="true">{String(set.index + 1).padStart(2, '0')}</motion.span>
@@ -107,9 +147,16 @@ function SetSpread({ set, paused, onOpen, positions, highlights, register, ancho
     {set.copy && <motion.p variants={piece}>{set.copy}</motion.p>}
   </motion.header>;
   const cards = set.photos.map((photo, index) => <PhotoCard key={campaignPhotoKey(photo)} photo={photo} index={index} position={positions.get(campaignPhotoKey(photo))} highlight={highlights.has(campaignPhotoKey(photo))} paused={paused} onOpen={onOpen} lead={index === 0} entrance={set.design === 'detail' ? index === 0 ? 'across' : 'up' : set.design === 'collection' ? 'up' : 'fade'} className={index === 0 ? 'cp-set-lead' : ''} label={`Open ${set.title} photograph ${index + 1}`} />);
+  const sequenceLayout = (set.design === 'lifestyle' && set.layout !== 'triptych') || set.layout === 'strip';
+  let spread;
+  if (sequenceLayout) spread = <div className="cp-location-stage">{heading}<CampaignSequence cards={cards} title={set.title} /></div>;
+  else if (set.design === 'detail') spread = <div className="cp-detail-board">{heading}<div className="cp-set-photos">{cards}</div></div>;
+  else if (set.design === 'collection') spread = <>{heading}<div className="cp-set-photos cp-collection-board">{cards}</div></>;
+  else if (set.design === 'portrait') spread = <div className="cp-portrait-stage">{heading}<div className="cp-set-photos">{cards}</div></div>;
+  else spread = <>{heading}<div className="cp-set-photos">{cards}</div></>;
   return <article ref={register} id={anchor} className="cp-set" data-design={set.design} data-layout={set.layout} data-count={set.photos.length} data-long-title={set.title.length > 40} tabIndex={-1} aria-labelledby={`${anchor}-title`} style={set.accent ? { '--cp-set-accent': set.accent } : undefined}>
     <motion.span className="cp-set-rule" aria-hidden="true" initial={{ scaleX: 0 }} whileInView={{ scaleX: 1 }} viewport={viewport} transition={{ duration: 1, ease }} />
-    {set.design === 'collection' ? <><div className="cp-collection-opening">{cards[0]}{heading}</div>{cards.length > 1 && <div className="cp-set-photos cp-collection-support">{cards.slice(1)}</div>}</> : <>{heading}<div className="cp-set-photos">{cards}</div></>}
+    {spread}
   </article>;
 }
 
@@ -136,12 +183,13 @@ export function CampaignDeliveryViewer({ delivery, galleryProps: suppliedGallery
   const closing = delivery?.creativeDirection?.closingLine || 'The collection is yours.';
   const branding = delivery ? delivery.branding : demoBranding;
   const usage = delivery?.formatConfig?.usageTerms;
-  const styles = getFormatThemeStyles(delivery, { bg: '#080b10', surface: '#111720', text: '#f3eee4', accent: '#d1a782', fontDisplay: "'Cormorant Garamond', Georgia, serif", fontBody: "'Manrope', sans-serif" });
+  const styles = getFormatThemeStyles(delivery, { bg: '#090d13', surface: '#121a25', text: '#f5f2eb', accent: '#e9ab79', fontDisplay: "'Outfit', sans-serif", fontBody: "'Manrope', sans-serif" });
   const hasPhotoMotion = [openingPhoto, closingPhoto, ...photos].some(photo => photo && photo.motion !== 'still');
   const paused = motionPaused || !pageVisible || gallery;
   const currentSet = sets.find(set => campaignSetAnchor(set) === activeSet) || sets[0];
   const titleWords = title.trim().split(/\s+/);
   const splitTitle = titleWords.length >= 3 && title.length <= 38;
+  const longestWord = Math.max(...titleWords.map(word => word.length));
   const galleryProps = suppliedGalleryProps || (!delivery ? {
     liked: demoLiked,
     onLike: key => setDemoLiked(current => { const next = new Set(current); next.has(key) ? next.delete(key) : next.add(key); return next; }),
@@ -206,13 +254,14 @@ export function CampaignDeliveryViewer({ delivery, galleryProps: suppliedGallery
   return <div ref={viewer} className="fd-page vec-campaign cp-viewer" data-heading-kind={styles['--delivery-font-heading'].includes('Georgia') ? 'serif' : 'sans'} data-photo-motion-paused={paused} data-composition={styles['--fd-composition']} style={styles}>
     <div className="cp-masthead"><StudioIdentity branding={branding} /><DemoHeader format="Campaign Delivery" client={title} sectionId="campaign" delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} /></div>
     <main>
-      <section className="cp-cover" data-title-size={title.length > 65 ? 'long' : 'short'} data-design="cover" aria-labelledby={`${instance}-title`} style={splitTitle ? { '--cp-title-size': `${Math.min(17, 120 / titleWords.at(-1).length)}vw`, '--cp-mobile-title-size': `${Math.min(24, 168 / titleWords.at(-1).length)}vw` } : undefined}>
-        <motion.div className="cp-cover-heading" variants={sequence} initial="hidden" whileInView="visible" viewport={viewport}>
+      <section className="cp-cover" data-title-size={title.length > 65 ? 'long' : 'short'} data-design="campaign-poster" aria-labelledby={`${instance}-title`} style={{ '--cp-title-size': `${Math.min(9, 44 / longestWord)}vw`, '--cp-mobile-title-size': `${Math.min(22, 120 / longestWord)}vw` }}>
+        <div className="cp-cover-stage"><motion.div className="cp-cover-heading" variants={sequence} initial="hidden" whileInView="visible" viewport={viewport}>
           <motion.div className="cp-cover-top" variants={piece}><span>Campaign Delivery</span>{delivery?.clientName && <span>For {delivery.clientName}</span>}</motion.div>
           <motion.h1 id={`${instance}-title`} variants={piece}>{splitTitle ? <><span className="cp-title-prefix">{titleWords.slice(0, -1).join(' ')} </span><span className="cp-title-word">{titleWords.at(-1)}</span></> : title}</motion.h1>
+          {opening && <motion.p className="cp-cover-intro" variants={piece}>{opening}</motion.p>}
         </motion.div>
-        <PhotoCard photo={openingPhoto} position={positions.get(campaignPhotoKey(openingPhoto))} paused={paused} onOpen={openPhoto} label="Open the campaign cover photograph" eager lead entrance="split" highlight={highlights.has(campaignPhotoKey(openingPhoto))} className="cp-cover-photo" sizes="(max-width: 1480px) 100vw, 1480px" />
-        <motion.div className="cp-cover-note" variants={sequence} initial="hidden" whileInView="visible" viewport={viewport}>{opening && <motion.p variants={piece}>{opening}</motion.p>}<motion.span variants={piece}>{galleryPhotos.length} {galleryPhotos.length === 1 ? 'photograph' : 'photographs'}</motion.span></motion.div>
+        <PhotoCard photo={openingPhoto} position={positions.get(campaignPhotoKey(openingPhoto))} paused={paused} onOpen={openPhoto} label="Open the campaign cover photograph" eager lead entrance="split" highlight={highlights.has(campaignPhotoKey(openingPhoto))} className="cp-cover-photo" sizes="(max-width: 767px) 100vw, (max-width: 1480px) 60vw, 880px" /></div>
+        <motion.div className="cp-cover-note" variants={sequence} initial="hidden" whileInView="visible" viewport={viewport}><motion.span variants={piece}>The campaign photographs</motion.span><motion.span variants={piece}>{String(galleryPhotos.length).padStart(2, '0')} {galleryPhotos.length === 1 ? 'photograph' : 'photographs'}</motion.span></motion.div>
       </section>
 
       {(sets.length > 0 || hasPhotoMotion) && <section ref={navigation} className="cp-tools" aria-label="Campaign navigation and actions">
@@ -232,6 +281,7 @@ export function CampaignDeliveryViewer({ delivery, galleryProps: suppliedGallery
       }} />)}</section>
 
       <footer className="cp-ending" data-design="closing">
+        <motion.div className="cp-ending-heading" variants={sequence} initial="hidden" whileInView="visible" viewport={viewport}><motion.p variants={piece}>The complete<br />campaign.</motion.p><motion.span variants={piece}>{galleryPhotos.length} {galleryPhotos.length === 1 ? 'photograph' : 'photographs'}<br />{delivery?.clientName ? `For ${delivery.clientName}` : 'Ready to keep and share'}</motion.span></motion.div>
         {closingPhoto && <PhotoCard photo={closingPhoto} position={positions.get(campaignPhotoKey(closingPhoto))} paused={paused} onOpen={openPhoto} label="Open the closing campaign photograph" lead entrance="up" className="cp-closing-photo" highlight={highlights.has(campaignPhotoKey(closingPhoto))} />}
         <div ref={closingRef} className="cp-ending-actions">
           <motion.div className="cp-ending-copy" variants={sequence} initial="hidden" whileInView="visible" viewport={viewport} data-long-copy={closing.length > 65}>

@@ -14,7 +14,9 @@ async function setup(page, delivery) {
   await page.route('**/fonts.gstatic.com/**', route => route.abort());
   await page.goto(delivery ? '/d/campaign-design?phoneView=1' : '/demo/campaign?phoneView=1');
   await expect(page.locator('.cp-cover h1')).toBeVisible();
-  await page.evaluate(() => Promise.all([document.fonts.load('400 48px "Cormorant Garamond"'), document.fonts.load('italic 400 48px "Cormorant Garamond"')]));
+  await page.evaluate(() => Promise.all([document.fonts.load('700 48px Outfit'), document.fonts.load('400 16px Manrope')]));
+  await expect(page.locator('.cp-cover-heading')).toHaveCSS('transform', 'none');
+  await expect(page.locator('.cp-cover h1')).toHaveCSS('transform', 'none');
 }
 
 const transform = locator => locator.evaluate(element => getComputedStyle(element).transform);
@@ -28,6 +30,7 @@ for (const [width, height] of [[320,568], [390,844], [640,900], [768,1024], [834
     await expect(cards).toHaveCount(12);
     expect(new Set(await cards.evaluateAll(elements => elements.map(element => element.dataset.photoId))).size).toBe(12);
     const cover = page.locator('.cp-cover .cp-photo-button');
+    expect(await page.locator('.cp-cover h1').evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(2);
     expect((await cover.boundingBox()).y).toBeLessThan(height - 80);
     await expect.poll(() => cover.locator('img').evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
     const brand = page.locator('.cp-masthead .cp-brand');
@@ -65,11 +68,46 @@ test('the demo has four different spreads, detailed captions and a compact keybo
   await summary.press('Space'); await links.nth(2).click();
   await expect(page.locator('.cp-set').nth(2)).toBeFocused();
   await expect.poll(() => page.locator('.cp-set').nth(2).evaluate(element => Math.round(element.getBoundingClientRect().top))).toBeGreaterThanOrEqual(80);
-  await expect(page.locator('.cp-current-title')).toHaveText('The whole collection');
+  await expect(page.locator('.cp-current-title')).toHaveText('The collection');
   await summary.click();
   await expect(links.nth(2)).toHaveAttribute('aria-current', 'location');
   await page.locator('.cp-set').nth(2).locator('h2').click();
   await expect(menu).not.toHaveAttribute('open', '');
+});
+
+test('Campaign has a poster cover and a different typographic identity from Event Coverage', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 }); await setup(page);
+  const heading = page.locator('.cp-cover h1');
+  await expect(heading).toHaveCSS('text-transform', 'uppercase');
+  await expect(heading).toHaveCSS('font-weight', '700');
+  expect(await heading.evaluate(element => getComputedStyle(element).fontFamily)).toContain('Outfit');
+  const [titleBox, photographBox] = await Promise.all([heading.boundingBox(), page.locator('.cp-cover .cp-photo-button').boundingBox()]);
+  expect(titleBox.x + titleBox.width).toBeLessThan(photographBox.x);
+  expect(Math.abs(titleBox.y - photographBox.y)).toBeLessThan(photographBox.height);
+  await expect(page.locator('.cp-set[data-design="detail"]')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await page.goto('/demo/event-coverage?phoneView=1');
+  await expect(page.locator('.ec-cover h1')).toBeVisible();
+  expect(await page.locator('.ec-cover h1').evaluate(element => getComputedStyle(element).fontFamily)).toContain('Cormorant Garamond');
+});
+
+for (const width of [320,834,1440]) test(`the location sequence works by keyboard and arrows at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 1000 }); await setup(page);
+  const set = page.locator('.cp-set[data-design="lifestyle"]'), track = set.locator('.cp-sequence');
+  const previous = set.getByRole('button', { name: 'Previous photograph in On location' });
+  const next = set.getByRole('button', { name: 'Next photograph in On location' });
+  await track.scrollIntoViewIfNeeded(); await expect(previous).toBeDisabled();
+  expect(await track.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
+  await track.focus(); await track.press('ArrowRight');
+  await expect(set.locator('.cp-sequence-position')).toHaveText('02 / 04');
+  await next.click(); await expect(set.locator('.cp-sequence-position')).toHaveText('03 / 04');
+  await next.click(); await expect(set.locator('.cp-sequence-position')).toHaveText('04 / 04');
+  await expect(next).toBeDisabled();
+  await expect.poll(async () => {
+    const [lastBox, trackBox] = await Promise.all([track.locator('.cp-photo-card').last().boundingBox(), track.boundingBox()]);
+    return lastBox.x + lastBox.width - trackBox.x - trackBox.width;
+  }).toBeLessThanOrEqual(2);
+  await previous.click(); await expect(set.locator('.cp-sequence-position')).toHaveText('03 / 04');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
 });
 
 test('a photograph opens alone, supports likes and downloads, and restores keyboard focus', async ({ page }) => {
