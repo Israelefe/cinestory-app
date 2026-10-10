@@ -8,7 +8,7 @@ export async function symbolicateBrowserDiagnostic(diagnostic) {
   const root = path.resolve(process.env.BROWSER_SOURCE_MAP_DIR), releaseDir = path.resolve(root, diagnostic.release);
   if (!releaseDir.startsWith(root + path.sep)) return diagnostic;
   const frames = await Promise.all(diagnostic.frames.map(async frame => {
-    if (!/^\/assets\/[A-Za-z0-9_-]{1,120}\.m?js$/.test(frame.asset)) return frame;
+    if (!/^\/assets\/[A-Za-z0-9_][A-Za-z0-9_.-]{0,119}\.m?js$/.test(frame.asset)) return frame;
     const file = path.join(releaseDir, `${path.basename(frame.asset)}.map`);
     try {
       let map = maps.get(file);

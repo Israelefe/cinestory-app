@@ -11,6 +11,7 @@ import { trackEvent } from '../services/analytics.js';
 import './Dashboard.css';
 import './DashboardV2.css';
 import DeliveryDownloadSettings from '../components/delivery/DeliveryDownloadSettings.jsx';
+import DashboardTools from '../components/DashboardTools.jsx';
 import './StudioWorkspace.css';
 
 export default function Dashboard({ user }) {
@@ -224,7 +225,8 @@ export default function Dashboard({ user }) {
         </aside>
       </motion.section>
 
-      <section className="v-dashboard-deliveries">
+      <DashboardTools user={user} />
+      <section className="v-dashboard-deliveries ph-no-capture">
         <header><div><p className="v-workspace-eyebrow">CLIENT WORK</p><h2>Your deliveries</h2><span>{dataUnavailable ? 'Some deliveries could not be loaded. Try again below.' : stories.length > 0 ? `${totalDownloads} downloads across your active deliveries.` : 'Your finished shoots will appear here.'}</span></div><div className="v-dashboard-head-actions">{!isPro && planStatus.data?.usage?.deliveriesRemaining != null && <small>{freeMonthlyLimit - planStatus.data.usage.deliveriesRemaining} of {freeMonthlyLimit} Free deliveries published this month</small>}</div></header>
 
         {(quotaReached || planStatus.error) && <div id="v-dashboard-quota-note" className="v-dashboard-quota-note" role="status"><Clock3 size={18} /><span>{quotaReached ? `You've published all ${freeMonthlyLimit} Free deliveries this month. You can create another next month, or move to Pro.` : 'We could not check your plan right now. Try again before starting a delivery.'}</span>{quotaReached ? <Link to="/billing">View Pro</Link> : <button type="button" onClick={fetchPlanStatus}>Try again</button>}</div>}

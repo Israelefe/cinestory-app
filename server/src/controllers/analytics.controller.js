@@ -9,7 +9,7 @@ const eventSchema = z.object({
   eventId: z.string().uuid().optional(),
   occurredAt: z.string().datetime().optional(),
   sequence: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
-  diagnostic: z.object({ type: z.string().max(40), mechanism: z.enum(['window', 'promise', 'react']), release: z.string().max(80), frames: z.array(z.object({ asset: z.string().max(160), line: z.number().min(0).max(10000000), column: z.number().min(0).max(10000000) }).strict()).max(8) }).strict().optional(),
+  diagnostic: z.object({ type: z.string().max(40), mechanism: z.enum(['window', 'promise', 'react']), release: z.string().max(80), frames: z.array(z.object({ asset: z.string().max(160), line: z.number().min(0).max(10000000), column: z.number().min(0).max(10000000), chunkId: z.string().regex(/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i).optional() }).strict()).max(8) }).strict().optional(),
   name: z.string().trim().min(1).max(120),
   version: z.number().int().min(1).max(20).optional(),
   actorType: z.enum(['photographer', 'client', 'guest', 'anonymous']).optional(),

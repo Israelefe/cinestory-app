@@ -22,15 +22,17 @@
     "framer-motion": "^11.0.8",
     "libraw-wasm": "^1.6.0",
     "lucide-react": "^0.359.0",
+    "posthog-js": "1.438.7",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^7.18.3",
     "react-toastify": "^10.0.5",
-    "sharp": "^0.35.4",
+    "sharp": "^0.35.5",
     "tailwind-merge": "^2.2.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
+    "@posthog/rollup-plugin": "1.6.1",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.19",
     "postcss": "^8.4.38",

@@ -20,6 +20,7 @@ import portfolioRoutes from './src/routes/portfolio.routes.js';
 import supportRoutes from './src/routes/support.routes.js';
 import volumeRoutes from './src/routes/volume.routes.js';
 import analyticsRoutes from './src/routes/analytics.routes.js';
+import productControlsRoutes from './src/routes/productControls.routes.js';
 import assistantRoutes from './src/routes/assistant.routes.js';
 import mediaRoutes from './src/routes/media.routes.js';
 import { paystackWebhook } from './src/controllers/billing.controller.js';
@@ -35,6 +36,8 @@ import { seedAdminFromEnv } from './src/utils/seedAdmin.js';
 import { maintenanceMiddleware } from './src/middleware/maintenance.middleware.js';
 import { startPosthogWorker } from './src/services/posthog.service.js';
 import AnalyticsEvent from './src/models/AnalyticsEvent.js';
+import ProductExposure from './src/models/ProductExposure.js';
+import ProductFeedback from './src/models/ProductFeedback.js';
 import { prepareStudioNames } from './src/services/studioName.service.js';
 
 dotenv.config();
@@ -123,6 +126,7 @@ app.use('/api/v1/portfolios', portfolioRoutes);
 app.use('/api/v1/support', supportRoutes);
 app.use('/api/v1/volume-jobs', volumeRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
+app.use('/api/v1/product', productControlsRoutes);
 app.use('/api/v1/assistant', assistantRoutes);
 app.use('/api/v1/media', mediaRoutes);
 app.use('/api/v1/admin', adminRoutes);
@@ -147,7 +151,11 @@ connectDB().then(async connection => {
     }
   }
   if (connection) {
-    await AnalyticsEvent.collection.createIndex({ eventKey: 1 }, { unique: true, sparse: true });
+    await Promise.all([
+      AnalyticsEvent.collection.createIndex({ eventKey: 1 }, { unique: true, sparse: true }),
+      ProductExposure.collection.createIndex({ userId: 1, experiment: 1 }, { unique: true }),
+      ProductFeedback.collection.createIndex({ userId: 1, survey: 1 }, { unique: true })
+    ]);
     try { await prepareStudioNames(); }
     catch (error) { console.error('[studio-names]', error.message); }
   }

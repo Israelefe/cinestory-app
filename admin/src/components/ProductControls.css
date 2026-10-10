@@ -1,0 +1,14 @@
+.pc-workspace{margin-top:36px;padding-top:30px;border-top:1px solid #ffffff18;min-width:0}
+.pc-workspace h2{font-size:clamp(22px,3vw,31px);letter-spacing:-.035em;margin:8px 0 14px}
+.pc-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;padding:0;border:0;margin:24px 0}
+.pc-grid .pi-card{min-width:0;padding:26px}.pc-grid .pi-card>svg{color:#ff9b8e;margin-bottom:14px}
+.pc-grid h3,.pc-experiment h3{font-size:18px;margin:0 0 14px}.pc-grid p,.pc-experiment p{font-size:13px;color:#beb8b3;line-height:1.8;margin:0 0 20px}
+.pc-grid label{display:flex;flex-direction:column;gap:10px;font-size:13px;margin:18px 0}.pc-grid input:not([type=checkbox]){width:100%;box-sizing:border-box;background:#070709;border:1px solid #ffffff25;border-radius:8px;min-height:44px;color:white;padding:10px 12px;font:inherit}
+.pc-grid .pc-toggle{flex-direction:row;align-items:center;gap:12px;min-height:44px;cursor:pointer}.pc-toggle input{width:18px;height:18px;accent-color:#ff5a47;flex-shrink:0}
+.pc-grid small{display:block;color:#aaa29c;line-height:1.7;font-size:12px}.pc-workspace :focus-visible{outline:2px solid #ff9b8e;outline-offset:4px}
+.pc-workspace .pc-status{font-size:12px;line-height:1.7;color:#e9bd8c;margin:14px 0 0}.pc-workspace .pc-status.is-ready{color:#a4cfb4}
+.pc-feedback{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:20px}.pc-feedback div{display:flex;flex-direction:column;gap:12px;padding:12px 4px;text-align:center;border:1px solid #ffffff12;border-radius:8px}.pc-feedback span{font-size:11px;color:#b7afa8}.pc-feedback strong{font-size:20px}
+.pc-results{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}.pc-results>div{padding:20px;border:1px solid #ffffff15;border-radius:10px}.pc-results h4{font-size:14px;margin:0 0 18px}.pc-results strong{font-size:28px}.pc-results small{font-size:12px;color:#b7afa8;font-weight:400}.pc-results p{margin:14px 0 0!important}
+.pc-footer{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-top:24px}.pc-footer .pc-status{margin:0}
+@media(min-width:768px) and (max-width:1024px){.pc-grid{gap:18px}.pc-grid .pi-card{padding:22px}}
+@media(max-width:767px){.pc-grid,.pc-results{grid-template-columns:1fr}.pc-grid .pi-card{padding:22px}.pc-workspace{margin-top:28px}}

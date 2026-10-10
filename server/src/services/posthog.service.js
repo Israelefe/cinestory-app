@@ -1,8 +1,9 @@
 import crypto from 'node:crypto';
 import AnalyticsEvent from '../models/AnalyticsEvent.js';
+import ProductExposure from '../models/ProductExposure.js';
 import { excludedAnalyticsUser } from '../utils/analyticsPrivacy.js';
 
-const events = new Set(['account.activated', 'upload.completed', 'upload.failed', 'delivery.publish.succeeded', 'delivery.publish.failed', 'billing.checkout.started', 'billing.payment.confirmed', 'client.delivery.opened', 'client.experience.started', 'client.photo.download.started', 'client.download.all.started', 'javascript.error', 'assistant.answer.completed', 'assistant.answer.failed']);
+const events = new Set(['account.activated', 'upload.completed', 'upload.failed', 'delivery.publish.succeeded', 'delivery.publish.failed', 'billing.checkout.started', 'billing.payment.confirmed', 'client.delivery.opened', 'client.experience.started', 'client.photo.download.started', 'client.download.all.started', 'javascript.error', 'assistant.answer.completed', 'assistant.answer.failed', 'product.guidance.exposed', 'product.feedback.submitted']);
 const allowedValues = { format: new Set(['photo-story', 'event-coverage', 'campaign', 'campaign-delivery', 'editorial', 'album', 'classic', 'gridboard', 'event', 'story', 'grid', 'slideshow', 'film']), status: new Set(['failed', 'error', 'confirmed', 'opened', 'completed', 'started', 'success', 'published', 'partial_failure']), errorCode: new Set(['BROWSER_EXCEPTION', 'UPLOAD_FAILED', 'IMAGE_LOAD_FAILED', 'AUDIO_LOAD_FAILED', 'DOWNLOAD_FAILED']), deviceType: new Set(['mobile', 'tablet', 'desktop']), browser: new Set(['Chrome', 'Firefox', 'Safari', 'Edg', 'Opera', 'OPR', 'unknown']), operatingSystem: new Set(['Windows NT', 'Mac OS X', 'Android', 'iPhone', 'iPad', 'Linux', 'unknown']), connection: new Set(['slow-2g', '2g', '3g', '4g', 'wifi', 'cellular', 'ethernet', 'unknown']) };
 export function posthogConfiguration() {
   const enabled = process.env.POSTHOG_ENABLED === 'true';
@@ -12,24 +13,33 @@ export function posthogConfiguration() {
 }
 export function shouldForward(event) {
   const config = posthogConfiguration();
-  return config.enabled && config.configured && !event.excluded && !excludedAnalyticsUser(event.userId) && !['admin', 'system'].includes(event.actorType) && events.has(event.name);
+  return config.enabled && config.configured && !event.excluded && !excludedAnalyticsUser(event.userId) && !['admin', 'system'].includes(event.actorType) && events.has(event.name) && (!event.name.startsWith('product.') || event.source === 'server' && event.actorType === 'photographer');
 }
+export const posthogIdentity = identity => crypto.createHmac('sha256', process.env.POSTHOG_IDENTITY_SECRET).update(identity).digest('hex');
 export function posthogPayload(event) {
   // Build a new allowlisted payload. Never export metadata, Mongo IDs, IPs,
   // attribution strings, query strings, error messages or request bodies.
   const identity = event.actorType === 'photographer' && event.userId ? `account:${event.userId}` : event.sessionDigest ? `session:${event.sessionDigest}` : `event:${event._id}`;
-  const distinctId = crypto.createHmac('sha256', process.env.POSTHOG_IDENTITY_SECRET).update(identity).digest('hex');
+  const distinctId = posthogIdentity(identity);
   const properties = { distinct_id: distinctId, $process_person_profile: event.actorType === 'photographer', $geoip_disable: true, $insert_id: String(event._id), source: event.source, actor_type: event.actorType };
   for (const key of ['format', 'status', 'errorCode', 'deviceType', 'browser', 'operatingSystem', 'connection']) {
     if (allowedValues[key].has(event[key])) properties[key] = event[key];
   }
   for (const key of ['durationMs', 'count', 'bytes']) if (Number.isFinite(event[key])) properties[key] = event[key];
+  const variant = event.productVariant || (event.name === 'product.guidance.exposed' ? event.metadata?.variant : null);
+  if (['control', 'guided'].includes(variant)) {
+    properties['$feature/veylo-dashboard-guidance'] = variant;
+    if (event.name === 'product.guidance.exposed') { properties.$feature_flag = 'veylo-dashboard-guidance'; properties.$feature_flag_response = variant; }
+  }
+  if (event.name === 'product.feedback.submitted' && Number.isInteger(event.count) && event.count >= 1 && event.count <= 5) {
+    properties.survey = 'dashboard-ease-v1'; properties.score = event.count;
+  }
   if (event.diagnostic) {
-    properties.$exception_list = [{ type: event.diagnostic.type, value: 'Browser exception; message excluded for privacy', mechanism: { type: event.diagnostic.mechanism, handled: event.diagnostic.mechanism === 'react' }, stacktrace: { frames: event.diagnostic.frames.map(frame => ({ filename: frame.asset, lineno: frame.line, colno: frame.column })) } }];
+    properties.$exception_list = [{ type: event.diagnostic.type, value: 'Browser exception; message excluded for privacy', mechanism: { type: event.diagnostic.mechanism, handled: event.diagnostic.mechanism === 'react' }, stacktrace: { type: 'raw', frames: event.diagnostic.frames.map(frame => ({ filename: frame.asset, lineno: frame.line, colno: frame.column, ...(/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(frame.chunkId || '') ? { chunk_id: frame.chunkId } : {}) })) } }];
     properties.$exception_fingerprint = event.fingerprint;
     properties.release = event.diagnostic.release;
   }
-  return { uuid: crypto.createHash('md5').update(String(event._id)).digest('hex').replace(/^(........)(....)(....)(....)(............)$/, '$1-$2-$3-$4-$5'), event: event.diagnostic ? '$exception' : event.name, properties, timestamp: new Date(event.occurredAt).toISOString() };
+  return { uuid: crypto.createHash('md5').update(String(event._id)).digest('hex').replace(/^(........)(....)(....)(....)(............)$/, '$1-$2-$3-$4-$5'), event: event.diagnostic ? '$exception' : event.name === 'product.guidance.exposed' ? '$feature_flag_called' : event.name, properties, timestamp: new Date(event.occurredAt).toISOString() };
 }
 export async function forwardPosthogBatch({ fetchImpl = globalThis.fetch, now = new Date() } = {}) {
   const config = posthogConfiguration();
@@ -43,6 +53,10 @@ export async function forwardPosthogBatch({ fetchImpl = globalThis.fetch, now = 
   }
   if (!claimed.length) return 0;
   const eligible = claimed.filter(shouldForward);
+  for (const row of eligible.filter(event => event.name === 'delivery.publish.succeeded' && event.source === 'server' && event.userId)) {
+    const exposure = await ProductExposure.findOne({ userId: row.userId, experiment: 'dashboard-guidance-v1', exposedAt: { $lte: row.occurredAt } }).select('variant').lean();
+    if (exposure) row.productVariant = exposure.variant;
+  }
   let code = '';
   try {
     if (eligible.length) {

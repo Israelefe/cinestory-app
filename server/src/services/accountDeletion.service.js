@@ -36,6 +36,8 @@ import SupportOutbox from '../models/SupportOutbox.js';
 import SupportInbound from '../models/SupportInbound.js';
 import RefundRequest from '../models/RefundRequest.js';
 import AnalyticsEvent from '../models/AnalyticsEvent.js';
+import ProductExposure from '../models/ProductExposure.js';
+import ProductFeedback from '../models/ProductFeedback.js';
 import { deleteR2Prefix, r2Configured } from './r2.service.js';
 import Refund from '../models/Refund.js';
 import PaidUsage from '../models/PaidUsage.js';
@@ -134,6 +136,8 @@ async function deleteOwnedRecords({ accountId, deliveryIds, storyIds, volumeJobI
   await deleteMany('storyViews', StoryView, storyIds.length ? { storyId: { $in: storyIds } } : { _id: { $in: [] } });
   await deleteMany('stories', PhotoStory, { userId: accountId });
   await deleteMany('sessions', Session, { userId: accountId });
+  await deleteMany('productExposures', ProductExposure, { userId: accountId });
+  await deleteMany('productFeedback', ProductFeedback, { userId: accountId });
   await deleteMany('authCodes', AuthCode, { userId: accountId });
   await deleteMany('passwordResetTokens', PasswordResetToken, { userId: accountId });
   // Retain a restricted ledger without the studio, email, payment credentials or raw provider payloads.

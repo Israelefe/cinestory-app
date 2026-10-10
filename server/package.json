@@ -4,6 +4,7 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
+    "verify:product-controls": "node --test scripts/product-controls.test.mjs",
     "verify:product-insights": "node --test scripts/product-insights.test.mjs",
     "studio-names:audit": "node scripts/studio-names.mjs",
     "studio-names:migrate": "node scripts/studio-names.mjs --apply",

@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import AdminShell, { sectionLabel } from '../components/AdminShell.jsx';
 import SupportWorkspace from '../components/SupportWorkspace.jsx';
 import ProductInsights, { ActivityTimeline, BrowserErrors } from '../components/ProductInsights.jsx';
+import ProductControls from '../components/ProductControls.jsx';
 import RefundWorkspace, { RefundEvidence } from '../components/RefundWorkspace.jsx';
 import { AdminOverview, AdminOperations, AdminIssues, WorkspaceHeading, checkedTime } from '../components/OperationsWorkspace.jsx';
 import { motion } from 'framer-motion';
@@ -1358,7 +1359,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
 
           {/* Product analytics tab */}
           {!loading && tab === 'productAnalytics' && (
-            <ProductInsights
+            <><ProductInsights
               onAccount={['superadmin', 'operations'].includes(admin?.role) ? openAccount : undefined}
               data={productAnalytics}
               days={productAnalyticsDays}
@@ -1368,7 +1369,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
               onFormatChange={setProductAnalyticsFormat}
               onActorChange={setProductAnalyticsActor}
               error={panelErrors.productAnalytics}
-            />
+            /><ProductControls canEdit={admin?.role === 'superadmin'} /></>
           )}
 
           {/* Security and audit tab */}

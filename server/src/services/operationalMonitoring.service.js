@@ -4,6 +4,8 @@ import OperationalAlert from '../models/OperationalAlert.js';
 import WorkerHeartbeat from '../models/WorkerHeartbeat.js';
 import { operationalInstance, startProcessMetrics, sampleProcess, requestSnapshot, captureOperationalError } from './operationalMetrics.service.js';
 import { sendOnce } from './email.service.js';
+import { productMonitoringSignals } from './productMonitoring.service.js';
+import { operationsAlertRecipient } from './productControls.service.js';
 
 let timer, running = false;
 const streaks = new Map();
@@ -29,7 +31,8 @@ export async function operationalWorkerHealth(now = Date.now()) {
   });
 }
 async function notify(alert, recovery = false) {
-  if (!process.env.OPS_ALERT_EMAIL || !process.env.RESEND_API_KEY) return;
+  const recipient = await operationsAlertRecipient();
+  if (!recipient || !process.env.RESEND_API_KEY) return;
   const now = new Date();
   const claimed = await OperationalAlert.findOneAndUpdate({ _id: alert._id, status: recovery ? 'resolved' : { $ne: 'resolved' },
     $or: [{ notificationLeaseUntil: null }, { notificationLeaseUntil: { $lte: now } }],
@@ -38,7 +41,7 @@ async function notify(alert, recovery = false) {
   if (!claimed) return;
   try {
     const result = await sendOnce({ eventKey: `ops:${alert.key}:${new Date(alert.firstSeenAt).getTime()}:${recovery ? 'recovery' : 'outage'}`,
-      kind: 'operations-alert', to: process.env.OPS_ALERT_EMAIL,
+      kind: 'operations-alert', to: recipient,
       subject: `Veylo ${recovery ? 'recovered' : alert.severity}: ${alert.title}`,
       text: `${alert.title}\n${recovery ? 'The signal has returned to its normal range.' : 'This condition persisted across monitoring checks. Open Operations in the Veylo admin to investigate.'}\nFirst seen: ${new Date(alert.firstSeenAt).toISOString()}` });
     await OperationalAlert.updateOne({ _id: alert._id, firstSeenAt: alert.firstSeenAt }, { $set: { notificationStatus: result.status === 'sent' ? (recovery ? 'recovery-sent' : 'sent') : result.status, notifiedAt: now }, $unset: { notificationLeaseUntil: 1 } });
@@ -71,11 +74,16 @@ export async function runOperationalCheck() {
     const recoveries = await OperationalAlert.find({ status: 'resolved', notificationStatus: { $in: ['recovery-pending', 'failed'] } }).limit(5);
     for (const alert of recoveries) await notify(alert, true);
     const workers = await operationalWorkerHealth();
+    const productSignals = await productMonitoringSignals().catch(error => {
+      void captureOperationalError(error, { route: 'product-monitor', source: 'worker' });
+      return [];
+    });
     const signals = [
       { key: `memory:${operationalInstance}`, title: 'API memory is above 90% of its container limit', failed: processData.memoryLimitBytes && processData.rssBytes / processData.memoryLimitBytes > .9, severity: 'critical' },
       { key: `event-loop:${operationalInstance}`, title: 'API event loop is delayed by more than 200 ms', failed: processData.eventLoopP95Ms > 200 },
       { key: `api-errors:${operationalInstance}`, title: 'More than 5% of API requests are failing', failed: requests.count >= 20 && requests.errorRate > .05, severity: 'critical' },
-      ...workers.filter(worker => worker.enabled).map(worker => ({ key: `worker:${worker.workerName}`, title: `${worker.workerName} worker stopped reporting`, failed: ['stale', 'error'].includes(worker.status), severity: 'critical' }))
+      ...workers.filter(worker => worker.enabled).map(worker => ({ key: `worker:${worker.workerName}`, title: `${worker.workerName} worker stopped reporting`, failed: ['stale', 'error'].includes(worker.status), severity: 'critical' })),
+      ...productSignals
     ];
     for (const signal of signals) {
       const failing = sustained(signal.key, Boolean(signal.failed));

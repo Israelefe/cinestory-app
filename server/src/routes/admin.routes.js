@@ -1,5 +1,6 @@
 import { getSystemOverview, getOperationalIssues, updateOperationalIssue, acknowledgeOperationalAlert, monitorCheckIn } from '../controllers/adminOperations.controller.js';
 import express from 'express';
+import { getProductControls, saveProductControls } from '../controllers/productControls.controller.js';
 import jwt from 'jsonwebtoken';
 import {
   getOperationsOverview,
@@ -152,6 +153,8 @@ router.get('/operations', requireAdminRoles(ADMIN_READ_ACCESS.operations), getOp
 router.get('/analytics', requireAdminRoles(ADMIN_READ_ACCESS.analytics), getAdminAnalytics);
 router.get('/product-analytics', requireAdminRoles('superadmin', 'operations', 'analyst', 'read-only'), getProductAnalytics);
 router.get('/product-insights', requireAdminRoles('superadmin', 'operations', 'analyst', 'read-only'), getProductInsights);
+router.get('/product-controls', requireAdminRoles('superadmin', 'operations', 'analyst', 'read-only'), getProductControls);
+router.put('/product-controls', requireAdminRoles('superadmin'), saveProductControls);
 router.get('/product-cohorts/:key', requireAdminRoles(ADMIN_READ_ACCESS.accounts), getCohortAccounts);
 router.get('/browser-errors', requireAdminRoles('superadmin', 'operations', 'read-only'), getBrowserErrors);
 router.get('/users/:id/activity', requireAdminRoles(ADMIN_READ_ACCESS.accounts), getAccountActivity);

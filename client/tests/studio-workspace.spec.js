@@ -16,8 +16,9 @@ const deliveries = [
 async function mockWorkspace(page, options = {}) {
   let account = structuredClone({ ...baseAccount, ...options.account });
   const history = { profileSaves: 0, onboardingSaves: 0, names: [] };
-  await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 3, necessary: true, serviceAnalytics: true })));
+  await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 4, necessary: true, serviceAnalytics: true })));
   await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.route('https://workspace-test.r2.cloudflarestorage.com/**', route => route.fulfill({ status: 200, body: '' }));
   await page.route('**/api/v1/**', async route => {
     const url = new URL(route.request().url());
     const path = url.pathname;
@@ -36,7 +37,8 @@ async function mockWorkspace(page, options = {}) {
       account = { ...account, name: body.name, studio: { ...account.studio, ...body, name: body.studioName }, profileChangePolicy: { studioNameNextChangeAt: '2026-10-30T00:00:00Z' } };
       return reply({ success: true, user: account });
     }
-    if (path.endsWith('/onboarding/logo')) {
+    if (path.endsWith('/onboarding/logo/sign')) return reply({ success: true, data: { uploadUrl: 'https://workspace-test.r2.cloudflarestorage.com/logo', objectKey: 'fixture-logo', uploadToken: 'tests-only-upload-token', contentType: 'image/png' } });
+    if (path.endsWith('/onboarding/logo/confirm')) {
       account = { ...account, avatar: '/veylo/web/audience-portrait-480.webp' };
       return reply({ success: true, user: account, url: account.avatar });
     }
@@ -110,7 +112,8 @@ test('all onboarding steps fit phone, tablet, and desktop and lead to the dashbo
     await page.getByLabel('Portraits', { exact: true }).check();
     await expectFits(page);
     await page.getByRole('button', { name: 'Save and continue' }).click();
-    await expect(page.getByRole('heading', { name: 'One optional question.' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'How did you hear about Veylo?' })).toBeVisible();
+    await page.getByRole('radio', { name: 'Another photographer', exact: true }).check();
     await expectFits(page);
     await page.getByRole('button', { name: 'Open my dashboard' }).click();
     await expect(page).toHaveURL(/\/dashboard$/);

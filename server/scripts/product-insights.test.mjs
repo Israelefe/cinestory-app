@@ -80,6 +80,22 @@ test('browser diagnostics remove error text, private URLs, extension paths and s
   assert.equal(safeBrowserDiagnostic({ type: 'private message', frames: [{ asset: '/uploads/private.jpg', line: 1, column: 1 }] }).frames.length, 0);
   assert.equal(analyticsRoute('/d/private-access-token?pin=secret'), '/:id/:id');
 });
+test('private source-map chunk IDs survive diagnostics and PostHog encoding without exposing private stack text', () => {
+  const chunkId = '3b240955-d24f-4949-8b58-a1ab7fbac187';
+  const parsed = browserDiagnostic({ name: 'TypeError', stack: 'TypeError: private message\n at privateFunction (https://veylo.test/assets/module.full.no-external-abcd.js:2:9)' }, {
+    origin: 'https://veylo.test', release: 'abc123',
+    chunkIds: { 'Error\n at https://veylo.test/assets/module.full.no-external-abcd.js:1:1': chunkId, 'Error\n at https://external.invalid/assets/module.full.no-external-abcd.js:1:1': '00000000-0000-4000-8000-000000000000' }
+  });
+  assert.equal(parsed.frames[0].chunkId, chunkId);
+  const diagnostic = safeBrowserDiagnostic(parsed);
+  assert.equal(diagnostic.frames[0].chunkId, chunkId);
+  process.env.POSTHOG_IDENTITY_SECRET = 'tests-only-source-map-identity-secret-12345';
+  const payload = posthogPayload({ _id: new mongoose.Types.ObjectId(), name: 'javascript.error', actorType: 'photographer', userId: user._id, occurredAt: new Date(), diagnostic });
+  assert.equal(payload.properties.$exception_list[0].stacktrace.frames[0].chunk_id, chunkId);
+  assert.doesNotMatch(JSON.stringify(payload), /private message|privateFunction|external.invalid/);
+  assert.equal(safeBrowserDiagnostic({ ...parsed, frames: [{ ...parsed.frames[0], chunkId: 'private-value' }] }).frames[0].chunkId, undefined);
+});
+
 test('repeated batches are deduplicated and client identity is not borrowed from the owner', async () => {
   const input = { name: 'upload.completed', userId: user._id, actorType: 'photographer', source: 'client', eventKey: 'one-retry' };
   await Promise.all([recordAnalyticsEvent(input), recordAnalyticsEvent(input)]); assert.equal(await AnalyticsEvent.countDocuments({}), 1);
