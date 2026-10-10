@@ -1,34 +1,7 @@
 // Run on a separate host from the API. This process deliberately does not use MongoDB.
 import { pathToFileURL } from 'node:url';
-export async function probe(url, fetcher = fetch) {
-  const started = performance.now();
-  try {
-    const response = await fetcher(url, { signal: AbortSignal.timeout(8000), redirect: 'error', cache: 'no-store' });
-    let healthy = false;
-    if (response.ok && new URL(url).pathname === '/ready') healthy = (await response.json()).status === 'ready';
-    else if (response.ok && /text\/html/.test(response.headers.get('content-type') || '')) {
-      const html = await response.text();
-      const source = html.match(/<script\b[^>]*\bsrc=["']([^"']+)["']/i)?.[1];
-      if (source) {
-        const asset = new URL(source, url);
-        if (asset.origin === new URL(url).origin && asset.pathname.startsWith('/assets/')) {
-          const bundle = await fetcher(asset, { method: 'HEAD', signal: AbortSignal.timeout(8000), redirect: 'error', cache: 'no-store' });
-          healthy = bundle.ok && /javascript|ecmascript/.test(bundle.headers.get('content-type') || '');
-        }
-      }
-    }
-    await response.body?.cancel().catch(() => {});
-    return { healthy, latencyMs: Math.round(performance.now() - started) };
-  } catch { return { healthy: false, latencyMs: Math.min(60000, Math.round(performance.now() - started)) }; }
-}
-export function advanceMonitor(previous = {}, healthy) {
-  const state = { failures: 0, successes: 0, incident: false, ...previous };
-  state.failures = healthy ? 0 : Math.min(100000, state.failures + 1);
-  state.successes = healthy ? state.successes + 1 : 0;
-  const transition = !state.incident && state.failures >= 3 ? 'outage' : state.incident && state.successes >= 2 ? 'recovery' : null;
-  if (transition) state.incident = transition === 'outage';
-  return { ...state, transition };
-}
+import { advanceMonitor, probe } from '../src/utils/uptimeMonitor.js';
+export { advanceMonitor, probe } from '../src/utils/uptimeMonitor.js';
 function trustedUrl(value, name) {
   const url = new URL(value);
   if (url.protocol !== 'https:' || url.username || url.password || url.hash || url.search) throw new Error(`${name} must be an HTTPS URL without credentials or query parameters.`);

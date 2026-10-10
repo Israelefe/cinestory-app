@@ -22,6 +22,8 @@ Provider credentials appear as **Configured**, not **Passing**. Database and sto
 
 Run `npm run operations:monitor` from `server` on a different host or monitoring provider from the API. Running it inside the API process or on the same failed machine cannot provide independent outage alerts. No monitor service is deployed by this commit.
 
+For the existing Cloudflare account, a deployable scheduled Worker is available in [cloudflare/uptime-monitor](../cloudflare/uptime-monitor/README.md). It checks every minute, persists incident state in one Durable Object, emails directly through Resend, and uses the same authenticated API check-in. Follow that directory's setup guide; adding the code does not deploy the monitor. Run either that Worker or the standalone Node process, rather than both against the same production targets.
+
 Set these environment variables on the independent monitor:
 
 | Variable | Purpose |

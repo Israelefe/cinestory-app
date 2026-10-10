@@ -1,0 +1,23 @@
+name = "veylo-uptime-monitor"
+main = "worker.js"
+compatibility_date = "2026-10-10"
+workers_dev = false
+preview_urls = false
+
+[vars]
+OPS_MONITOR_API_URL = "https://veylo-api-ptk3.onrender.com"
+OPS_MONITOR_WEBSITE_URL = "https://veylo.com.ng"
+
+[triggers]
+crons = ["* * * * *"]
+
+[observability]
+enabled = true
+
+[[durable_objects.bindings]]
+name = "UPTIME_MONITOR"
+class_name = "UptimeMonitor"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["UptimeMonitor"]
