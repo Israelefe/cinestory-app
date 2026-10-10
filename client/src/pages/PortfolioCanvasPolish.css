@@ -13,7 +13,6 @@
 .v-portfolio-canvas .vpc-share:hover { color: var(--portfolio-accent-text); }
 .v-portfolio-canvas .vpc-share-state { width: min(calc(100% - 40px), 1280px); margin: 12px auto; color: var(--portfolio-accent-text); font-size: 12px; line-height: 1.7; }
 .v-portfolio-canvas :is(.vpc-work, .vpc-projects, .vpc-business, .vpc-contact) { scroll-margin-top: 112px; }
-.v-portfolio-canvas .vpc-opening-actions { gap: 12px 24px; }
 .v-portfolio-canvas .vpc-opening-details { margin-top: 20px; }
 .design-editorial .vpc-hero { gap: 24px; padding-block: 28px 48px; }
 .design-editorial .vpc-hero-heading { order: -1; }
