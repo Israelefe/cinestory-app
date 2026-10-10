@@ -74,6 +74,8 @@ Incidents appear in admin without an email provider. Email additionally needs `R
 
 Operations uses the same saved recipient and environment fallback as the alert sender. Its email card reports **Configured** only when both a recipient and the email-provider key are present; otherwise it reports **Not configured** and identifies the missing setup. This is a configuration check, not confirmation that an email reached an inbox. Independent API and website checks still show **No observation** until an external monitor reports.
 
+Super administrators can use **Send test alert** in Product controls to verify inbox delivery without creating an incident. The authenticated, CSRF-protected endpoint accepts only the saved settings revision; the recipient and message are fixed on the server. Requests are audited and limited to one per administrator per minute. The shared email outbox also deduplicates tests for the same recipient within each minute across API replicas. Provider acceptance is shown separately from inbox delivery; the administrator must check the receiving inbox and spam folder. Save a changed alert address before testing.
+
 ## Private browser source maps
 
 Set `VEYLO_PRIVATE_SOURCE_MAPS=true` for a private-map client build. The revision comes from `VITE_APP_REVISION`, a supported CI commit variable, or the current Git commit. `npm run build` creates hidden maps and moves them out of the public build into `.private-sourcemaps/<revision>/`. The build fails if a safe revision is missing. Deploy only `client/dist` publicly; never publish `.private-sourcemaps`.

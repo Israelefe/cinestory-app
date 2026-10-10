@@ -1,6 +1,6 @@
 import { getSystemOverview, getOperationalIssues, updateOperationalIssue, acknowledgeOperationalAlert, monitorCheckIn } from '../controllers/adminOperations.controller.js';
 import express from 'express';
-import { getProductControls, saveProductControls } from '../controllers/productControls.controller.js';
+import { getProductControls, saveProductControls, testAlertEmail } from '../controllers/productControls.controller.js';
 import jwt from 'jsonwebtoken';
 import {
   getOperationsOverview,
@@ -76,7 +76,7 @@ import {
 import AdminUser from '../models/AdminUser.js';
 import AdminSession from '../models/AdminSession.js';
 import { ADMIN_READ_ACCESS, adminMfaRequired } from '../utils/adminAccess.js';
-import { authAttemptLimit, billingActionLimit, monitorCheckInLimit, supportMessageLimit } from '../middleware/rateLimit.middleware.js';
+import { authAttemptLimit, billingActionLimit, monitorCheckInLimit, supportMessageLimit, adminAlertTestLimit } from '../middleware/rateLimit.middleware.js';
 import { tokenDigest } from '../utils/auth.js';
 import { getProductAnalytics, getVisitorTrafficAnalytics } from '../controllers/adminAnalytics.controller.js';
 import { getProductInsights, getAccountActivity, getTicketActivity, getBrowserErrors, getCohortAccounts } from '../controllers/productInsights.controller.js';
@@ -156,6 +156,7 @@ router.get('/product-analytics', requireAdminRoles('superadmin', 'operations', '
 router.get('/product-insights', requireAdminRoles('superadmin', 'operations', 'analyst', 'read-only'), getProductInsights);
 router.get('/product-controls', requireAdminRoles('superadmin', 'operations', 'analyst', 'read-only'), getProductControls);
 router.put('/product-controls', requireAdminRoles('superadmin'), saveProductControls);
+router.post('/product-controls/test-alert', requireAdminRoles('superadmin'), adminAlertTestLimit, testAlertEmail);
 router.get('/product-cohorts/:key', requireAdminRoles(ADMIN_READ_ACCESS.accounts), getCohortAccounts);
 router.get('/browser-errors', requireAdminRoles('superadmin', 'operations', 'read-only'), getBrowserErrors);
 router.get('/users/:id/activity', requireAdminRoles(ADMIN_READ_ACCESS.accounts), getAccountActivity);

@@ -1,11 +1,13 @@
 import { z } from 'zod';
 import mongoose from 'mongoose';
+import crypto from 'node:crypto';
 import ProductControls from '../models/ProductControls.js';
 import ProductExposure from '../models/ProductExposure.js';
 import ProductFeedback from '../models/ProductFeedback.js';
 import AdminAudit from '../models/AdminAudit.js';
 import { EXPERIMENT, SURVEY, productControls, productRuntime, productParticipant, verifyExposure, operationsAlertRecipient } from '../services/productControls.service.js';
 import { recordAnalyticsEvent } from '../services/analytics.service.js';
+import { sendOnce } from '../services/email.service.js';
 
 const safe = handler => async (req, res, next) => { try { res.set('Cache-Control', 'private, no-store'); await handler(req, res); } catch (error) { next(error); } };
 const settingsSchema = z.object({
@@ -44,6 +46,30 @@ export const saveProductControls = safe(async (req, res) => {
   if (!saved) return res.status(409).json({ success: false, message: 'Another administrator changed these settings. Refresh before saving.' });
   await AdminAudit.create({ adminId: req.admin._id, action: 'product.controls.update', resourceType: 'ProductControls', before, after: saved });
   res.json({ success: true, data: saved });
+});
+export const testAlertEmail = safe(async (req, res) => {
+  const parsed = z.object({ revision: z.number().int().min(0) }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ success: false, message: 'Refresh product settings before sending a test alert.' });
+  const settings = await productControls();
+  if (settings.revision !== parsed.data.revision) return res.status(409).json({ success: false, message: 'The saved settings changed. Refresh product controls before testing.' });
+  const recipient = (settings.alertEmail || process.env.OPS_ALERT_EMAIL || '').trim().toLowerCase();
+  if (!z.email().max(254).safeParse(recipient).success || !process.env.RESEND_API_KEY) return res.status(409).json({ success: false, message: 'Save an alert address and configure the email provider before testing.' });
+  // The shared outbox prevents duplicate sends across API replicas and admins.
+  // Neither the recipient nor the message can be supplied by the browser.
+  const eventKey = `ops:test-alert:${crypto.createHash('sha256').update(recipient).digest('hex')}:${Math.floor(Date.now() / 60000)}`;
+  await AdminAudit.create({ adminId: req.admin._id, action: 'operations.alert.test.requested', resourceType: 'EmailDelivery',
+    details: { eventKey, recipient } });
+  let result;
+  try {
+    result = await sendOnce({ eventKey, kind: 'operations-alert', to: recipient, subject: 'Veylo alert email test',
+      text: 'This is a test of your Veylo alert email setup. No incident was created.\n\nIf this email reached your inbox, delivery worked for this test. Real incidents appear in Operations in the Veylo admin.' });
+  } catch {
+    return res.status(502).json({ success: false, message: 'The test alert could not be sent. Check the email provider settings and try again in a minute.' });
+  }
+  if (result.status === 'skipped') return res.status(409).json({ success: false, message: 'Alert emails are disabled. Check the email settings before testing again.' });
+  const accepted = result.status === 'sent';
+  res.status(202).json({ success: true, data: { status: accepted ? 'accepted' : 'sending',
+    message: accepted ? 'The email provider accepted the test alert. Check your inbox and spam folder.' : 'A test alert is already being sent. Check your inbox in a moment.' } });
 });
 export const acknowledgeExposure = safe(async (req, res) => {
   const parsed = z.object({ token: z.string().max(1000) }).strict().safeParse(req.body);

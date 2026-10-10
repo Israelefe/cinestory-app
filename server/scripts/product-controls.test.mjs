@@ -15,6 +15,8 @@ import ProductExposure from '../src/models/ProductExposure.js';
 import ProductFeedback from '../src/models/ProductFeedback.js';
 import AnalyticsEvent from '../src/models/AnalyticsEvent.js';
 import OperationalAlert from '../src/models/OperationalAlert.js';
+import EmailDelivery from '../src/models/EmailDelivery.js';
+import { adminAlertTestLimit } from '../src/middleware/rateLimit.middleware.js';
 import adminRoutes from '../src/routes/admin.routes.js';
 import productRoutes from '../src/routes/productControls.routes.js';
 import { tokenDigest } from '../src/utils/auth.js';
@@ -27,12 +29,13 @@ process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'product-tests-only-not-a-live-secret-1234';
 process.env.POSTHOG_IDENTITY_SECRET = 'product-tests-only-identity-secret-12345';
 const csrf = 'tests-only-csrf';
+const realFetch = globalThis.fetch;
 let mongo, server, origin, user, other, legacyAdmin, access;
 const administrators = {};
 const defaults = { revision: 0, replayEnabled: false, replaySamplePercent: 10, feedbackEnabled: false, guidanceEnabled: false, guidanceRolloutPercent: 10, guidanceExperimentEnabled: false, alertEmail: '' };
 before(async () => {
   mongo = await MongoMemoryServer.create(); await mongoose.connect(mongo.getUri());
-  await Promise.all([ProductExposure.init(), ProductFeedback.init(), ProductControls.init(), AnalyticsEvent.init(), OperationalAlert.init()]);
+  await Promise.all([ProductExposure.init(), ProductFeedback.init(), ProductControls.init(), AnalyticsEvent.init(), OperationalAlert.init(), EmailDelivery.init()]);
   user = await User.create({ name: 'Test Photographer', email: 'controls@example.invalid', role: 'user', accountStatus: 'active', emailVerifiedAt: new Date() });
   other = await User.create({ name: 'Other Photographer', email: 'controls-other@example.invalid', role: 'user', accountStatus: 'active', emailVerifiedAt: new Date() });
   legacyAdmin = await User.create({ name: 'Internal Account', email: 'controls-admin@example.invalid', role: 'admin', accountStatus: 'active', emailVerifiedAt: new Date() });
@@ -49,13 +52,76 @@ before(async () => {
   server = await new Promise(resolve => { const listener = app.listen(0, '127.0.0.1', () => resolve(listener)); }); origin = `http://127.0.0.1:${server.address().port}`;
 });
 beforeEach(async () => {
+  globalThis.fetch = realFetch;
+  await adminAlertTestLimit.resetKey(`account:${jwt.decode(administrators.superadmin).id}`);
   delete process.env.ANALYTICS_EXCLUDED_USER_IDS; delete process.env.POSTHOG_ENABLED; delete process.env.OPS_ALERT_EMAIL; delete process.env.RESEND_API_KEY;
-  await Promise.all([ProductControls.deleteMany({}), ProductExposure.deleteMany({}), ProductFeedback.deleteMany({}), AnalyticsEvent.deleteMany({}), OperationalAlert.deleteMany({})]);
+  await Promise.all([ProductControls.deleteMany({}), ProductExposure.deleteMany({}), ProductFeedback.deleteMany({}), AnalyticsEvent.deleteMany({}), OperationalAlert.deleteMany({}), EmailDelivery.deleteMany({})]);
 });
-after(async () => { await new Promise(resolve => server.close(resolve)); await mongoose.disconnect(); await mongo.stop(); });
+after(async () => { globalThis.fetch = realFetch; await new Promise(resolve => server.close(resolve)); await mongoose.disconnect(); await mongo.stop(); });
 const admin = (method, body, role = 'superadmin') => fetch(`${origin}/api/v1/admin/product-controls`, { method, headers: { Authorization: `Bearer ${administrators[role]}`, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
 const client = (path, body, validCsrf = true) => fetch(`${origin}/api/v1/product/${path}`, { method: body ? 'POST' : 'GET', headers: { Cookie: `veylo_access=${access}; veylo_csrf=${csrf}`, 'x-csrf-token': validCsrf ? csrf : 'wrong', 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
 const enable = patch => ProductControls.create({ ...defaults, ...patch });
+const alertTest = (body = { revision: 0 }, role = 'superadmin') => realFetch(`${origin}/api/v1/admin/product-controls/test-alert`, { method: 'POST', headers: { Authorization: `Bearer ${administrators[role]}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+test('test alerts require a superadmin bearer session and reject cookie-only requests', async () => {
+  assert.equal((await realFetch(`${origin}/api/v1/admin/product-controls/test-alert`, { method: 'POST' })).status, 401);
+  for (const role of ['analyst', 'support']) assert.equal((await alertTest({ revision: 0 }, role)).status, 403);
+  assert.equal((await realFetch(`${origin}/api/v1/admin/product-controls/test-alert`, { method: 'POST', headers: { Cookie: `veylo_admin_token=${administrators.superadmin}`, 'Content-Type': 'application/json' }, body: '{"revision":0}' })).status, 403);
+  assert.equal(await EmailDelivery.countDocuments(), 0);
+});
+
+test('test alerts reject browser-supplied messages, stale settings and missing provider setup', async () => {
+  await enable({ alertEmail: 'alerts@example.test' });
+  assert.equal((await alertTest({ revision: 0, to: 'other@example.test', subject: 'forbidden', text: 'forbidden' })).status, 400);
+  await adminAlertTestLimit.resetKey(`account:${jwt.decode(administrators.superadmin).id}`);
+  assert.equal((await alertTest({ revision: 1 })).status, 409);
+  await adminAlertTestLimit.resetKey(`account:${jwt.decode(administrators.superadmin).id}`);
+  assert.equal((await alertTest()).status, 409);
+  assert.equal(await EmailDelivery.countDocuments(), 0);
+});
+
+test('test alerts use the saved address, record an audit and rate limit repeat clicks without incidents', async () => {
+  await enable({ alertEmail: 'saved-alerts@example.test' });
+  process.env.RESEND_API_KEY = 're_product_test_only'; process.env.OPS_ALERT_EMAIL = 'fallback@example.test';
+  let sends = 0;
+  globalThis.fetch = (url, options) => {
+    if (!String(url).startsWith('https://api.resend.com/emails')) return realFetch(url, options);
+    const message = JSON.parse(options.body);
+    assert.equal(message.to, 'saved-alerts@example.test'); assert.equal(message.subject, 'Veylo alert email test');
+    sends++;
+    return Promise.resolve(new Response(JSON.stringify({ id: 'test-alert-accepted' }), { status: 200 }));
+  };
+  const result = await alertTest(); assert.equal(result.status, 202);
+  assert.equal((await result.json()).data.status, 'accepted');
+  assert.equal((await alertTest()).status, 429); assert.equal(sends, 1);
+  assert.ok(await AdminAudit.exists({ action: 'operations.alert.test.requested' }));
+  assert.equal((await EmailDelivery.findOne()).status, 'sent');
+  assert.equal(await OperationalAlert.countDocuments(), 0);
+});
+
+test('the shared outbox deduplicates test sends even when another API replica accepts the request', async t => {
+  const now = Date.now(); t.mock.method(Date, 'now', () => now);
+  await enable({ alertEmail: 'alerts@example.test' }); process.env.RESEND_API_KEY = 're_product_test_only';
+  let sends = 0;
+  globalThis.fetch = (url, options) => {
+    if (!String(url).startsWith('https://api.resend.com/emails')) return realFetch(url, options);
+    sends++; return Promise.resolve(new Response(JSON.stringify({ id: 'test-deduplicated' }), { status: 200 }));
+  };
+  assert.equal((await alertTest()).status, 202);
+  await adminAlertTestLimit.resetKey(`account:${jwt.decode(administrators.superadmin).id}`);
+  assert.equal((await alertTest()).status, 202);
+  assert.equal(sends, 1); assert.equal(await EmailDelivery.countDocuments(), 1);
+});
+
+test('a rejected test email stays failed and does not expose provider details', async () => {
+  await enable({ alertEmail: 'alerts@example.test' }); process.env.RESEND_API_KEY = 're_product_test_only';
+  globalThis.fetch = (url, options) => String(url).startsWith('https://api.resend.com/emails')
+    ? Promise.resolve(new Response(JSON.stringify({ name: 'validation_error', message: 'test-only private provider detail' }), { status: 422 })) : realFetch(url, options);
+  const result = await alertTest(); assert.equal(result.status, 502);
+  assert.ok(!(await result.text()).includes('test-only private provider detail'));
+  assert.equal((await EmailDelivery.findOne()).status, 'failed');
+  assert.equal(await OperationalAlert.countDocuments(), 0);
+});
 
 test('controls require an administrator and only superadmin can save; strict inputs and audit apply', async () => {
   assert.equal((await fetch(`${origin}/api/v1/admin/product-controls`)).status, 401);

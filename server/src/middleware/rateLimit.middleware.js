@@ -180,6 +180,13 @@ export const billingActionLimit = limiter({
   identifier: 'billing-actions'
 });
 
+export const adminAlertTestLimit = limiter({
+  windowMs: 60000,
+  limit: 1,
+  message: 'Please wait one minute before sending another test alert.',
+  identifier: 'admin-alert-test'
+});
+
 export const profileUpdateLimit = limiter({
   windowMs: 60 * 60 * 1000,
   limit: 120,
