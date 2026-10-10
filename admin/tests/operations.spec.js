@@ -14,13 +14,13 @@ function fixture() {
     history: Array.from({ length: 12 }, (_, index) => ({ observedAt: new Date(Date.now() - (12 - index) * 30000).toISOString(), process: { cpuPercent: 10 + index % 4, eventLoopP95Ms: 20 + index } }))
   };
 }
-async function setup(page, { role = 'superadmin', sections = allSections, mfaRequired = false } = {}) {
+async function setup(page, { role = 'superadmin', sections = allSections, mfaRequired = false, notifications = fixture().notifications } = {}) {
   const requested = []; let failSystem = false;
   await page.addInitScript(() => localStorage.setItem('veylo_admin_token', 'mock-only-token'));
   await page.route('**/api/v1/admin/**', async route => {
     const url = new URL(route.request().url()), path = url.pathname.replace('/api/v1/admin/', ''); requested.push(path);
     if (path === 'auth/me') return route.fulfill({ json: { success: true, admin: { name: 'Ada Okafor', username: 'ada', role, sections, mfaRequired, twoFactorEnabled: false } } });
-    if (path === 'system') return route.fulfill(failSystem ? { status: 503, json: { success: false, message: 'API telemetry is unavailable.' } } : { json: { success: true, data: fixture() } });
+    if (path === 'system') return route.fulfill(failSystem ? { status: 503, json: { success: false, message: 'API telemetry is unavailable.' } } : { json: { success: true, data: { ...fixture(), notifications } } });
     if (path === 'operations') return route.fulfill({ json: { success: true, data: { generatedAt: new Date().toISOString(), metrics: { accounts: { total: 213, newLast30Days: 18 } }, providers: { database: { status: 'healthy', latencyMs: 12 }, ai: { status: 'configured', message: 'Configuration only. No live provider probe.', failuresLast24Hours: 2 } } } } });
     if (path === 'issues') return route.fulfill({ json: { success: true, data: { generatedAt: new Date().toISOString(), items: url.searchParams.get('status') === 'resolved' ? [] : [{ _id: 'issue-1', code: 'HTTP_500', route: 'GET /deliveries/:id', status: 'open', occurrences: 6, frames: ['at handler (server/file.js:40:2)'], lastSeenAt: new Date().toISOString() }], total: url.searchParams.get('status') === 'resolved' ? 0 : 1, page: 1, pages: 1, browser: [] } } });
     if (path === 'support/tickets') return route.fulfill({ json: { success: true, data: { tickets: [], summary: {} } } });
@@ -46,6 +46,24 @@ for (const width of [320, 768, 834, 1440]) {
     await page.screenshot({ path: `../.visual-review/admin-operations/operations-${width}.png`, fullPage: true });
   });
 }
+test('saved alert setup shows Configured while an unconnected monitor stays No observation', async ({ page }) => {
+  await setup(page, { notifications: { configured: true, recipientConfigured: true, providerConfigured: true } });
+  await page.goto('/?section=operations');
+  const email = page.locator('.aw-coverage article').filter({ has: page.getByRole('heading', { name: 'Critical alert email' }) });
+  await expect(email).toContainText('Recipient and email provider configured');
+  await expect(email.locator('.aw-state')).toHaveText('Configured');
+  const website = page.locator('.aw-coverage article').filter({ has: page.getByRole('heading', { name: 'Public website' }) });
+  await expect(website.locator('.aw-state')).toHaveText('No observation');
+});
+
+test('missing email provider shows Not configured and explains the remaining setup', async ({ page }) => {
+  await setup(page, { notifications: { configured: false, recipientConfigured: true, providerConfigured: false } });
+  await page.goto('/?section=operations');
+  const email = page.locator('.aw-coverage article').filter({ has: page.getByRole('heading', { name: 'Critical alert email' }) });
+  await expect(email.locator('.aw-state')).toHaveText('Not configured');
+  await expect(email).toContainText('Configure the email provider on the API.');
+});
+
 test('failed refresh identifies stale records and replaces old passing status', async ({ page }) => {
   const mock = await setup(page); await page.goto('/'); await expect(page.locator('.aw-live-value')).toHaveText('23');
   mock.fail(); await page.getByRole('button', { name: 'Refresh', exact: true }).click();

@@ -72,6 +72,8 @@ Internal and excluded activity does not contribute to product error rates. Brows
 
 Incidents appear in admin without an email provider. Email additionally needs `RESEND_API_KEY` and the recipient saved in Product controls, or the `OPS_ALERT_EMAIL` fallback. A saved address is not proof of mail delivery. A separate external uptime check remains necessary to detect a completely unavailable API, because a stopped process cannot run its own monitoring.
 
+Operations uses the same saved recipient and environment fallback as the alert sender. Its email card reports **Configured** only when both a recipient and the email-provider key are present; otherwise it reports **Not configured** and identifies the missing setup. This is a configuration check, not confirmation that an email reached an inbox. Independent API and website checks still show **No observation** until an external monitor reports.
+
 ## Private browser source maps
 
 Set `VEYLO_PRIVATE_SOURCE_MAPS=true` for a private-map client build. The revision comes from `VITE_APP_REVISION`, a supported CI commit variable, or the current Git commit. `npm run build` creates hidden maps and moves them out of the public build into `.private-sourcemaps/<revision>/`. The build fails if a safe revision is missing. Deploy only `client/dist` publicly; never publish `.private-sourcemaps`.

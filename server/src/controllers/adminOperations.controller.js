@@ -10,6 +10,7 @@ import AnalyticsEvent from '../models/AnalyticsEvent.js';
 import AdminAudit from '../models/AdminAudit.js';
 import { operationalInstance, processSnapshot, requestSnapshot } from '../services/operationalMetrics.service.js';
 import { operationalWorkerHealth } from '../services/operationalMonitoring.service.js';
+import { operationsAlertRecipient } from '../services/productControls.service.js';
 
 export async function readiness(req, res) {
   res.set('Cache-Control', 'no-store');
@@ -25,13 +26,14 @@ export async function getSystemOverview(req, res, next) {
   res.set('Cache-Control', 'no-store');
   try {
     const now = new Date(), since = new Date(Date.now() - 3600000), activeSince = new Date(Date.now() - 90000);
-    const [history, checks, alerts, issues, workers, activity] = await Promise.all([
+    const [history, checks, alerts, issues, workers, activity, alertRecipient] = await Promise.all([
       OperationalSample.find({ observedAt: { $gte: since } }).sort({ observedAt: -1 }).limit(480).lean(),
       MonitorCheck.find().lean(),
       OperationalAlert.find({ status: { $ne: 'resolved' } }).sort({ severity: 1, lastSeenAt: -1 }).limit(50).lean(),
       OperationalIssue.countDocuments({ status: { $ne: 'resolved' } }),
       operationalWorkerHealth(),
-      ActiveSession.aggregate([{ $match: { lastSeenAt: { $gte: activeSince } } }, { $group: { _id: '$actorType', count: { $sum: 1 } } }])
+      ActiveSession.aggregate([{ $match: { lastSeenAt: { $gte: activeSince } } }, { $group: { _id: '$actorType', count: { $sum: 1 } } }]),
+      operationsAlertRecipient()
     ]);
     const byActor = Object.fromEntries(activity.map(row => [row._id, row.count]));
     const freshInstances = Object.values(Object.fromEntries(history.filter(row => Date.now() - new Date(row.observedAt).getTime() < 90000).reverse().map(row => [row.instance, row])));
@@ -45,7 +47,8 @@ export async function getSystemOverview(req, res, next) {
         return { name, status: !check ? 'unknown' : Date.now() - new Date(check.receivedAt).getTime() > 180000 ? 'stale' : check.healthy ? 'healthy' : 'unavailable',
           checkedAt: check?.checkedAt || null, receivedAt: check?.receivedAt || null, latencyMs: check?.latencyMs ?? null };
       }) },
-      notifications: { configured: Boolean(process.env.OPS_ALERT_EMAIL && process.env.RESEND_API_KEY), encryptionConfigured: Boolean(process.env.BILLING_ENCRYPTION_KEY) },
+      notifications: { configured: Boolean(alertRecipient && process.env.RESEND_API_KEY), recipientConfigured: Boolean(alertRecipient),
+        providerConfigured: Boolean(process.env.RESEND_API_KEY), encryptionConfigured: Boolean(process.env.BILLING_ENCRYPTION_KEY) },
       revision: (process.env.RENDER_GIT_COMMIT || '').slice(0, 12) || null,
       scope: 'Process history and request metrics cover the responding API instance. Content Studio is excluded.'
     } });

@@ -8,6 +8,7 @@ import OperationalIssue from '../src/models/OperationalIssue.js';
 import OperationalAlert from '../src/models/OperationalAlert.js';
 import MonitorCheck from '../src/models/MonitorCheck.js';
 import ActiveSession from '../src/models/ActiveSession.js';
+import ProductControls from '../src/models/ProductControls.js';
 import AdminUser from '../src/models/AdminUser.js';
 import AdminSession from '../src/models/AdminSession.js';
 import { tokenDigest } from '../src/utils/auth.js';
@@ -43,7 +44,7 @@ before(async () => {
   server = await new Promise(resolve => { const listener = app.listen(0, '127.0.0.1', () => resolve(listener)); });
   origin = `http://127.0.0.1:${server.address().port}`;
 });
-beforeEach(async () => { delete process.env.ADMIN_REQUIRE_MFA; await Promise.all([OperationalIssue.deleteMany(), OperationalAlert.deleteMany(), MonitorCheck.deleteMany(), ActiveSession.deleteMany()]); });
+beforeEach(async () => { delete process.env.ADMIN_REQUIRE_MFA; await Promise.all([OperationalIssue.deleteMany(), OperationalAlert.deleteMany(), MonitorCheck.deleteMany(), ActiveSession.deleteMany(), ProductControls.deleteMany()]); });
 after(async () => { globalThis.fetch = realFetch; await new Promise(resolve => server.close(resolve)); await mongoose.disconnect(); await mongo.stop(); });
 test('roles deny private reads and the legacy admin alias', async () => {
   assert.equal(adminSections('support').includes('payments'), false);
@@ -151,12 +152,39 @@ test('resolving an issue requires a fix note and creates an audit record', async
   const rejected = response(); await updateOperationalIssue(req, rejected, error => { throw error; }); assert.equal(rejected.code, 400);
   const accepted = response(); await updateOperationalIssue({ ...req, body: { status: 'resolved', resolution: 'Fixed the worker connection timeout.' } }, accepted, error => { throw error; }); assert.equal(accepted.body.data.status, 'resolved');
 });
-test('alert sends retry safely and send one recovery notification', async () => {
+test('Operations recognises the saved alert recipient and reports missing email setup separately', async () => {
+  const originalRecipient = process.env.OPS_ALERT_EMAIL, originalProvider = process.env.RESEND_API_KEY;
+  const notifications = async () => {
+    const result = response();
+    await getSystemOverview({}, result, error => { throw error; });
+    return result.body.data.notifications;
+  };
+  try {
+    delete process.env.OPS_ALERT_EMAIL; delete process.env.RESEND_API_KEY;
+    assert.deepEqual(await notifications(), { configured: false, recipientConfigured: false, providerConfigured: false, encryptionConfigured: Boolean(process.env.BILLING_ENCRYPTION_KEY) });
+    await ProductControls.create({ alertEmail: 'saved-alerts@example.test' });
+    assert.equal((await notifications()).recipientConfigured, true);
+    assert.equal((await notifications()).configured, false);
+    process.env.RESEND_API_KEY = 're_operations_test_only';
+    assert.equal((await notifications()).configured, true);
+    assert.equal((await notifications()).providerConfigured, true);
+    await ProductControls.updateOne({ _id: 'product' }, { $set: { alertEmail: '' } });
+    assert.equal((await notifications()).configured, false);
+    process.env.OPS_ALERT_EMAIL = 'fallback-alerts@example.test';
+    assert.equal((await notifications()).configured, true);
+  } finally {
+    if (originalRecipient === undefined) delete process.env.OPS_ALERT_EMAIL; else process.env.OPS_ALERT_EMAIL = originalRecipient;
+    if (originalProvider === undefined) delete process.env.RESEND_API_KEY; else process.env.RESEND_API_KEY = originalProvider;
+  }
+});
+
+test('alerts use the saved recipient, retry safely and send one recovery notification', async () => {
   process.env.OPS_ALERT_EMAIL = 'operations@example.test'; process.env.RESEND_API_KEY = 're_operations_test_only';
+  await ProductControls.create({ alertEmail: 'saved-alerts@example.test' });
   let attempts = 0;
   globalThis.fetch = async (url, options) => {
     assert.match(String(url), /^https:\/\/api\.resend\.com\/emails/);
-    const body = JSON.parse(options.body); assert.equal(body.to, 'operations@example.test'); attempts++;
+    const body = JSON.parse(options.body); assert.equal(body.to, 'saved-alerts@example.test'); attempts++;
     return attempts === 1 ? new Response(JSON.stringify({ name: 'validation_error', message: 'Test rejection' }), { status: 422 }) : new Response(JSON.stringify({ id: `test-email-${attempts}` }), { status: 200 });
   };
   try {

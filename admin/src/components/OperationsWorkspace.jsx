@@ -7,7 +7,7 @@ import { useVeyloReducedMotion } from '../../../client/src/utils/motionPolicy.js
 const numeric = value => Number.isFinite(value) ? new Intl.NumberFormat('en-NG', { maximumFractionDigits: 1 }).format(value) : '—';
 const bytes = value => Number.isFinite(value) ? `${numeric(value / 1024 ** 2)} MB` : '—';
 export const checkedTime = value => value ? new Date(value).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'No check received';
-const statusLabel = status => ({ healthy: 'Passing', configured: 'Configured', disabled: 'Disabled', unknown: 'No observation', stale: 'Stale', unavailable: 'Unavailable', degraded: 'Needs attention', idle: 'Reporting', busy: 'Working', error: 'Error' }[status] || 'Unknown');
+const statusLabel = status => ({ healthy: 'Passing', configured: 'Configured', unconfigured: 'Not configured', disabled: 'Disabled', unknown: 'No observation', stale: 'Stale', unavailable: 'Unavailable', degraded: 'Needs attention', idle: 'Reporting', busy: 'Working', error: 'Error' }[status] || 'Unknown');
 function State({ status = 'unknown' }) { return <span className={`aw-state aw-state-${status}`}><i />{statusLabel(status)}</span>; }
 export function WorkspaceHeading({ eyebrow, title, description, loading, onRefresh, updatedAt }) {
   const reduced = useVeyloReducedMotion();
@@ -33,7 +33,20 @@ export function AdminOverview({ system, operations, sections, onNavigate, canOpe
     <div className="aw-quick-links">{[['support', 'Help a photographer', 'Open the support inbox and account records.'], ['aiJobs', 'Check processing jobs', 'Inspect failures, retry work and review progress.']].filter(([key]) => sections.includes(key)).map(([key, title, text]) => <button type="button" key={key} onClick={() => onNavigate(key)}><span>{title}<small>{text}</small></span><ArrowUpRight size={20} /></button>)}</div>
   </>;
 }
-function Coverage({ system }) { return <div className="aw-coverage">{(system?.externalMonitor?.checks || [{ name: 'api' }, { name: 'website' }]).map(check => <article key={check.name}><Server size={18} /><div><h3>{check.name === 'api' ? 'API readiness' : 'Public website'}</h3><p>{check.checkedAt ? `Last external check ${checkedTime(check.checkedAt)}` : 'Independent monitor has not reported yet'}</p></div><State status={check.status} /></article>)}<article><Mail size={18} /><div><h3>Critical alert email</h3><p>{system?.notifications?.configured ? 'Recipient and email provider configured' : 'Set an alert recipient and email provider'}</p></div><State status={system?.notifications?.configured ? 'configured' : 'unknown'} /></article></div>; }
+function Coverage({ system }) {
+  const notifications = system?.notifications;
+  const emailStatus = !notifications ? 'unknown' : notifications.configured ? 'configured' : 'unconfigured';
+  let emailDetails = 'Waiting for the API to report email settings.';
+  if (notifications) {
+    emailDetails = notifications.configured ? 'Recipient and email provider configured' : 'Set an alert recipient and email provider';
+    if (!notifications.configured && notifications.recipientConfigured && notifications.providerConfigured === false) emailDetails = 'Configure the email provider on the API.';
+    if (!notifications.configured && notifications.providerConfigured && notifications.recipientConfigured === false) emailDetails = 'Save an alert recipient in Product analytics.';
+  }
+  return <div className="aw-coverage">
+    {(system?.externalMonitor?.checks || [{ name: 'api' }, { name: 'website' }]).map(check => <article key={check.name}><Server size={18} /><div><h3>{check.name === 'api' ? 'API readiness' : 'Public website'}</h3><p>{check.checkedAt ? `Last external check ${checkedTime(check.checkedAt)}` : 'Independent monitor has not reported yet'}</p></div><State status={check.status} /></article>)}
+    <article><Mail size={18} /><div><h3>Critical alert email</h3><p>{emailDetails}</p></div><State status={emailStatus} /></article>
+  </div>;
+}
 export function AdminOperations({ system, operations, onRefresh, canOperate }) {
   const [error, setError] = useState('');
   const acknowledge = async id => { setError(''); try { await api.post(`/v1/admin/alerts/${id}/acknowledge`); onRefresh(); } catch (failure) { setError(failure.response?.data?.message || 'Could not acknowledge the alert.'); } };
