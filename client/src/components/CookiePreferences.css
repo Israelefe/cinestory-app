@@ -47,3 +47,14 @@
 }
 
 .v-cookie-banner.v-cookie-portfolio{position:relative;inset:auto;transform:none;width:100%;max-width:none;box-sizing:border-box;margin:0;border-radius:0;padding:14px 20px;box-shadow:none;z-index:20}.v-cookie-portfolio p{font-size:11px;line-height:1.6}.v-cookie-portfolio strong{font-size:12px}@media(min-width:768px){.v-cookie-banner.v-cookie-portfolio{padding:12px 32px}}
+.v-cookie-banner.v-cookie-portfolio {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+}
+.v-cookie-banner.v-cookie-portfolio > span { display: none; }
+.v-cookie-banner.v-cookie-portfolio p { margin: 0; font-size: 11px; line-height: 1.6; max-width: 650px; }
+.v-cookie-banner.v-cookie-portfolio .v-cookie-actions { grid-column: 2; gap: 4px; margin: 0; }
+.v-cookie-banner.v-cookie-portfolio .v-cookie-actions button { padding: 8px 10px; min-height: 44px; }
+@media (min-width: 768px) { .v-cookie-banner.v-cookie-portfolio { padding-inline: 32px; } }

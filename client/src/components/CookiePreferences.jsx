@@ -45,11 +45,11 @@ export default function CookiePreferences({ compactPortfolio = false }) {
     {!acknowledged && <aside className={`v-cookie-banner v-cookie-compact ${compactPortfolio ? 'v-cookie-portfolio' : ''}`} aria-label="Cookies and browser storage notice">
       <span><ShieldCheck size={20} /></span>
       <div>
-        <strong>{compactPortfolio ? 'Browser storage notice' : 'How Veylo uses browser storage'}</strong>
-        <p>{compactPortfolio ? 'Veylo uses necessary browser storage and first-party service analytics. No advertising cookies.' : 'Veylo uses necessary cookies and first-party service analytics to sign you in, protect account actions, measure visits, and improve the platform. We do not use advertising cookies or sell visitor data.'}</p>
+        {!compactPortfolio && <strong>How Veylo uses browser storage</strong>}
+        <p>{compactPortfolio ? 'Veylo uses necessary storage and visit analytics. No advertising cookies.' : 'Veylo uses necessary cookies and first-party service analytics to sign you in, protect account actions, measure visits, and improve the platform. We do not use advertising cookies or sell visitor data.'}</p>
       </div>
       <div className="v-cookie-actions">
-        <button type="button" onClick={() => setOpen(true)}>View details</button>
+        <button type="button" onClick={() => setOpen(true)}>{compactPortfolio ? 'Details' : 'View details'}</button>
         <button type="button" onClick={acknowledgeNotice}>Got it<Check size={15} /></button>
       </div>
     </aside>}

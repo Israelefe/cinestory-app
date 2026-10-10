@@ -1,0 +1,104 @@
+.v-portfolio-canvas { --vpc-paper: #08080b; }
+.v-portfolio-canvas.is-warm-black { --vpc-paper: #120e0c; }
+.v-portfolio-canvas.is-ivory { --vpc-paper: #eee8de; }
+.v-portfolio-canvas .vpc-header { position: sticky; top: 0; z-index: 25; background: var(--vpc-paper); min-height: 76px; gap: 16px; padding-block: 12px; }
+.v-portfolio-canvas .vpc-brand { flex: 1; min-width: 0; max-width: 360px; font-size: 13px; }
+.vpc-header-controls { display: flex; align-items: center; gap: 8px; flex: none; }
+.v-portfolio-canvas .vpc-header-contact .vpc-primary { padding: 10px 12px !important; min-height: 44px; font-size: 12px; gap: 6px; white-space: nowrap; }
+.vpc-header-contact .vpc-primary > svg:first-child:not(:last-child) { display: none; }
+.v-portfolio-canvas .vpc-header-right { display: none; }
+.v-portfolio-canvas .vpc-mobile-menu { display: block; }
+.v-portfolio-canvas .vpc-share { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; padding: 8px 3px; }
+.v-portfolio-canvas .vpc-mobile-menu .vpc-share { padding: 8px 12px; width: 100%; }
+.v-portfolio-canvas .vpc-share:hover { color: var(--portfolio-accent-text); }
+.v-portfolio-canvas .vpc-share-state { width: min(calc(100% - 40px), 1280px); margin: 12px auto; color: var(--portfolio-accent-text); font-size: 12px; line-height: 1.7; }
+.v-portfolio-canvas :is(.vpc-work, .vpc-projects, .vpc-business, .vpc-contact) { scroll-margin-top: 112px; }
+.v-portfolio-canvas .vpc-opening-actions { gap: 12px 24px; }
+.v-portfolio-canvas .vpc-opening-details { margin-top: 20px; }
+.design-editorial .vpc-hero { gap: 24px; padding-block: 28px 48px; }
+.design-editorial .vpc-hero-heading { order: -1; }
+.design-editorial .vpc-hero h1 { font-size: clamp(36px, 10cqi, 110px); }
+.design-cinema .vpc-cinema-stage { min-height: clamp(340px, 110cqi, 620px); padding: 24px 20px 32px; }
+.design-cinema .vpc-hero h1 { font-size: clamp(36px, 10cqi, 100px); max-width: 14ch; line-height: 1.04; }
+.design-cinema .vpc-hero-copy { padding-block: 24px 8px; }
+.design-gallery .vpc-hero { gap: 24px; padding-block: 28px 48px; }
+.design-gallery .vpc-hero-heading { order: -1; }
+.design-gallery .vpc-cover { max-width: 400px; }
+.design-gallery .vpc-cover img { max-height: min(76cqi, 420px); }
+.design-folio .vpc-cover { rotate: 2deg; border-width: 6px; box-shadow: 0 12px 30px #0003; }
+.design-folio .vpc-companion { rotate: -4deg; box-shadow: 0 8px 24px #0003; }
+.design-folio .vpc-folio-opening { padding-bottom: 12px; }
+.v-portfolio-canvas .vpc-contact-form { min-width: 0; border: 1px solid var(--vpc-rule); align-self: start; }
+.vpc-contact-form > summary, .vpc-shoot-details > summary, .vpc-process-section > details > summary { cursor: pointer; min-height: 52px; padding: 18px 20px; font-size: 14px; line-height: 1.6; }
+.vpc-contact-form > summary { display: flex; justify-content: space-between; align-items: center; gap: 16px; list-style: none; color: var(--portfolio-accent-text); }
+.vpc-contact-form > summary::-webkit-details-marker { display: none; }
+.vpc-contact-form > summary > svg { flex: none; transition: transform .2s; }
+.vpc-contact-form[open] > summary > svg { transform: rotate(90deg); }
+.vpc-contact-form .vpc-enquiry-form { border: 0; border-top: 1px solid var(--vpc-rule); padding: 24px 20px; }
+.vpc-contact-form .vpc-enquiry-success { border: 0; border-top: 1px solid var(--vpc-rule); }
+.vpc-shoot-details { border-block: 1px solid var(--vpc-rule); margin-top: 24px; }
+.vpc-shoot-details > summary { padding-inline: 0; font-size: 12px; }
+.vpc-shoot-details > summary span { font-size: 11px; margin-left: 12px; color: var(--vpc-muted); }
+.vpc-process-section > details > summary { padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: clamp(24px, 4cqi, 40px); list-style: none; }
+.vpc-process-section > details > summary::-webkit-details-marker { display: none; }
+.vpc-process-section > details > summary > span { font: 12px/1.7 'Plus Jakarta Sans', sans-serif; color: var(--vpc-muted); flex-basis: 100%; order: 1; }
+.vpc-process-section > details > summary > svg { margin-left: auto; flex: none; transition: transform .2s; }
+.vpc-process-section > details[open] > summary > svg { transform: rotate(90deg); }
+.vpc-process-section .vpc-process { margin-top: 32px; }
+.v-portfolio-canvas summary:focus-visible { outline: 2px solid var(--portfolio-accent-text); outline-offset: 4px; }
+.v-portfolio-canvas :is(summary, a) { transition: color .18s, transform .18s; }
+.v-portfolio-canvas summary:active { opacity: .8; }
+.v-portfolio-canvas .vpc-service { padding: 24px 0; background: transparent; border-width: 1px 0 0; }
+.design-editorial .vpc-business h2, .design-editorial .vpc-contact h2 { font-family: 'Playfair Display', Georgia, serif; font-weight: 450; }
+.design-editorial .vpc-service h3 { font-size: 24px; }
+.design-editorial .vpc-testimonials figure { border-top: 0; padding-top: 0; }
+.design-cinema .vpc-business h2 { font-family: 'Outfit', sans-serif; letter-spacing: -.045em; }
+.design-cinema .vpc-service { padding: 24px; border: 1px solid var(--vpc-rule); }
+.design-cinema .vpc-testimonials blockquote { font-family: 'Outfit', sans-serif; font-weight: 400; letter-spacing: -.025em; }
+.design-gallery .vpc-business > h2 { text-align: center; font-family: 'Playfair Display', Georgia, serif; }
+.design-gallery .vpc-business > .vpc-eyebrow { text-align: center; }
+.design-gallery .vpc-service { border: 1px solid var(--vpc-rule); padding: 24px; }
+.design-gallery .vpc-testimonials figure { border: 1px solid var(--vpc-rule); padding: 24px; }
+.design-folio .vpc-business h2 { font-family: 'Outfit', sans-serif; letter-spacing: -.045em; }
+.design-folio .vpc-service { padding-top: 28px; border-top-width: 2px; }
+.design-folio .vpc-testimonials blockquote { font-family: 'Outfit', sans-serif; letter-spacing: -.025em; }
+.vpc-mobile-enquiry { background: var(--vpc-paper); color: inherit; border-color: var(--vpc-rule); }
+.vpc-mobile-enquiry .vpc-primary { width: 100%; justify-content: center; }
+.vpc-service-details { margin-top: 22px; border-top: 1px solid var(--vpc-rule); }
+.vpc-service-details > summary { min-height: 44px; padding: 12px 0; font-size: 12px; cursor: pointer; color: var(--vpc-muted); }
+.v-portfolio-canvas.type-modern :is(.vpc-business, .vpc-contact) h2 { font-family: 'Outfit', sans-serif; }
+.v-portfolio-canvas:is(.type-editorial, .type-classic) :is(.vpc-business, .vpc-contact) h2 { font-family: 'Playfair Display', Georgia, serif; }
+.vpc-enquiry-form :is(input, select, textarea) { scroll-margin-top: 112px; }
+@container (min-width: 640px) {
+  .design-editorial .vpc-hero { grid-template-areas: 'heading cover' 'copy cover' 'details cover'; gap: 24px 36px; padding-block: 40px 64px; }
+  .design-editorial .vpc-hero h1 { font-size: clamp(42px, 7cqi, 110px); }
+  .design-gallery .vpc-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: 'heading cover' 'copy cover' 'details cover'; align-items: start; text-align: left; gap: 24px 40px; padding-block: 44px 64px; }
+  .design-gallery .vpc-hero-heading { grid-area: heading; align-self: end; }
+  .design-gallery .vpc-cover { grid-area: cover; width: 100%; justify-self: end; align-self: center; }
+  .design-gallery .vpc-hero-copy { grid-area: copy; align-items: start; }
+  .design-gallery .vpc-opening-details { grid-area: details; margin-top: 0; }
+  .design-gallery .vpc-hero h1 { font-size: clamp(40px, 6.3cqi, 84px); }
+  .design-gallery .vpc-cover img { max-height: 480px; }
+  .design-cinema .vpc-cinema-stage { min-height: clamp(400px, 62cqi, 680px); padding: 40px; }
+  .design-folio .vpc-folio-opening { padding-block: 24px; }
+  .vpc-header-contact .vpc-primary > svg:first-child:not(:last-child) { display: block; }
+}
+@container (min-width: 768px) {
+  .v-portfolio-canvas .vpc-business { padding-block: 56px 64px; }
+  .vpc-contact-form .vpc-enquiry-form { padding: 28px; }
+  .vpc-services { gap: 36px; }
+}
+@container (min-width: 1024px) {
+  .v-portfolio-canvas .vpc-header-right { display: flex; gap: 16px; }
+  .v-portfolio-canvas .vpc-mobile-menu { display: none; }
+  .vpc-header-controls { gap: 24px; }
+  .v-portfolio-canvas .vpc-brand { max-width: 28%; font-size: 16px; }
+  .v-portfolio-canvas .vpc-header { min-height: 88px; }
+  .design-editorial .vpc-hero { gap: 28px 64px; padding-block: 56px 80px; }
+  .design-editorial .vpc-hero h1 { font-size: clamp(72px, 7.5cqi, 110px); }
+  .design-gallery .vpc-hero { gap: 24px 80px; padding-block: 56px 80px; }
+  .design-cinema .vpc-cinema-stage { min-height: min(70dvh, 780px); padding: 56px; }
+  .design-cinema .vpc-hero h1 { font-size: clamp(72px, 8cqi, 120px); }
+  .design-folio .vpc-folio-opening { padding-block: 40px; }
+  .v-portfolio-canvas .vpc-contact.has-form { align-items: start; }
+}

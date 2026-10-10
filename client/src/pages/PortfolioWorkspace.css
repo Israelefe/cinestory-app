@@ -1,0 +1,90 @@
+/* Keep editing close by and give secondary information its own place. */
+.v-pedit h1 { font-size: clamp(30px, 4vw, 44px); margin: 4px 0 12px; }
+.v-pedit-header { gap: 16px 24px; padding-bottom: 24px; border-bottom: 1px solid #ffffff19; }
+.v-pedit-status { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; font-size: 12px; }
+.v-pedit-status strong { font-weight: 500; }
+.v-pedit-status .v-pedit-save { width: auto; margin: 0; }
+.v-pedit-link-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; width: 100%; }
+.v-pedit-link-row a { min-width: 0; font-size: 12px; overflow-wrap: anywhere; }
+.v-pedit-link-row svg { flex: none; }
+.v-pedit .v-pedit-link-row button { padding: 6px 10px; border-color: transparent; background: transparent; font-size: 12px; }
+.v-pedit-workspace { display: grid; gap: 22px; }
+.v-pedit-sidebar, .v-pedit-panel { min-width: 0; }
+.v-pedit-section-select { display: grid; gap: 10px; font-size: 12px; color: #b7b3bd; }
+.v-pedit-destinations { display: none; }
+.v-pedit-content { padding-top: 24px; }
+.v-pedit-panel > .v-pedit-tabs { gap: 4px; padding-top: 0; padding-bottom: 12px; }
+.v-pedit-tabs button { padding: 10px 12px; font-size: 13px; }
+.v-pedit-publish-check { border-bottom: 1px solid #ffffff19; padding: 6px 0; }
+.v-pedit-publish-check summary, .v-pedit-disclosure > summary { cursor: pointer; min-height: 48px; font-size: 13px; line-height: 1.6; padding: 12px 0; }
+.v-pedit-publish-check summary { color: #ffb4aa; }
+.v-pedit-readiness { list-style: none; padding: 0; margin: 12px 0; }
+.v-pedit .v-pedit-readiness button { width: 100%; justify-content: space-between; gap: 16px; text-align: left; background: transparent; border-color: transparent; font-size: 13px; padding: 12px 8px; }
+.v-pedit-readiness svg { flex: none; }
+.v-pedit-disclosure { padding: 4px 0; margin-top: 28px; border-block: 1px solid #ffffff20; }
+.v-pedit-disclosure > summary { font-size: 15px; color: #eeeaf0; }
+.v-pedit-disclosure > summary span { margin-left: 12px; font-size: 11px; color: #aaa4b1; }
+.v-pedit-disclosure[open] > summary { margin-bottom: 18px; }
+.v-pedit-disclosure > .v-pcontent-section { margin-top: 0; }
+.v-pedit .v-pedit-help { font-size: 12px; }
+.v-pedit-home-mode { margin: 0 0 24px; }
+.v-pedit-home-mode > label { max-width: 480px; }
+.v-pedit-photo-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; padding: 8px; gap: 4px; }
+.v-pedit-photo-order { gap: 0; }
+.v-pedit-photo-order button, .v-pedit-photo-controls .v-pedit-grip { width: 44px; border-color: transparent; background: transparent; }
+.v-pedit-photo-info strong, .v-pedit-photo-info small { font-size: 13px; }
+.v-pedit .v-pedit-photo-caption { justify-content: center; }
+.v-pedit-project-incomplete { display: block; color: #ffb4aa; padding: 0 20px 20px; font-size: 12px; line-height: 1.6; }
+.v-pedit-project-fields { border: 0; min-width: 0; padding: 0; margin: 0; }
+.v-pedit-project-order li { flex-wrap: wrap; }
+.v-pedit-project-order li > span { flex-basis: 100%; line-height: 1.6; overflow-wrap: anywhere; }
+.v-pedit-project-actions { position: sticky; bottom: -24px; background: #0c0c10; padding-bottom: 16px; box-shadow: 0 -12px 20px #0c0c10; z-index: 1; }
+.v-pedit-privacy { border-top: 1px solid #ffffff20; padding-top: 24px; margin-top: 32px; }
+.v-pedit-preview-sheet { display: flex; flex-direction: column; height: calc(100dvh - 32px); overflow: hidden; padding: 16px; }
+.v-pedit-preview-sheet > header { flex: none; align-items: center; margin-bottom: 12px; }
+.v-pedit-preview-sheet > header h2 { font-size: 19px; }
+.v-pedit-preview-sheet .v-pedit-preview-tools { flex: none; gap: 10px; padding-bottom: 14px; }
+.v-pedit-preview-tools > p { width: 100%; font-size: 12px; }
+.v-pedit-preview-tools nav { gap: 4px; }
+.v-pedit-preview-tools nav button { padding: 8px 10px; font-size: 12px; }
+.v-pedit-preview-tools > label { flex: 1; min-width: 120px; max-width: 240px; }
+.v-pedit-preview-scroll { overscroll-behavior: contain; }
+.v-pedit-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.v-pedit-panel { animation: pe-arrive .22s ease-out; }
+.v-pedit-work-head { gap: 12px; margin-bottom: 14px; }
+.v-pedit-work-head h2 { margin: 0; font-size: 20px; }
+.v-pedit .v-pedit-work-help { font-size: 13px; margin: 0 0 20px; max-width: 560px; }
+.v-pedit-home-mode { margin-top: 0; }
+@media (max-width: 639px) {
+  .v-pedit-header-actions { width: 100%; }
+  .v-pedit-header-actions > button { flex: 1; }
+  .v-pedit-photo-grid { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+  .v-pedit .v-pedit-photo-image { height: 280px; }
+  .v-pedit-photo-info { padding-inline: 16px; }
+  .v-pedit-photo-controls { padding-inline: 10px; }
+}
+@media (min-width: 640px) {
+  .v-pedit-photo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .v-pedit-preview-tools > p { width: auto; margin-right: auto; }
+}
+@media (min-width: 768px) {
+  .v-pedit-workspace { gap: 28px; }
+  .v-pedit-section-select { max-width: 380px; }
+  .v-pedit-project-order li > span { flex-basis: auto; }
+  .v-pedit-project-actions { bottom: -30px; }
+  .v-pedit-preview-sheet { padding: 22px; }
+}
+@media (min-width: 1024px) {
+  .v-pedit-workspace { grid-template-columns: 200px minmax(0, 1fr); gap: 40px; }
+  .v-pedit-section-select { display: none; }
+  .v-pedit-sidebar { align-self: start; position: sticky; top: 100px; }
+  .v-pedit-destinations { display: grid; gap: 8px; }
+  .v-pedit .v-pedit-destinations button { background: transparent; border-color: transparent; padding: 12px 14px; justify-content: flex-start; gap: 12px; }
+  .v-pedit .v-pedit-destinations button[aria-pressed=true] { background: #ff9b8e0d; border-color: #ff9b8e30; color: #ffb4aa; }
+  .v-pedit-destinations small { margin-left: auto; background: #ff9b8e20; padding: 3px 7px; border-radius: 5px; font-size: 11px; }
+  .v-pedit .v-pedit-settings-link { margin-top: 20px; border-top: 1px solid #ffffff19; border-radius: 0; color: #b7b3bd; }
+  .v-pedit-photo-grid, .v-pedit-project-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1280px) {
+  .v-pedit-photo-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

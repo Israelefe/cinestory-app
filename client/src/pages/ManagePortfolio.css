@@ -82,8 +82,8 @@
   flex-wrap: wrap;
   gap: 24px;
   justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 30px
+  align-items: center;
+  margin-bottom: 28px
 }
 .v-pedit-eyebrow {
   font-size: 11px!important;
@@ -163,7 +163,7 @@
 .v-pedit-tabs {
   display: flex;
   gap: 6px;
-  overflow: auto;
+  flex-wrap: wrap;
   padding: 6px 0 18px;
   border-bottom: 1px solid #ffffff19
 }
@@ -248,7 +248,7 @@
   display: flex;
   gap: 6px;
   align-items: center;
-  padding: 8px 4px
+  padding: 10px 12px 0
 }
 .v-pedit .v-pedit-checkbox {
   width: 44px;
@@ -273,12 +273,13 @@
   position: relative;
   color: #ff9b8e
 }
-.v-pedit-photo-info>button:nth-child(2) {
+.v-pedit .v-pedit-photo-caption {
   flex: 1;
   min-width: 0;
   border: 0;
   background: transparent;
-  padding: 4px 0;
+  padding: 6px 0;
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -313,7 +314,7 @@
 .v-pedit-photo-order {
   display: flex;
   justify-content: flex-end;
-  padding: 0 8px 8px;
+  padding: 0;
   gap: 4px
 }
 .v-pedit-photo-order button {
@@ -611,8 +612,8 @@
   border-color: #ff9b8e77
 }
 .v-pedit-preview-scroll {
-  height: 62dvh;
-  min-height: 240px;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   background: #050507;
   border: 1px solid #ffffff20;
