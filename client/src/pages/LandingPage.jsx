@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Page, Reveal as PublicReveal, Photo, Action, Eyebrow, EndNote, Questions, TextLink } from '../components/PublicDesign.jsx';
 import HomeShowcaseCard from '../components/HomeShowcaseCard.jsx';
+import HomeVideoDelivery from '../components/HomeVideoDelivery.jsx';
 import HeroFormatStage from '../components/HeroFormatStage.jsx';
 import StudioReviewStage from '../components/StudioReviewStage.jsx';
 import { DELIVERY_FORMATS, DELIVERY_PROCESS } from '../constants/deliveryFormats.js';
@@ -145,7 +146,7 @@ export default function LandingPage() {
 
       <Reveal className="v-hero-text v-hero-after" delay={.18}>
         <p className="v-copy">Every photoshoot deserves a delivery worth remembering. Veylo turns the finished shoot into a designed first viewing your client can enjoy before opening the full gallery. You choose how the experience begins, and Veylo shapes its direction around the photographs.</p>
-        <div className="v-actions"><Action to="/signup">Get started</Action></div>
+        <div className="v-actions"><Action to="/signup">Get started</Action><TextLink to="/#video-delivery">Video delivery for Pro</TextLink></div>
         <div className="v-hero-points"><span><Check size={13} />3 free deliveries each month</span><span><Check size={13} />Full gallery and downloads</span><span><Check size={13} />No app for your client</span></div>
       </Reveal>
     </div></section>
@@ -191,6 +192,8 @@ export default function LandingPage() {
       </div>
       <Reveal className="v-definition-after"><p>Your edit is done. Veylo takes care of how it arrives, so the first thing your client opens feels as considered as the photographs inside it.</p></Reveal>
     </div></ScrollSection>
+
+    <ScrollSection id="video-delivery" className="v-section v-home-video"><HomeVideoDelivery /></ScrollSection>
 
     <ScrollSection id="formats" className="v-section v-formats-section"><div className="v-wrap">
       <Reveal className="v-section-head"><div><Eyebrow number="02">Eight Showcase formats</Eyebrow><h2 className="v-heading">Give the shoot<br /><em>a designed first viewing.</em></h2></div></Reveal>
@@ -253,7 +256,7 @@ export default function LandingPage() {
 
     <ScrollSection id="how-it-works" className="v-section v-workflow"><div className="v-wrap v-workflow-grid">
       <Reveal className="v-workflow-title"><Eyebrow number="04">From your studio to their phone</Eyebrow><h2 className="v-heading">You provide the truth.<br /><em>Veylo directs the presentation.</em></h2></Reveal>
-      <Reveal className="v-workflow-photo"><Photo name="smile" className="v-workflow-smile" alt="A smiling photographer in a blue suit ready to send a finished client delivery" /><div className="v-workflow-note"><ImageIcon size={25} /><p>One finished upload.<span>Three delivery types.</span></p></div></Reveal>
+      <Reveal className="v-workflow-photo"><Photo name="smile" className="v-workflow-smile" alt="A smiling photographer in a blue suit ready to send a finished client delivery" /><div className="v-workflow-note"><ImageIcon size={25} /><p>One finished upload.<span>Three photo delivery types.</span></p></div></Reveal>
       <Reveal className="v-workflow-after"><div className="v-steps">{DELIVERY_PROCESS.map(([title, copy], i) => <div className="v-step" key={title}><span className="v-index">{romanNumerals[i]}</span><div><h3>{title}</h3><p>{copy}</p></div></div>)}</div></Reveal>
     </div></ScrollSection>
 
@@ -302,7 +305,7 @@ export default function LandingPage() {
     </div></ScrollSection>
 
     <ScrollSection id="pricing" className="v-section v-workflow"><div className="v-wrap">
-      <Reveal className="v-section-head"><div><Eyebrow number="07">Plans in naira</Eyebrow><h2 className="v-heading">Start with three deliveries.<br /><em>Move to Pro when you need more.</em></h2></div><p className="v-copy">Both plans include Photo Swap, GridBoard, and all eight Showcase formats. The difference is delivery volume, storage, portfolio access, and whose branding your client sees.</p></Reveal>
+      <Reveal className="v-section-head"><div><Eyebrow number="07">Plans in naira</Eyebrow><h2 className="v-heading">Start with three deliveries.<br /><em>Move to Pro when you need more.</em></h2></div><p className="v-copy">Both plans include Photo Swap, GridBoard, and all eight Showcase formats. Pro adds video delivery, more room for client work, shared storage, Portfolio and your studio branding.</p></Reveal>
       <div className="v-home-plan-preview">
         <Reveal className="v-home-plan-card">
           <div className="v-home-plan-card-top"><span>FREE</span><small>For trying Veylo with client work</small></div>
@@ -312,7 +315,7 @@ export default function LandingPage() {
         <Reveal className="v-home-plan-card is-pro" delay={.08}>
           <div className="v-home-plan-card-top"><span>PRO</span><small>For regular studio delivery</small></div>
           <PricingNotice /><div className="v-home-plan-price"><strong><ProPrice /></strong><span>/ month</span></div>
-          <p>Unlimited photo deliveries under fair use, your studio branding, Veylo Portfolio, 100 GB of shared original storage, private client preselection, and password-protected editor handoffs.</p><p><VideoAvailability compact />. <Link to="/video-delivery">See the video delivery details</Link></p>
+          <p>Unlimited photo deliveries under fair use, video delivery, your studio branding, Veylo Portfolio, 100 GB of shared original storage, private client preselection, and password-protected editor handoffs.</p><p><VideoAvailability compact />. <Link to="/video-delivery">See the video delivery details</Link></p>
         </Reveal>
       </div>
       <Reveal className="v-home-plan-action"><TextLink to="/pricing">Compare Free and Pro</TextLink></Reveal>

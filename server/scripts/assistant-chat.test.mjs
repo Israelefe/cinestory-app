@@ -213,9 +213,10 @@ test('shared marketing facts include current delivery types without exposing tex
   assert.doesNotMatch(knowledge, /=>|function |runtimeConfig/);
 });
 
-test('video help states actual limits and keeps uploads closed until qualified', () => {
+test('video help describes the built Pro feature and its actual limits', () => {
   const knowledge = buildAssistantKnowledge({ query: 'video film upload 5gb storage playback', audience: 'studio' });
-  assert.match(knowledge, /not open for uploads yet/);
+  assert.match(knowledge, /Video delivery is included with Pro/);
+  assert.doesNotMatch(knowledge, /coming to Pro|not open for uploads yet|being prepared/);
   assert.match(knowledge, /1–10 MP4, MOV or WebM/);
   assert.match(knowledge, /at most 5 GB/);
   assert.match(knowledge, /share the existing Pro 100 GB/);

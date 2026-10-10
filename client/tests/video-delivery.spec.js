@@ -91,7 +91,32 @@ test('PIN protection hides all film titles until the recipient unlocks the deliv
   await page.getByLabel('Access PIN').fill('123456'); await page.getByRole('button', { name: 'Open films' }).click();
   await expect(page.locator('video')).toHaveCount(1); expect(state.unlocks).toBe(1); await expect(page.locator('.vv-brand')).toContainText('Amara Studio');
 });
-test('public video information does not advertise an unconfigured launch as available', async ({ page }) => {
-  await mock(page, { available: false }); await page.goto('/video-delivery'); await expect(page.getByText(/coming to Pro/i).first()).toBeVisible();
+test('video stays a Pro feature while unconfigured upload controls remain unavailable', async ({ page }) => {
+  await mock(page, { available: false }); await page.goto('/video-delivery'); await expect(page.getByText('Video delivery included with Pro', { exact: true })).toBeVisible();
+  await expect(page.getByText(/coming to Pro/i)).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Create a video delivery/ })).toHaveCount(0);
+});
+
+for (const width of [320, 390, 768, 834, 1024, 1440]) test(`homepage presents video delivery as included with Pro at ${width}px`, async ({ page }) => {
+  const { errors } = await mock(page, { available: false });
+  await page.setViewportSize({ width, height: 1000 }); await page.goto('/');
+  const shortcut = page.getByRole('link', { name: 'Video delivery for Pro', exact: true });
+  await expect(shortcut).toBeVisible(); await shortcut.click();
+  const section = page.locator('#video-delivery');
+  await expect(section.getByRole('heading', { name: 'Your finished films. Your studio’s name.' })).toBeVisible();
+  const navigation = await page.locator('header.v-nav').boundingBox();
+  await expect.poll(async () => (await section.getByRole('heading', { level: 2 }).boundingBox()).y).toBeGreaterThan(navigation.y + navigation.height);
+  await expect(section.getByText('Included with Veylo Pro', { exact: true })).toBeVisible();
+  await expect(section.getByRole('link', { name: 'Explore video delivery', exact: true })).toHaveAttribute('href', '/video-delivery');
+  await expect(section.getByRole('link', { name: 'Open the client demo', exact: true })).toHaveAttribute('href', '/demo/video');
+  expect(await section.locator('video').evaluate(video => video.paused && video.preload === 'none')).toBe(true);
+  await noOverflow(page);
+  if ([390, 834, 1440].includes(width)) { await page.waitForTimeout(800); await page.screenshot({ path: `../.visual-review/home-video-${width}.png` }); }
+  if (width === 390) {
+    await section.locator('video').evaluate(video => video.play());
+    await expect.poll(() => section.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(.1);
+    await section.locator('video').evaluate(video => video.pause());
+  }
+  await expect(page.getByText(/coming to Pro/i)).toHaveCount(0);
+  expect(errors).toEqual([]);
 });

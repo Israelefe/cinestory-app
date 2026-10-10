@@ -12,7 +12,7 @@ const priceSummary = [
 
 const comparison = [
   ['Final photo deliveries', '3 each month', 'Unlimited under fair use'],
-  ['Delivery types', 'Showcase (8 formats) + GridBoard + Photo Swap', 'Showcase (8 formats) + GridBoard + Photo Swap'],
+  ['Delivery types', 'Showcase (8 formats) + GridBoard + Photo Swap', 'Showcase (8 formats) + GridBoard + Photo Swap + Video'],
   ['Photos in one delivery', 'Up to 100', 'Up to 500'],
   ['Complete gallery and downloads', 'Included', 'Included'],
   ['Veylo Portfolio', '—', 'Included'],
@@ -22,8 +22,8 @@ const comparison = [
   ['Shared original storage', '—', '100 GB for Image Library files and video originals'],
   ['Photo delivery hosting', 'Included', 'Included outside your 100 GB'],
   ['Video delivery', '—', <VideoAvailability key="video" compact />],
-  ['Video limits when available', '—', 'Up to 10 videos per delivery · 5 GB each · 3 hours each'],
-  ['Video allowances when available', '—', '1,000 stored minutes · 5,000 delivered minutes per month']
+  ['Video limits', '—', 'Up to 10 videos per delivery · 5 GB each · 3 hours each'],
+  ['Video allowances', '—', '1,000 stored minutes · 5,000 delivered minutes per month']
 ];
 
 const faqs = [
@@ -31,6 +31,7 @@ const faqs = [
   { q: 'What counts as one delivery?', a: 'One published client project counts as one delivery, whichever format you choose. The complete downloadable gallery is included in that project.' },
   { q: 'How many photos can I add?', a: 'Free allows up to 100 finished photographs in one delivery. Pro allows up to 500. Veylo uses the photographs you upload and leaves the original files untouched.' },
   { q: 'Do I pay separately for a Photo Story, Album, GridBoard, or Photo Swap?', a: 'No. GridBoard, Photo Swap, and all eight Showcase formats are included on both plans.' },
+  { q: 'Is video delivery included with Pro?', a: 'Yes. Deliver up to 10 finished films in one private video link, with your studio branding, optional PIN and original downloads. Each film can be up to 5 GB and three hours long. Video originals share your 100 GB storage allowance.' },
   { q: 'What does unlimited under fair use mean?', a: 'Normal client delivery work for one photographer or studio is included. Fair use prevents automated bulk use and unrelated studios sharing one account.' },
   { q: 'How do client preselection and editor handoff work?', a: 'With Pro, send a private link so a client can choose the photographs they want edited. Give your editor a password-protected link to download camera originals and upload finished edits. The originals, previews, and returned edits use your 100 GB Image Library.' },
   { q: 'How does the 100 GB Image Library work?', a: 'Pro includes 100 GB for photographs you keep in the Image Library. Camera originals, their paired previews, returned edits and original videos count toward that space. Photos hosted in published client deliveries use separate hosting.' },
@@ -54,7 +55,7 @@ export default function PricingPage() {
         <footer><Check size={18} /><p>Monthly billing. No annual commitment.</p></footer>
       </Reveal>
       <Reveal className="v-pricing-hero-copy v-pricing-hero-after">
-        <p className="v-lead">Choose based on how often you deliver and whether your studio needs its own branding, portfolio, and storage. Pro also includes private links for client photo selection and password-protected editor handoffs. Photo Swap, GridBoard, and all eight Showcase formats are available on both plans.</p>
+        <p className="v-lead">Choose based on how often you deliver and whether your studio needs video delivery, its own branding, portfolio and storage. Pro also includes private links for client photo selection and password-protected editor handoffs. Photo Swap, GridBoard, and all eight Showcase formats are available on both plans.</p>
         <div className="v-pricing-early-actions"><a href="#pricing-plans">Compare Free and Pro</a><Link to="/signup">Start free</Link></div>
         <div className="v-pricing-monthly"><span>MONTHLY PRICING</span><strong>No annual plan</strong><small>Free stays free. Pro is <ProPrice /> each month.</small></div>
       </Reveal>
@@ -67,7 +68,7 @@ export default function PricingPage() {
     </div></section>
 
     <section className="v-section v-pricing-compare"><div className="v-wrap">
-      <Reveal className="v-pricing-section-intro"><Eyebrow number="02">Free and Pro</Eyebrow><h2 className="v-heading">What changes when<br /><em>you move to Pro.</em></h2><p className="v-copy">Photo Swap, GridBoard, and the eight Showcase formats are on both plans. Pro adds more delivery room, your studio branding, a 100 GB Image Library, and private links for client selections and editor handoffs.</p></Reveal>
+      <Reveal className="v-pricing-section-intro"><Eyebrow number="02">Free and Pro</Eyebrow><h2 className="v-heading">What changes when<br /><em>you move to Pro.</em></h2><p className="v-copy">Photo Swap, GridBoard, and the eight Showcase formats are on both plans. Pro adds video delivery, more delivery room, your studio branding, 100 GB of shared storage, and private links for client selections and editor handoffs.</p></Reveal>
       <Reveal className="v-pricing-table" delay={.08}>
         <header><span>Plan detail</span><strong>Free</strong><strong>Pro</strong></header>
         {comparison.map(([label, free, pro]) => <div className="v-pricing-row" key={label}><span>{label}</span><p>{free === 'Included' && <Check size={15} />}{free}</p><p>{pro === 'Included' && <Check size={15} />}{pro}</p></div>)}

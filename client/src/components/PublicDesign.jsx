@@ -5,7 +5,6 @@ import { motion } from 'framer-motion';
 import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { ArrowUpRight, ArrowRight, Plus, Check, BadgeCheck, Camera } from 'lucide-react';
 import Footer from './Footer.jsx';
-import { useVideoAvailability } from './VideoAvailability.jsx';
 
 export function Reveal({ children, className = '', delay = 0, ...props }) {
   const reduced = useVeyloReducedMotion();
@@ -95,12 +94,13 @@ export function EndNote({ title = 'Your next shoot.', accent = 'Give it a proper
 }
 
 export const questions = [
-  { q: 'What does Veylo deliver?', a: 'Choose a Photo Swap for a swipe through finished photos with individual captions, likes, and downloads; a GridBoard for the complete gallery first; or one of eight Showcase formats.' },
-  { q: 'What should I upload?', a: 'Upload the final edited photographs your client is meant to receive. Add the client’s name and explain what the shoot is about so the presentation has the right context.' },
+  { q: 'What does Veylo deliver?', a: 'Choose a Photo Swap for a swipe through finished photos with individual captions, likes, and downloads; a GridBoard for the complete gallery first; or one of eight Showcase formats. Pro also includes separate video deliveries for finished films.' },
+  { q: 'What should I upload?', a: 'For a photo delivery, upload the final edited photographs your client is meant to receive. For a video delivery on Pro, upload finished MP4, MOV or WebM films, up to 5 GB each. Photos and films have separate delivery links.' },
+  { q: 'Is video delivery included with Pro?', a: 'Yes. Add up to 10 finished videos to one delivery, each up to 5 GB and three hours long. Your studio branding leads the client player. You control the PIN, expiry and original downloads. Original videos share your existing 100 GB storage allowance.' },
   { q: 'Does Veylo change my photographs?', a: 'No. Veylo designs the presentation around your photographs. It does not replace an image, retouch a face, or alter your colour grade.' },
   { q: 'Do I choose a template?', a: 'No fixed template decides how the shoot looks. Veylo studies the photographs and proposes the layout, colours, type, order, motion, and pacing. You review the result before publishing.' },
   { q: 'Does my client need an account?', a: 'No. Send the delivery link through WhatsApp, Instagram DM, or email. Your client opens it in a browser and can browse and download the photographs there.' },
-  { q: 'Can clients download the photographs?', a: 'Yes. The complete gallery is part of every delivery. Clients can browse the final photographs and download the files provided by the photographer.' }
+  { q: 'Can clients download the photographs?', a: 'Yes. The complete gallery is part of every photo delivery. Clients can browse the final photographs and download the files provided by the photographer.' }
 ];
 
 export function Questions({ items = questions }) {
@@ -108,9 +108,8 @@ export function Questions({ items = questions }) {
 }
 
 export function Plans() {
-  const video = useVideoAvailability();
   const free = ['3 final photo deliveries each month', 'Up to 100 photos in each delivery', 'Photo Swap, GridBoard, and 8 Showcase formats with Veylo branding'];
-  const pro = ['Unlimited photo deliveries under fair use', 'Up to 500 photos in each photo delivery', 'Studio branding and Veylo Portfolio', '100 GB shared original storage', 'Private client preselection links', 'Password-protected editor handoff', video.available ? 'Video delivery: up to 10 films per delivery' : 'Video delivery (coming to Pro)', 'Video originals share the 100 GB allowance'];
+  const pro = ['Unlimited photo deliveries under fair use', 'Up to 500 photos in each photo delivery', 'Studio branding and Veylo Portfolio', '100 GB shared original storage', 'Private client preselection links', 'Password-protected editor handoff', 'Video delivery: up to 10 films per delivery', 'Video originals share the 100 GB allowance'];
   return <div className="v-plans"><Reveal className="v-plan"><div className="v-plan-number"><span>01</span><small>FREE</small></div><div className="v-plan-top"><Camera size={22} /><span className="v-eyebrow">For trying Veylo with real client work</span></div><h3>Veylo Free</h3><p className="v-price">₦0<span>/ month</span></p><p className="v-copy">Deliver up to three finished shoots each month. Choose Photo Swap, GridBoard, or a Showcase format.</p><p className="v-plan-format-note"><Check size={15} />Photo Swap, GridBoard, and 8 Showcase formats</p><ul>{free.map(x => <li key={x}><Check size={17} /><span>{x}</span></li>)}</ul><Action to="/signup">Start free</Action><p className="v-fine">No payment card needed. Your three deliveries reset monthly.</p></Reveal><Reveal className="v-plan v-plan-pro" delay={0.08}><div className="v-plan-number"><span>02</span><small>PRO</small></div><div className="v-plan-top"><BadgeCheck size={22} /><span className="v-eyebrow">For regular client delivery</span></div><h3>Veylo Pro</h3><PricingNotice /><p className="v-price"><ProPrice /><span>/ month</span></p><p className="v-copy">For photographers and studios delivering work every week and wanting their own name across the experience.</p><p className="v-plan-format-note"><Check size={15} />Photo Swap, GridBoard, and 8 Showcase formats</p><ul>{pro.map(x => <li key={x}><Check size={17} /><span>{x}</span></li>)}</ul><Action to="/billing">Choose Pro</Action><p className="v-fine">Billed monthly. Unlimited delivery is covered by the fair use policy.</p></Reveal></div>;
 }
 
