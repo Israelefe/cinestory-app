@@ -193,8 +193,6 @@ export default function LandingPage() {
       <Reveal className="v-definition-after"><p>Your edit is done. Veylo takes care of how it arrives, so the first thing your client opens feels as considered as the photographs inside it.</p></Reveal>
     </div></ScrollSection>
 
-    <ScrollSection id="video-delivery" className="v-section v-home-video"><HomeVideoDelivery /></ScrollSection>
-
     <ScrollSection id="formats" className="v-section v-formats-section"><div className="v-wrap">
       <Reveal className="v-section-head"><div><Eyebrow number="02">Eight Showcase formats</Eyebrow><h2 className="v-heading">Give the shoot<br /><em>a designed first viewing.</em></h2></div></Reveal>
       <div className="v-format-ledger">{DELIVERY_FORMATS.map((format, i) => <article className={'v-format-row format-' + format.id} id={format.id} key={format.id}>
@@ -202,6 +200,10 @@ export default function LandingPage() {
         <Reveal className="v-format-art" delay={Math.min(i * .03, .12)}><HomeShowcaseCard format={format} /></Reveal>
         <Reveal className="v-format-after">{i === 0 && <p className="v-formats-intro">Showcase deliveries open with a presentation, then lead to the complete gallery. The original photographs stay as supplied.</p>}<p>{format.line}</p><TextLink to={demoLinks[format.id][0]} onClick={event => keepFormatAsBackDestination(event, format.id)}>{demoLinks[format.id][1]}</TextLink></Reveal>
       </article>)}</div>
+      <Reveal className="v-formats-explore">
+        <div><span>All eight Showcase formats</span><p>See what each one does and which shoots it suits.</p></div>
+        <Action to="/formats" onClick={event => keepFormatAsBackDestination(event, 'album')}>Explore all formats</Action>
+      </Reveal>
       <Reveal className="v-home-pinboard-card"><div className="v-home-pinboard-art" aria-hidden="true">{gridboardArtPhotos.map(photo => <span key={photo}><img src={photo} alt="" loading="lazy" decoding="async" /></span>)}</div><div><Eyebrow>GRIDBOARD DELIVERY</Eyebrow><h3>Put the full gallery first.</h3><p>Clients can find a moment, browse by outfit or backdrop colour, open Similar Shot for close visual matches, or start a slideshow with optional music. You choose the layout they see.</p><div className="v-home-pinboard-actions"><TextLink to="/gridboard">See what GridBoard can do</TextLink><TextLink to="/demo/gridboard">Browse the live demo</TextLink><TextLink to="/create?type=pinboard">Create a GridBoard</TextLink></div></div></Reveal>
       <Reveal className="v-home-photoswap-card" id="photoswap">
         <div className="v-home-photoswap-heading"><Eyebrow>PhotoSwap delivery</Eyebrow><h3>One photo.<br /><em>A closer look.</em></h3></div>
@@ -226,11 +228,9 @@ export default function LandingPage() {
           <div className="v-home-photoswap-actions"><Action to="/demo/photoswap">Open the client view</Action><TextLink to="/photoswap">About PhotoSwap</TextLink></div>
         </div>
       </Reveal>
-      <Reveal className="v-formats-explore">
-        <div><span>All eight Showcase formats</span><p>See what each one does and which shoots it suits.</p></div>
-        <Action to="/formats" onClick={event => keepFormatAsBackDestination(event, 'album')}>Explore all formats</Action>
-      </Reveal>
     </div></ScrollSection>
+
+    <ScrollSection id="video-delivery" className="v-section v-home-video"><HomeVideoDelivery /></ScrollSection>
 
     <ScrollSection className="v-section v-assurance-band"><div className="v-wrap v-assurance-grid">
       <Reveal className="v-assurance-title"><Eyebrow number="03">Every delivery includes</Eyebrow><h2 className="v-heading">The format changes.<br /><em>Your photographs don’t.</em></h2></Reveal>
