@@ -6,7 +6,7 @@ import { openCookieSettings } from './CookiePreferences.jsx';
 const emailAddress = 'info@veylo.com.ng';
 
 const groups = [
-  ['Explore', [['The Veylo product', '/product'], ['Client preselection', '/product#client-preselection'], ['Editor handoff', '/product#editor-handoff'], ['Delivery types', '/formats'], ['GridBoard delivery', '/gridboard'], ['Photo Swap delivery', '/photoswap'], ['Veylo Portfolio', '/portfolio'], ['Client experience', '/client-experience'], ['Plans and pricing', '/pricing']]],
+  ['Explore', [['The Veylo product', '/product'], ['Client preselection', '/product#client-preselection'], ['Editor handoff', '/product#editor-handoff'], ['Delivery types', '/formats'], ['GridBoard delivery', '/gridboard'], ['Photo Swap delivery', '/photoswap'], ['Video delivery', '/video-delivery'], ['Veylo Portfolio', '/portfolio'], ['Client experience', '/client-experience'], ['Plans and pricing', '/pricing']]],
   ['Your kind of work', [['Portraits', '/for/portrait-photographers'], ['Weddings', '/for/wedding-studios'], ['Birthdays', '/for/birthday-shoots'], ['Commercial', '/for/media-companies']]],
   ['Veylo', [['About us', '/about'], ['Privacy', '/privacy'], ['Terms of use', '/terms'], ['Fair use', '/fair-use'], ['Refund policy', '/refund-policy']]]
 ];

@@ -1,10 +1,12 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
-import { ArrowRight, Clapperboard, Grid2X2, Image, Layers3 } from 'lucide-react';
+import { ArrowRight, Clapperboard, Grid2X2, Image, Layers3, Film } from 'lucide-react';
+import VideoAvailability, { useVideoAvailability } from '../components/VideoAvailability.jsx';
 import { Link } from 'react-router-dom';
 import './CreateDeliveryChoice.css';
 import './GridboardChoice.css';
+import '../components/video/VideoCreatorDetails.css';
 
 const gridboardPreviewPhotos = [4, 1, 5, 6, 2, 3].map(number => `/veylo/web/demo-lora-${number}-480.webp`);
 const showcaseFormats = [
@@ -26,6 +28,7 @@ const types = [
 
 export default function CreateDeliveryChoice() {
   const reduced = useVeyloReducedMotion();
+  const video = useVideoAvailability();
   return <main className="v-create-choice">
     <div className="v-create-choice-top"><Link to="/dashboard" aria-label="Back to dashboard"><Image size={18} /> Dashboard</Link><span>NEW DELIVERY</span></div>
     <section className="v-create-choice-intro">
@@ -33,6 +36,7 @@ export default function CreateDeliveryChoice() {
         <p>START WITH THE CLIENT EXPERIENCE</p><h1>How should this gallery open?</h1><span>All three options deliver every finished photo. Choose the presentation that suits this shoot.</span>
       </motion.div>
     </section>
+    <motion.section className="v-choice-video" initial={reduced ? false : { opacity: 0, y: 15 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .15 }}><div><Film size={28} /><span>FINISHED FILMS / PRO</span><h2>Sending video?</h2><p>Give your films a separate client link, with private playback, your studio branding and optional original downloads.</p><VideoAvailability /></div><div><Link to={video.available ? '/create?type=video' : '/video-delivery'}>{video.available ? 'Create a video delivery' : 'About video delivery'}<ArrowRight size={17} /></Link><Link to="/demo/video">Open the client demo<ArrowRight size={17} /></Link><Link to="/videos/library">Your video library<ArrowRight size={17} /></Link></div></motion.section>
     <section className="v-create-choice-grid" aria-label="Choose a delivery type">
       {types.map((type, index) => {
         const Icon = type.icon;

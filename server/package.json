@@ -14,6 +14,8 @@
     "verify:syntax": "node scripts/verify-syntax.mjs",
     "dev": "nodemon server.js",
     "delivery:worker": "node delivery-worker.js",
+    "video:worker": "node video-worker.js",
+    "verify:video": "node --test scripts/video-delivery.test.mjs",
     "content:worker": "node content-worker.js",
     "render": "node content-worker.js",
     "content:local": "node content-local.js",

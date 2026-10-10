@@ -18,6 +18,10 @@ import lazyWithRecovery from './utils/lazyWithRecovery.jsx';
 import 'react-toastify/dist/ReactToastify.css';
 
 const Dashboard = lazyWithRecovery(() => import('./pages/Dashboard.jsx'), 'dashboard');
+const VideoClientPage = lazyWithRecovery(() => import('./pages/VideoClientPage.jsx'), 'video-client');
+const VideoLibrary = lazyWithRecovery(() => import('./pages/VideoLibrary.jsx'), 'video-library');
+const VideoDeliveryPage = lazyWithRecovery(() => import('./pages/VideoDeliveryPage.jsx'), 'video-delivery');
+const VideoDemo = lazyWithRecovery(() => import('./pages/VideoDemo.jsx'), 'video-demo');
 const CreateDelivery = lazyWithRecovery(() => import('./pages/CreateDeliveryRouter.jsx'), 'create-delivery');
 const StoryViewer = lazyWithRecovery(() => import('./pages/StoryViewer.jsx'), 'photo-story');
 const DeliveryViewer = lazyWithRecovery(() => import('./pages/DeliveryViewer.jsx'), 'client-delivery');
@@ -106,7 +110,11 @@ function RoutePosition() {
   useEffect(() => {
     const names = { '/': 'Photo delivery for finished shoots', '/formats': 'Three delivery types | Eight Showcase formats', '/gridboard': 'GridBoard delivery', '/photoswap': 'Photo Swap delivery', '/portfolio': 'Veylo Portfolio', '/pricing': 'Plans and pricing', '/signup': 'Create your account', '/signin': 'Sign in', '/verify-email': 'Verify your email', '/forgot-password': 'Reset your password', '/reset-password': 'Choose a new password', '/onboarding': 'Set up your studio', '/settings': 'Account settings', '/about': 'About us', '/client-experience': 'The client experience', '/contact': 'Get in touch', '/privacy': 'Privacy policy', '/refund-policy': 'Refund policy', '/terms': 'Terms of use', '/fair-use': 'Fair use', '/changelog': 'Product updates', '/create': 'Create a delivery', '/demo': 'Watch a Photo Story', '/demo/gridboard': 'Browse a GridBoard delivery', '/demo/pinboard': 'Browse a GridBoard delivery', '/demo/photoswap': 'Swipe through a Photo Swap', '/demo/editorial': 'Explore an Editorial Page', '/demo/reveal': 'Begin a Photo Reveal', '/demo/canvas': 'Explore a Canvas', '/demo/chapters': 'Choose a chapter', '/demo/album': 'Turn through an Album', '/demo/event-coverage': 'Browse Event Coverage', '/demo/campaign': 'Open a Campaign Delivery' };
     names['/formats'] = 'Three delivery types | Eight Showcase formats';
-    names['/product'] = 'Client selection, editor handoff and photo delivery';
+    names['/product'] = 'Client selection, editor handoff and finished delivery';
+    names['/video-delivery'] = 'Finished video delivery';
+    names['/videos/library'] = 'Video library and usage';
+    names['/demo/video'] = 'Watch a video delivery';
+    if (pathname.startsWith('/v/')) names[pathname] = 'Your video delivery';
     names['/demo/event-coverage'] = 'Browse Event Coverage';
     names['/demo/campaign'] = 'Open a Campaign Delivery';
     if (pathname === '/billing') names[pathname] = 'Plan and billing';
@@ -151,7 +159,7 @@ function DeliveryChrome({ user }) {
   // screen. Necessary session and analytics cookies still work in the
   // background, but neither the privacy notice nor Veylo Assistant is rendered on
   // a delivery or delivery demo.
-  const isDeliverySurface = /^\/(?:d|story|volume|select|edit)(?:\/|$)/.test(pathname)
+  const isDeliverySurface = /^\/(?:d|v|story|volume|select|edit)(?:\/|$)/.test(pathname)
     || pathname === '/demo'
     || pathname.startsWith('/demo/')
     || pathname === '/__phone-preview';
@@ -168,7 +176,7 @@ function VerificationRoute({ user, loading, children }) {
 
 const focusedRoutes = new Set(['/signup', '/signin', '/verify-email', '/forgot-password', '/reset-password', '/onboarding', '/dashboard', '/create', '/sharing', '/settings', '/billing', '/library', '/portfolio/manage', '/portfolio/enquiries']);
 const authRoutes = new Set(['/signup', '/signin', '/verify-email', '/forgot-password', '/reset-password']);
-const productRoutes = new Set(['/dashboard', '/create', '/sharing', '/settings', '/billing', '/library', '/portfolio/manage', '/portfolio/enquiries']);
+const productRoutes = new Set(['/videos/library', '/dashboard', '/create', '/sharing', '/settings', '/billing', '/library', '/portfolio/manage', '/portfolio/enquiries']);
 
 function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountDeleted, onPlanChanged }) {
   const { pathname } = useLocation();
@@ -183,6 +191,8 @@ function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountD
     <main id="main-content"><Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/product" element={<ProductPage user={user} />} />
+      <Route path="/video-delivery" element={<VideoDeliveryPage />} />
+      <Route path="/videos/library" element={<ProtectedRoute user={user} loading={authLoading}><VideoLibrary /></ProtectedRoute>} />
       <Route path="/dashboard" element={<ProtectedRoute user={user} loading={authLoading}><Dashboard user={user} onLogout={onLogout} /></ProtectedRoute>} />
       <Route path="/create" element={<ProtectedRoute user={user} loading={authLoading}><div className="veylo-assistant-entry-row"><AssistantEntry /></div><CreateDelivery user={user} /></ProtectedRoute>} />
       <Route path="/sharing" element={<ProtectedRoute user={user} loading={authLoading}><DeliverySharing /></ProtectedRoute>} />
@@ -247,6 +257,8 @@ export default function App() {
     <Route path="/edit/:publicId" element={<LibraryCollaborationPage kind="editor-handoff" />} />
     <Route path="/story/:storyId" element={<PhonePresentationRoute title="Photo Story demo"><StoryViewer /></PhonePresentationRoute>} />
     <Route path="/d/:publicId" element={<PhonePresentationRoute title="Client delivery"><DeliveryViewer /></PhonePresentationRoute>} />
+    <Route path="/v/:publicId" element={<VideoClientPage />} />
+    <Route path="/demo/video" element={<VideoDemo />} />
     <Route path="/__phone-preview" element={<PhonePreviewPage />} />
     <Route path="/volume-deliveries" element={<Navigate to="/dashboard" replace />} />
     <Route path="/volume/:publicId" element={<Navigate to="/" replace />} />

@@ -1,6 +1,6 @@
 # Video Delivery: full build plan
 
-Date: 10 October 2026. Status: proposed; awaiting approval for implementation.
+Date: 10 October 2026. Status: implementation and local validation complete; production qualification remains gated. See [setup and release checks](video-delivery-operations.md) for the implementation record and outstanding provider/device/load checks.
 
 This plan is grounded in the current Veylo codebase and Cloudflare's documentation checked on the date above. It covers the complete feature, its operating costs, the pages that need updating, and the checks required before release. Creating this document does not enable video uploads or change the live product.
 

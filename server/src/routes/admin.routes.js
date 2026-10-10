@@ -143,6 +143,7 @@ router.post('/auth/logout', adminLogout);
 
 // Protected routes
 router.use(adminAuthMiddleware);
+router.get('/video-operations', requireAdminRoles('superadmin', 'operations', 'admin'), videoOperations);
 router.get('/auth/me', getAdminMe);
 router.post('/auth/verify-2fa', authAttemptLimit, verifyAdminSessionMfa);
 router.get('/system', requireAdminRoles(ADMIN_READ_ACCESS.operations), getSystemOverview);
@@ -239,3 +240,4 @@ router.post('/security/admins/:id/force-logout', requireAdminRoles('superadmin')
 router.post('/security/admins/:id/2fa/disable', requireAdminRoles('superadmin'), disableAdminTwoFactor);
 
 export default router;
+import { videoOperations } from '../controllers/videoAdmin.controller.js';

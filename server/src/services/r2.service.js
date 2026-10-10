@@ -78,7 +78,7 @@ function r2Path(bucket, key) {
   return `/${encode(bucket)}/${encodeKey(key)}`;
 }
 
-export function presignR2Object(key, { method = 'GET', expiresIn = DEFAULT_DOWNLOAD_SECONDS, contentType = '', downloadFilename = '', signedHeaders: additionalHeaders = {} } = {}) {
+export function presignR2Object(key, { method = 'GET', expiresIn = DEFAULT_DOWNLOAD_SECONDS, contentType = '', downloadFilename = '', signedHeaders: additionalHeaders = {}, query: additionalQuery = {} } = {}) {
   const settings = config();
   const normalizedKey = String(key || '').replace(/^\/+/, '');
   if (!normalizedKey || normalizedKey.includes('..') || normalizedKey.length > 900) throw Object.assign(new Error('That file could not be prepared.'), { status: 400 });
@@ -98,6 +98,10 @@ export function presignR2Object(key, { method = 'GET', expiresIn = DEFAULT_DOWNL
     'X-Amz-Expires': String(expires),
     'X-Amz-SignedHeaders': signedHeaders
   });
+  for (const [name, value] of Object.entries(additionalQuery)) {
+    if (/^x-amz-/i.test(name) || !['uploads', 'uploadId', 'partNumber', 'part-number-marker', 'max-parts'].includes(name)) throw new Error('Unsupported storage query.');
+    query.set(name, String(value));
+  }
   if (downloadFilename && method === 'GET') {
     const safe = String(downloadFilename).replace(/[\r\n"\\]/g, '_').slice(0, 150) || 'photograph';
     query.set('response-content-disposition', `attachment; filename*=UTF-8''${encode(safe)}`);
@@ -144,12 +148,12 @@ function r2NetworkFailure(method, cause) {
   });
 }
 
-async function requestR2(key, { method = 'GET', contentType = '', body, query = {}, downloadFilename, expiresIn, timeoutMs = 120_000 } = {}) {
-  const signed = presignR2Object(key, { method, contentType, downloadFilename, expiresIn });
+async function requestR2(key, { method = 'GET', contentType = '', body, query = {}, headers = {}, downloadFilename, expiresIn, timeoutMs = 120_000 } = {}) {
+  const signed = presignR2Object(key, { method, contentType, downloadFilename, expiresIn, query, signedHeaders: headers });
   // Listing uses a bucket-level URL and is signed separately below.
   let response;
   try {
-    response = await fetch(signed.url, { method, headers: contentType ? { 'Content-Type': contentType } : undefined, body, signal: AbortSignal.timeout(timeoutMs) });
+    response = await fetch(signed.url, { method, headers: signed.headers, body, signal: AbortSignal.timeout(timeoutMs) });
   } catch (error) {
     throw r2NetworkFailure(method.toUpperCase(), error);
   }
@@ -207,8 +211,48 @@ export async function getR2ObjectBuffer(key, { maxBytes = MAX_IMAGE_BYTES } = {}
 }
 
 export async function getR2ObjectStream(key, options = {}) {
-  const response = await requestR2(key, { method: 'GET', timeoutMs: Number(options.timeoutMs) || 120_000 });
-  return { body: response.body, contentType: response.headers.get('content-type') || 'application/octet-stream', bytes: Number(response.headers.get('content-length') || 0) };
+  const response = await requestR2(key, { method: options.method === 'HEAD' ? 'HEAD' : 'GET', headers: options.range ? { range: options.range } : {}, timeoutMs: Number(options.timeoutMs) || 120_000 });
+  return { body: response.body, status: response.status, contentRange: response.headers.get('content-range'), contentType: response.headers.get('content-type') || 'application/octet-stream', bytes: Number(response.headers.get('content-length') || 0) };
+}
+
+async function multipartXml(response) {
+  const text = await response.text();
+  if (text.length > 1_000_000 || /<!DOCTYPE|<!ENTITY|<Error[>\s]/i.test(text)) throw Object.assign(new Error('Storage could not complete this multipart request.'), { status: 502, code: 'R2_MULTIPART_FAILED' });
+  return text;
+}
+
+export async function createR2Multipart(key, contentType) {
+  const xml = await multipartXml(await requestR2(key, { method: 'POST', contentType, query: { uploads: '' } }));
+  const id = xmlValue(xml.match(/<UploadId>([^<]+)<\/UploadId>/)?.[1] || '');
+  if (!id || id.length > 1000) throw new Error('Storage did not return an upload identifier.');
+  return id;
+}
+
+export async function listR2Parts(key, uploadId) {
+  const parts = [];
+  let marker = '';
+  do {
+    const xml = await multipartXml(await requestR2(key, { query: { uploadId, 'max-parts': 1000, ...(marker ? { 'part-number-marker': marker } : {}) } }));
+    for (const match of xml.matchAll(/<Part>([\s\S]*?)<\/Part>/g)) {
+      const value = name => xmlValue(match[1].match(new RegExp('<' + name + '>([^<]*)</' + name + '>'))?.[1]);
+      parts.push({ partNumber: Number(value('PartNumber')), etag: value('ETag').replace(/^"|"$/g, ''), bytes: Number(value('Size')) });
+    }
+    marker = /<IsTruncated>true<\/IsTruncated>/.test(xml) ? xml.match(/<NextPartNumberMarker>(\d+)<\/NextPartNumberMarker>/)?.[1] : '';
+    if (parts.length > 1000) throw new Error('Too many video parts.');
+  } while (marker);
+  return parts;
+}
+
+export async function completeR2Multipart(key, uploadId, parts) {
+  if (!parts.length || parts.some(part => !Number.isInteger(part.partNumber) || !/^[a-f\d-]{16,100}$/i.test(part.etag))) throw Object.assign(new Error('The uploaded parts could not be verified.'), { status: 400 });
+  const body = '<CompleteMultipartUpload>' + parts.map(part => '<Part><PartNumber>' + part.partNumber + '</PartNumber><ETag>"' + part.etag + '"</ETag></Part>').join('') + '</CompleteMultipartUpload>';
+  await multipartXml(await requestR2(key, { method: 'POST', query: { uploadId }, contentType: 'application/xml', body }));
+}
+
+export async function abortR2Multipart(key, uploadId) {
+  if (!uploadId) return;
+  try { await requestR2(key, { method: 'DELETE', query: { uploadId } }); }
+  catch (error) { if (error.status !== 404) throw error; }
 }
 
 export async function deleteR2Object(key) {

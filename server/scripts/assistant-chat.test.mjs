@@ -97,7 +97,7 @@ test('visitors can learn about the Product page, client preselection and editor 
     assert.match(knowledge, /without download controls/);
     assert.match(knowledge, /Editor handoff requires a password/);
     assert.match(knowledge, /same link/);
-    assert.match(knowledge, /Published delivery hosting is separate/);
+    assert.match(knowledge, /Published photo delivery hosting is separate/);
   }
   assert.ok(assistantSuggestedQuestions('public', { query: 'product overview' }).some(question => question.includes('preselection')));
 });
@@ -211,6 +211,24 @@ test('shared marketing facts include current delivery types without exposing tex
   assert.match(knowledge, /Photo Swap/);
   assert.match(knowledge, /GridBoard/);
   assert.doesNotMatch(knowledge, /=>|function |runtimeConfig/);
+});
+
+test('video help states actual limits and keeps uploads closed until qualified', () => {
+  const knowledge = buildAssistantKnowledge({ query: 'video film upload 5gb storage playback', audience: 'studio' });
+  assert.match(knowledge, /not open for uploads yet/);
+  assert.match(knowledge, /1–10 MP4, MOV or WebM/);
+  assert.match(knowledge, /at most 5 GB/);
+  assert.match(knowledge, /share the existing Pro 100 GB/);
+  assert.match(knowledge, /5000 minutes, including previews and buffering/);
+  assert.match(knowledge, /downloads default off/);
+});
+
+test('recipient video help explains playback without offering studio configuration', () => {
+  const knowledge = buildAssistantKnowledge({ query: 'video film play audio download pin expired', audience: 'recipient' });
+  assert.match(knowledge, /Watching and downloading your videos/);
+  assert.match(knowledge, /Press play to start the film/);
+  assert.match(knowledge, /cannot remove a PIN/);
+  assert.doesNotMatch(knowledge, /Details & upload|observed admission controls/);
 });
 
 test('follow-up retrieval includes the immediately preceding answer, and only answers the latest turn', async t => {

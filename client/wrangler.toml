@@ -14,7 +14,7 @@ not_found_handling = "single-page-application"
 # Only these routes invoke the Worker. Static assets and SPA routes are served
 # by the asset layer without a Worker invocation. The Worker handles `/api` and
 # `/d/*` fully, so nothing falls through.
-run_worker_first = ["/api", "/api/*", "/d/*", "/@*", "/robots.txt", "/portfolio-sitemap*.xml"]
+run_worker_first = ["/api", "/api/*", "/d/*", "/v/*", "/@*", "/robots.txt", "/portfolio-sitemap*.xml"]
 
 # Local development values. In production these come from the dashboard's
 # environment variables; the code falls back to the same values either way.

@@ -1,7 +1,7 @@
 import { useAssistantWorkflow } from '../components/AssistantContext.jsx';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Check, Copy, Image, Link2, LoaderCircle, ShieldCheck, Trash2, Users } from 'lucide-react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
 import './DeliverySharing.css';
@@ -46,11 +46,10 @@ export default function DeliverySharing() {
     }
     setBusy(true);
     try {
-      const [deliveryResponse, grantsResponse] = await Promise.all([
-        api.get(`/v1/deliveries/${deliveryId}`),
-        api.get(`/v1/deliveries/${deliveryId}/share-grants`)
-      ]);
+      const deliveryResponse = await api.get(`/v1/deliveries/${deliveryId}`);
       setDelivery(deliveryResponse.data.data);
+      if (deliveryResponse.data.data.kind === 'video') return;
+      const grantsResponse = await api.get(`/v1/deliveries/${deliveryId}/share-grants`);
       setGrants(grantsResponse.data.data || []);
     } catch (requestError) {
       setError(apiMessage(requestError, 'We could not open the sharing settings.'));
@@ -131,6 +130,7 @@ export default function DeliverySharing() {
     return <main className="ds-page"><div className="ds-state"><LoaderCircle className="v-spin" size={26} />Opening sharing settings…</div></main>;
   }
 
+  if (delivery?.kind === 'video') return <Navigate to={`/create?draft=${deliveryId}`} replace />;
   return (
     <main className="ds-page">
       <div className="ds-wrap">

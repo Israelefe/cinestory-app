@@ -47,6 +47,7 @@ assert.match(client, /sessionStorage/);
 assert.match(client, /Start a new Veylo Assistant chat/);
 assert.match(client, /Do not send passwords/);
 assert.match(markdown, /safeHref/);
+for (const path of ['/video-delivery', '/videos/library', '/demo/video']) assert.ok(markdown.includes(`'${path}'`), `Assistant links must allow ${path}`);
 assert.match(markdown, /veylo-markdown-table/);
 assert.match(styles, /@media \(max-width: 560px\)/);
 assert.doesNotMatch(styles, /prefers-reduced-motion/);

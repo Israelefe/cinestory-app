@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-const knownSegments = new Set(['api', 'v1', 'auth', 'signup', 'login', 'verify-email', 'onboarding', 'dashboard', 'delivery', 'deliveries', 'create', 'edit', 'publish', 'preview', 'view', 'watch', 'gallery', 'download', 'downloads', 'photos', 'billing', 'checkout', 'verify', 'pricing', 'support', 'tickets', 'portfolio', 'portfolios', 'storage', 'library', 'account', 'settings', 'demo', 'format-demo', 'event-coverage', 'campaign', 'editorial', 'photo-story', 'assistant', 'home', 'cancel', 'callback']);
+const knownSegments = new Set(['v', 'videos', 'video-delivery', 'playback', 'assets', 'uploads', 'api', 'v1', 'auth', 'signup', 'login', 'verify-email', 'onboarding', 'dashboard', 'delivery', 'deliveries', 'create', 'edit', 'publish', 'preview', 'view', 'watch', 'gallery', 'download', 'downloads', 'photos', 'billing', 'checkout', 'verify', 'pricing', 'support', 'tickets', 'portfolio', 'portfolios', 'storage', 'library', 'account', 'settings', 'demo', 'format-demo', 'event-coverage', 'campaign', 'editorial', 'photo-story', 'assistant', 'home', 'cancel', 'callback']);
 export function analyticsRoute(value) {
   const path = String(value || '').split(/[?#]/)[0];
   if (!path.startsWith('/') || path.startsWith('//')) return '/other';

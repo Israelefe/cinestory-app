@@ -1,3 +1,4 @@
+import { VideoAsset } from '../models/video.models.js';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 import Delivery from '../models/Delivery.js';
@@ -26,13 +27,26 @@ export function freshAssistantContext(context, now = Date.now()) {
 }
 export async function ownedAssistantDelivery(id, userId) {
   if (!userId || !mongoose.isValidObjectId(id)) return null;
-  return Delivery.findOne({ _id: id, userId, kind: { $in: ['showcase', 'pinboard', 'photoswap'] } })
-    .select('userId schemaVersion kind format status title clientName shootType brief assets v3 creativeDirection curatedAssetIds pinboard photoswap soundtrack narration access.expiresAt reviewApprovedAt updatedAt publicId').lean();
+  return Delivery.findOne({ _id: id, userId, kind: { $in: ['showcase', 'pinboard', 'photoswap', 'video'] } })
+    .select('userId schemaVersion kind format status title clientName shootType brief assets v3 video creativeDirection curatedAssetIds pinboard photoswap soundtrack narration access.expiresAt reviewApprovedAt updatedAt publicId').lean();
 }
 export function deliveryCheck(delivery, { entitlements, pendingJob = false, workflow = {} } = {}) {
   const checks = [];
   const add = (severity, text, step) => checks.push({ severity, text, step });
   const assets = delivery.assets || [], ids = new Set(assets.map(asset => asset.assetId));
+  if (delivery.kind === 'video') {
+    const items = delivery.video?.draft?.items || [];
+    if (entitlements?.plan !== 'pro') add('blocker', 'Video creation and hosting require active Pro.', 'publish');
+    if (!items.length) add('blocker', 'Upload a finished video or choose one from your video library.', 'details');
+    if (!delivery.video?.draft?.title?.trim()) add('blocker', 'Add a delivery title.', 'details');
+    if (items.some(item => !item.title?.trim())) add('blocker', 'Give each film a title.', 'presentation');
+    if (workflow.unsaved) add('blocker', 'Save your changes before checking the client preview.', workflow.step || 'details');
+    if (workflow.uploading || pendingJob) add('blocker', 'Wait for every upload and playback preparation to finish.', 'details');
+    if (workflow.failedUploads) add('blocker', 'Resume the paused or failed video uploads before publishing.', 'details');
+    if (delivery.access?.expiresAt && new Date(delivery.access.expiresAt) <= new Date()) add('blocker', 'Update the expired client link date.', 'access');
+    if (!checks.length) add('info', 'The saved video details are ready. Check the player preview before publishing.', 'publish');
+    return { status: checks.some(check => check.severity === 'blocker') ? 'needs-attention' : 'ready-to-review', checks, videoCount: items.length, checkedAt: new Date().toISOString() };
+  }
   if (delivery.status === 'published') return { status: 'published', checks: [{ severity: 'info', text: 'This delivery is already published.', step: 'publish' }], photoCount: assets.length };
   if (delivery.status === 'archived') add('blocker', 'Restore this delivery from Dashboard before editing it.', 'details');
   if (delivery.schemaVersion !== 3) add('info', 'Use this delivery’s existing review and publishing flow.', 'publish');
@@ -67,6 +81,11 @@ export function deliveryCheck(delivery, { entitlements, pendingJob = false, work
   return { status: checks.some(item => item.severity === 'blocker') ? 'needs-attention' : 'ready-to-review', checks, photoCount: assets.length, checkedAt: new Date().toISOString() };
 }
 export async function inspectAssistantDelivery(delivery, entitlements, workflow) {
+  if (delivery.kind === 'video') {
+    const ids = delivery.video?.draft?.items?.map(item => item.assetId) || [];
+    const ready = await VideoAsset.countDocuments({ _id: { $in: ids }, userId: delivery.userId, state: 'ready' });
+    return deliveryCheck(delivery, { entitlements, pendingJob: ready !== ids.length, workflow });
+  }
   const pendingJob = Boolean(await DeliveryJob.exists({ deliveryId: delivery._id, userId: delivery.userId, status: { $in: ['queued', 'running'] }, cancelRequestedAt: { $exists: false } }));
   return deliveryCheck(delivery, { entitlements, pendingJob, workflow });
 }
@@ -76,14 +95,15 @@ export async function assistantWorkspaceContext(user, entitlements, context) {
     deliveriesThisMonth: entitlements.usage?.deliveriesThisMonth, deliveriesRemaining: entitlements.usage?.deliveriesRemaining,
     monthlyDeliveryLimit: entitlements.limits.deliveriesPerMonth, photoLimit: entitlements.limits.photosPerDelivery,
     storageUsedBytes: Math.max(0, Number(user.storageUsedBytes) || 0), storageLimitBytes: entitlements.limits.personalStorageBytes,
-    storageMode: entitlements.features.storageMode
+    storageMode: entitlements.features.storageMode,
+    videoAvailable: entitlements.features.videoDelivery, storageReservedBytes: Math.max(0, Number(user.storageReservedBytes) || 0), videoOriginalBytes: Math.max(0, Number(user.videoUsedBytes) || 0), videoStoredSeconds: Math.max(0, Number(user.videoStoredSeconds) || 0), videoLimits: entitlements.limits.videoDelivery
   } };
   if (!page) return { facts, delivery: null };
   facts.browserReported = { page: page.page, label: ASSISTANT_PAGES[page.page], workflow: page.workflow, recent: page.recent };
   let delivery = null;
   if (page.workflow.deliveryId && ['/create', '/sharing'].includes(page.page)) {
     delivery = await ownedAssistantDelivery(page.workflow.deliveryId, user._id);
-    if (delivery) facts.delivery = { kind: delivery.kind, format: delivery.format, status: delivery.status, photoCount: delivery.assets?.length || 0, step: delivery.v3?.step, check: await inspectAssistantDelivery(delivery, entitlements, page.workflow) };
+    if (delivery) facts.delivery = { kind: delivery.kind, format: delivery.format, status: delivery.status, ...(delivery.kind === 'video' ? { videoCount: delivery.video?.draft?.items?.length || 0 } : { photoCount: delivery.assets?.length || 0 }), step: delivery.kind === 'video' ? page.workflow.step : delivery.v3?.step, check: await inspectAssistantDelivery(delivery, entitlements, page.workflow) };
     else facts.delivery = { available: false };
   }
   if (page.page.startsWith('/portfolio')) {

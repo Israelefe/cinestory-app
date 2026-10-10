@@ -30,7 +30,7 @@ export async function getAssistantWorkspace(req, res) {
     const { facts, delivery } = await assistantWorkspaceContext(account.user, account.entitlements, parsed.data.context);
     const selected = new Set((delivery?.creativeDirection?.frames || []).map(item => item.assetId));
     const photos = delivery ? (delivery.assets || []).slice().sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)).map((asset, index) => ({ assetId: asset.assetId, label: `Photo ${index + 1}`, captionEditable: delivery.kind === 'photoswap' || (delivery.kind === 'showcase' && selected.has(asset.assetId)) })) : [];
-    const drafts = await Delivery.find({ userId: account.user._id, kind: { $in: ['showcase', 'pinboard', 'photoswap'] }, status: { $in: ['draft', 'review'] } }).select('_id kind title').sort({ updatedAt: -1 }).limit(5).lean();
+    const drafts = await Delivery.find({ userId: account.user._id, kind: { $in: ['showcase', 'pinboard', 'photoswap', 'video'] }, status: { $in: ['draft', 'review'] } }).select('_id kind title').sort({ updatedAt: -1 }).limit(5).lean();
     res.set('Cache-Control', 'no-store');
     return res.json({ success: true, data: { ...facts, photos, drafts, accountSummary: account.safeContext } });
   } catch (error) { return failure(res, error); }
@@ -65,9 +65,10 @@ export async function proposeAssistantWriting(req, res) {
     } else {
       delivery = await ownedAssistantDelivery(input.deliveryId, account.user._id);
       if (!delivery) throw toolError('Open a delivery belonging to your account first.', 404);
+      if (delivery.kind === 'video' && input.kind !== 'client-message') throw toolError('Use footage suggestions in the video editor to review titles and descriptions based on the actual films.', 400);
       if (input.kind !== 'client-message' && !['draft', 'review'].includes(delivery.status)) throw toolError('Writing changes require an editable draft.');
       if (input.kind === 'client-message' && delivery.status !== 'published') throw toolError('Publish the delivery before preparing its delivery message.');
-      source = { title: delivery.creativeDirection?.title || delivery.pinboard?.title || delivery.title, shootType: delivery.shootType, purpose: String(delivery.brief || '').slice(0, 1600) };
+      source = delivery.kind === 'video' ? { title: delivery.video?.published?.title || delivery.title, purpose: 'Finished films ready for the client to watch.', shootType: '' } : { title: delivery.creativeDirection?.title || delivery.pinboard?.title || delivery.title, shootType: delivery.shootType, purpose: String(delivery.brief || '').slice(0, 1600) };
       maxLength = input.kind === 'delivery-title' ? delivery.kind === 'showcase' ? 80 : 120 : input.kind === 'caption' ? delivery.kind === 'showcase' && hasDetailedWriting(delivery.format) ? photoCaptionLimit(delivery.format) : 180 : 600;
       if (input.kind === 'caption') {
         const asset = delivery.assets?.find(item => item.assetId === input.assetId);
@@ -87,7 +88,7 @@ export async function proposeAssistantWriting(req, res) {
     const proposal = { kind: input.kind, text, ...(delivery ? { deliveryId: String(delivery._id), version: new Date(delivery.updatedAt).toISOString() } : { version: String(portfolio.draftRevision) }), ...(input.kind === 'caption' ? { assetId: input.assetId } : {}) };
     const confirmation = jwt.sign({ ...proposal, userId: String(account.user._id) }, process.env.JWT_SECRET, { expiresIn: '10m', issuer: 'veylo-api', audience: 'veylo-assistant-writing' });
     res.set('Cache-Control', 'no-store');
-    return res.json({ success: true, data: { ...proposal, confirmation, ...(input.kind === 'client-message' ? { clientPath: `/d/${delivery.publicId}` } : {}) } });
+    return res.json({ success: true, data: { ...proposal, confirmation, ...(input.kind === 'client-message' ? { clientPath: `/${delivery.kind === 'video' ? 'v' : 'd'}/${delivery.publicId}` } : {}) } });
   } catch (error) { if (!controller.signal.aborted) return failure(res, error); }
   finally { res.off('close', disconnect); }
 }

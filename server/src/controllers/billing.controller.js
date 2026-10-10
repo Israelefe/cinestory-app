@@ -1,3 +1,4 @@
+import { publicVideoSettings } from '../config/videoDelivery.js';
 import crypto from 'node:crypto';
 import { recordAnalyticsEventAsync } from '../services/analytics.service.js';
 import { sendRefundProgressEmail } from '../services/email.service.js';
@@ -103,10 +104,12 @@ export async function activateSubscription({ data, user, subscription }) {
     return Subscription.findById(subscription._id);
   });
 }
-export function getPlans(req, res) {
+export async function getPlans(req, res) {
   const pricing = proPricing();
   res.set('Cache-Control', 'private, no-store');
-  res.json({ success: true, data: publicPlans(), pricing, billingAvailable: billingConfigured() });
+  const runtime = await getRuntimeConfig();
+  const videoDelivery = publicVideoSettings(runtime.videoDelivery);
+  res.json({ success: true, data: Object.values(runtime.plans).map(plan => ({ ...plan, personalStorageGb: Math.round(plan.personalStorageBytes / 1024 ** 3), personalStorageBytes: undefined, videoDelivery: plan.id === 'pro' ? videoDelivery : { available: false } })), videoDelivery, pricing, billingAvailable: billingConfigured() });
 }
 export async function getBillingStatus(req, res) {
   try {

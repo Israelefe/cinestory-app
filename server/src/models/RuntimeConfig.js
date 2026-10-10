@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 const runtimeConfigSchema = new mongoose.Schema({
   key: { type: String, unique: true, required: true, default: 'global' },
   plans: { type: mongoose.Schema.Types.Mixed, default: {} },
+  videoDelivery: { type: mongoose.Schema.Types.Mixed, default: {} },
   formats: { type: mongoose.Schema.Types.Mixed, default: {} },
   featureFlags: { type: mongoose.Schema.Types.Mixed, default: {} },
   maintenance: { type: mongoose.Schema.Types.Mixed, default: {} },

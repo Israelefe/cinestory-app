@@ -3,6 +3,7 @@ import PortfolioMedia from '../models/PortfolioMedia.js';
 import PortfolioJob from '../models/PortfolioJob.js';
 import PortfolioEnquiry from '../models/PortfolioEnquiry.js';
 import { withBillingLock } from './billingLock.service.js';
+import { purgeUserVideos } from './videoWorker.service.js';
 import { resolveEntitlements } from './entitlement.service.js';
 import { processPortfolioRemovals } from './portfolioLifecycle.service.js';
 import Portfolio from '../models/Portfolio.js';
@@ -97,7 +98,7 @@ export async function purgeExpiredProData(now = new Date()) {
         { _id: account._id },
         paid
           ? { $set: { plan: 'pro' }, $unset: { planOverride: 1, proRetentionUntil: 1 } }
-          : { $set: { plan: 'free', proRetentionUntil: new Date(now.getTime() + retentionDays * 24 * 60 * 60 * 1000) }, $unset: { planOverride: 1 } }
+          : { $set: { plan: 'free', proRetentionUntil: new Date(now.getTime() + retentionDays * 24 * 60 * 60 * 1000), videoRetentionUntil: new Date(new Date(owner.planOverride.expiresAt).getTime() + runtime.videoDelivery.recoveryDays * 86400_000) }, $unset: { planOverride: 1 } }
       );
       });
     }
@@ -133,6 +134,14 @@ export async function purgeExpiredProData(now = new Date()) {
       await withBillingLock(user._id, async () => {
       const currentOwner = await User.findById(user._id);
       if (!currentOwner || !currentOwner.proRetentionUntil || currentOwner.proRetentionUntil > now || (await resolveEntitlements(currentOwner, { includeUsage: false, now })).plan !== 'free') return;
+      const { videoContext } = await import('./videoDelivery.service.js');
+      const videoRecovery = (await videoContext(user._id, { maintenance: true })).recoveryUntil;
+      // A shorter Image Library policy must not erase shared video storage
+      // before its promised recovery window ends.
+      if (videoRecovery && videoRecovery > now) return;
+      // Provider failures stop the purge here. Do not erase the shared quota
+      // projection while a video original or playback copy still exists.
+      await purgeUserVideos(user._id);
       const portfolios = await Portfolio.find({ userId: user._id }).select('_id items.publicId draft.items.publicId profileMedia.publicId draft.profileMedia.publicId').lean();
       await PortfolioHandle.deleteMany({ portfolioId: { $in: portfolios.map(item => item._id) } });
       await PortfolioJob.deleteMany({ userId: user._id });

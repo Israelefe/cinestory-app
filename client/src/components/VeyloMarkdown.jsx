@@ -8,7 +8,8 @@ const HELP_PATHS = new Set([
   '/contact', '/privacy', '/terms', '/refund-policy', '/fair-use', '/pricing',
   '/signup', '/signin', '/forgot-password', '/changelog', '/demo', '/demo/gridboard',
   '/demo/photoswap', '/demo/editorial', '/demo/reveal', '/demo/canvas', '/demo/chapters',
-  '/demo/album', '/demo/event-coverage', '/demo/campaign'
+  '/demo/album', '/demo/event-coverage', '/demo/campaign',
+  '/video-delivery', '/videos/library', '/demo/video'
 ]);
 
 function safeHref(rawHref) {

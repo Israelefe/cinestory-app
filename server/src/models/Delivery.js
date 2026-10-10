@@ -34,19 +34,40 @@ const accessSchema = new mongoose.Schema({
   revokedAt: Date
 }, { _id: false, toObject: { transform: (_doc, access) => cleanDeliveryAccess(access) }, toJSON: { transform: (_doc, access) => cleanDeliveryAccess(access) } });
 
+const videoItemSchema = new mongoose.Schema({
+  assetId: { type: mongoose.Schema.Types.ObjectId, ref: 'VideoAsset', required: true },
+  title: { type: String, trim: true, maxlength: 100, default: '' },
+  description: { type: String, trim: true, maxlength: 2000, default: '' },
+  posterSeconds: { type: Number, min: 0, default: 0 },
+  // Internal immutable cover reference captured when publishing.
+  posterKey: String,
+  allowDownload: { type: Boolean, default: null }
+}, { _id: false });
+const videoPresentationSchema = new mongoose.Schema({
+  title: { type: String, maxlength: 120 }, introduction: { type: String, maxlength: 1500, default: '' },
+  items: { type: [videoItemSchema], default: [] }, featuredAssetId: mongoose.Schema.Types.ObjectId,
+  allowDownloads: { type: Boolean, default: false }
+}, { _id: false });
+const videoSchema = new mongoose.Schema({
+  draft: { type: videoPresentationSchema, default: () => ({}) },
+  published: videoPresentationSchema, revision: { type: Number, default: 0 },
+  accessVersion: { type: Number, default: 0 }
+}, { _id: false });
+
 const deliverySchema = new mongoose.Schema({
   publicId: { type: String, unique: true, index: true, default: () => crypto.randomBytes(24).toString('base64url') },
   legacyStoryId: { type: String, index: true, sparse: true },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   schemaVersion: { type: Number, default: 2 },
   v3: { type: mongoose.Schema.Types.Mixed },
-  kind: { type: String, enum: ['showcase', 'pinboard', 'photoswap', 'volume'], default: 'showcase', index: true },
+  kind: { type: String, enum: ['showcase', 'pinboard', 'photoswap', 'volume', 'video'], default: 'showcase', index: true },
   format: { type: String, enum: ['photo-story', 'editorial', 'photo-reveal', 'canvas', 'chapters', 'album', 'event-coverage', 'campaign'] },
   status: { type: String, enum: ['draft', 'analyzing', 'directing', 'review', 'published', 'archived'], default: 'draft', index: true },
   clientName: { type: String, trim: true, maxlength: 100, default: '' },
   title: { type: String, trim: true, maxlength: 120, default: '' },
   shootType: { type: String, trim: true, maxlength: 80, default: '' },
-  brief: { type: String, trim: true, required: true, default: '' },
+  brief: { type: String, trim: true, required() { return (this.kind || this.getQuery?.().kind) !== 'video'; }, default: '' },
+  video: videoSchema,
   assets: { type: [assetSchema], default: [] },
   collectionAnalysis: { type: mongoose.Schema.Types.Mixed },
   formatRecommendations: { type: [mongoose.Schema.Types.Mixed], default: [] },

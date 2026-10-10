@@ -12,7 +12,7 @@ import { handleApiProxy } from './apiProxy.js';
 import { handleDeliveryShell } from './deliveryShell.js';
 import { handlePortfolioShell, handlePortfolioSitemap, PORTFOLIO_PATH } from './portfolioShell.js';
 
-const DELIVERY_PATH = /^\/d\/([^/]+)\/?$/;
+const DELIVERY_PATH = /^\/(d|v)\/([^/]+)\/?$/;
 
 export default {
   async fetch(request, env, ctx) {
@@ -28,7 +28,7 @@ export default {
 
     const delivery = pathname.match(DELIVERY_PATH);
     if (delivery) {
-      return handleDeliveryShell(request, env, ctx, decodeURIComponent(delivery[1]));
+      return handleDeliveryShell(request, env, ctx, decodeURIComponent(delivery[2]), delivery[1]);
     }
     const portfolio = pathname.match(PORTFOLIO_PATH);
     if (portfolio) return handlePortfolioShell(request, env, portfolio[1], portfolio[2] || '');

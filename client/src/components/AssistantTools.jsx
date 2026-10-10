@@ -97,7 +97,7 @@ export default function AssistantTools({ session, state, surface, onMessage, onC
     </details>}
     <div className="veylo-assistant-tool-buttons">
       {isStudio && deliveryId && <button type="button" onClick={check} disabled={Boolean(working)}><ClipboardCheck size={16} />{working === 'check' ? 'Checking…' : 'Check delivery'}</button>}
-      {isStudio && (deliveryId || state.page === '/portfolio/manage') && <button type="button" onClick={() => { setWriting(value => !value); setProposal(null); setConfirm(false); }} disabled={Boolean(working)} aria-expanded={writing}><PencilLine size={16} />Writing help</button>}
+      {isStudio && (deliveryId || state.page === '/portfolio/manage') && (state.workflow.kind !== 'video' || workspace?.delivery?.status === 'published') && <button type="button" onClick={() => { setWriting(value => !value); setProposal(null); setConfirm(false); }} disabled={Boolean(working)} aria-expanded={writing}><PencilLine size={16} />Writing help</button>}
       <button type="button" onClick={() => { if (state.workflow.unsaved && !window.confirm('Your open form has unsaved changes. Leave this page?')) return; prepareAssistantSupport(facts); navigate('/contact'); onClose(); }}><MessageCircle size={16} />Prepare support request</button>
     </div>
     {writing && <form onSubmit={suggest} className="veylo-assistant-writing">

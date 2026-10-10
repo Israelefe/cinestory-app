@@ -55,7 +55,7 @@ function bad(res, parsed) {
 function fail(res, error) { console.error('[delivery-v3]', error.code || error.name, error.message); return res.status(error.status || 500).json({ success: false, code: error.code || 'V3_STEP_FAILED', message: error.status ? error.message : 'This step could not finish. Please try again.' }); }
 async function owned(req, { pin = false } = {}) {
   if (!mongoose.isValidObjectId(req.params.id)) return null;
-  const query = Delivery.findOne({ _id: req.params.id, userId: req.user.id, schemaVersion: 3 });
+  const query = Delivery.findOne({ _id: req.params.id, userId: req.user.id, schemaVersion: 3, kind: { $ne: 'video' } });
   if (pin) query.select('+access.pinDigest');
   return query;
 }

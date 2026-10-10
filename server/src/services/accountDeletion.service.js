@@ -229,6 +229,8 @@ async function deleteUserAccountLocked({ userId } = {}) {
   const volumeJobIds = volumeJobs.map(item => item._id);
 
   await removeMedia({ user, stories, contentProjects, hasDeliveries: deliveries.length > 0, hasStorageAssets: storageAssets.length > 0 });
+  await purgeUserVideos(accountId);
+  await deleteVideoAccountRecords(accountId);
 
   const deleted = {};
   const session = await mongoose.startSession();
@@ -262,3 +264,4 @@ export async function deleteUserAccount({ userId } = {}) {
   if (!mongoose.isValidObjectId(userId)) throw new AccountDeletionError('That account identifier is not valid.', 400, 'INVALID_ACCOUNT_ID');
   return withBillingLock(userId, () => deleteUserAccountLocked({ userId }));
 }
+import { purgeUserVideos, deleteVideoAccountRecords } from './videoWorker.service.js';

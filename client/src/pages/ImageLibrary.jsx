@@ -1,4 +1,5 @@
 import { useAssistantWorkflow } from '../components/AssistantContext.jsx';
+import { Link } from 'react-router-dom';
 import { ProPrice } from '../components/ProPricing.jsx';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -149,7 +150,7 @@ export default function ImageLibrary() {
     if (!incoming.length) return;
     const invalid = incoming.find(file => (!ALLOWED.has(file.type) && !isRawPhoto(file)) || file.size > MAX_FILE_BYTES);
     if (invalid) return toast.error('Choose a JPEG, PNG, WebP, or supported camera RAW file that is 100 MB or smaller.');
-    if (incoming.reduce((total, file) => total + file.size, usage.usedBytes) > usage.limitBytes) return toast.error('These files would take your library above 100 GB.');
+    if (incoming.reduce((total, file) => total + file.size, (usage.usedBytes + (usage.reservedBytes || 0))) > usage.limitBytes) return toast.error('These files would take your library above 100 GB.');
     try {
       setUploading(true); setProgress(0);
       const saved = await uploadLibraryPhotos(incoming, { folder: uploadFolder.trim() || 'All photographs', onProgress: (value, label) => { setProgress(value); setProgressLabel(label || ''); } });
@@ -200,11 +201,11 @@ export default function ImageLibrary() {
     <div className="v-library-wrap">
       <motion.header className="v-library-head" initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}>
         <div><p>VEYLO PRO · PERSONAL STORAGE</p><h1>Your photographs,<br /><em>ready when you need them.</em></h1><span>Keep client shoots in one place. Reuse photographs in a delivery, ask clients to choose their edits, or send camera originals to your editor.</span></div>
-        <aside><HardDrive size={20} /><div><strong>{bytes(usage.usedBytes)} used</strong><span>of 100 GB</span></div><i><b style={{ transform: `scaleX(${percent / 100})` }} /></i></aside>
+        <aside><HardDrive size={20} /><div><strong>{bytes(usage.usedBytes)} used</strong><Link to="/videos/library">Video library</Link><span>of 100 GB · shared with video originals</span></div><i><b style={{ transform: `scaleX(${percent / 100})` }} /></i></aside>
       </motion.header>
 
       {access === 'read-only' && <div className="v-library-notice"><HardDrive size={18} /><p><strong>Your library is being kept for 30 days.</strong><span>You can download or remove photographs now. Renew Pro to upload and organise them again.</span></p></div>}
-      {access === 'unavailable' && !loading && <section className="v-library-locked"><HardDrive size={28} /><p>PERSONAL IMAGE STORAGE</p><h2>100 GB for the work<br />you want close by.</h2><span>Veylo Pro includes the Image Library for camera originals, previews, and returned edits. Send clients a private link to choose photos, or give your editor a password-protected link to return finished edits. Published client delivery hosting stays separate and does not use this 100 GB.</span><a className="v-button" href="/billing">Pro · <ProPrice /> / month</a></section>}
+      {access === 'unavailable' && !loading && <section className="v-library-locked"><HardDrive size={28} /><p>PERSONAL IMAGE STORAGE</p><h2>100 GB for the work<br />you want close by.</h2><span>Veylo Pro includes the Image Library for camera originals, previews, and returned edits. Send clients a private link to choose photos, or give your editor a password-protected link to return finished edits. Photo delivery hosting stays separate. Video originals share the same 100 GB.</span><a className="v-button" href="/billing">Pro · <ProPrice /> / month</a></section>}
 
       {access !== 'unavailable' && <>
         <nav className="v-library-panels" aria-label="Image library sections">

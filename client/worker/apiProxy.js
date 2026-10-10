@@ -7,6 +7,7 @@
  * `VITE_API_URL` straight at Render instead would require SameSite=None.
  */
 const DEFAULT_API_ORIGIN = 'https://veylo-api-ptk3.onrender.com';
+import { handleVideoDownload } from './videoDownload.js';
 
 const EDGE_KEY_HEADER = 'x-veylo-edge-key';
 const EDGE_CLIENT_IP_HEADER = 'x-veylo-client-ip';
@@ -35,11 +36,17 @@ export async function handleApiProxy(request, env) {
   headers.delete(EDGE_KEY_HEADER);
   headers.delete(EDGE_CLIENT_IP_HEADER);
   headers.delete('x-veylo-country');
+  headers.delete('x-veylo-video-download-proxy');
+  headers.delete('x-veylo-video-download-method');
   const edgeKey = env?.VEYLO_EDGE_KEY;
   const clientIp = request.headers.get('cf-connecting-ip');
   if (edgeKey && clientIp) {
     headers.set(EDGE_KEY_HEADER, edgeKey);
     headers.set(EDGE_CLIENT_IP_HEADER, clientIp);
+  }
+  if (edgeKey && ['GET', 'HEAD'].includes(request.method) && /^\/api\/v1\/videos\/(?:public\/[A-Za-z0-9_-]+\/)?assets\/[a-f\d]{24}\/download$/.test(incoming.pathname)) {
+    headers.set(EDGE_KEY_HEADER, edgeKey);
+    return handleVideoDownload(request, target, headers);
   }
 
   const init = {

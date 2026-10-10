@@ -7,12 +7,13 @@ const basePricing = Object.freeze({ currency: 'NGN', amountKobo: 4_000_000, mont
 export function ProPricingProvider({ children }) {
   const [pricing, setPricing] = useState(null);
   const [plans, setPlans] = useState([]);
+  const [videoDelivery, setVideoDelivery] = useState(null);
   const refresh = useCallback(async () => {
-    try { const response = await api.get('/v1/billing/plans'); setPricing({ ...basePricing, ...response.data.pricing, billingAvailable: response.data.billingAvailable }); setPlans(Array.isArray(response.data.data) ? response.data.data : []); }
+    try { const response = await api.get('/v1/billing/plans'); setPricing({ ...basePricing, ...response.data.pricing, billingAvailable: response.data.billingAvailable }); setPlans(Array.isArray(response.data.data) ? response.data.data : []); setVideoDelivery(response.data.videoDelivery || null); }
     catch { setPricing(basePricing); }
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
-  return <PricingContext.Provider value={{ pricing, plans, refresh, setPricing }}>{children}</PricingContext.Provider>;
+  return <PricingContext.Provider value={{ pricing, plans, videoDelivery, refresh, setPricing }}>{children}</PricingContext.Provider>;
 }
 export function useProPricing() { return useContext(PricingContext) || { pricing: null, refresh: () => {} }; }
 export function ProPrice() {

@@ -1,4 +1,5 @@
 import { ProPrice, PricingNotice } from '../components/ProPricing.jsx';
+import VideoAvailability from '../components/VideoAvailability.jsx';
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useInView } from 'framer-motion';
@@ -311,7 +312,7 @@ export default function LandingPage() {
         <Reveal className="v-home-plan-card is-pro" delay={.08}>
           <div className="v-home-plan-card-top"><span>PRO</span><small>For regular studio delivery</small></div>
           <PricingNotice /><div className="v-home-plan-price"><strong><ProPrice /></strong><span>/ month</span></div>
-          <p>Unlimited deliveries under fair use, your studio branding, Veylo Portfolio, 100 GB in the Image Library, private client preselection, and password-protected editor handoffs.</p>
+          <p>Unlimited photo deliveries under fair use, your studio branding, Veylo Portfolio, 100 GB of shared original storage, private client preselection, and password-protected editor handoffs.</p><p><VideoAvailability compact />. <Link to="/video-delivery">See the video delivery details</Link></p>
         </Reveal>
       </div>
       <Reveal className="v-home-plan-action"><TextLink to="/pricing">Compare Free and Pro</TextLink></Reveal>

@@ -16,6 +16,9 @@ import contentStudioRoutes from './src/routes/contentStudio.routes.js';
 import billingRoutes from './src/routes/billing.routes.js';
 import deliveryRoutes from './src/routes/delivery.routes.js';
 import storageRoutes from './src/routes/storage.routes.js';
+import videoRoutes from './src/routes/video.routes.js';
+import { streamWebhook } from './src/services/videoWorker.service.js';
+import { ensureVideoIndexes } from './src/models/video.models.js';
 import portfolioRoutes from './src/routes/portfolio.routes.js';
 import supportRoutes from './src/routes/support.routes.js';
 import volumeRoutes from './src/routes/volume.routes.js';
@@ -85,6 +88,7 @@ app.disable('x-powered-by');
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 // Paystack signs the exact request bytes. This route must stay above express.json().
 app.post('/api/v1/webhooks/paystack', express.raw({ type: 'application/json', limit: '256kb' }), paystackWebhook);
+app.post('/api/v1/webhooks/stream', express.raw({ type: 'application/json', limit: '256kb' }), streamWebhook);
 function isAllowedOrigin(origin) {
   if (!origin) return true;
   const clean = origin.replace(/\/$/, '');
@@ -122,6 +126,7 @@ app.use('/api/v1/stories', storyRoutes);
 app.use('/api/v1/billing', billingRoutes);
 app.use('/api/v1/deliveries', deliveryRoutes);
 app.use('/api/v1/storage', storageRoutes);
+app.use('/api/v1/videos', videoRoutes);
 app.use('/api/v1/portfolios', portfolioRoutes);
 app.use('/api/v1/support', supportRoutes);
 app.use('/api/v1/volume-jobs', volumeRoutes);
@@ -151,6 +156,7 @@ connectDB().then(async connection => {
     }
   }
   if (connection) {
+    await ensureVideoIndexes();
     await Promise.all([
       AnalyticsEvent.collection.createIndex({ eventKey: 1 }, { unique: true, sparse: true }),
       ProductExposure.collection.createIndex({ userId: 1, experiment: 1 }, { unique: true }),

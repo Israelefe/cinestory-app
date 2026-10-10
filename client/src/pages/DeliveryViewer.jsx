@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
 import { ArrowRight, Check, Image, LoaderCircle, Mic2, Music2, RefreshCw } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api, { apiMessage } from '../services/api.js';
@@ -592,6 +592,7 @@ export default function DeliveryViewer() {
     }
   }
 
+  if (delivery?.kind === 'video') return <Navigate to={'/v/' + delivery.publicId} replace />;
   if (loading && !locked) {
     return (
       <div className="vd-state">

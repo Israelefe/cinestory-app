@@ -10,14 +10,14 @@ const DEFAULT_WEB_ORIGIN = 'https://veylo.com.ng';
 
 const PUBLIC_ID_PATTERN = /^[A-Za-z0-9_-]{20,80}$/;
 
-export async function handleDeliveryShell(request, env, ctx, publicId) {
+export async function handleDeliveryShell(request, env, ctx, publicId, kind = 'd') {
   if (!PUBLIC_ID_PATTERN.test(publicId)) return plain('Delivery not found.', 404);
 
   let html = '';
   try {
     html = await shellHtml(request, env);
     const meta = await shareMeta(env, publicId);
-    const canonical = `${webOrigin(env)}/d/${publicId}`;
+    const canonical = `${webOrigin(env)}/${kind === 'v' ? 'v' : 'd'}/${publicId}`;
     const response = new Response(applyShareMeta(html, meta, canonical), {
       status: 200,
       headers: {

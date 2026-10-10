@@ -1,4 +1,5 @@
 import RuntimeConfig from '../models/RuntimeConfig.js';
+import { VIDEO_DEFAULTS, normalizeVideoSettings, videoInfrastructure } from '../config/videoDelivery.js';
 import { PLAN_DEFINITIONS } from '../config/plans.js';
 import { DELIVERY_SOUNDTRACKS } from '../constants/deliverySoundtracks.js';
 import { DEFAULT_NARRATION_VOICE_ID, NARRATION_VOICES } from '../constants/narrationVoices.js';
@@ -78,7 +79,8 @@ function providerState() {
     narration: { provider: 'Deepgram Flux', configured: Boolean(process.env.DEEPGRAM_API_KEY), defaultVoiceId: DEFAULT_NARRATION_VOICE_ID },
     email: { provider: 'Resend', configured: Boolean(process.env.RESEND_API_KEY), from: process.env.RESEND_FROM_EMAIL || 'Veylo <info@veylo.com.ng>' },
     billing: { provider: 'Paystack', configured: Boolean(process.env.PAYSTACK_SECRET_KEY && process.env.PAYSTACK_PRO_PLAN_CODE), enabled: process.env.BILLING_ENABLED === 'true' },
-    r2: { provider: 'Cloudflare R2', configured: r2Configured() }
+    r2: { provider: 'Cloudflare R2', configured: r2Configured() },
+    video: { provider: 'Cloudflare Stream / private R2 originals', configured: videoInfrastructure().stream && videoInfrastructure().storage && videoInfrastructure().media }
   };
 }
 
@@ -86,6 +88,7 @@ export function defaultRuntimeConfig() {
   return {
     key: 'global',
     plans: clone(PLAN_DEFINITIONS),
+    videoDelivery: { ...VIDEO_DEFAULTS, enabled: process.env.VIDEO_DELIVERY_ENABLED === 'true', publicAvailable: process.env.VIDEO_DELIVERY_PUBLIC === 'true' },
     formats: Object.fromEntries(FORMAT_IDS.map(id => [id, { id, label: FORMAT_LABELS[id], enabled: true }])),
     featureFlags: {
       deliveryPipeline: process.env.DELIVERY_PIPELINE_ENABLED === 'true',
@@ -104,6 +107,8 @@ export function defaultRuntimeConfig() {
     rateLimits: normalizedRateLimits(),
     emailTemplates: [
       { id: 'portfolio-enquiry', label: 'Portfolio enquiry notification', enabled: true },
+      { id: 'video-usage', label: 'Video playback allowance', enabled: true },
+      { id: 'video-retention', label: 'Video recovery reminders', enabled: true },
       { id: 'verification', label: 'Email verification', enabled: true },
       { id: 'password-reset', label: 'Password reset', enabled: true },
       { id: 'welcome', label: 'Welcome', enabled: true },
@@ -127,6 +132,7 @@ export function defaultRuntimeConfig() {
 
 function applyDerivedValues(config) {
   const output = { ...config, providers: providerState() };
+  output.videoDelivery = normalizeVideoSettings(config.videoDelivery);
   output.rateLimits = normalizedRateLimits(config.rateLimits);
   output.music = { ...(config.music || {}), catalogueCount: DELIVERY_SOUNDTRACKS.length, source: 'Pixabay', licence: 'Pixabay Content License', verifiedCatalogue: true };
   output.narration = { ...(config.narration || {}), voices: NARRATION_VOICES.map(voice => ({ id: voice.id, name: voice.name, presentation: voice.presentation, tone: voice.tone, bestFor: voice.bestFor })) };

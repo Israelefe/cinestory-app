@@ -4,6 +4,7 @@ import DeliveryUsage from '../models/DeliveryUsage.js';
 import Delivery from '../models/Delivery.js';
 import { PLAN_DEFINITIONS } from '../config/plans.js';
 import { getRuntimeConfig } from './runtimeConfig.service.js';
+import { publicVideoSettings } from '../config/videoDelivery.js';
 
 const LAGOS_OFFSET_MS = 60 * 60 * 1000;
 
@@ -54,7 +55,7 @@ export async function resolveEntitlements(user, { includeUsage = true, now = new
     const key = `${user._id}:${start.toISOString().slice(0, 7)}`;
     const [legacyCount, deliveryCount, usage] = await Promise.all([
       PhotoStory.countDocuments({ userId: user._id, status: 'published', createdAt: { $gte: start, $lt: end } }),
-      Delivery.countDocuments({ userId: user._id, status: 'published', publishedAt: { $gte: start, $lt: end } }),
+      Delivery.countDocuments({ userId: user._id, kind: { $ne: 'video' }, status: 'published', publishedAt: { $gte: start, $lt: end } }),
       DeliveryUsage.findOne({ key }).lean()
     ]);
     usedThisMonth = Math.max(legacyCount + deliveryCount, usage?.publishedDeliveries || 0);
@@ -67,7 +68,8 @@ export async function resolveEntitlements(user, { includeUsage = true, now = new
     limits: {
       deliveriesPerMonth: plan.deliveriesPerMonth,
       photosPerDelivery: plan.photosPerDelivery,
-      personalStorageBytes: plan.personalStorageBytes
+      personalStorageBytes: plan.personalStorageBytes,
+      videoDelivery: publicVideoSettings(runtime.videoDelivery)
     },
     features: {
       formats: (plan.formats || []).filter(format => enabledFormats.has(format)),
@@ -80,7 +82,8 @@ export async function resolveEntitlements(user, { includeUsage = true, now = new
       volumeDeliveries: featureFlags.volumeDeliveries !== false,
       accessControls: true,
       clientLikes: true,
-      downloads: true
+      downloads: true,
+      videoDelivery: Boolean(pro && publicVideoSettings(runtime.videoDelivery).available)
     },
     usage: { deliveriesThisMonth: usedThisMonth, deliveriesRemaining: remaining, periodStart: start, periodEnd: end },
     subscription: subscription ? {

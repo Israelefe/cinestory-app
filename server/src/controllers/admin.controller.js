@@ -1,3 +1,4 @@
+import { VIDEO_DEFAULTS, normalizeVideoSettings } from '../config/videoDelivery.js';
 import { operationalWorkerHealth } from '../services/operationalMonitoring.service.js';
 import { resolveEntitlements } from '../services/entitlement.service.js';
 import Refund from '../models/Refund.js';
@@ -407,6 +408,8 @@ export async function updateUserPlan(req, res) {
       if (plan === 'free') {
         const paid = await Subscription.exists({ userId: accountId, status: { $in: ['active', 'canceling', 'past_due'] }, $or: [{ paidThrough: { $gt: new Date() } }, { graceEndsAt: { $gt: new Date() } }] });
         if (paid) return res.status(409).json({ success: false, message: 'This account still has paid Pro access. Cancel or resolve its subscription before removing Pro.' });
+        const runtime = await getRuntimeConfig();
+        update.videoRetentionUntil = new Date(Date.now() + runtime.videoDelivery.recoveryDays * 86400_000);
       }
       update.plan = plan;
       update.planOverride = plan === 'pro'
@@ -2069,6 +2072,7 @@ const runtimePlanPatchSchema = z.object({
 }).strict();
 
 const runtimeConfigPatchSchema = z.object({
+  videoDelivery: z.object(Object.fromEntries(Object.entries(VIDEO_DEFAULTS).map(([key, value]) => [key, (typeof value === 'boolean' ? z.boolean() : z.number().finite()).optional()]))).strict().superRefine((value, context) => { try { normalizeVideoSettings(value); } catch (error) { context.addIssue({ code: 'custom', message: error.message }); } }).optional(),
   plans: z.object({ free: runtimePlanPatchSchema.optional(), pro: runtimePlanPatchSchema.optional() }).strict().optional(),
   formats: z.array(z.object({ id: z.enum(FORMAT_IDS), label: z.string().trim().min(2).max(80), enabled: z.boolean() }).strict()).max(FORMAT_IDS.length).optional(),
   featureFlags: z.object({ deliveryPipeline: z.boolean().optional(), veyloAssistant: z.boolean().optional(), portfolio: z.boolean().optional(), music: z.boolean().optional(), narration: z.boolean().optional(), volumeDeliveries: z.boolean().optional(), optionalAnalytics: z.boolean().optional() }).strict().optional(),
@@ -2095,6 +2099,7 @@ export async function updateRuntimeConfiguration(req, res) {
     if (!parsed.success) return res.status(400).json({ success: false, message: parsed.error.issues[0]?.message || 'That configuration change is not valid.' });
     const current = await getRuntimeConfig({ fresh: true });
     const patch = { ...parsed.data };
+    if (patch.videoDelivery) patch.videoDelivery = normalizeVideoSettings({ ...current.videoDelivery, ...patch.videoDelivery });
     if (patch.plans) patch.plans = { free: { ...(current.plans?.free || {}), ...(patch.plans.free || {}) }, pro: { ...(current.plans?.pro || {}), ...(patch.plans.pro || {}) } };
     if (patch.formats) patch.formats = Object.fromEntries(patch.formats.map(format => [format.id, { id: format.id, label: format.label || FORMAT_LABELS[format.id], enabled: format.enabled }]));
     if (patch.featureFlags) patch.featureFlags = { ...(current.featureFlags || {}), ...patch.featureFlags };

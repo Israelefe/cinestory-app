@@ -1,4 +1,5 @@
 import { ProPrice, PricingNotice, useProPricing } from '../components/ProPricing.jsx';
+import VideoAvailability from '../components/VideoAvailability.jsx';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -14,8 +15,9 @@ const features = [
   ['Portfolio', 'Included'],
   ['Client photo preselection', 'Private links'],
   ['Editor handoff', 'Password-protected'],
-  ['Personal image storage', '100 GB in the Image Library'],
-  ['Delivery hosting', 'Separate from library storage']
+  ['Shared original storage', '100 GB for library files and video originals'],
+  ['Photo delivery hosting', 'Separate from original storage'],
+  ['Video delivery', <VideoAvailability key="video" compact />]
 ];
 
 function dateLabel(value) {

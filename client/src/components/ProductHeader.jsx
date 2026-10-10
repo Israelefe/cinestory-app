@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Camera, CreditCard, Folder, Image, LayoutDashboard, LogOut, Menu, Settings, Share2, X } from 'lucide-react';
+import { Camera, CreditCard, Folder, Image, LayoutDashboard, LogOut, Menu, Settings, Share2, X, Film } from 'lucide-react';
 import { useDialogFocus } from './useDialogFocus.js';
 import './Header.css';
 
@@ -23,6 +23,7 @@ export default function ProductHeader({ user, onLogout, mode = 'app' }) {
     ['Dashboard', '/dashboard', LayoutDashboard],
     ['Portfolio', '/portfolio/manage', Image],
     ['Library', '/library', Folder],
+    ['Videos', '/videos/library', Film],
     ['Sharing', '/sharing', Share2],
     ['Billing', '/billing', CreditCard],
     ['Settings', '/settings', Settings]

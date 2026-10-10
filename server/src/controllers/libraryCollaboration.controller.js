@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
+import { storageCapacityFilter } from '../services/videoQuota.service.js';
 import LibraryCollaboration from '../models/LibraryCollaboration.js';
 import StorageAsset from '../models/StorageAsset.js';
 import User from '../models/User.js';
@@ -337,7 +338,7 @@ export async function confirmPublicEditorUpload(req, res) {
     if (!imageFormats.has(String(resource.format).toLowerCase()) || Number(resource.bytes) > 100 * 1024 * 1024) throw Object.assign(new Error('Choose a JPEG, PNG, or WebP edit that is 100 MB or smaller.'), { status: 400 });
     const { entitlements } = await activeProFor(collaboration.userId);
     const storageLimitBytes = Number(entitlements.limits.personalStorageBytes || 0);
-    const user = await User.findOneAndUpdate({ _id: collaboration.userId, $expr: { $lte: [{ $add: [{ $ifNull: ['$storageUsedBytes', 0] }, resource.bytes] }, storageLimitBytes] } }, { $inc: { storageUsedBytes: resource.bytes } }, { new: true });
+    const user = await User.findOneAndUpdate({ _id: collaboration.userId, ...storageCapacityFilter(resource.bytes, storageLimitBytes) }, { $inc: { storageUsedBytes: resource.bytes } }, { new: true });
     if (!user) throw Object.assign(new Error(`This edit would take the photographer's library above ${Math.round(storageLimitBytes / (1024 ** 3))} GB.`), { status: 403, code: 'STORAGE_LIMIT_REACHED' });
     reservedBytes = Number(resource.bytes);
     reservedUserId = String(user._id);
@@ -353,7 +354,7 @@ export async function confirmPublicEditorUpload(req, res) {
   } catch (error) {
     if (linkedCollaborationId && createdAssetId) await LibraryCollaboration.updateOne({ _id: linkedCollaborationId }, { $pull: { returnedAssets: { assetId: createdAssetId } } }).catch(() => {});
     if (createdAssetId) await StorageAsset.deleteOne({ _id: createdAssetId }).catch(() => {});
-    if (reservedBytes && reservedUserId) await User.updateOne({ _id: reservedUserId }, [{ $set: { storageUsedBytes: { $max: [0, { $subtract: [{ $ifNull: ['$storageUsedBytes', 0] }, reservedBytes] }] } } }]).catch(() => {});
+    if (reservedBytes && reservedUserId) await User.updateOne({ _id: reservedUserId }, { $inc: { storageUsedBytes: -reservedBytes } }).catch(() => {});
     if (uploadedPublicId) await removeStorageAsset(uploadedPublicId).catch(() => {});
     res.status(error.status || 500).json({ success: false, message: error.message || 'We could not save that edited photograph.' });
   }

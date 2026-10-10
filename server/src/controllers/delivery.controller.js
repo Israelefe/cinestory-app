@@ -1,4 +1,6 @@
 import { recordPaidUsage } from '../services/paidUsage.service.js';
+import { ownerVideoDTO, videoContext, queueVideoJob } from '../services/videoDelivery.service.js';
+import { VideoAsset, VideoUpload } from '../models/video.models.js';
 import { schedulePortfolioRemoval, finishPortfolioRemoval } from '../services/portfolioLifecycle.service.js';
 import crypto from 'crypto';
 import { deliveryGatePalette } from '../utils/deliveryGatePalette.js';
@@ -103,8 +105,8 @@ const shareGrantSchema = z.object({
   expiresAt: z.string().datetime().optional().or(z.literal(''))
 }).strict();
 
-async function ownedDelivery(id, userId, selectPin = false) {
-  const query = Delivery.findOne({ _id: id, userId });
+async function ownedDelivery(id, userId, selectPin = false, allowVideo = false) {
+  const query = Delivery.findOne({ _id: id, userId, ...(allowVideo ? {} : { kind: { $ne: 'video' } }) });
   if (selectPin) query.select('+access.pinDigest');
   return query;
 }
@@ -286,7 +288,9 @@ export async function listDeliveries(req, res) {
   try {
     const includeArchived = req.query.scope === 'archived';
     const deliveries = await Delivery.find({ userId: req.user.id, status: includeArchived ? 'archived' : { $ne: 'archived' } }).sort({ updatedAt: -1 }).lean();
-    const data = deliveries.map(delivery => ({ ...delivery, assets: delivery.assets?.slice(0, 1).map(asset => ({ ...asset, thumbnailUrl: signedDeliveryImageUrl(asset.publicId, { thumbnail: true }) })) }));
+    const data = deliveries.map(delivery => delivery.kind === 'video'
+      ? { ...delivery, videoCount: delivery.video?.draft?.items?.length || 0, video: undefined, assets: [] }
+      : ({ ...delivery, assets: delivery.assets?.slice(0, 1).map(asset => ({ ...asset, thumbnailUrl: signedDeliveryImageUrl(asset.publicId, { thumbnail: true }) })) }));
     res.json({ success: true, data });
   } catch (error) {
     console.error('[deliveries/list]', error.message);
@@ -296,15 +300,16 @@ export async function listDeliveries(req, res) {
 
 export async function archiveDelivery(req, res) {
   try {
-    const delivery = await ownedDelivery(req.params.id, req.user.id);
+    const delivery = await ownedDelivery(req.params.id, req.user.id, false, true);
     if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
     if (delivery.status === 'archived') return res.json({ success: true, data: delivery });
     if (['analyzing', 'directing'].includes(delivery.status)) return res.status(409).json({ success: false, message: 'Wait for the current delivery task to finish before archiving it.' });
     delivery.archivedFromStatus = delivery.status;
     delivery.status = 'archived';
+    if (delivery.kind === 'video') delivery.video.accessVersion += 1;
     delivery.archivedAt = new Date();
     await delivery.save();
-    res.json({ success: true, data: delivery, message: 'Delivery archived. Its client link is now closed.' });
+    res.json({ success: true, data: delivery.kind === 'video' ? await ownerVideoDTO(delivery) : delivery, message: 'Delivery archived. Its client link is now closed.' });
   } catch (error) {
     console.error('[deliveries/archive]', error.message);
     res.status(500).json({ success: false, message: 'We could not archive this delivery.' });
@@ -313,14 +318,22 @@ export async function archiveDelivery(req, res) {
 
 export async function restoreDelivery(req, res) {
   try {
-    const delivery = await ownedDelivery(req.params.id, req.user.id);
+    const delivery = await ownedDelivery(req.params.id, req.user.id, false, true);
     if (!delivery || delivery.status !== 'archived') return res.status(404).json({ success: false, message: 'Archived delivery not found.' });
     const restoreStatus = ['draft', 'review', 'published'].includes(delivery.archivedFromStatus) ? delivery.archivedFromStatus : 'draft';
+    if (delivery.kind === 'video') {
+      const context = await videoContext(req.user.id);
+      if (restoreStatus === 'published' && context.entitlements.plan !== 'pro') return res.status(403).json({ success: false, message: 'Renew Pro before restoring a published video delivery.' });
+      if (restoreStatus === 'published') await videoContext(req.user.id, { hosting: true });
+      const ids = delivery.video?.published?.items?.map(item => item.assetId) || [];
+      if (restoreStatus === 'published' && await VideoAsset.countDocuments({ _id: { $in: ids }, userId: req.user.id, state: 'ready' }) !== ids.length) return res.status(409).json({ success: false, message: 'Some videos are no longer available. Open the draft and update it first.' });
+      delivery.video.accessVersion += 1;
+    }
     delivery.status = restoreStatus;
     delivery.archivedAt = undefined;
     delivery.archivedFromStatus = undefined;
     await delivery.save();
-    res.json({ success: true, data: delivery, message: restoreStatus === 'published' ? 'Delivery restored. Its client link works again.' : 'Delivery restored to your drafts.' });
+    res.json({ success: true, data: delivery.kind === 'video' ? await ownerVideoDTO(delivery) : delivery, message: restoreStatus === 'published' ? 'Delivery restored. Its client link works again.' : 'Delivery restored to your drafts.' });
   } catch (error) {
     console.error('[deliveries/restore]', error.message);
     res.status(500).json({ success: false, message: 'We could not restore this delivery.' });
@@ -395,8 +408,9 @@ export async function revokeShareGrant(req, res) {
 
 export async function getDelivery(req, res) {
   try {
-    const delivery = await ownedDelivery(req.params.id, req.user.id, true);
+    const delivery = await ownedDelivery(req.params.id, req.user.id, true, true);
     if (!delivery) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    if (delivery.kind === 'video') return res.json({ success: true, data: await ownerVideoDTO(delivery) });
     const latestJob = await DeliveryJob.findOne({ deliveryId: delivery._id, userId: req.user.id })
       .sort({ createdAt: -1 })
       .select('_id type status stage progress counts modelQueue errorCode errorMessage attempts createdAt updatedAt')
@@ -445,6 +459,12 @@ export async function deleteDelivery(req, res) {
     deleteStep = 'lookup';
     const removed = await Delivery.collection.findOne(filter);
     if (!removed) return res.status(404).json({ success: false, message: 'Delivery not found.' });
+    if (removed.kind === 'video') {
+      await Delivery.deleteOne({ _id: removed._id, userId: req.user.id });
+      const pending = await VideoUpload.find({ deliveryId: removed._id, userId: req.user.id, state: { $nin: ['completed', 'aborted'] } });
+      for (const upload of pending) await queueVideoJob({ _id: upload.assetId, userId: req.user.id }, 'delete');
+      return res.json({ success: true, message: 'Video delivery deleted. Completed originals remain in your video library.' });
+    }
     const removedIds = new Set((Array.isArray(removed.assets) ? removed.assets : []).map(asset => asset?.publicId).filter(Boolean));
     const portfolioCleanup = await schedulePortfolioRemoval(req.user.id, [...removedIds]);
     const deleteFilter = { _id: removed._id, userId: removed.userId || ownerId };
@@ -1265,6 +1285,7 @@ export async function getPublicDelivery(req, res) {
   try {
     const delivery = await publicDelivery(req.params.publicId);
     if (!delivery || expired(delivery)) return res.status(404).json({ success: false, message: 'This delivery is no longer available.' });
+    if (delivery.kind === 'video') return res.json({ success: true, data: { kind: 'video', publicId: delivery.publicId } });
     const grant = await shareGrant(req, delivery);
     if (!grant && !hasPublicAccess(req, delivery)) {
       const owner = delivery.userId;
@@ -1308,6 +1329,13 @@ export async function getDeliveryShareMeta(req, res) {
   try {
     const delivery = await publicDelivery(req.params.publicId);
     if (!delivery || expired(delivery)) return res.status(404).json({ success: false, message: 'This delivery is no longer available.' });
+    if (delivery.kind === 'video') {
+      const { videoContext, videoBrand } = await import('../services/videoDelivery.service.js');
+      const { user } = await videoContext(delivery.userId._id, { hosting: true });
+      const brand = videoBrand(user);
+      res.set('Cache-Control', 'private, no-store');
+      return res.json({ success: true, data: { title: `A private video delivery from ${brand.name}`, description: 'Open your photographer’s link to watch your finished films.', ...(brand.logoUrl ? { image: brand.logoUrl } : {}), brandName: brand.name, locked: Boolean(delivery.access?.pinDigest), kind: 'video' } });
+    }
     const entitlements = await resolveEntitlements(delivery.userId, { includeUsage: false });
     const studioBrand = entitlements.features.branding === 'studio';
     const brandName = studioBrand ? delivery.userId.studio?.name || delivery.userId.name : 'Veylo';

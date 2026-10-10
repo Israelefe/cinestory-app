@@ -1,4 +1,5 @@
 import { recordPaidUsage } from '../services/paidUsage.service.js';
+import { storageCapacityFilter } from '../services/videoQuota.service.js';
 import { schedulePortfolioRemoval, finishPortfolioRemoval } from '../services/portfolioLifecycle.service.js';
 import { z } from 'zod';
 import User from '../models/User.js';
@@ -27,14 +28,14 @@ function output(asset) { return { ...asset.toObject(), ...storageAssetUrls(asset
 export async function listStorage(req, res) {
   try {
     const { user, entitlements } = await storageAccess(req.user.id);
-    if (entitlements.features.storageMode === 'unavailable') return res.json({ success: true, data: [], access: entitlements.features.storageMode, usage: { usedBytes: user.storageUsedBytes || 0, limitBytes: entitlements.limits.personalStorageBytes } });
+    if (entitlements.features.storageMode === 'unavailable') return res.json({ success: true, data: [], access: entitlements.features.storageMode, usage: { usedBytes: user.storageUsedBytes || 0, reservedBytes: user.storageReservedBytes || 0, videoBytes: user.videoUsedBytes || 0, limitBytes: entitlements.limits.personalStorageBytes } });
     const query = { userId: user._id };
     if (req.query.folder) query.folder = String(req.query.folder).slice(0, 100);
     if (req.query.search) query.$or = [{ originalFilename: { $regex: escaped(req.query.search), $options: 'i' } }, { tags: { $regex: escaped(req.query.search), $options: 'i' } }];
     const page = Math.max(1, Math.min(10000, Number(req.query.page) || 1));
     const [assets, folders] = await Promise.all([StorageAsset.find(query).sort({ createdAt: -1 }).skip((page - 1) * 60).limit(61), StorageAsset.distinct('folder', { userId: user._id })]);
     const hasMore = assets.length > 60;
-    res.json({ success: true, data: assets.slice(0, 60).map(output), folders, access: entitlements.features.storageMode, usage: { usedBytes: user.storageUsedBytes || 0, limitBytes: entitlements.limits.personalStorageBytes }, page, hasMore });
+    res.json({ success: true, data: assets.slice(0, 60).map(output), folders, access: entitlements.features.storageMode, usage: { usedBytes: user.storageUsedBytes || 0, reservedBytes: user.storageReservedBytes || 0, videoBytes: user.videoUsedBytes || 0, limitBytes: entitlements.limits.personalStorageBytes }, page, hasMore });
   } catch (error) { res.status(error.status || 500).json({ success: false, message: error.message || 'We could not open your image library.' }); }
 }
 
@@ -75,7 +76,7 @@ export async function confirmStorageAsset(req, res) {
     }
     const totalBytes = Number(resource.bytes) + Number(rawResource?.bytes || 0);
     const storageLimitBytes = Number(entitlements.limits.personalStorageBytes || 0);
-    const user = await User.findOneAndUpdate({ _id: req.user.id, $expr: { $lte: [{ $add: [{ $ifNull: ['$storageUsedBytes', 0] }, totalBytes] }, storageLimitBytes] } }, { $inc: { storageUsedBytes: totalBytes } }, { new: true });
+    const user = await User.findOneAndUpdate({ _id: req.user.id, ...storageCapacityFilter(totalBytes, storageLimitBytes) }, { $inc: { storageUsedBytes: totalBytes } }, { new: true });
     if (!user) { await removeStorageAsset(resource.public_id); if (rawResource) await removeStorageAsset(rawResource.public_id, 'raw'); return res.status(403).json({ success: false, code: 'STORAGE_LIMIT_REACHED', message: `This upload would take your personal storage above ${Math.round(storageLimitBytes / (1024 ** 3))} GB.` }); }
     reserved = true;
     reservedBytes = totalBytes;
@@ -86,7 +87,7 @@ export async function confirmStorageAsset(req, res) {
   } catch (error) {
     if (reserved && reservedBytes) await User.updateOne(
       { _id: req.user.id },
-      [{ $set: { storageUsedBytes: { $max: [0, { $subtract: [{ $ifNull: ['$storageUsedBytes', 0] }, reservedBytes] }] } } }]
+      { $inc: { storageUsedBytes: -reservedBytes } }
     ).catch(() => {});
     if (uploadedPublicId) await removeStorageAsset(uploadedPublicId).catch(() => {});
     if (uploadedRawPublicId) await removeStorageAsset(uploadedRawPublicId, 'raw').catch(() => {});
@@ -117,11 +118,11 @@ export async function deleteStorageAsset(req, res) {
     const cleanup = await schedulePortfolioRemoval(req.user.id, [asset.publicId]);
     await removeStorageAsset(asset.publicId);
     if (asset.rawPublicId) await removeStorageAsset(asset.rawPublicId, 'raw');
-    await StorageAsset.deleteOne({ _id: asset._id, userId: req.user.id });
+    const removed = await StorageAsset.deleteOne({ _id: asset._id, userId: req.user.id });
     await finishPortfolioRemoval(cleanup);
-    await User.updateOne(
-      { _id: req.user.id },
-      [{ $set: { storageUsedBytes: { $max: [0, { $subtract: [{ $ifNull: ['$storageUsedBytes', 0] }, asset.bytes] }] } } }]
+    if (removed.deletedCount) await User.updateOne(
+      { _id: req.user.id, storageUsedBytes: { $gte: asset.bytes } },
+      { $inc: { storageUsedBytes: -asset.bytes } }
     );
     recordAnalyticsEventAsync({ name: 'storage.delete.completed', source: 'server', actorType: 'photographer', userId: req.user?.id, status: 'completed', bytes: asset.bytes, metadata: { surface: 'library' } });
     res.json({ success: true, message: 'Photograph removed from your library.' });

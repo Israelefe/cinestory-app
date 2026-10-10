@@ -6,6 +6,7 @@ import CreateDeliveryV3 from './CreateDeliveryV3.jsx';
 import CreatePinboardV3 from './CreatePinboardV3.jsx';
 import CreatePhotoSwapV3 from './CreatePhotoSwapV3.jsx';
 import CreateDeliveryChoice from './CreateDeliveryChoice.jsx';
+import CreateVideoDelivery from './CreateVideoDelivery.jsx';
 
 export default function CreateDeliveryRouter({ user }) {
   const [params] = useSearchParams();
@@ -23,6 +24,7 @@ export default function CreateDeliveryRouter({ user }) {
   }, [draftId]);
   if (state.loading) return <div className="v-page-loading" role="status">Opening your draft…</div>;
   if (state.error) return <div className="v-page-loading" role="alert">{state.error}</div>;
+  if (state.delivery?.kind === 'video' || (!state.delivery && requestedType === 'video')) return <CreateVideoDelivery key={draftId || 'new-video'} user={user} initialDelivery={state.delivery} />;
   if (state.delivery && state.delivery.schemaVersion !== 3) return <CreateDelivery user={user} />;
   if (state.delivery?.kind === 'pinboard' || (!state.delivery && requestedType === 'pinboard')) return <CreatePinboardV3 key={draftId || 'new-pinboard'} user={user} initialDelivery={state.delivery} />;
   if (state.delivery?.kind === 'photoswap' || (!state.delivery && requestedType === 'photoswap')) return <CreatePhotoSwapV3 key={draftId || 'new-photoswap'} user={user} initialDelivery={state.delivery} />;
