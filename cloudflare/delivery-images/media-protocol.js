@@ -86,9 +86,11 @@ export async function authorizeMedia(request, env, token, claims, files) {
   let origin;
   try { origin = new URL(env.VEYLO_API_ORIGIN); } catch { throw mediaError('Private files are temporarily unavailable.', 503, 'MEDIA_AUTH_CONFIG'); }
   if (origin.protocol !== 'https:' || origin.username || origin.password || origin.pathname !== '/' || origin.search || origin.hash) throw mediaError('Private files are temporarily unavailable.', 503, 'MEDIA_AUTH_CONFIG');
+  // Workers support manual/follow redirects. Manual keeps the signed token
+  // on this API origin; the non-success check below rejects any redirect.
   const response = await fetch(new URL('/api/v1/media/authorize', origin), {
     method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...(files ? { files } : {}) }), redirect: 'error', signal: AbortSignal.timeout(60_000)
+    body: JSON.stringify({ ...(files ? { files } : {}) }), redirect: 'manual', signal: AbortSignal.timeout(60_000)
   });
   if (!response.ok) throw mediaError(response.status >= 500 ? 'Private files are temporarily unavailable.' : 'This sharing link is no longer available.', response.status >= 500 ? 503 : 403, 'MEDIA_ACCESS_DENIED');
 }

@@ -9,7 +9,7 @@ export async function importGeneratedImage(env, data) {
   let url;
   try { url = new URL(data.url); } catch { throw mediaError('The image provider returned an invalid address.', 502, 'PROVIDER_IMAGE_URL'); }
   if (url.protocol !== 'https:' || url.username || url.password || url.port && url.port !== '443' || !(/\.oss-[a-z0-9-]+\.aliyuncs\.com$/.test(url.hostname) || /\.oss\.aliyuncs\.com$/.test(url.hostname) || url.hostname.endsWith('.alicdn.com'))) throw mediaError('The image provider returned an unsupported address.', 502, 'PROVIDER_IMAGE_URL');
-  const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(60_000) });
+  const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(60_000) });
   if (!response.ok || Number(response.headers.get('content-length')) > 20_000_000) {
     await response.body?.cancel();
     throw mediaError('The generated image could not be downloaded.', 502, 'PROVIDER_IMAGE_FAILED');

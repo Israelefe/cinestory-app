@@ -69,7 +69,7 @@ async function transformedImage(request, env, key, preset, head) {
   // source route returns R2 bytes directly and never applies another transform.
   const token = await signMediaToken({ iss: 'veylo-media-v2', action: 'source', key, etag: head.etag, exp: Math.floor(Date.now() / 1000) + 300 }, env.IMAGE_SIGNING_SECRET);
   const source = new URL(`/v2/source/${token}`, request.url);
-  const response = await fetch(source, { cf: { image: options }, redirect: 'error' });
+  const response = await fetch(source, { cf: { image: options }, redirect: 'manual' });
   if (!response.ok) { await response.body?.cancel(); throw mediaError('Cloudflare could not create this photograph preview. Please retry.', 502, 'IMAGE_TRANSFORM_FAILED'); }
   return response;
 }

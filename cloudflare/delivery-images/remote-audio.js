@@ -7,7 +7,7 @@ export async function remoteAudioResponse(request, claims) {
   const maximum = 25 * 1024 * 1024;
   const range = request.headers.get('range');
   if (range && !/^bytes=(?:\d+-\d*|-\d+)$/.test(range)) throw mediaError('That audio range is not available.', 416, 'AUDIO_RANGE_INVALID');
-  const response = await fetch(url, { method: request.method, headers: { 'User-Agent': 'Veylo', Referer: 'https://pixabay.com/', ...(range ? { Range: range } : {}) }, redirect: 'error', signal: AbortSignal.timeout(120_000) });
+  const response = await fetch(url, { method: request.method, headers: { 'User-Agent': 'Veylo', Referer: 'https://pixabay.com/', ...(range ? { Range: range } : {}) }, redirect: 'manual', signal: AbortSignal.timeout(120_000) });
   const headers = new Headers({ 'Cache-Control': 'private, no-store', 'Accept-Ranges': 'bytes', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' });
   if (response.status === 416) {
     await response.body?.cancel();
