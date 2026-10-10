@@ -691,7 +691,27 @@
 .v-pedit-picker-scroll {
   overflow: auto;
   flex: 1;
-  min-height: 150px
+  min-height: 0
+}
+.v-pedit-picker > section > header,.v-pedit-picker footer {
+  flex: none
+}
+.v-pedit-picker-selection {
+  flex: none;
+  display: grid;
+  gap: 10px;
+  padding-bottom: 18px
+}
+.v-pedit-picker-selection > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px
+}
+.v-pedit-picker-selection p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #b9b3c1
 }
 .v-pedit-source-grid {
   display: grid;
