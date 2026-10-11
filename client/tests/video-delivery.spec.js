@@ -34,6 +34,37 @@ async function mock(page, options = {}) {
 }
 async function noOverflow(page) { expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true); }
 
+test('upload step follows real preparation state and offers failed originals a retry', async ({ page }) => {
+  const { state, errors } = await mock(page);
+  state.project.assets[0].state = 'queued';
+  await page.clock.install();
+  await page.goto(`/create?draft=${id}`);
+  await expect(page.locator('.vc-upload-row')).toContainText('Uploaded · waiting for preparation');
+  state.project.assets[0].state = 'processing';
+  await page.clock.fastForward(6000);
+  await expect(page.locator('.vc-upload-row')).toContainText('Preparing playback qualities');
+  state.project.assets[0].state = 'failed';
+  state.project.assets[0].errorMessage = 'This video could not be prepared. You can retry or download the original.';
+  await page.clock.fastForward(6000);
+  await expect(page.locator('.vc-upload-row')).toContainText('Preparation failed');
+  await expect(page.locator('.vc-upload-row [role="alert"]')).toBeVisible();
+  let retries = 0;
+  await page.route(`**/api/v1/videos/assets/${assetId}/retry`, route => {
+    retries++; state.project.assets[0].state = 'queued'; delete state.project.assets[0].errorMessage;
+    return route.fulfill({ json: { success: true, data: { queued: true } } });
+  });
+  await page.getByRole('button', { name: 'Retry preparation for ceremony.mp4' }).click();
+  await expect.poll(() => retries).toBe(1);
+  await expect(page.locator('.vc-upload-row')).toContainText('Uploaded · waiting for preparation');
+  state.project.assets[0].state = 'ready';
+  await page.clock.fastForward(6000);
+  await expect(page.locator('.vc-upload-row')).toContainText('Ready for playback');
+  await expect(page.locator('.vc-upload-row')).not.toContainText('preparing playback');
+  await page.reload();
+  await expect(page.locator('.vc-upload-row')).toContainText('Ready for playback');
+  expect(errors).toEqual([]);
+});
+
 for (const width of [390, 834, 1440]) test(`real adaptive HLS plays, seeks and keeps original audio at ${width}px`, async ({ page }) => {
   const fixture = new URL('../../.visual-review/video-hls/landscape/', import.meta.url);
   test.skip(!existsSync(fileURLToPath(new URL('master.m3u8', fixture))), 'Generate real fixtures with the server video encoding tests first.');

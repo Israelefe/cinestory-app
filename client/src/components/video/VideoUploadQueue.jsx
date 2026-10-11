@@ -3,8 +3,9 @@ import { Upload, Pause, Play, X, FileVideo, RefreshCw } from 'lucide-react';
 import api, { apiMessage } from '../../services/api.js';
 import { videoBytes, videoFingerprint, persistVideoUpload, savedVideoUploads, forgetVideoUpload, transferVideo } from '../../services/videoDelivery.js';
 
-export default function VideoUploadQueue({ deliveryId, initialize, onRefresh, onRemoveAsset, onState, disabled, maxBytes = 5_000_000_000, accountTransfers = 2 }) {
+export default function VideoUploadQueue({ deliveryId, assets = [], initialize, onRefresh, onRemoveAsset, onState, disabled, maxBytes = 5_000_000_000, accountTransfers = 2 }) {
   const [queue, setQueue] = useState([]); const [error, setError] = useState('');
+  const [retrying, setRetrying] = useState('');
   const active = useRef(new Map()); const input = useRef(null); const mounted = useRef(true); const initializeRef = useRef(initialize); const refreshRef = useRef(onRefresh);
   const cancelled = useRef(new Set()); const removeAssetRef = useRef(onRemoveAsset);
   removeAssetRef.current = onRemoveAsset;
@@ -78,11 +79,28 @@ export default function VideoUploadQueue({ deliveryId, initialize, onRefresh, on
     setQueue(rows => rows.filter(value => value.requestKey !== row.requestKey));
     await refreshRef.current();
   }
+  const assetById = new Map(assets.map(asset => [asset.id, asset]));
+  const rows = [...queue, ...assets.filter(asset => !['reserved', 'uploading', 'deleted', 'deleting'].includes(asset.state) && !queue.some(row => row.upload?.assetId === asset.id)).map(asset => ({ requestKey: asset.id, filename: asset.filename, bytes: asset.bytes, status: 'done', upload: { assetId: asset.id } }))];
+  const preparationLabel = row => {
+    const asset = assetById.get(row.upload?.assetId);
+    if (asset?.state === 'ready') return 'Ready for playback';
+    if (asset?.state === 'failed') return 'Preparation failed';
+    if (asset?.state === 'processing') return 'Preparing playback qualities';
+    if (asset?.state === 'verifying') return 'Checking the uploaded video';
+    if (asset?.state === 'queued') return 'Uploaded · waiting for preparation';
+    return 'Checking preparation status';
+  };
+  async function retryPreparation(assetId) {
+    setRetrying(assetId); setError('');
+    try { await api.post(`/v1/videos/assets/${assetId}/retry`, {}); await refreshRef.current(); }
+    catch (failure) { setError(apiMessage(failure, 'Preparation could not be restarted. Please try again.')); }
+    finally { setRetrying(''); }
+  }
   return <section className="vc-upload" aria-label="Upload finished videos">
     <input ref={input} type="file" accept=".mp4,.mov,.webm,video/mp4,video/quicktime,video/webm" multiple hidden disabled={disabled} onChange={event => { void addFiles(event.target.files); event.target.value = ''; }} />
     <button type="button" className="vc-drop" disabled={disabled} onClick={() => input.current?.click()} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); if (!disabled) void addFiles(event.dataTransfer.files); }}><span><Upload size={25} /></span><strong>Choose your finished videos</strong><small>MP4, MOV or WebM · Up to 5 GB per video</small><b>Browse files</b></button>
     <p className="vc-upload-note">Completed parts are saved if your connection drops. After closing this page, choose the same original file to resume. Keep this tab open while files are transferring.</p>
     {error && <p role="alert" className="vc-error">{error}</p>}
-    <div className="vc-upload-list">{queue.map(row => <div className="vc-upload-row" key={row.requestKey}><FileVideo size={20} /><div><strong>{row.filename}</strong><small>{videoBytes(row.bytes)} · {row.status === 'done' ? 'Uploaded · preparing playback' : row.status === 'needs-file' ? 'Choose the same file to resume' : row.status === 'paused' ? 'Paused · completed parts saved' : row.status === 'waiting' ? 'Waiting for an upload slot' : `${Math.floor(row.progress)}% uploaded`}</small>{['uploading', 'paused'].includes(row.status) && <progress value={row.progress} max={100} aria-label={`Upload progress for ${row.filename}`} />}{row.error && <p role="alert">{row.error}</p>}</div>{row.status === 'uploading' ? <button type="button" onClick={() => active.current.get(row.requestKey)?.abort()} aria-label={`Pause ${row.filename}`}><Pause size={17} /></button> : row.status === 'paused' && row.file ? <button type="button" onClick={() => update(row.requestKey, { status: 'waiting' })} aria-label={`Resume ${row.filename}`}><Play size={17} /></button> : row.status === 'needs-file' || (row.status === 'paused' && !row.file) ? <label className="vc-file-resume"><RefreshCw size={15} /><span>Choose file</span><input type="file" accept=".mp4,.mov,.webm" onChange={async event => { const file = event.target.files?.[0]; if (!file) return; if (await videoFingerprint(file) !== row.fingerprint) { update(row.requestKey, { error: 'This is a different file. Choose the exact original you started uploading.' }); return; } update(row.requestKey, { file, status: 'waiting', error: '' }); }} /></label> : null}{row.status !== 'done' && <button type="button" aria-label={`Remove upload ${row.filename}`} onClick={() => remove(row)}><X size={17} /></button>}</div>)}</div>
+    <div className="vc-upload-list">{rows.map(row => <div className="vc-upload-row" key={row.requestKey}><FileVideo size={20} /><div><strong>{row.filename}</strong><small>{videoBytes(row.bytes)} · {row.status === 'done' ? preparationLabel(row) : row.status === 'needs-file' ? 'Choose the same file to resume' : row.status === 'paused' ? 'Paused · completed parts saved' : row.status === 'waiting' ? 'Waiting for an upload slot' : `${Math.floor(row.progress)}% uploaded`}</small>{['uploading', 'paused'].includes(row.status) && <progress value={row.progress} max={100} aria-label={`Upload progress for ${row.filename}`} />}{row.error && <p role="alert">{row.error}</p>}{row.status === 'done' && assetById.get(row.upload?.assetId)?.errorMessage && <p role="alert">{assetById.get(row.upload?.assetId).errorMessage}</p>}</div>{row.status === 'uploading' ? <button type="button" onClick={() => active.current.get(row.requestKey)?.abort()} aria-label={`Pause ${row.filename}`}><Pause size={17} /></button> : row.status === 'paused' && row.file ? <button type="button" onClick={() => update(row.requestKey, { status: 'waiting' })} aria-label={`Resume ${row.filename}`}><Play size={17} /></button> : row.status === 'needs-file' || (row.status === 'paused' && !row.file) ? <label className="vc-file-resume"><RefreshCw size={15} /><span>Choose file</span><input type="file" accept=".mp4,.mov,.webm" onChange={async event => { const file = event.target.files?.[0]; if (!file) return; if (await videoFingerprint(file) !== row.fingerprint) { update(row.requestKey, { error: 'This is a different file. Choose the exact original you started uploading.' }); return; } update(row.requestKey, { file, status: 'waiting', error: '' }); }} /></label> : null}{row.status === 'done' && assetById.get(row.upload?.assetId)?.state === 'failed' && <button type="button" disabled={Boolean(retrying) || disabled} onClick={() => retryPreparation(row.upload.assetId)} aria-label={`Retry preparation for ${row.filename}`}><RefreshCw size={17} /></button>}{row.status !== 'done' && <button type="button" aria-label={`Remove upload ${row.filename}`} onClick={() => remove(row)}><X size={17} /></button>}</div>)}</div>
   </section>;
 }
