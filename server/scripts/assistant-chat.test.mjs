@@ -221,7 +221,9 @@ test('video help describes the built Pro feature and its actual limits', () => {
   assert.match(knowledge, /at most 5 GB/);
   assert.match(knowledge, /share the existing Pro 100 GB/);
   assert.match(knowledge, /5000 minutes, including previews and buffering/);
-  assert.match(knowledge, /downloads default off/);
+  assert.match(knowledge, /original downloads are enabled by default on new deliveries/);
+  assert.match(knowledge, /three steps are Upload, Details, Preview & send/);
+  assert.match(knowledge, /Existing saved choices remain unchanged/);
 });
 
 test('recipient video help explains playback without offering studio configuration', () => {

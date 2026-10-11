@@ -20,7 +20,7 @@ import { videoContext, videoId, videoError, ownedVideoDelivery, ownedVideoAsset,
 
 const id = z.string().regex(/^[a-f\d]{24}$/i);
 const itemSchema = z.object({ assetId: id, title: z.string().trim().max(100).default(''), description: z.string().trim().max(2000).default(''), posterSeconds: z.number().finite().min(0).max(10800).default(0), allowDownload: z.boolean().nullable().default(null) }).strict();
-const presentationSchema = z.object({ title: z.string().trim().max(120), introduction: z.string().trim().max(1500).default(''), items: z.array(itemSchema).max(10), featuredAssetId: id.nullable().optional(), allowDownloads: z.boolean().default(false) }).strict();
+const presentationSchema = z.object({ title: z.string().trim().max(120), introduction: z.string().trim().max(1500).default(''), items: z.array(itemSchema).max(10), featuredAssetId: id.nullable().optional(), allowDownloads: z.boolean().optional() }).strict();
 const draftSchema = z.object({ revision: z.number().int().nonnegative(), clientName: z.string().trim().max(100), brief: z.string().trim().max(3000), presentation: presentationSchema }).strict();
 const initSchema = z.object({ filename: z.string().trim().min(5).max(180).refine(value => !/[\\/\x00-\x1f]/.test(value) && /\.(mp4|mov|webm)$/i.test(value), 'Choose an MP4, MOV or WebM video.'), bytes: z.number().int().positive().max(5_000_000_000), fingerprint: z.string().regex(/^[a-f\d]{64}$/i), requestKey: z.string().uuid() }).strict();
 const parse = (schema, value) => { const result = schema.safeParse(value); if (!result.success) throw videoError(result.error.issues[0]?.message || 'Check the video details.'); return result.data; };
@@ -47,7 +47,7 @@ export const createVideoDelivery = videoAction(async (req, res) => {
   const { settings } = await writable(req);
   if (!settings.uploadsEnabled) throw videoError('New video uploads are temporarily paused.', 503);
   parse(z.object({}).strict(), req.body);
-  const delivery = await Delivery.create({ userId: req.user.id, kind: 'video', schemaVersion: 3, video: { draft: { title: '', items: [], allowDownloads: false } } });
+  const delivery = await Delivery.create({ userId: req.user.id, kind: 'video', schemaVersion: 3, video: { draft: { title: '', items: [], allowDownloads: true } } });
   res.status(201); ok(res, await ownerVideoDTO(delivery));
 });
 export const getVideoDelivery = videoAction(async (req, res) => {
@@ -58,6 +58,7 @@ export const saveVideoDraft = videoAction(async (req, res) => {
   const { settings } = await writable(req);
   const input = parse(draftSchema, req.body);
   const delivery = await ownedVideoDelivery(req.params.id, req.user.id); editable(delivery);
+  input.presentation.allowDownloads ??= delivery.video.draft.allowDownloads;
   const ids = input.presentation.items.map(item => item.assetId);
   if (new Set(ids).size !== ids.length || ids.length > settings.maxVideos) throw videoError('Choose each video once, up to ' + settings.maxVideos + ' videos.');
   const assets = await VideoAsset.find({ _id: { $in: ids }, userId: req.user.id, state: { $nin: ['deleted', 'deleting'] } }).select('_id duration');

@@ -34,6 +34,52 @@ async function mock(page, options = {}) {
 }
 async function noOverflow(page) { expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true); }
 
+for (const width of [320, 390, 768, 834, 1440]) test(`vertical feed hands playback to the visible film and fills circular photographer image at ${width}px`, async ({ page }) => {
+  const { errors } = await mock(page); const starts = []; const ends = [];
+  const videos = [0, 1].map(index => ({ ...asset, id: String(index + 3).repeat(24), title: `Vertical film ${index + 1}`, description: 'The complete finished portrait film. '.repeat(20), width: 540, height: 960, duration: 8, allowDownload: true, posterUrl: '/veylo/video/portrait-study.webp' }));
+  await page.route('**/api/v1/videos/public/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/playback/end')) { ends.push(route.request().postDataJSON().sessionId); return route.fulfill({ json: { success: true, data: {} } }); }
+    if (path.endsWith('/playback')) { const id = path.split('/').at(-2); starts.push(id); return route.fulfill({ json: { success: true, data: { sessionId: id, hlsUrl: '/veylo/video/portrait-study.mp4', expiresAt: new Date(Date.now() + 600000).toISOString() } } }); }
+    return route.fulfill({ json: { success: true, data: { ...presentation, items: videos, featuredAssetId: videos[0].id, branding: { name: 'Amara Studio', avatarUrl: '/veylo/web/photographer-480.webp' } } } });
+  });
+  await page.setViewportSize({ width, height: 900 });
+  await page.goto('/v/video-example-private-id');
+  await expect(page.locator('.vv-feed')).toBeVisible(); await expect(page.locator('video')).toHaveCount(1);
+  expect(starts).toEqual([]);
+  const avatar = await page.locator('.vv-reel.is-active .vv-avatar img').evaluate(img => {
+    const style = getComputedStyle(img), image = img.getBoundingClientRect(), circle = img.parentElement.getBoundingClientRect();
+    return { fit: style.objectFit, radius: style.borderRadius, width: image.width, height: image.height, circle: circle.width };
+  });
+  expect(avatar.fit).toBe('cover'); expect(avatar.radius).toBe('50%'); expect(avatar.width).toBe(avatar.height); expect(Math.abs(avatar.width - avatar.circle)).toBeLessThanOrEqual(2);
+  await page.getByRole('button', { name: 'Play film', exact: true }).click();
+  await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(.1);
+  await page.locator('.vv-feed').evaluate(feed => feed.scrollTo({ top: feed.clientHeight, behavior: 'instant' }));
+  await expect(page.locator('.vv-reel.is-active')).toHaveAttribute('data-video-id', videos[1].id);
+  await expect(page.locator('video')).toHaveCount(1);
+  await expect.poll(() => starts.length).toBe(2); await expect.poll(() => ends.length).toBe(1);
+  await expect.poll(() => page.locator('video').evaluate(video => !video.paused && video.currentTime > .1)).toBe(true);
+  await page.getByRole('button', { name: 'Pause video' }).click(); expect(await page.locator('video').evaluate(video => video.paused)).toBe(true);
+  await page.locator('.vv-reel.is-active summary').click(); await expect(page.locator('.vv-reel.is-active details')).toHaveAttribute('open', '');
+  await expect(page.getByRole('link', { name: 'Download Vertical film 2', exact: true })).toBeVisible();
+  await noOverflow(page);
+  if ([390, 834, 1440].includes(width)) await page.screenshot({ path: `../.visual-review/video-vertical-${width}.png` });
+  expect(errors).toEqual([]);
+});
+
+test('three creation steps keep optional settings tucked away and retain a saved download choice', async ({ page }) => {
+  const { state } = await mock(page); state.project.video.draft.allowDownloads = true;
+  await page.goto(`/create?draft=${id}`);
+  await expect(page.locator('.vc-steps button')).toHaveCount(3);
+  await expect(page.getByLabel('Delivery title', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: /Add details/ }).click();
+  const downloads = page.getByRole('checkbox', { name: /Let your client download/ }); await expect(downloads).toBeChecked();
+  await expect(page.getByLabel('Cover frame (seconds)')).not.toBeVisible();
+  await downloads.uncheck(); await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+  await expect.poll(() => state.project.video.draft.allowDownloads).toBe(false);
+  await page.reload(); await page.getByRole('button', { name: /Add details/ }).click(); await expect(downloads).not.toBeChecked();
+});
+
 test('upload step follows real preparation state and offers failed originals a retry', async ({ page }) => {
   const { state, errors } = await mock(page);
   state.project.assets[0].state = 'queued';
@@ -100,7 +146,7 @@ for (const width of [320, 390, 768, 834, 1024, 1440]) test(`client demo fits ${w
   await expect(page.getByRole('heading', { name: 'A place for the finished film.' })).toBeVisible();
   await expect(page.locator('video')).toHaveCount(1); expect(await page.locator('video').evaluate(video => video.paused)).toBe(true);
   await expect(page.locator('.vv-brand')).toContainText('Veylo Studio'); await noOverflow(page);
-  await page.getByRole('button', { name: /Light, in portrait/ }).click(); await expect(page.locator('.vv-screen')).toHaveClass(/is-portrait/); await noOverflow(page);
+  await page.getByRole('button', { name: /Light, in portrait/ }).click(); await expect(page.locator('.vv-reel.is-active .vv-screen')).toHaveClass(/is-portrait/); await noOverflow(page);
   if (width === 390 || width === 834) await page.screenshot({ path: `../.visual-review/video-demo-${width}.png`, fullPage: true });
   expect(errors).toEqual([]);
 });
@@ -139,11 +185,11 @@ test('expired playback sessions reopen on the same player and preserve the playb
 });
 for (const width of [320, 768, 834]) test(`creator saves, reviews and publishes a separate snapshot at ${width}px`, async ({ page }) => {
   const { state, errors } = await mock(page); await page.setViewportSize({ width, height: 1000 }); await page.goto(`/create?draft=${id}`);
-  await expect(page.getByRole('heading', { name: 'Start with the finished files.' })).toBeVisible(); await page.getByLabel('Delivery title', { exact: true }).fill('A revised wedding title');
+  await expect(page.getByRole('heading', { name: 'Add your finished videos.' })).toBeVisible(); await page.getByRole('button', { name: 'Details', exact: false }).first().click(); await page.getByLabel('Delivery title', { exact: true }).fill('A revised wedding title');
   await page.getByRole('button', { name: 'Save draft', exact: true }).click(); await expect.poll(() => state.saves.at(-1)?.presentation.title).toBe('A revised wedding title');
-  await page.getByRole('button', { name: /Arrange & present/ }).click(); await expect(page.getByLabel('Film title', { exact: true })).toHaveValue('The ceremony'); await noOverflow(page);
-  await page.getByRole('textbox', { name: 'Description', exact: true }).fill('The vows, readings and final walk together, in the order they happened.');
-  await page.getByRole('button', { name: /Preview & publish/ }).click(); await page.getByRole('button', { name: /Publish video delivery|Publish latest changes|Publish delivery/ }).click();
+   await expect(page.getByLabel('Video title', { exact: true })).toHaveValue('The ceremony'); await noOverflow(page);
+  await page.getByRole('textbox', { name: 'Description', exact: false }).fill('The vows, readings and final walk together, in the order they happened.');
+  await page.getByRole('button', { name: 'Preview & send', exact: true }).first().click(); await page.getByRole('button', { name: /Create client link|Update client link/ }).click();
   await expect.poll(() => state.publishes).toBe(1); await expect(page.getByRole('link', { name: 'Open the client view' })).toBeVisible();
   expect(state.project.video.published.items[0].description).toContain('The vows'); await noOverflow(page);
   if (width === 834) await page.screenshot({ path: '../.visual-review/video-creator-834.png', fullPage: true });

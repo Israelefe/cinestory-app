@@ -96,7 +96,7 @@ export async function publicVideoDelivery(req, { allowLocked = false, playback =
   return { ...context, delivery, locked };
 }
 export function videoBrand(user) {
-  return { name: user.studio?.name || user.name || 'Your photographer', logoUrl: user.studio?.logoUrl || user.avatar || '', website: /^https?:\/\//i.test(user.studio?.website || '') ? user.studio.website : '' };
+  return { name: user.studio?.name || user.name || 'Your photographer', avatarUrl: user.avatar || user.studio?.logoUrl || '', logoUrl: user.studio?.logoUrl || user.avatar || '', website: /^https?:\/\//i.test(user.studio?.website || '') ? user.studio.website : '' };
 }
 export async function videoPresentationDTO(delivery, user, { preview = false } = {}) {
   const presentation = preview ? delivery.video.draft : delivery.video.published;

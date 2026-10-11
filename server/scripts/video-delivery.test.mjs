@@ -15,7 +15,7 @@ import { acquireVideoLease, releaseVideoLease } from '../src/services/videoLease
 import { normalizeVideoSettings, publicVideoSettings } from '../src/config/videoDelivery.js';
 import { updateRuntimeConfig } from '../src/services/runtimeConfig.service.js';
 import { videoContext, ownedVideoAsset, publicVideoDelivery, ownerVideoDTO, videoPresentationDTO, hasVideoGrant, setVideoGrant, videoPlayback, usageKey } from '../src/services/videoDelivery.service.js';
-import { publishVideoDelivery, saveVideoDraft, saveVideoAccess, validatedVideoRange, deleteVideoAsset, downloadOwnerVideo, initializeVideoUpload, completeVideoUpload } from '../src/controllers/video.controller.js';
+import { createVideoDelivery, publishVideoDelivery, saveVideoDraft, saveVideoAccess, validatedVideoRange, deleteVideoAsset, downloadOwnerVideo, initializeVideoUpload, completeVideoUpload } from '../src/controllers/video.controller.js';
 import { signedHlsMedia, verifyHlsToken, hlsFile } from '../src/services/videoHls.service.js';
 import { authorizeHlsRequest } from '../src/services/videoDelivery.service.js';
 import { handleVideoHls, verifyVideoToken } from '../../cloudflare/delivery-images/video-hls.js';
@@ -93,6 +93,22 @@ test('ownership and active entitlement checks reject another owner and Free acco
   await assert.rejects(ownedVideoAsset(film._id, outsider._id), { status: 404 });
   await assert.rejects(videoContext(outsider._id, { write: true }), { code: 'VIDEO_PRO_REQUIRED' });
   assert.equal((await videoContext(owner._id, { write: true })).entitlements.plan, 'pro');
+});
+
+test('new video deliveries enable downloads while omitted settings preserve an existing opt-out', async () => {
+  const created = response();
+  await createVideoDelivery({ user: { id: String(owner._id) }, body: {} }, created);
+  assert.equal(created.statusCode, 201, JSON.stringify(created.body));
+  assert.equal(created.body.data.video.draft.allowDownloads, true);
+  const film = await asset(); const project = await delivery(film);
+  assert.equal(project.video.draft.allowDownloads, false);
+  const presentation = project.video.draft.toObject(); delete presentation.allowDownloads;
+  presentation.items = presentation.items.map(item => ({ assetId: String(item.assetId), title: item.title, description: item.description }));
+  presentation.featuredAssetId = String(film._id);
+  const saved = response();
+  await saveVideoDraft(request(project._id, { revision: 0, clientName: '', brief: '', presentation }), saved);
+  assert.equal(saved.statusCode, 200, JSON.stringify(saved.body));
+  assert.equal(saved.body.data.video.draft.allowDownloads, false);
 });
 test('publishing snapshots titles, descriptions and covers; conflicting saves cannot overwrite it', async () => {
   const film = await asset(); const project = await delivery(film);

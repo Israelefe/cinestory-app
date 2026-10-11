@@ -46,7 +46,7 @@ const videoItemSchema = new mongoose.Schema({
 const videoPresentationSchema = new mongoose.Schema({
   title: { type: String, maxlength: 120 }, introduction: { type: String, maxlength: 1500, default: '' },
   items: { type: [videoItemSchema], default: [] }, featuredAssetId: mongoose.Schema.Types.ObjectId,
-  allowDownloads: { type: Boolean, default: false }
+  allowDownloads: { type: Boolean, default: true }
 }, { _id: false });
 const videoSchema = new mongoose.Schema({
   draft: { type: videoPresentationSchema, default: () => ({}) },
