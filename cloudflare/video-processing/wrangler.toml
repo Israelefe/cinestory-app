@@ -5,6 +5,7 @@ compatibility_date = "2026-10-11"
 [vars]
 VEYLO_API_ORIGIN = "https://veylo-api-ptk3.onrender.com"
 CLIENT_URL = "https://veylo.com.ng"
+R2_BUCKET_NAME = "veylo"
 VIDEO_PLAYBACK_WORKER_URL = "https://veylo-delivery-images.israelonanefe08157.workers.dev"
 VIDEO_PROCESSING_MODE = "cloudflare-containers"
 VIDEO_MEDIA_WORKER_ENABLED = "true"
