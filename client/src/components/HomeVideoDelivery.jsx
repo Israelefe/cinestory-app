@@ -2,6 +2,7 @@ import React from 'react';
 import { Film, LockKeyhole, Download, BadgeCheck } from 'lucide-react';
 import { Action, Eyebrow, Reveal, TextLink } from './PublicDesign.jsx';
 import './HomeVideoDelivery.css';
+import { VIDEO_DEMO_MEDIA, demoVideoUrl } from '../constants/videoDemoMedia.js';
 
 export default function HomeVideoDelivery() {
   return <div className="v-wrap hv-layout">
@@ -13,14 +14,15 @@ export default function HomeVideoDelivery() {
     <Reveal className="hv-player" delay={.08}>
       <div className="hv-player-header"><span><Film size={18} /><strong>VEYLO MEDIA</strong></span><small>CLIENT PLAYER / DEMO</small></div>
       <video
-        src="/veylo/video/light-study.mp4"
-        poster="/veylo/video/light-study.webp"
+        src={demoVideoUrl(VIDEO_DEMO_MEDIA.wide)}
+        poster={VIDEO_DEMO_MEDIA.wide.posterUrl}
         controls
+        controlsList="nodownload"
         playsInline
         preload="none"
-        aria-label="Video delivery preview: A study in light"
+        aria-label="Video delivery preview: A celebration, in full view"
       />
-      <div className="hv-player-caption"><div><span>SAMPLE FILM</span><h3>A study in light</h3><p>An original Veylo animation. Press play to try the player.</p></div><span className="hv-film-length">00:10</span></div>
+      <div className="hv-player-caption"><div><span>PEXELS SAMPLE / NO AUDIO</span><h3>A celebration, in full view</h3><p>Watch the landscape sample, or open the demo for a vertical film.</p></div><span className="hv-film-length">00:12</span></div>
       <div className="hv-player-access"><span><LockKeyhole size={14} />Private client link</span><span><Download size={14} />You control downloads</span></div>
     </Reveal>
 

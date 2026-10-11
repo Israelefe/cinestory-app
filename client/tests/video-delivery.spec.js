@@ -11,6 +11,15 @@ const presentation = { title: 'Ada and Emeka', introduction: 'Your finished film
 function project() { return { _id: id, publicId: 'video-example-private-id', kind: 'video', schemaVersion: 3, status: 'draft', clientName: '', brief: '', video: { draft: structuredClone(presentation), revision: 0, accessVersion: 0 }, access: { hasPin: false }, assets: [structuredClone(asset)] }; }
 async function mock(page, options = {}) {
   await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 4, necessary: true, serviceAnalytics: true })));
+  // Keep browser checks deterministic; production smoke checks use the real R2 originals.
+  await page.route('**/demo-videos/*', async route => {
+    const portrait = route.request().url().includes('drummer-');
+    const body = await readFile(new URL(`../public/veylo/video/${portrait ? 'portrait-study' : 'light-study'}.mp4`, import.meta.url));
+    const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range || '');
+    const start = range ? Number(range[1]) : 0;
+    const end = range?.[2] ? Math.min(Number(range[2]), body.length - 1) : body.length - 1;
+    return route.fulfill({ status: range ? 206 : 200, contentType: 'video/mp4', headers: { 'Accept-Ranges': 'bytes', 'Access-Control-Allow-Origin': '*', ...(range ? { 'Content-Range': `bytes ${start}-${end}/${body.length}` } : {}) }, body: body.subarray(start, end + 1) });
+  });
   const state = { project: project(), saves: [], publishes: 0, unlocks: 0 }; const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/api/v1/**', async route => {
@@ -175,20 +184,28 @@ for (const width of [320, 390, 768, 834, 1024, 1440]) test(`client demo fits ${w
   const { errors } = await mock(page); await page.setViewportSize({ width, height: 950 }); await page.emulateMedia({ reducedMotion: 'reduce' }); await page.goto('/demo/video');
   await expect(page.getByRole('heading', { name: 'A place for the finished film.' })).toBeVisible();
   await expect(page.locator('video')).toHaveCount(1); await expect.poll(() => page.locator('video').evaluate(video => !video.paused && video.muted)).toBe(true);
-  await expect(page.locator('.vv-brand')).toContainText('Veylo Studio'); await noOverflow(page);
-  await page.getByRole('button', { name: /Light, in portrait/ }).click(); await expect(page.locator('.vv-reel.is-active .vv-screen')).toHaveClass(/is-portrait/); await noOverflow(page);
+  await expect(page.locator('.vv-brand')).toContainText('Example studio');
+  await expect(page.locator('.vv-download')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Enable sound', exact: true })).toHaveCount(0);
+  await expect(page.locator('video')).toHaveAttribute('src', /demo-videos\/celebration-a1a6b543\.mp4$/); await noOverflow(page);
+  await page.getByRole('button', { name: /The drummer, up close/ }).click(); await expect(page.locator('.vv-reel.is-active .vv-screen')).toHaveClass(/is-portrait/);
+  await expect(page.locator('.vv-download')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Unmute video|Mute video|Enable sound/ })).toHaveCount(0);
+  await expect(page.locator('video')).toHaveAttribute('src', /demo-videos\/drummer-7510db80\.mp4$/); await noOverflow(page);
   if (width === 390 || width === 834) await page.screenshot({ path: `../.visual-review/video-demo-${width}.png`, fullPage: true });
   expect(errors).toEqual([]);
 });
-test('demo plays original audio on demand, seeks and keeps a single player when changing films', async ({ page }) => {
+test('Pexels demo seeks, has no downloads or audio controls and keeps one player when changing films', async ({ page }) => {
   await mock(page); await page.goto('/demo/video');
   await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(.1);
   expect(await page.locator('video').evaluate(video => video.muted)).toBe(true);
-  await page.getByRole('button', { name: 'Enable sound', exact: true }).click();
-  expect(await page.locator('video').evaluate(video => video.muted)).toBe(false);
+  await expect(page.getByRole('button', { name: 'Enable sound', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /Download/ })).toHaveCount(0);
   await page.locator('video').evaluate(video => { video.pause(); video.currentTime = 4; }); await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(3.9);
-  await page.getByRole('button', { name: /Light, in portrait/ }).click(); await expect(page.locator('video')).toHaveCount(1);
-  await expect.poll(() => page.locator('video').evaluate(video => !video.paused && !video.muted)).toBe(true);
+  await page.getByRole('button', { name: /The drummer, up close/ }).click(); await expect(page.locator('video')).toHaveCount(1);
+  await expect.poll(() => page.locator('video').evaluate(video => !video.paused && video.muted)).toBe(true);
+  await expect(page.getByRole('link', { name: /Download/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Unmute video|Mute video|Enable sound/ })).toHaveCount(0);
 });
 test('expired playback sessions reopen on the same player and preserve the playback position', async ({ page }) => {
   const { errors } = await mock(page); const requests = []; let ended = 0;

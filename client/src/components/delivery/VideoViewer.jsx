@@ -53,7 +53,7 @@ export default function VideoViewer({ delivery, requestPlayback, endPlayback, do
         <header className="vv-brand vv-reel-brand"><Photographer branding={branding} /><span className="vv-reel-count">{index + 1} / {portraitItems.length}</span></header>
         {wideItems.length > 0 && <button type="button" className="vv-all-films" onClick={() => select(wideItems[0].id)}><ArrowLeft size={15} />All films</button>}
         <div className="vv-reel-caption"><p>{delivery.title}{demo ? ' / DEMO' : ''}</p><h1>{video.title}</h1>{(video.description || delivery.introduction) && <details className="vv-reel-description"><summary>About this film<ChevronDown size={14} /></summary><div>{video.description}{delivery.introduction && <p className="vv-reel-message">{delivery.introduction}</p>}</div></details>}</div>
-        <div className="vv-reel-actions"><OriginalDownload item={video} downloadUrl={downloadUrl} compact />{/^https?:\/\//.test(branding.website || '') && <a href={branding.website} target="_blank" rel="noreferrer" aria-label="Visit the photographer's website"><ArrowUpRight size={21} /><span>Studio</span></a>}</div>
+        <div className="vv-reel-actions"><OriginalDownload item={video} downloadUrl={demo ? undefined : downloadUrl} compact />{/^https?:\/\//.test(branding.website || '') && <a href={branding.website} target="_blank" rel="noreferrer" aria-label="Visit the photographer's website"><ArrowUpRight size={21} /><span>Studio</span></a>}</div>
       </article>)}
     </div>
   </main>;
@@ -65,7 +65,7 @@ export default function VideoViewer({ delivery, requestPlayback, endPlayback, do
     <div className={'vv-layout' + (delivery.items.length === 1 ? ' is-single' : '')}>
       <section className="vv-film" aria-label={item.title}>
         <div className="vv-screen">{player}</div>
-        <div className="vv-film-caption"><div><p>{videoDuration(item.duration)} / {delivery.playbackMode === 'adaptive' ? 'Adaptive playback' : 'Original quality'}</p><h2>{item.title}</h2></div><OriginalDownload item={item} downloadUrl={downloadUrl} /></div>
+        <div className="vv-film-caption"><div><p>{videoDuration(item.duration)} / {delivery.playbackMode === 'adaptive' ? 'Adaptive playback' : 'Original quality'}</p><h2>{item.title}</h2></div><OriginalDownload item={item} downloadUrl={demo ? undefined : downloadUrl} /></div>
         {item.description && <div className="vv-description">{item.description}</div>}
       </section>
       {delivery.items.length > 1 && <aside className="vv-playlist" aria-label="Films in this delivery"><div className="vv-playlist-title"><span>IN THIS DELIVERY</span><small>{delivery.items.length} films</small></div>{delivery.items.map((video, index) => <button type="button" key={video.id} aria-pressed={video.id === item.id} className={'vv-playlist-item' + (video.id === item.id ? ' is-current' : '')} onClick={() => select(video.id)}><span className="vv-playlist-image">{video.posterUrl ? <img src={videoMediaUrl(video.posterUrl)} alt="" loading="lazy" /> : <Film size={24} />}<i>{videoDuration(video.duration)}</i></span><span className="vv-playlist-copy"><strong>{video.title}</strong><small>{isPortrait(video) ? 'Vertical video' : `Film ${String(index + 1).padStart(2, '0')}`}{video.id === item.id ? ' / Selected' : ''}</small></span><Play size={15} /></button>)}</aside>}
