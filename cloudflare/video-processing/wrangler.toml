@@ -5,6 +5,7 @@ compatibility_date = "2026-10-11"
 [vars]
 VEYLO_API_ORIGIN = "https://veylo-api-ptk3.onrender.com"
 CLIENT_URL = "https://veylo.com.ng"
+CLOUDFLARE_AI_ACCOUNT_ID = "935f69b03acd93c47238ee5e2d244a38"
 R2_BUCKET_NAME = "veylo"
 VIDEO_PLAYBACK_WORKER_URL = "https://veylo-delivery-images.israelonanefe08157.workers.dev"
 VIDEO_PROCESSING_MODE = "cloudflare-containers"
@@ -13,7 +14,7 @@ VIDEO_MEDIA_WORKER_ENABLED = "true"
 VIDEO_MAX_CONTAINERS = "1"
 VIDEO_DAILY_CONTAINER_SECONDS = "21600"
 VIDEO_MAX_JOB_SECONDS = "21600"
-VIDEO_AI_MODEL_READY = "false"
+VIDEO_AI_MODEL_READY = "true"
 
 [triggers]
 crons = ["* * * * *"]
