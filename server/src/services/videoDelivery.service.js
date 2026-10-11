@@ -8,7 +8,7 @@ import { VideoAsset, VideoUsage, VideoPlayback, VideoJob } from '../models/video
 import { resolveEntitlements, lagosMonthWindow } from './entitlement.service.js';
 import { getRuntimeConfig } from './runtimeConfig.service.js';
 import { publicVideoSettings } from '../config/videoDelivery.js';
-import { getStreamMinutes, signedStreamMedia } from './videoProvider.service.js';
+import { signedHlsMedia, verifyHlsToken, hlsFile } from './videoHls.service.js';
 import { acquireVideoLease, releaseVideoLease } from './videoLease.service.js';
 
 export const videoError = (message, status = 400, code = 'VIDEO_REQUEST_FAILED') => Object.assign(new Error(message), { status, code });
@@ -49,9 +49,12 @@ export async function ownedVideoAsset(id, userId) {
   return asset;
 }
 export function videoAssetDTO(asset, { owner = false, posterUrl } = {}) {
+  if (owner && posterUrl && asset.cover?.state === 'ready' && asset.cover.generation) {
+    posterUrl += (posterUrl.includes('?') ? '&' : '?') + 'v=' + encodeURIComponent(asset.cover.generation);
+  }
   return { id: String(asset._id), filename: owner ? asset.filename : undefined, bytes: asset.bytes,
     duration: asset.duration || 0, width: asset.width || 0, height: asset.height || 0,
-    state: asset.state, posterUrl, ...(owner ? { errorCode: asset.errorCode, errorMessage: asset.errorMessage, analysis: asset.analysis ? { state: asset.analysis.state, includeSpeech: asset.analysis.includeSpeech, suggestions: asset.analysis.suggestions, frames: asset.analysis.frames, errorMessage: asset.analysis.errorMessage } : { state: 'idle' } } : {}) };
+    state: asset.state, posterUrl, ...(owner ? { cover: asset.cover, errorCode: asset.errorCode, errorMessage: asset.errorMessage, analysis: asset.analysis ? { state: asset.analysis.state, includeSpeech: asset.analysis.includeSpeech, suggestions: asset.analysis.suggestions, frames: asset.analysis.frames, errorMessage: asset.analysis.errorMessage } : { state: 'idle' } } : {}) };
 }
 function safeVideoDetails(value) {
   const video = value?.toObject ? value.toObject() : structuredClone(value);
@@ -108,14 +111,14 @@ export async function videoPresentationDTO(delivery, user, { preview = false } =
 export function usageKey(userId, start) { return String(userId) + ':' + start.toISOString(); }
 export async function reconcileVideoUsage(userId, { now = new Date(), periodDate = now } = {}) {
   const { start, end } = lagosMonthWindow(periodDate);
-  const minutes = await getStreamMinutes(userId, start, now < end ? now : end);
-  // Provider totals may lag. Never reduce already observed delivery minutes.
-  return VideoUsage.findOneAndUpdate({ _id: usageKey(userId, start) }, { $setOnInsert: { userId, periodStart: start, periodEnd: end }, $max: { deliveredMinutes: minutes }, $set: { reconciledAt: now } }, { new: true, upsert: true });
+  // Usage is reserved by the API for each requested HLS segment, including
+  // buffering and repeats. No Stream analytics or client watch events are used.
+  return VideoUsage.findOneAndUpdate({ _id: usageKey(userId, start) }, { $setOnInsert: { userId, periodStart: start, periodEnd: end }, $set: { reconciledAt: now } }, { new: true, upsert: true });
 }
 export async function assertVideoPlaybackUsage(userId, settings, now = new Date()) {
   const { start } = lagosMonthWindow(now);
   let usage = await VideoUsage.findById(usageKey(userId, start));
-  if (!usage || !usage.reconciledAt || now - usage.reconciledAt > settings.usageMaxLagSeconds * 1000) {
+  if (!usage) {
     try { usage = await reconcileVideoUsage(userId, { now }); }
     catch { throw videoError('Video usage could not be checked. Please try again shortly.', 503, 'VIDEO_USAGE_UNAVAILABLE'); }
   }
@@ -123,16 +126,38 @@ export async function assertVideoPlaybackUsage(userId, settings, now = new Date(
   return usage;
 }
 export async function videoPlayback({ delivery, asset, settings, sessionId, preview = false }) {
+  if (!asset.hls?.version) throw videoError('This film is preparing for private playback. Please try again shortly.', 409, 'VIDEO_NOT_READY');
   await assertVideoPlaybackUsage(delivery.userId, settings);
-  let session = sessionId && /^[a-f\d-]{36}$/i.test(sessionId) ? await VideoPlayback.findOne({ _id: sessionId, deliveryId: delivery._id, assetId: asset._id, accessVersion: delivery.video.accessVersion, expiresAt: { $gt: new Date() } }) : null;
+  let session = sessionId && /^[a-f\d-]{36}$/i.test(sessionId) ? await VideoPlayback.findOne({ _id: sessionId, deliveryId: delivery._id, assetId: asset._id, accessVersion: delivery.video.accessVersion, preview, expiresAt: { $gt: new Date() } }) : null;
   if (sessionId && !session) throw videoError('Open the video again to continue playback.', 401, 'VIDEO_SESSION_EXPIRED');
   const id = session?._id || crypto.randomUUID();
   const leaseId = await acquireVideoLease('view:' + delivery.userId, settings.accountViewers, { ownerId: delivery.userId, resourceId: id, ttlSeconds: settings.tokenSeconds });
-  const media = signedStreamMedia(asset.streamUid, { seconds: settings.tokenSeconds });
+  let media;
   try {
-    session = await VideoPlayback.findOneAndUpdate({ _id: id }, { $set: { userId: delivery.userId, deliveryId: delivery._id, assetId: asset._id, accessVersion: delivery.video.accessVersion, leaseId, expiresAt: media.expiresAt } }, { upsert: true, new: true });
+    media = signedHlsMedia({ assetId: asset._id, sessionId: id, version: asset.hls.version, seconds: settings.tokenSeconds });
+    session = await VideoPlayback.findOneAndUpdate({ _id: id }, { $set: { userId: delivery.userId, deliveryId: delivery._id, assetId: asset._id, accessVersion: delivery.video.accessVersion, preview, leaseId, expiresAt: media.expiresAt } }, { upsert: true, new: true });
   } catch (error) { await releaseVideoLease(leaseId, id); throw error; }
   return { sessionId: session._id, ...media, renewAfterSeconds: Math.floor(settings.tokenSeconds / 2), preview };
+}
+export async function authorizeHlsRequest({ token, file, method }) {
+  const claims = verifyHlsToken(token);
+  const session = await VideoPlayback.findOne({ _id: claims.sessionId, assetId: claims.assetId, expiresAt: { $gt: new Date() } }).lean();
+  if (!session) throw videoError('Reopen this film to continue playback.', 401, 'VIDEO_SESSION_EXPIRED');
+  const { settings } = await videoContext(session.userId, { playback: true });
+  const delivery = await Delivery.findOne({ _id: session.deliveryId, userId: session.userId, kind: 'video', 'video.accessVersion': session.accessVersion }).lean();
+  if (!delivery || delivery.status === 'archived' || (!session.preview && (delivery.status !== 'published' || delivery.access?.revokedAt || (delivery.access?.expiresAt && delivery.access.expiresAt <= new Date())))) throw videoError('This video link is no longer available.', 410, 'VIDEO_LINK_CLOSED');
+  const presentation = session.preview ? delivery.video.draft : delivery.video.published;
+  if (!presentation?.items.some(item => String(item.assetId) === claims.assetId)) throw videoError('Video not found in this delivery.', 404);
+  const asset = await VideoAsset.findOne({ _id: claims.assetId, userId: session.userId, state: 'ready', 'hls.version': claims.version }).lean();
+  const resource = asset && hlsFile(asset, file);
+  if (!resource || !Number.isSafeInteger(resource.bytes) || resource.bytes < 1) throw videoError('Playback file not found.', 404);
+  const { start, end } = lagosMonthWindow();
+  if (!await VideoUsage.exists({ _id: usageKey(session.userId, start) })) await reconcileVideoUsage(session.userId);
+  const minutes = method === 'GET' ? resource.seconds / 60 : 0;
+  const nextMinutes = { $round: [{ $add: ['$deliveredMinutes', minutes] }, 8] };
+  const usage = await VideoUsage.findOneAndUpdate({ _id: usageKey(session.userId, start), $expr: { $lte: [nextMinutes, settings.monthlyDeliveredMinutes] } }, [{ $set: { deliveredMinutes: nextMinutes, deliveredBytes: { $add: [{ $ifNull: ['$deliveredBytes', 0] }, minutes ? resource.bytes : 0] }, reconciledAt: new Date(), periodEnd: end } }], { new: true });
+  if (!usage) throw videoError('This account has reached its video playback allowance for this month.', 429, 'VIDEO_PLAYBACK_LIMIT');
+  return { ...resource, origin: new URL(process.env.CLIENT_URL).origin };
 }
 export async function queueVideoJob(asset, type, options = {}, keySuffix = '') {
   const key = `${type}:${asset._id}:${keySuffix || 'v1'}`;

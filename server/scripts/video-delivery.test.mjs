@@ -1,33 +1,37 @@
 import assert from 'node:assert/strict';
 import { before, after, test } from 'node:test';
 import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import jwt from 'jsonwebtoken';
 import User from '../src/models/User.js';
 import Delivery from '../src/models/Delivery.js';
 import WorkerHeartbeat from '../src/models/WorkerHeartbeat.js';
-import { VideoAsset, VideoQuota, VideoUsage, VideoPlayback, ensureVideoIndexes } from '../src/models/video.models.js';
+import { VideoAsset, VideoQuota, VideoUsage, VideoPlayback, VideoJob, ensureVideoIndexes } from '../src/models/video.models.js';
 import { videoTransaction, reserveVideoBytes, commitVideoBytes, reserveVideoDuration, commitVideoDuration, releaseVideoQuota, storageCapacityFilter, reconcileVideoQuota } from '../src/services/videoQuota.service.js';
 import { acquireVideoLease, releaseVideoLease } from '../src/services/videoLease.service.js';
 import { normalizeVideoSettings, publicVideoSettings } from '../src/config/videoDelivery.js';
 import { updateRuntimeConfig } from '../src/services/runtimeConfig.service.js';
 import { videoContext, ownedVideoAsset, publicVideoDelivery, ownerVideoDTO, videoPresentationDTO, hasVideoGrant, setVideoGrant, videoPlayback, usageKey } from '../src/services/videoDelivery.service.js';
 import { publishVideoDelivery, saveVideoDraft, saveVideoAccess, validatedVideoRange, deleteVideoAsset, downloadOwnerVideo, initializeVideoUpload, completeVideoUpload } from '../src/controllers/video.controller.js';
-import { signedStreamMedia, verifyStreamWebhook, getStreamMinutes, streamCreator } from '../src/services/videoProvider.service.js';
+import { signedHlsMedia, verifyHlsToken, hlsFile } from '../src/services/videoHls.service.js';
+import { authorizeHlsRequest } from '../src/services/videoDelivery.service.js';
+import { handleVideoHls, verifyVideoToken } from '../../cloudflare/delivery-images/video-hls.js';
 import { frameTimestamps } from '../src/services/videoMedia.service.js';
 import { lagosMonthWindow } from '../src/services/entitlement.service.js';
 import { chargeVideoAIBudget } from '../src/services/videoAnalysis.service.js';
-import { deleteVideoOriginal } from '../src/services/videoWorker.service.js';
+import { deleteVideoOriginal, prepareVideo } from '../src/services/videoWorker.service.js';
 import { handleVideoDownload } from '../../client/worker/videoDownload.js';
 import { VideoUpload } from '../src/models/video.models.js';
 
 let database, owner, outsider;
 const settings = normalizeVideoSettings({ enabled: true });
-const key = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+const playbackSecret = crypto.randomBytes(32).toString('hex');
 const previousEnv = { ...process.env };
 before(async () => {
-  Object.assign(process.env, { NODE_ENV: 'test', JWT_SECRET: 'video-tests-only-not-a-production-secret', R2_ACCOUNT_ID: 'a'.repeat(32), R2_ACCESS_KEY_ID: 'test', R2_SECRET_ACCESS_KEY: 'test', R2_BUCKET_NAME: 'test', CLOUDFLARE_STREAM_ACCOUNT_ID: 'a'.repeat(32), CLOUDFLARE_STREAM_API_TOKEN: 'test', CLOUDFLARE_STREAM_CUSTOMER_CODE: 'test', CLOUDFLARE_STREAM_KEY_ID: 'testkey', CLOUDFLARE_STREAM_PRIVATE_KEY: key.privateKey.export({ type: 'pkcs8', format: 'pem' }), CLOUDFLARE_STREAM_WEBHOOK_SECRET: 'test-webhook', VIDEO_MEDIA_WORKER_ENABLED: 'true' });
+  Object.assign(process.env, { NODE_ENV: 'test', JWT_SECRET: 'video-tests-only-not-a-production-secret', R2_ACCOUNT_ID: 'a'.repeat(32), R2_ACCESS_KEY_ID: 'test', R2_SECRET_ACCESS_KEY: 'test', R2_BUCKET_NAME: 'test', CLIENT_URL: 'https://veylo.example', VIDEO_PLAYBACK_WORKER_URL: 'https://media.veylo.example', VIDEO_PLAYBACK_SECRET: playbackSecret, VIDEO_MEDIA_WORKER_ENABLED: 'true' });
   database = await MongoMemoryReplSet.create({ replSet: { count: 1 }, instanceOpts: [{ storageEngine: 'wiredTiger' }] });
   await mongoose.connect(database.getUri());
   await Promise.all([User.init(), Delivery.init(), ensureVideoIndexes()]);
@@ -40,7 +44,11 @@ before(async () => {
 after(async () => { await mongoose.disconnect(); await database?.stop(); for (const name of Object.keys(process.env)) if (!(name in previousEnv)) delete process.env[name]; Object.assign(process.env, previousEnv); });
 function response() { return { statusCode: 200, set() { return this; }, status(value) { this.statusCode = value; return this; }, json(value) { this.body = value; return this; } }; }
 const request = (id, body = {}) => ({ user: { id: String(owner._id) }, params: { id: String(id) }, body });
-async function asset() { const id = new mongoose.Types.ObjectId(); return VideoAsset.create({ _id: id, userId: owner._id, objectKey: `test/${id}/original.mp4`, filename: 'finished-film.mp4', bytes: 100, duration: 60, width: 1920, height: 1080, state: 'ready', streamUid: 'b'.repeat(32), posterKey: `test/${id}/poster.webp` }); }
+async function asset() {
+  const id = new mongoose.Types.ObjectId(); const version = crypto.randomUUID();
+  return VideoAsset.create({ _id: id, userId: owner._id, objectKey: `veylo/video/${owner._id}/${id}/original.mp4`, filename: 'finished-film.mp4', bytes: 100, duration: 60, width: 1920, height: 1080, state: 'ready', posterKey: `veylo/video/${owner._id}/${id}/poster.webp`,
+    hls: { version, prefix: `veylo/video/${owner._id}/${id}/hls/${version}/`, bytes: 1234, masterBytes: 100, variants: [{ name: 'q360', width: 640, height: 360, bandwidth: 1000000, playlistBytes: 100, segments: Array.from({ length: 10 }, () => ({ bytes: 20, seconds: 6 })) }] } });
+}
 async function delivery(film) { return Delivery.create({ userId: owner._id, kind: 'video', video: { draft: { title: 'Wedding films', items: [{ assetId: film._id, title: 'The ceremony', description: 'The complete ceremony.', allowDownload: null }], featuredAssetId: film._id, allowDownloads: false } } }); }
 
 test('limits stay within the approved upload ceiling and availability fails closed', () => {
@@ -113,7 +121,7 @@ test('PIN grants are scoped to a delivery and invalidated immediately by access 
   const locked = await publicVideoDelivery(req, { allowLocked: true }); assert.equal(locked.locked, true);
   await assert.rejects(publicVideoDelivery(req), { code: 'VIDEO_PIN_REQUIRED' });
 });
-test('provider usage caps prevent new playback but do not change download settings', async () => {
+test('playback allowance caps prevent new playback but do not change download settings', async () => {
   const film = await asset(); const project = await delivery(film); const { start, end } = lagosMonthWindow();
   await VideoUsage.create({ _id: usageKey(owner._id, start), userId: owner._id, periodStart: start, periodEnd: end, deliveredMinutes: 5000, reconciledAt: new Date() });
   await assert.rejects(videoPlayback({ delivery: project, asset: film, settings }), { code: 'VIDEO_PLAYBACK_LIMIT' });
@@ -129,19 +137,18 @@ test('AI spending reservations stay inside account and platform limits under con
   assert.equal(results.filter(result => result.status === 'fulfilled').length, 2);
   assert.ok(results.filter(result => result.status === 'rejected').every(result => result.reason.code === 'VIDEO_AI_BUDGET'));
 });
-test('signed credentials forbid Stream downloads and expire within the configured window', () => {
-  const now = Date.now(); const media = signedStreamMedia('b'.repeat(32), { now, seconds: 600 });
-  const token = new URL(media.hlsUrl).pathname.split('/')[1];
-  const payload = jwt.verify(token, key.publicKey, { algorithms: ['RS256'] });
-  assert.equal(payload.downloadable, false); assert.equal(payload.sub, 'b'.repeat(32)); assert.equal(payload.exp, Math.floor(now / 1000) + 600);
+test('HLS credentials scope one asset, session and immutable version, with bounded expiry', async () => {
+  const film = await asset(); const sessionId = crypto.randomUUID(); const now = Date.now();
+  const media = signedHlsMedia({ assetId: film._id, sessionId, version: film.hls.version, now, seconds: 600 });
+  const token = new URL(media.hlsUrl).pathname.split('/')[2];
+  const payload = verifyHlsToken(token);
+  assert.equal(payload.assetId, String(film._id)); assert.equal(payload.sessionId, sessionId); assert.equal(payload.version, film.hls.version); assert.equal(payload.exp, Math.floor(now / 1000) + 600);
+  assert.ok(await verifyVideoToken(token, playbackSecret));
+  assert.equal(await verifyVideoToken(token, 'wrong-secret'.repeat(4)), null);
+  assert.equal(await verifyVideoToken(token, playbackSecret, now + 601000), null);
+  assert.equal(hlsFile(film, 'original.mp4'), null); assert.equal(hlsFile(film, '../poster.webp'), null); assert.equal(hlsFile(film, 'q360/s000010.ts'), null);
 });
-test('webhook authentication uses exact raw bytes and rejects old or altered events', () => {
-  const now = Date.now(); const time = String(Math.floor(now / 1000)); const body = Buffer.from('{"uid":"test"}');
-  const sig = crypto.createHmac('sha256', 'test-webhook').update(time + '.').update(body).digest('hex'); const header = `time=${time},sig1=${sig}`;
-  assert.equal(verifyStreamWebhook(body, header, 'test-webhook', now), true);
-  assert.equal(verifyStreamWebhook(Buffer.from('{}'), header, 'test-webhook', now), false);
-  assert.equal(verifyStreamWebhook(body, header, 'test-webhook', now + 301_000), false);
-});
+
 test('original range requests and full-timeline sampling stay bounded', () => {
   assert.equal(validatedVideoRange('bytes=100-', 1000), 'bytes=100-999'); assert.equal(validatedVideoRange('bytes=-100', 1000), 'bytes=900-999'); assert.equal(validatedVideoRange('bytes=0-999999', 1000), 'bytes=0-999');
   for (const value of ['bytes=1000-', 'bytes=5-4', 'bytes=-0', 'bytes=0-2,4-6', 'bytes=999999999999999999999-']) assert.throws(() => validatedVideoRange(value, 1000), { status: 416 });
@@ -160,7 +167,7 @@ test('failed provider cleanup retains charges; a duplicate successful cleanup re
   const film = await asset(); await videoTransaction(session => reserveVideoBytes({ assetId: film._id, userId: owner._id, bytes: film.bytes, limit: 1000 }, session)); await videoTransaction(session => commitVideoBytes(film._id, session));
   const fetch = t.mock.method(globalThis, 'fetch', async url => { if (String(url).includes('r2.cloudflarestorage.com')) throw new Error('Simulated connection failure'); return Response.json({ success: true, result: {} }); });
   await assert.rejects(deleteVideoOriginal(film)); assert.equal((await VideoQuota.findById(String(film._id))).byteState, 'committed'); assert.equal((await User.findById(owner._id)).videoUsedBytes, film.bytes);
-  const orphan = `test/${film._id}/cover-orphan.webp`; const removed = [];
+  const orphan = `veylo/video/${owner._id}/${film._id}/cover-orphan.webp`; const removed = [];
   fetch.mock.mockImplementation(async (url, options) => {
     if (!String(url).includes('r2.cloudflarestorage.com')) return Response.json({ success: true, result: {} });
     if (!options.method || options.method === 'GET') return new Response(`<ListBucketResult><IsTruncated>false</IsTruncated><Contents><Key>${orphan}</Key><Size>100</Size></Contents></ListBucketResult>`);
@@ -201,17 +208,45 @@ test('edge range downloads never forward account cookies or trust headers to sto
   assert.equal(result.status, 206); assert.equal(await result.text(), '0123456789'); assert.equal(result.headers.get('Content-Range'), 'bytes 10-19/100'); assert.equal(calls[1].options.headers.get('cookie'), null); assert.equal(calls[1].options.headers.get('x-veylo-edge-key'), null); assert.equal(calls[1].options.headers.get('range'), 'bytes=10-19');
 });
 
-test('provider usage uses creator-scoped delivered minutes and rejects malformed analytics', async t => {
-  const fetch = t.mock.method(globalThis, 'fetch', async (_url, options) => {
-    const body = JSON.parse(options.body);
-    assert.match(body.query, /\$account: string!/);
-    assert.match(body.query, /datetime_geq: \$start, datetime_lt: \$end, creator: \$creator/);
-    assert.equal(body.variables.creator, streamCreator(owner._id));
-    return Response.json({ data: { viewer: { accounts: [{ streamMinutesViewedAdaptiveGroups: [{ sum: { minutesViewed: 82.5 } }] }] } } });
+test('HLS requests enforce access and atomically reserve requested segment minutes', async () => {
+  const film = await asset(); const project = await delivery(film); project.status = 'published'; project.video.published = project.video.draft; await project.save();
+  const { start } = lagosMonthWindow(); await VideoUsage.updateOne({ _id: usageKey(owner._id, start) }, { $set: { deliveredMinutes: 4999.8 } });
+  const media = await videoPlayback({ delivery: project, asset: film, settings });
+  const token = new URL(media.hlsUrl).pathname.split('/')[2];
+  const input = { token, file: 'q360/s000000.ts', method: 'GET' };
+  await authorizeHlsRequest({ ...input, method: 'HEAD' });
+  assert.equal((await VideoUsage.findById(usageKey(owner._id, start))).deliveredMinutes, 4999.8);
+  const results = await Promise.allSettled(Array.from({ length: 4 }, () => authorizeHlsRequest(input)));
+  assert.equal(results.filter(row => row.status === 'fulfilled').length, 2);
+  assert.ok(results.filter(row => row.status === 'rejected').every(row => row.reason.code === 'VIDEO_PLAYBACK_LIMIT'));
+  await VideoUsage.updateOne({ _id: usageKey(owner._id, start) }, { $set: { deliveredMinutes: 1 } });
+  assert.match((await authorizeHlsRequest(input)).key, /hls/);
+  await assert.rejects(authorizeHlsRequest({ ...input, file: 'original.mp4' }), { status: 404 });
+  await assert.rejects(authorizeHlsRequest({ ...input, file: '../q360/s000000.ts' }), { status: 404 });
+  await Delivery.updateOne({ _id: project._id }, { $inc: { 'video.accessVersion': 1 } });
+  await assert.rejects(authorizeHlsRequest(input), { code: 'VIDEO_LINK_CLOSED' });
+});
+
+test('private HLS edge validates tokens and permissions before any R2 read, with CORS and ranges', async t => {
+  const film = await asset(); const project = await delivery(film); project.status = 'published'; project.video.published = project.video.draft; await project.save();
+  const media = await videoPlayback({ delivery: project, asset: film, settings });
+  let reads = 0; let denied = false;
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(new URL(url).pathname, '/api/v1/videos/media/authorize');
+    assert.equal(options.headers['x-veylo-video-secret'], playbackSecret);
+    assert.equal(options.headers.Cookie, undefined);
+    if (denied) return new Response(null, { status: 410 });
+    return Response.json({ data: await authorizeHlsRequest(JSON.parse(options.body)) });
   });
-  assert.equal(await getStreamMinutes(owner._id, new Date('2026-09-30T23:00:00Z'), new Date('2026-10-31T23:00:00Z')), 82.5);
-  fetch.mock.mockImplementation(async () => Response.json({ data: { viewer: { accounts: [{ streamMinutesViewedAdaptiveGroups: [{}] }] } } }));
-  await assert.rejects(getStreamMinutes(owner._id, new Date(), new Date()), /could not be verified/);
+  const env = { VIDEO_PLAYBACK_SECRET: playbackSecret, VEYLO_WEB_ORIGIN: process.env.CLIENT_URL, VEYLO_API_ORIGIN: 'https://api.example', DELIVERY_MEDIA: { async get(key, options) { reads++; const bytes = new Uint8Array(20); return { size: 20, body: new Blob([options?.range ? bytes.slice(options.range.offset, options.range.offset + options.range.length) : bytes]).stream() }; } } };
+  const url = media.hlsUrl.replace('master.m3u8', 'q360/s000000.ts');
+  const result = await handleVideoHls(new Request(url, { headers: { Origin: process.env.CLIENT_URL, Range: 'bytes=5-9' } }), env);
+  assert.equal(result.status, 206); assert.equal((await result.arrayBuffer()).byteLength, 5); assert.equal(result.headers.get('Content-Range'), 'bytes 5-9/20'); assert.equal(result.headers.get('Access-Control-Allow-Origin'), process.env.CLIENT_URL); assert.match(result.headers.get('Cache-Control'), /no-store/);
+  const head = await handleVideoHls(new Request(url, { method: 'HEAD' }), env); assert.equal(head.status, 200); assert.equal(reads, 1);
+  denied = true;
+  assert.equal((await handleVideoHls(new Request(url), env)).status, 410); assert.equal(reads, 1);
+  assert.equal((await handleVideoHls(new Request(url.replace('q360/s000000.ts', 'original.mp4')), env)).status, 401); assert.equal(reads, 1);
+  assert.equal((await handleVideoHls(new Request(url, { headers: { Origin: 'https://other.example' } }), env)).status, 403);
 });
 
 test('video recovery starts at actual Pro expiry and renewal restores hosting', async () => {
@@ -231,4 +266,65 @@ test('video recovery starts at actual Pro expiry and renewal restores hosting', 
   } finally {
     await User.updateOne({ _id: owner._id }, { $set: { planOverride: { plan: 'pro' } }, $unset: { videoRetentionUntil: 1 } });
   }
+});
+
+
+test('pending covers and unmigrated playback cannot publish incomplete snapshots', async () => {
+  const film = await asset(); const project = await delivery(film);
+  const beforeCover = (await ownerVideoDTO(project)).assets[0].posterUrl;
+  await VideoAsset.updateOne({ _id: film._id }, { $set: { 'cover.state': 'queued' } });
+  const pending = response(); await publishVideoDelivery(request(project._id, { revision: 0 }), pending); assert.equal(pending.statusCode, 409);
+  await VideoAsset.updateOne({ _id: film._id }, { $set: { 'cover.state': 'ready', 'cover.generation': crypto.randomUUID() }, $unset: { hls: 1 } });
+  assert.notEqual((await ownerVideoDTO(project)).assets[0].posterUrl, beforeCover, 'A completed cover must refresh the image in the creator.');
+  const missing = response(); await publishVideoDelivery(request(project._id, { revision: 0 }), missing); assert.equal(missing.statusCode, 409);
+  assert.equal((await Delivery.findById(project._id)).status, 'draft');
+});
+
+test('media access stops on link expiry, playback pause and Pro expiry; preview grants stay scoped', async () => {
+  const film = await asset(); const project = await delivery(film); project.status = 'published'; project.video.published = project.video.draft; await project.save();
+  const media = await videoPlayback({ delivery: project, asset: film, settings });
+  const input = { token: new URL(media.hlsUrl).pathname.split('/')[2], file: 'master.m3u8', method: 'GET' };
+  await Delivery.updateOne({ _id: project._id }, { $set: { 'access.expiresAt': new Date(Date.now() - 1000) } });
+  await assert.rejects(authorizeHlsRequest(input), { code: 'VIDEO_LINK_CLOSED' });
+  await Delivery.updateOne({ _id: project._id }, { $set: { 'access.expiresAt': null } });
+  try {
+    await updateRuntimeConfig({ videoDelivery: { ...settings, playbackEnabled: false } });
+    await assert.rejects(authorizeHlsRequest(input), { code: 'VIDEO_PLAYBACK_PAUSED' });
+    await updateRuntimeConfig({ videoDelivery: settings });
+    await User.updateOne({ _id: owner._id }, { $set: { planOverride: { plan: 'free' } } });
+    await assert.rejects(authorizeHlsRequest(input), { code: 'VIDEO_PRO_REQUIRED' });
+  } finally { await User.updateOne({ _id: owner._id }, { $set: { planOverride: { plan: 'pro' } } }); await updateRuntimeConfig({ videoDelivery: settings }); }
+  const preview = await videoPlayback({ delivery: project, asset: film, settings, preview: true });
+  await assert.rejects(videoPlayback({ delivery: project, asset: film, settings, sessionId: preview.sessionId, preview: false }), { code: 'VIDEO_SESSION_EXPIRED' });
+  await VideoPlayback.deleteOne({ _id: media.sessionId });
+  await assert.rejects(authorizeHlsRequest(input), { code: 'VIDEO_SESSION_EXPIRED' });
+});
+
+const encoder = spawnSync(process.env.FFMPEG_PATH || 'ffmpeg', ['-hide_banner', '-muxers'], { encoding: 'utf8', windowsHide: true });
+test('real preparation commits complete R2 HLS and duration together; expired job leases cannot publish', { skip: !(encoder.status === 0 && /\bE\s+hls\s/.test(encoder.stdout)) && 'Requires full FFmpeg and FFprobe.', timeout: 180000 }, async t => {
+  const original = await readFile(new URL('../../client/public/veylo/video/light-study.mp4', import.meta.url));
+  const film = await asset(); await VideoAsset.updateOne({ _id: film._id }, { $set: { state: 'queued', bytes: original.length }, $unset: { hls: 1, posterKey: 1 } });
+  await videoTransaction(session => reserveVideoBytes({ assetId: film._id, userId: owner._id, bytes: original.length, limit: 100 * 1024 ** 3 }, session));
+  await videoTransaction(session => commitVideoBytes(film._id, session));
+  const stored = new Map();
+  t.mock.method(globalThis, 'fetch', async (url, options = {}) => {
+    const target = new URL(url);
+    assert.match(target.hostname, /r2\.cloudflarestorage\.com$/);
+    if (target.searchParams.has('list-type')) return new Response('<ListBucketResult><IsTruncated>false</IsTruncated></ListBucketResult>');
+    if (options.method === 'PUT') { stored.set(decodeURIComponent(target.pathname.slice('/test/'.length)), Buffer.from(await new Response(options.body).arrayBuffer())); return new Response(null, { status: 200 }); }
+    if (options.method === 'DELETE') return new Response(null, { status: 204 });
+    return new Response(original, { headers: { 'Content-Length': String(original.length) } });
+  });
+  const job = await VideoJob.create({ key: 'real-prepare:' + film._id, assetId: film._id, userId: owner._id, type: 'prepare', state: 'running', leaseToken: crypto.randomUUID(), leaseUntil: new Date(Date.now() + 120000) });
+  await prepareVideo(await VideoAsset.findById(film._id), settings, job);
+  const ready = await VideoAsset.findById(film._id);
+  assert.equal(ready.state, 'ready'); assert.ok(ready.hls.variants.length >= 2); assert.ok(stored.has(ready.hls.prefix + 'master.m3u8'));
+  assert.equal((await VideoQuota.findById(String(film._id))).durationState, 'committed');
+  for (const variant of ready.hls.variants) for (let index = 0; index < variant.segments.length; index++) assert.equal(stored.get(ready.hls.prefix + variant.name + '/s' + String(index).padStart(6, '0') + '.ts').length, variant.segments[index].bytes);
+  const stale = await asset(); await VideoAsset.updateOne({ _id: stale._id }, { $set: { state: 'queued', bytes: original.length }, $unset: { hls: 1 } });
+  const expired = await VideoJob.create({ key: 'expired:' + stale._id, assetId: stale._id, userId: owner._id, type: 'prepare', state: 'running', leaseToken: crypto.randomUUID(), leaseUntil: new Date(Date.now() - 1000) });
+  await assert.rejects(prepareVideo(await VideoAsset.findById(stale._id), settings, expired), { code: 'VIDEO_JOB_SUPERSEDED' });
+  assert.notEqual((await VideoAsset.findById(stale._id)).state, 'ready');
+  await VideoJob.updateOne({ _id: job._id }, { $set: { state: 'done' } });
+  await deleteVideoOriginal(ready); assert.equal((await VideoQuota.findById(String(film._id))).byteState, 'released');
 });

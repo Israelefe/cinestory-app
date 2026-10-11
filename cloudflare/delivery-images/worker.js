@@ -1,4 +1,5 @@
 import { cleanMediaManifests, handleMediaRequest } from './media-worker.js';
+import { handleVideoHls } from './video-hls.js';
 
 const MAX_IMAGE_BYTES = 20_000_000;
 const IMAGE_WIDTHS = new Set([400, 480, 640, 800, 960, 1024, 1200, 1600]);
@@ -174,7 +175,7 @@ async function handleImage(request, env, ctx) {
 
 export default {
   async fetch(request, env, ctx) {
-    return await handleMediaRequest(request, env, ctx) || handleImage(request, env, ctx);
+    return await handleVideoHls(request, env) || await handleMediaRequest(request, env, ctx) || handleImage(request, env, ctx);
   },
   async scheduled(_event, env, ctx) {
     ctx.waitUntil(cleanMediaManifests(env));

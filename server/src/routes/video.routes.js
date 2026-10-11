@@ -6,6 +6,7 @@ import * as video from '../controllers/video.controller.js';
 
 const router = express.Router();
 const poster = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10_000_000, files: 1, fields: 2 }, fileFilter: (req, file, done) => done(null, ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) });
+router.post('/media/authorize', video.authorizeVideoMedia);
 router.get('/config', publicAccessLimit, video.getVideoConfig);
 router.get('/public/:publicId', publicAccessLimit, video.getPublicVideo);
 router.post('/public/:publicId/unlock', privateLinkUnlockLimit, video.unlockPublicVideo);

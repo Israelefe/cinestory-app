@@ -13,16 +13,23 @@ export function frameTimestamps(duration) {
   return Array.from({ length: count }, (_, index) => Math.round((duration * (index + .5) / count) * 100) / 100);
 }
 
-export function runMediaTool(tool, args, { timeoutMs = 120_000, maxOutput = 1_000_000 } = {}) {
+export function runMediaTool(tool, args, { timeoutMs = 120_000, maxOutput = 1_000_000, guard } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.env[tool === 'ffprobe' ? 'FFPROBE_PATH' : 'FFMPEG_PATH'] || tool, args, { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, TEMP: process.env.TEMP, TMP: process.env.TMP } });
     const chunks = []; let bytes = 0; let settled = false;
-    const finish = (error, value) => { if (settled) return; settled = true; clearTimeout(timer); error ? reject(error) : resolve(value); };
-    const timer = setTimeout(() => { child.kill('SIGKILL'); finish(Object.assign(new Error('This video took too long to inspect. Try a standard MP4 export.'), { code: 'VIDEO_MEDIA_TIMEOUT' })); }, timeoutMs);
-    child.stdout.on('data', chunk => { bytes += chunk.length; if (bytes > maxOutput) { child.kill('SIGKILL'); finish(new Error('Video inspection output exceeded its limit.')); } else chunks.push(chunk); });
+    let checking = false; let failure;
+    const stop = error => { if (settled || failure) return; failure = error; child.kill('SIGKILL'); };
+    const watch = guard && setInterval(async () => {
+      if (checking || settled) return; checking = true;
+      try { await guard(); } catch (error) { stop(error); } finally { checking = false; }
+    }, 10_000);
+    watch?.unref?.();
+    const finish = (error, value) => { if (settled) return; settled = true; clearTimeout(timer); clearInterval(watch); error ? reject(error) : resolve(value); };
+    const timer = setTimeout(() => { stop(Object.assign(new Error('This video took too long to prepare. Try a shorter or smaller export.'), { code: 'VIDEO_MEDIA_TIMEOUT' })); }, timeoutMs);
+    child.stdout.on('data', chunk => { bytes += chunk.length; if (bytes > maxOutput) { stop(new Error('Video inspection output exceeded its limit.')); } else chunks.push(chunk); });
     child.stderr.on('data', () => {}); // Provider paths and media metadata never enter logs.
     child.once('error', () => finish(Object.assign(new Error('The video media worker is unavailable.'), { code: 'VIDEO_MEDIA_UNAVAILABLE' })));
-    child.once('close', code => finish(code ? Object.assign(new Error('This export could not be decoded. Try MP4 with H.264 video and AAC audio.'), { code: 'VIDEO_INVALID_MEDIA' }) : null, Buffer.concat(chunks).toString('utf8')));
+    child.once('close', code => finish(failure || (code ? Object.assign(new Error('This export could not be decoded. Try MP4 with H.264 video and AAC audio.'), { code: 'VIDEO_INVALID_MEDIA' }) : null), Buffer.concat(chunks).toString('utf8')));
   });
 }
 
@@ -66,9 +73,11 @@ export async function inspectLocalVideo(file, maxDuration) {
   const video = metadata.streams?.find(stream => stream.codec_type === 'video' && !stream.disposition?.attached_pic);
   const audio = metadata.streams?.find(stream => stream.codec_type === 'audio');
   const duration = Number(metadata.format?.duration || video?.duration);
-  if (!video || !Number.isFinite(duration) || duration < .1 || duration > maxDuration || !Number.isInteger(video.width) || !Number.isInteger(video.height) || video.width > 8192 || video.height > 8192 || video.width < 1 || video.height < 1) throw Object.assign(new Error('Choose a playable video within the duration and export limits.'), { code: 'VIDEO_INVALID_MEDIA' });
+  if (!video || !Number.isFinite(duration) || duration < .1 || duration > maxDuration || !Number.isInteger(video.width) || !Number.isInteger(video.height) || video.width > 8192 || video.height > 8192 || video.width < 16 || video.height < 16) throw Object.assign(new Error('Choose a playable video within the duration and export limits.'), { code: 'VIDEO_INVALID_MEDIA' });
   const rotation = Number(video.side_data_list?.find(item => Number.isFinite(item.rotation))?.rotation || video.tags?.rotate || 0);
-  return { duration, width: Math.abs(rotation) % 180 === 90 ? video.height : video.width, height: Math.abs(rotation) % 180 === 90 ? video.width : video.height, rotation, videoCodec: video.codec_name, audioCodec: audio?.codec_name || '' };
+  const [rate, divisor = 1] = String(video.avg_frame_rate || '30').split('/').map(Number);
+  const frameRate = Number.isFinite(rate / divisor) && rate / divisor > 0 ? Math.min(30, rate / divisor) : 30;
+  return { duration, width: Math.abs(rotation) % 180 === 90 ? video.height : video.width, height: Math.abs(rotation) % 180 === 90 ? video.width : video.height, rotation, frameRate, videoCodec: video.codec_name, audioCodec: audio?.codec_name || '' };
 }
 
 export async function extractVideoFrame(file, directory, seconds, index = 0) {

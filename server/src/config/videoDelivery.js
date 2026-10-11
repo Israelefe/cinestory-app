@@ -5,7 +5,7 @@ export const VIDEO_DEFAULTS = Object.freeze({
   accountTransfers: 2, platformTransfers: 100, platformEncodes: 100, accountViewers: 100,
   partBytes: 16 * 1024 * 1024, reservationHours: 24, recoveryDays: 30,
   tokenSeconds: 600, usageMaxLagSeconds: 1800, aiMonthlyBudgetUsd: 10,
-  aiPlatformDailyBudgetUsd: 20, workerConcurrency: 2
+  aiPlatformDailyBudgetUsd: 20, workerConcurrency: 1
 });
 
 const bounds = {
@@ -34,9 +34,16 @@ export function normalizeVideoSettings(value = {}) {
 
 export function videoInfrastructure() {
   const has = names => names.every(name => Boolean(String(process.env[name] || '').trim()));
+  let playback = false;
+  try {
+    const url = new URL(process.env.VIDEO_PLAYBACK_WORKER_URL || process.env.R2_IMAGE_WORKER_URL);
+    playback = (process.env.VIDEO_PLAYBACK_SECRET || '').length >= 32
+      && url.protocol === 'https:' && !url.username && !url.password
+      && url.pathname === '/' && !url.search && !url.hash;
+  } catch { /* Missing or invalid playback configuration stays unavailable. */ }
   return {
     storage: has(['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET_NAME']),
-    stream: has(['CLOUDFLARE_STREAM_ACCOUNT_ID', 'CLOUDFLARE_STREAM_API_TOKEN', 'CLOUDFLARE_STREAM_CUSTOMER_CODE', 'CLOUDFLARE_STREAM_KEY_ID', 'CLOUDFLARE_STREAM_PRIVATE_KEY', 'CLOUDFLARE_STREAM_WEBHOOK_SECRET']),
+    playback,
     ai: has(['CLOUDFLARE_AI_ACCOUNT_ID', 'CLOUDFLARE_AI_API_TOKEN']) && process.env.VIDEO_AI_MODEL_READY === 'true',
     media: process.env.VIDEO_MEDIA_WORKER_ENABLED === 'true'
   };
@@ -44,7 +51,7 @@ export function videoInfrastructure() {
 
 export function publicVideoSettings(settings) {
   const infrastructure = videoInfrastructure();
-  const configured = infrastructure.storage && infrastructure.stream && infrastructure.media;
+  const configured = infrastructure.storage && infrastructure.playback && infrastructure.media;
   return { ...Object.fromEntries(['maxVideos', 'maxFileBytes', 'maxDurationSeconds', 'storedSeconds', 'monthlyDeliveredMinutes', 'accountTransfers', 'recoveryDays'].map(key => [key, settings[key]])),
     available: Boolean(settings.enabled && settings.publicAvailable && configured && process.env.VIDEO_DELIVERY_QUALIFIED === 'true'),
     configured, writeAvailable: Boolean(settings.enabled && configured), aiAvailable: Boolean(settings.aiEnabled && infrastructure.ai), playbackResolution: '1080p' };

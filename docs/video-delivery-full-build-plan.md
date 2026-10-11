@@ -1,5 +1,8 @@
 # Video Delivery: full build plan
 
+> Updated 11 October 2026: the owner approved replacing Cloudflare Stream with FFmpeg-generated adaptive HLS on private R2. The current implementation and deployment requirements are documented in [video-delivery-operations.md](video-delivery-operations.md). Stream provisioning, signing, webhooks, analytics and Stream-specific cost assumptions below are historical and superseded. Upload limits, Pro access, shared original storage, privacy and AI requirements remain. This change removes the Stream subscription, not R2, encoding compute or optional AI costs.
+
+
 Date: 10 October 2026. Status: implementation and local validation complete; production qualification remains gated. See [setup and release checks](video-delivery-operations.md) for the implementation record and outstanding provider/device/load checks.
 
 This plan is grounded in the current Veylo codebase and Cloudflare's documentation checked on the date above. It covers the complete feature, its operating costs, the pages that need updating, and the checks required before release. Creating this document does not enable video uploads or change the live product.

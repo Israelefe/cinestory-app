@@ -6,6 +6,8 @@ workers_dev = true
 
 [vars]
 VEYLO_API_ORIGIN = "https://veylo-api-ptk3.onrender.com"
+VEYLO_WEB_ORIGIN = "https://veylo.com.ng"
+# Set VIDEO_PLAYBACK_SECRET with `wrangler secret put`; share it with the API.
 
 # ZIP CRC checks and streaming hashes require Workers Paid, without Containers.
 [limits]

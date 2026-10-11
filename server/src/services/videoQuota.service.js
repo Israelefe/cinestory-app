@@ -44,11 +44,12 @@ export async function reserveVideoDuration(assetId, seconds, limit) {
   });
 }
 
-export async function commitVideoDuration(assetId) {
-  return videoTransaction(async session => {
+export async function commitVideoDuration(assetId, transactionSession) {
+  const work = async session => {
     const quota = await VideoQuota.findOneAndUpdate({ _id: String(assetId), durationState: 'reserved' }, { $set: { durationState: 'committed' } }, { session, new: true });
     if (quota) await User.updateOne({ _id: quota.userId }, { $inc: { videoReservedSeconds: -quota.seconds, videoStoredSeconds: quota.seconds } }, { session });
-  });
+  };
+  return transactionSession ? work(transactionSession) : videoTransaction(work);
 }
 
 // Call only after both provider cleanup steps succeed. Keeping the ledger row

@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const id = '222222222222222222222222', assetId = '333333333333333333333333';
 const config = { configured: true, available: true, writeAvailable: true, aiAvailable: false, maxVideos: 10, maxFileBytes: 5_000_000_000, accountTransfers: 2 };
@@ -30,6 +33,36 @@ async function mock(page, options = {}) {
   return { state, errors };
 }
 async function noOverflow(page) { expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true); }
+
+for (const width of [390, 834, 1440]) test(`real adaptive HLS plays, seeks and keeps original audio at ${width}px`, async ({ page }) => {
+  const fixture = new URL('../../.visual-review/video-hls/landscape/', import.meta.url);
+  test.skip(!existsSync(fileURLToPath(new URL('master.m3u8', fixture))), 'Generate real fixtures with the server video encoding tests first.');
+  const { errors } = await mock(page); const requested = [];
+  await page.setViewportSize({ width, height: 1000 });
+  await page.route('**/__hls__/**', async route => {
+    const file = new URL(route.request().url()).pathname.slice('/__hls__/'.length);
+    if (!/^(master\.m3u8|q\d+\/(?:index\.m3u8|s\d{6}\.ts))$/.test(file)) return route.abort();
+    requested.push(file);
+    await route.fulfill({ contentType: file.endsWith('.ts') ? 'video/mp2t' : 'application/vnd.apple.mpegurl', body: await readFile(new URL(file, fixture)) });
+  });
+  await page.route('**/api/v1/videos/public/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    const data = path.endsWith('/playback') ? { sessionId: '44444444-4444-4444-8444-444444444444', hlsUrl: '/__hls__/master.m3u8', expiresAt: new Date(Date.now() + 600000).toISOString() } : path.endsWith('/playback/end') ? {} : { ...presentation, items: [{ ...asset, ...presentation.items[0], duration: 8, width: 1920, height: 1080 }], branding: { name: 'Amara Studio' } };
+    return route.fulfill({ json: { success: true, data } });
+  });
+  await page.goto('/v/' + 'a'.repeat(24));
+  await expect(page.locator('video')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Play film', exact: true }).click();
+  await expect.poll(() => page.locator('video').evaluate(video => video.currentTime), { timeout: 15000 }).toBeGreaterThan(.2);
+  expect(await page.locator('video').evaluate(video => video.muted)).toBe(false);
+  if (width === 1440) await expect.poll(() => new Set(requested.filter(file => file.endsWith('.ts')).map(file => file.split('/')[0])).size, { timeout: 10000 }).toBeGreaterThan(1);
+  await page.locator('video').evaluate(video => { video.pause(); video.currentTime = 6.2; });
+  await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(6);
+  expect(requested).toContain('master.m3u8');
+  expect(requested.some(file => /q\d+\/s\d+\.ts/.test(file))).toBe(true);
+  await expect(page.locator('.vv-error')).toHaveCount(0); await noOverflow(page);
+  expect(errors).toEqual([]);
+});
 
 for (const width of [320, 390, 768, 834, 1024, 1440]) test(`client demo fits ${width}px with one idle player and photographer branding`, async ({ page }) => {
   const { errors } = await mock(page); await page.setViewportSize({ width, height: 950 }); await page.emulateMedia({ reducedMotion: 'reduce' }); await page.goto('/demo/video');

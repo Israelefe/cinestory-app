@@ -7,10 +7,14 @@ const assetSchema = new Schema({
   userId: owner, objectKey: { type: String, required: true, unique: true },
   filename: { type: String, maxlength: 180, required: true }, contentType: String,
   bytes: { type: Number, min: 1, required: true }, checksum: String,
-  duration: Number, width: Number, height: Number, rotation: Number, videoCodec: String, audioCodec: String,
+  duration: Number, width: Number, height: Number, rotation: Number, frameRate: Number, videoCodec: String, audioCodec: String,
   state: { type: String, enum: ['reserved', 'uploading', 'verifying', 'queued', 'processing', 'ready', 'failed', 'deleting', 'deleted'], default: 'reserved', index: true },
   errorCode: String, errorMessage: String, streamUid: { type: String, index: true },
   streamImportedAt: Date, streamReadyAt: Date, posterKey: String, posterKeys: [String],
+  encodingId: String,
+  hls: { version: String, prefix: String, bytes: Number, masterBytes: Number, readyAt: Date,
+    variants: [{ _id: false, name: String, width: Number, height: Number, bitrate: Number, bandwidth: Number, playlistBytes: Number, segments: [{ _id: false, seconds: Number, bytes: Number }] }] },
+  cover: { state: String, generation: String, seconds: Number, errorMessage: String },
   analysis: { state: { type: String, enum: ['idle', 'queued', 'running', 'ready', 'failed'], default: 'idle' },
     includeSpeech: Boolean, generation: String, version: String, frames: [Number], suggestions: Schema.Types.Mixed,
     inputHash: String, costUsd: Number, errorMessage: String, completedAt: Date },
@@ -37,7 +41,7 @@ const quotaSchema = new Schema({
 const jobSchema = new Schema({
   key: { type: String, unique: true, required: true }, userId: owner,
   assetId: { type: Schema.Types.ObjectId, required: true },
-  type: { type: String, enum: ['prepare', 'analyze', 'present', 'delete'], required: true },
+  type: { type: String, enum: ['prepare', 'analyze', 'present', 'poster', 'delete'], required: true },
   state: { type: String, enum: ['queued', 'running', 'done', 'failed'], default: 'queued' },
   attempts: { type: Number, default: 0 }, leaseUntil: Date, leaseToken: String,
   runAfter: { type: Date, default: Date.now }, errorCode: String, options: Schema.Types.Mixed, result: Schema.Types.Mixed
@@ -47,13 +51,13 @@ jobSchema.index({ state: 1, runAfter: 1, leaseUntil: 1 });
 const leaseSchema = new Schema({ _id: String, ownerId: String, resourceId: String, expiresAt: { type: Date, index: true } }, { timestamps: true });
 const usageSchema = new Schema({
   _id: String, userId: owner, periodStart: Date, periodEnd: Date,
-  deliveredMinutes: { type: Number, default: 0 }, reconciledAt: Date,
+  deliveredMinutes: { type: Number, default: 0 }, deliveredBytes: { type: Number, default: 0 }, reconciledAt: Date,
   warned80At: Date, warned95At: Date
 }, { timestamps: true });
 const playbackSchema = new Schema({
   _id: String, userId: owner, deliveryId: { type: Schema.Types.ObjectId, required: true },
   assetId: { type: Schema.Types.ObjectId, required: true }, accessVersion: Number,
-  leaseId: String, expiresAt: { type: Date, index: { expireAfterSeconds: 0 } }
+  preview: { type: Boolean, default: false }, leaseId: String, expiresAt: { type: Date, index: { expireAfterSeconds: 0 } }
 }, { timestamps: true });
 const aiUsageSchema = new Schema({ _id: String, reservedUsd: { type: Number, default: 0 }, spentUsd: { type: Number, default: 0 } }, { timestamps: true });
 

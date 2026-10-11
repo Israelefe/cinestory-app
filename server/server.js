@@ -17,7 +17,6 @@ import billingRoutes from './src/routes/billing.routes.js';
 import deliveryRoutes from './src/routes/delivery.routes.js';
 import storageRoutes from './src/routes/storage.routes.js';
 import videoRoutes from './src/routes/video.routes.js';
-import { streamWebhook } from './src/services/videoWorker.service.js';
 import { ensureVideoIndexes } from './src/models/video.models.js';
 import portfolioRoutes from './src/routes/portfolio.routes.js';
 import supportRoutes from './src/routes/support.routes.js';
@@ -88,7 +87,6 @@ app.disable('x-powered-by');
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 // Paystack signs the exact request bytes. This route must stay above express.json().
 app.post('/api/v1/webhooks/paystack', express.raw({ type: 'application/json', limit: '256kb' }), paystackWebhook);
-app.post('/api/v1/webhooks/stream', express.raw({ type: 'application/json', limit: '256kb' }), streamWebhook);
 function isAllowedOrigin(origin) {
   if (!origin) return true;
   const clean = origin.replace(/\/$/, '');

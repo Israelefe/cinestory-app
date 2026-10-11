@@ -12,11 +12,11 @@ import { publicVideoSettings } from '../config/videoDelivery.js';
 import { videoTransaction, reserveVideoBytes, commitVideoBytes } from '../services/videoQuota.service.js';
 import { acquireVideoLease, releaseVideoLease } from '../services/videoLease.service.js';
 import { presignR2Object, createR2Multipart, listR2Parts, completeR2Multipart, headR2Object, getR2ObjectStream, getR2ObjectBuffer, putR2Object } from '../services/r2.service.js';
-import { signedStreamMedia } from '../services/videoProvider.service.js';
+import { trustedVideoEdge } from '../services/videoHls.service.js';
 import { lagosMonthWindow } from '../services/entitlement.service.js';
 import { recordPaidUsage } from '../services/paidUsage.service.js';
 import { videoEvent, recordVideoVisit } from '../services/videoEvents.service.js';
-import { videoContext, videoId, videoError, ownedVideoDelivery, ownedVideoAsset, ownerVideoDTO, videoAssetDTO, publicVideoDelivery, setVideoGrant, videoBrand, videoPresentationDTO, videoPlayback, usageKey, queueVideoJob } from '../services/videoDelivery.service.js';
+import { videoContext, videoId, videoError, ownedVideoDelivery, ownedVideoAsset, ownerVideoDTO, videoAssetDTO, publicVideoDelivery, setVideoGrant, videoBrand, videoPresentationDTO, videoPlayback, usageKey, queueVideoJob, authorizeHlsRequest } from '../services/videoDelivery.service.js';
 
 const id = z.string().regex(/^[a-f\d]{24}$/i);
 const itemSchema = z.object({ assetId: id, title: z.string().trim().max(100).default(''), description: z.string().trim().max(2000).default(''), posterSeconds: z.number().finite().min(0).max(10800).default(0), allowDownload: z.boolean().nullable().default(null) }).strict();
@@ -38,6 +38,11 @@ const writable = req => videoContext(req.user.id, { write: true });
 function editable(delivery) { if (delivery.status === 'archived') throw videoError('Restore this delivery before making changes.', 409); }
 
 export const getVideoConfig = videoAction(async (req, res) => ok(res, publicVideoSettings((await getRuntimeConfig()).videoDelivery)));
+export const authorizeVideoMedia = videoAction(async (req, res) => {
+  if (!trustedVideoEdge(req.get('x-veylo-video-secret'))) throw videoError('Not authorised.', 401);
+  const input = parse(z.object({ token: z.string().max(2000), file: z.string().max(100), method: z.enum(['GET', 'HEAD']) }).strict(), req.body);
+  ok(res, await authorizeHlsRequest(input));
+});
 export const createVideoDelivery = videoAction(async (req, res) => {
   const { settings } = await writable(req);
   if (!settings.uploadsEnabled) throw videoError('New video uploads are temporarily paused.', 503);
@@ -83,10 +88,10 @@ export const publishVideoDelivery = videoAction(async (req, res) => {
   if (delivery.access?.expiresAt && delivery.access.expiresAt <= new Date()) throw videoError('Update the expired access date before publishing.');
   // The snapshot and asset states are read and committed in one transaction.
   await videoTransaction(async session => {
-    const readyAssets = await VideoAsset.find({ _id: { $in: draft.items.map(item => item.assetId) }, userId: req.user.id, state: 'ready', duration: { $lte: settings.maxDurationSeconds }, bytes: { $lte: settings.maxFileBytes } }).select('_id posterKey').session(session).lean();
+    const readyAssets = await VideoAsset.find({ _id: { $in: draft.items.map(item => item.assetId) }, userId: req.user.id, state: 'ready', 'hls.version': { $exists: true }, 'cover.state': { $nin: ['queued', 'running'] }, duration: { $lte: settings.maxDurationSeconds }, bytes: { $lte: settings.maxFileBytes } }).select('_id posterKey').session(session).lean();
     const snapshot = draft.toObject();
     snapshot.items = snapshot.items.map(item => ({ ...item, posterKey: readyAssets.find(asset => String(asset._id) === String(item.assetId))?.posterKey }));
-    if (readyAssets.length !== draft.items.length) throw videoError('Wait for every video to finish preparing before publishing.', 409);
+    if (readyAssets.length !== draft.items.length) throw videoError('Wait for every video and cover to finish preparing before publishing.', 409);
     const updated = await Delivery.updateOne({ _id: delivery._id, userId: req.user.id, 'video.revision': revision }, { $set: { 'video.published': snapshot, status: 'published', publishedAt: delivery.publishedAt || new Date(), 'access.revokedAt': null }, $inc: { 'video.accessVersion': 1, 'video.revision': 1 } }, { session });
     if (!updated.modifiedCount) throw videoError('The draft changed. Save your latest changes and publish again.', 409, 'VIDEO_DRAFT_CONFLICT');
     // Updating assets participates in the deletion/reuse race without changing them visually.
@@ -388,12 +393,10 @@ export const setVideoPoster = videoAction(async (req, res) => {
   let source = req.file?.buffer;
   if (!source) {
     const { seconds } = parse(z.object({ seconds: z.number().finite().min(0).max(asset.duration) }).strict(), req.body);
-    const { posterUrl } = signedStreamMedia(asset.streamUid, { seconds: 300, posterSeconds: seconds });
-    const response = await fetch(posterUrl, { signal: AbortSignal.timeout(30_000) });
-    if (!response.ok || Number(response.headers.get('content-length')) > 10_000_000) throw videoError('This cover frame could not be loaded.', 502);
-    const chunks = []; let bytes = 0;
-    for await (const chunk of response.body) { bytes += chunk.length; if (bytes > 10_000_000) throw videoError('Cover image is too large.', 413); chunks.push(Buffer.from(chunk)); }
-    source = Buffer.concat(chunks);
+    const generation = crypto.randomUUID();
+    await VideoAsset.updateOne({ _id: asset._id, state: 'ready' }, { $set: { cover: { state: 'queued', generation, seconds, errorMessage: '' } } });
+    await queueVideoJob(asset, 'poster', { seconds, generation }, generation);
+    return ok(res, { queued: true });
   }
   const image = sharp(source, { limitInputPixels: 40_000_000, failOn: 'error' });
   const metadata = await image.metadata().catch(() => { throw videoError('Choose a JPEG, PNG or WebP cover.'); });
@@ -401,6 +404,6 @@ export const setVideoPoster = videoAction(async (req, res) => {
   const buffer = await image.rotate().resize({ width: 1280, height: 1280, fit: 'inside', withoutEnlargement: true }).webp({ quality: 84 }).toBuffer();
   const key = asset.objectKey.replace(/original\.[^.]+$/, `cover-${crypto.randomUUID()}.webp`);
   await putR2Object(key, buffer, { contentType: 'image/webp' });
-  await VideoAsset.updateOne({ _id: asset._id, state: 'ready' }, { $set: { posterKey: key }, $addToSet: { posterKeys: key } });
+  await VideoAsset.updateOne({ _id: asset._id, state: 'ready' }, { $set: { posterKey: key, cover: { state: 'ready', generation: crypto.randomUUID() } }, $addToSet: { posterKeys: key } });
   ok(res, { posterUrl: `/api/v1/videos/assets/${asset._id}/poster?v=${Date.now()}` });
 });

@@ -80,7 +80,7 @@ function providerState() {
     email: { provider: 'Resend', configured: Boolean(process.env.RESEND_API_KEY), from: process.env.RESEND_FROM_EMAIL || 'Veylo <info@veylo.com.ng>' },
     billing: { provider: 'Paystack', configured: Boolean(process.env.PAYSTACK_SECRET_KEY && process.env.PAYSTACK_PRO_PLAN_CODE), enabled: process.env.BILLING_ENABLED === 'true' },
     r2: { provider: 'Cloudflare R2', configured: r2Configured() },
-    video: { provider: 'Cloudflare Stream / private R2 originals', configured: videoInfrastructure().stream && videoInfrastructure().storage && videoInfrastructure().media }
+    video: { provider: 'Private R2 adaptive HLS / FFmpeg', configured: videoInfrastructure().playback && videoInfrastructure().storage && videoInfrastructure().media }
   };
 }
 
