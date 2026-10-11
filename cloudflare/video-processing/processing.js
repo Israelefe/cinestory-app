@@ -144,6 +144,7 @@ export function processingClasses(DurableObject) {
       }
     }
     async tick({ start = false, slot, enabled = true } = {}) {
+      this.operation = 'configuration';
       const container = this.ctx.container;
       if (!enabled) { await this.stop(); return; }
       let run = await this.ctx.storage.get('run');
@@ -157,8 +158,11 @@ export function processingClasses(DurableObject) {
         await this.ctx.storage.put('run', run);
         // Store a recovery alarm before startup; startup is asynchronous.
         await this.ctx.storage.setAlarm(Date.now() + POLL_MS);
+        this.operation = 'container-start';
         container.start({ enableInternet: true, env: containerEnvironment(this.env) });
+        this.operation = 'container-inactivity-timeout';
         await container.setInactivityTimeout(120_000);
+        this.operation = 'container-monitor';
         this.ctx.waitUntil(container.monitor().catch(() => console.warn('[video-processing] Encoder stopped; queued work will recover.')));
       }
       if (!run || Date.now() - run.startedAt > processingLimits(this.env).jobSeconds * 1000) { await this.stop(); return; }
@@ -167,18 +171,24 @@ export function processingClasses(DurableObject) {
       await this.ctx.storage.setAlarm(Date.now() + POLL_MS);
       await container.setInactivityTimeout(120_000);
       try {
+        this.operation = 'encoder-status';
         const status = await this.control('status');
         if (!status.ready) throw new Error('Encoder not ready.');
+        this.operation = 'encoder-lease';
         await this.control('lease', { until: credit.until });
         if (!run.launched) {
+          this.operation = 'readiness-proof';
           await internal(this.env, 'verified');
           await this.ctx.storage.delete('failures');
           await this.ctx.storage.delete('nextStartAt');
+          this.operation = 'encoder-run';
           await this.control('run', {});
           run.launched = true;
           await this.ctx.storage.put('run', run);
         } else if (!status.busy) await this.stop();
       } catch {
+        // Log only a fixed operation label, never provider errors or credentials.
+        console.warn('[video-processing] Encoder is unavailable at ' + this.operation + '.');
         // Mongo/index/FFmpeg startup gets a bounded grace period. Never extend
         // it indefinitely or keep a failed paid instance alive.
         if (run.launched || Date.now() - run.startedAt > 120_000) await this.stop({ failed: true });
@@ -190,11 +200,11 @@ export function processingClasses(DurableObject) {
       if (path !== '/tick' || request.method !== 'POST') return json({ error: 'Not found.' }, 404);
       const body = await request.json();
       // Alarm/request interleaving must not start or stop the same slot twice.
-      await this.ctx.blockConcurrencyWhile(() => this.tick(body).catch(async () => { await this.stop({ failed: true }); }));
+      await this.ctx.blockConcurrencyWhile(() => this.tick(body).catch(async () => { console.warn('[video-processing] Encoder failed at ' + this.operation + '.'); await this.stop({ failed: true }); }));
       return json({ success: true });
     }
     async alarm() {
-      await this.ctx.blockConcurrencyWhile(() => this.tick().catch(async () => { await this.stop({ failed: true }); }));
+      await this.ctx.blockConcurrencyWhile(() => this.tick().catch(async () => { console.warn('[video-processing] Encoder failed at ' + this.operation + '.'); await this.stop({ failed: true }); }));
     }
   }
   return { Coordinator, Encoder };
