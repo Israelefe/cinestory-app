@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import crypto from 'node:crypto';
 import { once } from 'node:events';
+import { readFileSync } from 'node:fs';
 import { createVideoContainerServer } from '../src/services/videoContainer.service.js';
 import { processingAuthorized } from '../src/services/videoProcessingAuth.js';
 import { authorized, apiRequest, containerEnvironment, processingClasses, processingLimits, reserveCredit, handleProcessing } from '../../cloudflare/video-processing/processing.js';
@@ -49,6 +50,17 @@ test('runtime credentials use an explicit allowlist and limits fail closed', () 
   assert.throws(() => containerEnvironment({ ...env(), MONGODB_URI: '' }));
   for (const value of ['0', '5', '1.5', 'garbage']) assert.throws(() => processingLimits({ VIDEO_MAX_CONTAINERS: value }));
   assert.throws(() => processingLimits({ VIDEO_DAILY_CONTAINER_SECONDS: '0' }));
+});
+
+test('production encoder forwards the enabled delivery access flags used by the API', () => {
+  const config = readFileSync(new URL('../../cloudflare/video-processing/wrangler.toml', import.meta.url), 'utf8');
+  const flags = Object.fromEntries(['VIDEO_DELIVERY_ENABLED', 'VIDEO_DELIVERY_PUBLIC', 'VIDEO_DELIVERY_QUALIFIED'].map(key => {
+    const value = config.match(new RegExp('^' + key + '\\s*=\\s*"([^"]+)"', 'm'))?.[1];
+    assert.equal(value, 'true', key + ' must match the public production rollout');
+    return [key, value];
+  }));
+  const values = containerEnvironment({ ...env(), ...flags });
+  for (const [key, value] of Object.entries(flags)) assert.equal(values[key], value);
 });
 
 test('daily credits bound concurrent slots, renewals, crashes and UTC rollover', () => {

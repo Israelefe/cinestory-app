@@ -10,6 +10,10 @@ R2_BUCKET_NAME = "veylo"
 VIDEO_PLAYBACK_WORKER_URL = "https://veylo-delivery-images.israelonanefe08157.workers.dev"
 VIDEO_PROCESSING_MODE = "cloudflare-containers"
 VIDEO_MEDIA_WORKER_ENABLED = "true"
+# Match the production API: the encoder applies the same Pro access checks.
+VIDEO_DELIVERY_ENABLED = "true"
+VIDEO_DELIVERY_PUBLIC = "true"
+VIDEO_DELIVERY_QUALIFIED = "true"
 # Raise deliberately after measuring preparation time and Cloudflare usage.
 VIDEO_MAX_CONTAINERS = "1"
 VIDEO_DAILY_CONTAINER_SECONDS = "21600"
