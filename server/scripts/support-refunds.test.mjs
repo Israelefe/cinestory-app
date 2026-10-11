@@ -3,6 +3,8 @@ import crypto from 'node:crypto';
 import { before, after, beforeEach, test } from 'node:test';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { ImapFlow } from 'imapflow';
+import nodemailer from 'nodemailer';
 import User from '../src/models/User.js';
 import Payment from '../src/models/Payment.js';
 import Subscription from '../src/models/Subscription.js';
@@ -18,7 +20,7 @@ import AdminAudit from '../src/models/AdminAudit.js';
 import { createSupportTicket, readCustomerSupport, replyCustomerSupport, listAdminSupport, readAdminSupport, editAdminSupport, retrySupportEmail, addSupportAttachment, downloadSupportAttachment } from '../src/controllers/support.controller.js';
 import { readRefundRequest, decideRefundRequest, linkSupportRefund, submitCustomerRefundBank } from '../src/controllers/refundSupport.controller.js';
 import { supportCreateSchema, createSupportRequest, categoryForSubject, appendSupportMessage } from '../src/services/support.service.js';
-import { importSupportEmail, runSupportMaintenance, supportMailboxHealth, mailboxConfig } from '../src/services/supportMail.service.js';
+import { importSupportEmail, runSupportMaintenance, supportMailboxHealth, mailboxConfig, deliverSupportMessage } from '../src/services/supportMail.service.js';
 import { refundEvidence, recordPaidUsage } from '../src/services/paidUsage.service.js';
 import { supportHandoffActions } from '../src/controllers/assistant.controller.js';
 import { requestReviewedRefund } from '../src/services/billingRefund.service.js';
@@ -117,6 +119,94 @@ test('an ambiguous SMTP result is preserved and never blindly sent twice', async
   const row = await SupportOutbox.findOne(); assert.equal(row.status, 'uncertain'); assert.equal(attempts, 1);
   const res = await invoke(retrySupportEmail, { params: { id: String(saved._id) }, body: { messageId: String(row.messageId), reason: 'Reviewed mailbox history' } });
   assert.equal(res.code, 400);
+});
+
+function configureSupportDelivery(t, mode = 'resend') {
+  const settings = { SUPPORT_EMAIL_TRANSPORT: mode, RESEND_API_KEY: 're_test_not_a_real_key',
+    SUPPORT_GENERAL_IMAP_HOST: 's4.whitelabelclouds.com', SUPPORT_GENERAL_SMTP_HOST: 's4.whitelabelclouds.com',
+    SUPPORT_GENERAL_PASSWORD: 'test-only-general-password', SUPPORT_BILLING_IMAP_HOST: 'mail.veylo.com.ng',
+    SUPPORT_BILLING_SMTP_HOST: 'mail.veylo.com.ng', SUPPORT_BILLING_PASSWORD: 'test-only-billing-password' };
+  const previous = Object.fromEntries(Object.keys(settings).map(key => [key, process.env[key]]));
+  Object.assign(process.env, settings);
+  t.after(() => { for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
+  const copies = [];
+  t.mock.method(ImapFlow.prototype, 'connect', async function () { return true; });
+  t.mock.method(ImapFlow.prototype, 'list', async function () { return [{ path: 'INBOX.Sent', specialUse: '\\Sent' }]; });
+  t.mock.method(ImapFlow.prototype, 'append', async function (folder, raw) { copies.push({ folder, raw: raw.toString() }); return true; });
+  t.mock.method(ImapFlow.prototype, 'logout', async function () {});
+  return copies;
+}
+async function queuedEmailReply(mailbox) {
+  const saved = await importSupportEmail({ mailbox, sourceKey: `${mailbox}:${crypto.randomUUID()}`, parsed: {
+    messageId: `<${crypto.randomUUID()}@example.test>`, from: { value: [{ address: owner.email }] }, subject: 'Support test', text: 'Please help.' } });
+  await appendSupportMessage(saved._id, { authorType: 'admin', message: 'We have checked your request.', requestKey: crypto.randomUUID() });
+  return SupportOutbox.findOne({ ticketId: saved._id });
+}
+
+test('Resend sends both configured cPanel mailboxes over HTTPS and keeps reply threading and Sent copies', async t => {
+  const copies = configureSupportDelivery(t), deliveries = [];
+  t.mock.method(nodemailer, 'createTransport', () => { assert.fail('SMTP must not be used on Render Free'); });
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(url, 'https://api.resend.com/emails');
+    deliveries.push({ body: JSON.parse(options.body), key: options.headers.get('Idempotency-Key') });
+    return Response.json({ id: `test-email-${deliveries.length}` });
+  });
+  for (const [mailbox, address] of [['general', 'info@veylo.com.ng'], ['billing', 'payment@veylo.com.ng']]) {
+    const row = await queuedEmailReply(mailbox);
+    assert.deepEqual(await deliverSupportMessage(row), { sent: true });
+    const sent = deliveries.at(-1), saved = await SupportOutbox.findById(row._id);
+    assert.equal(sent.body.from, `Veylo <${address}>`); assert.equal(sent.body.reply_to, address); assert.equal(sent.body.to, owner.email);
+    assert.equal(sent.key, `support:${row._id}`); assert.equal(sent.body.headers['Message-ID'], saved.emailMessageId);
+    assert.match(sent.body.headers['In-Reply-To'], /@example\.test>$/);
+    assert.equal(sent.body.headers.References, sent.body.headers['In-Reply-To']);
+    assert.equal(saved.status, 'sent'); assert.equal(saved.sentCopyStatus, 'saved');
+    const updated = await SupportTicket.findById(row.ticketId);
+    assert.equal(updated.messages.id(row.messageId).deliveryStatus, 'sent');
+    assert.equal(copies.at(-1).folder, 'INBOX.Sent'); assert.ok(copies.at(-1).raw.includes(saved.emailMessageId));
+    assert.doesNotMatch(JSON.stringify(saved), /test-only|re_test/);
+  }
+  assert.equal(deliveries.length, 2); assert.equal(copies.length, 2);
+});
+
+test('default transport still sends through configured SMTP without contacting Resend', async t => {
+  const copies = configureSupportDelivery(t); delete process.env.SUPPORT_EMAIL_TRANSPORT;
+  const sent = [];
+  t.mock.method(globalThis, 'fetch', async () => { assert.fail('Resend must not be contacted'); });
+  t.mock.method(nodemailer, 'createTransport', options => {
+    assert.equal(options.host, 's4.whitelabelclouds.com'); assert.equal(options.port, 465); assert.equal(options.secure, true);
+    return { sendMail: async mail => { sent.push(mail); return { accepted: [mail.to] }; }, close() {} };
+  });
+  const row = await queuedEmailReply('general'); await deliverSupportMessage(row);
+  assert.equal(sent.length, 1); assert.equal(copies.length, 1); assert.equal((await SupportOutbox.findById(row._id)).status, 'sent');
+});
+
+test('invalid transport or missing Resend key cannot silently fall back to configured SMTP', async t => {
+  const copies = configureSupportDelivery(t);
+  t.mock.method(nodemailer, 'createTransport', () => { assert.fail('SMTP must not be used'); });
+  t.mock.method(globalThis, 'fetch', async () => { assert.fail('No provider request is allowed'); });
+  const row = await queuedEmailReply('general');
+  process.env.SUPPORT_EMAIL_TRANSPORT = 'typo';
+  await assert.rejects(deliverSupportMessage(row), { message: 'SUPPORT_EMAIL_TRANSPORT_INVALID', definitelyRejected: true });
+  process.env.SUPPORT_EMAIL_TRANSPORT = 'resend'; delete process.env.RESEND_API_KEY;
+  await assert.rejects(deliverSupportMessage(row), { message: 'SUPPORT_EMAIL_NOT_CONFIGURED', definitelyRejected: true });
+  assert.equal(copies.length, 0); assert.notEqual((await SupportOutbox.findById(row._id)).status, 'sent');
+});
+
+test('a Resend rejection, timeout or missing acceptance never triggers SMTP or a Sent copy', async t => {
+  const copies = configureSupportDelivery(t);
+  t.mock.method(nodemailer, 'createTransport', () => { assert.fail('Do not switch providers after a possible send'); });
+  let outcome = 'rejected';
+  t.mock.method(globalThis, 'fetch', async () => {
+    if (outcome === 'rejected') return Response.json({ statusCode: 403, name: 'validation_error', message: 'Sender not permitted' }, { status: 403 });
+    if (outcome === 'timeout') throw new Error('Connection timed out');
+    return Response.json({});
+  });
+  const row = await queuedEmailReply('billing');
+  await assert.rejects(deliverSupportMessage(row), { message: 'SUPPORT_EMAIL_REJECTED', definitelyRejected: true });
+  outcome = 'timeout';
+  await assert.rejects(deliverSupportMessage(row), error => error.message === 'SUPPORT_EMAIL_REJECTED' && !error.definitelyRejected);
+  outcome = 'no-id'; await assert.rejects(deliverSupportMessage(row), /SUPPORT_EMAIL_ACCEPTANCE_UNCONFIRMED/);
+  assert.equal(copies.length, 0); assert.notEqual((await SupportOutbox.findById(row._id)).status, 'sent');
 });
 test('mail import is idempotent, renders text only, and never grants account access from a sender address', async () => {
   const parsed = { messageId: '<original@example.test>', from: { value: [{ address: owner.email, name: owner.name }] }, subject: 'Please review my payment', text: 'I was charged twice for Pro.', html: '<script>alert(1)</script><img src="https://track.example">' };

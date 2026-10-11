@@ -45,6 +45,8 @@ Copy the non-secret entries from `server/.env.example` into the API deployment e
 
 Per-mailbox settings are `SUPPORT_GENERAL_IMAP_HOST`, `SUPPORT_GENERAL_SMTP_HOST`, `SUPPORT_GENERAL_USER`, `SUPPORT_GENERAL_PASSWORD` and the corresponding `SUPPORT_BILLING_*` entries. Secure ports default to 993 and 465; per-mailbox `*_IMAP_PORT` and `*_SMTP_PORT` can override shared ports. SMTP 587 requires STARTTLS. Optional `*_SENT_FOLDER` specifies the actual IMAP Sent path if the server does not advertise it.
 
+On Render Free, set `SUPPORT_EMAIL_TRANSPORT=resend` on the API service. [Render blocks outbound SMTP ports on Free services](https://render.com/docs/free). Replies then use the existing `RESEND_API_KEY` over HTTPS, with the relevant mailbox as From and Reply-To; its domain must be verified in Resend and permitted by that key. Keep all cPanel credentials: incoming mail and Sent-folder copies still use IMAP. The default `auto` selects configured SMTP, otherwise Resend; `smtp` explicitly requires SMTP credentials. Veylo never switches providers after a possible send. Existing uncertain replies stay paused until staff check delivery and explicitly retry them.
+
 After restart, open **Admin → Support inbox** and choose **Sync mail**. Check both mailboxes for a successful sync time. Then send a deliberate test request from an address you control, reply from admin and verify receipt and the Sent-folder copy. No live mailbox connection or real email send was performed during implementation because passwords were not supplied.
 
 The API worker starts after 20 seconds and runs each minute. It imports INBOX in bounded batches, tracks UID validity and message identities, and uses a database lease across API instances. Initial backlog arrives over successive runs. It does not move or delete messages in cPanel. Existing Sent history and other folders are not imported. Replies sent from admin are copied to Sent when a Sent folder is available. General mail is restricted to operations/support/superadmin; raw billing email and financial actions are restricted to finance/superadmin.
@@ -53,7 +55,7 @@ Email HTML, remote images and tracking pixels are never rendered in admin. Long 
 
 ## Delivery failures and recovery
 
-Customer replies appear in the app immediately. Public staff replies enter a persistent email outbox; internal notes never do. **Sent** means the SMTP or email provider accepted the message, not that the customer's inbox received it. Failed delivery and Sent-copy failures are visible in the conversation. Resend is an optional fallback for sending when mailbox SMTP is unconfigured; it does not connect the cPanel inbox.
+Customer replies appear in the app immediately. Public staff replies enter a persistent email outbox; internal notes never do. **Sent** means the SMTP or email provider accepted the message, not that the customer's inbox received it. Failed delivery and Sent-copy failures are visible in the conversation. Resend can be selected explicitly for sending, or used when mailbox SMTP is unconfigured; it does not connect the cPanel inbox.
 
 Known rejections retry with backoff. Timeouts or process interruptions after a possible SMTP send are marked **uncertain**. Staff must inspect mail history and confirm the message was not sent before retrying; this creates an audit entry. Do not repeatedly retry an uncertain email or refund to clear its warning.
 

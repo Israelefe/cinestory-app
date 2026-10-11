@@ -21,6 +21,7 @@ for (const width of [320, 768, 834, 1440]) test(`admin support and refund eviden
   await page.setViewportSize({ width, height: 1000 }); await setup(page); await page.goto('/?section=support');
   await expect(page.getByRole('heading', { name: 'The support desk.' })).toBeVisible();
   await expect(page.getByText('Connection setup needed')).toHaveCount(2);
+  await expect(page.getByRole('combobox', { name: 'Inbox', exact: true }).locator('option')).toHaveText(['All available inboxes', 'info@veylo.com.ng', 'payment@veylo.com.ng']);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.getByRole('button', { name: /Upload problem on my phone/ }).click();
   await expect(page.getByText('Check the affected upload before replying.')).toBeVisible();

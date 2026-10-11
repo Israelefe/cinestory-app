@@ -124,8 +124,11 @@ export async function deliverSupportMessage(row, transport) {
     ...(previous ? { inReplyTo: previous.emailMessageId, references: previous.emailMessageId } : {}),
     text: `${item.message}\n\nVeylo support · ${ticket.ticketNumber}\n${ticket.userId ? `Read or reply in your support inbox: ${url}` : 'Reply to this email to continue the conversation.'}` };
   await SupportOutbox.updateOne({ _id: row._id }, { $set: { emailMessageId: messageId } });
+  const emailTransport = String(process.env.SUPPORT_EMAIL_TRANSPORT || 'auto').trim().toLowerCase();
+  if (!['auto', 'smtp', 'resend'].includes(emailTransport)) throw Object.assign(new Error('SUPPORT_EMAIL_TRANSPORT_INVALID'), { definitelyRejected: true });
   if (transport) await transport(mail);
-  else if (config.smtpHost && config.pass) {
+  else if (emailTransport === 'smtp' || (emailTransport === 'auto' && config.smtpHost && config.pass)) {
+    if (!config.smtpHost || !config.pass) throw Object.assign(new Error('SUPPORT_EMAIL_NOT_CONFIGURED'), { definitelyRejected: true });
     if (![465, 587].includes(config.smtpPort)) throw Object.assign(new Error('SMTP_PORT_INVALID'), { definitelyRejected: true });
     const sender = nodemailer.createTransport({ host: config.smtpHost, port: config.smtpPort, secure: config.smtpPort === 465, requireTLS: true,
       auth: { user: config.user, pass: config.pass }, tls: { rejectUnauthorized: true }, connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000,
@@ -137,9 +140,10 @@ export async function deliverSupportMessage(row, transport) {
     finally { sender.close(); }
   } else {
     if (!process.env.RESEND_API_KEY) throw Object.assign(new Error('SUPPORT_EMAIL_NOT_CONFIGURED'), { definitelyRejected: true });
-    const { error } = await new Resend(process.env.RESEND_API_KEY).emails.send({ from: mail.from, to: mail.to, replyTo: mail.replyTo,
+    const { data, error } = await new Resend(process.env.RESEND_API_KEY).emails.send({ from: mail.from, to: mail.to, replyTo: mail.replyTo,
       subject: mail.subject, text: mail.text, headers: { 'Message-ID': messageId, ...(mail.inReplyTo ? { 'In-Reply-To': mail.inReplyTo, References: mail.references } : {}) } }, { idempotencyKey: `support:${row._id}` });
     if (error) throw Object.assign(new Error('SUPPORT_EMAIL_REJECTED'), { definitelyRejected: Number(error.statusCode) >= 400 && Number(error.statusCode) < 500 });
+    if (!data?.id) throw new Error('SUPPORT_EMAIL_ACCEPTANCE_UNCONFIRMED');
   }
   // Mark accepted before any Sent-folder work; a failed copy must never trigger another send.
   await SupportOutbox.updateOne({ _id: row._id }, { $set: { status: 'sent', sentAt: new Date(), failureCode: null }, $unset: { leaseUntil: 1 } });
