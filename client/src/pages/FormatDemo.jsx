@@ -20,6 +20,7 @@ import { useClosingGallery } from '../utils/useClosingGallery.js';
 import AlbumSpread, { AlbumCaption, AlbumPageTurn } from '../components/delivery/AlbumSpread.jsx';
 import { albumSpreads as normalizeAlbumSpreads } from '../utils/deliveryPresentation.js';
 import { albumBookRatio, albumCoverRatio, albumCoverShape, albumPhotoKey, albumReaderPages, albumSpreadPhotos } from '../utils/albumPresentation.js';
+import { demoFormatTheme } from '../constants/demoPalettes.js';
 import '../styles/format-demos.css';
 import '../components/delivery/DeliveryTypography.css';
 import '../styles/chapters.css';
@@ -92,6 +93,7 @@ export function getFormatThemeStyles(delivery, fallback = {}) {
   const densityGap = variation.density === 'spacious' ? '1.28' : variation.density === 'layered' ? '.84' : '1';
 
   return {
+    ...fallback.demoStyles,
     '--fd-accent': accent,
     '--fd-accent-soft': `${accent}26`,
     '--fd-bg': bg,
@@ -442,7 +444,7 @@ export const chapters = [
     kicker: 'THE OPENING PORTRAITS',
     line: 'The two of you, side by side, from the very first frame.',
     note: 'Folake and Tunde, you arrived in matching bronze and looked completely at home beside each other from the first frame.',
-    accent: '#d7a86e',
+    accent: '#e4c183',
     photos: [weddingPhotos[0], weddingPhotos[3]],
     captions: [
       'Folake, your hand on Tunde\'s shoulder and the smile between you make this portrait feel easy. The bronze embroidery, your gele and his agbada belong in the frame, but it is the way you look at each other that holds it together.',
@@ -454,7 +456,7 @@ export const chapters = [
     kicker: 'BETWEEN THE POSES',
     line: 'The smiles you kept finding between frames.',
     note: 'Some of our favourite portraits came when you stopped looking at the camera and looked at each other.',
-    accent: '#c89057',
+    accent: '#d6af7b',
     photos: [weddingPhotos[1], weddingPhotos[2]],
     captions: [
       'With Tunde standing behind you, the portrait becomes a little closer. Your hands meet at your waist, and you turn towards each other with the same warm smile. The light from the glass doors picks up the detail in the bronze fabric.',
@@ -466,7 +468,7 @@ export const chapters = [
     kicker: 'SAVED FOR THE END',
     line: 'One quiet photograph of the two of you to close the collection.',
     note: 'After the formal portraits, you held each other close. We saved this frame for the end.',
-    accent: '#e0b989',
+    accent: '#f0d5a1',
     photos: [weddingPhotos[4]],
     captions: ['Folake and Tunde, we saved this close portrait for the end. With your arms around each other and your faces almost touching, there is very little distance between you. The bronze fabric catches the light, and the room falls gently into the background.']
   }
@@ -574,7 +576,8 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
     bg: '#070709',
     surface: '#0c0c10',
     text: '#f3ece4',
-    accent: '#d7a86e'
+    accent: '#d7a86e',
+    ...(!delivery ? demoFormatTheme('chapters') : {})
   });
 
   const chapterIdentity = `${delivery?.publicId || delivery?._id || client}:${allPhotos.map(photo => photo.assetId || photo.name).join('|')}:${(delivery?.creativeDirection?.sections || []).map(section => section.id).join('|')}`;
@@ -707,7 +710,7 @@ export function ChaptersDemo({ delivery, galleryProps, audioState, toggleAudio, 
     </button>;
   };
 
-  return <div className="fd-page fd-chapters fd-chapters-refined" data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} data-pace={themeStyles['--fd-pace']} style={{ ...themeStyles, '--chapter-accent': currentChapter?.accent || themeStyles['--fd-accent'] }}>
+  return <div className="fd-page fd-chapters fd-chapters-refined" data-demo-palette={themeStyles['--demo-format']} data-composition={themeStyles['--fd-composition']} data-accent-placement={themeStyles['--fd-accent-placement']} data-pace={themeStyles['--fd-pace']} style={{ ...themeStyles, '--chapter-accent': currentChapter?.accent || themeStyles['--fd-accent'] }}>
     <DemoHeader format="Chapters" client={client} sectionId="chapters" delivery={brandedDelivery} audioState={audioState} toggleAudio={toggleAudio} />
 
     <>
@@ -1008,7 +1011,8 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
     bg: '#09090c',
     surface: '#f0e8da',
     text: '#f2eee8',
-    accent: '#d4b38b'
+    accent: '#d4b38b',
+    ...(!delivery ? demoFormatTheme('album') : {})
   });
   const paperChoice = delivery?.formatConfig?.album?.paperTone || 'theme';
   const surfaceHex = /^#[0-9a-f]{6}$/i.test(themeStyles['--fd-surface']) ? themeStyles['--fd-surface'].slice(1) : 'f0e8da';
@@ -1043,7 +1047,7 @@ export function AlbumDemo({ delivery, galleryProps, audioState, toggleAudio, onN
     if (index >= 0) setSelectedPhoto(index);
   };
 
-  return <div className={`fd-page fd-album ${audioTrack ? 'has-music' : ''}`} data-paper-tone={paperTone} style={{ ...themeStyles, '--album-paper': paperChoice === 'theme' ? themeStyles['--fd-surface'] : paperTone === 'dark' ? '#1c1c20' : '#f0e8da' }}>
+  return <div className={`fd-page fd-album ${audioTrack ? 'has-music' : ''}`} data-paper-tone={paperTone} data-demo-palette={themeStyles['--demo-format']} style={{ ...themeStyles, '--album-paper': paperChoice === 'theme' ? themeStyles['--fd-surface'] : paperTone === 'dark' ? '#1c1c20' : '#f0e8da' }}>
     {audioTrack && <audio ref={audio} crossOrigin="anonymous" src={audioTrack} loop preload="none" muted={muted} onWaiting={() => setAudioLoading(true)} onStalled={() => setAudioLoading(true)} onPlaying={() => { setAudioLoading(false); setAudioFailed(false); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioLoading(false); setAudioFailed(true); }} />}
     <DemoHeader format="Album" client={client} sectionId="album" onGallery={galleryUnlocked ? openGallery : undefined} delivery={delivery} demoBranding={!delivery ? ALBUM_DEMO_BRANDING : undefined} audioState={audioState} toggleAudio={toggleAudio} hideSoundtrack />
     {!started ? <main className="fd-album-cover">

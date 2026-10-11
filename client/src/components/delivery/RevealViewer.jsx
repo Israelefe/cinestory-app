@@ -1,3 +1,4 @@
+import { demoPaletteVariables } from '../../constants/demoPalettes.js';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
@@ -62,7 +63,7 @@ export default function RevealViewer({ delivery, demo = false, galleryProps = {}
   const photos = useMemo(() => revealPhotos(delivery), [delivery]);
   const allPhotos = useMemo(() => revealPhotos(delivery, true), [delivery]);
   const settings = revealSettings(delivery);
-  const theme = revealTheme(delivery);
+  const theme = { ...revealTheme(delivery), ...(demo ? demoPaletteVariables('photo-reveal') : {}) };
   const direction = delivery?.creativeDirection || {};
   const cover = allPhotos.find(photo => photo.assetId === delivery?.v3?.openingAssetId) || photos[0];
   const closing = allPhotos.find(photo => photo.assetId === delivery?.v3?.closingAssetId) || photos.at(-1);
@@ -292,7 +293,7 @@ export default function RevealViewer({ delivery, demo = false, galleryProps = {}
   const galleryActions = demo ? { liked: demoLiked, onLike, onDownload: runDemoDownload, onDownloadAll: () => runDemoDownload(), busy: demoBusy } : galleryProps;
   const loading = pending !== null;
   const moving = !reduced && settings.movement && !motionPaused && !gallery && !captionExpanded && !hidden;
-  return <div className="fd-page rv-viewer" style={theme} data-reveal-style={settings.style} data-phase={phase} data-reveal-stage={revealStage}>
+  return <div className="fd-page rv-viewer" style={theme} data-demo-palette={demo ? 'photo-reveal' : undefined} data-reveal-style={settings.style} data-phase={phase} data-reveal-stage={revealStage}>
     {track && <audio ref={audio} src={track} crossOrigin="anonymous" loop preload="metadata" onWaiting={() => setAudioLoading(true)} onPlaying={() => { setAudioLoading(false); setAudioFailed(false); }} onPause={() => setAudioLoading(false)} onError={() => { setAudioLoading(false); setAudioFailed(true); }} />}
     <header className="rv-header">
       <div className="rv-brand"><DeliveryBrandMark branding={delivery.branding} /><div><span>{delivery.branding?.type === 'studio' ? 'Photographed by' : 'Photo Reveal'}</span><strong>{delivery.branding?.name || 'Veylo'}</strong></div></div>

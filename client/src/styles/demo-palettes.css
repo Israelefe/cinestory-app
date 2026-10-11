@@ -1,0 +1,179 @@
+/* Demo colour treatments stay separate from photographer-selected client themes. */
+[data-demo-palette] {
+  --demo-muted: color-mix(in srgb, var(--demo-text) 74%, var(--demo-bg));
+  --demo-rule: color-mix(in srgb, var(--demo-text) 17%, transparent);
+  --demo-tint: color-mix(in srgb, var(--demo-accent) 10%, transparent);
+}
+
+.fd-page[data-demo-palette] {
+  background:
+    radial-gradient(ellipse at 92% 0%, var(--demo-tint), transparent 42rem),
+    radial-gradient(ellipse at 0% 65%, color-mix(in srgb, var(--demo-surface) 62%, transparent), transparent 48rem),
+    var(--demo-bg);
+  color: var(--demo-text);
+}
+
+.fd-page[data-demo-palette] .fd-header:not(.is-light) {
+  background: color-mix(in srgb, var(--demo-bg) 94%, transparent);
+  border-color: var(--demo-rule);
+  color: var(--demo-text);
+}
+
+.fd-page[data-demo-palette] :is(.ec-masthead, .cp-masthead) .fd-header {
+  background: transparent;
+}
+
+/* Champagne rules and plum paper around Ada's emerald portraits. */
+.ed-publication[data-demo-palette] .ed-cover {
+  background: radial-gradient(ellipse at 90% 36%, color-mix(in srgb, var(--demo-accent) 8%, transparent), transparent 65%);
+}
+
+.ed-publication[data-demo-palette] :is(.ed-masthead, .ed-section-heading) {
+  border-color: color-mix(in srgb, var(--demo-accent) 28%, transparent);
+}
+
+.ed-publication[data-demo-palette] .ed-photo-mount {
+  background: var(--demo-surface);
+}
+
+/* A navy viewing room, with an ice-blue reveal and progress controls. */
+.rv-viewer[data-demo-palette] :is(.rv-primary, .rv-introduction-hand) {
+  background: var(--demo-accent);
+  color: var(--demo-bg);
+  border-color: var(--demo-accent);
+}
+
+.rv-viewer[data-demo-palette] .rv-primary:hover {
+  background: color-mix(in srgb, var(--demo-accent) 84%, white);
+}
+
+.cv-board[data-demo-palette] .cv-point-marker > span {
+  background: var(--demo-surface);
+  border-color: var(--demo-accent);
+}
+
+/* The album's paper remains ivory; the binding and room take the plum palette. */
+.fd-album[data-demo-palette] .fd-album-cover-shade {
+  background: radial-gradient(ellipse at 48% 32%, color-mix(in srgb, var(--demo-accent) 12%, transparent), transparent 64%);
+}
+
+.fd-album[data-demo-palette] .album-cover-book {
+  background:
+    repeating-linear-gradient(92deg, #ffffff03 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(2deg, #ffffff02 0 1px, transparent 1px 4px),
+    var(--demo-surface);
+  border-color: color-mix(in srgb, var(--demo-accent) 36%, transparent);
+  color: var(--demo-text);
+}
+
+.fd-album[data-demo-palette] :is(.album-cover-stamp > span, .album-cover-book > figcaption) {
+  color: var(--demo-accent);
+}
+
+.fd-album[data-demo-palette] :is(.album-cover-photo, .album-cover-photo .v-photo) {
+  background: var(--demo-paper);
+}
+
+.fd-album[data-demo-palette] .fd-album-cover > section > button {
+  background: var(--demo-accent);
+  border-color: var(--demo-accent);
+  color: var(--demo-bg);
+}
+
+.fd-album[data-demo-palette] .fd-album-cover > section > button:hover {
+  background: var(--demo-paper);
+}
+
+.ec-viewer[data-demo-palette] .ec-cover-stage {
+  background: var(--demo-bg);
+}
+
+.ec-viewer[data-demo-palette] .ec-title-accent {
+  color: var(--demo-accent);
+}
+
+.cp-viewer[data-demo-palette] .cp-ending {
+  border-color: color-mix(in srgb, var(--demo-accent) 30%, transparent);
+}
+
+/* Copper controls on the story's espresso background. */
+.v-public.v-story-shell[data-demo-palette] {
+  --story-chrome-surface: var(--demo-surface);
+  --story-chrome-primary: var(--demo-accent);
+  --story-chrome-primary-text: var(--demo-bg);
+}
+
+.v-public.v-story-shell[data-demo-palette] :is(.v-story-primary, .v-story-gallery-cta) {
+  background: var(--demo-accent);
+  border-color: var(--demo-accent);
+  color: var(--demo-bg);
+}
+
+.v-public.v-story-shell[data-demo-palette] :is(.v-story-primary, .v-story-gallery-cta):hover {
+  background: color-mix(in srgb, var(--demo-accent) 84%, white);
+}
+
+.pb-viewer[data-demo-palette] {
+  background:
+    radial-gradient(ellipse at 95% 0%, color-mix(in srgb, var(--demo-accent) 9%, transparent), transparent 42rem),
+    radial-gradient(ellipse at 0% 75%, color-mix(in srgb, var(--demo-surface) 65%, transparent), transparent 40rem),
+    var(--demo-bg);
+}
+
+.ps-viewer[data-demo-palette] {
+  --ps-paper: var(--demo-text);
+  --ps-muted: var(--demo-muted);
+  --ps-coral: var(--demo-accent);
+  --ps-coral-soft: var(--demo-accent);
+  background: var(--demo-bg);
+}
+
+.ps-viewer[data-demo-palette] .ps-ambient {
+  background:
+    radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--ps-photo-glow) 40%, transparent), transparent 70%),
+    radial-gradient(ellipse at 15% 100%, var(--demo-tint), transparent 60%);
+}
+
+.ps-viewer[data-demo-palette] .ps-start-button {
+  background: linear-gradient(135deg, var(--demo-accent), #7caaf1);
+  border-color: var(--demo-accent);
+  color: var(--demo-bg);
+  box-shadow: 0 8px 30px color-mix(in srgb, var(--demo-accent) 12%, transparent);
+}
+
+.ps-viewer[data-demo-palette] :is(.ps-start-copy p, .ps-start-note, .ps-overlay-caption, .ps-cover-stamp span) {
+  color: var(--demo-muted);
+}
+
+.ps-viewer[data-demo-palette] .ps-cover-stamp {
+  background: color-mix(in srgb, var(--demo-surface) 96%, transparent);
+  border-color: var(--demo-rule);
+}
+
+.ps-viewer[data-demo-palette] .ps-cover-stamp strong { color: var(--demo-text); }
+.ps-viewer[data-demo-palette] .ps-start-front { background: var(--demo-text); }
+.ps-viewer[data-demo-palette] .ps-start-card { border-color: var(--demo-rule); }
+.ps-viewer[data-demo-palette] .ps-btn-like.is-liked { color: var(--demo-accent); border-color: var(--demo-accent); background: var(--demo-tint); }
+.ps-viewer[data-demo-palette] button:focus-visible { outline-color: var(--demo-accent); }
+
+.vv-page[data-demo-palette] {
+  background: radial-gradient(ellipse at 8% 0%, var(--demo-tint), transparent 50%), var(--demo-bg);
+  color: var(--demo-text);
+}
+
+.vv-page[data-demo-palette] :is(.vv-demo-label, .vv-heading > p, .vv-playlist-item > svg) { color: var(--demo-accent); }
+.vv-page[data-demo-palette] :is(.vv-introduction, .vv-description, .vv-playlist-copy small) { color: var(--demo-muted); }
+.vv-page[data-demo-palette] .vv-description { background: var(--demo-surface); border-color: var(--demo-rule); }
+.vv-page[data-demo-palette] .vv-playlist-item.is-current { background: var(--demo-tint); border-color: color-mix(in srgb, var(--demo-accent) 42%, transparent); }
+.vv-page[data-demo-palette] .vv-play:hover > span { background: var(--demo-accent); color: var(--demo-bg); }
+.vv-page[data-demo-palette] :is(button, a):focus-visible { outline: 2px solid var(--demo-accent); outline-offset: 4px; }
+.vv-page[data-demo-palette] .vv-seek { accent-color: var(--demo-accent); }
+
+/* Portalled galleries receive their demo palette explicitly. */
+.client-gallery[data-demo-palette] { background: var(--demo-bg); color: var(--demo-text); }
+.client-gallery[data-demo-palette] .client-gallery-header { background: var(--demo-bg); border-color: var(--demo-rule); }
+.client-gallery[data-demo-palette] :is(.client-gallery-header p, .is-liked) { color: var(--demo-accent); }
+.client-gallery[data-demo-palette] :is(.client-gallery-photo, .client-gallery-filters button.is-active) { background: var(--demo-surface); color: var(--demo-text); border-color: var(--demo-rule); }
+.client-gallery[data-demo-palette] :is(.client-gallery-download-tip, .client-gallery-download-progress) { border-color: var(--demo-rule); background: var(--demo-tint); color: var(--demo-text); }
+.client-gallery[data-demo-palette] button:hover:not(:disabled) { border-color: var(--demo-accent); background-color: var(--demo-tint); }
+.client-gallery[data-demo-palette] :is(button, a):focus-visible { outline-color: var(--demo-accent); }

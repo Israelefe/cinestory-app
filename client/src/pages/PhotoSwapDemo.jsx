@@ -1,4 +1,5 @@
 import React from 'react';
+import { DEMO_PALETTES } from '../constants/demoPalettes.js';
 import PhotoSwapViewer from '../components/delivery/PhotoSwapViewer.jsx';
 
 const photos = [
@@ -11,20 +12,20 @@ const photos = [
   {
     alt: "A closer studio portrait of Sharon",
     caption: "A closer look from Sharon’s studio portrait session.",
-    dominantColor: '#2b1a3d',
-    photoColors: ['#2b1a3d', '#e8d5f2', '#150c1f']
+    dominantColor: '#193b70',
+    photoColors: ['#193b70', '#e9edf5', '#0f2240']
   },
   {
     alt: "Sharon in an ivory look against blue",
     caption: "The ivory styling stands out against the cobalt backdrop.",
-    dominantColor: '#163328',
-    photoColors: ['#163328', '#d0f0e4', '#0d1f18']
+    dominantColor: '#234c88',
+    photoColors: ['#234c88', '#f0eae0', '#122c52']
   },
   {
     alt: "A final portrait from Sharon's session",
     caption: "A final portrait from Sharon’s session.",
-    dominantColor: '#3d2014',
-    photoColors: ['#3d2014', '#f5dfd0', '#21110a']
+    dominantColor: '#102c56',
+    photoColors: ['#102c56', '#e7eaf0', '#091a36']
   }
 ];
 
@@ -44,6 +45,7 @@ const assets = photos.map((photo, index) => ({
 
 const demoDelivery = {
   kind: 'photoswap',
+  demoPalette: 'photoswap',
   title: "Sharon’s Studio Portraits",
   clientName: 'Sharon',
   shootType: 'Studio Portrait',
@@ -53,6 +55,7 @@ const demoDelivery = {
   access: { allowIndividualDownloads: true, allowDownloadAll: false, allowLikes: true },
   photoswap: {
     backgroundMode: 'auto',
+    palette: { ...DEMO_PALETTES.photoswap },
     typography: { display: 'Playfair Display', body: 'Outfit' }
   }
 };

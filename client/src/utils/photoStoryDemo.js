@@ -1,6 +1,7 @@
 // Sample deliveries use the same saved shape as creation previews and client links.
 // Only the content and local demo actions differ from a published delivery.
 import demoNarration from '../constants/demoNarration.json' with { type: 'json' };
+import { DEMO_PALETTES } from '../constants/demoPalettes.js';
 
 export function photoStoryDemoDelivery(preset) {
   if (!preset) return null;
@@ -22,6 +23,7 @@ export function photoStoryDemoDelivery(preset) {
   return {
     schemaVersion: 3,
     format: 'photo-story',
+    demoPalette: 'photo-story',
     title: preset.title,
     clientName: preset.clientName,
     shootType: preset.occasion,
@@ -32,7 +34,7 @@ export function photoStoryDemoDelivery(preset) {
       title: preset.opening?.headline || preset.title,
       openingLine,
       closingLine,
-      palette: { background: '#0c0c10', surface: '#17171c', text: '#fffaf6', accent: preset.theme?.accentColor || '#ff5a47' },
+      palette: { ...DEMO_PALETTES['photo-story'], accent: preset.theme?.accentColor || DEMO_PALETTES['photo-story'].accent },
       typography: { display: 'Playfair Display', body: 'Outfit' },
       frames: preset.photos.map((photo, index) => ({
         assetId: assets[index].assetId,

@@ -8,6 +8,7 @@ import { toast } from 'react-toastify';
 import api from '../services/api.js';
 import { API_BASE_URL } from '../config/env.js';
 import { trackEvent } from '../services/analytics.js';
+import { demoPaletteVariables } from '../constants/demoPalettes.js';
 import { DEMO_PRESETS } from '../constants/demoStories.js';
 import { StoryCaptionContent, StoryCaptionDialog } from '../components/delivery/StoryCaption.jsx';
 import { photoStoryDemoDelivery } from '../utils/photoStoryDemo.js';
@@ -785,7 +786,7 @@ export default function StoryViewer({ demoMode = false, delivery: suppliedDelive
   const fontStyles = deliveryFontStyles({}, { display: story.theme?.displayFont, body: story.theme?.bodyFont });
   const imageWaiting = started && (finished ? !preparedPhotos.closingReady : preparedPhotos.waiting);
   const imageFailed = finished ? preparedPhotos.closingFailed : preparedPhotos.failed;
-  return <div className={'v-public v-story-shell' + (deliveryProp?.schemaVersion === 3 ? ' is-v3' : '')} style={{ '--story-accent': photo?.colorAccent || story.theme?.accentColor || '#ff5a47', '--story-glow': photo?.glowColor || story.theme?.glowColor || 'rgba(255,90,71,.35)', '--story-secondary': photo?.secondaryColor || story.theme?.secondaryColor || '#151518', '--story-bg': story.theme?.backgroundColor || '#050506', '--story-font-display': fontStyles['--delivery-font-heading'], '--story-font-body': fontStyles['--delivery-font-caption'], ...fontStyles, ...chrome }}>
+  return <div data-demo-palette={demo ? 'photo-story' : undefined} className={'v-public v-story-shell' + (deliveryProp?.schemaVersion === 3 ? ' is-v3' : '')} style={{ '--story-accent': photo?.colorAccent || story.theme?.accentColor || '#ff5a47', '--story-glow': photo?.glowColor || story.theme?.glowColor || 'rgba(255,90,71,.35)', '--story-secondary': photo?.secondaryColor || story.theme?.secondaryColor || '#151518', '--story-bg': story.theme?.backgroundColor || '#050506', '--story-font-display': fontStyles['--delivery-font-heading'], '--story-font-body': fontStyles['--delivery-font-caption'], ...fontStyles, ...chrome, ...(demo ? demoPaletteVariables('photo-story') : {}) }}>
   <div className="v-story-ambient" aria-hidden="true"><img src={displaySrc} alt="" /></div>
   <main className={'v-story-canvas ' + (!started ? 'is-cover-state' : finished ? 'is-finale-state' : 'is-playing-state caption-position-' + captionPosition) + (!captions && !finished ? ' captions-off' : '')} id="main-content" ref={stage}>
    <div className="v-story-visual" onPointerDown={event => {
