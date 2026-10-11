@@ -1,6 +1,6 @@
 # Veylo video processing on Cloudflare
 
-This is a **new** Worker, `veylo-video-processing`. It manages Linux FFmpeg containers on Cloudflare. The existing `veylo-delivery-images` Worker still serves private images and HLS. Photographers upload from their own devices; processing runs on Cloudflare after upload, independently of your computer.
+This is a **new** Worker, `veylo-video-processing`. It manages Linux FFmpeg containers on Cloudflare. The existing `veylo-delivery-images` Worker still serves private images, original video playback and optional HLS. Photographers upload from their own devices; processing runs on Cloudflare after upload, independently of your computer.
 
 ## Deploy with Cloudflare Workers Builds
 
@@ -41,6 +41,10 @@ Reference: [Cloudflare hosted container deployment](https://developers.cloudflar
 8. Use an invited active Pro account for a real upload, preparation, client playback, seeking, original download and access-change check. Test cold startup after the container has stopped. Keep `VIDEO_DELIVERY_QUALIFIED=false` and public availability off until the qualification checks in [the operations guide](../../docs/video-delivery-operations.md) pass.
 
 No Cloudflare Stream subscription, Render background worker or permanently running personal computer is required for this setup. Containers require Workers Paid and incur usage charges above the account's included allocations. Deployment still requires you to configure secrets and provision the service; committing code does not do that.
+
+## Playback quality
+
+Original-quality playback is the default. The container checks the upload and makes a cover without creating alternate videos. Adaptive HLS is generated only after a photographer enables it in Details. The same private media Worker serves both original byte ranges and adaptive segments. Failed adaptive conversion leaves the original available; opting out prevents new conversion work when no other delivery has opted in.
 
 ## Cost and queue controls
 

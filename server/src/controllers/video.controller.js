@@ -12,15 +12,16 @@ import { publicVideoSettings } from '../config/videoDelivery.js';
 import { videoTransaction, reserveVideoBytes, commitVideoBytes } from '../services/videoQuota.service.js';
 import { acquireVideoLease, releaseVideoLease } from '../services/videoLease.service.js';
 import { presignR2Object, createR2Multipart, listR2Parts, completeR2Multipart, headR2Object, getR2ObjectStream, getR2ObjectBuffer, putR2Object } from '../services/r2.service.js';
+import { originalVideoCompatible } from '../services/videoOriginal.service.js';
 import { trustedVideoEdge } from '../services/videoHls.service.js';
 import { lagosMonthWindow } from '../services/entitlement.service.js';
 import { recordPaidUsage } from '../services/paidUsage.service.js';
 import { videoEvent, recordVideoVisit } from '../services/videoEvents.service.js';
-import { videoContext, videoId, videoError, ownedVideoDelivery, ownedVideoAsset, ownerVideoDTO, videoAssetDTO, publicVideoDelivery, setVideoGrant, videoBrand, videoPresentationDTO, videoPlayback, usageKey, queueVideoJob, authorizeHlsRequest } from '../services/videoDelivery.service.js';
+import { videoContext, videoId, videoError, ownedVideoDelivery, ownedVideoAsset, ownerVideoDTO, videoAssetDTO, publicVideoDelivery, setVideoGrant, videoBrand, videoPresentationDTO, videoPlayback, usageKey, queueVideoJob, queueAdaptiveVideo, authorizeHlsRequest } from '../services/videoDelivery.service.js';
 
 const id = z.string().regex(/^[a-f\d]{24}$/i);
 const itemSchema = z.object({ assetId: id, title: z.string().trim().max(100).default(''), description: z.string().trim().max(2000).default(''), posterSeconds: z.number().finite().min(0).max(10800).default(0), allowDownload: z.boolean().nullable().default(null) }).strict();
-const presentationSchema = z.object({ title: z.string().trim().max(120), introduction: z.string().trim().max(1500).default(''), items: z.array(itemSchema).max(10), featuredAssetId: id.nullable().optional(), allowDownloads: z.boolean().optional() }).strict();
+const presentationSchema = z.object({ title: z.string().trim().max(120), introduction: z.string().trim().max(1500).default(''), items: z.array(itemSchema).max(10), featuredAssetId: id.nullable().optional(), allowDownloads: z.boolean().optional(), playbackMode: z.enum(['original', 'adaptive']).optional() }).strict();
 const draftSchema = z.object({ revision: z.number().int().nonnegative(), clientName: z.string().trim().max(100), brief: z.string().trim().max(3000), presentation: presentationSchema }).strict();
 const initSchema = z.object({ filename: z.string().trim().min(5).max(180).refine(value => !/[\\/\x00-\x1f]/.test(value) && /\.(mp4|mov|webm)$/i.test(value), 'Choose an MP4, MOV or WebM video.'), bytes: z.number().int().positive().max(5_000_000_000), fingerprint: z.string().regex(/^[a-f\d]{64}$/i), requestKey: z.string().uuid() }).strict();
 const parse = (schema, value) => { const result = schema.safeParse(value); if (!result.success) throw videoError(result.error.issues[0]?.message || 'Check the video details.'); return result.data; };
@@ -40,7 +41,7 @@ function editable(delivery) { if (delivery.status === 'archived') throw videoErr
 export const getVideoConfig = videoAction(async (req, res) => ok(res, publicVideoSettings((await getRuntimeConfig()).videoDelivery)));
 export const authorizeVideoMedia = videoAction(async (req, res) => {
   if (!trustedVideoEdge(req.get('x-veylo-video-secret'))) throw videoError('Not authorised.', 401);
-  const input = parse(z.object({ token: z.string().max(2000), file: z.string().max(100), method: z.enum(['GET', 'HEAD']) }).strict(), req.body);
+  const input = parse(z.object({ token: z.string().max(2000), file: z.string().max(100), method: z.enum(['GET', 'HEAD']), range: z.string().max(100).optional() }).strict(), req.body);
   ok(res, await authorizeHlsRequest(input));
 });
 export const createVideoDelivery = videoAction(async (req, res) => {
@@ -59,14 +60,16 @@ export const saveVideoDraft = videoAction(async (req, res) => {
   const input = parse(draftSchema, req.body);
   const delivery = await ownedVideoDelivery(req.params.id, req.user.id); editable(delivery);
   input.presentation.allowDownloads ??= delivery.video.draft.allowDownloads;
+  input.presentation.playbackMode ??= delivery.video.draft.playbackMode || 'original';
   const ids = input.presentation.items.map(item => item.assetId);
   if (new Set(ids).size !== ids.length || ids.length > settings.maxVideos) throw videoError('Choose each video once, up to ' + settings.maxVideos + ' videos.');
-  const assets = await VideoAsset.find({ _id: { $in: ids }, userId: req.user.id, state: { $nin: ['deleted', 'deleting'] } }).select('_id duration');
+  const assets = await VideoAsset.find({ _id: { $in: ids }, userId: req.user.id, state: { $nin: ['deleted', 'deleting'] } }).select('_id userId duration state hls adaptive');
   if (assets.length !== ids.length) throw videoError('Choose videos from your own library.');
   if (input.presentation.featuredAssetId && !ids.includes(input.presentation.featuredAssetId)) throw videoError('Choose a featured video from this delivery.');
   for (const item of input.presentation.items) { const asset = assets.find(row => String(row._id) === item.assetId); if (asset.duration && item.posterSeconds > asset.duration) throw videoError('Choose a cover frame within the video.'); }
   const updated = await Delivery.findOneAndUpdate({ _id: delivery._id, userId: req.user.id, kind: 'video', 'video.revision': input.revision }, { $set: { clientName: input.clientName, brief: input.brief, title: input.presentation.title, 'video.draft': { ...input.presentation, featuredAssetId: input.presentation.featuredAssetId || ids[0] || undefined } }, $inc: { 'video.revision': 1 } }, { new: true, runValidators: true }).select('+access.pinDigest');
   if (!updated) throw videoError('This draft changed in another tab. Reload it before saving.', 409, 'VIDEO_DRAFT_CONFLICT');
+  if (input.presentation.playbackMode === 'adaptive') for (const asset of assets) await queueAdaptiveVideo(asset);
   ok(res, await ownerVideoDTO(updated));
 });
 export const saveVideoAccess = videoAction(async (req, res) => {
@@ -89,7 +92,8 @@ export const publishVideoDelivery = videoAction(async (req, res) => {
   if (delivery.access?.expiresAt && delivery.access.expiresAt <= new Date()) throw videoError('Update the expired access date before publishing.');
   // The snapshot and asset states are read and committed in one transaction.
   await videoTransaction(async session => {
-    const readyAssets = await VideoAsset.find({ _id: { $in: draft.items.map(item => item.assetId) }, userId: req.user.id, state: 'ready', 'hls.version': { $exists: true }, 'cover.state': { $nin: ['queued', 'running'] }, duration: { $lte: settings.maxDurationSeconds }, bytes: { $lte: settings.maxFileBytes } }).select('_id posterKey').session(session).lean();
+    const readyAssets = await VideoAsset.find({ _id: { $in: draft.items.map(item => item.assetId) }, userId: req.user.id, state: 'ready', ...(draft.playbackMode === 'adaptive' ? { 'hls.version': { $exists: true } } : {}), 'cover.state': { $nin: ['queued', 'running'] }, duration: { $lte: settings.maxDurationSeconds }, bytes: { $lte: settings.maxFileBytes } }).select('_id posterKey filename objectKey videoCodec audioCodec pixelFormat').session(session).lean();
+    if (draft.playbackMode !== 'adaptive' && readyAssets.some(asset => !originalVideoCompatible(asset))) throw videoError('An original uses a format that may not play in every browser. Upload an H.264/AAC MP4 or enable adaptive playback in Details.', 409, 'VIDEO_ORIGINAL_INCOMPATIBLE');
     const snapshot = draft.toObject();
     snapshot.items = snapshot.items.map(item => ({ ...item, posterKey: readyAssets.find(asset => String(asset._id) === String(item.assetId))?.posterKey }));
     if (readyAssets.length !== draft.items.length) throw videoError('Wait for every video and cover to finish preparing before publishing.', 409);
@@ -250,6 +254,13 @@ export const retryVideoAsset = videoAction(async (req, res) => {
   if (asset.state !== 'failed') throw videoError('Only a failed video can be retried.', 409);
   asset.state = 'queued'; asset.errorCode = undefined; asset.errorMessage = undefined; await asset.save();
   await queueVideoJob(asset, 'prepare', {}, crypto.randomUUID()); ok(res, { queued: true });
+});
+export const retryAdaptiveVideo = videoAction(async (req, res) => {
+  await writable(req);
+  const asset = await ownedVideoAsset(req.params.assetId, req.user.id);
+  if (!await Delivery.exists({ userId: req.user.id, kind: 'video', 'video.draft.playbackMode': 'adaptive', 'video.draft.items.assetId': asset._id })) throw videoError('Enable adaptive playback in this delivery before requesting copies.', 409);
+  await queueAdaptiveVideo(asset);
+  ok(res, { queued: true });
 });
 export const requestVideoAnalysis = videoAction(async (req, res) => {
   const { settings } = await writable(req);

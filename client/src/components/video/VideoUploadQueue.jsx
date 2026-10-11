@@ -85,7 +85,7 @@ export default function VideoUploadQueue({ deliveryId, assets = [], initialize, 
     const asset = assetById.get(row.upload?.assetId);
     if (asset?.state === 'ready') return 'Ready for playback';
     if (asset?.state === 'failed') return 'Preparation failed';
-    if (asset?.state === 'processing') return 'Preparing playback qualities';
+    if (asset?.state === 'processing') return 'Checking video and preparing cover';
     if (asset?.state === 'verifying') return 'Checking the uploaded video';
     if (asset?.state === 'queued') return 'Uploaded · waiting for preparation';
     return 'Checking preparation status';

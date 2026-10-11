@@ -18,16 +18,17 @@ export function trustedVideoEdge(value) {
   const expected = secret();
   return typeof value === 'string' && Buffer.byteLength(value) === Buffer.byteLength(expected) && crypto.timingSafeEqual(Buffer.from(value), Buffer.from(expected));
 }
-export function signedHlsMedia({ assetId, sessionId, version, seconds = 600, now = Date.now() }) {
-  if (!/^[a-f\d]{24}$/i.test(String(assetId)) || !/^[a-f\d-]{36}$/i.test(sessionId) || !/^[a-f\d-]{36}$/i.test(version) || !Number.isInteger(seconds) || seconds < 300 || seconds > 900) throw new Error('Invalid playback scope.');
+export function signedHlsMedia({ assetId, sessionId, version, original = false, seconds = 600, now = Date.now() }) {
+  if (!/^[a-f\d]{24}$/i.test(String(assetId)) || !/^[a-f\d-]{36}$/i.test(sessionId) || (!original && !/^[a-f\d-]{36}$/i.test(version)) || !Number.isInteger(seconds) || seconds < 300 || seconds > 900) throw new Error('Invalid playback scope.');
   const exp = Math.floor(now / 1000) + seconds;
-  const token = jwt.sign({ purpose: 'video-hls', assetId: String(assetId), sessionId, version, exp, nbf: Math.floor(now / 1000) - 30 }, secret(), { algorithm: 'HS256', issuer: 'veylo-video', audience: 'veylo-video-hls', noTimestamp: true });
-  return { hlsUrl: `${playbackOrigin()}/video/${token}/master.m3u8`, expiresAt: new Date(exp * 1000) };
+  const token = jwt.sign({ purpose: original ? 'video-original' : 'video-hls', assetId: String(assetId), sessionId, version: original ? 'original' : version, exp, nbf: Math.floor(now / 1000) - 30 }, secret(), { algorithm: 'HS256', issuer: 'veylo-video', audience: original ? 'veylo-video-original' : 'veylo-video-hls', noTimestamp: true });
+  return { hlsUrl: `${playbackOrigin()}/video/${token}/${original ? 'original' : 'master.m3u8'}`, expiresAt: new Date(exp * 1000) };
 }
 export function verifyHlsToken(token) {
   try {
-    const claims = jwt.verify(token, secret(), { algorithms: ['HS256'], issuer: 'veylo-video', audience: 'veylo-video-hls' });
-    if (claims.purpose !== 'video-hls' || !/^[a-f\d]{24}$/i.test(claims.assetId) || !/^[a-f\d-]{36}$/i.test(claims.sessionId) || !/^[a-f\d-]{36}$/i.test(claims.version) || claims.exp > Date.now() / 1000 + 930) throw new Error();
+    const claims = jwt.verify(token, secret(), { algorithms: ['HS256'], issuer: 'veylo-video', audience: ['veylo-video-hls', 'veylo-video-original'] });
+    const original = claims.purpose === 'video-original' && claims.aud === 'veylo-video-original' && claims.version === 'original';
+    if ((!original && (claims.purpose !== 'video-hls' || claims.aud !== 'veylo-video-hls')) || !/^[a-f\d]{24}$/i.test(claims.assetId) || !/^[a-f\d-]{36}$/i.test(claims.sessionId) || (!original && !/^[a-f\d-]{36}$/i.test(claims.version)) || claims.exp > Date.now() / 1000 + 930) throw new Error();
     return claims;
   } catch { throw Object.assign(new Error('Reopen this film to continue playback.'), { status: 401, code: 'VIDEO_SESSION_EXPIRED' }); }
 }

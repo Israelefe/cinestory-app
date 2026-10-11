@@ -7,7 +7,8 @@ const assetSchema = new Schema({
   userId: owner, objectKey: { type: String, required: true, unique: true },
   filename: { type: String, maxlength: 180, required: true }, contentType: String,
   bytes: { type: Number, min: 1, required: true }, checksum: String,
-  duration: Number, width: Number, height: Number, rotation: Number, frameRate: Number, videoCodec: String, audioCodec: String,
+  duration: Number, width: Number, height: Number, rotation: Number, frameRate: Number, videoCodec: String, audioCodec: String, pixelFormat: String,
+  adaptive: { state: String, generation: String, errorMessage: String },
   state: { type: String, enum: ['reserved', 'uploading', 'verifying', 'queued', 'processing', 'ready', 'failed', 'deleting', 'deleted'], default: 'reserved', index: true },
   errorCode: String, errorMessage: String, streamUid: { type: String, index: true },
   streamImportedAt: Date, streamReadyAt: Date, posterKey: String, posterKeys: [String],
@@ -57,6 +58,7 @@ const usageSchema = new Schema({
 const playbackSchema = new Schema({
   _id: String, userId: owner, deliveryId: { type: Schema.Types.ObjectId, required: true },
   assetId: { type: Schema.Types.ObjectId, required: true }, accessVersion: Number,
+  playbackMode: { type: String, enum: ['original', 'adaptive'] },
   preview: { type: Boolean, default: false }, leaseId: String, expiresAt: { type: Date, index: { expireAfterSeconds: 0 } }
 }, { timestamps: true });
 const aiUsageSchema = new Schema({ _id: String, reservedUsd: { type: Number, default: 0 }, spentUsd: { type: Number, default: 0 } }, { timestamps: true });

@@ -77,7 +77,7 @@ export async function inspectLocalVideo(file, maxDuration) {
   const rotation = Number(video.side_data_list?.find(item => Number.isFinite(item.rotation))?.rotation || video.tags?.rotate || 0);
   const [rate, divisor = 1] = String(video.avg_frame_rate || '30').split('/').map(Number);
   const frameRate = Number.isFinite(rate / divisor) && rate / divisor > 0 ? Math.min(30, rate / divisor) : 30;
-  return { duration, width: Math.abs(rotation) % 180 === 90 ? video.height : video.width, height: Math.abs(rotation) % 180 === 90 ? video.width : video.height, rotation, frameRate, videoCodec: video.codec_name, audioCodec: audio?.codec_name || '' };
+  return { duration, width: Math.abs(rotation) % 180 === 90 ? video.height : video.width, height: Math.abs(rotation) % 180 === 90 ? video.width : video.height, rotation, frameRate, videoCodec: video.codec_name, pixelFormat: video.pix_fmt, audioCodec: audio?.codec_name || '' };
 }
 
 export async function extractVideoFrame(file, directory, seconds, index = 0) {

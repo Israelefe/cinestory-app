@@ -24,6 +24,7 @@ router.get('/assets/:assetId/poster', video.getOwnerVideoPoster);
 router.get('/assets/:assetId/download', privateLinkMediaLimit, video.downloadOwnerVideo);
 router.post('/assets/:assetId/poster', privateLinkUploadLimit, poster.single('poster'), video.setVideoPoster);
 router.post('/assets/:assetId/retry', video.retryVideoAsset);
+router.post('/assets/:assetId/adaptive', video.retryAdaptiveVideo);
 router.post('/assets/:assetId/analyze', aiGenerationLimit, video.requestVideoAnalysis);
 router.delete('/assets/:assetId', video.deleteVideoAsset);
 router.get('/uploads/:uploadId', video.getVideoUpload);

@@ -3,11 +3,11 @@ import { Play, Pause, RefreshCw, Volume2, VolumeX, Maximize } from 'lucide-react
 import { videoDuration, videoMediaUrl } from '../../services/videoDelivery.js';
 
 // Only the selected film mounts a player or requests a playback session.
-export default function VideoPlayback({ item, requestPlayback, endPlayback, portrait = false, autoPlay = false, onStarted }) {
+export default function VideoPlayback({ item, requestPlayback, endPlayback, portrait = false, original = true, autoPlay = false, muted = true, onMutedChange }) {
   const element = useRef(null); const hls = useRef(null); const session = useRef(null);
   const request = useRef(null); const generation = useRef(0); const renewing = useRef(false); const sourceId = useRef('');
   const [loading, setLoading] = useState(false); const [error, setError] = useState(''); const [started, setStarted] = useState(false);
-  const [paused, setPaused] = useState(true); const [muted, setMuted] = useState(false); const [position, setPosition] = useState(0);
+  const [paused, setPaused] = useState(true); const [position, setPosition] = useState(0);
   const installSource = useCallback(async (url, { resumeAt = 0, play = false, generationId } = {}) => {
     const video = element.current; if (!video || generationId !== generation.current) return;
     hls.current?.destroy(); hls.current = null;
@@ -67,7 +67,7 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
       if (previousSession?.sessionId) void endPlayback?.(previousSession.sessionId)?.catch(() => {});
     };
   }, [endPlayback]);
-  useEffect(() => { if (autoPlay) void start(); }, [autoPlay, start]);
+  useEffect(() => { if (autoPlay && !document.hidden) void start(); }, [autoPlay, start]);
   useEffect(() => {
     const timer = setInterval(() => {
       if (!element.current?.paused && !document.hidden && session.current && Date.now() > new Date(session.current.expiresAt).getTime() - 300_000) void start({ renew: true });
@@ -78,18 +78,20 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
   }, [start]);
   const toggle = () => { if (element.current?.paused) void start(); else element.current?.pause(); };
   return <div className={'vv-playback' + (portrait ? ' is-vertical' : '')}>
-    <video ref={element} controls={started && !portrait} controlsList="nodownload" playsInline preload="none" poster={videoMediaUrl(item.posterUrl)} aria-label={item.title}
+    <video ref={element} controls={started && !portrait} controlsList="nodownload" playsInline preload="none" muted={muted} poster={videoMediaUrl(item.posterUrl)} aria-label={item.title}
       onClick={portrait ? toggle : undefined} onWaiting={() => setLoading(true)} onCanPlay={() => setLoading(false)}
-      onPlaying={() => { setLoading(false); setError(''); setPaused(false); onStarted?.(); }} onPause={() => setPaused(true)}
+      onPlaying={() => { setLoading(false); setError(''); setPaused(false); }} onPause={() => setPaused(true)}
+      onVolumeChange={() => onMutedChange?.(Boolean(element.current?.muted))}
       onTimeUpdate={() => setPosition(element.current?.currentTime || 0)}
       onPlay={() => { setPaused(false); if (session.current && new Date(session.current.expiresAt).getTime() < Date.now() + 60_000) void start({ renew: true }); }}
-      onError={() => { if (started && !renewing.current) { setLoading(false); setError('This film could not play. Check your connection and try again.'); } }} />
-    {(!started || (portrait && paused)) && !loading && !error && <button className="vv-play" type="button" onClick={() => start()} aria-label={started ? 'Resume film' : 'Play film'}><span><Play size={26} fill="currentColor" /></span><small>{started ? 'Resume film' : 'Play film'}</small></button>}
+      onError={() => { if (started && !renewing.current) { setLoading(false); setError(original && element.current?.error?.code === 4 ? 'This browser cannot play the original format. Ask your photographer for a compatible MP4 or adaptive playback.' : 'This film could not play. Check your connection and try again.'); } }} />
+    {(!started || (portrait && paused)) && !loading && !error && <button className="vv-play" type="button" onClick={() => start()} aria-label={started ? 'Resume film' : 'Play film'}><span><Play size={26} fill="currentColor" /></span>{!portrait && <small>{started ? 'Resume film' : 'Play film'}</small>}</button>}
     {loading && <span className="vv-buffer" role="status"><RefreshCw className="v-spin" size={20} />{started ? 'Loading film…' : 'Opening film…'}</span>}
     {error && <div className="vv-error" role="alert"><p>{error}</p><button type="button" onClick={() => { sourceId.current = ''; void start({ renew: Boolean(session.current) }); }}><RefreshCw size={16} />Try again</button></div>}
+    {muted && started && <button className="vv-sound" type="button" onClick={() => { if (element.current) { element.current.muted = false; void element.current.play().catch(() => setPaused(true)); } onMutedChange?.(false); }}><VolumeX size={16} />Enable sound</button>}
     {portrait && started && <div className="vv-reel-controls">
       <input className="vv-seek" type="range" min="0" max={item.duration || 1} step="0.1" value={Math.min(position, item.duration || 1)} aria-label="Seek video" onChange={event => { if (element.current) element.current.currentTime = Number(event.target.value); setPosition(Number(event.target.value)); }} />
-      <div><button type="button" onClick={toggle} aria-label={paused ? 'Play video' : 'Pause video'}>{paused ? <Play size={19} /> : <Pause size={19} />}</button><span>{videoDuration(position)} / {videoDuration(item.duration)}</span><button type="button" onClick={() => { if (element.current) element.current.muted = !muted; setMuted(!muted); }} aria-label={muted ? 'Unmute video' : 'Mute video'}>{muted ? <VolumeX size={19} /> : <Volume2 size={19} />}</button><button type="button" aria-label="Full screen" onClick={() => { const video = element.current; if (video?.webkitEnterFullscreen) video.webkitEnterFullscreen(); else void video?.requestFullscreen?.()?.catch(() => {}); }}><Maximize size={18} /></button></div>
+      <div><button type="button" onClick={toggle} aria-label={paused ? 'Play video' : 'Pause video'}>{paused ? <Play size={19} /> : <Pause size={19} />}</button><span>{videoDuration(position)} / {videoDuration(item.duration)}</span><button type="button" onClick={() => { if (element.current) element.current.muted = !muted; onMutedChange?.(!muted); }} aria-label={muted ? 'Unmute video' : 'Mute video'}>{muted ? <VolumeX size={19} /> : <Volume2 size={19} />}</button><button type="button" aria-label="Full screen" onClick={() => { const video = element.current; if (video?.webkitEnterFullscreen) video.webkitEnterFullscreen(); else void video?.requestFullscreen?.()?.catch(() => {}); }}><Maximize size={18} /></button></div>
     </div>}
   </div>;
 }

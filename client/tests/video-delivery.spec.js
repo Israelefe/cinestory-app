@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const id = '222222222222222222222222', assetId = '333333333333333333333333';
 const config = { configured: true, available: true, writeAvailable: true, aiAvailable: false, maxVideos: 10, maxFileBytes: 5_000_000_000, accountTransfers: 2 };
 const user = { id: '111111111111111111111111', name: 'Amara', emailVerified: true, onboardingComplete: true, plan: 'pro' };
-const asset = { id: assetId, filename: 'ceremony.mp4', bytes: 10000000, duration: 10, width: 960, height: 540, state: 'ready', posterUrl: '/veylo/video/light-study.webp', analysis: { state: 'idle' } };
+const asset = { originalCompatible: true, hasAdaptive: true, id: assetId, filename: 'ceremony.mp4', bytes: 10000000, duration: 10, width: 960, height: 540, state: 'ready', posterUrl: '/veylo/video/light-study.webp', analysis: { state: 'idle' } };
 const presentation = { title: 'Ada and Emeka', introduction: 'Your finished films are ready.', featuredAssetId: assetId, allowDownloads: false, items: [{ assetId, title: 'The ceremony', description: 'The complete ceremony film.', posterSeconds: 0, allowDownload: null }] };
 function project() { return { _id: id, publicId: 'video-example-private-id', kind: 'video', schemaVersion: 3, status: 'draft', clientName: '', brief: '', video: { draft: structuredClone(presentation), revision: 0, accessVersion: 0 }, access: { hasPin: false }, assets: [structuredClone(asset)] }; }
 async function mock(page, options = {}) {
@@ -46,13 +46,14 @@ for (const width of [320, 390, 768, 834, 1440]) test(`vertical feed hands playba
   await page.setViewportSize({ width, height: 900 });
   await page.goto('/v/video-example-private-id');
   await expect(page.locator('.vv-feed')).toBeVisible(); await expect(page.locator('video')).toHaveCount(1);
-  expect(starts).toEqual([]);
+  await expect(page.locator('.vv-desktop-device .v-phone-device')).toHaveCount(width > 1024 ? 1 : 0);
+  await expect(page.getByText('Delivered with Veylo', { exact: true })).toHaveCount(0);
+  await expect.poll(() => starts.length).toBe(1);
   const avatar = await page.locator('.vv-reel.is-active .vv-avatar img').evaluate(img => {
     const style = getComputedStyle(img), image = img.getBoundingClientRect(), circle = img.parentElement.getBoundingClientRect();
     return { fit: style.objectFit, radius: style.borderRadius, width: image.width, height: image.height, circle: circle.width };
   });
-  expect(avatar.fit).toBe('cover'); expect(avatar.radius).toBe('50%'); expect(avatar.width).toBe(avatar.height); expect(Math.abs(avatar.width - avatar.circle)).toBeLessThanOrEqual(2);
-  await page.getByRole('button', { name: 'Play film', exact: true }).click();
+  expect(avatar.fit).toBe('cover'); expect(avatar.radius).toBe('50%'); expect(avatar.width).toBeCloseTo(avatar.height, 3); expect(Math.abs(avatar.width - avatar.circle)).toBeLessThanOrEqual(2);
   await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(.1);
   await page.locator('.vv-feed').evaluate(feed => feed.scrollTo({ top: feed.clientHeight, behavior: 'instant' }));
   await expect(page.locator('.vv-reel.is-active')).toHaveAttribute('data-video-id', videos[1].id);
@@ -79,6 +80,34 @@ test('three creation steps keep optional settings tucked away and retain a saved
   await expect.poll(() => state.project.video.draft.allowDownloads).toBe(false);
   await page.reload(); await page.getByRole('button', { name: /Add details/ }).click(); await expect(downloads).not.toBeChecked();
 });
+test('original quality is the default and adaptive publishing waits for the opted-in copies', async ({ page }) => {
+  const { state } = await mock(page); state.project.assets[0].hasAdaptive = false;
+  await page.clock.install(); await page.goto(`/create?draft=${id}`);
+  await page.getByRole('button', { name: /Add details/ }).click();
+  const adaptive = page.getByRole('checkbox', { name: /Create adaptive playback copies/ }); await expect(adaptive).not.toBeChecked();
+  await page.getByRole('button', { name: 'Preview & send', exact: true }).first().click();
+  await expect(page.getByRole('button', { name: 'Create client link', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Details', exact: false }).first().click();
+  state.project.assets[0].adaptive = { state: 'queued' };
+  await adaptive.check(); await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+  await expect.poll(() => state.project.video.draft.playbackMode).toBe('adaptive');
+  await page.getByRole('button', { name: 'Preview & send', exact: true }).first().click();
+  await expect(page.getByRole('button', { name: 'Create client link', exact: true })).toBeDisabled();
+  state.project.assets[0].hasAdaptive = true; state.project.assets[0].adaptive.state = 'ready';
+  await page.clock.fastForward(6000);
+  await expect(page.getByRole('button', { name: 'Create client link', exact: true })).toBeEnabled();
+});
+test('an incompatible original needs a compatible upload or explicit adaptive choice', async ({ page }) => {
+  const { state } = await mock(page); state.project.assets[0].originalCompatible = false;
+  await page.goto(`/create?draft=${id}`); await page.getByRole('button', { name: /Add details/ }).click();
+  await expect(page.getByText('This original format may not play in every browser.', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: 'Preview & send', exact: true }).first().click();
+  await expect(page.getByRole('button', { name: 'Create client link', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Details', exact: false }).first().click();
+  await page.getByRole('checkbox', { name: /Create adaptive playback copies/ }).check();
+  await page.getByRole('button', { name: 'Preview & send', exact: true }).first().click();
+  await expect(page.getByRole('button', { name: 'Create client link', exact: true })).toBeEnabled();
+});
 
 test('upload step follows real preparation state and offers failed originals a retry', async ({ page }) => {
   const { state, errors } = await mock(page);
@@ -88,7 +117,7 @@ test('upload step follows real preparation state and offers failed originals a r
   await expect(page.locator('.vc-upload-row')).toContainText('Uploaded · waiting for preparation');
   state.project.assets[0].state = 'processing';
   await page.clock.fastForward(6000);
-  await expect(page.locator('.vc-upload-row')).toContainText('Preparing playback qualities');
+  await expect(page.locator('.vc-upload-row')).toContainText('Checking video and preparing cover');
   state.project.assets[0].state = 'failed';
   state.project.assets[0].errorMessage = 'This video could not be prepared. You can retry or download the original.';
   await page.clock.fastForward(6000);
@@ -129,8 +158,9 @@ for (const width of [390, 834, 1440]) test(`real adaptive HLS plays, seeks and k
   });
   await page.goto('/v/' + 'a'.repeat(24));
   await expect(page.locator('video')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Play film', exact: true }).click();
   await expect.poll(() => page.locator('video').evaluate(video => video.currentTime), { timeout: 15000 }).toBeGreaterThan(.2);
+  expect(await page.locator('video').evaluate(video => video.muted)).toBe(true);
+  await page.getByRole('button', { name: 'Enable sound', exact: true }).click();
   expect(await page.locator('video').evaluate(video => video.muted)).toBe(false);
   if (width === 1440) await expect.poll(() => new Set(requested.filter(file => file.endsWith('.ts')).map(file => file.split('/')[0])).size, { timeout: 10000 }).toBeGreaterThan(1);
   await page.locator('video').evaluate(video => { video.pause(); video.currentTime = 6.2; });
@@ -141,22 +171,24 @@ for (const width of [390, 834, 1440]) test(`real adaptive HLS plays, seeks and k
   expect(errors).toEqual([]);
 });
 
-for (const width of [320, 390, 768, 834, 1024, 1440]) test(`client demo fits ${width}px with one idle player and photographer branding`, async ({ page }) => {
+for (const width of [320, 390, 768, 834, 1024, 1440]) test(`client demo fits ${width}px with muted autoplay and photographer branding`, async ({ page }) => {
   const { errors } = await mock(page); await page.setViewportSize({ width, height: 950 }); await page.emulateMedia({ reducedMotion: 'reduce' }); await page.goto('/demo/video');
   await expect(page.getByRole('heading', { name: 'A place for the finished film.' })).toBeVisible();
-  await expect(page.locator('video')).toHaveCount(1); expect(await page.locator('video').evaluate(video => video.paused)).toBe(true);
+  await expect(page.locator('video')).toHaveCount(1); await expect.poll(() => page.locator('video').evaluate(video => !video.paused && video.muted)).toBe(true);
   await expect(page.locator('.vv-brand')).toContainText('Veylo Studio'); await noOverflow(page);
   await page.getByRole('button', { name: /Light, in portrait/ }).click(); await expect(page.locator('.vv-reel.is-active .vv-screen')).toHaveClass(/is-portrait/); await noOverflow(page);
   if (width === 390 || width === 834) await page.screenshot({ path: `../.visual-review/video-demo-${width}.png`, fullPage: true });
   expect(errors).toEqual([]);
 });
 test('demo plays original audio on demand, seeks and keeps a single player when changing films', async ({ page }) => {
-  await mock(page); await page.goto('/demo/video'); await page.getByRole('button', { name: 'Play film', exact: true }).click();
+  await mock(page); await page.goto('/demo/video');
   await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(.1);
+  expect(await page.locator('video').evaluate(video => video.muted)).toBe(true);
+  await page.getByRole('button', { name: 'Enable sound', exact: true }).click();
   expect(await page.locator('video').evaluate(video => video.muted)).toBe(false);
   await page.locator('video').evaluate(video => { video.pause(); video.currentTime = 4; }); await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(3.9);
   await page.getByRole('button', { name: /Light, in portrait/ }).click(); await expect(page.locator('video')).toHaveCount(1);
-  expect(await page.locator('video').evaluate(video => video.paused)).toBe(true); await expect(page.getByRole('button', { name: 'Play film', exact: true })).toBeVisible();
+  await expect.poll(() => page.locator('video').evaluate(video => !video.paused && !video.muted)).toBe(true);
 });
 test('expired playback sessions reopen on the same player and preserve the playback position', async ({ page }) => {
   const { errors } = await mock(page); const requests = []; let ended = 0;
@@ -171,7 +203,7 @@ test('expired playback sessions reopen on the same player and preserve the playb
     }
     return route.fulfill({ json: { success: true, data: { ...presentation, branding: { name: 'Amara Studio' }, items: [{ ...asset, ...presentation.items[0] }, { ...asset, id: '444444444444444444444444', title: 'Reception film' }] } } });
   });
-  await page.goto('/v/video-example-private-id'); await page.getByRole('button', { name: 'Play film', exact: true }).click();
+  await page.goto('/v/video-example-private-id');
   await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(.1);
   await page.locator('video').evaluate(video => { video.loop = true; video.currentTime = 4; });
   await page.clock.fastForward(4 * 60_000);

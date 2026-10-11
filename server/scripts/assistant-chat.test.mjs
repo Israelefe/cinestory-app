@@ -224,12 +224,15 @@ test('video help describes the built Pro feature and its actual limits', () => {
   assert.match(knowledge, /original downloads are enabled by default on new deliveries/);
   assert.match(knowledge, /three steps are Upload, Details, Preview & send/);
   assert.match(knowledge, /Existing saved choices remain unchanged/);
+  assert.match(knowledge, /Original quality is the default/);
+  assert.match(knowledge, /explicitly enable adaptive playback/);
+  assert.match(knowledge, /without a Veylo delivery credit/);
 });
 
 test('recipient video help explains playback without offering studio configuration', () => {
   const knowledge = buildAssistantKnowledge({ query: 'video film play audio download pin expired', audience: 'recipient' });
   assert.match(knowledge, /Watching and downloading your videos/);
-  assert.match(knowledge, /Press play to start the film/);
+  assert.match(knowledge, /Playback starts muted automatically/);
   assert.match(knowledge, /cannot remove a PIN/);
   assert.doesNotMatch(knowledge, /Details & upload|observed admission controls/);
 });
