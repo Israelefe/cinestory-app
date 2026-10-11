@@ -12,6 +12,23 @@ import { handleVideoDownload } from './videoDownload.js';
 const EDGE_KEY_HEADER = 'x-veylo-edge-key';
 const EDGE_CLIENT_IP_HEADER = 'x-veylo-client-ip';
 
+async function assistGatewayFailure(response) {
+  if (![502, 503, 504].includes(response.status)) return false;
+  // An application error has already exhausted its own bounded retry policy.
+  // Repeating it here doubles the model calls and can outlast the browser request.
+  if (response.headers.get('content-type')?.includes('application/json')) {
+    try {
+      const body = await response.clone().json();
+      if (typeof body?.code === 'string' && body.code) return false;
+    } catch { /* An unreadable upstream error can still be retried once. */ }
+  }
+  return true;
+}
+
+function assistUnavailable() {
+  return Response.json({ success: false, code: 'V3_ASSIST_UNAVAILABLE', message: 'Veylo could not finish this request. Your text is unchanged. Please try again.' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
+}
+
 export async function handleApiProxy(request, env) {
   const apiOrigin = (env?.VEYLO_API_ORIGIN || DEFAULT_API_ORIGIN).replace(/\/+$/, '');
 
@@ -57,7 +74,10 @@ export async function handleApiProxy(request, env) {
     redirect: 'manual',
     signal: request.signal
   };
-  if (request.method !== 'GET' && request.method !== 'HEAD') init.body = request.body;
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    init.body = request.body;
+    init.duplex = 'half';
+  }
 
   const proxyRequest = new Request(target, init);
   const retryV3Assist = request.method === 'POST' && incoming.pathname === '/api/v1/deliveries/v3/assist';
@@ -72,7 +92,7 @@ export async function handleApiProxy(request, env) {
   }
 
   if (response) {
-    if (!retryV3Assist || ![502, 503, 504].includes(response.status) || request.signal.aborted) return response;
+    if (!retryV3Assist || request.signal.aborted || !await assistGatewayFailure(response)) return response;
     try { await response.body?.cancel?.(); } catch { /* Retry the safe inference request below. */ }
     console.warn('[api-proxy] V3 assist upstream returned HTTP ' + response.status + '; retrying once.');
   }
@@ -83,5 +103,13 @@ export async function handleApiProxy(request, env) {
   // Returned untouched rather than rebuilt from `response.headers`: constructing
   // a new Response collapses repeated Set-Cookie headers into one, which would
   // silently break session and CSRF cookies.
-  return fetch(proxyRequest);
+  try {
+    const retried = await fetch(proxyRequest);
+    if (!await assistGatewayFailure(retried)) return retried;
+    try { await retried.body?.cancel?.(); } catch { /* Return the service error below. */ }
+    return assistUnavailable();
+  } catch (error) {
+    if (request.signal.aborted) throw error;
+    return assistUnavailable();
+  }
 }

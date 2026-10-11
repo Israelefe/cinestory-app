@@ -2,6 +2,7 @@ import { useAssistantWorkflow } from '../components/AssistantContext.jsx';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { deliveryPreparationMessage } from '../utils/deliveryPreparation.js';
 import { pollDeliveryProgress } from '../utils/deliveryProgress.js';
+import { usePurposeWording } from '../hooks/usePurposeWording.js';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import {
@@ -26,6 +27,7 @@ import {
   Pause,
   Play,
   RefreshCw,
+  RotateCcw,
   Trash2,
   Type,
   Upload,
@@ -164,6 +166,11 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
   const assetIdentity = assets.map(asset => asset.assetId).join('|');
   const captionIdentity = assets.map(asset => `${asset.assetId}:${asset.caption || ''}`).join('|');
   const actualShootType = shootType === 'Other' ? customShoot.trim() : shootType;
+  const { originalPurpose, purposeFeedback, improve, editPurpose, invalidate, revert } = usePurposeWording({
+    purpose, setPurpose, shootType: actualShootType,
+    initialOriginalPurpose: initialDelivery?.v3?.originalPurpose !== initialDelivery?.brief ? initialDelivery?.v3?.originalPurpose || '' : '',
+    busy, action, setError
+  });
   const assistantUnsaved = title !== (draft?.title || '') || clientName !== (draft?.clientName || '')
     || (stage === 'details' && (actualShootType !== (draft?.shootType || '') || purpose !== (draft?.brief === 'Photo Swap delivery' ? '' : draft?.brief || '')))
     || photoOrder.join('|') !== assets.map(asset => asset.assetId).join('|')
@@ -238,7 +245,9 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
           return recovered;
         }
       }
-      setError(errorText(failure));
+      const status = failure.response?.status;
+      const code = failure.response?.data?.code || (status >= 500 ? `V3_REQUEST_${status}` : '');
+      setError(errorText(failure) + (label === 'improve' && code ? ` Support reference: ${code}` : ''));
       return null;
     } finally {
       setBusy('');
@@ -360,6 +369,7 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
 
   async function continueDetails(event) {
     event?.preventDefault();
+    if (busy) return;
     if (!draft && quotaReached) {
       setError(quotaMessage(entitlements));
       return;
@@ -387,7 +397,7 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
         title: title.trim(),
         shootType: actualShootType,
         purpose: purpose.trim(),
-        originalPurpose: purpose.trim(),
+        originalPurpose: originalPurpose || purpose.trim(),
         clarificationAnswers: []
       };
       if (draft?._id) {
@@ -683,23 +693,32 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
                       <input value={title} onChange={event => setTitle(event.target.value)} maxLength={120} placeholder="e.g. Lora’s 25th birthday" />
                     </label>
                     <label>Type of shoot
-                      <select value={shootType} onChange={event => setShootType(event.target.value)}>
+                      <select value={shootType} onChange={event => { invalidate(); setShootType(event.target.value); }}>
                         <option value="">Choose a shoot type</option>
                         {SHOOT_TYPES.map(value => <option key={value}>{value}</option>)}
                       </select>
                     </label>
                     {shootType === 'Other' && <label>What type of shoot?
-                      <input value={customShoot} onChange={event => setCustomShoot(event.target.value)} maxLength={80} placeholder="e.g. naming ceremony" />
+                      <input value={customShoot} onChange={event => { invalidate(); setCustomShoot(event.target.value); }} maxLength={80} placeholder="e.g. naming ceremony" />
                     </label>}
                     <label>Purpose of the shoot
-                      <textarea value={purpose} onChange={event => setPurpose(event.target.value)} maxLength={3000} rows={4} placeholder="These photos were taken for Sharon’s studio portrait session…" />
+                      <textarea value={purpose} onChange={event => editPurpose(event.target.value)} maxLength={3000} rows={4} placeholder="These photos were taken for Sharon’s studio portrait session…" />
                       <small>{purpose.length} / 3,000. This helps write captions; it is not shown to your client.</small>
                     </label>
+                    <div className="ps-purpose-assist">
+                      <div className="ps-purpose-actions">
+                        <button type="button" onClick={improve} disabled={!!busy}>
+                          {busy === 'improve' ? <LoaderCircle className="ps-spin" size={16} /> : <RefreshCw size={16} />} Improve my wording
+                        </button>
+                        {originalPurpose && <button type="button" className="is-quiet" onClick={revert} disabled={!!busy}><RotateCcw size={16} /> Revert to my words</button>}
+                      </div>
+                      <p aria-live="polite">{purposeFeedback || 'Keeps your meaning and details. Your original wording is saved so you can restore it.'}</p>
+                    </div>
                   </div>
                   <div className="ps-step-note"><Layers3 size={18} /><p>Every finished photo stays in the delivery. You choose the order your client swipes through.</p></div>
                   <div className="ps-step-actions">
                     <Link to="/create" className="ps-back-link"><ArrowLeft size={16} /> Choose a delivery type</Link>
-                    <button type="submit" className="ps-create-primary" disabled={busy === 'details' || billingLoading || (!draft && quotaReached)}>
+                    <button type="submit" className="ps-create-primary" disabled={!!busy || billingLoading || (!draft && quotaReached)}>
                       {busy === 'details' ? <LoaderCircle className="ps-spin" size={17} /> : null}
                       Continue to photos <ArrowRight size={17} />
                     </button>

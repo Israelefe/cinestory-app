@@ -2,6 +2,7 @@ import { useAssistantWorkflow } from '../components/AssistantContext.jsx';
 import { ProPrice } from '../components/ProPricing.jsx';
 import { deliveryPreparationMessage } from '../utils/deliveryPreparation.js';
 import { pollDeliveryProgress } from '../utils/deliveryProgress.js';
+import { usePurposeWording } from '../hooks/usePurposeWording.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -86,33 +87,6 @@ function nextAfterShowcase(format) { return format === 'photo-story' ? 'narratio
 function freeMonthlyLimitReached(entitlements) { return entitlements?.plan === 'free' && entitlements?.usage?.deliveriesRemaining === 0; }
 function freeMonthlyLimitMessage(entitlements) { return `You've published all ${entitlements?.limits?.deliveriesPerMonth || 3} Free deliveries this month. You can create another next month, or move to Pro.`; }
 
-async function requestPurposeSuggestion(payload, signal) {
-  const deadline = Date.now() + 120_000;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      return await api.post('/v1/deliveries/v3/assist', payload, { signal, timeout: Math.max(1, deadline - Date.now()) });
-    } catch (error) {
-      const retryable = attempt === 0 && !signal.aborted
-        && [502, 503, 504].includes(error.response?.status)
-        && !error.response?.data?.code;
-      if (!retryable || Date.now() + 1000 >= deadline) throw error;
-
-      await new Promise((resolve, reject) => {
-        const onAbort = () => {
-          clearTimeout(timer);
-          signal.removeEventListener('abort', onAbort);
-          reject(signal.reason || Object.assign(new Error('Request canceled.'), { name: 'AbortError' }));
-        };
-        const timer = setTimeout(() => {
-          signal.removeEventListener('abort', onAbort);
-          resolve();
-        }, 1000);
-        signal.addEventListener('abort', onAbort, { once: true });
-        if (signal.aborted) onAbort();
-      });
-    }
-  }
-}
 function formatTrackTime(value) {
   const seconds = Math.max(0, Math.floor(Number(value) || 0));
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
@@ -150,12 +124,6 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const [shootType, setShootType] = useState(initialDelivery?.shootType && !SHOOT_TYPES.includes(initialDelivery.shootType) ? 'Other' : initialDelivery?.shootType || '');
   const [customShoot, setCustomShoot] = useState(SHOOT_TYPES.includes(initialDelivery?.shootType) ? '' : initialDelivery?.shootType || '');
   const [purpose, setPurpose] = useState(initialDelivery?.brief || '');
-  const [originalPurpose, setOriginalPurpose] = useState(initialDelivery?.v3?.originalPurpose || '');
-  const [purposeFeedback, setPurposeFeedback] = useState('');
-  const purposeRevision = useRef(0);
-  const purposeRequest = useRef(null);
-  const purposePending = useRef(false);
-  useEffect(() => () => purposeRequest.current?.abort(), []);
   const [recommendation, setRecommendation] = useState(null);
   const [format, setFormat] = useState(initialDelivery?.format || '');
   const [uploads, setUploads] = useState({});
@@ -215,6 +183,9 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   const [published, setPublished] = useState(initialDelivery?.status === 'published' ? { publicId: initialDelivery.publicId, url: window.location.origin + '/d/' + initialDelivery.publicId } : null);
   const [clientEmail, setClientEmail] = useState('');
   const actualShootType = shootType === 'Other' ? customShoot.trim() : shootType;
+  const { originalPurpose, purposeFeedback, improve, editPurpose, invalidate, revert } = usePurposeWording({
+    purpose, setPurpose, shootType: actualShootType, initialOriginalPurpose: initialDelivery?.v3?.originalPurpose || '', busy, action, setError
+  });
   const proFallback = user?.plan === 'pro' || user?.plan === 'studio';
   const limits = entitlements?.limits?.photosPerDelivery || (proFallback ? 500 : 100);
   const planName = entitlements?.plan === 'pro' || (!entitlements && proFallback) ? 'Pro' : 'Free';
@@ -363,33 +334,6 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
   }, [error, stage, reduced]);
   useEffect(() => { setActivePhotoIndex(current => Math.min(current, Math.max(0, selected.length - 1))); }, [selected.length]);
 
-  async function improve() {
-    if (busy || purposePending.current) return;
-    if (!purpose.trim() || !actualShootType) { setError('Enter the shoot type and purpose first.'); return; }
-    const source = purpose.trim();
-    const revision = purposeRevision.current;
-    const request = new AbortController();
-    purposePending.current = true;
-    purposeRequest.current = request;
-    setPurposeFeedback('');
-    await action('improve', async () => {
-      try {
-        const { data } = await requestPurposeSuggestion({ mode: 'improve', purpose: source, shootType: actualShootType }, request.signal);
-        if (request.signal.aborted) return;
-        if (revision !== purposeRevision.current) { setPurposeFeedback('You edited the text while Veylo was working. Your latest words have been kept.'); return; }
-        const suggestion = data.data;
-        const improved = typeof suggestion?.improved === 'string' ? suggestion.improved.trim() : '';
-        if (!improved || suggestion.sourcePurpose !== source || suggestion.meaningPreserved !== true) throw new Error('Veylo could not check that suggestion against your words. Your text has been kept. Please try again.');
-        if (improved === source) { setPurposeFeedback('No wording changes were suggested. Your text is unchanged.'); return; }
-        setOriginalPurpose(current => current || purpose); setPurpose(improved); setPurposeFeedback('Wording improved. Your original is saved so you can restore it.');
-      } catch (failure) {
-        if (!request.signal.aborted) throw failure;
-      } finally {
-        purposePending.current = false;
-        if (purposeRequest.current === request) purposeRequest.current = null;
-      }
-    });
-  }
   async function detailsNext() {
     if (!draft && quotaReached) { setError(freeMonthlyLimitMessage(entitlements)); return; }
     if (clientName.trim().length < 2) { setError('Enter the client name before continuing.'); return; }
@@ -749,13 +693,13 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
             <section className="v3-panel v3-shoot-fields">
               <div className="v3-panel-heading"><span>01</span><div><h2>Who is this delivery for?</h2><p>Set the client and shoot type.</p></div></div>
               <label>Client name<input maxLength={100} value={clientName} onChange={event => setClientName(event.target.value)} placeholder="Ada" /></label>
-              <label>Type of shoot<select value={shootType} onChange={event => { purposeRevision.current += 1; setShootType(event.target.value); setRecommendation(null); setFormat(''); }}><option value="">Choose a shoot type</option>{SHOOT_TYPES.map(value => <option key={value}>{value}</option>)}</select></label>
-              {shootType === 'Other' && <label>What type of shoot?<input maxLength={80} value={customShoot} onChange={event => { purposeRevision.current += 1; setCustomShoot(event.target.value); }} placeholder="e.g. bridal shower" /></label>}
+              <label>Type of shoot<select value={shootType} onChange={event => { invalidate(); setShootType(event.target.value); setRecommendation(null); setFormat(''); }}><option value="">Choose a shoot type</option>{SHOOT_TYPES.map(value => <option key={value}>{value}</option>)}</select></label>
+              {shootType === 'Other' && <label>What type of shoot?<input maxLength={80} value={customShoot} onChange={event => { invalidate(); setCustomShoot(event.target.value); }} placeholder="e.g. bridal shower" /></label>}
             </section>
             <section className="v3-panel v3-purpose-panel">
               <div className="v3-panel-heading"><span>02</span><div><h2>What was the shoot for?</h2><p>Use your own words. A short, plain description is enough.</p></div></div>
-              <label className="v3-purpose-label"><span>Purpose of the shoot</span><textarea rows={8} maxLength={3000} value={purpose} onChange={event => { purposeRevision.current += 1; setPurpose(event.target.value); setOriginalPurpose(''); setPurposeFeedback(''); }} placeholder="These photos were taken for Ada's 25th birthday celebration…" /><small>Include names and the occasion if they matter to the story.</small></label>
-              <div className="v3-assist"><button type="button" onClick={improve} disabled={!!busy}>{busy === 'improve' ? <LoaderCircle className="v3-spin" size={16} /> : <RefreshCw size={16} />} Improve my wording</button>{originalPurpose && <button type="button" className="is-quiet" disabled={!!busy} onClick={() => { purposeRevision.current += 1; setPurpose(originalPurpose); setOriginalPurpose(''); setPurposeFeedback('Your original wording is back.'); }}><RotateCcw size={16} /> Revert to my words</button>}<p aria-live="polite">{purposeFeedback || 'Keeps your meaning and details. Your original wording is saved so you can restore it.'}</p></div>
+              <label className="v3-purpose-label"><span>Purpose of the shoot</span><textarea rows={8} maxLength={3000} value={purpose} onChange={event => editPurpose(event.target.value)} placeholder="These photos were taken for Ada's 25th birthday celebration…" /><small>Include names and the occasion if they matter to the story.</small></label>
+              <div className="v3-assist"><button type="button" onClick={improve} disabled={!!busy}>{busy === 'improve' ? <LoaderCircle className="v3-spin" size={16} /> : <RefreshCw size={16} />} Improve my wording</button>{originalPurpose && <button type="button" className="is-quiet" disabled={!!busy} onClick={revert}><RotateCcw size={16} /> Revert to my words</button>}<p aria-live="polite">{purposeFeedback || 'Keeps your meaning and details. Your original wording is saved so you can restore it.'}</p></div>
             </section>
           </div>
           <div className="v3-actions"><StepButton onClick={detailsNext} disabled={!!busy || billingLoading || !draft && quotaReached}>{busy ? <LoaderCircle className="v3-spin" size={17} /> : <ArrowRight size={17} />} Continue to formats</StepButton></div>

@@ -448,6 +448,63 @@
   font-weight: 450;
 }
 
+.ps-purpose-assist {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ps-purpose-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.ps-purpose-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 11px 14px;
+  border: 1px solid rgba(255, 155, 142, .35);
+  border-radius: 5px;
+  color: #ffd0ca;
+  background: rgba(255, 90, 71, .07);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: transform .18s ease, background .18s ease;
+}
+
+.ps-purpose-actions button.is-quiet {
+  border-color: var(--ps-border);
+  color: #d7d0ca;
+  background: transparent;
+}
+
+.ps-purpose-actions button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: rgba(255, 90, 71, .13);
+}
+
+.ps-purpose-actions button:active:not(:disabled) {
+  transform: scale(.98);
+}
+
+.ps-purpose-actions button:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+.ps-purpose-assist p {
+  margin: 0;
+  color: #b5aaa1;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
 .ps-step-note,
 .ps-access-note,
 .ps-publish-note {
@@ -1636,6 +1693,10 @@
 }
 
 @media (max-width: 520px) {
+  .ps-purpose-actions button {
+    flex: 1 1 100%;
+  }
+
   .ps-create-top-meta > span,
   .ps-create-top-meta > i {
     display: none;

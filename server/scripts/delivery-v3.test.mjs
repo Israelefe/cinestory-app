@@ -4,6 +4,8 @@ import { V3_FORMATS, contrastRatio, validShowcase } from '../src/constants/deliv
 import { analyzeAllV3, calmGridboardPalette, directV3, directV3Pinboard, improvePurpose, nextGridboardPalette, recommendV3Format, regenerateV3Caption, repickV3Palette } from '../src/services/deliveryV3AI.service.js';
 import { captionSegments, generateNarration, narrationLine, NARRATION_RENDER_VERSION } from '../src/services/narration.service.js';
 import { v3Assist } from '../src/controllers/deliveryV3.controller.js';
+import { SHOOT_TYPES } from '../../client/src/constants/shootTypes.js';
+import { purposeWordingExamples } from './fixtures/purpose-wording.mjs';
 
 const ids = Array.from({ length: 25 }, (_, index) => 'asset-' + index);
 Object.assign(process.env, { R2_ACCOUNT_ID: 'offline-account', R2_ACCESS_KEY_ID: 'offline-key', R2_SECRET_ACCESS_KEY: 'offline-secret', R2_BUCKET_NAME: 'offline-bucket', R2_IMAGE_WORKER_URL: 'https://offline-worker.example', R2_IMAGE_WORKER_SECRET: 'offline-secret-that-is-at-least-32-characters' });
@@ -501,6 +503,138 @@ test('purpose improvement can honestly retain an already clear sentence', async 
   const restore = mockModel([{ improved: purpose }, { improved: purpose }], []);
   try { assert.equal(await improvePurpose({ purpose, shootType: 'Birthday' }), purpose); }
   finally { restore(); }
+});
+
+for (const [purpose, improved, shootType] of [
+  ['Ada at Thirty', "Celebrating Ada's 30th birthday.", 'Birthday'],
+  ['Ada at Thirty', 'Celebrating Ada at thirty.', 'Portrait'],
+  ['Ada 2oth birthday', "Celebrating Ada's 20th birthday.", 'Birthday'],
+  ['Ada thirtieth birthday', "Celebrating Ada's 30th birthday.", 'Birthday'],
+  ['Chidi at Twenty-One', "Celebrating Chidi's 21st birthday.", 'Birthday']
+]) test(`wording API accepts an equivalent age in one model call: ${purpose} (${shootType})`, async () => {
+  const calls = [];
+  const restore = mockModel([{ improved }], calls);
+  const response = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+  try {
+    await v3Assist({ body: { mode: 'improve', purpose, shootType } }, response);
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.body, { success: true, data: { improved, sourcePurpose: purpose, meaningPreserved: true } });
+    assert.equal(calls.length, 1);
+    const input = JSON.parse(calls[0].messages[1].content[0].text);
+    assert.equal(input.purpose, purpose);
+    assert.equal(input.occasion, shootType === 'Birthday' && / at /i.test(purpose) ? 'birthday' : undefined);
+    assert.equal(calls[0].temperature, 0.1);
+  } finally { restore(); }
+});
+
+test('wording improvement retains a checked original when a second suggestion changes its facts', async () => {
+  const purpose = "These photos were taken for Ada's 30th birthday.";
+  const restore = mockModel([{ improved: purpose }, { improved: "Celebrating Lora's 20th birthday." }], []);
+  try { assert.equal(await improvePurpose({ purpose, shootType: 'Birthday' }), purpose); }
+  finally { restore(); }
+});
+
+test('wording regression examples cover every selectable shoot type', () => {
+  const covered = new Set(purposeWordingExamples.map(([shootType]) => shootType));
+  for (const shootType of SHOOT_TYPES) assert.ok(covered.has(shootType), `Missing a purpose example for ${shootType}`);
+});
+
+for (const [shootType, purpose, improved] of purposeWordingExamples) test(`wording API improves everyday ${shootType} text: ${purpose}`, async () => {
+  const calls = [];
+  const restore = mockModel([{ improved }], calls);
+  const response = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+  try {
+    await v3Assist({ body: { mode: 'improve', purpose, shootType } }, response);
+    assert.equal(response.statusCode, 200, response.body?.message);
+    assert.equal(response.body.data.improved, improved);
+    assert.equal(response.body.data.sourcePurpose, purpose);
+    assert.equal(response.body.data.meaningPreserved, true);
+    assert.equal(calls.length, 1);
+  } finally { restore(); }
+});
+
+test('wording improvement keeps all paragraphs when the provider returns a label and line breaks', async () => {
+  const purpose = 'these photos was taken for Kora Studio new collection\nthe launch is on 12 June';
+  const improved = "These photos were taken for Kora Studio's new collection. The launch is on 12 June.";
+  const restore = mockModel([{ improved: "Photographer's purpose: These photos were taken for Kora Studio's new collection.\nThe launch is on 12 June." }], []);
+  try { assert.equal(await improvePurpose({ purpose, shootType: 'Commercial' }), improved); }
+  finally { restore(); }
+});
+
+test('invalid wording input is rejected before any model request', async () => {
+  const calls = [];
+  const restore = mockModel([], calls);
+  try {
+    for (const body of [
+      { mode: 'improve', purpose: '', shootType: 'Portrait' },
+      { mode: 'improve', purpose: '   ', shootType: 'Portrait' },
+      { mode: 'improve', purpose: null, shootType: 'Portrait' },
+      { mode: 'improve', purpose: { text: 'A portrait' }, shootType: 'Portrait' },
+      { mode: 'improve', purpose: 'x'.repeat(3001), shootType: 'Portrait' },
+      { mode: 'improve', purpose: 'A portrait', shootType: '' },
+      { mode: 'improve', purpose: 'A portrait', shootType: 'Portrait', unexpected: 'value' }
+    ]) {
+      const response = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(result) { this.body = result; return this; } };
+      await v3Assist({ body }, response);
+      assert.equal(response.statusCode, 400);
+      assert.equal(response.body.success, false);
+    }
+    assert.equal(calls.length, 0);
+  } finally { restore(); }
+});
+
+for (const phrase of ['these photos was taking for Kora Studio. ', 'these photos was taking for Àdá. ']) test(`long purposes have enough output allowance for the full edit: ${phrase}`, async () => {
+  const purpose = phrase.repeat(Math.floor(2990 / phrase.length)).trim();
+  const improved = purpose.replaceAll('was', 'were').replaceAll('taking', 'taken');
+  const calls = [];
+  const restore = mockModel([{ improved }], calls);
+  const response = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+  try {
+    await v3Assist({ body: { mode: 'improve', purpose, shootType: 'Portrait' } }, response);
+    assert.equal(response.statusCode, 200, response.body?.message);
+    assert.equal(response.body.data.improved, improved);
+    assert.equal(calls.length, 1);
+    assert.ok(calls[0].max_tokens > 3000 && calls[0].max_tokens <= 6000);
+  } finally { restore(); }
+});
+
+test('a suggestion exceeding the field limit gets a specific repair instead of being clipped', async () => {
+  const purpose = 'Kora Studio new collection launch. ' + 'Photos of the collection. '.repeat(110);
+  const improved = "Photographs of Kora Studio's new collection launch.";
+  const calls = [];
+  const restore = mockModel([{ improved: 'x'.repeat(3001) }, { improved }], calls);
+  try {
+    assert.equal(await improvePurpose({ purpose, shootType: 'Commercial' }), improved);
+    assert.equal(calls.length, 2);
+    assert.match(JSON.parse(calls[1].messages[1].content[0].text).corrections.join(' '), /3000 characters/);
+  } finally { restore(); }
+});
+
+test('wording improvement retains a checked original when the optional second call fails', async () => {
+  const purpose = "These photos were taken for Ada's 30th birthday.";
+  const calls = [];
+  const restore = mockModel([{ improved: purpose }], calls);
+  const modelFetch = globalThis.fetch;
+  globalThis.fetch = (...args) => {
+    if (calls.length) throw new TypeError('offline provider');
+    return modelFetch(...args);
+  };
+  try { assert.equal(await improvePurpose({ purpose, shootType: 'Birthday' }), purpose); }
+  finally { restore(); }
+});
+
+test('wording provider failures report a specific service error and preserve the source', async t => {
+  const restore = mockModel([], []);
+  globalThis.fetch = async () => { throw new TypeError('offline provider'); };
+  t.mock.method(console, 'error', () => {});
+  const response = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+  try {
+    await v3Assist({ body: { mode: 'improve', purpose: 'Ada at Thirty', shootType: 'Birthday' } }, response);
+    assert.equal(response.statusCode, 503);
+    assert.equal(response.body.code, 'V3_PURPOSE_UNAVAILABLE');
+    assert.match(response.body.message, /Your original text is unchanged/);
+    assert.equal(response.body.data, undefined);
+  } finally { restore(); }
 });
 
 test('purpose improvement has its own total timeout and preserves caption timeout handling', async t => {
