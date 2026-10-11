@@ -33,7 +33,9 @@ export function apiOrigin(env) {
   return url.origin;
 }
 export async function apiRequest(env, path, body = {}, timeout = 10_000) {
-  const response = await fetch(apiOrigin(env) + '/api/v1/videos/processing/' + path, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(timeout), headers: { Authorization: 'Bearer ' + env.VIDEO_PROCESSING_SECRET, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  // Workers support manual/follow redirects. Reject 3xx below without sending
+  // the processing secret to a different origin.
+  const response = await fetch(apiOrigin(env) + '/api/v1/videos/processing/' + path, { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(timeout), headers: { Authorization: 'Bearer ' + env.VIDEO_PROCESSING_SECRET, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (!response.ok) { await response.body?.cancel(); throw new Error('Video API unavailable.'); }
   const value = await response.json();
   if (!value.success) throw new Error('Video API unavailable.');

@@ -47,7 +47,7 @@ export async function handleVideoHls(request, env) {
     // Every request is authorised before R2 is read. Never cache a permission
     // decision: PIN changes, expiry, Pro expiry and closed links take effect on
     // the next request. Only the small grant travels through the API host.
-    const authorised = await fetch(new URL('/api/v1/videos/media/authorize', api), { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-veylo-video-secret': env.VIDEO_PLAYBACK_SECRET }, body: JSON.stringify({ token: match[1], file: match[2], method: request.method }), redirect: 'error', signal: AbortSignal.timeout(15_000) });
+    const authorised = await fetch(new URL('/api/v1/videos/media/authorize', api), { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-veylo-video-secret': env.VIDEO_PLAYBACK_SECRET }, body: JSON.stringify({ token: match[1], file: match[2], method: request.method }), redirect: 'manual', signal: AbortSignal.timeout(15_000) });
     if (!authorised.ok) { await authorised.body?.cancel(); return reply(fail([401, 403, 404, 410, 429].includes(authorised.status) ? authorised.status : 503, 'This film is unavailable. Reopen the delivery or contact your photographer.')); }
     const grant = (await authorised.json())?.data;
     const suffix = `/${claims.assetId}/hls/${claims.version}/${match[2]}`;

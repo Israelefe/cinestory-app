@@ -15,7 +15,7 @@ export async function handleVideoDownload(request, target, headers) {
   const objectHeaders = new Headers();
   if (grant.range) objectHeaders.set('Range', grant.range);
   // Never forward account/PIN cookies or the edge trust secret to storage.
-  const original = await fetch(url, { method: request.method, headers: objectHeaders, redirect: 'error', signal: request.signal });
+  const original = await fetch(url, { method: request.method, headers: objectHeaders, redirect: 'manual', signal: request.signal });
   if (![200, 206].includes(original.status)) { await original.body?.cancel(); return failed(); }
   const resultHeaders = new Headers({ 'Content-Type': 'application/octet-stream', 'Content-Disposition': grant.disposition, 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff' });
   for (const name of ['Content-Length', 'Content-Range']) if (original.headers.has(name)) resultHeaders.set(name, original.headers.get(name));

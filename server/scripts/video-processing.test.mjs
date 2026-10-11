@@ -4,13 +4,27 @@ import crypto from 'node:crypto';
 import { once } from 'node:events';
 import { createVideoContainerServer } from '../src/services/videoContainer.service.js';
 import { processingAuthorized } from '../src/services/videoProcessingAuth.js';
-import { authorized, containerEnvironment, processingClasses, processingLimits, reserveCredit, handleProcessing } from '../../cloudflare/video-processing/processing.js';
+import { authorized, apiRequest, containerEnvironment, processingClasses, processingLimits, reserveCredit, handleProcessing } from '../../cloudflare/video-processing/processing.js';
 
 const secret = crypto.randomBytes(32).toString('hex');
 const env = () => ({ VIDEO_PROCESSING_SECRET: secret, VIDEO_PLAYBACK_SECRET: secret,
   MONGODB_URI: 'mongodb://test.invalid/test', R2_ACCOUNT_ID: 'test', R2_ACCESS_KEY_ID: 'test', R2_SECRET_ACCESS_KEY: 'test', R2_BUCKET_NAME: 'test',
   VIDEO_PLAYBACK_WORKER_URL: 'https://media.example.test', VEYLO_API_ORIGIN: 'https://api.example.test', VIDEO_MAX_CONTAINERS: '4' });
 const request = (path, body) => new Request('https://internal/' + path, { method: body === undefined ? 'GET' : 'POST', ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+
+test('processing API uses Worker-compatible redirects and rejects redirects without forwarding secrets', async t => {
+  let redirect = false; const calls = [];
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    calls.push(url);
+    assert.equal(options.redirect, 'manual');
+    assert.equal(options.headers.Authorization, 'Bearer ' + secret);
+    return redirect ? new Response(null, { status: 302, headers: { Location: 'https://other.example/collect' } }) : Response.json({ success: true, data: { pending: 0 } });
+  });
+  assert.deepEqual(await apiRequest(env(), 'status'), { pending: 0 });
+  redirect = true;
+  await assert.rejects(apiRequest(env(), 'status'), /Video API unavailable/);
+  assert.deepEqual(calls, Array(2).fill('https://api.example.test/api/v1/videos/processing/status'));
+});
 
 test('processing entry points reject anonymous callers and ignore supplied jobs', async () => {
   assert.equal(processingAuthorized(undefined, secret), false);

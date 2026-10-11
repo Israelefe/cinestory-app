@@ -201,12 +201,27 @@ test('trusted edge grants avoid streaming original bytes through the API', async
 test('edge range downloads never forward account cookies or trust headers to storage', async t => {
   const calls = []; t.mock.method(globalThis, 'fetch', async (url, options) => {
     calls.push({ url, options });
+    assert.equal(url instanceof Request ? url.redirect : options.redirect, 'manual');
     if (url instanceof Request) return Response.json({ success: true, data: { url: 'https://' + 'a'.repeat(32) + '.r2.cloudflarestorage.com/private/original.mp4?signed=test', method: 'GET', range: 'bytes=10-19', bytes: 100, disposition: 'attachment; filename="film.mp4"' } });
     return new Response('0123456789', { status: 206, headers: { 'Content-Length': '10', 'Content-Range': 'bytes 10-19/100' } });
   });
   const req = new Request('https://veylo.example/api/v1/videos/assets/abc/download', { headers: { Cookie: 'private-session', Range: 'bytes=10-19' } });
   const result = await handleVideoDownload(req, new URL('https://api.example/download'), new Headers({ Cookie: 'private-session', 'x-veylo-edge-key': 'private-edge-key' }));
   assert.equal(result.status, 206); assert.equal(await result.text(), '0123456789'); assert.equal(result.headers.get('Content-Range'), 'bytes 10-19/100'); assert.equal(calls[1].options.headers.get('cookie'), null); assert.equal(calls[1].options.headers.get('x-veylo-edge-key'), null); assert.equal(calls[1].options.headers.get('range'), 'bytes=10-19');
+});
+
+test('original download rejects storage redirects without forwarding signed URLs', async t => {
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    calls++;
+    assert.equal(url instanceof Request ? url.redirect : options.redirect, 'manual');
+    if (url instanceof Request) return Response.json({ data: { url: 'https://' + 'a'.repeat(32) + '.r2.cloudflarestorage.com/private/original.mp4?signed=test', method: 'GET', bytes: 100, disposition: 'attachment; filename="film.mp4"' } });
+    return new Response(null, { status: 302, headers: { Location: 'https://other.example/collect' } });
+  });
+  const result = await handleVideoDownload(new Request('https://veylo.example/download'), new URL('https://api.example/download'), new Headers());
+  assert.equal(result.status, 502);
+  assert.equal(result.headers.get('Location'), null);
+  assert.equal(calls, 2);
 });
 
 test('HLS requests enforce access and atomically reserve requested segment minutes', async () => {
@@ -231,12 +246,13 @@ test('HLS requests enforce access and atomically reserve requested segment minut
 test('private HLS edge validates tokens and permissions before any R2 read, with CORS and ranges', async t => {
   const film = await asset(); const project = await delivery(film); project.status = 'published'; project.video.published = project.video.draft; await project.save();
   const media = await videoPlayback({ delivery: project, asset: film, settings });
-  let reads = 0; let denied = false;
+  let reads = 0; let denied = 0;
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     assert.equal(new URL(url).pathname, '/api/v1/videos/media/authorize');
+    assert.equal(options.redirect, 'manual');
     assert.equal(options.headers['x-veylo-video-secret'], playbackSecret);
     assert.equal(options.headers.Cookie, undefined);
-    if (denied) return new Response(null, { status: 410 });
+    if (denied) return new Response(null, { status: denied });
     return Response.json({ data: await authorizeHlsRequest(JSON.parse(options.body)) });
   });
   const env = { VIDEO_PLAYBACK_SECRET: playbackSecret, VEYLO_WEB_ORIGIN: process.env.CLIENT_URL, VEYLO_API_ORIGIN: 'https://api.example', DELIVERY_MEDIA: { async get(key, options) { reads++; const bytes = new Uint8Array(20); return { size: 20, body: new Blob([options?.range ? bytes.slice(options.range.offset, options.range.offset + options.range.length) : bytes]).stream() }; } } };
@@ -244,8 +260,10 @@ test('private HLS edge validates tokens and permissions before any R2 read, with
   const result = await handleVideoHls(new Request(url, { headers: { Origin: process.env.CLIENT_URL, Range: 'bytes=5-9' } }), env);
   assert.equal(result.status, 206); assert.equal((await result.arrayBuffer()).byteLength, 5); assert.equal(result.headers.get('Content-Range'), 'bytes 5-9/20'); assert.equal(result.headers.get('Access-Control-Allow-Origin'), process.env.CLIENT_URL); assert.match(result.headers.get('Cache-Control'), /no-store/);
   const head = await handleVideoHls(new Request(url, { method: 'HEAD' }), env); assert.equal(head.status, 200); assert.equal(reads, 1);
-  denied = true;
+  denied = 410;
   assert.equal((await handleVideoHls(new Request(url), env)).status, 410); assert.equal(reads, 1);
+  denied = 302;
+  assert.equal((await handleVideoHls(new Request(url), env)).status, 503); assert.equal(reads, 1);
   assert.equal((await handleVideoHls(new Request(url.replace('q360/s000000.ts', 'original.mp4')), env)).status, 401); assert.equal(reads, 1);
   assert.equal((await handleVideoHls(new Request(url, { headers: { Origin: 'https://other.example' } }), env)).status, 403);
 });
