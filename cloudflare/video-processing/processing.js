@@ -79,6 +79,7 @@ export function processingClasses(DurableObject) {
       const snapshot = await this.snapshot();
       const state = await apiRequest(this.env, 'status', snapshot);
       if (!Number.isInteger(state?.pending) || !Number.isInteger(state?.concurrency)) throw new Error('Invalid queue response.');
+      if (state.diagnostics) console.info('[video-processing] Queue status ' + JSON.stringify({ pending: state.pending, cleanupOnly: state.cleanupOnly, ...state.diagnostics }));
       const activeLimit = Math.min(limits.slots, state.concurrency);
       const needsProbe = snapshot.verifiedAt < Date.now() - 23 * 3600_000;
       // Stable slot IDs give a hard application-wide limit, including retries.
@@ -173,6 +174,7 @@ export function processingClasses(DurableObject) {
       try {
         this.operation = 'encoder-status';
         const status = await this.control('status');
+        console.info('[video-processing] Encoder status ' + JSON.stringify({ ready: status.ready === true, busy: status.busy === true, lastWorked: status.lastWorked === true ? true : status.lastWorked === false ? false : null }));
         if (!status.ready) throw new Error('Encoder not ready.');
         this.operation = 'encoder-lease';
         await this.control('lease', { until: credit.until });

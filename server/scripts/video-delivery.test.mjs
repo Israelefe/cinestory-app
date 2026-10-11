@@ -365,6 +365,10 @@ test('Cloudflare readiness accepts sleeping encoders only with a fresh verified 
       await videoProcessingStatus({ body: { verifiedAt, remainingSeconds, reservedSeconds: 90 } }, res, error => { throw error; });
       assert.equal(res.body.success, true);
       assert.equal(typeof res.body.data.pending, 'number');
+      assert.ok(res.body.data.diagnostics.jobs);
+      assert.ok(res.body.data.diagnostics.assets);
+      for (const row of res.body.data.diagnostics.failures) assert.deepEqual(Object.keys(row).sort(), ['attempts', 'code', 'runAfter', 'state', 'type', 'updatedAt']);
+      assert.doesNotMatch(JSON.stringify(res.body.data.diagnostics), /userId|assetId|objectKey|filename|leaseToken/);
       assert.equal(JSON.stringify(res.body).includes(process.env.VIDEO_PROCESSING_SECRET), false);
     };
     await report(Date.now() - 25 * 3600_000, 1000);
