@@ -22,7 +22,8 @@ class_name = "VideoEncoder"
 image = "../../server/VideoDelivery.Dockerfile"
 image_build_context = "../../server"
 max_instances = 4
-instance_type = { vcpu = 2, memory_mib = 4096, disk_mb = 20000 }
+# Custom instances require at least 3 GiB RAM per vCPU.
+instance_type = { vcpu = 2, memory_mib = 6144, disk_mb = 20000 }
 
 [[durable_objects.bindings]]
 name = "VIDEO_ENCODERS"

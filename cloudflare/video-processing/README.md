@@ -2,7 +2,27 @@
 
 This is a **new** Worker, `veylo-video-processing`. It manages Linux FFmpeg containers on Cloudflare. The existing `veylo-delivery-images` Worker still serves private images and HLS. Photographers upload from their own devices; processing runs on Cloudflare after upload, independently of your computer.
 
-## Deployment
+## Deploy with Cloudflare Workers Builds
+
+Cloudflare can build the container directly from this GitHub repository. Local Docker and WSL setup are unnecessary for this deployment path.
+
+In Workers & Pages, create a Worker by importing `Israelefe/cinestory-app`. Use:
+
+| Setting | Value |
+| --- | --- |
+| Worker name | `veylo-video-processing` |
+| Production branch | `main` |
+| Root directory | Leave empty (repository root) |
+| Build command | `npm ci --prefix cloudflare/video-processing` |
+| Deploy command | `npm run deploy --prefix cloudflare/video-processing` |
+
+The repository root includes both the Worker configuration and the Docker build context in `server/`. Save and deploy, then wait for a successful build and container provisioning. A custom instance with two vCPUs requires at least 6 GiB RAM; the configuration uses 6 GiB RAM and 20 GB disk.
+
+Once the Worker exists, add the required runtime secrets listed below under **Settings > Variables and Secrets**, choosing **Secret** for each. Build variables are separate from runtime secrets. Match the Render API processing secret and rollout settings, then complete the readiness and invited-Pro checks below before public activation.
+
+Reference: [Cloudflare hosted container deployment](https://developers.cloudflare.com/containers/guides/deploy/#deploy-with-workers-builds).
+
+## Alternative: deploy from a computer or CI runner
 
 1. Keep the existing private R2 bucket, CORS, playback secret and media Worker deployment.
 2. Set a new random secret of at least 32 characters, `VIDEO_PROCESSING_SECRET`, in the Render API environment. Use a different value from `VIDEO_PLAYBACK_SECRET`. Set `VIDEO_PROCESSING_MODE=cloudflare-containers` on the API and deploy the API code. Keep public video availability and qualification disabled.
@@ -25,7 +45,7 @@ No Cloudflare Stream subscription, Render background worker or permanently runni
 ## Cost and queue controls
 
 - `VIDEO_MAX_CONTAINERS=1` starts with one active container. The effective cap also respects Admin's `workerConcurrency`, initially one. Both can be raised to four after measurements; `max_instances=4` is the deployment ceiling. Jobs remain queued when full. Each photographer has one media job at a time. This is a safe starting limit, not a claim that one encoder can promptly prepare thousands of uploads.
-- Each container has two vCPUs, 4 GiB RAM and 20 GB scratch disk, with one media job at a time. Renditions encode sequentially. Test the largest supported originals and three-hour films before raising concurrency or making preparation-time promises.
+- Each container has two vCPUs, 6 GiB RAM and 20 GB scratch disk, with one media job at a time. Renditions encode sequentially. Test the largest supported originals and three-hour films before raising concurrency or making preparation-time promises.
 - `VIDEO_DAILY_CONTAINER_SECONDS=21600` limits **reserved aggregate container runtime** to six hours per UTC day. Four containers consume this allowance four times as quickly. It includes cold startup and idle time conservatively and never refunds uncertain/crashed intervals. It is configurable; six hours is an initial operating budget, not a photographer quota or a Cloudflare free allocation. It can pause preparation well before all users' uploads finish.
 - A central Durable Object reserves the next 90 seconds before a VM starts and renews only the extension every 30 seconds. When credits are exhausted, running containers stop, new uploads fail the readiness check and existing queue entries wait for the next UTC day. Already prepared videos still play within their account allowance. Interrupted work recovers through expiring Mongo leases. Repeated processing failures require manual retry after six attempts; cleanup keeps retrying.
 - `VIDEO_MAX_JOB_SECONDS=21600` bounds a single container run to six hours, including download, encoding and upload. Long/complex sources may need a larger measured limit and a matching daily allowance. Container startup is capped at two minutes; failures back off rather than restarting continuously.
