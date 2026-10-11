@@ -190,6 +190,8 @@ test('dashboard covers use the published featured cover and stay private to the 
   const fallback = videoDashboardCover(savedProject, new Map([[String(first._id), first]]));
   assert.equal(String(fallback.asset._id), String(first._id));
   assert.equal(videoDashboardCover(savedProject, new Map()), null);
+  savedProject.status = 'draft';
+  assert.equal(String(videoDashboardCover(savedProject, new Map([[String(first._id), first], [String(featured._id), featured]])).asset._id), String(first._id));
   const draft = await delivery(first);
   assert.ok((await videoDashboardSummaries([draft.toObject()], owner._id)).get(String(draft._id)).thumbnailUrl);
 });

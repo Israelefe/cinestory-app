@@ -63,8 +63,11 @@ function safeVideoDetails(value) {
   for (const presentation of [video?.draft, video?.published]) for (const item of presentation?.items || []) delete item.posterKey;
   return video;
 }
+export function videoDashboardPresentation(delivery) {
+  return ['draft', 'review'].includes(delivery.status) ? delivery.video?.draft : delivery.video?.published || delivery.video?.draft;
+}
 export function videoDashboardCover(delivery, assets) {
-  const presentation = delivery.video?.published || delivery.video?.draft;
+  const presentation = videoDashboardPresentation(delivery);
   const items = presentation?.items || [];
   const ordered = [...items.filter(item => String(item.assetId) === String(presentation?.featuredAssetId)), ...items];
   for (const item of ordered) {
@@ -76,11 +79,11 @@ export function videoDashboardCover(delivery, assets) {
 }
 export async function videoDashboardSummaries(deliveries, userId) {
   const videos = deliveries.filter(delivery => delivery.kind === 'video');
-  const ids = [...new Set(videos.flatMap(delivery => (delivery.video?.published || delivery.video?.draft)?.items?.map(item => String(item.assetId)) || []))];
+  const ids = [...new Set(videos.flatMap(delivery => videoDashboardPresentation(delivery)?.items?.map(item => String(item.assetId)) || []))];
   const assets = ids.length ? await VideoAsset.find({ _id: { $in: ids }, userId, state: 'ready' }).select('_id posterKey').lean() : [];
   const byId = new Map(assets.map(asset => [String(asset._id), asset]));
   return new Map(videos.map(delivery => [String(delivery._id), {
-    videoCount: (delivery.video?.published || delivery.video?.draft)?.items?.length || 0,
+    videoCount: videoDashboardPresentation(delivery)?.items?.length || 0,
     thumbnailUrl: videoDashboardCover(delivery, byId) ? `/api/v1/videos/deliveries/${delivery._id}/poster` : null
   }]));
 }

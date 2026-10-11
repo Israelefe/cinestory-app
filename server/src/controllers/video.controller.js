@@ -17,7 +17,7 @@ import { trustedVideoEdge } from '../services/videoHls.service.js';
 import { lagosMonthWindow } from '../services/entitlement.service.js';
 import { recordPaidUsage } from '../services/paidUsage.service.js';
 import { videoEvent, recordVideoVisit } from '../services/videoEvents.service.js';
-import { videoContext, videoId, videoError, ownedVideoDelivery, ownedVideoAsset, ownerVideoDTO, videoAssetDTO, publicVideoDelivery, setVideoGrant, videoBrand, videoPresentationDTO, videoPlayback, usageKey, queueVideoJob, queueAdaptiveVideo, authorizeHlsRequest, videoDashboardCover } from '../services/videoDelivery.service.js';
+import { videoContext, videoId, videoError, ownedVideoDelivery, ownedVideoAsset, ownerVideoDTO, videoAssetDTO, publicVideoDelivery, setVideoGrant, videoBrand, videoPresentationDTO, videoPlayback, usageKey, queueVideoJob, queueAdaptiveVideo, authorizeHlsRequest, videoDashboardCover, videoDashboardPresentation } from '../services/videoDelivery.service.js';
 
 const id = z.string().regex(/^[a-f\d]{24}$/i);
 const itemSchema = z.object({ assetId: id, title: z.string().trim().max(100).default(''), description: z.string().trim().max(2000).default(''), posterSeconds: z.number().finite().min(0).max(10800).default(0), allowDownload: z.boolean().nullable().default(null) }).strict();
@@ -424,7 +424,7 @@ export const getOwnerVideoPoster = videoAction(async (req, res) => {
 });
 export const getVideoDeliveryPoster = videoAction(async (req, res) => {
   const delivery = await ownedVideoDelivery(req.params.id, req.user.id);
-  const presentation = delivery.video.published || delivery.video.draft;
+  const presentation = videoDashboardPresentation(delivery);
   const assets = await VideoAsset.find({ _id: { $in: presentation.items.map(item => item.assetId) }, userId: req.user.id, state: 'ready' }).select('_id posterKey').lean();
   const cover = videoDashboardCover(delivery, new Map(assets.map(asset => [String(asset._id), asset])));
   if (!cover) return res.status(404).end();
