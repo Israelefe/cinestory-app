@@ -15,7 +15,8 @@ import { acquireVideoLease, releaseVideoLease } from '../src/services/videoLease
 import { normalizeVideoSettings, publicVideoSettings } from '../src/config/videoDelivery.js';
 import { updateRuntimeConfig } from '../src/services/runtimeConfig.service.js';
 import { videoContext, ownedVideoAsset, publicVideoDelivery, ownerVideoDTO, videoPresentationDTO, hasVideoGrant, setVideoGrant, videoPlayback, queueAdaptiveVideo, usageKey } from '../src/services/videoDelivery.service.js';
-import { createVideoDelivery, publishVideoDelivery, saveVideoDraft, saveVideoAccess, validatedVideoRange, deleteVideoAsset, downloadOwnerVideo, initializeVideoUpload, completeVideoUpload } from '../src/controllers/video.controller.js';
+import { createVideoDelivery, publishVideoDelivery, saveVideoDraft, saveVideoAccess, validatedVideoRange, deleteVideoAsset, downloadOwnerVideo, initializeVideoUpload, completeVideoUpload, getVideoDownloadSettings, updateVideoDownloadSettings, getVideoDeliveryPoster, downloadPublicVideo } from '../src/controllers/video.controller.js';
+import { videoDashboardSummaries, videoDashboardCover } from '../src/services/videoDelivery.service.js';
 import { signedHlsMedia, verifyHlsToken, hlsFile } from '../src/services/videoHls.service.js';
 import { authorizeHlsRequest } from '../src/services/videoDelivery.service.js';
 import { handleVideoHls, verifyVideoToken } from '../../cloudflare/delivery-images/video-hls.js';
@@ -164,6 +165,85 @@ test('publishing snapshots titles, descriptions and covers; conflicting saves ca
   const client = await videoPresentationDTO(saved, owner); assert.equal(client.items[0].allowDownload, false); assert.doesNotMatch(JSON.stringify(client), /finished-film.mp4|test\//);
   const remove = response(); await deleteVideoAsset({ ...request(project._id), params: { assetId: String(film._id) } }, remove); assert.equal(remove.statusCode, 409);
 });
+test('dashboard covers use the published featured cover and stay private to the owner', async t => {
+  const first = await asset(), featured = await asset(); const project = await delivery(first);
+  project.video.draft.items.push({ assetId: featured._id, title: 'Highlights' });
+  project.video.draft.featuredAssetId = featured._id;
+  await project.save();
+  const publish = response(); await publishVideoDelivery(request(project._id, { revision: 0 }), publish);
+  assert.equal(publish.statusCode, 200);
+  await VideoAsset.updateOne({ _id: featured._id }, { $set: { posterKey: 'new-draft-cover.webp' } });
+  const savedProject = await Delivery.findById(project._id);
+  savedProject.video.draft.featuredAssetId = first._id; await savedProject.save();
+  const summaries = await videoDashboardSummaries([savedProject.toObject()], owner._id);
+  assert.equal(summaries.get(String(project._id)).videoCount, 2);
+  assert.equal(summaries.get(String(project._id)).thumbnailUrl, `/api/v1/videos/deliveries/${project._id}/poster`);
+  assert.doesNotMatch(JSON.stringify([...summaries]), /posterKey|objectKey|cloudflarestorage/);
+  const requests = [];
+  t.mock.method(globalThis, 'fetch', async url => { requests.push(String(url)); return new Response(Buffer.from('test-cover'), { headers: { 'content-type': 'image/webp' } }); });
+  const poster = response(); poster.type = () => poster; poster.send = buffer => { poster.buffer = buffer; return poster; };
+  await getVideoDeliveryPoster(request(project._id), poster);
+  assert.equal(poster.buffer.toString(), 'test-cover');
+  assert.equal(new URL(requests[0]).pathname, '/test/' + featured.posterKey);
+  const forbidden = response(); await getVideoDeliveryPoster({ ...request(project._id), user: { id: String(outsider._id) } }, forbidden);
+  assert.equal(forbidden.statusCode, 404); assert.equal(requests.length, 1);
+  const fallback = videoDashboardCover(savedProject, new Map([[String(first._id), first]]));
+  assert.equal(String(fallback.asset._id), String(first._id));
+  assert.equal(videoDashboardCover(savedProject, new Map()), null);
+  const draft = await delivery(first);
+  assert.ok((await videoDashboardSummaries([draft.toObject()], owner._id)).get(String(draft._id)).thumbnailUrl);
+});
+
+test('dashboard download settings update live permissions without publishing draft edits or interrupting playback', async () => {
+  const film = await asset(); const project = await delivery(film);
+  const published = response(); await publishVideoDelivery(request(project._id, { revision: 0 }), published); assert.equal(published.statusCode, 200);
+  await Delivery.updateOne({ _id: project._id }, { $set: { 'video.draft.title': 'Unpublished title', 'video.draft.items.0.description': 'Unpublished caption', 'video.draft.playbackMode': 'adaptive' } });
+  const original = await Delivery.findById(project._id);
+  const load = response(); await getVideoDownloadSettings(request(project._id), load);
+  assert.equal(load.body.data.allowDownloads, false);
+  assert.equal(load.body.data.title, 'Wedding films');
+  assert.doesNotMatch(JSON.stringify(load.body), /posterKey|objectKey|pinDigest/);
+  const body = { revision: original.video.revision, allowDownloads: true, items: [{ assetId: String(film._id), allowDownload: false }] };
+  const save = response(); await updateVideoDownloadSettings(request(project._id, body), save);
+  assert.equal(save.statusCode, 200, JSON.stringify(save.body));
+  let latest = await Delivery.findById(project._id);
+  assert.equal(latest.video.revision, original.video.revision + 1);
+  assert.equal(latest.video.accessVersion, original.video.accessVersion);
+  assert.equal(latest.video.published.title, 'Wedding films');
+  assert.equal(latest.video.published.items[0].description, 'The complete ceremony.');
+  assert.equal(latest.video.draft.title, 'Unpublished title');
+  assert.equal(latest.video.draft.items[0].description, 'Unpublished caption');
+  assert.equal(latest.video.published.playbackMode, 'original');
+  assert.equal(latest.video.draft.playbackMode, 'adaptive');
+  assert.equal(latest.video.draft.items[0].allowDownload, false);
+  assert.equal((await videoPresentationDTO(latest, owner)).items[0].allowDownload, false);
+  const clientDownload = response(); await downloadPublicVideo({ params: { publicId: project.publicId, assetId: String(film._id) }, cookies: {} }, clientDownload);
+  assert.equal(clientDownload.statusCode, 403); assert.equal(clientDownload.body.code, 'VIDEO_DOWNLOAD_DISABLED');
+  const conflict = response(); await updateVideoDownloadSettings(request(project._id, body), conflict); assert.equal(conflict.statusCode, 409);
+  const inherit = response(); await updateVideoDownloadSettings(request(project._id, { ...body, revision: latest.video.revision, items: [{ assetId: String(film._id), allowDownload: null }] }), inherit);
+  assert.equal(inherit.statusCode, 200);
+  latest = await Delivery.findById(project._id); assert.equal((await videoPresentationDTO(latest, owner)).items[0].allowDownload, true);
+  const staleDraft = response(); await saveVideoDraft(request(project._id, { revision: original.video.revision, clientName: '', brief: '', presentation: { title: 'Old tab', items: [{ assetId: String(film._id), title: 'Old tab', allowDownload: false }] } }), staleDraft);
+  assert.equal(staleDraft.statusCode, 409);
+});
+
+test('dashboard download settings reject cross-owner, wrong video lists, invalid input and archived deliveries', async () => {
+  const film = await asset(), unrelated = await asset(); const project = await delivery(film);
+  const unpublished = response(); await getVideoDownloadSettings(request(project._id), unpublished); assert.equal(unpublished.statusCode, 409);
+  const published = response(); await publishVideoDelivery(request(project._id, { revision: 0 }), published);
+  const body = { revision: published.body.data.video.revision, allowDownloads: true, items: [{ assetId: String(film._id), allowDownload: null }] };
+  for (const action of [getVideoDownloadSettings, updateVideoDownloadSettings]) {
+    const denied = response(); await action({ ...request(project._id, body), user: { id: String(outsider._id) } }, denied); assert.equal(denied.statusCode, 404);
+  }
+  for (const items of [[{ assetId: String(unrelated._id), allowDownload: true }], [...body.items, ...body.items]]) {
+    const denied = response(); await updateVideoDownloadSettings(request(project._id, { ...body, items }), denied); assert.equal(denied.statusCode, 409);
+  }
+  const invalid = response(); await updateVideoDownloadSettings(request(project._id, { ...body, allowDownloads: 'true' }), invalid); assert.equal(invalid.statusCode, 400);
+  const extra = response(); await updateVideoDownloadSettings(request(project._id, { ...body, title: 'Sneaky rename' }), extra); assert.equal(extra.statusCode, 400);
+  await Delivery.updateOne({ _id: project._id }, { $set: { status: 'archived' } });
+  const archived = response(); await updateVideoDownloadSettings(request(project._id, body), archived); assert.equal(archived.statusCode, 409);
+});
+
 test('PIN grants are scoped to a delivery and invalidated immediately by access changes', async () => {
   const film = await asset(); const project = await delivery(film);
   project.status = 'published'; project.video.published = project.video.draft.toObject(); await project.save();

@@ -17,7 +17,7 @@ import { trustedVideoEdge } from '../services/videoHls.service.js';
 import { lagosMonthWindow } from '../services/entitlement.service.js';
 import { recordPaidUsage } from '../services/paidUsage.service.js';
 import { videoEvent, recordVideoVisit } from '../services/videoEvents.service.js';
-import { videoContext, videoId, videoError, ownedVideoDelivery, ownedVideoAsset, ownerVideoDTO, videoAssetDTO, publicVideoDelivery, setVideoGrant, videoBrand, videoPresentationDTO, videoPlayback, usageKey, queueVideoJob, queueAdaptiveVideo, authorizeHlsRequest } from '../services/videoDelivery.service.js';
+import { videoContext, videoId, videoError, ownedVideoDelivery, ownedVideoAsset, ownerVideoDTO, videoAssetDTO, publicVideoDelivery, setVideoGrant, videoBrand, videoPresentationDTO, videoPlayback, usageKey, queueVideoJob, queueAdaptiveVideo, authorizeHlsRequest, videoDashboardCover } from '../services/videoDelivery.service.js';
 
 const id = z.string().regex(/^[a-f\d]{24}$/i);
 const itemSchema = z.object({ assetId: id, title: z.string().trim().max(100).default(''), description: z.string().trim().max(2000).default(''), posterSeconds: z.number().finite().min(0).max(10800).default(0), allowDownload: z.boolean().nullable().default(null) }).strict();
@@ -54,6 +54,31 @@ export const createVideoDelivery = videoAction(async (req, res) => {
 export const getVideoDelivery = videoAction(async (req, res) => {
   await videoContext(req.user.id);
   ok(res, await ownerVideoDTO(await ownedVideoDelivery(req.params.id, req.user.id, { withPin: true })));
+});
+function videoDownloadSettings(delivery) {
+  const presentation = delivery.video.published;
+  if (delivery.status !== 'published' || !presentation) throw videoError('Publish this delivery before changing client download settings.', 409);
+  return { title: presentation.title, revision: delivery.video.revision, allowDownloads: presentation.allowDownloads,
+    items: presentation.items.map(item => ({ assetId: String(item.assetId), title: item.title, allowDownload: item.allowDownload ?? null })) };
+}
+export const getVideoDownloadSettings = videoAction(async (req, res) => {
+  ok(res, videoDownloadSettings(await ownedVideoDelivery(req.params.id, req.user.id)));
+});
+export const updateVideoDownloadSettings = videoAction(async (req, res) => {
+  const input = parse(z.object({ revision: z.number().int().nonnegative(), allowDownloads: z.boolean(), items: z.array(z.object({ assetId: id, allowDownload: z.boolean().nullable() }).strict()).min(1).max(10) }).strict(), req.body);
+  const delivery = await ownedVideoDelivery(req.params.id, req.user.id);
+  const current = videoDownloadSettings(delivery);
+  // Permission changes require Pro, but do not depend on an encoder being online.
+  await videoContext(req.user.id, { hosting: true });
+  const choices = new Map(input.items.map(item => [item.assetId, item.allowDownload]));
+  if (choices.size !== input.items.length || choices.size !== current.items.length || current.items.some(item => !choices.has(item.assetId))) throw videoError('The videos in this delivery changed. Reopen download settings.', 409, 'VIDEO_DRAFT_CONFLICT');
+  const fields = { 'video.published.allowDownloads': input.allowDownloads, 'video.draft.allowDownloads': input.allowDownloads };
+  for (const snapshot of ['published', 'draft']) delivery.video[snapshot].items.forEach((item, index) => {
+    if (choices.has(String(item.assetId))) fields[`video.${snapshot}.items.${index}.allowDownload`] = choices.get(String(item.assetId));
+  });
+  const updated = await Delivery.findOneAndUpdate({ _id: delivery._id, userId: req.user.id, kind: 'video', status: 'published', 'video.revision': input.revision }, { $set: fields, $inc: { 'video.revision': 1 } }, { new: true, runValidators: true });
+  if (!updated) throw videoError('This delivery changed in another tab. Reopen download settings before saving.', 409, 'VIDEO_DRAFT_CONFLICT');
+  ok(res, videoDownloadSettings(updated));
 });
 export const saveVideoDraft = videoAction(async (req, res) => {
   const { settings } = await writable(req);
@@ -396,6 +421,14 @@ async function posterResponse(res, asset, posterKey = asset.posterKey) {
 export const getOwnerVideoPoster = videoAction(async (req, res) => {
   const asset = await ownedVideoAsset(req.params.assetId, req.user.id);
   await posterResponse(res, asset);
+});
+export const getVideoDeliveryPoster = videoAction(async (req, res) => {
+  const delivery = await ownedVideoDelivery(req.params.id, req.user.id);
+  const presentation = delivery.video.published || delivery.video.draft;
+  const assets = await VideoAsset.find({ _id: { $in: presentation.items.map(item => item.assetId) }, userId: req.user.id, state: 'ready' }).select('_id posterKey').lean();
+  const cover = videoDashboardCover(delivery, new Map(assets.map(asset => [String(asset._id), asset])));
+  if (!cover) return res.status(404).end();
+  await posterResponse(res, cover.asset, cover.posterKey);
 });
 export const getPublicVideoPoster = videoAction(async (req, res) => { const { asset, item } = await selectedVideo(req, false, false); await posterResponse(res, asset, item.posterKey || asset.posterKey); });
 export const setVideoPoster = videoAction(async (req, res) => {

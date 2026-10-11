@@ -1,5 +1,5 @@
 import { recordPaidUsage } from '../services/paidUsage.service.js';
-import { ownerVideoDTO, videoContext, queueVideoJob } from '../services/videoDelivery.service.js';
+import { ownerVideoDTO, videoContext, queueVideoJob, videoDashboardSummaries } from '../services/videoDelivery.service.js';
 import { VideoAsset, VideoUpload } from '../models/video.models.js';
 import { schedulePortfolioRemoval, finishPortfolioRemoval } from '../services/portfolioLifecycle.service.js';
 import crypto from 'crypto';
@@ -288,8 +288,9 @@ export async function listDeliveries(req, res) {
   try {
     const includeArchived = req.query.scope === 'archived';
     const deliveries = await Delivery.find({ userId: req.user.id, status: includeArchived ? 'archived' : { $ne: 'archived' } }).sort({ updatedAt: -1 }).lean();
+    const videoSummaries = await videoDashboardSummaries(deliveries, req.user.id);
     const data = deliveries.map(delivery => delivery.kind === 'video'
-      ? { ...delivery, videoCount: delivery.video?.draft?.items?.length || 0, video: undefined, assets: [] }
+      ? { ...delivery, ...videoSummaries.get(String(delivery._id)), video: undefined, assets: [] }
       : ({ ...delivery, assets: delivery.assets?.slice(0, 1).map(asset => ({ ...asset, thumbnailUrl: signedDeliveryImageUrl(asset.publicId, { thumbnail: true }) })) }));
     res.json({ success: true, data });
   } catch (error) {

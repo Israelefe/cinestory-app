@@ -63,6 +63,27 @@ function safeVideoDetails(value) {
   for (const presentation of [video?.draft, video?.published]) for (const item of presentation?.items || []) delete item.posterKey;
   return video;
 }
+export function videoDashboardCover(delivery, assets) {
+  const presentation = delivery.video?.published || delivery.video?.draft;
+  const items = presentation?.items || [];
+  const ordered = [...items.filter(item => String(item.assetId) === String(presentation?.featuredAssetId)), ...items];
+  for (const item of ordered) {
+    const asset = assets.get(String(item.assetId));
+    const posterKey = item.posterKey || asset?.posterKey;
+    if (asset && posterKey) return { asset, posterKey };
+  }
+  return null;
+}
+export async function videoDashboardSummaries(deliveries, userId) {
+  const videos = deliveries.filter(delivery => delivery.kind === 'video');
+  const ids = [...new Set(videos.flatMap(delivery => (delivery.video?.published || delivery.video?.draft)?.items?.map(item => String(item.assetId)) || []))];
+  const assets = ids.length ? await VideoAsset.find({ _id: { $in: ids }, userId, state: 'ready' }).select('_id posterKey').lean() : [];
+  const byId = new Map(assets.map(asset => [String(asset._id), asset]));
+  return new Map(videos.map(delivery => [String(delivery._id), {
+    videoCount: (delivery.video?.published || delivery.video?.draft)?.items?.length || 0,
+    thumbnailUrl: videoDashboardCover(delivery, byId) ? `/api/v1/videos/deliveries/${delivery._id}/poster` : null
+  }]));
+}
 export async function ownerVideoDTO(delivery) {
   const ids = [...new Set([...(delivery.video?.draft?.items || []), ...(delivery.video?.published?.items || [])].map(item => String(item.assetId)))];
   const assets = await VideoAsset.find({ _id: { $in: ids }, userId: delivery.userId, state: { $ne: 'deleted' } }).lean();

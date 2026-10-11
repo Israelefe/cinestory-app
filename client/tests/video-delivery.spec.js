@@ -30,6 +30,7 @@ async function mock(page, options = {}) {
     if (path.endsWith('/billing/plans')) return route.fulfill({ json: { success: true, data: [], videoDelivery: { ...config, available: options.available ?? true } } });
     if (path.endsWith('/videos/config')) return ok(config);
     if (path.endsWith(`/deliveries/${id}/publish`)) { state.publishes++; state.project.status = 'published'; state.project.video.published = structuredClone(state.project.video.draft); state.project.video.revision++; return ok(state.project); }
+    if (path.endsWith(`/deliveries/${id}/access`)) { const body = route.request().postDataJSON(); state.project.access = { hasPin: Boolean(body.pin), expiresAt: body.expiresAt }; return ok(state.project); }
     if (path.endsWith(`/deliveries/${id}/preview`)) return ok({ ...presentation, items: [{ ...asset, ...presentation.items[0] }], branding: { name: 'Amara Studio' } });
     if (path.endsWith(`/deliveries/${id}`)) {
       if (method === 'PATCH') { const body = route.request().postDataJSON(); state.saves.push(body); state.project.video.draft = body.presentation; state.project.title = body.presentation.title; state.project.video.revision++; }
@@ -100,19 +101,18 @@ test('original quality is the default and adaptive publishing waits for the opte
   state.project.assets[0].adaptive = { state: 'queued' };
   await adaptive.check(); await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   await expect.poll(() => state.project.video.draft.playbackMode).toBe('adaptive');
-  await page.getByRole('button', { name: 'Preview & send', exact: true }).first().click();
-  await expect(page.getByRole('button', { name: 'Create client link', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Preview & send', exact: true })).toBeDisabled();
+  await expect(page.locator('.vc-steps button').nth(2)).toBeDisabled();
   state.project.assets[0].hasAdaptive = true; state.project.assets[0].adaptive.state = 'ready';
   await page.clock.fastForward(6000);
+  await page.getByRole('button', { name: 'Preview & send', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Create client link', exact: true })).toBeEnabled();
 });
 test('an incompatible original needs a compatible upload or explicit adaptive choice', async ({ page }) => {
   const { state } = await mock(page); state.project.assets[0].originalCompatible = false;
   await page.goto(`/create?draft=${id}`); await page.getByRole('button', { name: /Add details/ }).click();
   await expect(page.getByText('This original format may not play in every browser.', { exact: false })).toBeVisible();
-  await page.getByRole('button', { name: 'Preview & send', exact: true }).first().click();
-  await expect(page.getByRole('button', { name: 'Create client link', exact: true })).toBeDisabled();
-  await page.getByRole('button', { name: 'Details', exact: false }).first().click();
+  await expect(page.getByRole('button', { name: 'Preview & send', exact: true })).toBeDisabled();
   await page.getByRole('checkbox', { name: /Create adaptive playback copies/ }).check();
   await page.getByRole('button', { name: 'Preview & send', exact: true }).first().click();
   await expect(page.getByRole('button', { name: 'Create client link', exact: true })).toBeEnabled();
@@ -124,6 +124,11 @@ test('upload step follows real preparation state and offers failed originals a r
   await page.clock.install();
   await page.goto(`/create?draft=${id}`);
   await expect(page.locator('.vc-upload-row')).toContainText('Uploaded · waiting for preparation');
+  await expect(page.getByRole('button', { name: 'Add details', exact: true })).toBeDisabled();
+  await expect(page.locator('.vc-steps button').nth(1)).toBeDisabled();
+  await expect(page.locator('.vc-steps button').nth(2)).toBeDisabled();
+  await expect(page.getByRole('progressbar', { name: 'Preparation progress for ceremony.mp4' })).not.toHaveAttribute('value');
+  await expect(page.locator('.vc-upload-guide')).toContainText('Your original file stays unchanged');
   state.project.assets[0].state = 'processing';
   await page.clock.fastForward(6000);
   await expect(page.locator('.vc-upload-row')).toContainText('Checking video and preparing cover');
@@ -143,10 +148,66 @@ test('upload step follows real preparation state and offers failed originals a r
   state.project.assets[0].state = 'ready';
   await page.clock.fastForward(6000);
   await expect(page.locator('.vc-upload-row')).toContainText('Ready for playback');
+  await expect(page.getByRole('button', { name: 'Add details', exact: true })).toBeEnabled();
+  await expect(page.getByRole('progressbar', { name: 'Preparation progress for ceremony.mp4' })).toHaveAttribute('value', '100');
   await expect(page.locator('.vc-upload-row')).not.toContainText('preparing playback');
   await page.reload();
   await expect(page.locator('.vc-upload-row')).toContainText('Ready for playback');
   expect(errors).toEqual([]);
+});
+
+test('an extra uploading or paused file blocks navigation even when another video is ready', async ({ page }) => {
+  const { state } = await mock(page);
+  const extraId = '555555555555555555555555';
+  await page.route(`**/api/v1/videos/deliveries/${id}/uploads`, route => {
+    state.project.video.draft.items.push({ assetId: extraId, title: 'Extra film', description: '', posterSeconds: 0, allowDownload: null });
+    state.project.assets.push({ ...asset, id: extraId, filename: 'extra.mp4', state: 'uploading' });
+    return route.fulfill({ json: { success: true, data: { id: 'test-upload', assetId: extraId } } });
+  });
+  await page.route('**/api/v1/videos/uploads/test-upload', route => route.fulfill({ json: { success: true, data: { state: 'uploading', parts: [], partCount: 1, partBytes: 1024 } } }));
+  await page.route('**/api/v1/videos/uploads/test-upload/part', route => route.fulfill({ json: { success: true, data: { url: 'https://upload-test.example/part' } } }));
+  await page.route('https://upload-test.example/part', async route => {
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'PUT', 'Access-Control-Allow-Headers': '*' } });
+    // Leave the transfer pending so pause and forward navigation can be checked.
+  });
+  await page.goto(`/create?draft=${id}`);
+  await expect(page.getByRole('button', { name: 'Add details', exact: true })).toBeEnabled();
+  await page.locator('.vc-upload input[type=file]').first().setInputFiles({ name: 'extra.mp4', mimeType: 'video/mp4', buffer: Buffer.alloc(1024) });
+  await expect(page.getByRole('button', { name: 'Add details', exact: true })).toBeDisabled();
+  await expect(page.locator('.vc-steps button').nth(1)).toBeDisabled();
+  await expect(page.getByRole('progressbar', { name: 'Upload progress for extra.mp4' })).toBeVisible();
+  await page.getByRole('button', { name: 'Pause extra.mp4' }).click();
+  await expect(page.locator('.vc-upload-row').filter({ hasText: 'extra.mp4' })).toContainText('Paused');
+  await expect(page.locator('#vc-step-requirement')).toContainText('Resume or remove');
+  await page.getByRole('button', { name: 'Remove upload extra.mp4' }).click();
+  await expect(page.getByRole('button', { name: 'Add details', exact: true })).toBeEnabled();
+});
+
+test('required titles, cover readiness, PIN and expiry gate both forward navigation paths', async ({ page }) => {
+  const { state } = await mock(page); state.project.video.draft.title = '';
+  await page.clock.install(); await page.goto(`/create?draft=${id}`);
+  await page.getByRole('button', { name: 'Add details', exact: true }).click();
+  const next = page.getByRole('button', { name: 'Preview & send', exact: true });
+  const sidebarNext = page.locator('.vc-steps button').nth(2);
+  await expect(next).toBeDisabled(); await expect(sidebarNext).toBeDisabled();
+  await expect(page.locator('#vc-step-requirement')).toHaveText('Add a delivery title before continuing.');
+  await page.getByLabel('Delivery title', { exact: true }).fill('Wedding films');
+  await page.getByLabel('Video title', { exact: true }).fill(''); await expect(next).toBeDisabled();
+  await page.getByLabel('Video title', { exact: true }).fill('The ceremony');
+  await page.getByText('PIN & link expiry', { exact: false }).click();
+  await page.getByRole('checkbox', { name: /Protect this link/ }).check();
+  await expect(next).toBeDisabled();
+  await page.getByLabel('Six-digit PIN', { exact: false }).fill('123'); await expect(next).toBeDisabled(); await expect(sidebarNext).toBeDisabled();
+  await page.getByLabel('Six-digit PIN', { exact: false }).fill('123456');
+  await page.getByLabel('Link expiry', { exact: false }).fill('2020-01-01'); await expect(next).toBeDisabled();
+  await page.getByLabel('Link expiry', { exact: false }).fill('');
+  await expect(next).toBeEnabled();
+  state.project.assets[0].cover = { state: 'queued' };
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+  await expect(next).toBeDisabled(); await expect(sidebarNext).toBeDisabled();
+  state.project.assets[0].cover.state = 'ready'; await page.clock.fastForward(6000);
+  await expect(next).toBeEnabled();
+  await sidebarNext.click(); await expect(page.getByRole('button', { name: 'Create client link', exact: true })).toBeEnabled();
 });
 
 for (const width of [390, 834, 1440]) test(`real adaptive HLS plays, seeks and keeps original audio at ${width}px`, async ({ page }) => {
