@@ -1,0 +1,41 @@
+# Veylo video processing on Cloudflare
+
+This is a **new** Worker, `veylo-video-processing`. It manages Linux FFmpeg containers on Cloudflare. The existing `veylo-delivery-images` Worker still serves private images and HLS. Photographers upload from their own devices; processing runs on Cloudflare after upload, independently of your computer.
+
+## Deployment
+
+1. Keep the existing private R2 bucket, CORS, playback secret and media Worker deployment.
+2. Set a new random secret of at least 32 characters, `VIDEO_PROCESSING_SECRET`, in the Render API environment. Use a different value from `VIDEO_PLAYBACK_SECRET`. Set `VIDEO_PROCESSING_MODE=cloudflare-containers` on the API and deploy the API code. Keep public video availability and qualification disabled.
+3. Install Docker Desktop and start its Linux engine **for building and uploading the deployment image**. It is not the production encoder. Wrangler builds a `linux/amd64` image and uploads it to Cloudflare. After deployment, your computer can be off. A CI runner with Docker can also deploy this service.
+4. From this directory, run `npm ci`. The project pins Wrangler. Set Worker secrets with `npx wrangler secret put NAME`, one name at a time:
+
+   Required: `VIDEO_PROCESSING_SECRET`, `MONGODB_URI`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `VIDEO_PLAYBACK_SECRET`.
+
+   Use the same private database, R2 credentials and playback signing secret as the API. The processing secret must match step 2. Do not commit `.dev.vars`, environment files or credentials. For an initial Worker, Wrangler may offer to create it while setting secrets; keep the name `veylo-video-processing`.
+
+   Optional AI: `CLOUDFLARE_AI_ACCOUNT_ID`, `CLOUDFLARE_AI_API_TOKEN`. Set `VIDEO_AI_MODEL_READY=true` only after model provisioning and licences. Optional migration cleanup: `CLOUDFLARE_STREAM_ACCOUNT_ID`, `CLOUDFLARE_STREAM_API_TOKEN` for old Stream objects only.
+
+5. Check the non-secret origins in `wrangler.toml`. Add the same server-only `VIDEO_BETA_USER_IDS` as the API using a Worker variable. Match any environment-based entitlement/rollout flags on the API and container; saved runtime configuration is shared through MongoDB. Allow the container to reach MongoDB securely using TLS and a dedicated database credential; confirm your database network policy permits Cloudflare container outbound connections. Do not assume it has Render's IP address.
+6. Run `npm run deploy`. Wait for the Cloudflare container application to finish provisioning. Inspect `npx wrangler containers list` and the Worker/container logs. Never deploy this configuration over the existing media Worker.
+7. Set `VIDEO_MEDIA_WORKER_ENABLED=true` on the API once the new service is deployed. Within the next minute the cron performs a small cold-start check: MongoDB/indexes and full FFmpeg capabilities must pass before it records a healthy coordinator heartbeat. Admin video operations then reports `cloudflare-containers`. A public `/health` response only confirms the Worker exists; it does not certify the encoder.
+8. Use an invited active Pro account for a real upload, preparation, client playback, seeking, original download and access-change check. Test cold startup after the container has stopped. Keep `VIDEO_DELIVERY_QUALIFIED=false` and public availability off until the qualification checks in [the operations guide](../../docs/video-delivery-operations.md) pass.
+
+No Cloudflare Stream subscription, Render background worker or permanently running personal computer is required for this setup. Containers require Workers Paid and incur usage charges above the account's included allocations. Deployment still requires you to configure secrets and provision the service; committing code does not do that.
+
+## Cost and queue controls
+
+- `VIDEO_MAX_CONTAINERS=1` starts with one active container. The effective cap also respects Admin's `workerConcurrency`, initially one. Both can be raised to four after measurements; `max_instances=4` is the deployment ceiling. Jobs remain queued when full. Each photographer has one media job at a time. This is a safe starting limit, not a claim that one encoder can promptly prepare thousands of uploads.
+- Each container has two vCPUs, 4 GiB RAM and 20 GB scratch disk, with one media job at a time. Renditions encode sequentially. Test the largest supported originals and three-hour films before raising concurrency or making preparation-time promises.
+- `VIDEO_DAILY_CONTAINER_SECONDS=21600` limits **reserved aggregate container runtime** to six hours per UTC day. Four containers consume this allowance four times as quickly. It includes cold startup and idle time conservatively and never refunds uncertain/crashed intervals. It is configurable; six hours is an initial operating budget, not a photographer quota or a Cloudflare free allocation. It can pause preparation well before all users' uploads finish.
+- A central Durable Object reserves the next 90 seconds before a VM starts and renews only the extension every 30 seconds. When credits are exhausted, running containers stop, new uploads fail the readiness check and existing queue entries wait for the next UTC day. Already prepared videos still play within their account allowance. Interrupted work recovers through expiring Mongo leases. Repeated processing failures require manual retry after six attempts; cleanup keeps retrying.
+- `VIDEO_MAX_JOB_SECONDS=21600` bounds a single container run to six hours, including download, encoding and upload. Long/complex sources may need a larger measured limit and a matching daily allowance. Container startup is capped at two minutes; failures back off rather than restarting continuously.
+- Busy encoders receive short control leases. The Node process exits if the coordinator stops renewing them; Durable Object inactivity provides a second shutdown bound. Idle containers are destroyed at the next 30-second poll. A daily capability probe validates an otherwise idle encoder without keeping one running all day.
+- The daily allowance **does not cap the whole Cloudflare invoice**. CPU, memory, disk, container egress, Durable Objects, Workers, R2 and AI have separate billing. Watch Cloudflare usage and billing alerts. The protected dispatch response and Admin operations API expose reserved and remaining runtime seconds. Treat them as admission counters, not billed CPU seconds.
+
+Cron checks the durable queue each minute, so a newly uploaded video can wait up to approximately one minute plus cold-start time before processing. Queue durability does not depend on a browser staying open. Every ten minutes, the API reconciles interrupted uploads, quota, retention and cleanup; an empty queue does not boot FFmpeg for maintenance.
+
+## Checks
+
+`cd ../../server; npm run verify:video` covers scheduler, HTTP authentication, budget admission, slot limits, cold starts, idle shutdown and retry fencing, plus the existing video pipeline. Full FFmpeg/FFprobe enable the real encoding checks. `npm run check` in this directory validates the Worker bundle and builds the image without publishing; Docker must be running. When Docker is unavailable, `npx wrangler deploy --dry-run --containers-rollout=none` validates the Worker/configuration only and does not validate the image.
+
+References: [Cloudflare Containers](https://developers.cloudflare.com/containers/), [Durable Object Container API](https://developers.cloudflare.com/containers/api/durable-object-container/), [pricing](https://developers.cloudflare.com/containers/platform/pricing/).

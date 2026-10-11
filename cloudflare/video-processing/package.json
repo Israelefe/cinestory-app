@@ -1,0 +1,12 @@
+{
+  "name": "veylo-video-processing",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy --keep-vars",
+    "check": "wrangler deploy --dry-run"
+  },
+  "devDependencies": {
+    "wrangler": "4.149.0"
+  }
+}

@@ -1,3 +1,5 @@
+import { processingConfigured } from '../services/videoProcessingAuth.js';
+
 export const VIDEO_DEFAULTS = Object.freeze({
   enabled: false, publicAvailable: false, uploadsEnabled: true, publishingEnabled: true,
   playbackEnabled: true, aiEnabled: true, maxVideos: 10, maxFileBytes: 5_000_000_000,
@@ -45,7 +47,7 @@ export function videoInfrastructure() {
     storage: has(['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET_NAME']),
     playback,
     ai: has(['CLOUDFLARE_AI_ACCOUNT_ID', 'CLOUDFLARE_AI_API_TOKEN']) && process.env.VIDEO_AI_MODEL_READY === 'true',
-    media: process.env.VIDEO_MEDIA_WORKER_ENABLED === 'true'
+    media: process.env.VIDEO_MEDIA_WORKER_ENABLED === 'true' && processingConfigured()
   };
 }
 

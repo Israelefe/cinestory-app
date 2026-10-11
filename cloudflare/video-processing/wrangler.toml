@@ -1,0 +1,41 @@
+name = "veylo-video-processing"
+main = "worker.js"
+compatibility_date = "2026-10-11"
+
+[vars]
+VEYLO_API_ORIGIN = "https://veylo-api-ptk3.onrender.com"
+CLIENT_URL = "https://veylo.com.ng"
+VIDEO_PLAYBACK_WORKER_URL = "https://veylo-delivery-images.israelonanefe08157.workers.dev"
+VIDEO_PROCESSING_MODE = "cloudflare-containers"
+VIDEO_MEDIA_WORKER_ENABLED = "true"
+# Raise deliberately after measuring preparation time and Cloudflare usage.
+VIDEO_MAX_CONTAINERS = "1"
+VIDEO_DAILY_CONTAINER_SECONDS = "21600"
+VIDEO_MAX_JOB_SECONDS = "21600"
+VIDEO_AI_MODEL_READY = "false"
+
+[triggers]
+crons = ["* * * * *"]
+
+[[containers]]
+class_name = "VideoEncoder"
+image = "../../server/VideoDelivery.Dockerfile"
+image_build_context = "../../server"
+max_instances = 4
+instance_type = { vcpu = 2, memory_mib = 4096, disk_mb = 20000 }
+
+[[durable_objects.bindings]]
+name = "VIDEO_ENCODERS"
+class_name = "VideoEncoder"
+
+[[durable_objects.bindings]]
+name = "VIDEO_COORDINATOR"
+class_name = "VideoCoordinator"
+
+[exports.VideoEncoder]
+type = "durable-object"
+storage = "sqlite"
+
+[exports.VideoCoordinator]
+type = "durable-object"
+storage = "sqlite"

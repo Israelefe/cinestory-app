@@ -22,7 +22,8 @@ import { handleVideoHls, verifyVideoToken } from '../../cloudflare/delivery-imag
 import { frameTimestamps } from '../src/services/videoMedia.service.js';
 import { lagosMonthWindow } from '../src/services/entitlement.service.js';
 import { chargeVideoAIBudget } from '../src/services/videoAnalysis.service.js';
-import { deleteVideoOriginal, prepareVideo } from '../src/services/videoWorker.service.js';
+import { deleteVideoOriginal, prepareVideo, runVideoJob } from '../src/services/videoWorker.service.js';
+import { requireVideoProcessing, videoProcessingStatus } from '../src/controllers/videoProcessing.controller.js';
 import { handleVideoDownload } from '../../client/worker/videoDownload.js';
 import { VideoUpload } from '../src/models/video.models.js';
 
@@ -327,4 +328,56 @@ test('real preparation commits complete R2 HLS and duration together; expired jo
   assert.notEqual((await VideoAsset.findById(stale._id)).state, 'ready');
   await VideoJob.updateOne({ _id: job._id }, { $set: { state: 'done' } });
   await deleteVideoOriginal(ready); assert.equal((await VideoQuota.findById(String(film._id))).byteState, 'released');
+});
+
+test('Cloudflare readiness accepts sleeping encoders only with a fresh verified coordinator and budget', async () => {
+  const oldMode = process.env.VIDEO_PROCESSING_MODE;
+  const oldSecret = process.env.VIDEO_PROCESSING_SECRET;
+  process.env.VIDEO_PROCESSING_MODE = 'cloudflare-containers';
+  process.env.VIDEO_PROCESSING_SECRET = crypto.randomBytes(32).toString('hex');
+  try {
+    const denied = response(); let authenticated = false;
+    requireVideoProcessing({ headers: {} }, denied, () => { authenticated = true; });
+    assert.equal(denied.statusCode, 401); assert.equal(authenticated, false);
+    requireVideoProcessing({ headers: { authorization: 'Bearer ' + process.env.VIDEO_PROCESSING_SECRET } }, response(), () => { authenticated = true; });
+    assert.equal(authenticated, true);
+    await assert.rejects(videoContext(owner._id, { write: true }), { code: 'VIDEO_WORKER_UNAVAILABLE' });
+    const report = async (verifiedAt, remainingSeconds) => {
+      const res = response();
+      await videoProcessingStatus({ body: { verifiedAt, remainingSeconds, reservedSeconds: 90 } }, res, error => { throw error; });
+      assert.equal(res.body.success, true);
+      assert.equal(typeof res.body.data.pending, 'number');
+      assert.equal(JSON.stringify(res.body).includes(process.env.VIDEO_PROCESSING_SECRET), false);
+    };
+    await report(Date.now() - 25 * 3600_000, 1000);
+    await assert.rejects(videoContext(owner._id, { write: true }), { code: 'VIDEO_WORKER_UNAVAILABLE' });
+    await report(Date.now(), 1000);
+    assert.equal((await videoContext(owner._id, { write: true })).entitlements.plan, 'pro');
+    await report(Date.now(), 0);
+    await assert.rejects(videoContext(owner._id, { write: true }), { code: 'VIDEO_WORKER_UNAVAILABLE' });
+    // An already admitted job may commit while new-upload admission is paused.
+    assert.equal((await videoContext(owner._id, { write: true, worker: true })).entitlements.plan, 'pro');
+    await assert.rejects(videoContext(outsider._id, { write: true, worker: true }), { code: 'VIDEO_PRO_REQUIRED' });
+    await report(Date.now(), 1000);
+    await WorkerHeartbeat.updateOne({ workerName: 'video-coordinator', instance: 'cloudflare' }, { $set: { heartbeatAt: new Date(Date.now() - 121_000) } });
+    await assert.rejects(videoContext(owner._id, { write: true }), { code: 'VIDEO_WORKER_UNAVAILABLE' });
+  } finally {
+    await WorkerHeartbeat.deleteMany({ workerName: 'video-coordinator', instance: 'cloudflare' });
+    if (oldMode === undefined) delete process.env.VIDEO_PROCESSING_MODE; else process.env.VIDEO_PROCESSING_MODE = oldMode;
+    if (oldSecret === undefined) delete process.env.VIDEO_PROCESSING_SECRET; else process.env.VIDEO_PROCESSING_SECRET = oldSecret;
+  }
+});
+
+test('a repeatedly crashed encode stops at its attempt limit before another expensive preparation', async () => {
+  // Isolate the due queue from jobs retained by the preceding integration cases.
+  await VideoJob.updateMany({}, { $set: { runAfter: new Date(Date.now() + 86400_000) } });
+  const film = await asset();
+  await VideoAsset.updateOne({ _id: film._id }, { $set: { state: 'queued' } });
+  const job = await VideoJob.create({ key: 'crash-limit:' + film._id, userId: owner._id, assetId: film._id, type: 'prepare', state: 'running', leaseToken: 'expired-owner', leaseUntil: new Date(0), attempts: 6, runAfter: new Date(0) });
+  assert.equal(await runVideoJob(), true);
+  const result = await VideoJob.findById(job._id);
+  assert.equal(result.state, 'failed');
+  assert.equal(result.errorCode, 'VIDEO_RETRY_LIMIT');
+  assert.equal(result.attempts, 7);
+  assert.equal((await VideoAsset.findById(film._id)).state, 'failed');
 });

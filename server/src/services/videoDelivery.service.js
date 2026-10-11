@@ -10,13 +10,14 @@ import { getRuntimeConfig } from './runtimeConfig.service.js';
 import { publicVideoSettings } from '../config/videoDelivery.js';
 import { signedHlsMedia, verifyHlsToken, hlsFile } from './videoHls.service.js';
 import { acquireVideoLease, releaseVideoLease } from './videoLease.service.js';
+import { videoReadinessFilter } from './videoProcessingAuth.js';
 
 export const videoError = (message, status = 400, code = 'VIDEO_REQUEST_FAILED') => Object.assign(new Error(message), { status, code });
 export function videoId(value) {
   if (!/^[a-f\d]{24}$/i.test(String(value || ''))) throw videoError('Video not found.', 404);
   return String(value);
 }
-export async function videoContext(userId, { write = false, playback = false, hosting = false, maintenance = false } = {}) {
+export async function videoContext(userId, { write = false, playback = false, hosting = false, maintenance = false, worker = false } = {}) {
   const [user, runtime] = await Promise.all([User.findById(userId), getRuntimeConfig()]);
   if (!user || (!maintenance && user.accountStatus !== 'active')) throw videoError('This photographer account is unavailable.', 410);
   const entitlements = await resolveEntitlements(user, { includeUsage: false });
@@ -24,7 +25,7 @@ export async function videoContext(userId, { write = false, playback = false, ho
   if ((write || playback || hosting) && entitlements.plan !== 'pro') throw videoError(playback ? 'This video link is temporarily unavailable. Please contact your photographer.' : 'An active Pro plan is required for video delivery.', 403, 'VIDEO_PRO_REQUIRED');
   if ((write || playback || hosting) && (!settings.enabled || !publicVideoSettings(settings).configured)) throw videoError('Video delivery is not available yet.', 503, 'VIDEO_UNAVAILABLE');
   if (write && process.env.VIDEO_DELIVERY_QUALIFIED !== 'true' && !String(process.env.VIDEO_BETA_USER_IDS || '').split(',').map(value => value.trim()).includes(String(userId))) throw videoError('Video delivery is currently open to invited Pro accounts.', 403, 'VIDEO_BETA_ONLY');
-  if (write && !await WorkerHeartbeat.exists({ workerName: 'video', heartbeatAt: { $gt: new Date(Date.now() - 120_000) }, status: { $in: ['idle', 'busy'] } })) throw videoError('The video worker is temporarily unavailable. Your saved work is safe.', 503, 'VIDEO_WORKER_UNAVAILABLE');
+  if (write && !worker && !await WorkerHeartbeat.exists(videoReadinessFilter())) throw videoError('Video preparation is temporarily unavailable. Your saved work is safe. Please try again shortly.', 503, 'VIDEO_WORKER_UNAVAILABLE');
   if (playback && !settings.playbackEnabled) throw videoError('Video playback is temporarily paused. Please try again later.', 503, 'VIDEO_PLAYBACK_PAUSED');
   let recoveryUntil = null;
   if (entitlements.plan !== 'pro') {

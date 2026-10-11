@@ -3,8 +3,11 @@ import multer from 'multer';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { mediaSignatureLimit, privateLinkMediaLimit, privateLinkUnlockLimit, privateLinkUploadLimit, publicAccessLimit, aiGenerationLimit } from '../middleware/rateLimit.middleware.js';
 import * as video from '../controllers/video.controller.js';
+import { requireVideoProcessing, videoProcessingStatus, maintainVideoProcessing } from '../controllers/videoProcessing.controller.js';
 
 const router = express.Router();
+router.post('/processing/status', requireVideoProcessing, videoProcessingStatus);
+router.post('/processing/maintenance', requireVideoProcessing, maintainVideoProcessing);
 const poster = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10_000_000, files: 1, fields: 2 }, fileFilter: (req, file, done) => done(null, ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) });
 router.post('/media/authorize', video.authorizeVideoMedia);
 router.get('/config', publicAccessLimit, video.getVideoConfig);
