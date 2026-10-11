@@ -7,7 +7,9 @@ import VideoPlayback from '../video/VideoPlayback.jsx';
 import { DesktopPhoneFrame, useDesktopPhoneMode } from './DesktopPhoneFrame.jsx';
 import './VideoViewer.css';
 
-const isPortrait = item => item.height > item.width;
+const videoRatio = item => Number.isFinite(item?.width) && Number.isFinite(item?.height) && item.width > 0 && item.height > 0 ? item.width / item.height : 16 / 9;
+const isPortrait = item => videoRatio(item) < 1;
+const isSquare = item => Math.abs(videoRatio(item) - 1) < .01;
 function Photographer({ branding }) {
   const image = branding.avatarUrl || branding.logoUrl;
   return <div className="vv-photographer"><span className="vv-avatar">{image ? <img src={image} alt="" /> : <Film size={21} />}</span><span><small>BY YOUR PHOTOGRAPHER</small><strong>{branding.name || 'Your photographer'}</strong></span></div>;
@@ -62,13 +64,13 @@ export default function VideoViewer({ delivery, requestPlayback, endPlayback, do
   return <main className="vv-page vv-wide-page">
     <header className="vv-brand"><Photographer branding={branding} />{demo && <span className="vv-demo-label">CLIENT DEMO</span>}</header>
     <motion.section className="vv-heading" initial={reduced ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .35 }}><p>{delivery.items.length === 1 ? 'YOUR FILM' : `${delivery.items.length} FILMS`}</p><h1>{delivery.title}</h1>{delivery.introduction && <div className="vv-introduction">{delivery.introduction}</div>}</motion.section>
-    <div className={'vv-layout' + (delivery.items.length === 1 ? ' is-single' : '')}>
+    <div className={'vv-layout' + (delivery.items.length === 1 ? ' is-single' : '')} style={{ '--vv-aspect-ratio': videoRatio(item) }}>
       <section className="vv-film" aria-label={item.title}>
         <div className="vv-screen">{player}</div>
         <div className="vv-film-caption"><div><p>{videoDuration(item.duration)} / {delivery.playbackMode === 'adaptive' ? 'Adaptive playback' : 'Original quality'}</p><h2>{item.title}</h2></div><OriginalDownload item={item} downloadUrl={demo ? undefined : downloadUrl} /></div>
         {item.description && <div className="vv-description">{item.description}</div>}
       </section>
-      {delivery.items.length > 1 && <aside className="vv-playlist" aria-label="Films in this delivery"><div className="vv-playlist-title"><span>IN THIS DELIVERY</span><small>{delivery.items.length} films</small></div>{delivery.items.map((video, index) => <button type="button" key={video.id} aria-pressed={video.id === item.id} className={'vv-playlist-item' + (video.id === item.id ? ' is-current' : '')} onClick={() => select(video.id)}><span className="vv-playlist-image">{video.posterUrl ? <img src={videoMediaUrl(video.posterUrl)} alt="" loading="lazy" /> : <Film size={24} />}<i>{videoDuration(video.duration)}</i></span><span className="vv-playlist-copy"><strong>{video.title}</strong><small>{isPortrait(video) ? 'Vertical video' : `Film ${String(index + 1).padStart(2, '0')}`}{video.id === item.id ? ' / Selected' : ''}</small></span><Play size={15} /></button>)}</aside>}
+      {delivery.items.length > 1 && <aside className="vv-playlist" aria-label="Films in this delivery"><div className="vv-playlist-title"><span>IN THIS DELIVERY</span><small>{delivery.items.length} films</small></div>{delivery.items.map((video, index) => <button type="button" key={video.id} aria-pressed={video.id === item.id} className={'vv-playlist-item' + (video.id === item.id ? ' is-current' : '')} onClick={() => select(video.id)}><span className="vv-playlist-image">{video.posterUrl ? <img src={videoMediaUrl(video.posterUrl)} alt="" loading="lazy" /> : <Film size={24} />}<i>{videoDuration(video.duration)}</i></span><span className="vv-playlist-copy"><strong>{video.title}</strong><small>{isPortrait(video) ? 'Vertical video' : isSquare(video) ? 'Square video' : `Film ${String(index + 1).padStart(2, '0')}`}{video.id === item.id ? ' / Selected' : ''}</small></span><Play size={15} /></button>)}</aside>}
     </div>
     <footer className="vv-footer"><span>Delivered by <strong>{branding.name || 'Your photographer'}</strong></span>{/^https?:\/\//.test(branding.website || '') && <a href={branding.website} target="_blank" rel="noreferrer">Visit the studio<ArrowUpRight size={14} /></a>}</footer>
   </main>;
