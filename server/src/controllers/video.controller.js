@@ -287,18 +287,10 @@ export const retryAdaptiveVideo = videoAction(async (req, res) => {
   await queueAdaptiveVideo(asset);
   ok(res, { queued: true });
 });
-export const requestVideoAnalysis = videoAction(async (req, res) => {
-  const { settings } = await writable(req);
-  if (!settings.aiEnabled || !publicVideoSettings(settings).aiAvailable) throw videoError('Video suggestions are unavailable. You can still write your own titles and descriptions.', 503, 'VIDEO_AI_UNAVAILABLE');
-  const { includeSpeech, regenerate } = parse(z.object({ includeSpeech: z.boolean().default(false), regenerate: z.boolean().default(false) }).strict(), req.body);
-  const asset = await ownedVideoAsset(req.params.assetId, req.user.id);
-  if (asset.state !== 'ready') throw videoError('Wait for this video to finish preparing.', 409);
-  if (['queued', 'running'].includes(asset.analysis?.state)) return ok(res, { queued: true });
-  if (asset.analysis?.state === 'ready' && asset.analysis.includeSpeech === includeSpeech && !regenerate) return ok(res, { cached: true, suggestions: asset.analysis.suggestions });
-  const generation = crypto.randomUUID();
-  const queued = await VideoAsset.updateOne({ _id: asset._id, state: 'ready', 'analysis.state': { $nin: ['queued', 'running'] } }, { $set: { 'analysis.state': 'queued', 'analysis.includeSpeech': includeSpeech, 'analysis.generation': generation, 'analysis.errorMessage': '' } });
-  if (queued.modifiedCount) await queueVideoJob(asset, 'analyze', { includeSpeech, generation }, generation);
-  ok(res, { queued: true });
+export const requestVideoAnalysis = videoAction(async (req) => {
+  await writable(req);
+  await ownedVideoAsset(req.params.assetId, req.user.id);
+  throw videoError('Video writing suggestions have been removed. Add your own titles and descriptions in Details.', 410, 'VIDEO_AI_UNAVAILABLE');
 });
 export const getVideoPreview = videoAction(async (req, res) => {
   const { user } = await writable(req);
@@ -306,18 +298,10 @@ export const getVideoPreview = videoAction(async (req, res) => {
   videoEvent('delivery.preview.opened', { userId: req.user.id, deliveryId: delivery._id, status: 'opened' });
   ok(res, await videoPresentationDTO(delivery, user, { preview: true }));
 });
-export const requestVideoPresentation = videoAction(async (req, res) => {
-  const { settings } = await writable(req);
-  if (!settings.aiEnabled || !publicVideoSettings(settings).aiAvailable) throw videoError('Video suggestions are unavailable.', 503);
-  const { useNotes } = parse(z.object({ useNotes: z.boolean().default(false) }).strict(), req.body);
-  const delivery = await ownedVideoDelivery(req.params.id, req.user.id);
-  const ids = delivery.video.draft.items.map(item => item.assetId);
-  if (!ids.length || await VideoAsset.countDocuments({ _id: { $in: ids }, userId: req.user.id, state: 'ready', 'analysis.state': 'ready' }) !== ids.length) throw videoError('Request footage suggestions for every film before suggesting the full presentation.', 409);
-  const asset = await ownedVideoAsset(ids[0], req.user.id);
-  const analyzed = await VideoAsset.find({ _id: { $in: ids }, userId: req.user.id }).select('analysis.inputHash').lean();
-  const evidenceVersion = crypto.createHash('sha256').update(analyzed.map(row => row.analysis?.inputHash || '').sort().join(':')).digest('hex').slice(0, 20);
-  const job = await queueVideoJob(asset, 'present', { deliveryId: String(delivery._id), revision: delivery.video.revision, useNotes }, `${delivery._id}:${delivery.video.revision}:${useNotes}:${evidenceVersion}`);
-  ok(res, { jobId: String(job._id) });
+export const requestVideoPresentation = videoAction(async (req) => {
+  await writable(req);
+  await ownedVideoDelivery(req.params.id, req.user.id);
+  throw videoError('Video writing suggestions have been removed. Add your own titles and descriptions in Details.', 410, 'VIDEO_AI_UNAVAILABLE');
 });
 export const getVideoPresentationJob = videoAction(async (req, res) => {
   const job = await VideoJob.findOne({ _id: videoId(req.params.jobId), userId: req.user.id, type: 'present' }).lean();

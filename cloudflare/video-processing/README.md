@@ -33,7 +33,7 @@ Reference: [Cloudflare hosted container deployment](https://developers.cloudflar
 
    Use the same private database, R2 credentials and playback signing secret as the API. The processing secret must match step 2. Do not commit `.dev.vars`, environment files or credentials. For an initial Worker, Wrangler may offer to create it while setting secrets; keep the name `veylo-video-processing`.
 
-   Optional AI: `CLOUDFLARE_AI_ACCOUNT_ID`, `CLOUDFLARE_AI_API_TOKEN`. Set `VIDEO_AI_MODEL_READY=true` only after model provisioning and licences. Optional migration cleanup: `CLOUDFLARE_STREAM_ACCOUNT_ID`, `CLOUDFLARE_STREAM_API_TOKEN` for old Stream objects only.
+   Video AI analysis is disabled; Workers AI credentials and model setup are not required for video delivery. Optional migration cleanup: `CLOUDFLARE_STREAM_ACCOUNT_ID`, `CLOUDFLARE_STREAM_API_TOKEN` for old Stream objects only.
 
 5. Check the non-secret origins in `wrangler.toml`. Add the same server-only `VIDEO_BETA_USER_IDS` as the API using a Worker variable. Match any environment-based entitlement/rollout flags on the API and container; saved runtime configuration is shared through MongoDB. Allow the container to reach MongoDB securely using TLS and a dedicated database credential; confirm your database network policy permits Cloudflare container outbound connections. Do not assume it has Render's IP address.
 6. Run `npm run deploy`. Wait for the Cloudflare container application to finish provisioning. Inspect `npx wrangler containers list` and the Worker/container logs. Never deploy this configuration over the existing media Worker.

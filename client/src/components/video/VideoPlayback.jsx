@@ -14,7 +14,6 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
     const restore = () => {
       if (generationId !== generation.current) return;
       if (resumeAt) video.currentTime = Math.min(resumeAt, video.duration || resumeAt);
-      if (play) video.play().catch(() => { setLoading(false); setPaused(true); });
     };
     video.addEventListener('loadedmetadata', restore, { once: true });
     if (video.canPlayType('application/vnd.apple.mpegurl') || !url.includes('.m3u8')) { video.src = url; video.load(); }
@@ -30,6 +29,12 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
       player.loadSource(url); player.attachMedia(video);
     }
     sourceId.current = item.id;
+    // Calling play starts fetching on browsers that defer metadata until playback.
+    if (play) void video.play().catch(failure => {
+      if (generationId !== generation.current || failure.name === 'AbortError') return;
+      setLoading(false); setPaused(true);
+      if (failure.name !== 'NotAllowedError') setError('This film could not start. Check your connection and try again.');
+    });
   }, [item.id]);
   const start = useCallback(async ({ renew = false, shouldPlay = true } = {}) => {
     if (renewing.current) return;
@@ -53,9 +58,9 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
       if (generationId === generation.current) setStarted(true);
     } catch (failure) {
       if (!controller.signal.aborted && generationId === generation.current) {
-        element.current?.pause(); setError(failure.response?.data?.message || failure.message || 'This film could not be opened. Please try again.');
+        element.current?.pause(); setLoading(false); setError(failure.response?.data?.message || failure.message || 'This film could not be opened. Please try again.');
       }
-    } finally { if (generationId === generation.current) { renewing.current = false; setLoading(false); } }
+    } finally { if (generationId === generation.current) renewing.current = false; }
   }, [item, requestPlayback, endPlayback, installSource]);
   useEffect(() => {
     const video = element.current;
@@ -67,7 +72,21 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
       if (previousSession?.sessionId) void endPlayback?.(previousSession.sessionId)?.catch(() => {});
     };
   }, [endPlayback]);
-  useEffect(() => { if (autoPlay && !document.hidden) void start(); }, [autoPlay, start]);
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => { if (active && autoPlay && !document.hidden) void start(); });
+    return () => { active = false; };
+  }, [autoPlay, start]);
+  useEffect(() => {
+    if (!loading) return;
+    const timer = setTimeout(() => {
+      generation.current++; request.current?.abort(); renewing.current = false; sourceId.current = '';
+      hls.current?.destroy(); hls.current = null;
+      element.current?.pause(); setLoading(false);
+      setError('The film is taking too long to load. Check your connection and try again.');
+    }, 30_000);
+    return () => clearTimeout(timer);
+  }, [loading]);
   useEffect(() => {
     const timer = setInterval(() => {
       if (!element.current?.paused && !document.hidden && session.current && Date.now() > new Date(session.current.expiresAt).getTime() - 300_000) void start({ renew: true });
@@ -78,13 +97,13 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
   }, [start]);
   const toggle = () => { if (element.current?.paused) void start(); else element.current?.pause(); };
   return <div className={'vv-playback' + (portrait ? ' is-vertical' : '')}>
-    <video ref={element} controls={started && !portrait} controlsList="nodownload" playsInline preload="none" muted={muted} poster={videoMediaUrl(item.posterUrl)} aria-label={item.title}
-      onClick={portrait ? toggle : undefined} onWaiting={() => setLoading(true)} onCanPlay={() => setLoading(false)}
-      onPlaying={() => { setLoading(false); setError(''); setPaused(false); }} onPause={() => setPaused(true)}
+    <video ref={element} controls={started && !portrait} controlsList="nodownload" playsInline preload="auto" muted={muted} poster={videoMediaUrl(item.posterUrl)} aria-label={item.title}
+      onClick={portrait ? toggle : undefined} onWaiting={() => { if (!error) setLoading(true); }} onCanPlay={() => setLoading(false)}
+      onPlaying={() => { setLoading(false); setError(''); setPaused(false); }} onPause={() => { setPaused(true); if (!renewing.current) setLoading(false); }}
       onVolumeChange={() => onMutedChange?.(Boolean(element.current?.muted))}
       onTimeUpdate={() => setPosition(element.current?.currentTime || 0)}
       onPlay={() => { setPaused(false); if (session.current && new Date(session.current.expiresAt).getTime() < Date.now() + 60_000) void start({ renew: true }); }}
-      onError={() => { if (started && !renewing.current) { setLoading(false); setError(original && element.current?.error?.code === 4 ? 'This browser cannot play the original format. Ask your photographer for a compatible MP4 or adaptive playback.' : 'This film could not play. Check your connection and try again.'); } }} />
+      onError={() => { if (element.current?.getAttribute('src') || hls.current) { setLoading(false); setError(original && element.current?.error?.code === 4 ? 'This browser cannot play the original format. Ask your photographer for a compatible MP4 or adaptive playback.' : 'This film could not play. Check your connection and try again.'); } }} />
     {(!started || (portrait && paused)) && !loading && !error && <button className="vv-play" type="button" onClick={() => start()} aria-label={started ? 'Resume film' : 'Play film'}><span><Play size={26} fill="currentColor" /></span>{!portrait && <small>{started ? 'Resume film' : 'Play film'}</small>}</button>}
     {loading && <span className="vv-buffer" role="status"><RefreshCw className="v-spin" size={20} />{started ? 'Loading film…' : 'Opening film…'}</span>}
     {error && <div className="vv-error" role="alert"><p>{error}</p><button type="button" onClick={() => { sourceId.current = ''; void start({ renew: Boolean(session.current) }); }}><RefreshCw size={16} />Try again</button></div>}

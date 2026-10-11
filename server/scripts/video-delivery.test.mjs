@@ -15,7 +15,7 @@ import { acquireVideoLease, releaseVideoLease } from '../src/services/videoLease
 import { normalizeVideoSettings, publicVideoSettings } from '../src/config/videoDelivery.js';
 import { updateRuntimeConfig } from '../src/services/runtimeConfig.service.js';
 import { videoContext, ownedVideoAsset, publicVideoDelivery, ownerVideoDTO, videoPresentationDTO, hasVideoGrant, setVideoGrant, videoPlayback, queueAdaptiveVideo, usageKey } from '../src/services/videoDelivery.service.js';
-import { createVideoDelivery, publishVideoDelivery, saveVideoDraft, saveVideoAccess, validatedVideoRange, deleteVideoAsset, downloadOwnerVideo, initializeVideoUpload, completeVideoUpload, getVideoDownloadSettings, updateVideoDownloadSettings, getVideoDeliveryPoster, downloadPublicVideo } from '../src/controllers/video.controller.js';
+import { createVideoDelivery, publishVideoDelivery, saveVideoDraft, saveVideoAccess, validatedVideoRange, deleteVideoAsset, downloadOwnerVideo, initializeVideoUpload, completeVideoUpload, getVideoDownloadSettings, updateVideoDownloadSettings, getVideoDeliveryPoster, downloadPublicVideo, requestVideoAnalysis, requestVideoPresentation } from '../src/controllers/video.controller.js';
 import { videoDashboardSummaries, videoDashboardCover } from '../src/services/videoDelivery.service.js';
 import { signedHlsMedia, verifyHlsToken, hlsFile } from '../src/services/videoHls.service.js';
 import { authorizeHlsRequest } from '../src/services/videoDelivery.service.js';
@@ -59,6 +59,29 @@ test('limits stay within the approved upload ceiling and availability fails clos
   assert.equal(publicVideoSettings({ ...settings, publicAvailable: true }).available, false);
   assert.equal(publicVideoSettings(settings).aiAvailable, false);
   assert.equal(publicVideoSettings(settings).maxFileBytes, 5_000_000_000);
+});
+
+test('removed video AI rejects requests and retires queued jobs without calling a provider', async () => {
+  const film = await asset(); const project = await delivery(film);
+  assert.equal(publicVideoSettings({ ...settings, aiEnabled: true }).aiAvailable, false);
+  const analysis = response();
+  await requestVideoAnalysis({ ...request(project._id), params: { assetId: String(film._id) } }, analysis);
+  assert.equal(analysis.statusCode, 410, JSON.stringify(analysis.body));
+  const writing = response(); await requestVideoPresentation(request(project._id), writing);
+  assert.equal(writing.statusCode, 410, JSON.stringify(writing.body));
+  assert.equal(await VideoJob.countDocuments({ assetId: film._id }), 0);
+  const originalFetch = globalThis.fetch; let calls = 0;
+  globalThis.fetch = async () => { calls++; throw new Error('No provider should be called'); };
+  try {
+    for (const type of ['analyze', 'present']) {
+      const job = await VideoJob.create({ userId: owner._id, assetId: film._id, type, key: `removed-${type}`, state: 'queued', runAfter: new Date(0) });
+      assert.equal(await runVideoJob(), true);
+      const result = await VideoJob.findById(job._id);
+      assert.equal(result.state, 'failed'); assert.equal(result.errorCode, 'VIDEO_AI_UNAVAILABLE');
+    }
+    assert.equal(calls, 0);
+    assert.equal((await VideoAsset.findById(film._id)).state, 'ready');
+  } finally { globalThis.fetch = originalFetch; }
 });
 test('concurrent reservations share one atomic storage ceiling with image uploads', async () => {
   const results = await Promise.allSettled(Array.from({ length: 8 }, () => videoTransaction(session => reserveVideoBytes({ assetId: new mongoose.Types.ObjectId(), userId: owner._id, bytes: 200, limit: 500 }, session))));

@@ -1,0 +1,10 @@
+.vc-activity{display:flex;align-items:flex-start;gap:12px;color:#ffb3a8;padding:12px 0;min-width:0}
+.vc-activity>svg{flex-shrink:0;margin-top:2px}.vc-activity-copy{min-width:0;flex:1;display:grid;gap:7px}.vc-activity-copy>span{font-size:13px;line-height:1.5;font-weight:600}.vc-activity-copy>small{font-size:12px;line-height:1.6;color:#aaa7ad}
+.vc-activity.is-ready{color:#98d5b3}.vc-activity.is-error{color:#ffb3a8}.vc-activity.is-paused{color:#c4bec9}.vc-activity.is-waiting{color:#cec4c2}
+.vc-activity-track{height:4px;overflow:hidden;border-radius:8px;background:rgba(255,255,255,.09);margin:5px 0}.vc-activity-track i{display:block;height:100%;background:currentColor;transform-origin:left;transition:transform .2s ease;border-radius:inherit}.vc-activity-track.is-indeterminate i{width:35%;animation:vc-activity-travel 1.8s ease-in-out infinite}
+.vc-activity-spin{animation:vc-activity-turn 1.2s linear infinite;flex-shrink:0}.vc-activity.is-waiting .vc-activity-spin{animation-duration:2.5s}
+@keyframes vc-activity-turn{to{transform:rotate(360deg)}}@keyframes vc-activity-travel{0%{transform:translateX(-110%)}100%{transform:translateX(390%)}}
+.vc-section-heading{scroll-margin-top:32px}.vc-section-heading h2:focus{outline:none}.vc-section-heading h2:focus-visible{outline:2px solid #ff9b8e;outline-offset:8px;border-radius:4px}
+.vc-opening{display:flex;align-items:center;gap:10px;text-align:left;min-height:46px;padding:12px 14px;border:1px solid rgba(255,255,255,.15);border-radius:10px;background:transparent;color:#d5ced8;margin:8px 0 18px;transition:background .2s,transform .2s}.vc-opening[aria-pressed=true]{border-color:rgba(255,155,142,.5);background:rgba(255,90,71,.08);color:#ffc4bb}.vc-opening:hover{transform:translateY(-1px)}.vc-opening:active{transform:scale(.98)}
+.vc-upload-row .vc-activity{padding:8px 0}.vc-upload-row .vc-activity-copy{display:grid;gap:6px}.vc-upload-row .vc-activity-copy>small{line-height:1.6}.vc-upload-row>svg{align-self:start;margin-top:4px}
+.vc-status-refresh{padding:14px 18px;margin:16px 0;border:1px solid rgba(255,155,142,.3);border-radius:12px}.vc-status-refresh p{font-size:13px;line-height:1.6;margin:0 0 10px}

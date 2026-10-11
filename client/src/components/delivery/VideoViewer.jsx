@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useRef, useState } from 'react';
+﻿import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Play, Download, Film, ArrowUpRight, ArrowLeft, ChevronDown } from 'lucide-react';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
@@ -19,28 +19,34 @@ function OriginalDownload({ item, downloadUrl, compact = false }) {
 }
 export default function VideoViewer({ delivery, requestPlayback, endPlayback, downloadUrl, demo = false }) {
   const reduced = useVeyloReducedMotion(); const desktop = useDesktopPhoneMode(); const [muted, setMuted] = useState(true);
-  const initial = delivery.items.find(item => item.id === delivery.featuredAssetId) || delivery.items[0];
+  const orderedItems = useMemo(() => {
+    const opening = delivery.items.find(video => video.id === delivery.featuredAssetId);
+    return opening ? [opening, ...delivery.items.filter(video => video.id !== opening.id)] : delivery.items;
+  }, [delivery.items, delivery.featuredAssetId]);
+  const initial = orderedItems[0];
   const [selected, setSelected] = useState(initial?.id || '');
   const item = delivery.items.find(video => video.id === selected) || initial;
   const vertical = item && isPortrait(item);
-  const portraitItems = delivery.items.filter(isPortrait); const wideItems = delivery.items.filter(video => !isPortrait(video));
+  const portraitItems = orderedItems.filter(isPortrait); const wideItems = orderedItems.filter(video => !isPortrait(video));
   const branding = delivery.branding || {}; const feed = useRef(null); const activeId = useRef(selected);
   activeId.current = item?.id;
   const select = useCallback(id => setSelected(id), []);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!vertical || !feed.current) return;
     const root = feed.current;
+    let observing = true;
+    const target = Array.from(root.children).find(node => node.dataset.videoId === activeId.current);
+    if (target) root.scrollTop += target.getBoundingClientRect().top - root.getBoundingClientRect().top;
     const observer = new IntersectionObserver(entries => {
+      if (!observing) return;
       for (const entry of entries) {
         if (entry.isIntersecting && entry.intersectionRatio >= .65 && entry.target.dataset.videoId !== activeId.current) select(entry.target.dataset.videoId);
         if (entry.target.dataset.videoId === activeId.current && entry.intersectionRatio < .2) entry.target.querySelector('video')?.pause();
       }
     }, { root, threshold: [0, .2, .65, 1] });
     root.querySelectorAll('[data-video-id]').forEach(node => observer.observe(node));
-    const target = Array.from(root.children).find(node => node.dataset.videoId === activeId.current);
-    if (target) root.scrollTop = target.offsetTop;
-    return () => observer.disconnect();
-  }, [vertical, desktop, select, delivery.items]);
+    return () => { observing = false; observer.disconnect(); };
+  }, [vertical, desktop, select, orderedItems]);
   const player = item && <VideoPlayback key={item.id} item={item} portrait={vertical} original={delivery.playbackMode !== 'adaptive'} autoPlay muted={muted} onMutedChange={setMuted} requestPlayback={requestPlayback} endPlayback={endPlayback} />;
   if (!item) return <div className="vv-state"><Film /><h1>No videos are ready yet.</h1><p>Finish preparing a video before opening this preview.</p></div>;
   if (vertical) { const portraitView = <main className="vv-page vv-vertical-page">
@@ -48,7 +54,7 @@ export default function VideoViewer({ delivery, requestPlayback, endPlayback, do
       if (event.target !== event.currentTarget || !['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End'].includes(event.key)) return;
       event.preventDefault(); const index = portraitItems.findIndex(video => video.id === item.id);
       const next = event.key === 'Home' ? 0 : event.key === 'End' ? portraitItems.length - 1 : Math.max(0, Math.min(portraitItems.length - 1, index + (['ArrowDown', 'PageDown'].includes(event.key) ? 1 : -1)));
-      feed.current.scrollTo({ top: feed.current.children[next].offsetTop, behavior: 'smooth' });
+      feed.current.scrollTo({ top: feed.current.scrollTop + feed.current.children[next].getBoundingClientRect().top - feed.current.getBoundingClientRect().top, behavior: 'smooth' });
     }}>
       {portraitItems.map((video, index) => <article className={'vv-reel' + (item.id === video.id ? ' is-active' : '')} data-video-id={video.id} key={video.id} aria-label={video.title}>
         <div className="vv-screen is-portrait">{item.id === video.id ? player : video.posterUrl && <img className="vv-reel-poster" src={videoMediaUrl(video.posterUrl)} alt="" loading="lazy" />}</div>
@@ -70,7 +76,7 @@ export default function VideoViewer({ delivery, requestPlayback, endPlayback, do
         <div className="vv-film-caption"><div><p>{videoDuration(item.duration)} / {delivery.playbackMode === 'adaptive' ? 'Adaptive playback' : 'Original quality'}</p><h2>{item.title}</h2></div><OriginalDownload item={item} downloadUrl={demo ? undefined : downloadUrl} /></div>
         {item.description && <div className="vv-description">{item.description}</div>}
       </section>
-      {delivery.items.length > 1 && <aside className="vv-playlist" aria-label="Films in this delivery"><div className="vv-playlist-title"><span>IN THIS DELIVERY</span><small>{delivery.items.length} films</small></div>{delivery.items.map((video, index) => <button type="button" key={video.id} aria-pressed={video.id === item.id} className={'vv-playlist-item' + (video.id === item.id ? ' is-current' : '')} onClick={() => select(video.id)}><span className="vv-playlist-image">{video.posterUrl ? <img src={videoMediaUrl(video.posterUrl)} alt="" loading="lazy" /> : <Film size={24} />}<i>{videoDuration(video.duration)}</i></span><span className="vv-playlist-copy"><strong>{video.title}</strong><small>{isPortrait(video) ? 'Vertical video' : isSquare(video) ? 'Square video' : `Film ${String(index + 1).padStart(2, '0')}`}{video.id === item.id ? ' / Selected' : ''}</small></span><Play size={15} /></button>)}</aside>}
+      {delivery.items.length > 1 && <aside className="vv-playlist" aria-label="Films in this delivery"><div className="vv-playlist-title"><span>IN THIS DELIVERY</span><small>{delivery.items.length} films</small></div>{orderedItems.map((video, index) => <button type="button" key={video.id} aria-pressed={video.id === item.id} className={'vv-playlist-item' + (video.id === item.id ? ' is-current' : '')} onClick={() => select(video.id)}><span className="vv-playlist-image">{video.posterUrl ? <img src={videoMediaUrl(video.posterUrl)} alt="" loading="lazy" /> : <Film size={24} />}<i>{videoDuration(video.duration)}</i></span><span className="vv-playlist-copy"><strong>{video.title}</strong><small>{isPortrait(video) ? 'Vertical video' : isSquare(video) ? 'Square video' : `Film ${String(index + 1).padStart(2, '0')}`}{video.id === item.id ? ' / Selected' : ''}</small></span><Play size={15} /></button>)}</aside>}
     </div>
     <footer className="vv-footer"><span>Delivered by <strong>{branding.name || 'Your photographer'}</strong></span>{/^https?:\/\//.test(branding.website || '') && <a href={branding.website} target="_blank" rel="noreferrer">Visit the studio<ArrowUpRight size={14} /></a>}</footer>
   </main>;

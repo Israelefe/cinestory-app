@@ -28,10 +28,10 @@ async function mock(page, options = {}) {
     if (path.endsWith('/auth/me')) return route.fulfill({ json: { success: true, user } });
     if (path.endsWith('/billing/status')) return ok({ plan: 'pro', features: {}, limits: { personalStorageBytes: 100 * 1024 ** 3 }, usage: {} });
     if (path.endsWith('/billing/plans')) return route.fulfill({ json: { success: true, data: [], videoDelivery: { ...config, available: options.available ?? true } } });
-    if (path.endsWith('/videos/config')) return ok(config);
+    if (path.endsWith('/videos/config')) return ok({ ...config, aiAvailable: options.aiAvailable ?? false });
     if (path.endsWith(`/deliveries/${id}/publish`)) { state.publishes++; state.project.status = 'published'; state.project.video.published = structuredClone(state.project.video.draft); state.project.video.revision++; return ok(state.project); }
     if (path.endsWith(`/deliveries/${id}/access`)) { const body = route.request().postDataJSON(); state.project.access = { hasPin: Boolean(body.pin), expiresAt: body.expiresAt }; return ok(state.project); }
-    if (path.endsWith(`/deliveries/${id}/preview`)) return ok({ ...presentation, items: [{ ...asset, ...presentation.items[0] }], branding: { name: 'Amara Studio' } });
+    if (path.endsWith(`/deliveries/${id}/preview`)) return ok({ ...state.project.video.draft, items: state.project.video.draft.items.map(item => ({ ...state.project.assets.find(video => video.id === item.assetId), ...item })), branding: { name: 'Amara Studio' } });
     if (path.endsWith(`/deliveries/${id}`)) {
       if (method === 'PATCH') { const body = route.request().postDataJSON(); state.saves.push(body); state.project.video.draft = body.presentation; state.project.title = body.presentation.title; state.project.video.revision++; }
       return ok(state.project);
@@ -43,6 +43,91 @@ async function mock(page, options = {}) {
   return { state, errors };
 }
 async function noOverflow(page) { expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true); }
+
+for (const width of [390, 768, 834]) test(`creation opens each step at its heading and saves the opening film at ${width}px`, async ({ page }) => {
+  const { state, errors } = await mock(page, { aiAvailable: true });
+  const secondId = '444444444444444444444444';
+  state.project.assets.push({ ...asset, id: secondId, filename: 'reception.mp4' });
+  state.project.video.draft.items.push({ ...presentation.items[0], assetId: secondId, title: 'The reception' });
+  await page.setViewportSize({ width, height: 800 });
+  await page.goto(`/create?draft=${id}`);
+  await page.locator('.vc-bottom').getByRole('button', { name: 'Add details', exact: true }).click();
+  const heading = page.locator('.vc-section-heading h2');
+  await expect(heading).toBeFocused();
+  expect(await heading.evaluate(node => node.getBoundingClientRect().top)).toBeLessThan(160);
+  await expect(page.getByText('Cover & writing options', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Writing suggestions for the delivery', { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('Download for this video')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Open this video first', exact: true }).click();
+  await page.screenshot({ path: `../.visual-review/video-creation-polish/details-${width}.png`, fullPage: true });
+  await page.locator('.vc-bottom').getByRole('button', { name: 'Preview & send', exact: true }).click();
+  await expect(heading).toBeFocused();
+  expect(await heading.evaluate(node => node.getBoundingClientRect().top)).toBeLessThan(160);
+  expect(state.project.video.draft.featuredAssetId).toBe(secondId);
+  await page.getByRole('button', { name: 'Create client link', exact: true }).click();
+  expect(state.project.video.published.featuredAssetId).toBe(secondId);
+  await page.locator('.vc-bottom').getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(heading).toBeFocused();
+  await expect(page.locator('.vc-video-card').nth(1).getByRole('button', { name: 'Opens first', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await noOverflow(page); expect(errors).toEqual([]);
+});
+
+test('the chosen portrait opens first without briefly playing another film', async ({ page }) => {
+  await mock(page); const starts = [];
+  const films = [3, 4, 5].map(number => ({ ...asset, id: String(number).repeat(24), title: `Film ${number}`, width: 540, height: 960 }));
+  await page.route('**/api/v1/videos/public/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/playback')) { starts.push(path.split('/').at(-2)); return route.fulfill({ json: { success: true, data: { sessionId: starts.at(-1), hlsUrl: '/veylo/video/portrait-study.mp4', expiresAt: new Date(Date.now() + 600000).toISOString() } } }); }
+    if (path.endsWith('/playback/end')) return route.fulfill({ json: { success: true, data: {} } });
+    return route.fulfill({ json: { success: true, data: { ...presentation, items: films, featuredAssetId: films[2].id, branding: {} } } });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/v/video-example-private-id');
+  await expect(page.locator('.vv-reel.is-active')).toHaveAttribute('data-video-id', films[2].id);
+  await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(.1);
+  expect(starts).toEqual([films[2].id]);
+  await page.locator('.vv-feed').evaluate(feed => feed.scrollTo({ top: feed.clientHeight, behavior: 'instant' }));
+  await expect(page.locator('.vv-reel.is-active')).toHaveAttribute('data-video-id', films[0].id);
+});
+
+test('preparation stays animated with device reduced motion and exposes status refresh failures', async ({ page }) => {
+  const { state } = await mock(page); state.project.assets[0].state = 'processing';
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.clock.install();
+  await page.goto(`/create?draft=${id}`);
+  const indicator = page.locator('.vc-upload-row .vc-activity-spin');
+  await expect(indicator).toBeVisible();
+  expect(await indicator.evaluate(node => node.getAnimations().some(animation => animation.playState === 'running'))).toBe(true);
+  await page.route(`**/api/v1/videos/deliveries/${id}`, route => route.fulfill({ status: 503, json: { success: false } }));
+  await page.clock.fastForward(6000);
+  await expect(page.getByText(/Preparation status could not refresh/)).toBeVisible();
+  await expect(indicator).toHaveCount(0);
+  await page.unroute(`**/api/v1/videos/deliveries/${id}`);
+  state.project.assets[0].state = 'ready';
+  await page.getByRole('button', { name: 'Refresh status', exact: true }).click();
+  await expect(page.getByText(/Preparation status could not refresh/)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Add details', exact: true })).toBeEnabled();
+});
+
+test('a stalled original offers retry and resumes playback instead of loading forever', async ({ page }) => {
+  await mock(page);
+  await page.route('**/api/v1/videos/public/**', route => {
+    if (new URL(route.request().url()).pathname.endsWith('/playback')) return route.fulfill({ json: { success: true, data: { sessionId: 'session', hlsUrl: '/veylo/video/light-study.mp4', expiresAt: new Date(Date.now() + 600000).toISOString() } } });
+    return route.fulfill({ json: { success: true, data: { ...presentation, playbackMode: 'original', items: [{ ...asset, title: 'The ceremony' }], branding: {} } } });
+  });
+  await page.goto('/v/video-example-private-id');
+  await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(.1);
+  await page.clock.install();
+  await page.locator('video').evaluate(video => new Promise(resolve => { video.addEventListener('pause', resolve, { once: true }); video.pause(); }));
+  await page.locator('video').evaluate(video => video.dispatchEvent(new Event('waiting')));
+  await expect(page.locator('.vv-buffer')).toBeVisible();
+  await page.clock.fastForward(31000);
+  await expect(page.getByText(/The film is taking too long to load/)).toBeVisible();
+  await expect(page.locator('.vv-buffer')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect.poll(() => page.locator('video').evaluate(video => !video.paused && video.currentTime > .1)).toBe(true);
+  await expect(page.locator('.vv-error')).toHaveCount(0);
+});
 
 for (const width of [320, 390, 768, 834, 1440]) test(`vertical feed hands playback to the visible film and fills circular photographer image at ${width}px`, async ({ page }) => {
   const { errors } = await mock(page); const starts = []; const ends = [];
@@ -149,7 +234,7 @@ test('upload step follows real preparation state and offers failed originals a r
   await page.clock.fastForward(6000);
   await expect(page.locator('.vc-upload-row')).toContainText('Ready for playback');
   await expect(page.getByRole('button', { name: 'Add details', exact: true })).toBeEnabled();
-  await expect(page.getByRole('progressbar', { name: 'Preparation progress for ceremony.mp4' })).toHaveAttribute('value', '100');
+  await expect(page.getByRole('progressbar', { name: 'Preparation progress for ceremony.mp4' })).toHaveAttribute('aria-valuenow', '100');
   await expect(page.locator('.vc-upload-row')).not.toContainText('preparing playback');
   await page.reload();
   await expect(page.locator('.vc-upload-row')).toContainText('Ready for playback');
@@ -284,6 +369,8 @@ test('expired playback sessions reopen on the same player and preserve the playb
   await page.goto('/v/video-example-private-id');
   await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(.1);
   await page.locator('video').evaluate(video => { video.loop = true; video.currentTime = 4; });
+  await expect(page.locator('.vv-buffer')).toHaveCount(0);
+  await expect.poll(() => page.locator('video').evaluate(video => !video.seeking && video.readyState >= 3 && !video.paused)).toBe(true);
   await page.clock.fastForward(4 * 60_000);
   await expect.poll(() => requests.length).toBe(3);
   expect(requests[1].sessionId).toBe('session-1'); expect(requests[2].sessionId).toBeUndefined();

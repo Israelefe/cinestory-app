@@ -2,7 +2,7 @@ import { processingConfigured } from '../services/videoProcessingAuth.js';
 
 export const VIDEO_DEFAULTS = Object.freeze({
   enabled: false, publicAvailable: false, uploadsEnabled: true, publishingEnabled: true,
-  playbackEnabled: true, aiEnabled: true, maxVideos: 10, maxFileBytes: 5_000_000_000,
+  playbackEnabled: true, aiEnabled: false, maxVideos: 10, maxFileBytes: 5_000_000_000,
   maxDurationSeconds: 10_800, storedSeconds: 60_000, monthlyDeliveredMinutes: 5_000,
   accountTransfers: 2, platformTransfers: 100, platformEncodes: 100, accountViewers: 100,
   partBytes: 16 * 1024 * 1024, reservationHours: 24, recoveryDays: 30,
@@ -56,5 +56,5 @@ export function publicVideoSettings(settings) {
   const configured = infrastructure.storage && infrastructure.playback && infrastructure.media;
   return { ...Object.fromEntries(['maxVideos', 'maxFileBytes', 'maxDurationSeconds', 'storedSeconds', 'monthlyDeliveredMinutes', 'accountTransfers', 'recoveryDays'].map(key => [key, settings[key]])),
     available: Boolean(settings.enabled && settings.publicAvailable && configured && process.env.VIDEO_DELIVERY_QUALIFIED === 'true'),
-    configured, writeAvailable: Boolean(settings.enabled && configured), aiAvailable: Boolean(settings.aiEnabled && infrastructure.ai), defaultPlaybackMode: 'original', playbackResolution: 'original', adaptivePlaybackResolution: '1080p' };
+    configured, writeAvailable: Boolean(settings.enabled && configured), aiAvailable: false, defaultPlaybackMode: 'original', playbackResolution: 'original', adaptivePlaybackResolution: '1080p' };
 }

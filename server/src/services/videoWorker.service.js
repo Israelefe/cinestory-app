@@ -14,7 +14,6 @@ import { abortR2Multipart, deleteR2Object, deleteR2Prefix, putR2Object } from '.
 import { deleteLegacyStreamVideo } from './videoProvider.service.js';
 import { encodeAdaptiveVideo } from './videoEncode.service.js';
 import { withLocalVideo, inspectLocalVideo, extractVideoFrame, runMediaTool, cleanupVideoTemps } from './videoMedia.service.js';
-import { analyzeVideo, suggestVideoPresentation } from './videoAnalysis.service.js';
 
 export async function prepareVideo(asset, settings, job) {
   if (job.options?.adaptive) return prepareAdaptiveVideo(asset, settings, job);
@@ -153,6 +152,7 @@ export async function runVideoJob() {
   let globalLease; let accountLease; let encodingLease;
   const renew = setInterval(() => { void Promise.all([VideoJob.updateOne({ _id: job._id, leaseToken: token }, { $set: { leaseUntil: new Date(Date.now() + 120_000) } }), VideoLease.updateMany({ _id: { $in: [globalLease, accountLease, encodingLease].filter(Boolean) }, resourceId: String(job._id) }, { $set: { expiresAt: new Date(Date.now() + 120_000) } })]).catch(() => {}); }, 30_000); renew.unref?.();
   try {
+    if (['analyze', 'present'].includes(job.type)) throw Object.assign(new Error('Video writing suggestions have been removed.'), { code: 'VIDEO_AI_UNAVAILABLE' });
     if (job.type !== 'delete' && job.attempts > 6) throw Object.assign(new Error('Video preparation reached its retry limit.'), { code: 'VIDEO_RETRY_LIMIT' });
     globalLease = await acquireVideoLease('media:platform', settings.workerConcurrency, { ownerId: job.userId, resourceId: job._id, ttlSeconds: 120 });
     accountLease = await acquireVideoLease('media:' + job.userId, 1, { ownerId: job.userId, resourceId: job._id, ttlSeconds: 120 });
@@ -163,11 +163,6 @@ export async function runVideoJob() {
       else if (!['deleting', 'deleted'].includes(asset.state)) {
         if (job.type === 'prepare') await prepareVideo(asset, settings, job);
         else if (job.type === 'poster') await preparePoster(asset, job);
-        else if (job.type === 'analyze' || job.type === 'present') {
-          await videoContext(asset.userId, { write: true, worker: true }); if (!settings.aiEnabled) throw Object.assign(new Error('Video suggestions are temporarily paused.'), { code: 'VIDEO_AI_PAUSED' });
-          if (job.type === 'analyze') await analyzeVideo(asset, settings, job.options);
-          else { const result = await suggestVideoPresentation(job, settings); await VideoJob.updateOne({ _id: job._id, leaseToken: token }, { $set: { result } }); }
-        }
       }
     }
     await VideoJob.updateOne({ _id: job._id, leaseToken: token }, { $set: { state: 'done', leaseUntil: new Date(0) } });
@@ -200,9 +195,6 @@ export async function reconcileVideoLibrary() {
   }
   for (const asset of await VideoAsset.find({ state: 'deleting' }).limit(100)) await queueVideoJob(asset, 'delete');
   for (const upload of await VideoUpload.find({ state: 'aborting' }).limit(100)) await queueVideoJob({ _id: upload.assetId, userId: upload.userId }, 'delete');
-  for (const asset of await VideoAsset.find({ state: 'ready', 'analysis.state': { $in: ['queued', 'running'] }, updatedAt: { $lt: new Date(Date.now() - 180_000) } }).limit(100)) {
-    if (!await VideoJob.exists({ assetId: asset._id, type: 'analyze', state: { $in: ['running', 'queued'] } })) await queueVideoJob(asset, 'analyze', { includeSpeech: Boolean(asset.analysis.includeSpeech), generation: asset.analysis.generation }, asset.analysis.generation || 'recovery:' + asset.updatedAt.getTime());
-  }
   // Original-only assets are ready without HLS. Recover interrupted inspection.
   for (const asset of await VideoAsset.find({ state: { $in: ['processing', 'verifying'] } }).limit(100)) {
     if (!await VideoJob.exists({ assetId: asset._id, type: 'prepare', state: { $in: ['running', 'queued'] } })) {
