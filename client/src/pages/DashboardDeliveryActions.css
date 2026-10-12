@@ -1,0 +1,9 @@
+.v-studio-ui .v-dashboard-creation-actions{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;width:100%}
+.v-studio-ui .v-dashboard-creation-actions>a,.v-studio-ui .v-dashboard-creation-actions>button{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-width:0;min-height:52px;padding:14px 18px;font:600 13px/1.4 'Outfit',sans-serif;text-decoration:none;transition:background .2s,border-color .2s,transform .2s}
+.v-studio-ui .v-dashboard-video{border:1px solid #ff9b8e45;border-radius:9px;background:#ff9b8e08;color:#f4d9cf}
+.v-studio-ui .v-dashboard-video:hover{background:#ff9b8e12;border-color:#ff9b8e80;transform:translateY(-2px)}
+.v-studio-ui .v-dashboard-creation-actions>a:active{transform:scale(.98)}
+.v-studio-ui .v-dashboard-creation-actions>a:focus-visible{outline:2px solid #ffc6bb;outline-offset:4px}
+.v-studio-ui .v-dashboard-creation-actions svg{flex:none}
+@media(min-width:480px){.v-studio-ui .v-dashboard-creation-actions{grid-template-columns:repeat(2,minmax(0,1fr));width:fit-content}}
+@media(min-width:768px){.v-studio-ui .v-dashboard-hero-actions{flex-wrap:wrap;gap:16px}}

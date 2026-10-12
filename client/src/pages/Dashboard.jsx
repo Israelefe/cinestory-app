@@ -14,6 +14,7 @@ import DeliveryDownloadSettings from '../components/delivery/DeliveryDownloadSet
 import { videoMediaUrl } from '../services/videoDelivery.js';
 import DashboardTools from '../components/DashboardTools.jsx';
 import './StudioWorkspace.css';
+import './DashboardDeliveryActions.css';
 
 export default function Dashboard({ user }) {
   const reduced = useVeyloReducedMotion();
@@ -198,7 +199,10 @@ export default function Dashboard({ user }) {
           <h1>Ready for your<br /><em>next delivery.</em></h1>
           <span>Keep your client links and finished shoots in one place.</span>
           <div className="v-dashboard-hero-actions">
-            {newDeliveryDisabled ? <button type="button" className="v-dashboard-new" disabled aria-describedby={quotaReached || planStatus.error ? 'v-dashboard-quota-note' : undefined}><Plus size={18} />New delivery</button> : <Link to="/create" className="v-dashboard-new"><Plus size={18} />New delivery<ArrowRight size={17} /></Link>}
+            <div className="v-dashboard-creation-actions" role="group" aria-label="Create a delivery">
+              {newDeliveryDisabled ? <button type="button" className="v-dashboard-new" disabled aria-describedby={quotaReached || planStatus.error ? 'v-dashboard-quota-note' : undefined}><Plus size={18} />New photo delivery</button> : <Link to="/create" className="v-dashboard-new"><Plus size={18} />New photo delivery<ArrowRight size={17} /></Link>}
+              <Link to="/create?type=video" className="v-dashboard-video"><Film size={18} />New video delivery<ArrowRight size={17} /></Link>
+            </div>
             <Link to="/settings" className="v-workspace-secondary">Account settings<ArrowRight size={16} /></Link>
           </div>
         </div>
@@ -220,7 +224,7 @@ export default function Dashboard({ user }) {
         <aside className="v-studio-quick">
           <div className="v-studio-quick-heading"><p>STUDIO SHORTCUTS</p><span>Keep your library and public work close by.</span></div>
           <div className="v-studio-quick-links">
-            <Link className="v-studio-quick-link" to="/library" onClick={() => trackEvent('dashboard.library.opened', {}, { status: 'opened' })}><span className="v-studio-quick-icon"><Images size={18} /></span><span><strong>Image library</strong><small>Store originals and share client or editor links</small></span><ArrowRight size={16} /></Link>
+            <Link className="v-studio-quick-link" to="/library" onClick={() => trackEvent('dashboard.library.opened', {}, { status: 'opened' })}><span className="v-studio-quick-icon"><Images size={18} /></span><span><strong>Photo Library</strong><small>Organise shoots and keep your originals together</small></span><ArrowRight size={16} /></Link>
             <Link className="v-studio-quick-link" to="/portfolio/manage" onClick={() => trackEvent('dashboard.portfolio.opened', {}, { status: 'opened' })}><span className="v-studio-quick-icon"><Camera size={18} /></span><span><strong>Studio portfolio</strong><small>Choose what prospective clients see</small></span><ArrowRight size={16} /></Link>
           </div>
         </aside>
