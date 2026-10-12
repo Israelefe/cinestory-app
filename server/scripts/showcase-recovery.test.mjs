@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { orderWritingFrames, unsupportedWritingAddress } from '../src/utils/deliveryWritingIdentity.js';
 import { showcaseBookends, variedShowcaseCandidates } from '../src/utils/showcaseSelection.js';
-import { editorialDraftIssues, writeEditorialDirection } from '../src/services/editorialDirection.service.js';
+import { editorialDraftIssues, writeEditorialDirection, rewriteEditorialCaption } from '../src/services/editorialDirection.service.js';
 import { groupV3Sections, directV3, v3FrameWritingIssues } from '../src/services/deliveryV3AI.service.js';
 import { shootWritingIssues } from '../src/constants/deliveryWriting.js';
 import { DELIVERY_WRITING_VERSION } from '../src/constants/deliveryWritingLimits.js';
@@ -57,6 +57,71 @@ test('Editorial recovers malformed group order while preserving every checked ph
   assert.deepEqual(result.sections.flatMap(section => section.assetIds), ids);
   assert.deepEqual(editorialDraftIssues({ ...result, introduction: result.editorial.introduction }, ids, text => unsupportedWritingAddress(text, editorial), editorial, rows), []);
   assert.ok(checkpoints.length > 3);
+});
+
+test('Editorial repairs a saved photo when its combined headline and caption fail the purpose check', async () => {
+  const editorial = { ...delivery, format: 'editorial' };
+  const observations = rows.map(row => ({ ...row, summary: 'An emerald suit and an ivory telephone in a studio portrait.' }));
+  const rejected = { assetId: ids[0], headline: 'The emerald suit', caption: 'An ivory telephone appears in this birthday portrait.' };
+  // Neither field alone reaches the description threshold; the full photo does.
+  assert.deepEqual(shootWritingIssues(rejected.caption, editorial, { caption: true, observation: observations[0].summary }), []);
+  assert.ok(shootWritingIssues(rejected.headline + '. ' + rejected.caption, editorial, { caption: true, observation: observations[0].summary }).some(issue => /purpose/.test(issue)));
+  const draft = { title: "Ada's birthday portraits", openingLine: 'A birthday portrait feature for Ada.', closingLine: 'Your complete birthday collection follows.', introduction: '', frames: [rejected, ...frames.slice(1)], sections: [{ title: 'Birthday portraits for Ada', body: '', assetIds: ids }] };
+  let photoRepairs = 0;
+  const checkpoints = [];
+  const result = await writeEditorialDirection(async system => {
+    if (system.startsWith('Return JSON {"headline"')) { photoRepairs++; return frames[0]; }
+    return structuredClone(draft);
+  }, editorial, observations, ids, text => unsupportedWritingAddress(text, editorial), { resume: structuredClone(draft), checkpoint: async value => checkpoints.push(structuredClone(value)) });
+  assert.equal(photoRepairs, 1);
+  assert.deepEqual(result.frames.map(frame => frame.caption), captions);
+  assert.deepEqual(editorialDraftIssues({ ...result, introduction: result.editorial.introduction }, ids, text => unsupportedWritingAddress(text, editorial), editorial, observations), []);
+  assert.ok(checkpoints.some(value => value.frames[0].headline === frames[0].headline));
+});
+
+test('Editorial falls back safely when a headline invents details and repeated model repairs cannot fix it', async () => {
+  const editorial = { ...delivery, format: 'editorial' };
+  const rejected = { ...frames[0], headline: 'A silk jacket' };
+  const draft = { title: "Ada's birthday portraits", openingLine: 'A birthday portrait feature for Ada.', closingLine: 'Your complete birthday collection follows.', introduction: '', frames: [rejected, ...frames.slice(1)], sections: [{ title: 'Birthday portraits for Ada', body: '', assetIds: ids }] };
+  let photoRepairs = 0;
+  const result = await writeEditorialDirection(async system => {
+    if (system.startsWith('Return JSON {"headline"')) { photoRepairs++; return rejected; }
+    return structuredClone(draft);
+  }, editorial, rows, ids, text => unsupportedWritingAddress(text, editorial));
+  assert.equal(photoRepairs, 2);
+  assert.doesNotMatch(result.frames[0].headline, /silk|jacket/i);
+  assert.deepEqual(result.frames.slice(1).map(frame => frame.caption), captions.slice(1));
+  assert.deepEqual(editorialDraftIssues({ ...result, introduction: result.editorial.introduction }, ids, text => unsupportedWritingAddress(text, editorial), editorial, rows), []);
+});
+
+test('Editorial caption rewrites reject an unsupported headline and preserve approved writing', async () => {
+  const editorial = { ...delivery, format: 'editorial', creativeDirection: { frames: structuredClone(frames) } };
+  const before = structuredClone(editorial.creativeDirection);
+  await assert.rejects(rewriteEditorialCaption(async () => ({ ...frames[0], headline: 'A silk jacket' }), editorial, rows[0], '', frames[0], text => unsupportedWritingAddress(text, editorial)), { code: 'V3_EDITORIAL_WRITING_INCOMPLETE' });
+  assert.deepEqual(editorial.creativeDirection, before);
+});
+
+test('Editorial preparation resumes a rejected feature and finishes even when the model repeats its invalid photo wording', async t => {
+  const editorial = { ...delivery, format: 'editorial' };
+  const observations = rows.map(row => ({ ...row, summary: 'An emerald suit and an ivory telephone in a studio portrait.' }));
+  const rejected = { assetId: ids[0], headline: 'The emerald suit', caption: 'An ivory telephone appears in this birthday portrait.' };
+  const draft = { title: "Ada's birthday portraits", openingLine: 'A birthday portrait feature for Ada.', closingLine: 'Your complete birthday collection follows.', introduction: '', frames: [rejected, ...frames.slice(1)], sections: [{ title: 'Birthday portraits for Ada', body: '', assetIds: ids }] };
+  let repairs = 0;
+  model(t, call => {
+    const system = call.messages[0].content;
+    if (system.startsWith('Return JSON {"palette"')) return { palette: {} };
+    if (system.startsWith('Return JSON {"headline"')) { repairs++; return rejected; }
+    return structuredClone(draft);
+  });
+  const resume = { selected: ids, writingVersion: DELIVERY_WRITING_VERSION, editorialDraft: draft };
+  const before = structuredClone(resume);
+  const result = await directV3(editorial, observations, { resume });
+  assert.equal(repairs, 2);
+  assert.deepEqual(result.selected, ids);
+  assert.deepEqual(result.direction.sections.flatMap(section => section.assetIds), ids);
+  assert.deepEqual(result.direction.frames.slice(1).map(frame => frame.caption), captions.slice(1));
+  assert.deepEqual(editorialDraftIssues({ ...result.direction, introduction: result.direction.editorial.introduction }, ids, text => unsupportedWritingAddress(text, editorial), editorial, observations), []);
+  assert.deepEqual(resume, before);
 });
 
 for (const format of ['event-coverage', 'campaign']) test(`${format} recovers rejected group wording without losing membership or accepting invented details`, async t => {

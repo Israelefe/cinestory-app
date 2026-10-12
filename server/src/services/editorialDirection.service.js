@@ -20,10 +20,9 @@ export function editorialDraftIssues(draft, selected, factsIssue = () => false, 
   if (draft.introduction !== undefined && !within(draft.introduction, L.introduction)) issues.push('introduction');
   const frames = Array.isArray(draft.frames) ? draft.frames : [];
   if (frames.length !== selected.length || frames.some((frame, index) => frame.assetId !== selected[index])) issues.push('photograph order');
+  const draftContext = { ...delivery, creativeDirection: { openingLine: draft.openingLine, editorial: { introduction: draft.introduction }, sections: draft.sections } };
   for (const frame of frames) {
-    if (!within(frame.headline, L.sectionTitle, 2) || !within(frame.caption, L.caption, 5)) issues.push('photograph wording');
-    issues.push(...shootWritingIssues(frame.headline + '. ' + frame.caption, delivery, { caption: true, observation: rows.find(row => row.assetId === frame.assetId)?.summary || '' }));
-    issues.push(...detailedFrameIssues(frame, 'editorial', [draft.openingLine, draft.introduction, ...(draft.sections || []).map(section => section.body)]));
+    issues.push(...editorialCaptionIssues(frame, [], factsIssue, draftContext, rows.find(row => row.assetId === frame.assetId) || {}));
   }
   const sections = Array.isArray(draft.sections) ? draft.sections : [];
   const order = sections.flatMap(section => Array.isArray(section.assetIds) ? section.assetIds : []);
@@ -43,10 +42,12 @@ export function editorialDraftIssues(draft, selected, factsIssue = () => false, 
 
 function editorialCaptionIssues(result, existing, factsIssue, delivery, insight) {
   const issues = [];
-  if (!within(result?.headline, 70, 2)) issues.push('headline length');
+  if (!within(result?.headline, L.sectionTitle, 2)) issues.push('headline length');
   if (!within(result?.caption, L.caption, 5)) issues.push('caption length');
   if (result && factsIssue(`${result.headline || ''}. ${result.caption || ''}`)) issues.push('unsupported names or occasion facts');
-  issues.push(...shootWritingIssues(result?.caption, delivery, { caption: true, observation: insight.summary }));
+  // Validate the same photo text during full-feature checks, targeted repair
+  // and regeneration. Otherwise a rejected headline survives every retry.
+  issues.push(...shootWritingIssues(`${result?.headline || ''}. ${result?.caption || ''}`, delivery, { caption: true, observation: insight.summary || '' }));
   issues.push(...detailedFrameIssues(result, 'editorial', [delivery.creativeDirection?.openingLine, delivery.creativeDirection?.editorial?.introduction, ...(delivery.creativeDirection?.sections || []).map(section => section.body)]));
   if (result && existing.some(frame => clean(frame.caption).toLowerCase() === clean(result.caption).toLowerCase() || clean(frame.headline).toLowerCase() === clean(result.headline).toLowerCase())) issues.push('repeated wording');
   return [...new Set(issues)];
