@@ -38,3 +38,16 @@
 .client-gallery[data-demo-palette="canvas"] :is(.client-gallery-download-tip, .client-gallery-download-progress) { border-color: var(--demo-rule); background: var(--demo-tint); color: var(--demo-text); }
 .client-gallery[data-demo-palette="canvas"] button:hover:not(:disabled) { border-color: var(--demo-accent); background-color: var(--demo-tint); }
 .client-gallery[data-demo-palette="canvas"] :is(button, a):focus-visible { outline-color: var(--demo-accent); }
+
+/* Keep gallery labels and controls readable with light Canvas palettes. */
+.client-gallery[data-demo-palette="canvas"] {
+  --demo-muted: color-mix(in srgb, var(--demo-text) 80%, var(--demo-bg));
+  border-color: var(--demo-rule);
+}
+.client-gallery[data-demo-palette="canvas"] :is(.client-gallery-count, .client-gallery-studio span:not(.delivery-brand-mark), .client-gallery-filters button > span, .client-gallery-demo-note, .client-gallery-grid figcaption, .client-gallery-lightbox-caption, .client-gallery-empty) { color: var(--demo-muted); }
+.client-gallery[data-demo-palette="canvas"] :is(.client-gallery-filters button, .client-gallery-grid figcaption button, .client-gallery-group-filter, .client-gallery-empty h3) { color: var(--demo-text); }
+.client-gallery[data-demo-palette="canvas"] :is(.client-gallery-icon, .client-gallery-download-all, .client-gallery-download-one, .client-gallery-back, .client-gallery-filters, .client-gallery-empty button, .client-gallery-lightbox-photo) { border-color: var(--demo-rule); }
+.client-gallery[data-demo-palette="canvas"] :is(.client-gallery-studio > .delivery-brand-mark, .client-gallery-group-filter select, .client-gallery-photo-error) { background: var(--demo-surface); color: var(--demo-text); border-color: var(--demo-rule); }
+.client-gallery[data-demo-palette="canvas"] .client-gallery-photo-error svg { color: var(--demo-accent); }
+.client-gallery[data-demo-palette="canvas"] .client-gallery-group-filter select:focus-visible { outline-color: var(--demo-accent); }
+.client-gallery[data-demo-palette="canvas"] .client-gallery-collection { scrollbar-color: var(--demo-rule) transparent; }

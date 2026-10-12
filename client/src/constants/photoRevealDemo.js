@@ -17,7 +17,7 @@ export const PHOTO_REVEAL_DEMO = {
   branding: { type: 'studio', name: 'Studio Lumière' }, assets, curatedAssetIds: assets.map(asset => asset.assetId),
   creativeDirection: {
     title: 'Sharon, your portraits are ready.', openingLine: 'Five photographs from your studio session. Reveal each one when you are ready.', closingLine: 'Thank you for spending this session with us, Sharon. Your complete gallery is ready to enjoy and download.',
-    palette: { background: '#080b10', surface: '#121820', text: '#f5efe7', accent: '#d8b895' }, typography: { display: 'Playfair Display', body: 'Outfit' },
+    palette: { background: '#f3e9e0', surface: '#fff8f0', text: '#2b2b2b', accent: '#8d5524' }, typography: { display: 'Playfair Display', body: 'Outfit' },
     reveal: { style: 'curtain', movement: true, ending: 'triptych' },
     frames: assets.map((asset, index) => ({ assetId: asset.assetId, headline: words[index][0], caption: words[index][1] }))
   },

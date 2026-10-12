@@ -1,6 +1,6 @@
 // Demo art direction only. Published deliveries keep the photographer's palette.
 export const DEMO_PALETTES = {
-  canvas: { background: '#191514', surface: '#2c2321', text: '#fbf1e4', accent: '#e8b88b' },
+  canvas: { background: '#a8b8c8', surface: '#e0e5eb', text: '#212121', accent: '#3a5f3a' },
   gridboard: { background: '#2b1713', surface: '#42251e', text: '#fff2df', accent: '#f3c885' }
 };
 
