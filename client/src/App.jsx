@@ -16,6 +16,7 @@ import api from './services/api.js';
 import { installAnalyticsListeners, trackEvent, setAnalyticsAccount } from './services/analytics.js';
 import lazyWithRecovery from './utils/lazyWithRecovery.jsx';
 import 'react-toastify/dist/ReactToastify.css';
+import './styles/demo-palettes.css';
 
 const Dashboard = lazyWithRecovery(() => import('./pages/Dashboard.jsx'), 'dashboard');
 const VideoClientPage = lazyWithRecovery(() => import('./pages/VideoClientPage.jsx'), 'video-client');

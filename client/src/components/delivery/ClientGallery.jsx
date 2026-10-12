@@ -1,3 +1,4 @@
+import { demoPaletteVariables } from '../../constants/demoPalettes.js';
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
@@ -63,7 +64,8 @@ export default function ClientGallery({ photos: collectionPhotos = [], singlePho
   const allowLikes = delivery ? Boolean(delivery.access?.allowLikes && onLike) : Boolean(onLike);
   const resolvedPhotos = useMemo(() => photos.map((photo, index) => demoId ? { ...photo, name: `demo-${demoId}-${photographNumber(index)}`, url: `/veylo/web/demo-${demoId}-${photographNumber(index)}-1440.webp`, thumbnailUrl: `/veylo/web/demo-${demoId}-${photographNumber(index)}-480.webp` } : photo), [photos, demoId, singlePhoto, initialIndex]);
   const fonts = deliveryFontStyles(delivery?.kind === 'pinboard' ? delivery?.pinboard?.typography : delivery?.kind === 'photoswap' ? delivery?.photoswap?.typography : delivery?.creativeDirection?.typography, { display: fontStyles?.['--delivery-font-heading'], body: fontStyles?.['--delivery-font-caption'] });
-  const galleryTheme = { ...fonts, '--gallery-display': fonts['--delivery-font-heading'], '--gallery-body': fonts['--delivery-font-caption'] };
+  const demoFormat = delivery?.demoPalette || fontStyles?.['--demo-format'];
+  const galleryTheme = { ...demoPaletteVariables(demoFormat), ...fonts, '--gallery-display': fonts['--delivery-font-heading'], '--gallery-body': fonts['--delivery-font-caption'] };
   const favouriteCount = resolvedPhotos.filter((photo, index) => liked?.has(photoKey(photo, index))).length;
   const savedGroups = ['canvas', 'chapters', 'event-coverage', 'campaign'].includes(delivery?.format) ? delivery?.format === 'campaign' && delivery?.formatConfig?.campaign?.fileSets?.length ? delivery.formatConfig.campaign.fileSets : delivery?.creativeDirection?.sections || [] : [];
   const groups = savedGroups.filter(group => group.assetIds?.some(id => resolvedPhotos.some(photo => photo.assetId === id)));
@@ -154,7 +156,7 @@ export default function ClientGallery({ photos: collectionPhotos = [], singlePho
   const sceneTransition = { duration: reduced ? 0 : .32, ease: [.22, 1, .36, 1] };
 
   return createPortal(<LayoutGroup id={galleryId}><motion.div className="client-gallery-overlay" initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .2 }} onMouseDown={event => { if (event.target === event.currentTarget) onClose?.(); }}>
-    <motion.section ref={panel} className={`client-gallery ${selected === null ? 'is-collection' : 'is-lightbox'}`} style={galleryTheme} role="dialog" aria-modal="true" aria-labelledby={`${galleryId}-title`} tabIndex={-1} initial={reduced ? false : { opacity: 0, y: 28, scale: .985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={reduced ? { opacity: 0 } : { opacity: 0, y: 18 }} transition={reduced ? { duration: 0 } : { type: 'spring', damping: 28, stiffness: 270 }}>
+    <motion.section ref={panel} className={`client-gallery ${selected === null ? 'is-collection' : 'is-lightbox'}`} style={galleryTheme} data-demo-palette={demoFormat || undefined} role="dialog" aria-modal="true" aria-labelledby={`${galleryId}-title`} tabIndex={-1} initial={reduced ? false : { opacity: 0, y: 28, scale: .985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={reduced ? { opacity: 0 } : { opacity: 0, y: 18 }} transition={reduced ? { duration: 0 } : { type: 'spring', damping: 28, stiffness: 270 }}>
       <header className="client-gallery-header">
         <div className="client-gallery-heading">
           {showChapterStudio ? <div className="client-gallery-studio client-gallery-chapter-studio"><DeliveryBrandMark branding={delivery.branding} /><div><span>Photographed by</span><strong>{delivery.branding.name}</strong></div></div> : <p>{selected === null ? eyebrow : singlePhoto ? title : `${title} · ${selected + 1} of ${photos.length}`}</p>}

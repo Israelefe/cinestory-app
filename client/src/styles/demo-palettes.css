@@ -1,0 +1,40 @@
+/* Canvas and Gridboard demos only; client deliveries retain their saved colours. */
+:is([data-demo-palette="canvas"], [data-demo-palette="gridboard"]) {
+  --demo-rule: color-mix(in srgb, var(--demo-text) 17%, transparent);
+  --demo-tint: color-mix(in srgb, var(--demo-accent) 10%, transparent);
+}
+
+.fd-page[data-demo-palette="canvas"] {
+  background:
+    radial-gradient(ellipse at 92% 0%, var(--demo-tint), transparent 42rem),
+    radial-gradient(ellipse at 0% 65%, color-mix(in srgb, var(--demo-surface) 62%, transparent), transparent 48rem),
+    var(--demo-bg);
+  color: var(--demo-text);
+}
+
+.fd-page[data-demo-palette="canvas"] .fd-header:not(.is-light) {
+  background: color-mix(in srgb, var(--demo-bg) 94%, transparent);
+  border-color: var(--demo-rule);
+  color: var(--demo-text);
+}
+
+.cv-board[data-demo-palette="canvas"] .cv-point-marker > span {
+  background: var(--demo-surface);
+  border-color: var(--demo-accent);
+}
+
+.pb-viewer[data-demo-palette="gridboard"] {
+  background:
+    radial-gradient(ellipse at 95% 0%, color-mix(in srgb, var(--demo-accent) 9%, transparent), transparent 42rem),
+    radial-gradient(ellipse at 0% 75%, color-mix(in srgb, var(--demo-surface) 65%, transparent), transparent 40rem),
+    var(--demo-bg);
+}
+
+/* Canvas opens its collection in a portal outside the board. */
+.client-gallery[data-demo-palette="canvas"] { background: var(--demo-bg); color: var(--demo-text); }
+.client-gallery[data-demo-palette="canvas"] .client-gallery-header { background: var(--demo-bg); border-color: var(--demo-rule); }
+.client-gallery[data-demo-palette="canvas"] :is(.client-gallery-header p, .is-liked) { color: var(--demo-accent); }
+.client-gallery[data-demo-palette="canvas"] :is(.client-gallery-photo, .client-gallery-filters button.is-active) { background: var(--demo-surface); color: var(--demo-text); border-color: var(--demo-rule); }
+.client-gallery[data-demo-palette="canvas"] :is(.client-gallery-download-tip, .client-gallery-download-progress) { border-color: var(--demo-rule); background: var(--demo-tint); color: var(--demo-text); }
+.client-gallery[data-demo-palette="canvas"] button:hover:not(:disabled) { border-color: var(--demo-accent); background-color: var(--demo-tint); }
+.client-gallery[data-demo-palette="canvas"] :is(button, a):focus-visible { outline-color: var(--demo-accent); }

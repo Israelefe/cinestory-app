@@ -1,3 +1,4 @@
+import { demoPaletteVariables } from '../../constants/demoPalettes.js';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Link, useLocation } from 'react-router-dom';
@@ -258,7 +259,7 @@ export default function CanvasBoard({ delivery: supplied, galleryProps, audioSta
   useCanvasConnections(board, composition);
   const requestedTheme = getFormatThemeStyles(delivery, { bg: '#0c1b16', surface: '#eee5d8', text: '#efe6d6', accent: '#c8ac8c' });
   const ink = photoStoryChrome(requestedTheme['--fd-bg'], requestedTheme['--fd-text'], requestedTheme['--fd-accent']);
-  const theme = { ...requestedTheme, '--fd-text': ink['--story-text'], '--cv-line': ink['--story-chrome-accent'] };
+  const theme = { ...requestedTheme, ...(!supplied ? demoPaletteVariables('canvas') : {}), '--fd-text': ink['--story-text'], '--cv-line': ink['--story-chrome-accent'] };
   const order = points.flatMap(point => point.assetIds), orderedPhotos = order.map(id => byId.get(id)).filter(Boolean);
   const signature = points.map(point => `${point.id}:${point.assetIds.join(',')}`).join('|');
   const copySignature = JSON.stringify([points.map(point => [point.title, point.note]), photos.map(photo => [photo.headline, photo.width, photo.height]), delivery.creativeDirection?.typography, delivery.creativeDirection?.title, delivery.creativeDirection?.openingLine, delivery.creativeDirection?.closingLine, delivery.v3?.openingAssetId, delivery.v3?.closingAssetId]);
@@ -288,7 +289,7 @@ export default function CanvasBoard({ delivery: supplied, galleryProps, audioSta
   const paths = composition?.paths || [];
   const touch = !finePointer || composition?.phone;
   const bookendPosition = kind => composition ? { left: composition[kind].x, top: composition[kind].y, width: composition[kind].width } : undefined;
-  return <div className="fd-page fd-canvas cv-board" style={theme} data-touch={touch ? 'true' : 'false'} data-arrangement={settings.arrangement || 'spatial'} data-photo-motion={stillPhotos ? 'still' : motionPaused || selection || gallery ? 'paused' : 'playing'}>
+  return <div className="fd-page fd-canvas cv-board" style={theme} data-demo-palette={!supplied ? 'canvas' : undefined} data-touch={touch ? 'true' : 'false'} data-arrangement={settings.arrangement || 'spatial'} data-photo-motion={stillPhotos ? 'still' : motionPaused || selection || gallery ? 'paused' : 'playing'}>
     <DemoHeader format="Canvas" client={delivery.clientName || delivery.title} sectionId="canvas" delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} hideFormatLabel titleDetail={`${photos.length} photographs`} headerClassName="cv-header" headerActions={!stillPhotos && <button type="button" className="cv-motion-toggle" aria-label={motionPaused ? 'Resume photo motion' : 'Pause photo motion'} aria-pressed={motionPaused} onClick={() => setMotionPaused(value => !value)}>{motionPaused ? <Play size={16} /> : <Pause size={16} />}<span>{motionPaused ? 'Resume motion' : 'Pause motion'}</span></button>} />
     <main className="cv-main">
       <div className="cv-path-board" ref={board} style={{ height: composition?.height || 1800 }}>
