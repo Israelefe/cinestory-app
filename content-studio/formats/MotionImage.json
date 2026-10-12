@@ -1,0 +1,53 @@
+{
+  "name": "MotionImage",
+  "component": "src/render/Composition.jsx#Scene",
+  "purpose": "A real result photograph or approved context image with movement.",
+  "layout": "1080×1920; foreground safe rectangle x80–960, y250–1500; templates inset further for animated words.",
+  "typography": "Outfit, from extracted design-language.json; fit measured text before drawing.",
+  "motion": {
+    "easing": [
+      0.22,
+      1,
+      0.36,
+      1
+    ],
+    "enterFrames": 14,
+    "staggerFrames": 2,
+    "transitionFrames": 8
+  },
+  "rules": "Use push-in, drift, mask, light sweep or collage. Generated context cannot stand in for real finished work.",
+  "propsSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "slotId": {
+        "type": "string"
+      },
+      "caption": {
+        "type": "string",
+        "maxLength": 160
+      },
+      "preset": {
+        "type": "string",
+        "enum": [
+          "pushIn",
+          "drift",
+          "maskedReveal",
+          "lightSweep",
+          "collage"
+        ]
+      }
+    },
+    "required": [
+      "slotId",
+      "caption",
+      "preset"
+    ],
+    "additionalProperties": false
+  },
+  "example": {
+    "slotId": "finished-photo",
+    "caption": "A considered first viewing.",
+    "preset": "drift"
+  }
+}

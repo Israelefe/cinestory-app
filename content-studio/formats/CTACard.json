@@ -1,0 +1,41 @@
+{
+  "name": "CTACard",
+  "component": "src/render/Composition.jsx#Scene",
+  "purpose": "One approved action at the end.",
+  "layout": "1080×1920; foreground safe rectangle x80–960, y250–1500; templates inset further for animated words.",
+  "typography": "Outfit, from extracted design-language.json; fit measured text before drawing.",
+  "motion": {
+    "easing": [
+      0.22,
+      1,
+      0.36,
+      1
+    ],
+    "enterFrames": 14,
+    "staggerFrames": 2,
+    "transitionFrames": 8
+  },
+  "rules": "Use offer.json verbatim; a free-account CTA never makes paid features free.",
+  "propsSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "ctaId": {
+        "type": "string"
+      },
+      "text": {
+        "type": "string",
+        "maxLength": 100
+      }
+    },
+    "required": [
+      "ctaId",
+      "text"
+    ],
+    "additionalProperties": false
+  },
+  "example": {
+    "ctaId": "start-free",
+    "text": "Get started for free. Link in bio."
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "name": "PainMontage",
+  "component": "src/render/Composition.jsx#Scene",
+  "purpose": "Quick cuts showing the old handover problem.",
+  "layout": "1080×1920; foreground safe rectangle x80–960, y250–1500; templates inset further for animated words.",
+  "typography": "Outfit, from extracted design-language.json; fit measured text before drawing.",
+  "motion": {
+    "easing": [
+      0.22,
+      1,
+      0.36,
+      1
+    ],
+    "enterFrames": 14,
+    "staggerFrames": 2,
+    "transitionFrames": 8
+  },
+  "rules": "Cycle cleared context slots every 48 frames; no fabricated notifications or claims.",
+  "propsSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "slotIds": {
+        "minItems": 1,
+        "maxItems": 4,
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/__schema0"
+        }
+      },
+      "caption": {
+        "type": "string",
+        "maxLength": 160
+      }
+    },
+    "required": [
+      "slotIds",
+      "caption"
+    ],
+    "additionalProperties": false,
+    "definitions": {
+      "__schema0": {
+        "type": "string"
+      }
+    }
+  },
+  "example": {
+    "slotIds": [
+      "context-image"
+    ],
+    "caption": "A finished shoot. An ordinary link."
+  }
+}

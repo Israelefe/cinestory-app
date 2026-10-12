@@ -1,0 +1,36 @@
+{
+  "name": "BigCaptions",
+  "component": "src/render/Composition.jsx#Scene",
+  "purpose": "A short, readable statement between product actions.",
+  "layout": "1080×1920; foreground safe rectangle x80–960, y250–1500; templates inset further for animated words.",
+  "typography": "Outfit, from extracted design-language.json; fit measured text before drawing.",
+  "motion": {
+    "easing": [
+      0.22,
+      1,
+      0.36,
+      1
+    ],
+    "enterFrames": 14,
+    "staggerFrames": 2,
+    "transitionFrames": 8
+  },
+  "rules": "Fitted type, shared easing and stagger. Word-timed narration captions are a separate global layer.",
+  "propsSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string",
+        "maxLength": 300
+      }
+    },
+    "required": [
+      "text"
+    ],
+    "additionalProperties": false
+  },
+  "example": {
+    "text": "Present the finished collection with Veylo."
+  }
+}

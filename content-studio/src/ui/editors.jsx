@@ -1,0 +1,35 @@
+import React, { useState } from 'react';
+import { Check, Clapperboard } from 'lucide-react';
+import { sections, templateProps } from '../contracts/index.mjs';
+
+const textLabel = value => value.replace(/([A-Z])/g, ' $1').replace(/^./, letter => letter.toUpperCase());
+export function ScriptEditor({ variants, onSave }) {
+  const [data, setData] = useState(structuredClone(variants));
+  function change(index, kind, section, value) { setData(current => current.map((variant, i) => i === index ? { ...variant, [kind]: { ...variant[kind], [section]: value } } : variant)); }
+  return <div className="structured-editor"><div className="editor-intro"><h3>Edit the words</h3><p>Keep the hook angle and product focus distinct. Saving invalidates downstream work and re-runs validation.</p></div>{data.map((variant, index) => <details className="script-edit-card" key={variant.id} open={index === 0}><summary>{variant.title} / {variant.angle}</summary>{sections.map(section => <div className="form-grid" key={section}><label className="field"><span>{textLabel(section)} voiceover</span><textarea rows={3} value={variant.voiceover[section]} onChange={event => change(index, 'voiceover', section, event.target.value)} /><small>{variant.voiceover[section].trim().split(/\s+/).filter(Boolean).length} words</small></label><label className="field"><span>{textLabel(section)} on-screen text</span><textarea rows={3} maxLength={180} value={variant.onScreen[section]} onChange={event => change(index, 'onScreen', section, event.target.value)} /></label></div>)}</details>)}<button className="button quiet" onClick={() => onSave(data)}><Check size={17} />Validate & save scripts</button></div>;
+}
+function initialProps(name, old, variant, requests, captures) {
+  const schema = templateProps[name], next = {};
+  for (const [key, field] of Object.entries(schema.shape)) {
+    if (old[key] !== undefined && field.safeParse(old[key]).success) next[key] = old[key];
+    else if (key === 'ctaId') next[key] = variant.ctaId;
+    else if (key === 'text' && name === 'CTACard') next[key] = variant.voiceover.cta;
+    else if (key === 'clipId') next[key] = captures[0]?.id || '';
+    else if (key === 'slotId') next[key] = requests.find(request => name !== 'VideoScene' || request.kind === 'video')?.id || '';
+    else if (field.type === 'array') next[key] = key === 'slotIds' ? requests.filter(request => request.kind === 'image').slice(0, 1).map(request => request.id) : [];
+    else if (field.options) next[key] = field.options[0];
+    else next[key] = '';
+  }
+  return next;
+}
+export function SceneEditor({ board, captures, variant, onSave, onRegenerate }) {
+  const [data, setData] = useState(structuredClone(board)), [notes, setNotes] = useState({});
+  const change = (index, transform) => setData(current => ({ ...current, scenes: current.scenes.map((scene, i) => i === index ? transform(scene) : scene) }));
+  return <div className="structured-editor"><div className="editor-intro"><h3>Scene controls</h3><p>Change the registered template, copy, media reference, camera move or transition. Timing still comes from measured voice.</p></div>{data.scenes.map((scene, index) => <details className="scene-edit-card" key={scene.id}><summary>{String(index + 1).padStart(2, '0')} / {scene.section} / {scene.template}</summary><div className="form-grid"><label className="field"><span>Template</span><select value={scene.template} onChange={event => change(index, current => ({ ...current, template: event.target.value, props: initialProps(event.target.value, current.props, variant, data.requests, captures) }))}>{Object.keys(templateProps).map(name => <option key={name}>{name}</option>)}</select></label><label className="field"><span>Transition out</span><select value={scene.transitionOut} onChange={event => change(index, current => ({ ...current, transitionOut: event.target.value }))}>{['cut', 'fade', 'slideWipe'].map(value => <option key={value}>{value}</option>)}</select></label>{Object.entries(templateProps[scene.template].shape).map(([key, field]) => { const value = scene.props[key], update = value => change(index, current => ({ ...current, props: { ...current.props, [key]: value } })); let control;
+    if (key === 'clipId' || key === 'slotId') { const options = key === 'clipId' ? captures.filter(clip => variant.captureIds.includes(clip.id)) : data.requests.filter(request => scene.template !== 'VideoScene' || request.kind === 'video'); control = <select value={value} onChange={event => update(event.target.value)}><option value="">Choose…</option>{options.map(option => <option key={option.id} value={option.id}>{option.id}</option>)}</select>; }
+    else if (field.options) control = <select value={value} onChange={event => update(event.target.value)}>{field.options.map(option => <option key={option}>{option}</option>)}</select>;
+    else if (field.type === 'array') control = <input value={value.join(', ')} onChange={event => update(event.target.value.split(',').map(item => item.trim()).filter(Boolean))} />;
+    else control = <textarea rows={2} value={value} onChange={event => update(event.target.value)} />;
+    return <label className="field" key={key}><span>{textLabel(key)}</span>{control}</label>;
+  })}<label className="field"><span>Camera move</span><select value={scene.motion.camera} onChange={event => change(index, current => ({ ...current, motion: { ...current.motion, camera: event.target.value } }))}>{['none', 'pushIn', 'drift', 'followTargets'].map(value => <option key={value}>{value}</option>)}</select></label><label className="field"><span>Enter animation</span><select value={scene.motion.enter} onChange={event => change(index, current => ({ ...current, motion: { ...current.motion, enter: event.target.value } }))}>{['fade', 'wordStagger', 'mask', 'slide'].map(value => <option key={value}>{value}</option>)}</select></label><label className="field"><span>Transition out</span><select value={scene.transitionOut} onChange={event => change(index, current => ({ ...current, transitionOut: event.target.value }))}>{["cut", "fade", "slideWipe"].map(value => <option key={value}>{value}</option>)}</select></label></div><label className="field"><span>Regeneration note</span><input maxLength={1500} placeholder="What should this scene communicate more clearly?" value={notes[scene.id] || ""} onChange={event => setNotes(current => ({ ...current, [scene.id]: event.target.value }))} /></label><button className="button quiet" onClick={() => onRegenerate(scene.id, notes[scene.id] || "")}><Clapperboard size={17} />Regenerate this saved scene</button><p className="muted">Uses the saved template and media. Save any control edits first.</p></details>)}<label className="field"><span>Cover scene</span><select value={data.coverSceneId} onChange={event => setData(current => ({ ...current, coverSceneId: event.target.value }))}>{data.scenes.map(scene => <option key={scene.id}>{scene.id}</option>)}</select></label><button className="button quiet" onClick={() => onSave(data)}><Check size={17} />Validate & save storyboard</button></div>;
+}

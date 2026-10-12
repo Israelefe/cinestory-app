@@ -1,0 +1,50 @@
+{
+  "name": "VideoScene",
+  "component": "src/render/Composition.jsx#Scene",
+  "purpose": "Cinematic context clip supplied manually from Google Flow.",
+  "layout": "1080×1920; foreground safe rectangle x80–960, y250–1500; templates inset further for animated words.",
+  "typography": "Outfit, from extracted design-language.json; fit measured text before drawing.",
+  "motion": {
+    "easing": [
+      0.22,
+      1,
+      0.36,
+      1
+    ],
+    "enterFrames": 14,
+    "staggerFrames": 2,
+    "transitionFrames": 8
+  },
+  "rules": "Use reviewed context footage; never invent the product interface or finished client work.",
+  "propsSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "slotId": {
+        "type": "string"
+      },
+      "caption": {
+        "type": "string",
+        "maxLength": 160
+      },
+      "framing": {
+        "type": "string",
+        "enum": [
+          "cover",
+          "contain"
+        ]
+      }
+    },
+    "required": [
+      "slotId",
+      "caption",
+      "framing"
+    ],
+    "additionalProperties": false
+  },
+  "example": {
+    "slotId": "context-clip",
+    "caption": "Give the handover some care.",
+    "framing": "cover"
+  }
+}

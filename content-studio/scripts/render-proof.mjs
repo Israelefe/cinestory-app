@@ -1,0 +1,11 @@
+import path from 'node:path';
+import sharp from 'sharp';
+import { configuration } from '../src/server/config.mjs';
+import { initialiseStorage, atomicWrite } from '../src/server/storage.mjs';
+import { renderVideo } from '../src/server/render.mjs';
+const config = configuration(); await initialiseStorage(config);
+const image = await sharp({ create: { width: 1080, height: 1920, channels: 3, background: '#6d352d' } }).webp().toBuffer(); await atomicWrite(path.join(config.data, 'temp/proof.webp'), image);
+const scene = (id, section, template, props) => ({ id, section, template, props, voLineId: section, motion: { enter: 'wordStagger', camera: 'pushIn' }, transitionOut: 'fade' });
+const board = { title: 'Renderer verification', coverSceneId: 's3', requests: [], scenes: [scene('s1', 'hook', 'HookKinetic', { text: 'Photographers, make the handover count.', emphasis: ['handover'] }), scene('s2', 'problem', 'MotionImage', { slotId: 'proof', caption: 'A finished shoot. An ordinary link.', preset: 'drift' }), scene('s3', 'demo', 'BigCaptions', { text: 'Present the finished collection with Veylo.' }), scene('s4', 'result', 'BigCaptions', { text: 'A first viewing worth sharing.' }), scene('s5', 'cta', 'CTACard', { ctaId: 'start-free', text: 'Get started for free. Link in bio.' })] };
+let last = -1; const result = await renderVideo({ config, job: { id: 'render-proof', revision: 1, brief: { seconds: 20 } }, board, media: { proof: { kind: 'image', path: 'temp/proof.webp' } }, preview: true, silent: true, debug: true, progress: (p, text) => { const step = Math.floor(p * 10); if (step !== last) { last = step; console.log(Math.round(p * 100) + '% ' + text); } } });
+await atomicWrite(path.join(config.data, 'jobs/render-proof/report.json'), result); console.log(JSON.stringify({ path: result.path, info: result.info }, null, 2));

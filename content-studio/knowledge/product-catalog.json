@@ -1,0 +1,301 @@
+{
+  "version": 1,
+  "features": [
+    {
+      "id": "showcase:photo-story",
+      "name": "Photo Story",
+      "family": "showcase",
+      "description": "Veylo turns the finished shoot into a cinematic presentation with image order, captions, motion, transitions, pacing, music, and an optional narration track. The complete downloadable gallery waits at the end.",
+      "bestFor": "Weddings, birthdays, maternity, graduation, anniversaries, and personal milestones.",
+      "problem": "A directed sequence with a beginning, a rhythm, and a finale.",
+      "route": "/demo",
+      "evidence": [
+        "client/src/constants/deliveryFormats.js",
+        "client/src/pages/FormatDemo.jsx"
+      ],
+      "availability": "source_present",
+      "approvalRequired": true,
+      "digest": "59d644b5eb4e8c58559b11bd468e7164b761c789ec6b86f3fbb9152f0cf097a7"
+    },
+    {
+      "id": "showcase:editorial",
+      "name": "Editorial Page",
+      "family": "showcase",
+      "description": "Veylo studies the photographs and builds a bespoke editorial page from them. Image scale, spacing, typography, colour, and scroll rhythm respond to the work instead of forcing it into a fixed template.",
+      "bestFor": "Fashion, portraits, personal branding, campaigns, and studio sessions.",
+      "problem": "A scrollable publication designed around the character of the shoot.",
+      "route": "/demo/editorial",
+      "evidence": [
+        "client/src/constants/deliveryFormats.js",
+        "client/src/pages/FormatDemo.jsx"
+      ],
+      "availability": "source_present",
+      "approvalRequired": true,
+      "digest": "7b9215c61d9d7360de83d04d481402f17e72f69554f305d1968f58ecf6006708"
+    },
+    {
+      "id": "showcase:photo-reveal",
+      "name": "Photo Reveal",
+      "family": "showcase",
+      "description": "Each tap reveals one finished photograph. Choose the order, add a short caption, and let the client take their time before opening the complete gallery.",
+      "bestFor": "Portraits, beauty sessions, birthdays, maternity, and graduation shoots.",
+      "problem": "A first viewing that moves only when the client is ready.",
+      "route": "/demo/reveal",
+      "evidence": [
+        "client/src/constants/deliveryFormats.js",
+        "client/src/pages/FormatDemo.jsx"
+      ],
+      "availability": "source_present",
+      "approvalRequired": true,
+      "digest": "86e7d16773d9ac9a3c7f769882e93a36fcdf047472e6497fb3be2c0cbb828aa0"
+    },
+    {
+      "id": "showcase:canvas",
+      "name": "Canvas",
+      "family": "showcase",
+      "description": "Framed photographs follow a broken line down the board. Keep a photo on its own, group related images at a checkpoint, and let the client scroll, jump to a group, or open a photograph.",
+      "bestFor": "Fashion, weddings, events, portraits, and branding shoots.",
+      "problem": "A scrolling photo board with connected photographs and groups.",
+      "route": "/demo/canvas",
+      "evidence": [
+        "client/src/constants/deliveryFormats.js",
+        "client/src/pages/FormatDemo.jsx"
+      ],
+      "availability": "source_present",
+      "approvalRequired": true,
+      "digest": "22444ed4f78874e7a91d030647d0242b4715a069a47407530e745cbafcf1831c"
+    },
+    {
+      "id": "showcase:chapters",
+      "name": "Chapters",
+      "family": "showcase",
+      "description": "Veylo finds the natural parts of the shoot and gives each one a visual chapter cover. The client chooses where to begin, explores that part, and returns to the complete collection.",
+      "bestFor": "Weddings, events, multi-outfit sessions, branding shoots, and traditional weddings.",
+      "problem": "A large collection organised by the moments already inside it.",
+      "route": "/demo/chapters",
+      "evidence": [
+        "client/src/constants/deliveryFormats.js",
+        "client/src/pages/FormatDemo.jsx"
+      ],
+      "availability": "source_present",
+      "approvalRequired": true,
+      "digest": "732a7e8f2d4683319cd02474411d839ef6c1e2055fd1156af4662d4585cb3fc8"
+    },
+    {
+      "id": "showcase:album",
+      "name": "Album",
+      "family": "showcase",
+      "description": "Veylo arranges the photographs as a considered digital album, deciding the cover, page order, pairings, full-page portraits, quiet space, typography, and closing spread. The complete downloadable gallery follows the final page.",
+      "bestFor": "Traditional weddings, white weddings, anniversaries, maternity, family sessions, and milestone celebrations.",
+      "problem": "A page-by-page keepsake composed from the finished shoot.",
+      "route": "/demo/album",
+      "evidence": [
+        "client/src/constants/deliveryFormats.js",
+        "client/src/pages/FormatDemo.jsx"
+      ],
+      "availability": "source_present",
+      "approvalRequired": true,
+      "digest": "04a33a15d4e38576fe0e0bf9d33cacaf619ba7434369069ed892dbfddea871ce"
+    },
+    {
+      "id": "showcase:event-coverage",
+      "name": "Event Coverage",
+      "family": "showcase",
+      "description": "Built for conferences, church services, owambe celebrations, and gatherings where no single person is the subject. The delivery opens with highlights, then lets guests browse every scene and the complete gallery.",
+      "bestFor": "Conferences, church services, social gatherings, corporate events, concerts, and community celebrations.",
+      "problem": "A complete event organised around the scenes, people, and shifts in the day.",
+      "route": "/demo/event-coverage",
+      "evidence": [
+        "client/src/constants/deliveryFormats.js",
+        "client/src/pages/FormatDemo.jsx"
+      ],
+      "availability": "source_present",
+      "approvalRequired": true,
+      "digest": "6bb08a4d97f481dc57a673ba04290f7dd68113ef13d9e5b1876a7b8ece1322b1"
+    },
+    {
+      "id": "showcase:campaign",
+      "name": "Campaign Delivery",
+      "family": "showcase",
+      "description": "The client sees the campaign as a considered presentation, then moves into clearly named asset sets, variants, download sizes, and photographer-supplied usage terms.",
+      "bestFor": "Lookbooks, product campaigns, hospitality, food, property, personal branding, and corporate libraries.",
+      "problem": "A commercial showcase followed by an organised handoff of final assets.",
+      "route": "/demo/campaign",
+      "evidence": [
+        "client/src/constants/deliveryFormats.js",
+        "client/src/pages/FormatDemo.jsx"
+      ],
+      "availability": "source_present",
+      "approvalRequired": true,
+      "digest": "4b3a89297e34f515be20ae3d6d9e550b383c2ffbbc40504b6365c2eee5d85184"
+    },
+    {
+      "id": "dashboard",
+      "name": "Photographer dashboard",
+      "family": "feature",
+      "description": "Keep completed deliveries together in the photographer dashboard.",
+      "problem": "Finding and sharing a completed client delivery.",
+      "route": "/dashboard",
+      "evidence": [
+        "client/src/pages/Dashboard.jsx"
+      ],
+      "availability": "source_present",
+      "approvalRequired": true,
+      "digest": "23701dfc8fd33b5735d9cff14025c853f31e6974bacb4ce8f96d12dc87903857"
+    },
+    {
+      "id": "gridboard",
+      "name": "GridBoard",
+      "family": "photo",
+      "description": "Help clients explore the complete collection.",
+      "problem": "Finding a particular moment in a large shoot.",
+      "route": "/demo/gridboard",
+      "evidence": [
+        "client/src/pages/GridboardDelivery.jsx"
+      ],
+      "availability": "source_present",
+      "approvalRequired": true,
+      "digest": "fcb66773dc3d271bf74fb51c142ea0fd39721adc8d8e158ba6b5767fa641b0c3"
+    },
+    {
+      "id": "photoswap",
+      "name": "Photo Swap",
+      "family": "photo",
+      "description": "Present finished photographs one swipe at a time.",
+      "problem": "Giving a portrait collection a focused first viewing.",
+      "route": "/demo/photoswap",
+      "evidence": [
+        "client/src/pages/PhotoSwapDelivery.jsx"
+      ],
+      "availability": "source_present",
+      "approvalRequired": true,
+      "digest": "06f6f61531a975e08fd8311659c18d30b5faa667d264854b998c2ae886ac2d37"
+    },
+    {
+      "id": "video",
+      "name": "Video delivery",
+      "family": "video",
+      "description": "Deliver finished films through a dedicated client player.",
+      "problem": "Handing over finished films with a considered viewing experience.",
+      "route": "/demo/video",
+      "evidence": [
+        "client/src/pages/VideoDeliveryPage.jsx"
+      ],
+      "availability": "source_present",
+      "approvalRequired": true,
+      "digest": "89816042d0b8b0d64e1faa924c2cb0c6340fa222f36e1346e8f181efc7350370"
+    },
+    {
+      "id": "portfolio",
+      "name": "Portfolio",
+      "family": "feature",
+      "description": "Choose completed work to present in a public portfolio.",
+      "problem": "Having a considered collection ready when someone asks to see your work.",
+      "route": "/portfolio",
+      "evidence": [
+        "client/src/pages/PortfolioPage.jsx"
+      ],
+      "availability": "source_present",
+      "approvalRequired": true,
+      "digest": "1e42d647fbe545519883dc0bff0d1ad6483add96673dddffeb11d7bde800ab76"
+    },
+    {
+      "id": "library",
+      "name": "Photo Library",
+      "family": "feature",
+      "description": "Organise photographs by shoot.",
+      "problem": "Keeping shoots and their files organised.",
+      "route": "/library",
+      "evidence": [
+        "client/src/pages/ImageLibrary.jsx"
+      ],
+      "availability": "source_present",
+      "approvalRequired": true,
+      "digest": "892ecc329550724c7295476e55b567d2bdcb397b062b601d17db3aff3e298303"
+    },
+    {
+      "id": "preselection",
+      "name": "Photo Pre-selection",
+      "family": "feature",
+      "description": "Prepare a client selection and review their submitted photographs.",
+      "problem": "Collecting client choices before preparing finished edits.",
+      "route": "/pre-selection",
+      "evidence": [
+        "client/src/pages/PhotoPreselection.jsx"
+      ],
+      "availability": "source_present",
+      "approvalRequired": true,
+      "digest": "1c601ac6b8a4ce88198e061bb2e8c904e845e2286314caee3a404fe392a43f25"
+    },
+    {
+      "id": "editor-links",
+      "name": "Editor Links",
+      "family": "feature",
+      "description": "Send originals to an editor and review returned edits.",
+      "problem": "Keeping the editor handoff and returned files together.",
+      "route": "/editor-links",
+      "evidence": [
+        "client/src/pages/EditorLinks.jsx"
+      ],
+      "availability": "source_present",
+      "approvalRequired": true,
+      "digest": "011a20c1bb6702f4ee7563260aa7fa62c9ea8aeae8d64e04740db6a5f8a8dbfc"
+    },
+    {
+      "id": "sharing",
+      "name": "Sharing",
+      "family": "feature",
+      "description": "Share the finished delivery through a client link.",
+      "problem": "Sending finished work through the channels clients already use.",
+      "route": "/create?type=showcase",
+      "evidence": [
+        "client/src/pages/CreateDeliveryV3.jsx"
+      ],
+      "availability": "source_present",
+      "approvalRequired": true,
+      "digest": "aeece7b46c0ece1e2e21122e8f6d85479bf7b2321aa4804c14f47405855037ce"
+    },
+    {
+      "id": "downloads",
+      "name": "Gallery and downloads",
+      "family": "feature",
+      "description": "Let clients browse and download the finished photographs provided.",
+      "problem": "Keeping the complete gallery available after the presentation.",
+      "route": "/demo",
+      "evidence": [
+        "client/src/components/PublicDesign.jsx"
+      ],
+      "availability": "source_present",
+      "approvalRequired": true,
+      "digest": "6b03928578298c937656ef33f402f72c2ccc812599a02ab86a7b520adb3246b8"
+    },
+    {
+      "id": "privacy",
+      "name": "Client access controls",
+      "family": "feature",
+      "description": "Choose client access and download settings before publishing.",
+      "problem": "Controlling access to a client delivery.",
+      "route": "/create?type=showcase",
+      "evidence": [
+        "client/src/pages/CreateDeliveryV3.jsx"
+      ],
+      "availability": "source_present",
+      "approvalRequired": true,
+      "digest": "e3256d06bfdf4f343fca359acd2aa3b3265e3ffd0dc59699e6f2a0bd528ab3fd"
+    },
+    {
+      "id": "branding",
+      "name": "Studio branding",
+      "family": "feature",
+      "description": "Present eligible deliveries with the studio brand.",
+      "problem": "Keeping the photographer’s identity visible during handover.",
+      "route": "/settings",
+      "evidence": [
+        "client/src/components/PublicDesign.jsx"
+      ],
+      "availability": "source_present",
+      "approvalRequired": true,
+      "digest": "8eb8e23c93a378715ca427f24bbf31809ec0ea49e27f8395e7254d758abf953a"
+    }
+  ]
+}

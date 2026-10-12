@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "pricingAllowed": false,
+  "allowancesAllowed": false,
+  "ctas": [
+    {
+      "id": "start-free",
+      "text": "Get started for free. Link in bio.",
+      "appliesTo": "free-account",
+      "notAClaimThatAllFeaturesAreFree": true
+    },
+    {
+      "id": "explore",
+      "text": "Explore Veylo. Link in bio.",
+      "appliesTo": "all"
+    }
+  ]
+}

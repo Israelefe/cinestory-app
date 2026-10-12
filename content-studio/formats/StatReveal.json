@@ -1,0 +1,41 @@
+{
+  "name": "StatReveal",
+  "component": "src/render/Composition.jsx#Scene",
+  "purpose": "A statement backed by an approved fact ID.",
+  "layout": "1080×1920; foreground safe rectangle x80–960, y250–1500; templates inset further for animated words.",
+  "typography": "Outfit, from extracted design-language.json; fit measured text before drawing.",
+  "motion": {
+    "easing": [
+      0.22,
+      1,
+      0.36,
+      1
+    ],
+    "enterFrames": 14,
+    "staggerFrames": 2,
+    "transitionFrames": 8
+  },
+  "rules": "Disabled for unsourced numerical claims. Never introduce prices or allowances.",
+  "propsSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "factId": {
+        "type": "string"
+      },
+      "text": {
+        "type": "string",
+        "maxLength": 160
+      }
+    },
+    "required": [
+      "factId",
+      "text"
+    ],
+    "additionalProperties": false
+  },
+  "example": {
+    "factId": "feature:photoswap",
+    "text": "One photograph at a time."
+  }
+}

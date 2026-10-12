@@ -1,0 +1,14 @@
+{
+  "items": [
+    {
+      "id": "product-scope",
+      "detail": "The original master and AGENTS describe a narrower final-photo-delivery product. Current source and the owner’s approved studio plan include additional delivery and collaboration capabilities.",
+      "resolution": "Use source-backed catalog entries only after owner review; do not rewrite the original product documents."
+    },
+    {
+      "id": "pricing",
+      "detail": "Historical product documents disagree on pricing and allowances.",
+      "resolution": "Prices and allowances are excluded from promotional generation."
+    }
+  ]
+}

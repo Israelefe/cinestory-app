@@ -1,0 +1,52 @@
+{
+  "name": "BeforeAfterSplit",
+  "component": "src/render/Composition.jsx#Scene",
+  "purpose": "Compare the old handover with a real Veylo viewing.",
+  "layout": "1080×1920; foreground safe rectangle x80–960, y250–1500; templates inset further for animated words.",
+  "typography": "Outfit, from extracted design-language.json; fit measured text before drawing.",
+  "motion": {
+    "easing": [
+      0.22,
+      1,
+      0.36,
+      1
+    ],
+    "enterFrames": 14,
+    "staggerFrames": 2,
+    "transitionFrames": 8
+  },
+  "rules": "Use a real capture and cleared reference. No invented competitor interfaces or income promises.",
+  "propsSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "slotId": {
+        "type": "string"
+      },
+      "clipId": {
+        "type": "string"
+      },
+      "before": {
+        "type": "string",
+        "maxLength": 90
+      },
+      "after": {
+        "type": "string",
+        "maxLength": 90
+      }
+    },
+    "required": [
+      "slotId",
+      "clipId",
+      "before",
+      "after"
+    ],
+    "additionalProperties": false
+  },
+  "example": {
+    "slotId": "context-image",
+    "clipId": "photoswap-interaction",
+    "before": "The ordinary link",
+    "after": "A considered viewing"
+  }
+}

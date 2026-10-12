@@ -1,0 +1,313 @@
+{
+  "version": 1,
+  "facts": [
+    {
+      "id": "feature:showcase:photo-story",
+      "statement": "Veylo turns the finished shoot into a cinematic presentation with image order, captions, motion, transitions, pacing, music, and an optional narration track. The complete downloadable gallery waits at the end.",
+      "allowedWording": "Veylo turns the finished shoot into a cinematic presentation with image order, captions, motion, transitions, pacing, music, and an optional narration track. The complete downloadable gallery waits at the end.",
+      "source": [
+        "client/src/constants/deliveryFormats.js",
+        "client/src/pages/FormatDemo.jsx"
+      ],
+      "sourceDigest": "59d644b5eb4e8c58559b11bd468e7164b761c789ec6b86f3fbb9152f0cf097a7",
+      "allowedSurfaces": [
+        "voiceover",
+        "caption",
+        "on-screen"
+      ],
+      "approvalRequired": true
+    },
+    {
+      "id": "feature:showcase:editorial",
+      "statement": "Veylo studies the photographs and builds a bespoke editorial page from them. Image scale, spacing, typography, colour, and scroll rhythm respond to the work instead of forcing it into a fixed template.",
+      "allowedWording": "Veylo studies the photographs and builds a bespoke editorial page from them. Image scale, spacing, typography, colour, and scroll rhythm respond to the work instead of forcing it into a fixed template.",
+      "source": [
+        "client/src/constants/deliveryFormats.js",
+        "client/src/pages/FormatDemo.jsx"
+      ],
+      "sourceDigest": "7b9215c61d9d7360de83d04d481402f17e72f69554f305d1968f58ecf6006708",
+      "allowedSurfaces": [
+        "voiceover",
+        "caption",
+        "on-screen"
+      ],
+      "approvalRequired": true
+    },
+    {
+      "id": "feature:showcase:photo-reveal",
+      "statement": "Each tap reveals one finished photograph. Choose the order, add a short caption, and let the client take their time before opening the complete gallery.",
+      "allowedWording": "Each tap reveals one finished photograph. Choose the order, add a short caption, and let the client take their time before opening the complete gallery.",
+      "source": [
+        "client/src/constants/deliveryFormats.js",
+        "client/src/pages/FormatDemo.jsx"
+      ],
+      "sourceDigest": "86e7d16773d9ac9a3c7f769882e93a36fcdf047472e6497fb3be2c0cbb828aa0",
+      "allowedSurfaces": [
+        "voiceover",
+        "caption",
+        "on-screen"
+      ],
+      "approvalRequired": true
+    },
+    {
+      "id": "feature:showcase:canvas",
+      "statement": "Framed photographs follow a broken line down the board. Keep a photo on its own, group related images at a checkpoint, and let the client scroll, jump to a group, or open a photograph.",
+      "allowedWording": "Framed photographs follow a broken line down the board. Keep a photo on its own, group related images at a checkpoint, and let the client scroll, jump to a group, or open a photograph.",
+      "source": [
+        "client/src/constants/deliveryFormats.js",
+        "client/src/pages/FormatDemo.jsx"
+      ],
+      "sourceDigest": "22444ed4f78874e7a91d030647d0242b4715a069a47407530e745cbafcf1831c",
+      "allowedSurfaces": [
+        "voiceover",
+        "caption",
+        "on-screen"
+      ],
+      "approvalRequired": true
+    },
+    {
+      "id": "feature:showcase:chapters",
+      "statement": "Veylo finds the natural parts of the shoot and gives each one a visual chapter cover. The client chooses where to begin, explores that part, and returns to the complete collection.",
+      "allowedWording": "Veylo finds the natural parts of the shoot and gives each one a visual chapter cover. The client chooses where to begin, explores that part, and returns to the complete collection.",
+      "source": [
+        "client/src/constants/deliveryFormats.js",
+        "client/src/pages/FormatDemo.jsx"
+      ],
+      "sourceDigest": "732a7e8f2d4683319cd02474411d839ef6c1e2055fd1156af4662d4585cb3fc8",
+      "allowedSurfaces": [
+        "voiceover",
+        "caption",
+        "on-screen"
+      ],
+      "approvalRequired": true
+    },
+    {
+      "id": "feature:showcase:album",
+      "statement": "Veylo arranges the photographs as a considered digital album, deciding the cover, page order, pairings, full-page portraits, quiet space, typography, and closing spread. The complete downloadable gallery follows the final page.",
+      "allowedWording": "Veylo arranges the photographs as a considered digital album, deciding the cover, page order, pairings, full-page portraits, quiet space, typography, and closing spread. The complete downloadable gallery follows the final page.",
+      "source": [
+        "client/src/constants/deliveryFormats.js",
+        "client/src/pages/FormatDemo.jsx"
+      ],
+      "sourceDigest": "04a33a15d4e38576fe0e0bf9d33cacaf619ba7434369069ed892dbfddea871ce",
+      "allowedSurfaces": [
+        "voiceover",
+        "caption",
+        "on-screen"
+      ],
+      "approvalRequired": true
+    },
+    {
+      "id": "feature:showcase:event-coverage",
+      "statement": "Built for conferences, church services, owambe celebrations, and gatherings where no single person is the subject. The delivery opens with highlights, then lets guests browse every scene and the complete gallery.",
+      "allowedWording": "Built for conferences, church services, owambe celebrations, and gatherings where no single person is the subject. The delivery opens with highlights, then lets guests browse every scene and the complete gallery.",
+      "source": [
+        "client/src/constants/deliveryFormats.js",
+        "client/src/pages/FormatDemo.jsx"
+      ],
+      "sourceDigest": "6bb08a4d97f481dc57a673ba04290f7dd68113ef13d9e5b1876a7b8ece1322b1",
+      "allowedSurfaces": [
+        "voiceover",
+        "caption",
+        "on-screen"
+      ],
+      "approvalRequired": true
+    },
+    {
+      "id": "feature:showcase:campaign",
+      "statement": "The client sees the campaign as a considered presentation, then moves into clearly named asset sets, variants, download sizes, and photographer-supplied usage terms.",
+      "allowedWording": "The client sees the campaign as a considered presentation, then moves into clearly named asset sets, variants, download sizes, and photographer-supplied usage terms.",
+      "source": [
+        "client/src/constants/deliveryFormats.js",
+        "client/src/pages/FormatDemo.jsx"
+      ],
+      "sourceDigest": "4b3a89297e34f515be20ae3d6d9e550b383c2ffbbc40504b6365c2eee5d85184",
+      "allowedSurfaces": [
+        "voiceover",
+        "caption",
+        "on-screen"
+      ],
+      "approvalRequired": true
+    },
+    {
+      "id": "feature:dashboard",
+      "statement": "Keep completed deliveries together in the photographer dashboard.",
+      "allowedWording": "Keep completed deliveries together in the photographer dashboard.",
+      "source": [
+        "client/src/pages/Dashboard.jsx"
+      ],
+      "sourceDigest": "23701dfc8fd33b5735d9cff14025c853f31e6974bacb4ce8f96d12dc87903857",
+      "allowedSurfaces": [
+        "voiceover",
+        "caption",
+        "on-screen"
+      ],
+      "approvalRequired": true
+    },
+    {
+      "id": "feature:gridboard",
+      "statement": "Help clients explore the complete collection.",
+      "allowedWording": "Help clients explore the complete collection.",
+      "source": [
+        "client/src/pages/GridboardDelivery.jsx"
+      ],
+      "sourceDigest": "fcb66773dc3d271bf74fb51c142ea0fd39721adc8d8e158ba6b5767fa641b0c3",
+      "allowedSurfaces": [
+        "voiceover",
+        "caption",
+        "on-screen"
+      ],
+      "approvalRequired": true
+    },
+    {
+      "id": "feature:photoswap",
+      "statement": "Present finished photographs one swipe at a time.",
+      "allowedWording": "Present finished photographs one swipe at a time.",
+      "source": [
+        "client/src/pages/PhotoSwapDelivery.jsx"
+      ],
+      "sourceDigest": "06f6f61531a975e08fd8311659c18d30b5faa667d264854b998c2ae886ac2d37",
+      "allowedSurfaces": [
+        "voiceover",
+        "caption",
+        "on-screen"
+      ],
+      "approvalRequired": true
+    },
+    {
+      "id": "feature:video",
+      "statement": "Deliver finished films through a dedicated client player.",
+      "allowedWording": "Deliver finished films through a dedicated client player.",
+      "source": [
+        "client/src/pages/VideoDeliveryPage.jsx"
+      ],
+      "sourceDigest": "89816042d0b8b0d64e1faa924c2cb0c6340fa222f36e1346e8f181efc7350370",
+      "allowedSurfaces": [
+        "voiceover",
+        "caption",
+        "on-screen"
+      ],
+      "approvalRequired": true
+    },
+    {
+      "id": "feature:portfolio",
+      "statement": "Choose completed work to present in a public portfolio.",
+      "allowedWording": "Choose completed work to present in a public portfolio.",
+      "source": [
+        "client/src/pages/PortfolioPage.jsx"
+      ],
+      "sourceDigest": "1e42d647fbe545519883dc0bff0d1ad6483add96673dddffeb11d7bde800ab76",
+      "allowedSurfaces": [
+        "voiceover",
+        "caption",
+        "on-screen"
+      ],
+      "approvalRequired": true
+    },
+    {
+      "id": "feature:library",
+      "statement": "Organise photographs by shoot.",
+      "allowedWording": "Organise photographs by shoot.",
+      "source": [
+        "client/src/pages/ImageLibrary.jsx"
+      ],
+      "sourceDigest": "892ecc329550724c7295476e55b567d2bdcb397b062b601d17db3aff3e298303",
+      "allowedSurfaces": [
+        "voiceover",
+        "caption",
+        "on-screen"
+      ],
+      "approvalRequired": true
+    },
+    {
+      "id": "feature:preselection",
+      "statement": "Prepare a client selection and review their submitted photographs.",
+      "allowedWording": "Prepare a client selection and review their submitted photographs.",
+      "source": [
+        "client/src/pages/PhotoPreselection.jsx"
+      ],
+      "sourceDigest": "1c601ac6b8a4ce88198e061bb2e8c904e845e2286314caee3a404fe392a43f25",
+      "allowedSurfaces": [
+        "voiceover",
+        "caption",
+        "on-screen"
+      ],
+      "approvalRequired": true
+    },
+    {
+      "id": "feature:editor-links",
+      "statement": "Send originals to an editor and review returned edits.",
+      "allowedWording": "Send originals to an editor and review returned edits.",
+      "source": [
+        "client/src/pages/EditorLinks.jsx"
+      ],
+      "sourceDigest": "011a20c1bb6702f4ee7563260aa7fa62c9ea8aeae8d64e04740db6a5f8a8dbfc",
+      "allowedSurfaces": [
+        "voiceover",
+        "caption",
+        "on-screen"
+      ],
+      "approvalRequired": true
+    },
+    {
+      "id": "feature:sharing",
+      "statement": "Share the finished delivery through a client link.",
+      "allowedWording": "Share the finished delivery through a client link.",
+      "source": [
+        "client/src/pages/CreateDeliveryV3.jsx"
+      ],
+      "sourceDigest": "aeece7b46c0ece1e2e21122e8f6d85479bf7b2321aa4804c14f47405855037ce",
+      "allowedSurfaces": [
+        "voiceover",
+        "caption",
+        "on-screen"
+      ],
+      "approvalRequired": true
+    },
+    {
+      "id": "feature:downloads",
+      "statement": "Let clients browse and download the finished photographs provided.",
+      "allowedWording": "Let clients browse and download the finished photographs provided.",
+      "source": [
+        "client/src/components/PublicDesign.jsx"
+      ],
+      "sourceDigest": "6b03928578298c937656ef33f402f72c2ccc812599a02ab86a7b520adb3246b8",
+      "allowedSurfaces": [
+        "voiceover",
+        "caption",
+        "on-screen"
+      ],
+      "approvalRequired": true
+    },
+    {
+      "id": "feature:privacy",
+      "statement": "Choose client access and download settings before publishing.",
+      "allowedWording": "Choose client access and download settings before publishing.",
+      "source": [
+        "client/src/pages/CreateDeliveryV3.jsx"
+      ],
+      "sourceDigest": "e3256d06bfdf4f343fca359acd2aa3b3265e3ffd0dc59699e6f2a0bd528ab3fd",
+      "allowedSurfaces": [
+        "voiceover",
+        "caption",
+        "on-screen"
+      ],
+      "approvalRequired": true
+    },
+    {
+      "id": "feature:branding",
+      "statement": "Present eligible deliveries with the studio brand.",
+      "allowedWording": "Present eligible deliveries with the studio brand.",
+      "source": [
+        "client/src/components/PublicDesign.jsx"
+      ],
+      "sourceDigest": "8eb8e23c93a378715ca427f24bbf31809ec0ea49e27f8395e7254d758abf953a",
+      "allowedSurfaces": [
+        "voiceover",
+        "caption",
+        "on-screen"
+      ],
+      "approvalRequired": true
+    }
+  ]
+}

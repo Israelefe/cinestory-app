@@ -1,0 +1,55 @@
+{
+  "name": "PhoneDemo",
+  "component": "src/render/Composition.jsx#Scene",
+  "purpose": "A real Veylo capture inside a device frame.",
+  "layout": "1080×1920; foreground safe rectangle x80–960, y250–1500; templates inset further for animated words.",
+  "typography": "Outfit, from extracted design-language.json; fit measured text before drawing.",
+  "motion": {
+    "easing": [
+      0.22,
+      1,
+      0.36,
+      1
+    ],
+    "enterFrames": 14,
+    "staggerFrames": 2,
+    "transitionFrames": 8
+  },
+  "rules": "Use current manifest IDs and DOM targets; keep the product action large enough to follow.",
+  "propsSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "clipId": {
+        "type": "string"
+      },
+      "zoomTargets": {
+        "maxItems": 5,
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/__schema0"
+        }
+      },
+      "caption": {
+        "type": "string",
+        "maxLength": 160
+      }
+    },
+    "required": [
+      "clipId",
+      "zoomTargets",
+      "caption"
+    ],
+    "additionalProperties": false,
+    "definitions": {
+      "__schema0": {
+        "type": "string"
+      }
+    }
+  },
+  "example": {
+    "clipId": "photoswap-interaction",
+    "zoomTargets": [],
+    "caption": "One photograph at a time."
+  }
+}
