@@ -120,17 +120,23 @@ for (const width of [320, 834, 1440]) {
     await page.getByRole('button', { name: 'Continue to formats' }).click();
     await expect(page.getByRole('heading', { name: 'Choose how they first see the work.' })).toBeVisible();
     expect(recommendationInputs.at(-1)).toMatchObject({ shootType: 'Birthday', purpose: suppliedPurpose });
-    await expect(page.locator('.v3-featured-format')).toContainText('Photo Story');
-    await expect(page.locator('.v3-featured-format')).toBeVisible();
-    await expect(page.locator('.v3-format-card')).toHaveCount(7);
-    await page.locator('.v3-format-card').first().getByRole('button').click();
-    await expect(page.locator('.v3-format-card').first().getByRole('button')).toHaveAttribute('aria-pressed', 'true');
-    await page.locator('.v3-featured-format').getByRole('button', { name: 'Choose this format' }).click();
-    await expect(page.locator('.v3-featured-format').getByRole('button', { name: 'Selected' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('radio')).toHaveCount(8);
+    await expect(page.getByRole('radio', { name: 'Photo Story', exact: true })).toBeChecked();
+    await expect(page.getByText('A birthday shoot works well as a short personal sequence.')).toBeVisible();
+    await page.getByRole('radio', { name: 'Editorial Page', exact: true }).check();
+    await expect(page.getByRole('radio', { name: 'Editorial Page', exact: true })).toBeChecked();
+    await expect(page.locator('.v-format-picker-preview-caption strong')).toHaveText('Editorial Page');
+    await page.getByRole('radio', { name: 'Photo Story', exact: true }).check();
+    await expect(page.locator('.v-format-picker-preview-caption strong')).toHaveText('Photo Story');
+    await expect(page.getByRole('link', { name: 'Try the demo' })).toHaveAttribute('href', '/demo');
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
-    const columns = await page.locator('.v3-format-grid').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length);
-    expect(columns).toBe(width <= 540 ? 1 : width <= 1024 ? 2 : 3);
-    if (width === 834) await page.screenshot({ path: '../.visual-review/delivery-v3/format-834.png', fullPage: true });
+    if (width === 834) await page.screenshot({ path: '.visual-review/creation-redesign/format-834.png', fullPage: true });
+    await page.getByRole('radio', { name: 'Canvas', exact: true }).check();
+    await expect(page.getByRole('link', { name: 'Try the demo' })).toHaveAttribute('href', '/demo/canvas');
+    await page.getByRole('button', { name: 'Continue to photos', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Add the finished photographs.' })).toBeVisible();
+    expect(draft.format).toBe('canvas');
+
   });
 }
 

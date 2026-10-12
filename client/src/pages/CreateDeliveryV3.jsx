@@ -22,7 +22,7 @@ import { NARRATION_VOICES, DEFAULT_NARRATION_VOICE_ID } from '../constants/narra
 import { DELIVERY_FORMATS } from '../constants/deliveryFormats.js';
 import { photoCaptionLimit, hasDetailedWriting } from '../utils/deliveryWritingLimits.js';
 import { DELIVERY_FONTS as FONTS } from '../utils/deliveryTypography.js';
-import DeliveryFormatVisual from '../components/DeliveryFormatVisual.jsx';
+import DeliveryFormatPicker from '../components/delivery/DeliveryFormatPicker.jsx';
 import NarrationVoicePicker from '../components/delivery/NarrationVoicePicker.jsx';
 import ShowcasePhotoPicker from '../components/delivery/ShowcasePhotoPicker.jsx';
 import { ClientPreviewPhoneFrame } from '../components/delivery/PhonePresentation.jsx';
@@ -100,17 +100,6 @@ function StepButton({ children, onClick, disabled, secondary = false, type = 'bu
 }
 function Head({ eyebrow, title, children }) {
   return <header className="v3-head"><span>{eyebrow}</span><h1>{title}</h1>{children && <p>{children}</p>}</header>;
-}
-
-function FormatCard({ item, selected, onSelect }) {
-  return <article className={'v3-format-card' + (selected ? ' is-selected' : '')}>
-    <button type="button" className="v3-format-select" onClick={onSelect} aria-pressed={selected}>
-      <div className="v3-format-art" aria-hidden="true" inert=""><DeliveryFormatVisual format={item} compact paused /></div>
-      <span>{item.name}</span><small>{item.line}</small><b>{BOUNDS[item.value][0]}–{BOUNDS[item.value][1]} showcase photos</b>
-      {selected && <Check size={19} aria-hidden="true" />}
-    </button>
-    <Link to={'/demo/' + (item.value === 'photo-reveal' ? 'reveal' : item.value)} target="_blank" rel="noopener noreferrer">Preview demo <ExternalLink size={14} /></Link>
-  </article>;
 }
 
 export default function CreateDeliveryV3({ user, initialDelivery }) {
@@ -227,7 +216,6 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     };
   }, [draft, previewBranding.type, previewBranding.name, previewBranding.logoUrl, selected, headlines, captions, title, openingLine, closingLine, format, palette, typography, openingAssetId, closingAssetId, publication, frameSettings, sections, reveal, canvas]);
   const bounds = BOUNDS[format] || [5, 10];
-  const recommendedFormat = DELIVERY_FORMATS.find(item => item.value === recommendation?.format);
   const assets = draft?.assets || [];
   const assistantUnsaved = title !== (draft?.creativeDirection?.title || '')
     || (stage === 'details' && (clientName !== (draft?.clientName || '') || purpose !== (draft?.brief || '') || (shootType === 'Other' ? customShoot : shootType) !== (draft?.shootType || '')))
@@ -669,7 +657,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
     }
   }
 
-  return <div className={'v3-create' + (stage === 'design' ? ' is-designing' : '')}>
+  return <div className={'v3-create' + (stage === 'design' ? ' is-designing' : stage === 'format' ? ' is-choosing-format' : '')}>
     <div className="v3-shell">
       {!published && <section className="v3-progress" aria-label="Creation progress">
         <div className="v3-progress-copy">
@@ -704,22 +692,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
           </div>
           <div className="v3-actions"><StepButton onClick={detailsNext} disabled={!!busy || billingLoading || !draft && quotaReached}>{busy ? <LoaderCircle className="v3-spin" size={17} /> : <ArrowRight size={17} />} Continue to formats</StepButton></div>
         </>}
-        {stage === 'format' && <>
-          <Head eyebrow="02 / THE FORMAT" title="Choose how they first see the work.">Pick the format that fits this shoot. The recommendation is a starting point; you can choose any of the eight.</Head>
-          {recommendedFormat && <section className="v3-featured-format" aria-label="Recommended format">
-            <div className="v3-featured-art" aria-hidden="true" inert=""><DeliveryFormatVisual format={recommendedFormat} compact paused /></div>
-            <div className="v3-featured-copy">
-              <span>Recommended for this delivery</span>
-              <h2>{recommendedFormat.name}</h2>
-              <p>{recommendation.reason || recommendedFormat.line}</p>
-              <small>{BOUNDS[recommendedFormat.value][0]}–{BOUNDS[recommendedFormat.value][1]} showcase photos</small>
-              <div className="v3-featured-actions"><button type="button" onClick={() => setFormat(recommendedFormat.value)} aria-pressed={format === recommendedFormat.value}>{format === recommendedFormat.value ? <><Check size={16} /> Selected</> : 'Choose this format'}</button><Link to={'/demo/' + (recommendedFormat.value === 'photo-reveal' ? 'reveal' : recommendedFormat.value)} target="_blank" rel="noopener noreferrer">Preview demo <ExternalLink size={15} /></Link></div>
-            </div>
-          </section>}
-          {recommendedFormat && <div className="v3-format-section"><h2>Other formats</h2><p>Choose a different way to introduce the gallery.</p></div>}
-          <div className="v3-format-grid">{DELIVERY_FORMATS.filter(item => item.value !== recommendedFormat?.value).map(item => <FormatCard key={item.value} item={item} selected={format === item.value} onSelect={() => setFormat(item.value)} />)}</div>
-          <div className="v3-actions"><StepButton secondary onClick={() => setStage('details')}><ArrowLeft size={17} /> Back</StepButton><StepButton onClick={chooseFormat} disabled={!!busy}>{busy ? <LoaderCircle className="v3-spin" size={17} /> : <ArrowRight size={17} />} Continue to photos</StepButton></div>
-        </>}
+        {stage === 'format' && <DeliveryFormatPicker formats={DELIVERY_FORMATS} format={format} recommendation={recommendation} onSelect={setFormat} onContinue={chooseFormat} onBack={() => setStage('details')} busy={busy} bounds={BOUNDS} />}
         {stage === 'upload' && <>
           <Head eyebrow="03 / THE PHOTOGRAPHS" title="Add the finished photographs.">The complete upload goes into the client's gallery. We will select {bounds[0]}–{bounds[1]} photos for the {selectedFormat?.name || 'showcase'}.</Head>
           <div className="v3-upload-heading">

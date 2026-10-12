@@ -6,7 +6,7 @@ const draftId = '507f1f77bcf86cd799439011';
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
-    localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 3, necessary: true, serviceAnalytics: true }));
+    localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 4, necessary: true, serviceAnalytics: true }));
   });
 });
 
@@ -44,15 +44,16 @@ test('new delivery offers Showcase and GridBoard, then opens GridBoard details a
     await expect(page.getByRole('heading', { name: 'How should this gallery open?' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Showcase Delivery' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'GridBoard Delivery' })).toBeVisible();
-    await expect(page.locator('.v-choice-format')).toHaveCount(8);
-    const artDoesNotOverlapLabel = await page.locator('.is-pinboard .v-create-choice-visual').evaluate(visual => {
-      const label = visual.querySelector('.v-create-choice-visual-tag').getBoundingClientRect();
-      const board = visual.querySelector('.v-choice-masonry').getBoundingClientRect();
-      return label.bottom < board.top;
-    });
-    expect(artDoesNotOverlapLabel).toBe(true);
+    await expect(page.getByRole('radio')).toHaveCount(3);
+    await expect(page.getByRole('radio', { name: 'Showcase Delivery', exact: true })).toBeChecked();
+    await page.getByRole('radio', { name: 'Photo Swap Delivery', exact: true }).check();
+    await expect(page.getByRole('link', { name: 'Continue with Photo Swap' })).toHaveAttribute('href', '/create?type=photoswap');
+    await expect(page.getByRole('link', { name: 'Try the client demo' })).toHaveAttribute('href', '/demo/photoswap');
+    await page.getByRole('radio', { name: 'GridBoard Delivery', exact: true }).check();
+    await expect(page.getByRole('radio', { name: 'GridBoard Delivery', exact: true })).toBeChecked();
+    await expect(page.getByRole('link', { name: 'Try the client demo' })).toHaveAttribute('href', '/demo/gridboard');
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
-    await page.getByRole('link', { name: 'Create a GridBoard' }).click();
+    await page.getByRole('link', { name: 'Continue with GridBoard' }).click();
     await expect(page.getByRole('heading', { name: 'Start with the gallery.' })).toBeVisible();
     await page.getByLabel('Client name').fill('Lora Ade');
     await page.getByLabel('Gallery title').fill("Lora's birthday");
