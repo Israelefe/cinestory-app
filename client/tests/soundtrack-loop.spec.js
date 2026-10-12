@@ -59,3 +59,19 @@ test('every music format uses the shared loop player in its demo', async ({ page
     await expect.poll(() => page.locator('audio').evaluateAll(players => players.some(player => Object.hasOwn(player, 'volume') && !player.loop))).toBe(true);
   }
 });
+
+test('Photo Swap attaches its loop after readiness, overlaps the restart and respects mute', async ({ page }) => {
+  const assets = Array.from({ length: 6 }, (_, index) => ({ assetId: `photo-${index}`, sortOrder: index, url: '/veylo/web/demo-lora-1-1440.webp', thumbnailUrl: '/veylo/web/demo-lora-1-480.webp', width: 960, height: 1280 }));
+  const delivery = { publicId: 'music-loop-test', kind: 'photoswap', format: 'photoswap', schemaVersion: 3, status: 'published', title: 'Birthday portraits', clientName: 'Ada', shootType: 'Birthday', branding: { name: 'Amara Photography' }, assets, curatedAssetIds: assets.map(asset => asset.assetId), access: {}, soundtrack: { url: '/test-loop.wav' } };
+  await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 3, necessary: true, serviceAnalytics: true })));
+  await page.route('**/api/v1/**', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data: delivery }) }));
+  await page.route('**/test-loop.wav', route => route.fulfill({ contentType: 'audio/wav', body: toneWav() }));
+  await page.goto('/d/music-loop-test?phoneView=1');
+  await page.getByRole('button', { name: 'Swipe photographs', exact: true }).click();
+  const player = page.locator('.ps-viewer audio');
+  await expect.poll(() => player.evaluate(player => Object.hasOwn(player, 'volume') && !player.loop && !player.paused)).toBe(true);
+  await player.evaluate(player => { player.currentTime = 3.15; });
+  await expect.poll(() => player.evaluate(player => player.currentTime < 2 && !player.paused), { timeout: 6000 }).toBe(true);
+  await page.getByRole('button', { name: 'Mute soundtrack', exact: true }).click();
+  await expect(player).toHaveJSProperty('muted', true);
+});

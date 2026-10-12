@@ -49,7 +49,7 @@ test('client and server writing limits stay identical across separate deployment
   for (const format of DETAILED_WRITING_FORMATS) { assert.equal(photoCaptionLimit(format), 320); assert.equal(FORMAT_WRITING_PROFILES[format].caption, 320); }
   for (const [format, limit] of [['photo-story', 150], ['photo-reveal', 180], ['canvas', 180], ['album', 180], ['photoswap', 180]]) assert.equal(photoCaptionLimit(format), limit);
   for (const [format, limit] of [['chapters', 320], ['editorial', 700], ['event-coverage', 360], ['campaign', 320], ['canvas', 120]]) assert.equal(writingBlockLimit({ kind: 'section-body' }, format), limit);
-  assert.equal(requiresDirectAddress({ format: 'chapters', clientName: 'Ada', shootType: 'Wedding', brief: 'Wedding portraits and family welcome.' }), false);
+  assert.equal(requiresDirectAddress({ format: 'chapters', clientName: 'Ada', shootType: 'Wedding', brief: 'Wedding portraits and family welcome.' }), true);
   assert.equal(requiresDirectAddress({ format: 'photo-story', clientName: 'Ada', shootType: 'Birthday', brief: 'Birthday portraits.' }), true);
 });
 
@@ -157,10 +157,11 @@ test('old in-flight writing is regenerated for Chapters instead of restoring its
   const result = await directV3(delivery, rows.slice(0, 8), { resume: { selected, writing: { narrative: {}, captions: [{ assetId: ids[0], headline: 'Old heading', caption: 'Old short caption.' }] }, sections: [{ id: 'old', title: 'Old section', assetIds: selected }] }, checkpoint: async value => { checkpoints.push(value); } });
   assert.ok(calls[0].messages[0].content.includes('"title"')); assert.equal(result.direction.frames[0].caption, captions[0]); assert.equal(checkpoints[0].writingVersion, DELIVERY_WRITING_VERSION);
 });
-test('Chapters accepts natural direct and third-person captions but rejects a changed subject name', () => {
+test('Chapters accepts purpose-led personal captions and rejects photo narration or a changed subject name', () => {
   const delivery = { format: 'chapters', clientName: 'Ada and Emeka', shootType: 'Traditional Wedding', brief: 'Ada and Emeka’s wedding portraits and family welcome.' };
   const insight = [{ assetId: ids[0], summary: 'Ada and Emeka standing together for a portrait.' }];
-  for (const caption of ['You stand together for a portrait from your wedding collection.', 'Ada and Emeka stand together for a wedding portrait.']) assert.deepEqual(v3FrameWritingIssues({ assetId: ids[0], headline: 'Wedding portraits', caption }, 'chapters', delivery, insight), []);
+  for (const caption of ['Keep these wedding portraits as a record of your occasion.', 'Ada and Emeka, these wedding photographs are yours to keep.']) assert.deepEqual(v3FrameWritingIssues({ assetId: ids[0], headline: 'Wedding portraits', caption }, 'chapters', delivery, insight), []);
+  assert.ok(v3FrameWritingIssues({ assetId: ids[0], headline: 'Wedding portraits', caption: 'You stand together for a wedding portrait.' }, 'chapters', delivery, insight).some(issue => /purpose/.test(issue)));
   assert.ok(v3FrameWritingIssues({ assetId: ids[0], headline: 'Wedding portraits', caption: 'Ada and Ememba are standing together for a wedding portrait.' }, 'chapters', delivery, insight).some(issue => issue.includes('names exactly')));
 });
 test('section review discards unrequested model edits while returning only the validated paragraph', async t => {

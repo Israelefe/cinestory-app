@@ -12,6 +12,8 @@ import DeliveryBrandMark from '../components/delivery/DeliveryBrandMark.jsx';
 import { gridboardAccentInk, resolvedGridboardPalette } from '../utils/gridboardPalette.js';
 import { getDeliveryCapabilities } from '../constants/deliveryCapabilities.js';
 import { imageSrcSetCandidates, mapImageSrcSet } from '../utils/imageSrcSet.js';
+import { downloadPhotograph, downloadGalleryArchive } from '../utils/photoDownloads.js';
+import { prepareSoundtrackPlayback, useSmoothSoundtrackLoop } from '../utils/smoothSoundtrackLoop.js';
 import '../styles/format-demos.css';
 import './DeliveryViewer.css';
 import './DeliveryViewerRole.css';
@@ -71,32 +73,6 @@ function downloadFilename(asset, index, clientName = 'photographs') {
   if (original && original.includes('.')) return original.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 180);
   const base = String(clientName || 'photographs').replace(/[^a-z0-9_-]/gi, '_').slice(0, 60) || 'photographs';
   return `${base}-${String(index + 1).padStart(2, '0')}.jpg`;
-}
-
-function startBrowserDownload(url, filename) {
-  if (!url) throw new Error('The download link was empty.');
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  if (!String(url).startsWith('blob:')) {
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-  }
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-}
-
-async function prepareShareFile(item) {
-  const response = await fetch(item.url, { credentials: 'omit', cache: 'force-cache' });
-  if (!response.ok) throw new Error(`Photograph returned ${response.status}.`);
-  const blob = await response.blob();
-  if (!blob.size) throw new Error('The photograph was empty.');
-  return new File([blob], item.filename, { type: blob.type || 'image/jpeg' });
-}
-
-function canShareFiles(files) {
-  return typeof File !== 'undefined' && typeof navigator !== 'undefined' && typeof navigator.share === 'function' && typeof navigator.canShare === 'function' && navigator.canShare({ files });
 }
 
 async function preloadBlob(url, cleanup, kind, maxAttempts = 3) {
@@ -271,7 +247,6 @@ export default function DeliveryViewer() {
   const [error, setError] = useState('');
   const [liked, setLiked] = useState(new Set());
   const [busy, setBusy] = useState('');
-  const [downloadProgress, setDownloadProgress] = useState(null);
   const [downloadNotice, setDownloadNotice] = useState('');
   const [experienceReady, setExperienceReady] = useState(false);
   const [preloadedMedia, setPreloadedMedia] = useState({ assets: {}, soundtrack: '', narration: '' });
@@ -305,6 +280,8 @@ export default function DeliveryViewer() {
     };
   }, [delivery, preloadedMedia]);
 
+  useSmoothSoundtrackLoop(soundtrackRef, playbackDelivery?.soundtrack?.url);
+
   const toggleAudio = async kind => {
     const capabilities = getDeliveryCapabilities(capabilityFormat(delivery));
     if ((kind === 'soundtrack' && !capabilities.music) || (kind === 'narration' && !capabilities.narration)) return;
@@ -330,6 +307,7 @@ export default function DeliveryViewer() {
       }
       setAudioState(current => ({ ...current, loading: kind }));
       const resuming = Number(selected.currentTime || 0) > 0.2;
+      if (kind === 'soundtrack') prepareSoundtrackPlayback(selected);
       await selected.play();
       setAudioState({ playing: kind, loading: '' });
       trackEvent(resuming ? (kind === 'narration' ? 'client.narration.resumed' : 'client.music.started') : (kind === 'narration' ? 'client.narration.started' : 'client.music.started'), { format: delivery?.format }, { format: delivery?.format, status: resuming ? 'resumed' : 'started' });
@@ -520,75 +498,41 @@ export default function DeliveryViewer() {
 
   async function handleDownload(assetId, index = 0) {
     const asset = deliveryAssets.find(item => String(item.assetId) === String(assetId)) || deliveryAssets[index];
-    setBusy(assetId);
+    if (!asset || busy) return;
+    setBusy(asset.assetId);
     try {
-      // Use the server-proxy stream endpoint — triggers a real browser download on all devices
-      const fileUrl = `/api/v1/deliveries/public/${delivery.publicId}/photos/${encodeURIComponent(assetId)}/file`;
-      const filename = downloadFilename(asset, deliveryAssets.indexOf(asset) >= 0 ? deliveryAssets.indexOf(asset) : index, delivery.clientName);
-      const link = document.createElement('a');
-      link.href = fileUrl;
-      link.download = filename;
-      link.style.display = 'none';
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      trackEvent('client.photo.download.started', { downloadType: 'individual' }, { format: delivery?.format, status: 'completed', count: 1 });
-      toast.info('Download started. Check your Downloads folder.');
+      const file = await requestPhotoDownload(asset, deliveryAssets.indexOf(asset));
+      await downloadPhotograph(apiMediaUrl(file.url), file.filename);
+      await recordPhotoDownload(asset.assetId);
+      trackEvent('client.photo.download.started', { downloadType: 'individual' }, { format: delivery?.format, status: 'started', count: 1 });
+      toast.info('Your photograph is ready to save. On iPhone, use Save to Files if prompted.');
     } catch (err) {
       trackEvent('client.photo.download.failed', { downloadType: 'individual' }, { format: delivery?.format, status: 'failed', errorCode: 'DOWNLOAD_FAILED' });
-      toast.error('We could not start that download. Try again.');
+      toast.error(apiMessage(err, err.message || 'We could not start that download. Try again.'));
     } finally {
       setBusy('');
     }
   }
 
   async function handleDownloadAll() {
-    if (busy === 'all' || downloadProgress) return;
+    if (busy) return;
     const assets = deliveryAssets;
     if (!assets.length) return;
-    let failed = 0;
-    let cancelled = false;
     setBusy('all');
     trackEvent('client.download.all.started', { count: assets.length }, { format: delivery?.format, status: 'started', count: assets.length });
-    setDownloadProgress({ current: 0, total: assets.length, failed: 0, cancel: () => { cancelled = true; } });
-    setDownloadNotice('Each photograph saves to your Downloads folder. This may take a minute for larger galleries.');
+    setDownloadNotice('Preparing your full gallery as one ZIP file…');
     try {
-      for (let index = 0; index < assets.length; index += 1) {
-        if (cancelled) break;
-        const asset = assets[index];
-        try {
-          // Use the server-proxy stream endpoint — same-origin, so download attr always works
-          const fileUrl = `/api/v1/deliveries/public/${delivery.publicId}/photos/${encodeURIComponent(asset.assetId)}/file`;
-          const filename = downloadFilename(asset, index, delivery.clientName);
-          const link = document.createElement('a');
-          link.href = fileUrl;
-          link.download = filename;
-          link.style.display = 'none';
-          document.body.appendChild(link);
-          link.click();
-          link.remove();
-        } catch {
-          failed += 1;
-        }
-        setDownloadProgress({ current: index + 1, total: assets.length, failed, cancel: () => { cancelled = true; } });
-        // Delay between downloads to avoid browser throttling
-        if (index < assets.length - 1 && !cancelled) {
-          await new Promise(resolve => window.setTimeout(resolve, 800));
-        }
-      }
-      const started = (cancelled ? downloadProgress?.current : assets.length) - failed;
-      setDownloadNotice(
-        cancelled
-          ? `Stopped after ${started} download${started === 1 ? '' : 's'}.`
-          : failed
-            ? `${started} download${started === 1 ? '' : 's'} started. ${failed} could not be prepared.`
-            : 'All downloads started. Check your Downloads folder.'
-      );
-      toast.info(cancelled ? 'Download stopped.' : failed ? `${started} downloads started. Try the rest individually.` : 'All photos are downloading. Check your Downloads folder.');
-      trackEvent(failed ? 'client.download.all.partial_failed' : 'client.photo.download.started', { downloadType: 'all', count: started }, { format: delivery?.format, status: failed ? 'partial_failure' : 'completed', count: started });
+      const response = await api.get(`/v1/deliveries/public/${delivery.publicId}/download-all`, { headers: accessHeaders(delivery.publicId) });
+      const filename = `${String(delivery.clientName || 'client').replace(/[^a-z0-9_-]/gi, '-')}-photographs.zip`;
+      await downloadGalleryArchive(apiMediaUrl(response.data?.data?.url), filename);
+      setDownloadNotice('Your gallery ZIP download has started. On iPhone, look in the Files app.');
+      trackEvent('client.photo.download.started', { downloadType: 'all', count: assets.length }, { format: delivery?.format, status: 'started', count: assets.length });
+    } catch (err) {
+      setDownloadNotice('Your gallery could not download. Please try again.');
+      trackEvent('client.photo.download.failed', { downloadType: 'all' }, { format: delivery?.format, status: 'failed', errorCode: 'DOWNLOAD_FAILED' });
+      toast.error(apiMessage(err, err.message || 'We could not prepare that download. Try again.'));
     } finally {
       setBusy('');
-      setDownloadProgress(null);
     }
   }
 
@@ -658,8 +602,7 @@ export default function DeliveryViewer() {
     onDownload: handleDownload,
     onDownloadAll: handleDownloadAll,
     busy,
-    downloadNotice,
-    downloadProgress
+    downloadNotice
   };
 
   const sharedProps = {
@@ -689,7 +632,6 @@ export default function DeliveryViewer() {
           onStalled={() => handleAudioWaiting('soundtrack')}
           onPlaying={() => handleAudioPlaying('soundtrack')}
           onError={() => handleAudioError('soundtrack')}
-          onEnded={() => setAudioState({ playing: '', loading: '' })}
         />
       )}
       {playbackDelivery.narration?.url && capabilities.narrationOwner === 'viewer' && (

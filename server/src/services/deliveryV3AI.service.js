@@ -7,6 +7,8 @@ import { writingBlockLimit } from '../constants/deliveryWritingBlocks.js';
 import { SECTION_BODY_LIMITS } from '../constants/deliveryPresentationCore.js';
 import { photoCaptionLimit, hasDetailedWriting, DELIVERY_WRITING_VERSION } from '../constants/deliveryWritingLimits.js';
 import { detailedFrameIssues, repeatsWriting } from '../utils/deliveryWritingQuality.js';
+import { orderWritingFrames, unsupportedWritingAddress } from '../utils/deliveryWritingIdentity.js';
+import { showcaseBookends, variedShowcaseCandidates } from '../utils/showcaseSelection.js';
 import { anyModelProviderConfigured, DEFAULT_ALIBABA_FALLBACK_MODEL, MAX_CONCURRENT_MODEL_REQUESTS, requestModelCompletion } from './modelProvider.service.js';
 
 const MODEL = DEFAULT_ALIBABA_FALLBACK_MODEL;
@@ -158,11 +160,9 @@ export async function recommendV3Format(shootType, purpose = '') {
 
 async function analyzeBatch(batch, context) {
   const descriptors = batch.map((asset, index) => ({ index, assetId: asset.assetId }));
-  const similarityFields = context.kind === 'pinboard' ? ',"similarityTags":["seated half-length pose","dark studio backdrop"]' : '';
-  const similarityInstructions = context.kind === 'pinboard'
-    ? ' Return up to six specific similarityTags used only to find photographs that look alike, such as a close profile, seated half-length pose, full-length framing, floral arch, or dark studio backdrop. Reuse the same concise phrase across images whenever that visible detail matches. Do not use broad moment labels such as portrait, wedding, birthday, or dancing as similarity tags; those belong in momentTags. Similarity tags describe visible composition and details, not who a person is.'
-    : '';
-  const result = await request(`Return JSON {"images":[{"index":0,"summary":"visible facts only","score":1,"colors":["#hex"],"momentTags":["ceremony"],"colorGroups":[{"area":"outfit","color":"green"}]${similarityFields}}]}. Describe each supplied image by its numeric index. Include every index exactly once. List up to four visible photo colours as #RRGGBB in order of how much of the photograph they occupy. Score visual showcase suitability 1-10 based on image quality, variety and clear subject. Return up to three momentTags for useful groups based on the scene or activity, such as portraits, ceremony, dancing, or details; do not use colour alone as a moment. When clearly visible, describe specific outfit or backdrop colours rather than generic tags like clothing. Also return up to two colorGroups for each image, using only area outfit or backdrop and a plain common color name. Add an outfit group only when clothing and its colour are clearly visible. Add a backdrop group only when the background or studio setting and its colour are clearly visible. Never infer a colour from the overall photo palette; never guess hidden or unclear details. These groups let clients find photos with the same outfit or backdrop.${similarityInstructions} Describe visible scenes only. Do not identify people or infer names, ages, relationships, emotions, or event facts from pixels. Never use face recognition. If an image cannot be seen, say so and score 1.`, `Shoot type: ${context.shootType}. Purpose: ${context.brief}. Images in order: ${JSON.stringify(descriptors)}`, { images: batch, maxTokens: Math.min(25000, (context.kind === 'pinboard' ? 430 : 330) * batch.length) });
+  const similarityFields = ',"quality":{"sharpness":8,"exposure":8,"composition":8},"unusable":false,"similarityTags":["seated half-length pose","dark studio backdrop"]';
+  const similarityInstructions = ' Score sharpness, exposure and composition separately, each 1-10. Judge intentional photographic treatment fairly; shallow depth of field, monochrome or a deliberate dark background is not a defect. Mark unusable only for a failed load or a clearly unusable photograph. Return up to six specific similarityTags for framing, pose, setting and visible activity. Reuse the same concise phrases for matching details. Broad labels such as portrait or birthday belong in momentTags. These tags help choose varied showcase photographs; they never identify people.';
+  const result = await request(`Return JSON {"images":[{"index":0,"summary":"visible facts only","score":1,"colors":["#hex"],"momentTags":["ceremony"],"colorGroups":[{"area":"outfit","color":"green"}]${similarityFields}}]}. Describe each supplied image by its numeric index. Include every index exactly once. List up to four visible photo colours as #RRGGBB in order of how much of the photograph they occupy. Score visual showcase suitability 1-10 based on image quality, variety and clear subject. Return up to three momentTags for useful groups based on the scene or activity, such as portraits, ceremony, dancing, or details; do not use colour alone as a moment. When clearly visible, describe specific outfit or backdrop colours rather than generic tags like clothing. Also return up to two colorGroups for each image, using only area outfit or backdrop and a plain common color name. Add an outfit group only when clothing and its colour are clearly visible. Add a backdrop group only when the background or studio setting and its colour are clearly visible. Never infer a colour from the overall photo palette; never guess hidden or unclear details. These groups let clients find photos with the same outfit or backdrop.${similarityInstructions} Describe visible scenes only. Do not identify people or infer names, ages, relationships, emotions, or event facts from pixels. Never use face recognition. If an image cannot be seen, say so and score 1.`, `Shoot type: ${context.shootType}. Purpose: ${context.brief}. Images in order: ${JSON.stringify(descriptors)}`, { images: batch, maxTokens: Math.min(25000, 600 * batch.length) });
   const rows = Array.isArray(result.images) ? result.images : [];
   if (rows.length !== batch.length) throw Object.assign(new Error('Some photographs were not analysed. Retry this step.'), { code: 'V3_INCOMPLETE_ANALYSIS' });
   const byIndex = new Map(rows.map(row => [Number(row.index), row]));
@@ -177,8 +177,10 @@ async function analyzeBatch(batch, context) {
     }).filter(Boolean).slice(0, 2);
     return {
       assetId: asset.assetId,
-      summary: String(row.summary || '').slice(0, 220),
+      summary: String(row.summary || '').slice(0, 600),
       score: Math.max(1, Math.min(10, Number(row.score) || 1)),
+      ...(row.quality && ['sharpness', 'exposure', 'composition'].every(key => Number.isFinite(Number(row.quality[key]))) ? { quality: Object.fromEntries(['sharpness', 'exposure', 'composition'].map(key => [key, Math.max(1, Math.min(10, Number(row.quality[key])))])) } : {}),
+      unusable: row.unusable === true,
       colors: (Array.isArray(row.colors) ? row.colors : []).filter(color => /^#[0-9a-f]{6}$/i.test(color)).slice(0, 4),
       momentTags: (Array.isArray(row.momentTags) ? row.momentTags : []).map(value => String(value).toLowerCase().replace(/[^a-z0-9 -]/g, '').trim().slice(0, 32)).filter(Boolean).slice(0, 3),
       colorGroups,
@@ -507,11 +509,13 @@ export async function groupV3Sections(delivery, rows, selected, frames = []) {
   const bodyLimit = SECTION_BODY_LIMITS[delivery.format];
   const system = `Return JSON {"sections":[{"title":"...","subtitle":"...","body":"...","assetIds":["..."]},{"title":"...","subtitle":"...","body":"...","assetIds":["..."]}]}. Group every supplied asset ID into 2 to 5 useful sections. Include each ID exactly once. A single section is invalid: separate complete views and details, or different supported activities. Section titles maximum 60 characters; subtitles maximum 120; body maximum ${bodyLimit}. Write a specific title, a short directory summary and a useful paragraph explaining the shared context of this group. Chapters introductions usually use two or three sentences; event scenes and campaign sets usually use one or two. Develop the supplied facts, using fewer sentences when context is limited. Do not copy a photo caption into the group paragraph. Event Coverage sections should describe real scenes, people or shifts visible in the supplied summaries. Campaign sections should group assets by clear use or visual role. Chapters should mark real changes in outfit, place or activity. Never invent event details or usage rights. ` + deliveryWritingPolicy(delivery);
   const prompt = 'Authoritative context: ' + narrativeContext(delivery) + '\nPhoto observations: ' + JSON.stringify(rows) + '\nPhoto writing to complement, never a source of facts: ' + JSON.stringify(frames);
-  const deadline = Date.now() + 45000;
+  const deadline = Date.now() + 120000;
   let feedback = [];
+  let lastSections = [];
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const result = await request(system, prompt + (attempt ? '\nRepair these problems from the previous attempt: ' + JSON.stringify(feedback) : ''), { maxTokens: 2800, deadline, temperature: 0.2 });
+    const result = await request(system, prompt + (attempt ? '\nRepair these problems from the previous attempt: ' + JSON.stringify(feedback) + '\nPrevious untrusted groups: ' + JSON.stringify(lastSections) : ''), { maxTokens: 4000, deadline, temperature: 0.2 });
     const sections = Array.isArray(result?.sections) ? result.sections : [];
+    lastSections = sections;
     const grouped = sections.flatMap(section => Array.isArray(section?.assetIds) ? section.assetIds : []);
     feedback = [];
     if (sections.length < 2 || sections.length > 5 || sections.some(section => !section || !Array.isArray(section.assetIds) || !section.assetIds.length) || grouped.length !== selected.length || new Set(grouped).size !== grouped.length || grouped.some(id => !selected.includes(id))) { feedback.push('Return 2 to 5 non-empty groups, every supplied photo exactly once, and no other photo IDs.'); continue; }
@@ -526,19 +530,60 @@ export async function groupV3Sections(delivery, rows, selected, frames = []) {
     if (new Set(sections.map(section => section.title.trim().toLocaleLowerCase())).size !== sections.length || new Set(sections.map(section => section.body.trim().toLocaleLowerCase())).size !== sections.length) { feedback.push('Use a different title and paragraph for each group.'); continue; }
     return sections.map((section, index) => ({ id: 'section-' + (index + 1), title: section.title.trim(), subtitle: String(section.subtitle || '').trim(), body: section.body.trim(), layout: 'grid', assetIds: section.assetIds }));
   }
-  throw Object.assign(new Error('The photo groups or their wording need another pass. Retry this step.'), { code: 'V3_INCOMPLETE_SECTIONS', status: 502 });
+  // Keep grouping separate from wording recovery. Model-generated memberships
+  // are accepted only if every selected ID occurs once; otherwise use the
+  // observed activity tags and the already selected viewing order.
+  const memberships = lastSections.flatMap(section => Array.isArray(section?.assetIds) ? section.assetIds : []);
+  const validMemberships = lastSections.length >= 2 && lastSections.length <= 5 && lastSections.every(section => section?.assetIds?.length) && memberships.length === selected.length && new Set(memberships).size === selected.length && memberships.every(id => selected.includes(id));
+  if (!validMemberships) {
+    const tagged = new Map();
+    for (const id of selected) {
+      const tag = rows.find(row => row.assetId === id)?.momentTags?.[0] || '';
+      if (!tagged.has(tag)) tagged.set(tag, []);
+      tagged.get(tag).push(id);
+    }
+    lastSections = tagged.size >= 2 && tagged.size <= 5 ? [...tagged.values()].map(assetIds => ({ assetIds })) : [{ assetIds: selected.slice(0, Math.ceil(selected.length / 2)) }, { assetIds: selected.slice(Math.ceil(selected.length / 2)) }];
+  }
+  const accepted = [];
+  for (const [index, group] of lastSections.entries()) {
+    const observation = rows.filter(row => group.assetIds.includes(row.assetId)).map(row => row.summary).join(' ');
+    const problems = section => {
+      const text = `${section?.title || ''}. ${section?.subtitle || ''}. ${section?.body || ''}`;
+      return [...shootWritingIssues(text, delivery, { observation }),
+        ...(!section || typeof section.title !== 'string' || section.title.trim().length < 2 || section.title.trim().length > 60 || typeof section.body !== 'string' || section.body.trim().length < 5 || section.body.trim().length > bodyLimit || section.subtitle !== undefined && typeof section.subtitle !== 'string' || String(section.subtitle || '').length > 120 ? ['Check title, subtitle and paragraph limits.'] : []),
+        ...(hasUnsupportedAddress(text, delivery) || hasUnsupportedNumbers(text, delivery) || hasUnsupportedGathering(text, delivery) ? ['Use supplied names, people and occasion facts only.'] : []),
+        ...(repeatsWriting(section?.body, [section?.subtitle, ...frames.filter(frame => group.assetIds.includes(frame.assetId)).map(frame => frame.caption), ...accepted.map(section => section.body)]) || accepted.some(other => other.title.toLowerCase() === String(section?.title || '').toLowerCase()) ? ['Add distinct context without repeating other wording.'] : [])];
+    };
+    let section = group;
+    for (let attempt = 0; attempt < 2 && problems(section).length; attempt += 1) {
+      const result = await request('Return JSON {"title":"...","subtitle":"...","body":"..."}. Write only this group. Title 2-60 characters, subtitle up to 120, paragraph 5-' + bodyLimit + ' characters. One short supported sentence is enough. Do not change membership. ' + deliveryWritingPolicy(delivery), JSON.stringify({ context: deliveryWritingContext(delivery), photographs: rows.filter(row => group.assetIds.includes(row.assetId)), problems: problems(section), otherGroups: accepted, photoCaptionsToAvoidRepeating: frames.filter(frame => group.assetIds.includes(frame.assetId)) }), { maxTokens: 750, temperature: .2 });
+      section = { ...result, assetIds: group.assetIds };
+    }
+    if (problems(section).length) {
+      const label = deliveryWritingContext(delivery).shoot.replace(/-/g, ' ');
+      const bodies = [`These finished photographs are part of the ${label} collection.`, `The ${label} collection continues with this group of finished photographs.`, `This part of the ${label} collection brings together photographs from the same delivery.`, `These photographs belong to the finished ${label} set.`, `The remaining ${label} photographs are gathered in this part of the collection.`];
+      section = { title: frames.find(frame => group.assetIds.includes(frame.assetId))?.headline?.slice(0, 60) || `${label} photographs`, subtitle: '', body: bodies[index], assetIds: group.assetIds };
+    }
+    if (problems(section).length) throw Object.assign(new Error('We could not finish this group’s wording. Your completed photo captions are saved; retry to continue.'), { code: 'V3_INCOMPLETE_SECTIONS', status: 502 });
+    accepted.push({ id: 'section-' + (index + 1), title: section.title.trim(), subtitle: String(section.subtitle || '').trim(), body: section.body.trim(), layout: 'grid', assetIds: group.assetIds });
+  }
+  return accepted;
 }
 
 async function chooseV3Showcase(delivery, insights, maximum) {
-  if (insights.length <= maximum) return insights.map(row => row.assetId);
-  const ranked = [...insights].sort((a, b) => b.score - a.score);
-  const shortlist = ranked.slice(0, Math.min(insights.length, maximum * 3));
+  const usable = insights.filter(row => !row.unusable);
+  if (usable.length >= V3_FORMATS[delivery.format][0]) {
+    insights = usable;
+    maximum = Math.min(maximum, usable.length);
+  }
+  if (insights.length <= maximum) return variedShowcaseCandidates(insights, maximum).map(row => row.assetId);
+  const shortlist = variedShowcaseCandidates(insights, Math.min(insights.length, maximum * 3));
   const bucketSize = Math.max(1, Math.floor(insights.length / maximum));
   for (let start = 0; start < insights.length; start += bucketSize) {
     const best = [...insights.slice(start, start + bucketSize)].sort((a, b) => b.score - a.score)[0];
     if (best && !shortlist.some(item => item.assetId === best.assetId)) shortlist.push(best);
   }
-  const result = await request('Return JSON {"assetIds":["..."]}. Select exactly ' + maximum + ' unique photo asset IDs in a strong viewing order. Use only the candidate IDs supplied. The shoot purpose is the main context. Prefer clear, varied finished photographs; avoid near-duplicates. These are showcase choices, not a judgment about which originals belong in the full gallery.', 'Purpose: ' + delivery.brief + '\nFormat: ' + delivery.format + '\nCandidates: ' + JSON.stringify(shortlist.map(item => ({ assetId: item.assetId, summary: item.summary, score: item.score }))), { maxTokens: 1700 });
+  const result = await request('Return JSON {"assetIds":["..."]}. Select exactly ' + maximum + ' unique photo asset IDs in a strong viewing order. Use only the candidate IDs supplied. The shoot purpose is the main context. Prefer clear, varied finished photographs; avoid near-duplicates using similarityTags. Include supported scene and framing variety, without choosing a clearly unusable photograph over a strong alternative. Start with a clear representative image and finish with a strong different view. These are showcase choices, not a judgment about which originals belong in the full gallery.', 'Purpose: ' + delivery.brief + '\nFormat: ' + delivery.format + '\nCandidates: ' + JSON.stringify(shortlist.map(({ assetId, summary, score, quality, momentTags, similarityTags, unusable }) => ({ assetId, summary, score, quality, momentTags, similarityTags, unusable }))), { maxTokens: 1700 });
   const chosen = result.assetIds;
   const known = new Set(shortlist.map(item => item.assetId));
   if (!Array.isArray(chosen) || chosen.length !== maximum || new Set(chosen).size !== maximum || chosen.some(id => !known.has(id))) throw Object.assign(new Error('The showcase selection was incomplete. Retry this step.'), { code: 'V3_INVALID_SELECTION' });
@@ -571,7 +616,7 @@ const BIRTHDAY_FALLBACKS = [
 ];
 
 function purposeHeadline(delivery, index = 0) {
-  if (deliveryWritingContext(delivery).shoot !== 'birthday' || deliveryWritingContext(delivery).separateSubject) return writingFallback(delivery, index).headline;
+  if (deliveryWritingContext(delivery).shoot !== 'birthday' || deliveryWritingContext(delivery).separateSubject || ['event-coverage', 'campaign'].includes(delivery.format)) return writingFallback(delivery, index).headline;
   const purpose = String(delivery.brief || '').replace(/\s+/g, ' ').trim();
   if (index > 0) {
     const heading = BIRTHDAY_FALLBACKS[index % BIRTHDAY_FALLBACKS.length][0];
@@ -585,7 +630,7 @@ function purposeHeadline(delivery, index = 0) {
 }
 
 function purposeCaption(delivery, limit, index = 0) {
-  if (deliveryWritingContext(delivery).shoot !== 'birthday' || deliveryWritingContext(delivery).separateSubject) return writingFallback(delivery, index, limit).caption;
+  if (deliveryWritingContext(delivery).shoot !== 'birthday' || deliveryWritingContext(delivery).separateSubject || ['event-coverage', 'campaign'].includes(delivery.format)) return writingFallback(delivery, index, limit).caption;
   const purpose = String(delivery.brief || '').replace(/\s+/g, ' ').trim();
   if (deliveryWritingContext(delivery).shoot === 'birthday') {
     const normalized = normalizeOccasionNumbers(purpose);
@@ -678,6 +723,7 @@ function hasUnsupportedGathering(value, delivery) {
   if (/\b(?:family|friends|guests|party|people|loved ones|gathering|gathered|together)\b/i.test(purpose)) return false;
   return String(value || '').split(/[.!?]+/).some(sentence => {
     if (deliveryWritingContext(delivery).style === 'documentary' && !/\b(?:family|friends|loved ones)\b/i.test(sentence)) return false;
+    if (/\b(?:photographs|photos|images|collection|gallery)\b/i.test(sentence) && /\bgathered\b/i.test(sentence) && !/\b(?:everyone|everybody|guests?|family|friends|loved ones|people|surrounded|we all|us all)\b/i.test(sentence)) return false;
     if (!/\b(?:everyone|everybody|guests?|family|friends|loved ones|people|surrounded|gathered|came together|we all|us all)\b/i.test(sentence)) return false;
     // Future wishes can mention company; supplied occasion facts are still
     // required for claims about people being present at this shoot.
@@ -691,7 +737,7 @@ function hasUnsupportedGathering(value, delivery) {
 // needs a small visible cue; passing the summary makes props and clothes the story.
 function captionCue(insight, delivery) {
   const summary = String(insight?.summary || '');
-  if (delivery && (hasDetailedWriting(delivery.format) || supportsVisualWriting(delivery))) return summary.slice(0, 600);
+  if (delivery && (supportsVisualWriting(delivery) || hasDetailedWriting(delivery.format) && delivery.format !== 'chapters')) return summary.slice(0, 600);
   const sentences = summary.split(/[.!?\n]+/).filter(sentence => !/\b(?:not|no|without|unclear|cannot|can't|unable)\b/i.test(sentence));
   if (sentences.some(sentence => /\b(?:laughs?|laughing|laughter)\b/i.test(sentence))) return 'visible laughter';
   if (sentences.some(sentence => /\b(?:smiles?|smiling)\b/i.test(sentence))) return 'visible smile';
@@ -715,20 +761,7 @@ function describesPhoto(value, delivery) {
 // Detect explicit personal addresses, without requiring every caption to repeat a name.
 // A purpose can name someone other than the paying client; both are authoritative.
 function hasUnsupportedAddress(value, delivery) {
-  const known = new Set(String([delivery.clientName, delivery.brief].filter(Boolean).join(' ')).toLocaleLowerCase().match(/[\p{L}\p{M}]+/gu) || []);
-  const ordinaryWords = new Set(['you', 'your', 'he', 'she', 'they', 'we', 'our', 'these', 'those', 'a', 'the', 'it', 'that', 'what', 'here', 'there', 'let', 'life', 'today', 'tomorrow', 'yesterday', 'everyone', 'someone', 'anyone', 'nobody', 'nothing', 'everything', 'something', 'now', 'together', 'still', 'finally', 'first', 'next', 'sometimes', 'often']);
-  const text = String(value || '');
-  const addresses = [...text.matchAll(/(?:^|[.!?]\s+)([\p{Lu}][\p{L}\p{M}-]+),\s+(?:you|your|this|turning|may|take|here|today|on)\b/gu), ...text.matchAll(/\b([\p{Lu}][\p{L}\p{M}-]+)['’]s\b/gu)];
-  const ordinarySubjects = new Set(['attendee', 'attendees', 'audience', 'speaker', 'participant', 'participants', 'guests', 'guest', 'family', 'people', 'couple', 'person', 'man', 'woman', 'staff', 'model']);
-  if (hasDetailedWriting(delivery.format)) for (const match of text.matchAll(/\b([\p{Lu}][\p{L}\p{M}-]+)(?:\s+and\s+([\p{Lu}][\p{L}\p{M}-]+))?\s+(?:is|are|stands?|sits?|wears?|holds?|walks?|poses?)\b/gu)) {
-    if (!ordinarySubjects.has(match[1].toLocaleLowerCase())) addresses.push([match[0], match[1]]);
-    if (match[2]) addresses.push([match[0], match[2]]);
-  }
-  return addresses.some(match => {
-    const address = match[1].toLocaleLowerCase();
-    const parts = address.match(/[\p{L}\p{M}]+/gu) || [];
-    return !ordinaryWords.has(address) && !parts.every(part => known.has(part));
-  });
+  return unsupportedWritingAddress(value, delivery);
 }
 
 function narrativeContext(delivery) {
@@ -736,20 +769,13 @@ function narrativeContext(delivery) {
 }
 
 function alignNarrativeFrames(value, selected) {
-  const rows = Array.isArray(value) ? value.filter(frame => frame && typeof frame === 'object') : [];
-  const used = new Set();
-  return selected.map((assetId, index) => {
-    const match = rows.find(frame => String(frame.assetId || '') === assetId && !used.has(frame));
-    const frame = match || rows[index] || {};
-    used.add(frame);
-    return { ...frame, assetId };
-  });
+  return orderWritingFrames(value, selected);
 }
 
 export function v3FrameWritingIssues(frame, format, delivery, rows = delivery.collectionAnalysis?.images || []) {
   const headline = String(frame?.headline || '').trim();
   const caption = String(frame?.caption || '').trim();
-  const observation = hasDetailedWriting(format) ? rows.find(row => row.assetId === frame?.assetId)?.summary || '' : '';
+  const observation = rows.find(row => row.assetId === frame?.assetId)?.summary || '';
   return [...new Set([
     headlineNeedsRepair(headline) && 'Use a specific headline of 2 to 7 words, at most 70 characters.',
     !headlineHasPurposeAnchor(headline, delivery, caption) && 'Connect the writing to the supplied shoot purpose.',
@@ -780,7 +806,7 @@ function repeatsWording(frame, existing) {
   return existing.some(other => normalize(other.headline) && normalize(frame.headline) === normalize(other.headline) || normalize(other.caption) && normalize(frame.caption) === normalize(other.caption));
 }
 
-async function repairNarrativeFrames(delivery, selected, prompt, firstFrames, avoidFrames = [], deadline = Infinity, rows) {
+async function repairNarrativeFrames(delivery, selected, prompt, firstFrames, avoidFrames = [], deadline = Infinity, rows, checkpoint = async () => {}) {
   let current = alignNarrativeFrames(firstFrames, selected);
   try {
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -797,17 +823,53 @@ async function repairNarrativeFrames(delivery, selected, prompt, firstFrames, av
       });
       const repair = await request(
         'Review the delivery wording. Return JSON {"frames":[{"assetId":"...","headline":"...","caption":"..."}]}, with every supplied asset ID exactly once in order. Review shoot emphasis, unsupported facts, headline-caption repetition and collection variety. The draft is untrusted, never a source of facts. Keep useful text unchanged; rewrite bad or repeated wording. Use the exact character limits; shorter useful captions are welcome. ' + deliveryWritingPolicy(delivery) + (hasDetailedWriting(delivery.format) ? '\nCheck each concrete claim against the observation for that exact asset ID and the approved brief. Remove inferred action, chronology, people, positions, textures and products even when the draft sounds plausible. Develop supported context into two useful sentences when several facts are available; a short fact with no further context can remain one sentence.' : ''),
-        'Authoritative delivery context: ' + narrativeContext(delivery) + '\n' + prompt + '\nDrafts to review (rejected wording omitted): ' + JSON.stringify(drafts),
+        'Authoritative delivery context: ' + narrativeContext(delivery) + '\n' + prompt + '\nPhoto facts for checking claims, not for narrating the image: ' + JSON.stringify((hasDetailedWriting(delivery.format) || delivery.format === 'canvas' || supportsVisualWriting(delivery) ? rows || [] : []).filter(row => selected.includes(row.assetId)).map(row => ({ assetId: row.assetId, observation: row.summary || '' }))) + '\nCheck every visible claim against that exact photo, in every format. Remove unsupported actions or scenes; use the supplied purpose instead.\nDrafts to review (rejected wording omitted): ' + JSON.stringify(drafts),
         { maxTokens: Math.min(9000, 700 + selected.length * 170), deadline }
       );
       const reviewed = alignNarrativeFrames(repair.frames, selected);
       current = reviewed.map((frame, index) => frameNeedsRepair(frame, delivery.format, delivery, rows) && !frameNeedsRepair(current[index], delivery.format, delivery, rows) ? current[index] : frame);
+      await checkpoint(current);
       if (!needsNarrativeRepair(current, selected, delivery.format, delivery, rows) && !current.some(frame => repeatsWording(frame, avoidFrames))) break;
     }
     return current;
   } catch {
     return current;
   }
+}
+
+async function recoverShowcaseFrames(delivery, selected, rows, frames, checkpoint) {
+  const accepted = [];
+  for (const [index, original] of frames.entries()) {
+    let frame = original;
+    let problems = v3FrameWritingIssues(frame, delivery.format, delivery, rows);
+    if (repeatsWording(frame, accepted)) problems.push('Use a different headline and thought from the accepted photographs.');
+    if (problems.length) {
+      // A small request can correct a single stubborn caption without rewriting
+      // the complete set, or losing valid work when the worker is retried.
+      const observation = rows.find(row => row.assetId === selected[index])?.summary || '';
+      for (let attempt = 0; attempt < 2 && problems.length; attempt += 1) {
+        let result;
+        try {
+          result = await request('Return JSON {"headline":"...","caption":"..."}. Repair only this photograph. Prefer a short supported thought to a longer description. ' + deliveryWritingPolicy(delivery), JSON.stringify({ context: deliveryWritingContext(delivery), assetId: selected[index], observation, problems, accepted: accepted.map(({ headline, caption }) => ({ headline, caption })) }), { maxTokens: 600, temperature: .2 });
+        } catch (error) { if (error.code === 'V3_INVALID_AI_RESPONSE') break; throw error; }
+        frame = { ...result, assetId: selected[index] };
+        problems = v3FrameWritingIssues(frame, delivery.format, delivery, rows);
+        if (repeatsWording(frame, accepted)) problems.push('Repeated wording.');
+      }
+      if (problems.length) {
+        // Only generation uses a conservative purpose-based draft. Rewriting
+        // approved studio text continues to fail safely without replacing it.
+        for (let slot = index; slot < index + 24; slot += 1) {
+          const candidate = { assetId: selected[index], headline: purposeHeadline(delivery, slot), caption: purposeCaption(delivery, photoCaptionLimit(delivery.format), slot) };
+          if (!v3FrameWritingIssues(candidate, delivery.format, delivery, rows).length && !repeatsWording(candidate, accepted)) { frame = candidate; problems = []; break; }
+        }
+      }
+      if (problems.length) throw Object.assign(new Error('We could not finish this photograph’s wording. Retry to continue from the saved captions.'), { code: 'V3_WRITING_INCOMPLETE', status: 502 });
+    }
+    accepted.push(frame);
+    await checkpoint([...accepted, ...frames.slice(index + 1)]);
+  }
+  return accepted;
 }
 
 export async function directV3PhotoSwapCaptions(delivery, insights, onProgress = () => {}, resumeFrames = []) {
@@ -867,7 +929,7 @@ export async function directV3PhotoSwapCaptions(delivery, insights, onProgress =
 export async function directV3(delivery, insights, { resume = {}, checkpoint = async () => {} } = {}) {
   const saved = { ...resume };
   if (hasDetailedWriting(delivery.format) && saved.writingVersion !== DELIVERY_WRITING_VERSION) {
-    delete saved.writing; delete saved.sections; delete saved.editorial;
+    delete saved.writing; delete saved.sections; delete saved.editorial; delete saved.writingDraft; delete saved.editorialDraft;
     saved.writingVersion = DELIVERY_WRITING_VERSION;
   }
   const step = async (name, task) => {
@@ -881,12 +943,10 @@ export async function directV3(delivery, insights, { resume = {}, checkpoint = a
   const selected = await step('selected', () => chooseV3Showcase(delivery, insights, Math.min(maximum, candidates.length)));
   if (selected.length < minimum) throw Object.assign(new Error(`This format needs at least ${minimum} photos.`), { code: 'V3_TOO_FEW_PHOTOS' });
   const selectedSet = new Set(selected);
-  const extras = candidates.filter(row => !selectedSet.has(row.assetId));
-  const openingAssetId = extras[0]?.assetId || selected[0];
-  const closingAssetId = extras[1]?.assetId || extras[0]?.assetId || selected.at(-1);
+  const { openingAssetId, closingAssetId } = showcaseBookends(insights, selected);
   const rows = insights.filter(row => selectedSet.has(row.assetId));
   if (delivery.format === 'editorial') {
-    const direction = await step('editorial', () => writeEditorialDirection(request, delivery, rows, selected, text => hasUnsupportedAddress(text, delivery) || hasUnsupportedNumbers(text, delivery) || hasUnsupportedGathering(text, delivery)));
+    const direction = await step('editorial', () => writeEditorialDirection(request, delivery, rows, selected, text => hasUnsupportedAddress(text, delivery) || hasUnsupportedNumbers(text, delivery) || hasUnsupportedGathering(text, delivery), { resume: saved.editorialDraft, checkpoint: async draft => { saved.editorialDraft = draft; await checkpoint(structuredClone(saved)); } }));
     const visual = await request('Return JSON {"palette":{"background":"#hex","surface":"#hex","text":"#hex","accent":"#hex"},"typography":{"display":"Playfair Display","body":"Outfit"}}. Choose a readable magazine palette from the photograph colours; do not recolour photographs. Fonts: Playfair Display, Outfit, Plus Jakarta Sans, Cormorant Garamond, DM Sans, Libre Baskerville, Manrope.', JSON.stringify(rows.map(row => ({ colors: row.colors }))), { maxTokens: 450 });
     const palette = Object.fromEntries(Object.keys(V3_DEFAULT_PALETTE).map(key => [key, /^#[0-9a-f]{6}$/i.test(visual?.palette?.[key]) ? visual.palette[key] : V3_DEFAULT_PALETTE[key]]));
     if (contrastRatio(palette.background, palette.text) < 4.5 || contrastRatio(palette.surface, palette.text) < 4.5) {
@@ -906,15 +966,17 @@ export async function directV3(delivery, insights, { resume = {}, checkpoint = a
     'Selected photographs in order (supporting observations appropriate to this shoot): ' + JSON.stringify(selected.map(assetId => ({ assetId, cue: captionCue(rows.find(row => row.assetId === assetId), delivery) })))
   ].join('\n');
   const { narrative, captions } = await step('writing', async () => {
-    const narrative = await request(narrativeSystem, narrativePrompt, { maxTokens: Math.min(12000, 1200 + selected.length * 220) });
+    const narrative = saved.writingDraft || await request(narrativeSystem, narrativePrompt, { maxTokens: Math.min(12000, 1200 + selected.length * 220) });
+    const saveFrames = async frames => { saved.writingDraft = { ...narrative, frames }; await checkpoint(structuredClone(saved)); };
+    await saveFrames(narrative.frames);
     let responseFrames = alignNarrativeFrames(narrative.frames, selected);
-    const reviewedFrames = alignNarrativeFrames(await repairNarrativeFrames(delivery, selected, narrativePrompt, responseFrames, [], Infinity, rows), selected);
+    const reviewedFrames = alignNarrativeFrames(await repairNarrativeFrames(delivery, selected, narrativePrompt, responseFrames, [], Infinity, rows, saveFrames), selected);
     responseFrames = reviewedFrames.map((frame, index) => frameNeedsRepair(frame, delivery.format, delivery, rows) && !frameNeedsRepair(responseFrames[index], delivery.format, delivery, rows) ? responseFrames[index] : frame);
-    if (hasDetailedWriting(delivery.format) && needsNarrativeRepair(responseFrames, selected, delivery.format, delivery, rows)) throw Object.assign(new Error('The photo headlines and captions need another pass. Retry the writing step.'), { code: 'V3_WRITING_INCOMPLETE', status: 502 });
+    if (hasDetailedWriting(delivery.format) && needsNarrativeRepair(responseFrames, selected, delivery.format, delivery, rows)) responseFrames = await recoverShowcaseFrames(delivery, selected, rows, responseFrames, saveFrames);
     const captions = responseFrames.map((frame, index) => {
       const rawHeadline = String(frame?.headline || '').replace(/^\s*headline\s*:\s*/i, '').trim();
       const rawCaption = String(frame?.caption || '').replace(/^\s*caption\s*:\s*/i, '').trim();
-      const observation = hasDetailedWriting(delivery.format) ? rows.find(row => row.assetId === selected[index])?.summary || '' : '';
+      const observation = rows.find(row => row.assetId === selected[index])?.summary || '';
       const headline = fitText(shootWritingIssues(rawHeadline, delivery, { observation }).length || headlineNeedsRepair(rawHeadline) || !headlineHasPurposeAnchor(rawHeadline, delivery, rawCaption) || hasUnsupportedAddress(rawHeadline + '. ' + rawCaption, delivery) || hasUnsupportedNumbers(rawHeadline, delivery) || describesPhoto(rawHeadline, delivery) || hasUnsupportedGathering(rawHeadline, delivery) ? purposeHeadline(delivery, index) : rawHeadline, 70);
       const caption = substantialCaption(rawCaption, delivery, captionLimit, headline, index, observation);
       return { assetId: selected[index], headline, caption, textAnimation: delivery.format === 'photo-story' ? 'typewriter' : 'word_fade_up' };
@@ -1002,7 +1064,7 @@ export async function regenerateV3Caption(delivery, insight, instruction = '', p
   if (hasDetailedWriting(delivery.format) && (frameNeedsRepair(result, delivery.format, delivery, rows) || repeatsWording(result, existing) || detailedFrameIssues(result, delivery.format, (delivery.creativeDirection?.sections || []).map(section => section.body)).length)) throw Object.assign(new Error('The new headline and caption need another pass. Your current wording is unchanged.'), { code: 'V3_WRITING_INCOMPLETE', status: 502 });
   const rawHeadline = String(result.headline || '').replace(/^\s*headline\s*:\s*/i, '').trim();
   const rawCaption = String(result.caption || '').replace(/^\s*caption\s*:\s*/i, '').trim();
-  const observation = hasDetailedWriting(delivery.format) ? insight.summary : '';
+  const observation = insight.summary || '';
   let headline = fitText(shootWritingIssues(rawHeadline, delivery, { observation }).length || headlineNeedsRepair(rawHeadline) || !headlineHasPurposeAnchor(rawHeadline, delivery, rawCaption) || hasUnsupportedAddress(rawHeadline + '. ' + rawCaption, delivery) || hasUnsupportedNumbers(rawHeadline, delivery) || describesPhoto(rawHeadline, delivery) || hasUnsupportedGathering(rawHeadline, delivery) ? purposeHeadline(delivery) : rawHeadline, 70);
   let caption = substantialCaption(rawCaption, delivery, limit, headline, 0, observation);
   if (repeatsWording({ headline, caption }, existing)) {

@@ -5,6 +5,7 @@ import { API_BASE_URL } from '../../config/env.js';
 import { DeliveryFormatViewer } from './viewerRegistry.jsx';
 import { DeliveryReadiness } from '../../pages/DeliveryViewer.jsx';
 import { getDeliveryCapabilities } from '../../constants/deliveryCapabilities.js';
+import { prepareSoundtrackPlayback, useSmoothSoundtrackLoop } from '../../utils/smoothSoundtrackLoop.js';
 import PinboardViewer from './PinboardViewer.jsx';
 import PhotoSwapViewer from './PhotoSwapViewer.jsx';
 import '../../pages/DeliveryViewer.css';
@@ -80,6 +81,8 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
         : undefined
   }), [effectiveAccess, delivery, preloadedMedia]);
 
+  useSmoothSoundtrackLoop(soundtrackRef, playbackDelivery.soundtrack?.url);
+
   const toggleAudio = async kind => {
     const selected = kind === 'narration' ? narrationRef.current : soundtrackRef.current;
     const other = kind === 'narration' ? soundtrackRef.current : narrationRef.current;
@@ -92,6 +95,7 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
     try {
       other?.pause();
       setAudioState(current => ({ ...current, loading: kind }));
+      if (kind === 'soundtrack') prepareSoundtrackPlayback(selected);
       await selected.play();
       setAudioState({ playing: kind, loading: '' });
     } catch {
@@ -154,7 +158,7 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
     return <DeliveryReadiness key={`${delivery?._id || delivery?.publicId || ''}:${delivery?.format || ''}`} delivery={delivery} onReady={media => { setPreloadedMedia(media); setExperienceReady(true); }} />;
   }
 
-  if (delivery?.kind === 'pinboard') return <div className="v-client-preview-runtime"><PinboardViewer delivery={playbackDelivery} preview galleryProps={{ onDownload: () => toast.info('Photo downloads will be available on the published client link.'), onDownloadAll: () => toast.info('The published link will download each photograph separately.') }} /></div>;
+  if (delivery?.kind === 'pinboard') return <div className="v-client-preview-runtime"><PinboardViewer delivery={playbackDelivery} preview galleryProps={{ onDownload: () => toast.info('Photo downloads will be available on the published client link.'), onDownloadAll: () => toast.info('The published link will download the gallery as a ZIP file.') }} /></div>;
   if (delivery?.kind === 'photoswap') return <div className="v-client-preview-runtime"><PhotoSwapViewer delivery={playbackDelivery} preview galleryProps={{ liked: previewLiked, onLike: assetId => setPreviewLiked(current => { const next = new Set(current); if (next.has(assetId)) next.delete(assetId); else next.add(assetId); return next; }), onDownload: () => toast.info('Individual photo downloads will be active on the published client link.') }} /></div>;
 
   const galleryProps = {
@@ -166,7 +170,7 @@ export default function ClientDeliveryPreview({ delivery, narrationEnabled = tru
       return next;
     }),
     onDownload: () => toast.info('Individual photo downloads will be active on the published client link.'),
-    onDownloadAll: () => toast.info('The published link will download each photograph separately.')
+    onDownloadAll: () => toast.info('The published link will download the gallery as a ZIP file.')
   };
   const sharedProps = {
     delivery: playbackDelivery,

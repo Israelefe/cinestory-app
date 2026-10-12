@@ -48,7 +48,7 @@ test('Editorial saves longer text, layouts, credits and framing and invalidates 
   requestBody.frames[0].imageFit = 'cover'; requestBody.frames[0].focalPoint = '50% 20%'; requestBody.editorial.credits = [{ role: 'Photography', name: 'Apex Imagery' }];
   let filter; t.mock.method(Delivery, 'findOne', value => { filter = value; return Promise.resolve(delivery); });
   const res = response(); await v3Showcase({ body: requestBody, params: { id: delivery._id }, user: { id: delivery.userId } }, res);
-  assert.equal(res.statusCode, 200); assert.equal(delivery.saved, true); assert.equal(delivery.creativeDirection.editorial.sections[0].body, body); assert.equal(delivery.creativeDirection.editorial.credits[0].name, 'Apex Imagery'); assert.equal(delivery.creativeDirection.frames[0].imageFit, 'cover'); assert.equal(delivery.creativeDirection.frames[0].focalPoint, '50% 20%'); assert.equal(delivery.v3.approvedRevision, null); assert.deepEqual(filter, { _id: delivery._id, userId: delivery.userId, schemaVersion: 3 });
+  assert.equal(res.statusCode, 200); assert.equal(delivery.saved, true); assert.equal(delivery.creativeDirection.editorial.sections[0].body, body); assert.equal(delivery.creativeDirection.editorial.credits[0].name, 'Apex Imagery'); assert.equal(delivery.creativeDirection.frames[0].imageFit, 'cover'); assert.equal(delivery.creativeDirection.frames[0].focalPoint, '50% 20%'); assert.equal(delivery.v3.approvedRevision, null); assert.deepEqual(filter, { _id: delivery._id, userId: delivery.userId, schemaVersion: 3, kind: { '$ne': 'video' } });
 });
 test('non Editorial limits and fields remain protected', async t => {
   const delivery = { ...draft(), format: 'photo-reveal' }; t.mock.method(Delivery, 'findOne', () => Promise.resolve(delivery));

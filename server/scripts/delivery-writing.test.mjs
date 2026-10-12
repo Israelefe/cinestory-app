@@ -47,11 +47,12 @@ test('the receiving studio is not addressed as the person photographed', () => {
   assert.equal(requiresDirectAddress({ ...personal, format: 'photo-story', clientName: 'Amara' }), false);
   assert.doesNotMatch(writingFallback({ ...personal, clientName: 'Apex Imagery Studio' }).caption, /your birthday|you turned/i);
 });
-test('detailed captions can use supplied photo details while other personal formats retain their writing rules', () => {
+test('personal captions lead with purpose in reading formats; commercial captions may explain supported details', () => {
   const caption = 'Ada wears an emerald suit beside an ivory telephone in this portrait.';
   assert.ok(shootWritingIssues(caption, personal, { caption: true }).length);
   assert.deepEqual(shootWritingIssues(caption, { ...personal, shootType: 'Fashion' }, { caption: true, observation: 'Ada wears an emerald suit beside an ivory telephone.' }), []);
-  assert.deepEqual(shootWritingIssues(caption, personal, { caption: true, observation: 'Ada wears an emerald suit beside an ivory telephone.' }), []);
+  assert.ok(shootWritingIssues(caption, personal, { caption: true, observation: 'Ada wears an emerald suit beside an ivory telephone.' }).some(issue => /purpose/.test(issue)));
+  assert.deepEqual(shootWritingIssues('Your birthday is yours to mark. This emerald suit is part of your portrait session.', personal, { caption: true, observation: 'An emerald suit in a portrait.' }), []);
   assert.ok(shootWritingIssues(caption, { ...personal, format: 'photo-story' }, { caption: true }).length);
   assert.deepEqual(shootWritingIssues('Ada, keep holding onto what matters to you.', personal, { caption: true }), []);
   assert.ok(shootWritingIssues('A waterproof sustainable bag.', { shootType: 'Fashion' }).length);

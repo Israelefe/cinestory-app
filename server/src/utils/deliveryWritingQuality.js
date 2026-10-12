@@ -2,7 +2,6 @@ import { hasDetailedWriting } from '../constants/deliveryWritingLimits.js';
 
 const normalize = value => String(value || '').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 export function detailedWritingFactsIssues(text, delivery, observation = '') {
-  if (!hasDetailedWriting(delivery.format)) return [];
   const facts = normalize(`${delivery.brief || ''} ${observation}`);
   const details = String(text || '').match(/\b(?:emerald|ivory|burgundy|plum|velvet|linen|silk|leather|cotton|waterproof|sustainable|handmade|organic|tailored|oversized|sleeveless|lightweight|breathable|weave|texture|earrings?|cuffs?|telephones?|plinths?|balloons?|champagne|cakes?|gowns?|blazers?|suits?|dresses?|jackets?|pockets?|backdrops?|lecterns?|microphones?|badges?|coffee|business cards?|queues?|staff|traditional attire|hands linked|hands joined|holding hands|clasped|start of the day)\b/gi) || [];
   return [...new Set(details.filter(detail => {

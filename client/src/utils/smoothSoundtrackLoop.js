@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 const audioGraphs = new WeakMap();
 const soundtrackUnlockers = new WeakMap();
@@ -17,7 +17,7 @@ export function attachSmoothSoundtrackLoop(player) {
   const incoming = new Audio();
   incoming.crossOrigin = player.crossOrigin;
   incoming.preload = 'none';
-  incoming.src = player.currentSrc || player.src;
+  incoming.src = player.src || player.currentSrc;
   incoming.playbackRate = player.playbackRate;
   const originalLoop = player.loop;
   const ownVolume = Object.getOwnPropertyDescriptor(player, 'volume');
@@ -108,13 +108,13 @@ export function attachSmoothSoundtrackLoop(player) {
       if (token !== generation) { if (!blend) incoming.pause(); return; }
       blend.ready = true;
       if (player.paused && !player.ended) incoming.pause();
-    }).catch(() => { if (token === generation) resetBlend(); });
+    }).catch(() => { if (token === generation) { resetBlend(); player.loop = true; } });
   };
   const tick = () => {
     frame = 0;
     if (disposed || player.paused) return;
     const duration = player.duration;
-    const windowSeconds = Math.min(1.6, duration / 4);
+    const windowSeconds = Math.min(4, duration / 4);
     if (!blend && Number.isFinite(duration) && duration > .5 && duration - player.currentTime <= windowSeconds) beginBlend();
     if (blend?.handoff) {
       const progress = Math.min(1, (performance.now() - blend.handoff) / 160);
@@ -130,6 +130,7 @@ export function attachSmoothSoundtrackLoop(player) {
   };
   const schedule = () => { if (!frame && !disposed) frame = window.requestAnimationFrame(tick); };
   const onPlay = () => {
+    player.loop = false;
     incoming.preload = 'auto';
     enableAudioGraph();
     if (blend?.handoffPausedAt) { blend.handoff += performance.now() - blend.handoffPausedAt; delete blend.handoffPausedAt; }
@@ -167,12 +168,18 @@ export function attachSmoothSoundtrackLoop(player) {
     }).catch(() => { if (!disposed) resetBlend(); });
   };
   const onRate = () => { incoming.playbackRate = player.playbackRate; };
+  const onTimeUpdate = () => {
+    // Browsers suspend animation frames in background tabs. Media events still
+    // allow an active soundtrack to make its handoff without an ended gap.
+    if (document.hidden) { window.cancelAnimationFrame(frame); tick(); }
+  };
   player.addEventListener('play', onPlay);
   player.addEventListener('pause', onPause);
   player.addEventListener('seeking', onSeek);
   player.addEventListener('ended', onEnded);
   player.addEventListener('volumechange', applyVolume);
   player.addEventListener('ratechange', onRate);
+  player.addEventListener('timeupdate', onTimeUpdate);
   if (!player.paused) onPlay();
 
   return () => {
@@ -185,6 +192,7 @@ export function attachSmoothSoundtrackLoop(player) {
     player.removeEventListener('ended', onEnded);
     player.removeEventListener('volumechange', applyVolume);
     player.removeEventListener('ratechange', onRate);
+    player.removeEventListener('timeupdate', onTimeUpdate);
     incoming.pause(); incoming.removeAttribute('src'); incoming.load();
     incomingSource?.disconnect(); incomingGain?.disconnect();
     if (graph) {
@@ -203,8 +211,14 @@ export function attachSmoothSoundtrackLoop(player) {
 }
 
 export function useSmoothSoundtrackLoop(ref, source) {
+  const attachment = useRef(null);
   useEffect(() => {
-    if (!source || !ref.current) return undefined;
-    return attachSmoothSoundtrackLoop(ref.current);
-  }, [ref, source]);
+    const player = source ? ref.current : null;
+    if (attachment.current?.player === player && attachment.current?.source === source) return;
+    attachment.current?.dispose();
+    attachment.current = player ? { player, source, dispose: attachSmoothSoundtrackLoop(player) } : null;
+  });
+  // The audio element can mount after a readiness screen while source stays
+  // unchanged. Inspect the ref after each render, attaching only when needed.
+  useEffect(() => () => { attachment.current?.dispose(); attachment.current = null; }, []);
 }

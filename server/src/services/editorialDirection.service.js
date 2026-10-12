@@ -1,11 +1,12 @@
 import { EDITORIAL_LIMITS as L, EDITORIAL_LAYOUTS, EDITORIAL_POLICY } from '../constants/editorial.js';
-import { deliveryWritingContext, deliveryWritingPolicy, shootWritingIssues } from '../constants/deliveryWriting.js';
+import { deliveryWritingContext, deliveryWritingPolicy, shootWritingIssues, writingFallback } from '../constants/deliveryWriting.js';
 import { detailedFrameIssues, repeatsWriting } from '../utils/deliveryWritingQuality.js';
+import { orderWritingFrames } from '../utils/deliveryWritingIdentity.js';
 
 const clean = value => typeof value === 'string' ? value.trim() : '';
 const incomplete = () => Object.assign(new Error('The Editorial wording needs another pass. Your current text is unchanged; please retry.'), { code: 'V3_EDITORIAL_WRITING_INCOMPLETE', status: 502 });
 const within = (value, max, min = 0) => typeof value === 'string' && value.trim().length >= min && value.trim().length <= max;
-const context = (delivery, rows) => JSON.stringify({ ...deliveryWritingContext(delivery), photographs: rows.map(row => ({ assetId: row.assetId, observation: row.summary || '', width: row.width, height: row.height })) });
+const context = (delivery, rows) => JSON.stringify({ ...deliveryWritingContext(delivery), photographs: rows.filter(Boolean).map(row => ({ assetId: row.assetId, observation: row.summary || '', width: row.width, height: row.height })) });
 const policy = delivery => EDITORIAL_POLICY + '\n' + deliveryWritingPolicy(delivery);
 
 export function editorialDraftIssues(draft, selected, factsIssue = () => false, delivery = {}, rows = []) {
@@ -64,19 +65,76 @@ function logRejectedEditorial(flow, issues) {
   console.warn(`[editorial-writing/${flow}] draft failed validation after retries: ${issues.join(', ')}`);
 }
 
-export async function writeEditorialDirection(request, delivery, rows, selected, factsIssue) {
+export async function writeEditorialDirection(request, delivery, rows, selected, factsIssue, { resume, checkpoint = async () => {} } = {}) {
   const shape = 'Return JSON {"title":"...","openingLine":"...","introduction":"...","closingLine":"...","frames":[{"assetId":"...","headline":"...","caption":"..."}],"sections":[{"title":"...","body":"...","layout":"auto","assetIds":["..."]}]}. Include every supplied asset ID once in frames in the exact supplied order. Group the same order into 1-4 consecutive sections; no duplicates or missing photographs. Use useful section headings, not generic photo group names. Layout is auto, hero, pair, triptych, feature or wide. The cover summary (openingLine) must contain 5-300 characters and the closing note must contain 5-280 characters. Develop a useful section paragraph from the shared shoot context when it is supplied, and use photo captions to add distinct details. Only omit an introduction or section body when it adds no supported information. Never output placeholder dots. Keep the writing grounded in the supplied context; if details are limited, use restrained factual wording. Do not generate a photographer note, issue number, credits or attributed quotes.';
   const prompt = context(delivery, selected.map(id => rows.find(row => row.assetId === id)));
-  let draft = await request(shape + policy(delivery), prompt, { maxTokens: 1800 + selected.length * 220 });
+  const normalize = value => ({ ...value, frames: orderWritingFrames(value?.frames, selected) });
+  let draft = normalize(resume || await request(shape + policy(delivery), prompt, { maxTokens: 2000 + selected.length * 300 }));
+  await checkpoint(draft);
   let issues = editorialDraftIssues(draft, selected, factsIssue, delivery, rows);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     if (!issues.length) break;
-    draft = await request(shape + policy(delivery), prompt + '\nRevise these problems: ' + issues.join(', ') + '. Section assetIds, concatenated in section order, must equal ' + JSON.stringify(selected) + ' exactly. Group consecutive photographs only; do not regroup similar views across non-adjacent positions. The cover summary and closing note are required; only the introduction and section body may be empty.\nUntrusted draft (not a source of facts): ' + JSON.stringify(draft), { maxTokens: 1800 + selected.length * 220 });
+    const next = normalize(await request(shape + policy(delivery), prompt + '\nRevise these problems: ' + issues.join(', ') + '. Section assetIds, concatenated in section order, must equal ' + JSON.stringify(selected) + ' exactly. Group consecutive photographs only; do not regroup similar views across non-adjacent positions. The cover summary and closing note are required; only the introduction and section body may be empty.\nUntrusted draft (not a source of facts): ' + JSON.stringify(draft), { maxTokens: 2000 + selected.length * 300 }));
+    // Preserve checked photo words even if a full-draft retry drops them.
+    next.frames = next.frames.map((frame, index) => editorialCaptionIssues(frame, [], factsIssue, delivery, rows.find(row => row.assetId === frame.assetId) || {}).length && !editorialCaptionIssues(draft.frames[index], [], factsIssue, delivery, rows.find(row => row.assetId === frame.assetId) || {}).length ? draft.frames[index] : frame);
+    draft = next;
+    await checkpoint(draft);
     issues = editorialDraftIssues(draft, selected, factsIssue, delivery, rows);
   }
   if (issues.length) {
-    logRejectedEditorial('direction', issues);
-    throw incomplete();
+    // Repair small, independent blocks after whole-feature attempts. A single
+    // rejected sentence must not discard the rest of a finished feature.
+    const accepted = [];
+    const draftContext = { ...delivery, creativeDirection: { openingLine: draft.openingLine, editorial: { introduction: draft.introduction }, sections: draft.sections } };
+    for (const [index, original] of draft.frames.entries()) {
+      const insight = rows.find(row => row.assetId === original.assetId) || { assetId: original.assetId };
+      let frame = original;
+      if (editorialCaptionIssues(frame, accepted, factsIssue, draftContext, insight).length) {
+        try {
+          frame = { assetId: original.assetId, ...await rewriteEditorialCaption(request, { ...draftContext, creativeDirection: { ...draftContext.creativeDirection, frames: accepted } }, insight, 'Lead with the supplied purpose. Use only a short supporting visual cue.', original, factsIssue) };
+        } catch (error) {
+          if (error.code !== 'V3_EDITORIAL_WRITING_INCOMPLETE') throw error;
+          for (let slot = index; slot < index + 24; slot += 1) {
+            const candidate = { assetId: original.assetId, ...writingFallback(delivery, slot, L.caption) };
+            if (!editorialCaptionIssues(candidate, accepted, factsIssue, draftContext, insight).length) { frame = candidate; break; }
+          }
+        }
+      }
+      accepted.push(frame);
+      draft.frames[index] = frame;
+      await checkpoint(draft);
+    }
+    const blockLimits = { title: L.headline, openingLine: L.summary, closingLine: L.closing, introduction: L.introduction };
+    for (const [key, limit] of Object.entries(blockLimits)) {
+      const minimum = key === 'title' ? 2 : key === 'introduction' ? 0 : 5;
+      const value = clean(draft[key]);
+      if (!within(value, limit, minimum) || factsIssue(value) || shootWritingIssues(value, delivery, { observation: rows.map(row => row.summary || '').join(' ') }).length) {
+        if (key === 'introduction') draft[key] = '';
+        else {
+          const result = await request(`Return JSON {"text":"..."}. Write only the ${key}, ${minimum}-${limit} characters. Keep to the supplied purpose. ` + policy(delivery), prompt, { maxTokens: 450, temperature: .2 });
+          draft[key] = clean(result?.text);
+          if (!within(draft[key], limit, minimum) || factsIssue(draft[key]) || shootWritingIssues(draft[key], delivery).length) draft[key] = key === 'title' ? writingFallback(delivery).headline : key === 'openingLine' ? 'Your finished photographs are brought together in this feature.' : 'Your complete collection is here to view and keep.';
+        }
+        await checkpoint(draft);
+      }
+    }
+    const groups = Array.isArray(draft.sections) ? draft.sections : [];
+    const ids = groups.flatMap(group => Array.isArray(group?.assetIds) ? group.assetIds : []);
+    if (!groups.length || groups.length > 7 || groups.some(group => !group?.assetIds?.length) || ids.length !== selected.length || ids.some((id, index) => id !== selected[index])) {
+      const size = Math.max(1, Math.ceil(selected.length / 3));
+      draft.sections = [];
+      for (let start = 0; start < selected.length; start += size) draft.sections.push({ title: draft.frames[start].headline, body: '', layout: 'auto', assetIds: selected.slice(start, start + size) });
+    } else {
+      draft.sections = groups.map((group, index) => {
+        const observation = rows.filter(row => group.assetIds.includes(row.assetId)).map(row => row.summary || '').join(' ');
+        const title = within(group.title, L.sectionTitle, 2) && !factsIssue(group.title) && !shootWritingIssues(group.title, delivery, { observation }).length ? group.title : draft.frames.find(frame => group.assetIds.includes(frame.assetId)).headline;
+        const body = within(group.body || '', L.sectionBody) && !factsIssue(clean(group.body)) && !shootWritingIssues(group.body, delivery, { observation }).length && !repeatsWriting(group.body, [draft.openingLine, draft.introduction, ...groups.filter((_, other) => other !== index).map(group => group.body)]) ? clean(group.body) : '';
+        return { ...group, title, body };
+      });
+    }
+    await checkpoint(draft);
+    issues = editorialDraftIssues(draft, selected, factsIssue, delivery, rows);
+    if (issues.length) { logRejectedEditorial('direction', issues); throw incomplete(); }
   }
   const frames = draft.frames.map(frame => ({ assetId: frame.assetId, headline: clean(frame.headline), caption: clean(frame.caption), textAnimation: 'word_fade_up', imageFit: 'contain', focalPoint: '50% 50%' }));
   const sections = draft.sections.map((section, index) => ({ id: `feature-${index + 1}`, title: clean(section.title), body: clean(section.body), pullLine: '', layout: EDITORIAL_LAYOUTS.includes(section.layout) ? section.layout : 'auto', assetIds: [...section.assetIds] }));

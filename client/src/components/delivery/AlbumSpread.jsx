@@ -4,7 +4,8 @@ import { motion } from 'framer-motion';
 import { Images, Maximize2, X } from 'lucide-react';
 import { Photo } from '../PublicDesign.jsx';
 import { useDialogFocus } from '../useDialogFocus.js';
-import { albumPhotoKey, albumSpreadPhotos } from '../../utils/albumPresentation.js';
+import { albumPageProportions, albumPhotoKey, albumSpreadPhotos } from '../../utils/albumPresentation.js';
+import './AlbumPhotoPresentation.css';
 
 const folio = number => String(number).padStart(2, '0');
 
@@ -14,7 +15,8 @@ function MountedPhoto({ photo, onPhoto, decorative = false }) {
     width={photo.width || undefined} height={photo.height || undefined} alt={decorative ? '' : photo.alt || 'Photograph from this album'}
     style={{ backgroundSize: 'contain', backgroundRepeat: 'no-repeat' }}
     eager sizes="(max-width: 767px) 88vw, (max-width: 1024px) 43vw, 620px" />;
-  return <figure className="album-mount">{decorative ? <div className="album-photo-button">{image}</div> : <button className="album-photo-button" type="button" onClick={() => onPhoto?.(photo)} aria-label={`Open ${photo.alt || 'photograph'}`}>
+  const ratio = photo.width > 0 && photo.height > 0 ? photo.width / photo.height : .75;
+  return <figure className="album-mount" style={{ '--album-photo-ratio': ratio }}>{decorative ? <div className="album-photo-button">{image}</div> : <button className="album-photo-button" type="button" onClick={() => onPhoto?.(photo)} aria-label={`Open ${photo.alt || 'photograph'}`}>
     {image}<span className="album-photo-hint"><Maximize2 size={15} />View photo</span>
   </button>}</figure>;
 }
@@ -34,7 +36,7 @@ export default function AlbumSpread({ spread, index, onViewed, onPhoto, isLast =
   }, [index, onViewed, decorative]);
   const photos = albumSpreadPhotos(spread);
   const paired = photos.length > 1;
-  return <section className={`fd-album-spread ${paired ? 'album-facing-spread' : 'album-single-spread'} ${index === 0 ? 'is-opening' : ''} ${isLast ? 'is-finale' : ''}`} data-layout={spread.layout || 'single'} aria-label={decorative ? undefined : `Album page ${index + 1}`}>
+  return <section className={`fd-album-spread ${paired ? 'album-facing-spread' : 'album-single-spread'} ${index === 0 ? 'is-opening' : ''} ${isLast ? 'is-finale' : ''}`} style={{ gridTemplateColumns: albumPageProportions(photos) }} data-layout={spread.layout || 'single'} aria-label={decorative ? undefined : `Album page ${index + 1}`}>
     <AlbumPaper photos={paired ? photos.slice(0,1) : photos} side="left" index={paired ? index * 2 : index} footer={spread.footer} onPhoto={onPhoto} decorative={decorative} />
     {paired && <AlbumPaper photos={photos.slice(1)} side="right" index={index * 2 + 1} footer={spread.footer} onPhoto={onPhoto} decorative={decorative} />}
     <i className="fd-album-spine" aria-hidden="true" />

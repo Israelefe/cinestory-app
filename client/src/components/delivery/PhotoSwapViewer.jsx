@@ -20,6 +20,7 @@ import DeliveryBrandMark from './DeliveryBrandMark.jsx';
 import ClientGallery from './ClientGallery.jsx';
 import { API_BASE_URL } from '../../config/env.js';
 import { deliveryFontStyles } from '../../utils/deliveryTypography.js';
+import { prepareSoundtrackPlayback, useSmoothSoundtrackLoop } from '../../utils/smoothSoundtrackLoop.js';
 import './PhotoSwapViewer.css';
 import './DeliveryTypography.css';
 
@@ -252,6 +253,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
   }, []);
 
   const soundtrackUrl = delivery?.soundtrack?.url ? mediaUrl(delivery.soundtrack.url) : '';
+  useSmoothSoundtrackLoop(audioRef, soundtrackUrl);
   const studioName = delivery?.branding?.name || 'Your photographer';
   const title = delivery?.title || (delivery?.clientName ? delivery.clientName + "'s photographs" : 'Your photographs');
   const fontStyles = useMemo(
@@ -277,6 +279,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
     if (!fromGesture && soundtrackAttemptRef.current) return soundtrackAttemptRef.current;
     try {
       audio.muted = false;
+      prepareSoundtrackPlayback(audio);
       const playback = audio.play();
       if (!playback?.then) {
         setSoundBlocked(false);
@@ -452,6 +455,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
       setMuted(false);
       audio.muted = false;
       try {
+        prepareSoundtrackPlayback(audio);
         audio.play().then(() => setSoundBlocked(false)).catch(() => setSoundBlocked(true));
       } catch {
         setSoundBlocked(true);
@@ -538,6 +542,7 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
       {soundtrackUrl && (
         <audio
           ref={audioRef}
+          crossOrigin="anonymous"
           src={soundtrackUrl}
           loop
           preload="none"

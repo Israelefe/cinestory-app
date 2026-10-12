@@ -813,13 +813,16 @@ test('review retries repeated headings and captions while preserving the photo s
   } finally { restore(); }
 });
 
-test('persistently repeated Event Coverage writing fails safely instead of publishing generic birthday fallbacks', async () => {
+test('repeated Event Coverage writing recovers into distinct factual drafts without repeated birthday wishes', async () => {
   const selected = ids.slice(0, 24);
   const repeated = selected.map(assetId => ({ assetId, headline: narrativeHeadlines[0], caption: narrativeCaptions[0] }));
-  const restore = mockModel([{ frames: repeated }, { frames: repeated }, { frames: repeated }, { palette: {} }, { sections: [{ title: 'First set', assetIds: selected.slice(0, 12) }, { title: 'Second set', assetIds: selected.slice(12) }] }], []);
+  const restore = mockModel([{ frames: repeated }, { frames: repeated }, { frames: repeated }, ...Array.from({ length: 46 }, () => ({ headline: narrativeHeadlines[0], caption: narrativeCaptions[0] })), { palette: {} }, { sections: [{ title: 'Birthday coverage', body: 'This part of the coverage marks the supplied birthday occasion for Ada.', assetIds: selected.slice(0, 12) }, { title: 'Birthday collection', body: 'The remaining birthday photographs are grouped in this part of the coverage.', assetIds: selected.slice(12) }] }], []);
   try {
     const delivery = { clientName: 'Ada', brief: "Ada's 25th birthday", format: 'event-coverage' };
-    await assert.rejects(directV3(delivery, selected.map(assetId => ({ assetId, score: 8 }))), error => error.code === 'V3_WRITING_INCOMPLETE');
+    const result = await directV3(delivery, selected.map(assetId => ({ assetId, score: 8 })));
+    assert.equal(new Set(result.direction.frames.map(frame => frame.headline)).size, 24);
+    assert.equal(new Set(result.direction.frames.map(frame => frame.caption)).size, 24);
+    assert.ok(result.direction.frames.slice(1).every(frame => !/may |wish|year ahead|turning/i.test(frame.caption)));
     assert.equal(delivery.creativeDirection, undefined);
   } finally { restore(); }
 });
@@ -933,7 +936,7 @@ test('the other seven Showcase formats retain the purpose-led writing and review
       assert.ok(writing.length >= 4);
       for (const call of writing) {
         if (!/Group/.test(call.messages[0].content)) {
-          if (['chapters', 'event-coverage', 'campaign'].includes(format)) assert.match(call.messages[1].content[0].text, /green velvet|pearl earrings/);
+          if (['event-coverage', 'campaign'].includes(format) || ['chapters', 'canvas'].includes(format) && /Review the delivery wording/.test(call.messages[0].content)) assert.match(call.messages[1].content[0].text, /green velvet|pearl earrings/);
           else assert.doesNotMatch(call.messages[1].content[0].text, /green velvet|pearl earrings/);
         }
         assert.match(call.messages[0].content, /SHOOT GUIDANCE \(birthday\)/);

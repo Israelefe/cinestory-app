@@ -1,6 +1,11 @@
 import { expect } from '@playwright/test';
 
 export async function completePresentation(view, format) {
+  if (format === 'canvas') {
+    await view.locator('.cv-bookend.is-closing').scrollIntoViewIfNeeded();
+    await expect(view.getByRole('button', { name: 'View full gallery', exact: true })).toBeVisible();
+    return;
+  }
   if (format === 'editorial' || format === 'chapters') {
     if (format === 'chapters' && await view.locator('.fd-chapter-reading-page').count()) await view.getByRole('button', { name: 'All chapters', exact: true }).click();
     const button = view.getByRole('button', { name: 'View full gallery', exact: true });
@@ -49,7 +54,9 @@ export async function completePresentation(view, format) {
   } else if (format === 'photo-reveal') {
     await expect(view.locator('.rv-opening,.rv-position').first()).toBeVisible();
     const begin = view.getByRole('button', { name: 'Begin reveal', exact: true });
-    if (await begin.isVisible()) await begin.click();
+    const introduction = view.getByRole('dialog').getByRole('button', { name: 'Got it', exact: true });
+    if (await begin.isVisible()) { await begin.click(); await expect(introduction).toBeVisible(); }
+    if (await introduction.isVisible()) await introduction.click();
     const counter = view.locator('.rv-position');
     await expect(counter).toBeVisible();
     const [, current, total] = (await counter.getAttribute('aria-label')).match(/Photograph (\d+) of (\d+)/);
@@ -69,5 +76,5 @@ export async function completePresentation(view, format) {
 
 export async function openPresentationGallery(view, format) {
   await completePresentation(view, format);
-  await view.getByRole('button', { name: format === 'photo-story' ? 'Open gallery' : ['editorial', 'chapters'].includes(format) ? 'View full gallery' : 'Open full gallery', exact: true }).click();
+  await view.getByRole('button', { name: format === 'photo-story' ? 'Open gallery' : ['editorial', 'chapters', 'canvas'].includes(format) ? 'View full gallery' : 'Open full gallery', exact: true }).click();
 }

@@ -1,0 +1,20 @@
+/* Fit the mount to the photograph, so paper frames the image rather than a
+   large empty rectangle. The original remains complete at every viewport. */
+.fd-album .album-mount { container-type: size; }
+.fd-album .album-photo-button {
+  width: min(100cqw, calc(100cqh * var(--album-photo-ratio, .75)));
+  height: min(100cqh, calc(100cqw / var(--album-photo-ratio, .75)));
+  flex: none;
+  overflow: hidden;
+  box-shadow: 0 2px 8px #00000012;
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+.fd-album .album-photo-button:is(:hover, :focus-visible) { box-shadow: 0 4px 14px #00000020; }
+.fd-album .album-photo-button .v-photo { object-fit: contain; }
+.fd-album .album-paper { padding: 9px; }
+@media (min-width: 640px) { .fd-album .album-paper { padding: 13px; } }
+@media (min-width: 768px) {
+  .fd-album .album-paper-left { padding-right: 15px; }
+  .fd-album .album-paper-right { padding-left: 15px; }
+}
+@media (min-width: 1024px) { .fd-album .album-paper { padding-block: 16px; } }
