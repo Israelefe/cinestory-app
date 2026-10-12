@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Check, Clapperboard, ExternalLink, Film, Grid2X2, Images, Layers3 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Clapperboard, ExternalLink, Grid2X2, Images, Layers3 } from 'lucide-react';
 import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
-import VideoAvailability, { useVideoAvailability } from '../components/VideoAvailability.jsx';
 import DeliveryOpeningPreview from '../components/delivery/DeliveryOpeningPreview.jsx';
 import ShowcaseFormatOverview from '../components/delivery/ShowcaseFormatOverview.jsx';
 import './CreateDeliveryChoice.css';
@@ -16,7 +15,6 @@ const types = [
 
 export default function CreateDeliveryChoice() {
   const reduced = useVeyloReducedMotion();
-  const video = useVideoAvailability();
   const [selected, setSelected] = useState('showcase');
   const current = types.find(type => type.id === selected);
   return <main className="v-create-choice">
@@ -47,12 +45,6 @@ export default function CreateDeliveryChoice() {
         </section>
       </div>
       <div className="v-choice-actions"><div><span>YOUR CHOICE</span><strong>{current.title}</strong></div><Link className="v-choice-continue" to={'/create?type=' + selected}>Continue with {current.shortName}<ArrowRight size={17} /></Link></div>
-      <motion.section className="v-choice-film" initial={reduced ? false : { opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .15 }} transition={{ duration: .35 }}>
-        <span className="v-choice-film-icon"><Film size={24} strokeWidth={1.5} /></span>
-        <div className="v-choice-film-copy"><span className="v-choice-eyebrow">FOR FINISHED FILMS</span><h2>Delivering video instead?</h2><p>Send a separate link with private playback and your studio branding.</p><VideoAvailability compact /></div>
-        <div className="v-choice-film-links"><Link to={video.available ? '/create?type=video' : '/video-delivery'}>{video.available ? 'Create a video delivery' : 'About video delivery'}<ArrowRight size={15} /></Link><div><Link to="/demo/video" target="_blank" rel="noopener noreferrer">Watch the demo <ExternalLink size={12} /></Link><Link to="/videos/library">Your video library</Link></div></div>
-      </motion.section>
-      <p className="v-choice-foot">All three photo options share the same photo limits, private access and download settings.</p>
     </div>
   </main>;
 }
