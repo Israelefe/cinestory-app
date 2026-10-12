@@ -1,4 +1,3 @@
-import { demoPaletteVariables } from '../../constants/demoPalettes.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
@@ -207,7 +206,6 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
     columnHeights[shortest] += height / width + 0.07;
   });
   const style = {
-    ...(demo ? demoPaletteVariables('gridboard') : {}),
     '--pb-background': palette.background || '#13110f',
     '--pb-surface': palette.surface || '#211b18',
     '--pb-text': palette.text || '#fff6ec',
@@ -683,7 +681,7 @@ export default function PinboardViewer({ delivery, preview = false, demo = false
     ? moments.find(moment => moment.id === activeMoment)?.title || 'Selected moment'
     : selectedColourGroup ? colorGroupLabel(selectedColourGroup) : '';
 
-  return <main className={'pb-viewer' + (preview ? ' is-preview' : '') + (board.animation === 'none' ? '' : ' is-animated')} style={style} data-demo-palette={demo ? 'gridboard' : undefined}>
+  return <main className={'pb-viewer' + (preview ? ' is-preview' : '') + (board.animation === 'none' ? '' : ' is-animated')} style={style}>
     <div className="pb-wrap">
       <header className={'pb-header' + ((delivery?.branding?.name || 'Veylo').length > 32 ? ' has-long-brand' : '')}>
         <div className="pb-brand"><span className="pb-brand-mark"><DeliveryBrandMark branding={delivery?.branding} /></span><span><small>{delivery?.branding?.type === 'studio' ? 'Photographed by' : 'GRIDBOARD'}</small><strong>{delivery?.branding?.name || 'Veylo'}</strong></span></div>

@@ -1,4 +1,3 @@
-import { demoPaletteVariables } from '../../constants/demoPalettes.js';
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useScroll, useSpring, useTransform } from 'framer-motion';
@@ -104,7 +103,7 @@ export default function EditorialViewer({ delivery, galleryProps = {}, demo = fa
   const artworkKind = editorialArtworkKind(delivery.shootType);
   const readingPosition = useRef(0);
   const { scrollYProgress } = useScroll();
-  const theme = useMemo(() => ({ ...editorialTheme(delivery), ...(demo ? demoPaletteVariables('editorial') : {}) }), [delivery, demo]);
+  const theme = useMemo(() => editorialTheme(delivery), [delivery]);
   const editorial = useMemo(() => editorialFromDelivery(delivery), [delivery]);
   const photos = useMemo(() => editorialPhotos(delivery), [delivery]);
   const allPhotos = useMemo(() => editorialPhotos(delivery, true), [delivery]);
@@ -152,7 +151,7 @@ export default function EditorialViewer({ delivery, galleryProps = {}, demo = fa
     else navigate(url.pathname + url.search + url.hash);
   }
   const demoGalleryProps = demo ? { demoId: 'ada', liked: demoLikes, onLike: id => setDemoLikes(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; }), onDownload: () => toast.info('This is a sample. Photo downloads are available on published client deliveries.'), onDownloadAll: () => toast.info('This is a sample. Photo downloads are available on published client deliveries.') } : {};
-  return <div className="fd-page fd-editorial ed-publication" data-demo-palette={demo ? 'editorial' : undefined} style={theme} data-treatment={editorial.treatment} data-motion-paused={motionPaused}>
+  return <div className="fd-page fd-editorial ed-publication" style={theme} data-treatment={editorial.treatment} data-motion-paused={motionPaused}>
     <header className="ed-nav">
       <div className="ed-brand"><DeliveryBrandMark branding={delivery.branding} /><div><span>Photographed by</span><strong>{delivery.branding?.name || 'Your photographer'}</strong></div></div>
       <div className="ed-nav-title"><span>EDITORIAL</span><strong>{delivery.clientName || title}</strong></div>

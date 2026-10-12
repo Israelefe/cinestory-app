@@ -25,7 +25,6 @@ export function getFormatThemeStyles(delivery, fallback = {}) {
   const densityGap = variation.density === 'spacious' ? '1.28' : variation.density === 'layered' ? '.84' : '1';
 
   return {
-    ...fallback.demoStyles,
     '--fd-accent': accent,
     '--fd-accent-soft': `${accent}26`,
     '--fd-bg': bg,

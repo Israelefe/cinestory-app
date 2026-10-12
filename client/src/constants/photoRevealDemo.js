@@ -1,5 +1,3 @@
-import { DEMO_PALETTES } from './demoPalettes.js';
-
 const sources = ['demo-sharon-1', 'demo-sharon-2', 'demo-sharon-3', 'sharon-side', 'demo-sharon-4'];
 const words = [
   ['Your first look', 'Sharon, we are glad we could make these portraits with you. Take your time with them.'],
@@ -15,12 +13,11 @@ const assets = sources.map((source, index) => ({
   width: 960, height: 1280, alt: `Sharon's studio portrait ${index + 1}`, originalFilename: `sharon-${index + 1}.jpg`
 }));
 export const PHOTO_REVEAL_DEMO = {
-  demoPalette: 'photo-reveal',
   schemaVersion: 3, format: 'photo-reveal', clientName: 'Sharon', shootType: 'Studio portraits', title: 'Sharon’s studio portraits',
   branding: { type: 'studio', name: 'Studio Lumière' }, assets, curatedAssetIds: assets.map(asset => asset.assetId),
   creativeDirection: {
     title: 'Sharon, your portraits are ready.', openingLine: 'Five photographs from your studio session. Reveal each one when you are ready.', closingLine: 'Thank you for spending this session with us, Sharon. Your complete gallery is ready to enjoy and download.',
-    palette: { ...DEMO_PALETTES['photo-reveal'] }, typography: { display: 'Playfair Display', body: 'Outfit' },
+    palette: { background: '#080b10', surface: '#121820', text: '#f5efe7', accent: '#d8b895' }, typography: { display: 'Playfair Display', body: 'Outfit' },
     reveal: { style: 'curtain', movement: true, ending: 'triptych' },
     frames: assets.map((asset, index) => ({ assetId: asset.assetId, headline: words[index][0], caption: words[index][1] }))
   },

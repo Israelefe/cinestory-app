@@ -1,4 +1,3 @@
-import { demoPaletteVariables } from '../../constants/demoPalettes.js';
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, animate, motion, useAnimationControls, useMotionValue, useTransform } from 'framer-motion';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
@@ -261,7 +260,6 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
   );
   const stageStyle = {
     ...fontStyles,
-    ...(demo ? demoPaletteVariables('photoswap') : {}),
     '--ps-photo-glow': glow
   };
 
@@ -536,7 +534,6 @@ export default function PhotoSwapViewer({ delivery, galleryProps = {}, demo = fa
       ref={viewerElementRef}
       className={'ps-viewer' + (preview ? ' is-preview' : '')}
       style={stageStyle}
-      data-demo-palette={demo ? 'photoswap' : undefined}
     >
       {soundtrackUrl && (
         <audio

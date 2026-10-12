@@ -1,4 +1,3 @@
-import { demoFormatTheme } from '../../constants/demoPalettes.js';
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useAnimationControls, useInView, useMotionValue, useMotionValueEvent, useScroll } from 'framer-motion';
 import { ArrowLeft, ArrowRight, ChevronDown, Download, FileCheck2, Maximize2, Pause, Play } from 'lucide-react';
@@ -184,7 +183,7 @@ export function CampaignDeliveryViewer({ delivery, galleryProps: suppliedGallery
   const closing = delivery?.creativeDirection?.closingLine || 'The collection is yours.';
   const branding = delivery ? delivery.branding : demoBranding;
   const usage = delivery?.formatConfig?.usageTerms;
-  const styles = getFormatThemeStyles(delivery, { bg: '#090d13', surface: '#121a25', text: '#f5f2eb', accent: '#e9ab79', fontDisplay: "'Outfit', sans-serif", fontBody: "'Manrope', sans-serif", ...(!delivery ? demoFormatTheme('campaign') : {}) });
+  const styles = getFormatThemeStyles(delivery, { bg: '#090d13', surface: '#121a25', text: '#f5f2eb', accent: '#e9ab79', fontDisplay: "'Outfit', sans-serif", fontBody: "'Manrope', sans-serif" });
   const hasPhotoMotion = [openingPhoto, closingPhoto, ...photos].some(photo => photo && photo.motion !== 'still');
   const paused = motionPaused || !pageVisible || gallery;
   const currentSet = sets.find(set => campaignSetAnchor(set) === activeSet) || sets[0];
@@ -252,7 +251,7 @@ export function CampaignDeliveryViewer({ delivery, galleryProps: suppliedGallery
     element?.focus({ preventScroll: true }); element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  return <div ref={viewer} className="fd-page vec-campaign cp-viewer" data-heading-kind={styles['--delivery-font-heading'].includes('Georgia') ? 'serif' : 'sans'} data-photo-motion-paused={paused} data-composition={styles['--fd-composition']} style={styles} data-demo-palette={styles['--demo-format']}>
+  return <div ref={viewer} className="fd-page vec-campaign cp-viewer" data-heading-kind={styles['--delivery-font-heading'].includes('Georgia') ? 'serif' : 'sans'} data-photo-motion-paused={paused} data-composition={styles['--fd-composition']} style={styles}>
     <div className="cp-masthead"><StudioIdentity branding={branding} /><DemoHeader format="Campaign Delivery" client={title} sectionId="campaign" delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} /></div>
     <main>
       <section className="cp-cover" data-title-size={title.length > 65 ? 'long' : 'short'} data-design="campaign-poster" aria-labelledby={`${instance}-title`} style={{ '--cp-title-size': `${Math.min(9, 44 / longestWord)}vw`, '--cp-mobile-title-size': `${Math.min(22, 120 / longestWord)}vw` }}>

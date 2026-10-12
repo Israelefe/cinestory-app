@@ -1,4 +1,3 @@
-import { demoFormatTheme } from '../../constants/demoPalettes.js';
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useAnimationControls, useInView, useMotionValue, useMotionValueEvent, useScroll } from 'framer-motion';
 import { ArrowRight, ChevronDown, Images, Maximize2, Pause, Play, SlidersHorizontal } from 'lucide-react';
@@ -189,7 +188,7 @@ export default function EventCoverageViewer({ delivery, galleryProps, audioState
   const branding = delivery ? delivery.branding : demoBranding;
   const opening = delivery?.creativeDirection?.openingLine || delivery?.brief || (delivery ? '' : 'The programme, the conversations, and everyone who was there.');
   const closing = delivery?.creativeDirection?.closingLine || 'Your photographs are ready to keep.';
-  const styles = getFormatThemeStyles(delivery, { bg: '#070709', surface: '#0c0c10', text: '#f4efe8', accent: '#ff9b8e', fontDisplay: "'Cormorant Garamond', Georgia, serif", fontBody: "'Manrope', sans-serif", ...(!delivery ? demoFormatTheme('event-coverage') : {}) });
+  const styles = getFormatThemeStyles(delivery, { bg: '#070709', surface: '#0c0c10', text: '#f4efe8', accent: '#ff9b8e', fontDisplay: "'Cormorant Garamond', Georgia, serif", fontBody: "'Manrope', sans-serif" });
   const eventDate = dateLabel(settings.eventDate);
   const titleWords = title.trim().split(/\s+/);
   const accentTitle = titleWords.length >= 4 && title.length < 70;
@@ -265,7 +264,7 @@ export default function EventCoverageViewer({ delivery, galleryProps, audioState
   };
   const openGallery = () => { if (galleryUnlocked) { setGalleryIndex(null); setGallery(true); } };
   const closeGallery = () => { setGallery(false); setGalleryIndex(null); };
-  return <div ref={viewerRef} className="fd-page vec-event ec-viewer" data-motion-paused={motionPaused} data-composition={styles['--fd-composition']} data-heading-kind={serifHeading ? 'serif' : 'sans'} style={styles} data-demo-palette={styles['--demo-format']}>
+  return <div ref={viewerRef} className="fd-page vec-event ec-viewer" data-motion-paused={motionPaused} data-composition={styles['--fd-composition']} data-heading-kind={serifHeading ? 'serif' : 'sans'} style={styles}>
     <div className="ec-masthead">
       <EventBrandIdentity branding={branding} />
       <DemoHeader format="Event Coverage" client={title} sectionId="event-coverage" delivery={delivery} audioState={audioState} toggleAudio={toggleAudio} />

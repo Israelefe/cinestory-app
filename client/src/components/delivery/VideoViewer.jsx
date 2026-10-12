@@ -1,5 +1,4 @@
-﻿import { demoPaletteVariables } from '../../constants/demoPalettes.js';
-import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Play, Download, Film, ArrowUpRight, ArrowLeft, ChevronDown } from 'lucide-react';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
@@ -50,8 +49,7 @@ export default function VideoViewer({ delivery, requestPlayback, endPlayback, do
   }, [vertical, desktop, select, orderedItems]);
   const player = item && <VideoPlayback key={item.id} item={item} portrait={vertical} original={delivery.playbackMode !== 'adaptive'} autoPlay muted={muted} onMutedChange={setMuted} requestPlayback={requestPlayback} endPlayback={endPlayback} />;
   if (!item) return <div className="vv-state"><Film /><h1>No videos are ready yet.</h1><p>Finish preparing a video before opening this preview.</p></div>;
-  const demoStyle = demo ? demoPaletteVariables('video') : undefined;
-  if (vertical) { const portraitView = <main className="vv-page vv-vertical-page" style={demoStyle} data-demo-palette={demo ? 'video' : undefined}>
+  if (vertical) { const portraitView = <main className="vv-page vv-vertical-page">
     <div className="vv-feed" ref={feed} role="region" aria-label="Vertical videos" tabIndex={0} onKeyDown={event => {
       if (event.target !== event.currentTarget || !['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End'].includes(event.key)) return;
       event.preventDefault(); const index = portraitItems.findIndex(video => video.id === item.id);
@@ -69,7 +67,7 @@ export default function VideoViewer({ delivery, requestPlayback, endPlayback, do
   </main>;
     return desktop ? <div className="vv-desktop-device"><DesktopPhoneFrame title="Video delivery">{portraitView}</DesktopPhoneFrame></div> : portraitView;
   }
-  return <main className="vv-page vv-wide-page" style={demoStyle} data-demo-palette={demo ? 'video' : undefined}>
+  return <main className="vv-page vv-wide-page">
     <header className="vv-brand"><Photographer branding={branding} />{demo && <span className="vv-demo-label">CLIENT DEMO</span>}</header>
     <motion.section className="vv-heading" initial={reduced ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .35 }}><p>{delivery.items.length === 1 ? 'YOUR FILM' : `${delivery.items.length} FILMS`}</p><h1>{delivery.title}</h1>{delivery.introduction && <div className="vv-introduction">{delivery.introduction}</div>}</motion.section>
     <div className={'vv-layout' + (delivery.items.length === 1 ? ' is-single' : '')} style={{ '--vv-aspect-ratio': videoRatio(item) }}>
