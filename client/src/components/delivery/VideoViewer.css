@@ -29,3 +29,7 @@
 .vv-layout{--vv-player-height:clamp(160px,calc(100svh - 300px),720px)}
 .vv-layout>.vv-film{width:min(100%,calc(var(--vv-player-height)*var(--vv-aspect-ratio,1.777777778)));margin-inline:auto;align-self:start}
 .vv-layout .vv-screen{aspect-ratio:var(--vv-aspect-ratio,16/9);min-height:72px}
+.vv-buffer{max-width:calc(100% - 24px);line-height:1.5;padding:10px 14px;gap:9px}
+.vv-buffer>svg{flex-shrink:0}.vv-buffer>span{min-width:0}
+.vv-buffer button{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;padding:0;border:1px solid #ffffff20;border-radius:50%;background:#ffffff08;color:#fff;cursor:pointer;transition:transform .18s,background .18s}
+.vv-buffer button:hover{background:#ffffff18}.vv-buffer button:active{transform:scale(.94)}.vv-buffer button:focus-visible{outline:2px solid #ff9b8e;outline-offset:3px}

@@ -10,9 +10,11 @@ const asset = { originalCompatible: true, hasAdaptive: true, id: assetId, filena
 const presentation = { title: 'Ada and Emeka', introduction: 'Your finished films are ready.', featuredAssetId: assetId, allowDownloads: false, items: [{ assetId, title: 'The ceremony', description: 'The complete ceremony film.', posterSeconds: 0, allowDownload: null }] };
 function project() { return { _id: id, publicId: 'video-example-private-id', kind: 'video', schemaVersion: 3, status: 'draft', clientName: '', brief: '', video: { draft: structuredClone(presentation), revision: 0, accessVersion: 0 }, access: { hasPin: false }, assets: [structuredClone(asset)] }; }
 async function mock(page, options = {}) {
+  const demoMedia = [];
   await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 4, necessary: true, serviceAnalytics: true })));
   // Keep browser checks deterministic; production smoke checks use the real R2 originals.
   await page.route('**/demo-videos/*', async route => {
+    demoMedia.push(new URL(route.request().url()).pathname.split('/').at(-1));
     const portrait = route.request().url().includes('drummer-');
     const body = await readFile(new URL(`../public/veylo/video/${portrait ? 'portrait-study' : 'light-study'}.mp4`, import.meta.url));
     const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range || '');
@@ -40,7 +42,7 @@ async function mock(page, options = {}) {
     if (path.includes('/videos/public/')) return ok({ requiresPin: true, branding: { name: 'Amara Studio' } });
     return ok({});
   });
-  return { state, errors };
+  return { state, errors, demoMedia };
 }
 async function noOverflow(page) { expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true); }
 
@@ -327,17 +329,18 @@ for (const width of [390, 834, 1440]) test(`real adaptive HLS plays, seeks and k
 });
 
 for (const width of [320, 390, 768, 834, 1024, 1440]) test(`client demo fits ${width}px with muted autoplay and photographer branding`, async ({ page }) => {
-  const { errors } = await mock(page); await page.setViewportSize({ width, height: 950 }); await page.emulateMedia({ reducedMotion: 'reduce' }); await page.goto('/demo/video');
+  const { errors, demoMedia } = await mock(page); await page.setViewportSize({ width, height: 950 }); await page.emulateMedia({ reducedMotion: 'reduce' }); await page.goto('/demo/video');
   await expect(page.getByRole('heading', { name: 'A place for the finished film.' })).toBeVisible();
   await expect(page.locator('video')).toHaveCount(1); await expect.poll(() => page.locator('video').evaluate(video => !video.paused && video.muted)).toBe(true);
   await expect(page.locator('.vv-brand')).toContainText('Example studio');
   await expect(page.locator('.vv-download')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Enable sound', exact: true })).toHaveCount(0);
-  await expect(page.locator('video')).toHaveAttribute('src', /demo-videos\/celebration-a1a6b543\.mp4$/); await noOverflow(page);
+  expect(demoMedia).toContain('celebration-a1a6b543.mp4'); await noOverflow(page);
   await page.getByRole('button', { name: /The drummer, up close/ }).click(); await expect(page.locator('.vv-reel.is-active .vv-screen')).toHaveClass(/is-portrait/);
   await expect(page.locator('.vv-download')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Unmute video|Mute video|Enable sound/ })).toHaveCount(0);
-  await expect(page.locator('video')).toHaveAttribute('src', /demo-videos\/drummer-7510db80\.mp4$/); await noOverflow(page);
+  await expect.poll(() => page.locator('video').evaluate(video => !video.paused)).toBe(true);
+  expect(demoMedia).toContain('drummer-7510db80.mp4'); await noOverflow(page);
   if (width === 390 || width === 834) await page.screenshot({ path: `../.visual-review/video-demo-${width}.png`, fullPage: true });
   expect(errors).toEqual([]);
 });
