@@ -76,7 +76,7 @@ export async function inspectLocalVideo(file, maxDuration) {
   if (!video || !Number.isFinite(duration) || duration < .1 || duration > maxDuration || !Number.isInteger(video.width) || !Number.isInteger(video.height) || video.width > 8192 || video.height > 8192 || video.width < 16 || video.height < 16) throw Object.assign(new Error('Choose a playable video within the duration and export limits.'), { code: 'VIDEO_INVALID_MEDIA' });
   const rotation = Number(video.side_data_list?.find(item => Number.isFinite(item.rotation))?.rotation || video.tags?.rotate || 0);
   const [rate, divisor = 1] = String(video.avg_frame_rate || '30').split('/').map(Number);
-  const frameRate = Number.isFinite(rate / divisor) && rate / divisor > 0 ? Math.min(30, rate / divisor) : 30;
+  const frameRate = Number.isFinite(rate / divisor) && rate / divisor > 0 ? rate / divisor : 30;
   return { duration, width: Math.abs(rotation) % 180 === 90 ? video.height : video.width, height: Math.abs(rotation) % 180 === 90 ? video.width : video.height, rotation, frameRate, videoCodec: video.codec_name, pixelFormat: video.pix_fmt, audioCodec: audio?.codec_name || '' };
 }
 

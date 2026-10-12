@@ -2,14 +2,77 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { encodingVariants, parseHlsPlaylist, encodeAdaptiveVideo } from '../src/services/videoEncode.service.js';
 import { inspectLocalVideo, runMediaTool } from '../src/services/videoMedia.service.js';
+import { packageOriginalVideo } from '../src/services/videoPackage.service.js';
+import { originalVideoCompatible, originalPlaybackFile } from '../src/services/videoOriginal.service.js';
 
 const root = fileURLToPath(new URL('../../.visual-review/video-hls/', import.meta.url));
 const formats = spawnSync(process.env.FFMPEG_PATH || 'ffmpeg', ['-hide_banner', '-muxers'], { encoding: 'utf8', windowsHide: true });
 const hasEncoder = formats.status === 0 && /\bE\s+hls\s/.test(formats.stdout);
+
+for (const scenario of ['landscape', 'portrait', 'long-gop', 'open-gop', '4k', 'rotated', 'silent']) test(`lossless ${scenario} playback preserves every decoded video frame and encoded audio packet`, { skip: !hasEncoder && 'Requires full FFmpeg and FFprobe.', timeout: 180000 }, async t => {
+  await mkdir(root, { recursive: true }); const directory = await mkdtemp(path.join(root, 'original-'));
+  let source = path.join(directory, 'source.mp4');
+  const width = scenario === 'portrait' ? 360 : scenario === '4k' ? 3840 : 640;
+  const height = scenario === 'portrait' ? 640 : scenario === '4k' ? 2160 : 360;
+  const duration = scenario === 'long-gop' ? 14 : scenario === '4k' ? 1 : 8;
+  const visual = scenario === '4k' ? `color=c=navy:size=${width}x${height}:rate=60` : `testsrc2=size=${width}x${height}:rate=60`;
+  await runMediaTool('ffmpeg', ['-v', 'error', '-nostdin', '-f', 'lavfi', '-i', visual, ...(scenario === 'silent' ? [] : ['-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000']), '-t', String(duration), '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18', '-pix_fmt', 'yuv420p', '-g', scenario === 'long-gop' ? '1800' : '120', ...(scenario === 'open-gop' ? ['-bf', '2', '-x264-params', 'open-gop=1'] : []), '-sc_threshold', '0', '-threads', '2', '-c:a', 'aac', '-y', source]);
+  if (scenario === 'rotated') {
+    const rotated = path.join(directory, 'rotated.mp4');
+    await runMediaTool('ffmpeg', ['-v', 'error', '-i', source, '-c', 'copy', '-metadata:s:v:0', 'rotate=90', '-y', rotated]); source = rotated;
+  }
+  const original = await readFile(source); const metadata = await inspectLocalVideo(source, 10800);
+  assert.equal(metadata.frameRate, 60);
+  const previous = { ...process.env }; const uploads = new Map();
+  Object.assign(process.env, { R2_ACCOUNT_ID: 'a'.repeat(32), R2_ACCESS_KEY_ID: 'test', R2_SECRET_ACCESS_KEY: 'test', R2_BUCKET_NAME: 'test' });
+  t.after(() => { for (const key of Object.keys(process.env)) if (!(key in previous)) delete process.env[key]; Object.assign(process.env, previous); });
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(options.method, 'PUT');
+    uploads.set(decodeURIComponent(new URL(url).pathname.slice('/test/'.length)), Buffer.from(await new Response(options.body).arrayBuffer()));
+    return new Response(null, { status: 200 });
+  });
+  const prefix = 'fixture/'; const result = await packageOriginalVideo({ file: source, directory, metadata, bytes: original.length, prefix });
+  const target = path.join(root, 'original-' + scenario); await mkdir(target, { recursive: true });
+  for (const [key, bytes] of uploads) { const local = path.join(target, key.slice(prefix.length)); await mkdir(path.dirname(local), { recursive: true }); await writeFile(local, bytes); }
+  const playback = path.join(target, result.hls ? 'master.m3u8' : 'playback.mp4');
+  assert.equal(Boolean(result.hls), !['long-gop', 'open-gop', 'rotated'].includes(scenario));
+  if (result.hls) assert.deepEqual([result.hls.variants[0].width, result.hls.variants[0].height], [width, height]);
+  else {
+    const mp4 = uploads.get(result.key);
+    assert.ok(mp4.indexOf(Buffer.from('moov')) < mp4.indexOf(Buffer.from('mdat')), 'MP4 metadata must precede the media for fast startup.');
+  }
+  const frames = async file => (await runMediaTool('ffmpeg', ['-v', 'error', '-protocol_whitelist', 'file,crypto,data', '-threads', '2', '-i', file.replaceAll('\\', '/'), '-map', '0:v:0', '-an', '-f', 'framemd5', '-'])).split(/\r?\n/).filter(line => line && !line.startsWith('#')).map(line => line.split(',').at(-1).trim());
+  assert.deepEqual(await frames(playback), await frames(source));
+  if (scenario !== 'silent') {
+    for (const [label, file] of [['source', source], ['playback', playback]]) await runMediaTool('ffmpeg', ['-v', 'error', '-protocol_whitelist', 'file,crypto,data', '-i', file.replaceAll('\\', '/'), '-map', '0:a:0', '-c', 'copy', '-f', 'adts', '-y', path.join(directory, label + '.aac')]);
+    assert.deepEqual(await readFile(path.join(directory, 'playback.aac')), await readFile(path.join(directory, 'source.aac')));
+  } else assert.equal(metadata.audioCodec, '');
+  assert.deepEqual(await readFile(source), original, 'The uploaded original must never be modified.');
+  await assert.rejects(packageOriginalVideo({ file: source, directory, metadata, bytes: original.length, prefix, guard: async () => { throw Object.assign(new Error('Lease lost'), { code: 'VIDEO_JOB_SUPERSEDED' }); } }), { code: 'VIDEO_JOB_SUPERSEDED' });
+});
+
+test('native WebM playback preserves its original VP9 and Opus file', { skip: !hasEncoder && 'Requires full FFmpeg and FFprobe.', timeout: 60000 }, async t => {
+  const renderer = fileURLToPath(new URL('../node_modules/@remotion/compositor-win32-x64-msvc/ffmpeg.exe', import.meta.url));
+  const previous = process.env.FFMPEG_PATH;
+  t.after(() => { if (previous === undefined) delete process.env.FFMPEG_PATH; else process.env.FFMPEG_PATH = previous; });
+  const directory = path.join(root, 'original-webm'); await mkdir(directory, { recursive: true });
+  const input = path.join(directory, 'source.mp4');
+  await runMediaTool('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=24', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000', '-t', '8', '-c:v', 'libx264', '-preset', 'ultrafast', '-threads', '2', '-c:a', 'aac', '-y', input]);
+  if (process.platform === 'win32' && existsSync(renderer)) process.env.FFMPEG_PATH = renderer;
+  const file = path.join(directory, 'playback.webm');
+  await runMediaTool('ffmpeg', ['-v', 'error', '-i', input, '-c:v', 'libvpx-vp9', '-lossless', '1', '-threads', '2', '-c:a', 'libopus', '-y', file]);
+  const metadata = await inspectLocalVideo(file, 10800); const original = await readFile(file);
+  const asset = { ...metadata, filename: 'playback.webm', objectKey: 'private/original.webm', bytes: original.length };
+  assert.equal(metadata.videoCodec, 'vp9'); assert.equal(metadata.audioCodec, 'opus');
+  assert.equal(originalVideoCompatible(asset), true);
+  const resource = originalPlaybackFile(asset, 'original');
+  assert.equal(resource.key, asset.objectKey); assert.equal(resource.bytes, original.length); assert.equal(resource.contentType, 'video/webm');
+});
 test('quality ladders preserve portrait framing and never upscale small films', () => {
   assert.deepEqual(encodingVariants({ width: 1920, height: 1080 }).map(row => [row.width, row.height]), [[640, 360], [852, 480], [1280, 720], [1920, 1080]]);
   assert.deepEqual(encodingVariants({ width: 1080, height: 1920 }).map(row => [row.width, row.height]), [[360, 640], [480, 852], [720, 1280], [1080, 1920]]);

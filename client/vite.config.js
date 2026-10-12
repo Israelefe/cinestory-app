@@ -22,7 +22,8 @@ export default defineConfig({
       'framer-motion',
       'lucide-react',
       'react-toastify',
-      'axios'
+      'axios',
+      'hls.js'
     ]
   },
   server: {

@@ -3,6 +3,10 @@ import mongoose from 'mongoose';
 const { Schema } = mongoose;
 const owner = { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true };
 const model = (name, schema) => mongoose.models[name] || mongoose.model(name, schema);
+const hlsOutput = {
+  version: String, prefix: String, bytes: Number, masterBytes: Number, readyAt: Date,
+  variants: [{ _id: false, name: String, width: Number, height: Number, bitrate: Number, bandwidth: Number, playlistBytes: Number, segments: [{ _id: false, seconds: Number, bytes: Number }] }]
+};
 const assetSchema = new Schema({
   userId: owner, objectKey: { type: String, required: true, unique: true },
   filename: { type: String, maxlength: 180, required: true }, contentType: String,
@@ -13,8 +17,9 @@ const assetSchema = new Schema({
   errorCode: String, errorMessage: String, streamUid: { type: String, index: true },
   streamImportedAt: Date, streamReadyAt: Date, posterKey: String, posterKeys: [String],
   encodingId: String,
-  hls: { version: String, prefix: String, bytes: Number, masterBytes: Number, readyAt: Date,
-    variants: [{ _id: false, name: String, width: Number, height: Number, bitrate: Number, bandwidth: Number, playlistBytes: Number, segments: [{ _id: false, seconds: Number, bytes: Number }] }] },
+  hls: hlsOutput,
+  originalPlayback: { state: String, generation: String, version: String, bytes: Number,
+    key: String, contentType: String, hls: hlsOutput, readyAt: Date },
   cover: { state: String, generation: String, seconds: Number, errorMessage: String },
   analysis: { state: { type: String, enum: ['idle', 'queued', 'running', 'ready', 'failed'], default: 'idle' },
     includeSpeech: Boolean, generation: String, version: String, frames: [Number], suggestions: Schema.Types.Mixed,
@@ -59,6 +64,7 @@ const playbackSchema = new Schema({
   _id: String, userId: owner, deliveryId: { type: Schema.Types.ObjectId, required: true },
   assetId: { type: Schema.Types.ObjectId, required: true }, accessVersion: Number,
   playbackMode: { type: String, enum: ['original', 'adaptive'] },
+  mediaVersion: String, mediaFormat: String, mediaIssuedAt: Date, mediaExpiresAt: Date,
   preview: { type: Boolean, default: false }, leaseId: String, expiresAt: { type: Date, index: { expireAfterSeconds: 0 } }
 }, { timestamps: true });
 const aiUsageSchema = new Schema({ _id: String, reservedUsd: { type: Number, default: 0 }, spentUsd: { type: Number, default: 0 } }, { timestamps: true });

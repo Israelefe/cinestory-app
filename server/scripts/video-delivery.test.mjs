@@ -14,16 +14,17 @@ import { videoTransaction, reserveVideoBytes, commitVideoBytes, reserveVideoDura
 import { acquireVideoLease, releaseVideoLease } from '../src/services/videoLease.service.js';
 import { normalizeVideoSettings, publicVideoSettings } from '../src/config/videoDelivery.js';
 import { updateRuntimeConfig } from '../src/services/runtimeConfig.service.js';
-import { videoContext, ownedVideoAsset, publicVideoDelivery, ownerVideoDTO, videoPresentationDTO, hasVideoGrant, setVideoGrant, videoPlayback, queueAdaptiveVideo, usageKey } from '../src/services/videoDelivery.service.js';
+import { videoContext, ownedVideoAsset, publicVideoDelivery, ownerVideoDTO, videoPresentationDTO, hasVideoGrant, setVideoGrant, videoPlayback, queueAdaptiveVideo, queueOriginalPlayback, usageKey } from '../src/services/videoDelivery.service.js';
 import { createVideoDelivery, publishVideoDelivery, saveVideoDraft, saveVideoAccess, validatedVideoRange, deleteVideoAsset, downloadOwnerVideo, initializeVideoUpload, completeVideoUpload, getVideoDownloadSettings, updateVideoDownloadSettings, getVideoDeliveryPoster, downloadPublicVideo, requestVideoAnalysis, requestVideoPresentation } from '../src/controllers/video.controller.js';
 import { videoDashboardSummaries, videoDashboardCover } from '../src/services/videoDelivery.service.js';
 import { signedHlsMedia, verifyHlsToken, hlsFile } from '../src/services/videoHls.service.js';
 import { authorizeHlsRequest } from '../src/services/videoDelivery.service.js';
 import { handleVideoHls, verifyVideoToken } from '../../cloudflare/delivery-images/video-hls.js';
 import { frameTimestamps } from '../src/services/videoMedia.service.js';
+import { originalVideoRange, ORIGINAL_RANGE_BYTES } from '../src/services/videoOriginal.service.js';
 import { lagosMonthWindow } from '../src/services/entitlement.service.js';
 import { chargeVideoAIBudget } from '../src/services/videoAnalysis.service.js';
-import { deleteVideoOriginal, prepareVideo, runVideoJob } from '../src/services/videoWorker.service.js';
+import { deleteVideoOriginal, prepareVideo, runVideoJob, reconcileVideoLibrary } from '../src/services/videoWorker.service.js';
 import { requireVideoProcessing, videoProcessingStatus } from '../src/controllers/videoProcessing.controller.js';
 import { handleVideoDownload } from '../../client/worker/videoDownload.js';
 import { VideoUpload } from '../src/models/video.models.js';
@@ -500,6 +501,14 @@ test('real inspection creates no video copies; adaptive encoding requires explic
   assert.equal(ready.state, 'ready'); assert.equal(ready.hls?.version, undefined);
   assert.ok([...stored.keys()].every(key => !key.includes('/hls/')));
   assert.equal((await VideoQuota.findById(String(film._id))).durationState, 'committed');
+  const originalJob = await VideoJob.findOneAndUpdate({ assetId: film._id, 'options.originalPlayback': true }, { $set: { state: 'running', leaseToken: crypto.randomUUID(), leaseUntil: new Date(Date.now() + 120000) } }, { new: true });
+  assert.ok(originalJob, 'Original streaming should be queued without adaptive opt-in.');
+  await prepareVideo(ready, settings, originalJob);
+  ready = await VideoAsset.findById(film._id);
+  assert.equal(ready.state, 'ready'); assert.equal(ready.originalPlayback.state, 'ready');
+  assert.equal(ready.hls?.version, undefined, 'Lossless packaging must not create compressed adaptive renditions.');
+  const quota = await VideoQuota.findById(String(film._id));
+  assert.equal(quota.bytes, original.length); assert.equal(quota.durationState, 'committed');
   const project = await delivery(ready); project.video.draft.playbackMode = 'adaptive'; await project.save();
   await queueAdaptiveVideo(ready);
   const adaptiveJob = await VideoJob.findOneAndUpdate({ assetId: film._id, 'options.adaptive': true }, { $set: { state: 'running', leaseToken: crypto.randomUUID(), leaseUntil: new Date(Date.now() + 120000) } }, { new: true });
@@ -512,7 +521,7 @@ test('real inspection creates no video copies; adaptive encoding requires explic
   const expired = await VideoJob.create({ key: 'expired:' + stale._id, assetId: stale._id, userId: owner._id, type: 'prepare', state: 'running', leaseToken: crypto.randomUUID(), leaseUntil: new Date(Date.now() - 1000) });
   await assert.rejects(prepareVideo(await VideoAsset.findById(stale._id), settings, expired), { code: 'VIDEO_JOB_SUPERSEDED' });
   assert.notEqual((await VideoAsset.findById(stale._id)).state, 'ready');
-  await VideoJob.updateMany({ _id: { $in: [job._id, adaptiveJob._id] } }, { $set: { state: 'done' } });
+  await VideoJob.updateMany({ _id: { $in: [job._id, originalJob._id, adaptiveJob._id] } }, { $set: { state: 'done' } });
   await Delivery.deleteOne({ _id: project._id });
   await deleteVideoOriginal(ready); assert.equal((await VideoQuota.findById(String(film._id))).byteState, 'released');
 });
@@ -571,4 +580,94 @@ test('a repeatedly crashed encode stops at its attempt limit before another expe
   assert.equal(result.errorCode, 'VIDEO_RETRY_LIMIT');
   assert.equal(result.attempts, 7);
   assert.equal((await VideoAsset.findById(film._id)).state, 'failed');
+});
+
+for (const mode of ['original', 'adaptive']) for (const preview of [false, true]) test(`${mode} ${preview ? 'preview' : 'client'} session renews its lease without changing the media URL`, async () => {
+  const film = await asset(); const project = await delivery(film);
+  project.video.draft.playbackMode = mode; project.status = 'published'; project.video.published = project.video.draft; await project.save();
+  const media = await videoPlayback({ delivery: project, asset: film, settings, preview });
+  const token = new URL(media.hlsUrl).pathname.split('/')[2];
+  assert.ok(await verifyVideoToken(token, playbackSecret));
+  await VideoPlayback.updateOne({ _id: media.sessionId }, { $set: { expiresAt: new Date(Date.now() + 20000) } });
+  const renewed = await videoPlayback({ delivery: project, asset: film, settings, preview, sessionId: media.sessionId });
+  assert.equal(renewed.hlsUrl, media.hlsUrl); assert.equal(renewed.sessionId, media.sessionId);
+  assert.ok(renewed.expiresAt.getTime() > Date.now() + 500000);
+  const input = { token, file: mode === 'original' ? 'original' : 'master.m3u8', method: 'HEAD' };
+  await authorizeHlsRequest(input);
+  await VideoPlayback.updateOne({ _id: media.sessionId }, { $set: { expiresAt: new Date(Date.now() - 1000) } });
+  assert.ok(await verifyVideoToken(token, playbackSecret), 'The stable URL alone must not grant access.');
+  await assert.rejects(authorizeHlsRequest(input), { code: 'VIDEO_SESSION_EXPIRED' });
+});
+
+test('lossless original HLS uses its own immutable files and counts segment time', async t => {
+  const film = await asset(); const version = crypto.randomUUID();
+  film.originalPlayback = { state: 'ready', version, bytes: 1234, hls: { ...film.hls.toObject(), version, prefix: `veylo/video/${owner._id}/${film._id}/original-playback/${version}/` } }; await film.save();
+  const project = await delivery(film); project.status = 'published'; project.video.published = project.video.draft; await project.save();
+  const media = await videoPlayback({ delivery: project, asset: film, settings });
+  const token = new URL(media.hlsUrl).pathname.split('/')[2]; const claims = verifyHlsToken(token);
+  assert.equal(claims.purpose, 'video-original'); assert.equal(claims.format, 'hls'); assert.equal(claims.version, version);
+  assert.ok(await verifyVideoToken(token, playbackSecret));
+  const before = (await VideoUsage.findById(usageKey(owner._id, lagosMonthWindow().start))).deliveredMinutes;
+  const grant = await authorizeHlsRequest({ token, file: 'q360/s000000.ts', method: 'GET' });
+  assert.equal(grant.key, film.originalPlayback.hls.prefix + 'q360/s000000.ts');
+  const after = (await VideoUsage.findById(usageKey(owner._id, lagosMonthWindow().start))).deliveredMinutes;
+  assert.ok(Math.abs(after - before - .1) < .000001);
+  await assert.rejects(authorizeHlsRequest({ token, file: 'original', method: 'GET' }), { status: 404 });
+  let reads = 0;
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ data: grant }));
+  const env = { VIDEO_PLAYBACK_SECRET: playbackSecret, VEYLO_WEB_ORIGIN: process.env.CLIENT_URL, VEYLO_API_ORIGIN: 'https://api.example', DELIVERY_MEDIA: { async get(key) { reads++; assert.equal(key, grant.key); return { size: grant.bytes, body: new Blob([new Uint8Array(grant.bytes)]).stream() }; } } };
+  const response = await handleVideoHls(new Request(media.hlsUrl.replace('master.m3u8', 'q360/s000000.ts')), env);
+  assert.equal(response.status, 200); await response.body.cancel(); assert.equal(reads, 1);
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ data: { ...grant, key: film.hls.prefix + 'q360/s000000.ts' } }));
+  assert.equal((await handleVideoHls(new Request(media.hlsUrl.replace('master.m3u8', 'q360/s000000.ts')), env)).status, 503); assert.equal(reads, 1);
+});
+
+test('native lossless playback bills its actual copy bytes and preserves an already active original session', async () => {
+  const film = await asset(); const project = await delivery(film); project.status = 'published'; project.video.published = project.video.draft; await project.save();
+  const active = await videoPlayback({ delivery: project, asset: film, settings });
+  await Promise.all([queueOriginalPlayback(film), queueOriginalPlayback(film)]);
+  assert.equal(await VideoJob.countDocuments({ assetId: film._id, 'options.originalPlayback': true }), 1);
+  assert.equal((await VideoAsset.findById(film._id)).state, 'ready');
+  const version = crypto.randomUUID();
+  film.originalPlayback = { state: 'ready', version, key: `veylo/video/${owner._id}/${film._id}/original-playback/${version}/playback.mp4`, bytes: 200, contentType: 'video/mp4' }; await film.save();
+  assert.equal((await videoPlayback({ delivery: project, asset: film, settings, sessionId: active.sessionId })).hlsUrl, active.hlsUrl);
+  const media = await videoPlayback({ delivery: project, asset: film, settings });
+  const token = new URL(media.hlsUrl).pathname.split('/')[2];
+  const before = (await VideoUsage.findById(usageKey(owner._id, lagosMonthWindow().start))).deliveredMinutes;
+  const grant = await authorizeHlsRequest({ token, file: 'original', method: 'GET', range: 'bytes=0-19' });
+  assert.equal(grant.bytes, 200); assert.equal(grant.key, film.originalPlayback.key);
+  const after = (await VideoUsage.findById(usageKey(owner._id, lagosMonthWindow().start))).deliveredMinutes;
+  assert.ok(Math.abs(after - before - .1) < .000001);
+  assert.equal(originalVideoRange('bytes=0-', 100 * 1024 ** 2).length, ORIGINAL_RANGE_BYTES);
+  assert.deepEqual(originalVideoRange('bytes=10-19', 100), { offset: 10, length: 10 });
+});
+
+test('an exhausted lossless preparation retry leaves the original ready and downloadable', async () => {
+  await VideoJob.updateMany({}, { $set: { runAfter: new Date(Date.now() + 86400_000) } });
+  const film = await asset(); const generation = crypto.randomUUID();
+  await VideoAsset.updateOne({ _id: film._id }, { $set: { originalPlayback: { state: 'running', generation } } });
+  const job = await VideoJob.create({ key: 'original-crash:' + film._id, userId: owner._id, assetId: film._id, type: 'prepare', options: { originalPlayback: true, generation }, state: 'running', leaseUntil: new Date(0), attempts: 6, runAfter: new Date(0) });
+  assert.equal(await runVideoJob(), true);
+  assert.equal((await VideoJob.findById(job._id)).state, 'failed');
+  const ready = await VideoAsset.findById(film._id); assert.equal(ready.state, 'ready'); assert.equal(ready.originalPlayback.state, 'failed');
+});
+
+test('original playback backfill skips incompatible files before its batch limit and recovers an enqueue gap', async () => {
+  // Keep previous cases out of this maintenance batch without deleting records.
+  await VideoAsset.updateMany({ state: 'ready' }, { $set: { 'originalPlayback.state': 'failed' } });
+  const incompatible = Array.from({ length: 100 }, (_, index) => {
+    const id = new mongoose.Types.ObjectId();
+    return { _id: id, userId: owner._id, objectKey: `veylo/video/${owner._id}/${id}/original.mp4`, filename: 'incompatible.mp4', state: 'ready', bytes: 1, duration: 1, videoCodec: 'h264', pixelFormat: index < 50 ? 'yuv420p10le' : 'yuv420p', audioCodec: index < 50 ? 'aac' : 'flac' };
+  });
+  await VideoAsset.insertMany(incompatible);
+  const film = await asset();
+  await reconcileVideoLibrary();
+  const job = await VideoJob.findOne({ assetId: film._id, 'options.originalPlayback': true });
+  assert.ok(job); assert.equal(job.state, 'queued');
+  assert.equal(await VideoJob.countDocuments({ assetId: { $in: incompatible.map(row => row._id) }, 'options.originalPlayback': true }), 0);
+  // A completed stale job must not prevent recovery of the durable queued state.
+  await VideoJob.updateOne({ _id: job._id }, { $set: { state: 'done' } });
+  await reconcileVideoLibrary();
+  assert.equal(await VideoJob.countDocuments({ assetId: film._id, 'options.originalPlayback': true, state: 'queued' }), 1);
+  assert.equal((await VideoAsset.findById(film._id)).state, 'ready');
 });

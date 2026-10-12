@@ -7,7 +7,7 @@ import { cloudflareVideoProcessing } from '../services/videoProcessingAuth.js';
 export async function videoOperations(req, res) {
   try {
     const [runtime, assets, uploads, jobs, activeTransfers, activeEncodes, activeViewers, usage, budgets, worker] = await Promise.all([
-      getRuntimeConfig(), VideoAsset.aggregate([{ $match: { state: { $ne: 'deleted' } } }, { $group: { _id: '$state', count: { $sum: 1 }, bytes: { $sum: '$bytes' }, seconds: { $sum: '$duration' }, playbackBytes: { $sum: '$hls.bytes' } } }]),
+      getRuntimeConfig(), VideoAsset.aggregate([{ $match: { state: { $ne: 'deleted' } } }, { $group: { _id: '$state', count: { $sum: 1 }, bytes: { $sum: '$bytes' }, seconds: { $sum: '$duration' }, playbackBytes: { $sum: { $add: [{ $ifNull: ['$hls.bytes', 0] }, { $ifNull: ['$originalPlayback.bytes', 0] }] } } } }]),
       VideoUpload.aggregate([{ $group: { _id: '$state', count: { $sum: 1 } } }]), VideoJob.aggregate([{ $group: { _id: '$state', count: { $sum: 1 } } }]),
       VideoLease.countDocuments({ _id: /^transfer:platform:/, expiresAt: { $gt: new Date() } }), VideoLease.countDocuments({ _id: /^encode:platform:/, expiresAt: { $gt: new Date() } }), VideoLease.countDocuments({ _id: /^view:/, expiresAt: { $gt: new Date() } }),
       VideoUsage.aggregate([{ $match: { periodEnd: { $gt: new Date() } } }, { $group: { _id: null, deliveredMinutes: { $sum: '$deliveredMinutes' }, oldestReconciliation: { $min: '$reconciledAt' } } }]),

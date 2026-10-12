@@ -8,10 +8,10 @@ import { VideoAsset, VideoUsage, VideoPlayback, VideoJob } from '../models/video
 import { resolveEntitlements, lagosMonthWindow } from './entitlement.service.js';
 import { getRuntimeConfig } from './runtimeConfig.service.js';
 import { publicVideoSettings } from '../config/videoDelivery.js';
-import { signedHlsMedia, verifyHlsToken, hlsFile } from './videoHls.service.js';
+import { signedHlsMedia, verifyHlsToken, hlsFile, VIDEO_MEDIA_SECONDS } from './videoHls.service.js';
 import { acquireVideoLease, releaseVideoLease } from './videoLease.service.js';
 import { videoReadinessFilter } from './videoProcessingAuth.js';
-import { originalVideoCompatible, originalVideoType, originalVideoRange } from './videoOriginal.service.js';
+import { originalVideoCompatible, originalPlaybackFile, originalVideoRange } from './videoOriginal.service.js';
 
 export const videoError = (message, status = 400, code = 'VIDEO_REQUEST_FAILED') => Object.assign(new Error(message), { status, code });
 export function videoId(value) {
@@ -158,39 +158,54 @@ export async function videoPlayback({ delivery, asset, settings, sessionId, prev
   await assertVideoPlaybackUsage(delivery.userId, settings);
   let session = sessionId && /^[a-f\d-]{36}$/i.test(sessionId) ? await VideoPlayback.findOne({ _id: sessionId, deliveryId: delivery._id, assetId: asset._id, accessVersion: delivery.video.accessVersion, playbackMode: mode, preview, expiresAt: { $gt: new Date() } }) : null;
   if (sessionId && !session) throw videoError('Open the video again to continue playback.', 401, 'VIDEO_SESSION_EXPIRED');
+  if (session?.mediaExpiresAt && session.mediaExpiresAt.getTime() <= Date.now() + 60_000) throw videoError('Open the video again to continue playback.', 401, 'VIDEO_SESSION_EXPIRED');
   const id = session?._id || crypto.randomUUID();
   const leaseId = await acquireVideoLease('view:' + delivery.userId, settings.accountViewers, { ownerId: delivery.userId, resourceId: id, ttlSeconds: settings.tokenSeconds });
   let media;
   try {
-    media = signedHlsMedia({ assetId: asset._id, sessionId: id, version: asset.hls?.version, original: mode === 'original', seconds: settings.tokenSeconds });
-    session = await VideoPlayback.findOneAndUpdate({ _id: id }, { $set: { userId: delivery.userId, deliveryId: delivery._id, assetId: asset._id, accessVersion: delivery.video.accessVersion, playbackMode: mode, preview, leaseId, expiresAt: media.expiresAt } }, { upsert: true, new: true });
+    const prepared = asset.originalPlayback?.state === 'ready' ? asset.originalPlayback : null;
+    const format = session?.mediaFormat || (mode === 'adaptive' || prepared?.hls?.version ? 'hls' : 'file');
+    const version = session?.mediaVersion || (mode === 'adaptive' ? asset.hls.version : prepared?.version || 'original');
+    const issuedAt = session?.mediaIssuedAt || new Date();
+    media = signedHlsMedia({ assetId: asset._id, sessionId: id, version, format, original: mode === 'original', renewable: true, seconds: VIDEO_MEDIA_SECONDS, now: issuedAt.getTime() });
+    const expiresAt = new Date(Math.min(Date.now() + settings.tokenSeconds * 1000, media.expiresAt.getTime()));
+    session = await VideoPlayback.findOneAndUpdate({ _id: id }, { $set: { userId: delivery.userId, deliveryId: delivery._id, assetId: asset._id, accessVersion: delivery.video.accessVersion, playbackMode: mode, preview, leaseId, expiresAt,
+      mediaVersion: version, mediaFormat: format, mediaIssuedAt: issuedAt, mediaExpiresAt: media.expiresAt } }, { upsert: true, new: true });
   } catch (error) { await releaseVideoLease(leaseId, id); throw error; }
-  return { sessionId: session._id, ...media, playbackMode: mode, renewAfterSeconds: Math.floor(settings.tokenSeconds / 2), preview };
+  return { sessionId: session._id, ...media, expiresAt: session.expiresAt, playbackMode: mode, renewAfterSeconds: Math.floor(settings.tokenSeconds / 2), preview };
 }
 export async function authorizeHlsRequest({ token, file, method, range }) {
   const claims = verifyHlsToken(token);
   const original = claims.purpose === 'video-original';
-  if ((file === 'original') !== original) throw videoError('Playback file not found.', 404);
+  const filePlayback = (claims.format || (original ? 'file' : 'hls')) === 'file';
+  if ((file === 'original') !== filePlayback) throw videoError('Playback file not found.', 404);
   const session = await VideoPlayback.findOne({ _id: claims.sessionId, assetId: claims.assetId, expiresAt: { $gt: new Date() } }).lean();
   if (!session) throw videoError('Reopen this film to continue playback.', 401, 'VIDEO_SESSION_EXPIRED');
+  if (session.mediaVersion && (session.mediaVersion !== claims.version || session.mediaFormat !== (filePlayback ? 'file' : 'hls'))) throw videoError('Reopen this film to continue playback.', 401, 'VIDEO_SESSION_EXPIRED');
   const { settings } = await videoContext(session.userId, { playback: true });
   const delivery = await Delivery.findOne({ _id: session.deliveryId, userId: session.userId, kind: 'video', 'video.accessVersion': session.accessVersion }).lean();
   if (!delivery || delivery.status === 'archived' || (!session.preview && (delivery.status !== 'published' || delivery.access?.revokedAt || (delivery.access?.expiresAt && delivery.access.expiresAt <= new Date())))) throw videoError('This video link is no longer available.', 410, 'VIDEO_LINK_CLOSED');
   const presentation = session.preview ? delivery.video.draft : delivery.video.published;
   if ((presentation?.playbackMode || 'original') !== (original ? 'original' : 'adaptive')) throw videoError('Reopen this film to use its current playback setting.', 401, 'VIDEO_SESSION_EXPIRED');
   if (!presentation?.items.some(item => String(item.assetId) === claims.assetId)) throw videoError('Video not found in this delivery.', 404);
-  const asset = await VideoAsset.findOne({ _id: claims.assetId, userId: session.userId, state: 'ready', ...(!original ? { 'hls.version': claims.version } : {}) }).lean();
-  const resource = asset && (original ? { key: asset.objectKey, bytes: asset.bytes, contentType: originalVideoType(asset), seconds: asset.duration } : hlsFile(asset, file));
+  const asset = await VideoAsset.findOne({ _id: claims.assetId, userId: session.userId, state: 'ready', ...(!original ? { 'hls.version': claims.version } : claims.version !== 'original' ? { 'originalPlayback.version': claims.version, 'originalPlayback.state': 'ready' } : {}) }).lean();
+  const resource = asset && (filePlayback ? originalPlaybackFile(asset, claims.version) : hlsFile(asset, file, original));
   if (!resource || !Number.isSafeInteger(resource.bytes) || resource.bytes < 1) throw videoError('Playback file not found.', 404);
-  const requestedRange = original ? originalVideoRange(range, asset.bytes) : null;
+  const requestedRange = filePlayback ? originalVideoRange(range, resource.bytes) : null;
   const deliveredBytes = requestedRange?.length || resource.bytes;
   const { start, end } = lagosMonthWindow();
   if (!await VideoUsage.exists({ _id: usageKey(session.userId, start) })) await reconcileVideoUsage(session.userId);
-  const minutes = method === 'GET' ? resource.seconds / 60 * (original ? deliveredBytes / resource.bytes : 1) : 0;
+  const minutes = method === 'GET' ? resource.seconds / 60 * (filePlayback ? deliveredBytes / resource.bytes : 1) : 0;
   const nextMinutes = { $round: [{ $add: ['$deliveredMinutes', minutes] }, 8] };
   const usage = await VideoUsage.findOneAndUpdate({ _id: usageKey(session.userId, start), $expr: { $lte: [nextMinutes, settings.monthlyDeliveredMinutes] } }, [{ $set: { deliveredMinutes: nextMinutes, deliveredBytes: { $add: [{ $ifNull: ['$deliveredBytes', 0] }, method === 'GET' ? deliveredBytes : 0] }, reconciledAt: new Date(), periodEnd: end } }], { new: true });
   if (!usage) throw videoError('This account has reached its video playback allowance for this month.', 429, 'VIDEO_PLAYBACK_LIMIT');
-  return { ...resource, ...(original ? { range: requestedRange } : {}), origin: new URL(process.env.CLIENT_URL).origin };
+  return { ...resource, ...(filePlayback ? { range: requestedRange } : {}), origin: new URL(process.env.CLIENT_URL).origin };
+}
+export async function queueOriginalPlayback(asset) {
+  if (asset.state !== 'ready' || !originalVideoCompatible(asset) || !asset.objectKey.endsWith('.mp4')) return;
+  const generation = crypto.randomUUID();
+  const queued = await VideoAsset.findOneAndUpdate({ _id: asset._id, userId: asset.userId, state: 'ready', 'originalPlayback.state': { $nin: ['ready', 'queued', 'running', 'failed'] } }, { $set: { originalPlayback: { state: 'queued', generation } } }, { new: true });
+  if (queued) await queueVideoJob(queued, 'prepare', { originalPlayback: true, generation }, 'original-playback:' + generation);
 }
 export async function queueAdaptiveVideo(asset) {
   if (asset.hls?.version || asset.state !== 'ready') return;

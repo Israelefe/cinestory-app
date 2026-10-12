@@ -377,8 +377,9 @@ test('expired playback sessions reopen on the same player and preserve the playb
   await expect(page.locator('video')).toHaveCount(1);
   await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(3.9);
   await expect.poll(() => page.locator('video').evaluate(video => video.paused)).toBe(false);
+  await expect.poll(() => ended).toBe(1); // The expired session is released after replacement.
   await page.getByRole('button', { name: /Reception film/ }).click();
-  await expect.poll(() => ended).toBe(1); expect(errors).toEqual([]);
+  await expect.poll(() => ended).toBe(2); expect(errors).toEqual([]);
 });
 for (const width of [320, 768, 834]) test(`creator saves, reviews and publishes a separate snapshot at ${width}px`, async ({ page }) => {
   const { state, errors } = await mock(page); await page.setViewportSize({ width, height: 1000 }); await page.goto(`/create?draft=${id}`);

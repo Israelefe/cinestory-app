@@ -44,7 +44,7 @@ export async function encodeAdaptiveVideo({ file, directory, metadata, prefix, g
     if (space.bavail * space.bsize < expected + 1024 ** 3) throw Object.assign(new Error('Video preparation is waiting for temporary disk space.'), { code: 'VIDEO_DISK_BUSY' });
     const check = async () => { await guard(); const free = await statfs(directory); if (free.bavail * free.bsize < 512 * 1024 ** 2) throw Object.assign(new Error('Video preparation ran out of temporary disk space.'), { code: 'VIDEO_DISK_BUSY' }); };
     await runMediaTool('ffmpeg', ['-v', 'error', '-nostdin', '-threads', '2', '-protocol_whitelist', 'file', '-format_whitelist', 'mov,matroska,webm', '-i', file,
-      '-map', '0:v:0', '-map', '0:a:0?', '-sn', '-dn', '-vf', `scale=${variant.width}:${variant.height},setsar=1`, '-r', String(metadata.frameRate || 30),
+      '-map', '0:v:0', '-map', '0:a:0?', '-sn', '-dn', '-vf', `scale=${variant.width}:${variant.height},setsar=1`, '-r', String(Math.min(30, metadata.frameRate || 30)),
       '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-profile:v', 'high', '-pix_fmt', 'yuv420p', '-threads', '2',
       '-maxrate', String(variant.bitrate), '-bufsize', String(variant.bitrate * 2), '-sc_threshold', '0', '-force_key_frames', `expr:gte(t,n_forced*${HLS_SEGMENT_SECONDS})`,
       '-c:a', 'aac', '-b:a', '128k', '-ac', '2', '-ar', '48000', '-max_muxing_queue_size', '1024',
