@@ -5,6 +5,7 @@ import { prepareZipFiles, zipContentLength, zipStream } from './zip.js';
 import { createNarration, joinNarration } from './narration.js';
 import { importGeneratedImage } from './provider-image.js';
 import { remoteAudioResponse } from './remote-audio.js';
+import { selectionMarkStream } from './selection-mark.js';
 
 const presets = new Set(['400', '480', '640', '800', '960', '1024', '1200', '1600', 'thumb', 'og']);
 const manifestPrefix = 'veylo/system/media-manifests/';
@@ -80,13 +81,20 @@ async function imageResponse(request, env, ctx, claims) {
   const head = await env.DELIVERY_MEDIA.head(key);
   if (!head) throw mediaError('Photograph not found.', 404, 'MEDIA_NOT_FOUND');
   if (!head.size || head.size > MAX_MEDIA_BYTES || !['image/jpeg', 'image/png', 'image/webp'].includes(head.httpMetadata?.contentType)) throw mediaError('This photograph cannot be previewed.', 415, 'UNSUPPORTED_IMAGE');
-  const digest = createHash('sha256').update(`${key}\0${head.etag}\0${claims.preset}`).digest('hex');
+  const marked = claims.access?.type === 'library' && claims.access?.mark === 'selection';
+  const digest = createHash('sha256').update(`${key}\0${head.etag}\0${claims.preset}\0${marked ? 'selection-v1' : 'plain'}`).digest('hex');
   const cacheKey = new Request(new URL(`/__media-cache/${digest}`, request.url));
   let response;
   try { response = await caches.default.match(cacheKey); } catch { /* A miss is safe. */ }
   if (!response) {
     response = await transformedImage(request, env, key, claims.preset, head);
     if (!response.ok) throw mediaError('The photograph preview could not be created.', 502, 'IMAGE_TRANSFORM_FAILED');
+    if (marked) {
+      const width = Math.min(400, (Number(claims.preset) || 480) / 2);
+      response = (await env.IMAGES.input(response.body)
+        .draw(env.IMAGES.input(selectionMarkStream()).transform({ width }), { repeat: true, opacity: 0.32 })
+        .output({ format: 'image/webp', quality: 84 })).response();
+    }
     const cacheHeaders = new Headers(response.headers);
     cacheHeaders.set('Cache-Control', 'public, max-age=86400');
     cacheHeaders.delete('Set-Cookie');
@@ -138,7 +146,7 @@ async function rpcResponse(request, env, operation) {
   if (createHash('sha256').update(body).digest('hex') !== claims.digest) throw mediaError('This request could not be verified.', 403, 'MEDIA_SIGNATURE_INVALID');
   let data;
   try { data = JSON.parse(new TextDecoder().decode(body)); } catch { throw mediaError('This request could not be read.'); }
-  if (operation === 'health') return jsonResponse({ ok: true, protocol: 2, storage: Boolean(env.DELIVERY_MEDIA), images: Boolean(env.IMAGES), narration: Boolean(env.DEEPGRAM_API_KEY), authorization: Boolean(env.VEYLO_API_ORIGIN) });
+  if (operation === 'health') return jsonResponse({ ok: true, protocol: 2, selectionMarks: true, storage: Boolean(env.DELIVERY_MEDIA), images: Boolean(env.IMAGES), narration: Boolean(env.DEEPGRAM_API_KEY), authorization: Boolean(env.VEYLO_API_ORIGIN) });
   if (operation === 'inspect') return jsonResponse(await inspectResource(request, env, data));
   if (operation === 'narration') return jsonResponse(await createNarration(env, data));
   if (operation === 'join-narration') return jsonResponse(await joinNarration(env, data));

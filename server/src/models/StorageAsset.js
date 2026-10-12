@@ -22,6 +22,7 @@ const storageAssetSchema = new mongoose.Schema({
   hashAlgorithm: { type: String, enum: ['cloudinary-etag', 'r2-etag', 'sha256'] },
   hashVerifiedAt: Date,
   folder: { type: String, trim: true, maxlength: 100, default: 'All photographs' },
+  shootId: { type: mongoose.Schema.Types.ObjectId, ref: 'LibraryShoot', index: true },
   tags: [{ type: String, trim: true, maxlength: 40 }],
   caption: { type: String, trim: true, maxlength: 180, default: '' }
 }, { timestamps: true });

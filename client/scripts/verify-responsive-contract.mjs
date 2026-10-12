@@ -15,7 +15,7 @@ const paths = [
   'src/pages/DeliveryViewer.css',
   'src/pages/DeliverySharing.css',
   'src/pages/DeliverySharingV2.css',
-  'src/pages/ImageLibrary.css',
+  'src/components/library/LibraryWorkspace.css',
   'src/pages/VolumeManager.css',
   'src/pages/VolumeManagerV2.css',
   'src/pages/VolumeGallery.css',

@@ -8,6 +8,7 @@ import { hashObject, MAX_MEDIA_BYTES, signMediaToken, verifyMediaToken } from '.
 import { prepareZipFiles, zipContentLength, zipStream } from '../../cloudflare/delivery-images/zip.js';
 import { createNarration, joinNarration } from '../../cloudflare/delivery-images/narration.js';
 import { importGeneratedImage } from '../../cloudflare/delivery-images/provider-image.js';
+import { requireMarkedSelectionPreviews } from '../src/services/cloudflareMedia.service.js';
 import { cleanMediaManifests } from '../../cloudflare/delivery-images/media-worker.js';
 import { checkMediaWorker, signedMediaUrl, signedRemoteAudioUrl, verifyMediaWorkerToken } from '../src/services/cloudflareMedia.service.js';
 import { checkDeliveryImageWorker, confirmUploadedAsset, createUploadSignature } from '../src/services/deliveryMedia.service.js';
@@ -66,8 +67,21 @@ function imagesBinding() {
     async info(source) { calls.push('info'); const meta = await sharp(await bytesOf(source)).metadata(); return { format: meta.format, width: meta.width, height: meta.height }; },
     input(source) {
       calls.push('input');
-      let transform;
-      return { transform(value) { transform = value; return this; }, async output({ format, quality }) { const input = await bytesOf(source); const image = sharp(input, { failOn: 'error' }).rotate().resize({ width: transform.width, height: transform.height, fit: transform.fit === 'cover' ? 'cover' : 'inside', withoutEnlargement: transform.fit === 'scale-down' }); const data = await image.toFormat(format.split('/')[1], { quality }).toBuffer(); return { response() { return new Response(data, { headers: { 'Content-Type': format } }); } }; } };
+      let transform = {}, overlay;
+      return { transform(value) { transform = value; return this; },
+        async pixels() { return sharp(await bytesOf(source)).resize({ width: transform.width, height: transform.height, fit: 'inside' }).png().toBuffer(); },
+        draw(value, options) { calls.push(['draw', options]); overlay = { value, options }; return this; },
+        async output({ format, quality }) {
+          const input = await bytesOf(source);
+          let image = sharp(input, { failOn: 'error' }).rotate();
+          if (transform.width || transform.height) image = image.resize({ width: transform.width, height: transform.height, fit: transform.fit === 'cover' ? 'cover' : 'inside', withoutEnlargement: transform.fit === 'scale-down' });
+          if (overlay) {
+            const mark = await sharp(await overlay.value.pixels()).ensureAlpha().linear([1, 1, 1, overlay.options.opacity], [0, 0, 0, 0]).png().toBuffer();
+            image = image.composite([{ input: mark, tile: overlay.options.repeat }]);
+          }
+          const data = await image.toFormat(format.split('/')[1], { quality }).toBuffer(); return { response() { return new Response(data, { headers: { 'Content-Type': format } }); } };
+        }
+      };
     }
   };
 }
@@ -192,7 +206,7 @@ test('large image previews use Cloudflare URL transforms without the 20 MB bindi
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     assert.match(new URL(url).pathname, /^\/v2\/source\//);
     assert.equal(options.cf.image.width, 800);
-    assert.equal(options.redirect, 'error');
+    assert.equal(options.redirect, 'manual');
     return new Response('cloudflare-preview', { headers: { 'Content-Type': 'image/webp' } });
   });
   const response = await request(env, 'image', { key, preset: '800' });
@@ -215,6 +229,34 @@ test('closed shares are checked before cached previews are served', async t => {
   const result = await request(environment(bucket()), 'image', { key, preset: '400', access: { type: 'delivery', deliveryId } });
   assert.equal(result.status, 403);
   assert.equal(cacheReads, 0);
+});
+
+test('preselection marks are part of preview pixels and use a separate cache from plain photos', async t => {
+  const original = await sharp({ create: { width: 480, height: 640, channels: 3, background: '#444444' } }).jpeg().toBuffer();
+  const storage = bucket({ [key]: original }), images = imagesBinding(), cache = new Map();
+  const previous = globalThis.caches;
+  globalThis.caches = { default: { async match(request) { return cache.get(request.url)?.clone(); }, async put(request, response) { cache.set(request.url, response); } } };
+  t.after(() => { globalThis.caches = previous; });
+  t.mock.method(globalThis, 'fetch', async () => new Response(null, { status: 204 }));
+  const plain = await request(environment(storage, images), 'image', { key, preset: '480' });
+  const marked = await request(environment(storage, images), 'image', { key, preset: '480', access: { type: 'library', collaborationId: collabId, assetId, mode: 'view', mark: 'selection' } });
+  assert.equal(marked.status, 200);
+  const plainPixels = await sharp(await plain.arrayBuffer()).raw().toBuffer(), markedPixels = await sharp(await marked.arrayBuffer()).raw().toBuffer();
+  assert.notDeepEqual(markedPixels, plainPixels);
+  assert.deepEqual(storage.objects.get(key).bytes, original, 'The original must stay byte-for-byte unchanged');
+  assert.equal(cache.size, 2); assert.equal(images.calls.filter(call => Array.isArray(call) && call[0] === 'draw').length, 1);
+  assert.equal(marked.headers.get('cache-control'), 'private, no-store');
+});
+
+test('selection previews wait for a Worker that embeds the mark in the image', async t => {
+  settings(t);
+  let supported = false;
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ ok: true, protocol: 2, selectionMarks: supported }));
+  await assert.rejects(requireMarkedSelectionPreviews(), { status: 503, code: 'SELECTION_PREVIEWS_NOT_READY' });
+  supported = true;
+  await requireMarkedSelectionPreviews();
+  const health = await rpc(environment(bucket()), 'health', {});
+  assert.equal((await health.json()).selectionMarks, true);
 });
 
 test('hashing a 100 MB original streams chunks and rejects incomplete reads', async () => {
@@ -444,7 +486,7 @@ test('provider image imports reject arbitrary origins and store approved images 
   const destination = `veylo/content-studio/${deliveryId}/version-one/images/scene-one`;
   let requests = 0;
   const image = await sharp({ create: { width: 512, height: 768, channels: 3, background: '#ff5a47' } }).png().toBuffer();
-  t.mock.method(globalThis, 'fetch', async (_url, options) => { requests += 1; assert.equal(options.redirect, 'error'); return new Response(image); });
+  t.mock.method(globalThis, 'fetch', async (_url, options) => { requests += 1; assert.equal(options.redirect, 'manual'); return new Response(image); });
   await assert.rejects(importGeneratedImage(env, { key: destination, url: 'https://arbitrary.example/photo' }), { code: 'PROVIDER_IMAGE_URL' });
   assert.equal(requests, 0);
   const imported = await importGeneratedImage(env, { key: destination, url: 'https://images.oss-cn-shanghai.aliyuncs.com/photo' });
@@ -458,7 +500,7 @@ test('legacy music playback streams through Cloudflare with seeking and restrict
   assert.throws(() => signedRemoteAudioUrl('https://unapproved.example/music.mp3'), { status: 400 });
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     assert.equal(new URL(url).hostname, 'cdn.pixabay.com');
-    assert.equal(options.redirect, 'error');
+    assert.equal(options.redirect, 'manual');
     assert.equal(options.headers.Range, 'bytes=2-5');
     return new Response('3456', { status: 206, headers: { 'Content-Type': 'audio/mpeg', 'Content-Range': 'bytes 2-5/9', 'Content-Length': '4' } });
   });
@@ -466,6 +508,27 @@ test('legacy music playback streams through Cloudflare with seeking and restrict
   assert.equal(response.status, 206);
   assert.equal(response.headers.get('content-range'), 'bytes 2-5/9');
   assert.equal(await response.text(), '3456');
+});
+
+test('image transforms, provider imports and audio reject redirects without following them', async t => {
+  settings(t);
+  const previous = globalThis.caches;
+  globalThis.caches = { default: { async match() { return null; }, async put() {} } };
+  t.after(() => { globalThis.caches = previous; });
+  let requests = 0;
+  t.mock.method(globalThis, 'fetch', async (_url, options) => {
+    requests += 1;
+    assert.equal(options.redirect, 'manual');
+    return new Response(null, { status: 302, headers: { Location: 'https://unapproved.example/private' } });
+  });
+  const storage = { async head() { return { size: 35 * 1024 * 1024, etag: 'redirected', httpMetadata: { contentType: 'image/jpeg' } }; } };
+  assert.equal((await request(environment(storage), 'image', { key, preset: '800' })).status, 502);
+  const env = environment(bucket());
+  await assert.rejects(importGeneratedImage(env, { key: `veylo/content-studio/${deliveryId}/version-one/images/redirected`, url: 'https://images.oss-cn-shanghai.aliyuncs.com/photo' }));
+  assert.equal(env.DELIVERY_MEDIA.objects.size, 0);
+  const audio = await worker.fetch(new Request(signedRemoteAudioUrl('https://cdn.pixabay.com/audio/recording.mp3')), env, ctx());
+  assert.equal(audio.status, 502);
+  assert.equal(requests, 3);
 });
 
 function deliveryMock(t, accessOverrides = {}) {
@@ -508,8 +571,9 @@ test('library preselection grants show previews and never authorize original dow
   t.mock.method(User, 'findById', async () => ({ _id: owner, accountStatus: 'active', planOverride: { plan: 'pro' } }));
   t.mock.method(Subscription, 'find', () => ({ sort() { return this; }, async lean() { return []; } }));
   t.mock.method(RuntimeConfig, 'findOne', () => ({ async lean() { return null; } }));
-  const access = { type: 'library', collaborationId: collabId, assetId, mode: 'view' };
+  const access = { type: 'library', collaborationId: collabId, assetId, mode: 'view', mark: 'selection' };
   assert.equal(await authorizedMediaClaims({ action: 'image', key, access }), true);
+  assert.equal(await authorizedMediaClaims({ action: 'image', key, access: { ...access, mark: undefined } }), false);
   assert.equal(await authorizedMediaClaims({ action: 'file', key, access: { ...access, mode: 'download' } }), false);
   collaboration.kind = 'editor-handoff';
   assert.equal(await authorizedMediaClaims({ action: 'file', key: key + '-raw', access: { ...access, mode: 'download' } }), true);

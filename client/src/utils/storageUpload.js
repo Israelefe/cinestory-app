@@ -58,9 +58,63 @@ async function makeRawPreview(file) {
   }
 }
 
-async function uploadOne(file, signature) {
+async function uploadOne(file, signature, onProgress, signal) {
   if (file.size > MAX_LIBRARY_FILE_BYTES) throw new Error(`${file.name} is over the 100 MB upload limit. Choose a smaller file and try again.`);
-  return uploadR2Object(signature, file);
+  return uploadR2Object(signature, file, onProgress, { signal });
+}
+
+export function validLibraryPhoto(file) {
+  return Boolean(file?.size && file.size <= MAX_LIBRARY_FILE_BYTES && (['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || isRawPhoto(file)));
+}
+
+async function renewRecord(record, part, endpoint, extra = {}, headers) {
+  const name = part ? part + 'Signature' : 'signature', uploadedName = part ? 'uploaded' + part[0].toUpperCase() + part.slice(1) : 'uploaded';
+  const signature = record[name];
+  if (!signature?.expiresAt || new Date(signature.expiresAt).getTime() > Date.now() + 30000) return;
+  const { data } = await api.post(endpoint + '/renew', { objectKey: signature.objectKey, uploadToken: signature.uploadToken, ...extra }, { headers });
+  record[name] = data.data;
+  if (record[uploadedName]) record[uploadedName] = { ...record[uploadedName], uploadToken: data.data.uploadToken };
+}
+
+// Keep this record across retries: a failed confirmation must not transfer a
+// second copy of an already uploaded original or abandon its object key.
+export async function uploadLibraryPhoto(file, { folder = 'All photographs', signal, onChange = () => {}, record = {} } = {}) {
+  if (!validLibraryPhoto(file)) throw new Error('Use a JPEG, PNG, WebP, or supported camera RAW file, up to 100 MB each.');
+  signal?.throwIfAborted();
+  if (isRawPhoto(file) && !record.preview) {
+    onChange({ state: 'preparing' });
+    record.preview = await makeRawPreview(file);
+    signal?.throwIfAborted();
+  }
+  const image = record.preview || file;
+  await renewRecord(record, 'image', '/v1/storage/uploads');
+  await renewRecord(record, 'raw', '/v1/storage/uploads');
+  const total = file.size + (record.preview?.size || 0);
+  const loaded = { image: record.uploadedImage ? image.size : 0, raw: record.uploadedRaw ? file.size : 0 };
+  const report = (part, amount) => { loaded[part] = amount; onChange({ state: 'uploading', loaded: loaded.image + loaded.raw, total }); };
+  if (!record.uploadedImage || isRawPhoto(file) && !record.uploadedRaw) onChange({ state: 'uploading', loaded: loaded.image + loaded.raw, total });
+  // Originals and previews use the same per-file admission slot. RAW decoding
+  // stays serial in the queue to keep browser memory bounded.
+  if (isRawPhoto(file) && !record.uploadedRaw) {
+    record.rawSignature ||= (await api.post('/v1/storage/uploads/sign', { resourceType: 'raw', format: extension(file.name) }, { signal })).data.data;
+    record.uploadedRaw = await uploadOne(file, record.rawSignature, amount => report('raw', amount), signal);
+    report('raw', file.size);
+  }
+  if (!record.uploadedImage) {
+    record.imageSignature ||= (await api.post('/v1/storage/uploads/sign', { resourceType: 'image', contentType: image.type }, { signal })).data.data;
+    record.uploadedImage = await uploadOne(image, record.imageSignature, amount => report('image', amount), signal);
+    report('image', image.size);
+  }
+  onChange({ state: 'saving', loaded: total, total });
+  record.confirmationStarted = true;
+  // Do not abort confirmation: after bytes transfer, settle the saved record
+  // before reporting Added, even if the user cancels at that exact moment.
+  const response = await api.post('/v1/storage/uploads/confirm', {
+    objectKey: record.uploadedImage.objectKey, uploadToken: record.uploadedImage.uploadToken,
+    ...(record.uploadedRaw ? { rawOriginal: { objectKey: record.uploadedRaw.objectKey, uploadToken: record.uploadedRaw.uploadToken, format: extension(file.name), resourceType: 'raw' } } : {}),
+    originalFilename: file.name, folder, tags: []
+  });
+  return { asset: response.data.data, usage: response.data.usage };
 }
 
 export async function uploadLibraryPhotos(files, { folder = 'All photographs', onProgress = () => {} } = {}) {
@@ -119,18 +173,24 @@ export async function uploadLibraryPhotos(files, { folder = 'All photographs', o
   return completed;
 }
 
-export async function uploadEditorReturn(file, sourceAssetId, token, publicId) {
+export async function uploadEditorReturn(file, sourceAssetId, token, publicId, { signal, onChange = () => {}, record = {} } = {}) {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > MAX_LIBRARY_FILE_BYTES) {
     throw new Error('Choose a JPEG, PNG, or WebP edit that is 100 MB or smaller.');
   }
   const headers = { Authorization: `Bearer ${token}` };
   const endpoint = `/v1/storage/public/${encodeURIComponent(publicId)}/uploads`;
-  const signResponse = await api.post(`${endpoint}/sign`, { sourceAssetId, contentType: file.type }, { headers });
-  const uploaded = await uploadOne(file, signResponse.data.data);
+  await renewRecord(record, '', endpoint, { sourceAssetId, editorGrant: record.signature?.editorGrant }, headers);
+  record.signature ||= (await api.post(`${endpoint}/sign`, { sourceAssetId, contentType: file.type }, { headers, signal })).data.data;
+  onChange({ state: 'uploading', loaded: record.uploaded ? file.size : 0, total: file.size });
+  record.uploaded ||= await uploadOne(file, record.signature, loaded => onChange({ state: 'uploading', loaded, total: file.size }), signal);
+  const uploaded = record.uploaded;
+  onChange({ state: 'saving', loaded: file.size, total: file.size });
+  record.confirmationStarted = true;
   const response = await api.post(`${endpoint}/confirm`, {
     objectKey: uploaded.objectKey,
     uploadToken: uploaded.uploadToken,
     sourceAssetId,
+    editorGrant: record.signature.editorGrant,
     originalFilename: file.name
   }, { headers });
   return response.data.data;

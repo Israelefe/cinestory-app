@@ -4,7 +4,7 @@ function uploadError(message, code, status) {
   return Object.assign(new Error(message), { code, ...(status ? { status } : {}) });
 }
 
-export function uploadR2Object(upload, file, onProgress = () => {}) {
+export function uploadR2Object(upload, file, onProgress = () => {}, { signal } = {}) {
   return new Promise((resolve, reject) => {
     let target;
     try { target = new URL(upload?.uploadUrl); } catch { reject(new Error('Veylo could not prepare this upload.')); return; }
@@ -13,6 +13,10 @@ export function uploadR2Object(upload, file, onProgress = () => {}) {
       return;
     }
     const request = new XMLHttpRequest();
+    if (signal?.aborted) { reject(uploadError('The upload was cancelled.', 'UPLOAD_CANCELLED')); return; }
+    const abort = () => request.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    request.onloadend = () => signal?.removeEventListener('abort', abort);
     request.open('PUT', target.toString());
     request.timeout = PHOTO_UPLOAD_TIMEOUT_MS;
     for (const [name, value] of Object.entries(upload.uploadHeaders || {})) request.setRequestHeader(name, value);

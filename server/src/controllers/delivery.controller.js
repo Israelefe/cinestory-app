@@ -53,7 +53,7 @@ const narrationSchema = z.object({
   voiceId: z.enum(NARRATION_VOICES.map(voice => voice.id)).optional().default(DEFAULT_NARRATION_VOICE_ID)
 }).strict();
 const revisionSchema = z.object({ scope: z.enum(['selected', 'full']), instruction: z.string().trim().min(8).max(600), assetIds: z.array(z.string().min(1).max(100)).max(100).default([]), captionOnly: z.boolean().default(false) }).strict();
-const libraryAssetsSchema = z.object({ assetIds: z.array(z.string().min(8).max(100)).min(1).max(20) }).strict();
+const libraryAssetsSchema = z.object({ assetIds: z.array(z.string().regex(/^[a-f\d]{24}$/i)).min(1).max(20) }).strict();
 const accessSchema = z.preprocess(cleanDeliveryAccess, z.object({
   pin: z.string().regex(/^\d{6}$/).optional().or(z.literal('')),
   expiresAt: z.string().datetime().optional().or(z.literal('')),
@@ -132,6 +132,7 @@ function ownerAsset(asset, access) {
   const data = typeof asset.toObject === 'function' ? asset.toObject() : { ...asset };
   delete data.libraryTags;
   delete data.libraryCaption;
+  delete data.librarySourceId;
   return {
     ...data,
     url: signedDeliveryImageUrl(asset.publicId, { access }),
@@ -626,24 +627,35 @@ export async function addLibraryAssets(req, res) {
     const user = await User.findById(req.user.id);
     const entitlements = await resolveEntitlements(user, { includeUsage: false });
     if (entitlements.features.storageMode !== 'read-write') return res.status(403).json({ success: false, code: 'PRO_REQUIRED', message: 'Renew Pro to reuse photographs from your personal library.' });
-    if (delivery.assets.length + parsed.data.assetIds.length > entitlements.limits.photosPerDelivery) return res.status(403).json({ success: false, code: 'PHOTO_LIMIT_REACHED', message: `${entitlements.planName} allows up to ${entitlements.limits.photosPerDelivery} photographs in one delivery.` });
+    const alreadyAdded = new Set(delivery.assets.map(asset => String(asset.librarySourceId || '')));
+    const requestedIds = parsed.data.assetIds.filter(id => !alreadyAdded.has(id));
+    if (!requestedIds.length) return res.json({ success: true, data: delivery.assets.filter(asset => parsed.data.assetIds.includes(String(asset.librarySourceId))).map(asset => ownerAsset(asset)), replayed: true });
+    if (delivery.assets.length + requestedIds.length > entitlements.limits.photosPerDelivery) return res.status(403).json({ success: false, code: 'PHOTO_LIMIT_REACHED', message: `${entitlements.planName} allows up to ${entitlements.limits.photosPerDelivery} photographs in one delivery.` });
     const stored = await StorageAsset.find({ _id: { $in: parsed.data.assetIds }, userId: user._id });
     const byId = new Map(stored.map(asset => [String(asset._id), asset]));
     if (stored.length !== parsed.data.assetIds.length) return res.status(403).json({ success: false, message: 'One of those library photographs does not belong to your account.' });
+    if (stored.some(asset => asset.rawPublicId || !['jpg', 'jpeg', 'png', 'webp'].includes(String(asset.format).toLowerCase()) || Number(asset.bytes) > 20_000_000)) return res.status(400).json({ success: false, message: 'Use finished JPEG, PNG or WebP exports up to 20 MB. Camera originals and their previews are for editing.' });
     const newAssets = [];
-    // Copy library photos in parallel (up to 4 at a time) instead of sequentially
-    const copyResults = await Promise.all(parsed.data.assetIds.map(async (id) => {
-      const source = byId.get(id);
-      const resource = await copyStorageImageToDelivery({ sourcePublicId: source.publicId, userId: user._id, deliveryId: delivery._id });
-      return { id, source, resource };
-    }));
-    for (const { source, resource } of copyResults) {
-      copied.push(resource.public_id);
-      newAssets.push({ assetId: crypto.randomUUID(), publicId: resource.public_id, resourceType: 'image', format: resource.format, width: resource.width, height: resource.height, bytes: resource.bytes, contentHash: resource.etag || undefined, hashAlgorithm: resource.etag ? 'r2-etag' : undefined, hashVerifiedAt: resource.etag ? new Date() : undefined, originalFilename: source.originalFilename, libraryTags: source.tags || [], libraryCaption: source.caption || '', sortOrder: delivery.assets.length + newAssets.length });
+    const copyResults = [];
+    for (let index = 0; index < requestedIds.length; index += 4) {
+      const batch = await Promise.allSettled(requestedIds.slice(index, index + 4).map(async id => {
+        const source = byId.get(id);
+        const resource = await copyStorageImageToDelivery({ sourcePublicId: source.publicId, userId: user._id, deliveryId: delivery._id });
+        copied.push(resource.public_id);
+        return { id, source, resource };
+      }));
+      copyResults.push(...batch);
+      if (batch.some(result => result.status === 'rejected')) break;
+    }
+    const failedCopy = copyResults.find(result => result.status === 'rejected');
+    if (failedCopy) throw failedCopy.reason;
+    for (const { value: { source, resource } } of copyResults) {
+      newAssets.push({ assetId: crypto.randomUUID(), librarySourceId: source._id, publicId: resource.public_id, resourceType: 'image', format: resource.format, width: resource.width, height: resource.height, bytes: resource.bytes, contentHash: resource.etag || undefined, hashAlgorithm: resource.etag ? 'r2-etag' : undefined, hashVerifiedAt: resource.etag ? new Date() : undefined, originalFilename: source.originalFilename, libraryTags: source.tags || [], libraryCaption: source.caption || '', sortOrder: delivery.assets.length + newAssets.length });
     }
     const updated = await Delivery.findOneAndUpdate({
       _id: delivery._id,
       userId: user._id,
+      'assets.librarySourceId': { $nin: requestedIds },
       status: { $in: ['draft', 'review'] },
       $expr: { $lte: [{ $add: [{ $size: '$assets' }, newAssets.length] }, entitlements.limits.photosPerDelivery] }
     }, {
@@ -657,9 +669,11 @@ export async function addLibraryAssets(req, res) {
       error.status = 409;
       throw error;
     }
+    // Saved delivery files must survive a lost response or a later retry.
+    copied.length = 0;
     const addedIds = new Set(newAssets.map(item => item.assetId));
     const data = updated.assets.filter(item => addedIds.has(item.assetId)).map(asset => ownerAsset(asset));
-    await discardV3Narration(delivery);
+    await discardV3Narration(delivery).catch(() => {});
     recordAnalyticsEventAsync({ name: 'upload.completed', source: 'server', actorType: 'photographer', userId: req.user?.id, deliveryId: req.params.id, status: 'completed', count: data.length, bytes: newAssets.reduce((total, asset) => total + Number(asset.bytes || 0), 0), format: delivery.format, metadata: { surface: 'delivery', resourceType: 'library-copy' } });
     res.status(201).json({ success: true, data });
   } catch (error) {

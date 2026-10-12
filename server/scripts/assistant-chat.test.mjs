@@ -95,7 +95,9 @@ test('visitors can learn about the Product page, client preselection and editor 
     const knowledge = buildAssistantKnowledge({ query, audience: 'visitor' });
     assert.match(knowledge, /Pro Image Library/);
     assert.match(knowledge, /without download controls/);
-    assert.match(knowledge, /Editor handoff requires a password/);
+    assert.match(knowledge, /Editor Links require a password/);
+    assert.match(knowledge, /\/pre-selection/);
+    assert.match(knowledge, /\/editor-links/);
     assert.match(knowledge, /same link/);
     assert.match(knowledge, /Published photo delivery hosting is separate/);
   }

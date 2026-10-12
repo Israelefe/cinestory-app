@@ -11,6 +11,8 @@ import CookiePreferences from './components/CookiePreferences.jsx';
 import VeyloAssistant from './components/VeyloAssistant.jsx';
 import { AssistantContextProvider } from './components/AssistantContext.jsx';
 import AssistantEntry from './components/AssistantEntry.jsx';
+import UploadTray from './components/library/UploadTray.jsx';
+import { libraryUploads } from './utils/libraryUploadQueue.js';
 import LandingPage from './pages/LandingPage.jsx';
 import api from './services/api.js';
 import { installAnalyticsListeners, trackEvent, setAnalyticsAccount } from './services/analytics.js';
@@ -49,7 +51,10 @@ const OnboardingPage = lazyWithRecovery(() => import('./pages/OnboardingPage.jsx
 const AccountSettings = lazyWithRecovery(() => import('./pages/AccountSettings.jsx'), 'settings');
 const BillingPage = lazyWithRecovery(() => import('./pages/BillingPage.jsx'), 'billing');
 const ImageLibrary = lazyWithRecovery(() => import('./pages/ImageLibrary.jsx'), 'image-library');
-const LibraryCollaborationPage = lazyWithRecovery(() => import('./pages/LibraryCollaborationPage.jsx'), 'library-collaboration');
+const PhotoPreselection = lazyWithRecovery(() => import('./pages/PhotoPreselection.jsx'), 'photo-preselection');
+const EditorLinks = lazyWithRecovery(() => import('./pages/EditorLinks.jsx'), 'editor-links');
+const ClientPhotoSelection = lazyWithRecovery(() => import('./pages/ClientPhotoSelection.jsx'), 'client-photo-selection');
+const EditorWorkspace = lazyWithRecovery(() => import('./pages/EditorWorkspace.jsx'), 'editor-workspace');
 const ManagePortfolio = lazyWithRecovery(() => import('./pages/ManagePortfolio.jsx'), 'manage-portfolio');
 const PortfolioEnquiries = lazyWithRecovery(() => import('./pages/PortfolioEnquiries.jsx'), 'portfolio-enquiries');
 const PublicStudioPortfolio = lazyWithRecovery(() => import('./pages/PublicStudioPortfolio.jsx'), 'studio-portfolio');
@@ -119,7 +124,9 @@ function RoutePosition() {
     names['/demo/event-coverage'] = 'Browse Event Coverage';
     names['/demo/campaign'] = 'Open a Campaign Delivery';
     if (pathname === '/billing') names[pathname] = 'Plan and billing';
-    if (pathname === '/library') names[pathname] = 'Personal image library';
+    if (pathname === '/library') names[pathname] = 'Photo Library';
+    if (pathname.startsWith('/pre-selection')) names[pathname] = 'Photo Pre-selection';
+    if (pathname.startsWith('/editor-links')) names[pathname] = 'Editor Links';
     if (pathname.startsWith('/select/')) names[pathname] = 'Client photo selection';
     if (pathname.startsWith('/edit/')) names[pathname] = 'Editor photo handoff';
     if (pathname === '/portfolio/manage') names[pathname] = 'Manage portfolio';
@@ -183,12 +190,14 @@ function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountD
   const { pathname } = useLocation();
   const portfolioHandle = publicPortfolioHandle(pathname);
   if (portfolioHandle) return <PublicStudioPortfolio requestedHandle={portfolioHandle} />;
-  const showPublicHeader = !focusedRoutes.has(pathname);
+  const libraryWorkflow = pathname.startsWith('/pre-selection') || pathname.startsWith('/editor-links');
+  const showPublicHeader = !focusedRoutes.has(pathname) && !libraryWorkflow;
   return <div className="min-h-screen bg-[#070709] text-white">
+    {user && <UploadTray />}
     {showPublicHeader && <Navbar user={user} onLogout={onLogout} />}
     {authRoutes.has(pathname) && <ProductHeader mode="auth" />}
     {pathname === '/onboarding' && <ProductHeader mode="setup" user={user} onLogout={onLogout} />}
-    {productRoutes.has(pathname) && pathname !== '/create' && <ProductHeader user={user} onLogout={onLogout} />}
+    {(productRoutes.has(pathname) || libraryWorkflow) && pathname !== '/create' && <ProductHeader user={user} onLogout={onLogout} />}
     <main id="main-content"><Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/product" element={<ProductPage user={user} />} />
@@ -207,6 +216,8 @@ function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountD
       <Route path="/settings" element={<ProtectedRoute user={user} loading={authLoading}><AccountSettings user={user} onUserUpdated={onAuthenticated} onAccountDeleted={onAccountDeleted} /></ProtectedRoute>} />
       <Route path="/billing" element={<ProtectedRoute user={user} loading={authLoading}><BillingPage onPlanChanged={onPlanChanged} /></ProtectedRoute>} />
       <Route path="/library" element={<ProtectedRoute user={user} loading={authLoading}><ImageLibrary /></ProtectedRoute>} />
+      <Route path="/pre-selection/*" element={<ProtectedRoute user={user} loading={authLoading}><PhotoPreselection user={user} /></ProtectedRoute>} />
+      <Route path="/editor-links/*" element={<ProtectedRoute user={user} loading={authLoading}><EditorLinks user={user} /></ProtectedRoute>} />
       <Route path="/portfolio/enquiries" element={<ProtectedRoute user={user} loading={authLoading}><PortfolioEnquiries /></ProtectedRoute>} />
       <Route path="/portfolio/manage" element={<ProtectedRoute user={user} loading={authLoading}><ManagePortfolio /></ProtectedRoute>} />
       <Route path="/contact" element={<ContactSupport key={user?.id || user?._id || 'guest'} user={user} />} /><Route path="/changelog" element={<Changelog />} /><Route path="/about" element={<AboutUs />} /><Route path="/for/:slug" element={<NichePage />} /><Route path="/client-experience" element={<ClientExperience />} />
@@ -217,6 +228,7 @@ function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountD
 
 export default function App() {
   const [user, setUser] = useState(null);
+  useLayoutEffect(() => libraryUploads.setOwner(user?.id || user?._id || ''), [user?.id, user?._id]);
   const [authLoading, setAuthLoading] = useState(true);
   const authVersion = useRef(0);
   useEffect(() => { installAnalyticsListeners(); }, []);
@@ -254,8 +266,8 @@ export default function App() {
   };
   const handlePlanChanged = useCallback(plan => setUser(current => current ? { ...current, plan } : current), []);
   return <ProPricingProvider><MotionConfig {...VEYLO_MOTION_CONFIG}><BrowserRouter><AssistantContextProvider user={user}><RoutePosition /><DeliveryChrome user={user} /><ToastContainer position="top-right" theme="dark" autoClose={3000} /><Suspense fallback={<div className="v-page-loading" role="status">Opening Veylo…</div>}><Routes>
-    <Route path="/select/:publicId" element={<LibraryCollaborationPage kind="preselection" />} />
-    <Route path="/edit/:publicId" element={<LibraryCollaborationPage kind="editor-handoff" />} />
+    <Route path="/select/:publicId" element={<ClientPhotoSelection />} />
+    <Route path="/edit/:publicId" element={<EditorWorkspace />} />
     <Route path="/story/:storyId" element={<PhonePresentationRoute title="Photo Story demo"><StoryViewer /></PhonePresentationRoute>} />
     <Route path="/d/:publicId" element={<PhonePresentationRoute title="Client delivery"><DeliveryViewer /></PhonePresentationRoute>} />
     <Route path="/v/:publicId" element={<VideoClientPage />} />

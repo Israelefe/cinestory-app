@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import jwt from 'jsonwebtoken';
 import { createR2Upload, deleteR2Object, deleteR2Prefix, headR2Object, prepareR2Image, presignedR2Get, r2Configured, verifyUploadToken, MAX_IMAGE_BYTES } from './r2.service.js';
 import { signedImageUrl } from './deliveryMedia.service.js';
 import { mediaOffloadEnabled, mediaWorkerRequest } from './cloudflareMedia.service.js';
@@ -21,6 +22,14 @@ export function createStorageUploadSignature(userId, { resourceType = 'image', f
   if (resourceType === 'image' && !['image/jpeg', 'image/png', 'image/webp'].includes(mime)) throw Object.assign(new Error('Use a JPEG, PNG, or WebP photograph.'), { status: 400 });
   const signature = createR2Upload({ key, userId, contentType: mime, resourceType, maxBytes: MAX_IMAGE_BYTES });
   return { ...signature, resourceType, format: rawFormat, maxBytes: MAX_IMAGE_BYTES };
+}
+
+export function renewStorageUploadSignature(userId, { objectKey, uploadToken }) {
+  ready();
+  let claims;
+  try { claims = jwt.verify(uploadToken, process.env.JWT_SECRET, { issuer: 'veylo-r2-upload', ignoreExpiration: true }); } catch { throw Object.assign(new Error('This upload could not be renewed. Choose the file again.'), { status: 403 }); }
+  if (claims.purpose !== 'r2-upload' || claims.userId !== String(userId) || claims.key !== objectKey || !objectKey.startsWith(storageFolder(userId) + '/') || !['image', 'raw'].includes(claims.resourceType) || claims.iat < Date.now() / 1000 - 86400) throw Object.assign(new Error('This upload could not be renewed. Choose the file again.'), { status: 403 });
+  return { ...createR2Upload({ key: objectKey, userId, resourceType: claims.resourceType, contentType: claims.contentType, maxBytes: claims.maxBytes }), resourceType: claims.resourceType };
 }
 
 export async function confirmStorageUpload(userId, data, { resourceType = data.resourceType || 'image' } = {}) {

@@ -85,6 +85,19 @@ export async function checkMediaWorker() {
   return mediaWorkerRequest('health');
 }
 
+let selectionPreviewCheck;
+let selectionPreviewCheckUntil = 0;
+export async function requireMarkedSelectionPreviews() {
+  if (!mediaOffloadEnabled()) throw Object.assign(new Error('Marked selection previews are temporarily unavailable. Please try again later.'), { status: 503 });
+  if (!selectionPreviewCheck || Date.now() >= selectionPreviewCheckUntil) {
+    selectionPreviewCheckUntil = Date.now() + 30000;
+    selectionPreviewCheck = checkMediaWorker().then(health => {
+      if (health.selectionMarks !== true) throw Object.assign(new Error('Marked selection previews are being updated. Please try again shortly.'), { status: 503, code: 'SELECTION_PREVIEWS_NOT_READY' });
+    }).catch(error => { selectionPreviewCheck = null; throw error; });
+  }
+  await selectionPreviewCheck;
+}
+
 export async function prepareCloudflareImage(key, { maxBytes = 100 * 1024 * 1024 } = {}) {
   return mediaWorkerRequest('inspect', { key, maxBytes, resourceType: 'image' });
 }

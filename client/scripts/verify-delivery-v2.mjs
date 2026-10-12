@@ -166,8 +166,8 @@ assert.match(accountSettings, /window\.confirm/, 'Account settings must confirm 
 assert.match(managePortfolio, /handleNextChangeAt/, 'Portfolio management must show the portfolio-address change policy');
 assert.match(managePortfolio, /old address will redirect for 90 days/, 'Portfolio management must explain the old-address redirect window');
 assert.match(publicPortfolio, /history\.replaceState/, 'Old portfolio addresses must canonicalise to the current address');
-assert.match(imageLibrary, /Caption note for future deliveries/, 'Image library captions must explain their delivery purpose');
-assert.match(imageLibrary, /carried into the Creative Director/, 'Image library must explain how saved context is reused');
+assert.match(imageLibrary, /Internal caption note/, 'Library notes must be clearly labelled as internal');
+assert.match(imageLibrary, /For your future deliveries\. Review the final client caption before publishing/, 'Library notes must explain reuse and final caption review');
 for (const breakpoint of ['640px', '768px', '1024px']) {
   assert.match(`${viewerCss}\n${creationCss}`, new RegExp(`min-width:${breakpoint}`), `Missing responsive breakpoint: ${breakpoint}`);
 }

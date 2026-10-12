@@ -34,15 +34,26 @@ export async function authorizedMediaClaims(claims, files = []) {
     return Boolean(await StorageAsset.exists({ userId: user._id, publicId: claims.key }) || await Delivery.exists({ userId: user._id, 'assets.publicId': claims.key }));
   }
   if (access.type === 'library') {
-    if (!validId(access.collaborationId) || !validId(access.assetId)) return false;
-    const collaboration = await LibraryCollaboration.findOne({ _id: access.collaborationId, status: { $ne: 'revoked' }, expiresAt: { $gt: new Date() } }).lean();
-    if (!collaboration || !collaboration.assetIds.some(id => String(id) === access.assetId)) return false;
+    if (!validId(access.collaborationId)) return false;
+    const collaboration = await LibraryCollaboration.findOne({ _id: access.collaborationId, status: { $in: ['active', 'submitted'] }, expiresAt: { $gt: new Date() } }).lean();
+    if (!collaboration) return false;
+    if ((access.accessVersion || 0) !== (collaboration.accessVersion || 0)) return false;
     const user = await User.findById(collaboration.userId);
-    if (!user || (await resolveEntitlements(user, { includeUsage: false })).features.storageMode !== 'read-write') return false;
+    if (!user || user.accountStatus && user.accountStatus !== 'active' || (await resolveEntitlements(user, { includeUsage: false })).features.storageMode !== 'read-write') return false;
+    if (access.mode === 'archive') {
+      if (collaboration.kind !== 'editor-handoff' || claims.action !== 'archive' || !files.length || files.length > 500) return false;
+      const sources = await StorageAsset.find({ userId: collaboration.userId, _id: { $in: collaboration.assetIds } }).lean();
+      const keys = new Set(sources.map(asset => asset.rawPublicId || asset.publicId));
+      return files.every(file => keys.has(file?.key));
+    }
+    if (!validId(access.assetId)) return false;
+    if (access.mode === 'return-view') {
+      if (collaboration.kind !== 'editor-handoff' || !collaboration.returnedAssets?.some(item => String(item.assetId) === access.assetId)) return false;
+    } else if (!collaboration.assetIds.some(id => String(id) === access.assetId)) return false;
     const asset = await StorageAsset.findOne({ _id: access.assetId, userId: collaboration.userId }).lean();
     if (!asset) return false;
     if (access.mode === 'download') return collaboration.kind === 'editor-handoff' && claims.action === 'file' && claims.key === (asset.rawPublicId || asset.publicId);
-    return access.mode === 'view' && claims.action === 'image' && claims.key === asset.publicId;
+    return ['view', 'return-view'].includes(access.mode) && claims.action === 'image' && claims.key === asset.publicId && (collaboration.kind !== 'preselection' || access.mark === 'selection');
   }
   if (access.type !== 'delivery' || !validId(access.deliveryId) || !['view', 'download', 'archive', 'audio'].includes(access.mode)) return false;
   const delivery = await Delivery.findOne({ _id: access.deliveryId, status: 'published' }).select('+access.pinDigest').lean();

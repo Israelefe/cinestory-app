@@ -65,6 +65,8 @@ export default function ProductPage({ user }) {
   const free = plans?.find(plan => plan.id === 'free');
   const pro = plans?.find(plan => plan.id === 'pro');
   const libraryTo = user ? '/library' : '/signup';
+  const selectionTo = user ? '/pre-selection' : '/signup';
+  const editorTo = user ? '/editor-links' : '/signup';
   const createTo = user ? '/create' : '/signup';
   useEffect(() => {
     const description = document.querySelector('meta[name="description"]');
@@ -92,17 +94,17 @@ export default function ProductPage({ user }) {
     <section className="vp-section" id="client-preselection"><div className="v-wrap vp-feature">
       <Reveal className="vp-feature-title"><Eyebrow number="01">Before the edit</Eyebrow><h2>Let your client<br /><em>make their choices.</em></h2><ProLabel /></Reveal>
       <Reveal className="vp-feature-art"><SelectionPreview /></Reveal>
-      <Reveal className="vp-feature-after"><p className="v-copy">Send one private link instead of asking for screenshots and file numbers over WhatsApp. Your client taps the photographs they want edited and submits their choices.</p><Notes items={['Marked previews with no download controls', 'Add a six-digit PIN when you need one', 'Ask the client to choose again if the brief changes']} /><TextLink to={libraryTo}>{user ? 'Open client and editor links' : 'Start with a Veylo account'}</TextLink></Reveal>
+      <Reveal className="vp-feature-after"><p className="v-copy">Send one private link instead of asking for screenshots and file numbers over WhatsApp. Set how many photographs the client can choose. They swipe right to choose, swipe left to skip, then review and send their selection.</p><Notes items={['Marked previews with no download controls', 'Add a six-digit PIN when you need one', 'See chosen photographs and keep earlier submissions']} /><TextLink to={selectionTo}>{user ? 'Open Photo Pre-selection' : 'Start with a Veylo account'}</TextLink></Reveal>
     </div></section>
 
     <section className="vp-section vp-section-warm" id="editor-handoff"><div className="v-wrap vp-feature vp-feature-reverse">
       <Reveal className="vp-feature-title"><Eyebrow number="02">Work with your editor</Eyebrow><h2>The files they need.<br /><em>A place to return them.</em></h2><ProLabel /></Reveal>
       <Reveal className="vp-feature-art"><EditorPreview /></Reveal>
-      <Reveal className="vp-feature-after"><p className="v-copy">Give your editor a password-protected link to the source files. They download the originals and return finished edits to the same link, ready for you to review.</p><Notes items={['Share camera originals and their previews', 'Receive finished JPEG, PNG or WebP photographs', 'Set an expiry or close the link when the work is done']} /><TextLink to={libraryTo}>{user ? 'Open Image Library' : 'Create your studio account'}</TextLink></Reveal>
+      <Reveal className="vp-feature-after"><p className="v-copy">Give your editor a password-protected link to the source files. They download the originals and return finished edits to the same link, ready for you to review.</p><Notes items={['Share camera originals and their previews', 'Receive finished JPEG, PNG or WebP photographs', 'Set an expiry or close the link when the work is done']} /><TextLink to={editorTo}>{user ? 'Open Editor Links' : 'Create your studio account'}</TextLink></Reveal>
     </div></section>
 
     <section className="vp-section" id="image-library"><div className="v-wrap vp-library">
-      <Reveal><Eyebrow number="03">Your Image Library</Eyebrow><h2>Your shoot,<br /><em>kept together.</em></h2><p className="v-copy">Keep camera originals, paired previews and returned edits in your Pro Library. Use folders, tags and caption notes to find the photographs again and reuse them in a delivery.</p><TextLink to={libraryTo}>{user ? 'Go to your library' : 'Get started with Veylo'}</TextLink></Reveal>
+      <Reveal><Eyebrow number="03">Your Image Library</Eyebrow><h2>Your shoot,<br /><em>kept together.</em></h2><p className="v-copy">Keep camera originals, paired previews and returned edits in your Pro Library. Organise photographs by shoot, add search tags and keep internal notes. Use finished exports in a delivery after reviewing the edits.</p><TextLink to={libraryTo}>{user ? 'Go to your library' : 'Get started with Veylo'}</TextLink></Reveal>
       <Reveal className="vp-library-panel"><div className="vp-library-capacity"><HardDrive size={26} /><div><strong><StorageAmount plans={plans} /></strong><span>PERSONAL IMAGE LIBRARY / PRO</span></div></div><div className="vp-library-folders">{[[Camera, 'Camera originals', 'Keep the source file and its preview.'], [CheckCheck, 'Client choices', 'Know which photographs need editing.'], [Image, 'Returned edits', 'Review the files your editor sends back.']].map(([Icon, title, text]) => <div key={title}><Icon size={20} /><div><strong>{title}</strong><p>{text}</p></div></div>)}</div><p className="vp-library-separate"><ShieldCheck size={17} /><span>Photo delivery hosting is separate. Video originals share your 100 GB.</span></p></Reveal>
     </div></section>
 

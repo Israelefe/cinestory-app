@@ -86,7 +86,13 @@ function AssistantChat({ user, chatKey, surface, pathname }) {
     { icon: Image, label: 'Choose a delivery', question: 'How do Showcase, GridBoard and Photo Swap differ?' }
   ] : surface === 'studio' && pathname === '/library' ? [
     { icon: Image, label: 'Your storage', question: 'How much storage do I have left?' },
-    { icon: Send, label: 'Client and editor links', question: 'How do client selection and editor links work?' }
+    { icon: Upload, label: 'Adding photographs', question: 'How do I check upload progress or retry a failed photograph?' }
+  ] : surface === 'studio' && pathname.startsWith('/pre-selection') ? [
+    { icon: CheckCheck, label: 'Selection allowance', question: 'How do I set the number of photographs my client can choose?' },
+    { icon: Image, label: 'Client choices', question: 'Where do I see the photographs my client selected?' }
+  ] : surface === 'studio' && pathname.startsWith('/editor-links') ? [
+    { icon: Send, label: 'Send originals', question: 'How do I create an Editor Link with the source photographs?' },
+    { icon: Check, label: 'Review edits', question: 'How do I review returned versions and create a delivery from accepted edits?' }
   ] : surface === 'studio' && pathname === '/billing' ? [
     { icon: BadgeCheck, label: 'Your subscription', question: 'Explain my current subscription status and next steps.' },
     { icon: RefreshCw, label: 'Resume Pro', question: 'Can I resume my subscription before it expires?' }

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Camera, CreditCard, Folder, Image, LayoutDashboard, LogOut, Menu, Settings, Share2, X, Film } from 'lucide-react';
+import { Camera, CheckCheck, CreditCard, Folder, Image, LayoutDashboard, LogOut, Menu, Settings, Share2, X, Film, SlidersHorizontal } from 'lucide-react';
 import { useDialogFocus } from './useDialogFocus.js';
 import './Header.css';
 
@@ -22,7 +22,9 @@ export default function ProductHeader({ user, onLogout, mode = 'app' }) {
   const accountLinks = [
     ['Dashboard', '/dashboard', LayoutDashboard],
     ['Portfolio', '/portfolio/manage', Image],
-    ['Library', '/library', Folder],
+    ['Photo Library', '/library', Folder],
+    ['Photo Pre-selection', '/pre-selection', CheckCheck],
+    ['Editor Links', '/editor-links', SlidersHorizontal],
     ['Videos', '/videos/library', Film],
     ['Sharing', '/sharing', Share2],
     ['Billing', '/billing', CreditCard],

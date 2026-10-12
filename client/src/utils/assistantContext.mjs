@@ -2,7 +2,7 @@
 // input values, file names, or arbitrary analytics metadata as activity context.
 export const ASSISTANT_PAGES = Object.freeze({
   '/': 'Home', '/dashboard': 'Dashboard', '/create': 'New delivery', '/sharing': 'Delivery sharing',
-  '/billing': 'Billing', '/library': 'Image Library', '/portfolio/manage': 'Portfolio editor',
+  '/billing': 'Billing', '/library': 'Photo Library', '/pre-selection': 'Photo Pre-selection', '/editor-links': 'Editor Links', '/portfolio/manage': 'Portfolio editor',
   '/portfolio/enquiries': 'Portfolio enquiries', '/portfolio': 'About Portfolio', '/settings': 'Settings',
   '/formats': 'Delivery types', '/photoswap': 'About Photo Swap', '/gridboard': 'About GridBoard',
   '/pricing': 'Plans and pricing', '/contact': 'Support', '/signup': 'Create an account',
@@ -15,7 +15,13 @@ export const ASSISTANT_STEPS = ['details', 'format', 'photos', 'preparing', 'cap
 export const ASSISTANT_EVENTS = ['page-opened', 'step-opened', 'upload-started', 'upload-ended', 'upload-failed', 'draft-edited', 'form-clean', 'preview-opened', 'request-failed', 'writing-applied'];
 export const ASSISTANT_KINDS = ['showcase', 'pinboard', 'photoswap', 'portfolio', 'video'];
 export const CONTEXT_TTL = 30 * 60 * 1000;
-export function safeAssistantPage(path) { return Object.hasOwn(ASSISTANT_PAGES, path) ? path : ''; }
+export function safeAssistantPage(path) {
+  if (Object.hasOwn(ASSISTANT_PAGES, path)) return path;
+  // Share the workspace name, never a private link or record identifier.
+  if (/^\/pre-selection\/(?:new|[a-f0-9]{24}(?:\/(?:setup|revise))?)$/i.test(path)) return '/pre-selection';
+  if (/^\/editor-links\/(?:new|[a-f0-9]{24}(?:\/setup)?)$/i.test(path)) return '/editor-links';
+  return '';
+}
 export function contextLabel(context) {
   const kind = { showcase: 'Showcase', pinboard: 'GridBoard', photoswap: 'PhotoSwap', portfolio: 'Portfolio', video: 'Video delivery' }[context?.workflow?.kind];
   const step = context?.workflow?.step?.replaceAll('-', ' ');

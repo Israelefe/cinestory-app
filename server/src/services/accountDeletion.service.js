@@ -22,6 +22,7 @@ import PhotoLike from '../models/PhotoLike.js';
 import DeliveryView from '../models/DeliveryView.js';
 import StorageAsset from '../models/StorageAsset.js';
 import LibraryCollaboration from '../models/LibraryCollaboration.js';
+import LibraryShoot from '../models/LibraryShoot.js';
 import Portfolio from '../models/Portfolio.js';
 import PortfolioJob from '../models/PortfolioJob.js';
 import PortfolioEnquiry from '../models/PortfolioEnquiry.js';
@@ -163,6 +164,7 @@ async function deleteOwnedRecords({ accountId, deliveryIds, storyIds, volumeJobI
   await deleteMany('volumeJobs', VolumeJob, { userId: accountId });
   await deleteMany('storageAssets', StorageAsset, { userId: accountId });
   await deleteMany('libraryCollaborations', LibraryCollaboration, { userId: accountId });
+  await deleteMany('libraryShoots', LibraryShoot, { userId: accountId });
   const ownedPortfolios = await Portfolio.find({ userId: accountId }).select('_id items.publicId draft.items.publicId profileMedia.publicId draft.profileMedia.publicId').session(session || null).lean();
   await deleteMany('portfolioHandles', PortfolioHandle, { portfolioId: { $in: ownedPortfolios.map(item => item._id) } });
   await deleteMany('portfolioMedia', PortfolioMedia, { $or: [{ publicId: { $in: ownedPortfolios.flatMap(item => [...(item.items || []), ...(item.draft?.items || []), ...(item.profileMedia || []), ...(item.draft?.profileMedia || [])].map(photo => photo.publicId)) } }, { publicId: { $regex: `^veylo/users/${accountId}/` } }] });

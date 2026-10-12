@@ -20,6 +20,7 @@ const assetSchema = new mongoose.Schema({
   // Optional context carried over when a photograph is reused from the Pro library.
   libraryTags: [{ type: String, trim: true, maxlength: 40 }],
   libraryCaption: { type: String, trim: true, maxlength: 180 },
+  librarySourceId: { type: mongoose.Schema.Types.ObjectId, ref: 'StorageAsset' },
   sortOrder: { type: Number, default: 0 },
   uploadId: { type: String, maxlength: 100 },
   analysis: { type: mongoose.Schema.Types.Mixed }

@@ -9,6 +9,7 @@ import { processPortfolioRemovals } from './portfolioLifecycle.service.js';
 import Portfolio from '../models/Portfolio.js';
 import StorageAsset from '../models/StorageAsset.js';
 import LibraryCollaboration from '../models/LibraryCollaboration.js';
+import LibraryShoot from '../models/LibraryShoot.js';
 import User from '../models/User.js';
 import Subscription from '../models/Subscription.js';
 import Delivery from '../models/Delivery.js';
@@ -159,6 +160,7 @@ export async function purgeExpiredProData(now = new Date()) {
       await Promise.all([
         StorageAsset.deleteMany({ userId: user._id }),
         LibraryCollaboration.deleteMany({ userId: user._id }),
+        LibraryShoot.deleteMany({ userId: user._id }),
         Portfolio.deleteMany({ userId: user._id }),
         PortfolioEnquiry.deleteMany({ userId: user._id }),
         User.updateOne({ _id: user._id }, { $set: { storageUsedBytes: 0 }, $unset: { proRetentionUntil: 1 } })
