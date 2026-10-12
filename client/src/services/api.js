@@ -14,8 +14,10 @@ const api = axios.create({
 });
 
 api.interceptors.request.use(async config => {
-  // Finish a shared sign-in refresh before reading cookies for another request.
-  if (refreshRequest) await refreshRequest;
+  // Client video links use their own PIN/access and playback-session checks.
+  // A studio sign-in refresh must not block these anonymous viewer requests.
+  const clientVideo = String(config.url || '').startsWith('/v1/videos/public/');
+  if (refreshRequest && !clientVideo) await refreshRequest;
   config.metadata = { startedAt: typeof performance !== 'undefined' ? performance.now() : Date.now() };
   const csrf = cookieValue('veylo_csrf');
   if (csrf && !['get', 'head', 'options'].includes(String(config.method).toLowerCase())) config.headers['X-CSRF-Token'] = csrf;

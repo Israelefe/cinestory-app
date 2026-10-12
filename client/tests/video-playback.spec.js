@@ -184,43 +184,116 @@ test('original HLS plays while a slow segment is still downloading', async ({ pa
   } finally { release(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });
 
-for (const cancel of [false, true]) test(cancel ? 'pausing a buffering original prevents playback when the download finishes' : 'a heavy original buffers a runway before playback instead of starting with a few frames', async ({ page }) => {
+for (const pause of [false, true]) test(pause ? 'pausing an original stream prevents playback when the remaining bytes arrive' : 'a heavy original MP4 plays before its download finishes', async ({ page }) => {
   const fixture = new URL('../../.visual-review/video-hls/original-long-gop/playback.mp4', import.meta.url);
   test.skip(!existsSync(fileURLToPath(fixture)), 'Requires original video fixtures.');
-  const body = await readFile(fixture); let release; const tail = new Promise(resolve => { release = resolve; }); let requests = 0; let interrupted = 0;
+  const body = await readFile(fixture); let release; const tail = new Promise(resolve => { release = resolve; }); const ranges = []; let finished = false;
   const server = createServer(async (request, response) => {
-    requests++; response.on('close', () => { if (!response.writableFinished) interrupted++; });
+    ranges.push(request.headers.range);
     const range = /^bytes=(\d+)-(\d*)$/.exec(request.headers.range || '');
     const first = range ? Number(range[1]) : 0; const last = range?.[2] ? Math.min(Number(range[2]), body.length - 1) : body.length - 1;
     response.writeHead(range ? 206 : 200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'video/mp4', 'Accept-Ranges': 'bytes', 'Content-Length': last - first + 1, ...(range ? { 'Content-Range': `bytes ${first}-${last}/${body.length}` } : {}) });
     const middle = Math.min(last + 1, Math.max(first, Math.floor(body.length * .15)));
     response.write(body.subarray(first, middle)); await tail;
-    if (!response.destroyed) response.end(body.subarray(middle, last + 1));
+    if (!response.destroyed) { response.end(body.subarray(middle, last + 1)); finished = true; }
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     await page.setViewportSize({ width: 320, height: 700 });
     const state = await setup(page, { ...cases[4], bytes: 100 * 1024 ** 2 }, { mediaOrigin: `http://127.0.0.1:${server.address().port}` });
     await page.unroute('**/__playback__/**'); await page.goto('/v/playback-check');
-    await expect(page.locator('.vv-buffer')).toContainText('Buffering original quality');
-    await expect.poll(() => requests).toBe(1);
-    expect(await page.locator('video').evaluate(video => video.paused && video.currentTime < .1)).toBe(true);
-    expect(await page.locator('video').getAttribute('src')).toBeNull();
-    const panel = await page.locator('.vv-buffer').boundingBox(); const screen = await page.locator('.vv-screen').boundingBox();
-    expect(panel.x).toBeGreaterThanOrEqual(screen.x); expect(panel.x + panel.width).toBeLessThanOrEqual(screen.x + screen.width);
-    if (cancel) {
-      await page.getByRole('button', { name: 'Pause buffering', exact: true }).click();
-      await expect.poll(() => interrupted).toBe(1);
-    }
+    await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(.5);
+    expect(finished).toBe(false);
+    expect(ranges.length).toBeGreaterThan(0); expect(ranges.every(range => /^bytes=/.test(range))).toBe(true);
+    expect(await page.locator('video').getAttribute('src')).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/__playback__\/playback.mp4$/);
+    expect(await page.locator('video').evaluate(video => [video.videoWidth, video.videoHeight])).toEqual([640, 360]);
+    if (pause) await page.locator('video').evaluate(video => video.pause());
     release();
-    if (cancel) {
-      await expect(page.locator('.vv-buffer')).toHaveCount(0);
-      expect(await page.locator('video').evaluate(video => video.paused && video.currentTime < .1)).toBe(true);
-      await page.getByRole('button', { name: 'Resume film', exact: true }).click();
+    if (pause) {
+      await expect.poll(() => page.locator('video').evaluate(video => video.readyState)).toBe(4);
+      expect(await page.locator('video').evaluate(video => video.paused)).toBe(true);
+      await page.locator('video').evaluate(video => video.play());
     }
     await expect.poll(() => page.locator('video').evaluate(video => video.currentTime), { timeout: 10000 }).toBeGreaterThan(3);
-    expect(await page.locator('video').evaluate(async video => (await fetch(video.currentSrc).then(response => response.arrayBuffer())).byteLength)).toBe(body.length);
     await expect(page.locator('.vv-error')).toHaveCount(0); expect(state.errors).toEqual([]);
+  } finally { release(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+});
+
+for (const scenario of [cases[4], cases[5]]) test(`${scenario.name} does not time out while bytes arrive before the first playable frame`, async ({ page }) => {
+  test.setTimeout(60000);
+  const fixture = new URL(`../../.visual-review/video-hls/${scenario.directory}/`, import.meta.url);
+  test.skip(!existsSync(fileURLToPath(new URL(scenario.file || 'master.m3u8', fixture))), 'Requires original video fixtures.');
+  let release; const tail = new Promise(resolve => { release = resolve; }); let chunks = 0;
+  const timers = new Set();
+  const server = createServer(async (request, response) => {
+    const file = new URL(request.url, 'http://localhost').pathname.slice('/__playback__/'.length);
+    if (!/^(master\.m3u8|playback\.mp4|q\d+\/(?:index\.m3u8|s\d{6}\.ts))$/.test(file)) { response.writeHead(404); response.end(); return; }
+    try {
+      const body = await readFile(new URL(file, fixture));
+      const range = /^bytes=(\d+)-(\d*)$/.exec(request.headers.range || '');
+      const first = range ? Number(range[1]) : 0; const last = range?.[2] ? Math.min(Number(range[2]), body.length - 1) : body.length - 1;
+      response.writeHead(range ? 206 : 200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': file.endsWith('.ts') ? 'video/mp2t' : file.endsWith('.mp4') ? 'video/mp4' : 'application/vnd.apple.mpegurl', 'Accept-Ranges': 'bytes', 'Content-Length': last - first + 1, ...(range ? { 'Content-Range': `bytes ${first}-${last}/${body.length}` } : {}) });
+      if (!file.endsWith('.mp4') && !file.endsWith('.ts')) { response.end(body); return; }
+      // Keep MP4 metadata or the HLS loader's 128 KiB chunk incomplete for
+      // longer than the watchdog, while transferring real bytes every second.
+      const size = scenario.file ? 256 : 1024;
+      // Give the native loader enough bytes to identify MP4 before trickling
+      // the remaining (still incomplete) metadata box.
+      let offset = scenario.file ? Math.min(first + 4096, last + 1) : first;
+      response.write(body.subarray(first, offset));
+      const timer = setInterval(() => {
+        if (response.destroyed) { clearInterval(timer); timers.delete(timer); return; }
+        response.write(body.subarray(offset, offset + size)); offset += size; chunks++;
+      }, 1000);
+      timers.add(timer);
+      await tail; clearInterval(timer); timers.delete(timer);
+      if (!response.destroyed) response.end(body.subarray(offset, last + 1));
+    } catch { if (!response.destroyed) response.destroy(); }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const state = await setup(page, scenario, { mediaOrigin: `http://127.0.0.1:${server.address().port}` });
+    await page.unroute('**/__playback__/**'); await page.goto('/v/playback-check');
+    await expect.poll(() => chunks, { timeout: 42000, intervals: [1000] }).toBeGreaterThanOrEqual(34);
+    expect(await page.locator('video').evaluate(video => video.currentTime)).toBe(0);
+    await expect(page.locator('.vv-error')).toHaveCount(0);
+    release();
+    await expect.poll(() => page.locator('video').evaluate(video => video.currentTime), { timeout: 10000 }).toBeGreaterThan(.1);
+    expect(await page.locator('video').evaluate(video => [video.videoWidth, video.videoHeight])).toEqual([scenario.width, scenario.height]);
+    expect(state.errors).toEqual([]);
+  } finally { release(); for (const timer of timers) clearInterval(timer); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+});
+
+test('a stopped original segment still times out and offers retry', async ({ page }) => {
+  await setup(page, cases[0]);
+  await page.route('**/__playback__/**/*.ts', () => {});
+  await page.clock.install(); await page.goto('/v/playback-check');
+  await expect(page.locator('video')).toHaveAttribute('src', /^blob:/);
+  await page.clock.fastForward(31000);
+  await expect(page.locator('.vv-error')).toContainText('taking too long to load');
+  await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
+});
+
+test('native MP4 startup has a bounded timeout when metadata never finishes', async ({ page }) => {
+  const fixture = new URL('../../.visual-review/video-hls/original-long-gop/playback.mp4', import.meta.url);
+  test.skip(!existsSync(fileURLToPath(fixture)), 'Requires original video fixtures.');
+  const body = await readFile(fixture); let release; const tail = new Promise(resolve => { release = resolve; });
+  const server = createServer(async (request, response) => {
+    response.writeHead(206, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'video/mp4', 'Accept-Ranges': 'bytes', 'Content-Length': body.length, 'Content-Range': `bytes 0-${body.length - 1}/${body.length}` });
+    response.write(body.subarray(0, 4096)); await tail;
+    if (!response.destroyed) response.end(body.subarray(4096));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    await setup(page, cases[4], { mediaOrigin: `http://127.0.0.1:${server.address().port}` });
+    await page.unroute('**/__playback__/**');
+    await page.clock.install(); await page.goto('/v/playback-check');
+    await expect(page.locator('video')).toHaveAttribute('src', /^http:/);
+    await expect.poll(() => page.locator('video').evaluate(video => video.networkState)).toBe(2);
+    expect(await page.locator('video').evaluate(video => video.readyState)).toBe(0);
+    await page.clock.fastForward(121000);
+    await expect(page.locator('.vv-error')).toContainText('taking too long to load');
+    await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
   } finally { release(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });
 

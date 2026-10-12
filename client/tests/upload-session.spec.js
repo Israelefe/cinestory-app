@@ -21,6 +21,41 @@ test('a refused photo link does not refresh the photographer sign-in', async ({ 
   expect(refreshes).toBe(0);
 });
 
+for (const status of [200, 403]) test(`client video PIN and playback requests reach their access checks after a refused studio refresh (${status})`, async ({ page }) => {
+  await prepare(page);
+  let release; const refresh = new Promise(resolve => { release = resolve; }); let refreshes = 0; let protectedRequests = 0;
+  const videoRequests = [];
+  await page.route('**/api/v1/auth/refresh', async route => {
+    refreshes++; await refresh;
+    return route.fulfill({ status: 401, json: { code: 'SESSION_EXPIRED', message: 'Your session has expired.' } });
+  });
+  await page.route('**/api/v1/session-check', route => route.fulfill({ status: 401, json: { code: 'SESSION_EXPIRED' } }));
+  await page.route('**/api/v1/protected-check', route => { protectedRequests++; return route.fulfill({ json: { success: true } }); });
+  await page.route('**/api/v1/videos/public/**', route => {
+    videoRequests.push({ path: new URL(route.request().url()).pathname, csrf: route.request().headers()['x-csrf-token'] });
+    return route.fulfill({ status, json: status === 200 ? { success: true } : { code: 'VIDEO_PIN_REQUIRED' } });
+  });
+  try {
+    await page.evaluate(async () => {
+      const { default: api } = await import('/src/services/api.js');
+      window.studioResult = api.get('/v1/session-check').catch(error => error.response.status);
+    });
+    await expect.poll(() => refreshes).toBe(1);
+    await page.evaluate(async () => {
+      const { default: api } = await import('/src/services/api.js');
+      window.videoResults = Promise.all(['unlock', 'assets/film/playback', 'playback/end'].map(path => api.post('/v1/videos/public/private-test/' + path).then(response => ({ status: response.status })).catch(error => ({ status: error.response.status, code: error.response.data.code }))));
+      window.protectedResult = api.post('/v1/protected-check').catch(error => error.response.status);
+    });
+    await expect.poll(() => videoRequests.length).toBe(3);
+    release();
+    const results = await page.evaluate(async () => ({ studio: await window.studioResult, video: await window.videoResults, protected: await window.protectedResult }));
+    expect(results.studio).toBe(401); expect(results.protected).toBe(401); expect(protectedRequests).toBe(0);
+    expect(results.video).toEqual(Array(3).fill(status === 200 ? { status: 200 } : { status: 403, code: 'VIDEO_PIN_REQUIRED' }));
+    expect(videoRequests).toHaveLength(3); expect(videoRequests.every(request => request.csrf === 'original')).toBe(true);
+    expect(refreshes).toBe(1);
+  } finally { release(); }
+});
+
 test('six expired-session requests share one sign-in refresh and use its new security token', async ({ page }) => {
   await prepare(page);
   let refreshes = 0;
