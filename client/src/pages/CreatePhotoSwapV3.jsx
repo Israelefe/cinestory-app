@@ -1,3 +1,4 @@
+import LibraryDeliveryPicker from '../components/library/LibraryDeliveryPicker.jsx';
 import { useAssistantWorkflow } from '../components/AssistantContext.jsx';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { deliveryPreparationMessage } from '../utils/deliveryPreparation.js';
@@ -33,7 +34,7 @@ import {
   Upload,
   X
 } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { API_BASE_URL } from '../config/env.js';
 import api, { apiMessage } from '../services/api.js';
@@ -116,7 +117,7 @@ function SectionHeading({ number, title, children }) {
 }
 
 export default function CreatePhotoSwapV3({ user, initialDelivery }) {
-  const navigate = useNavigate();
+  const navigate = useNavigate(), location = useLocation();
   const veyloMotion = useVeyloReducedMotion();
   const initialKnownShootType = canonicalShootType(initialDelivery?.shootType);
   const [draft, setDraft] = useState(initialDelivery || null);
@@ -406,7 +407,7 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
       } else {
         const { data } = await api.post('/v1/deliveries/v3', body);
         setDraft(data.data);
-        navigate('/create?draft=' + data.data._id, { replace: true });
+        navigate('/create?draft=' + data.data._id, { replace: true, state: location.state });
       }
       setStage('photos');
     });
@@ -738,6 +739,7 @@ export default function CreatePhotoSwapV3({ user, initialDelivery }) {
                       <input type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={!!busy} onChange={event => { void uploadFiles(event.target.files); event.target.value = ''; }} />
                     </label>
                   </div>
+                  <LibraryDeliveryPicker deliveryId={draft?._id} disabled={!!busy} maxPhotos={maxPhotos} existingCount={assets.length} onAdded={refresh} onBusyChange={active => setBusy(active ? 'library-import' : '')} />
                   {busy === 'upload' && (
                     <div className="ps-upload-progress" role="status">
                       <span style={{ transform: `scaleX(${uploadPercent / 100})` }} />

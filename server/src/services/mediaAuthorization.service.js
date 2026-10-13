@@ -52,6 +52,7 @@ export async function authorizedMediaClaims(claims, files = []) {
     } else if (!collaboration.assetIds.some(id => String(id) === access.assetId)) return false;
     const asset = await StorageAsset.findOne({ _id: access.assetId, userId: collaboration.userId }).lean();
     if (!asset) return false;
+    if (access.mode === 'share-cover') return String(collaboration.coverAssetId || collaboration.assetIds[0]) === access.assetId && claims.action === 'image' && claims.key === asset.publicId && claims.preset === '480' && access.mark === 'selection';
     if (access.mode === 'download') return collaboration.kind === 'editor-handoff' && claims.action === 'file' && claims.key === (asset.rawPublicId || asset.publicId);
     return ['view', 'return-view'].includes(access.mode) && claims.action === 'image' && claims.key === asset.publicId && (collaboration.kind !== 'preselection' || access.mark === 'selection');
   }

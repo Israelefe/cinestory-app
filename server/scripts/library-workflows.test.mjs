@@ -1,3 +1,6 @@
+import EmailDelivery from '../src/models/EmailDelivery.js';
+import { retryLibraryEmails } from '../src/services/email.service.js';
+import { authorizedMediaClaims } from '../src/services/mediaAuthorization.service.js';
 import assert from 'node:assert/strict';
 import { before, beforeEach, after, test } from 'node:test';
 import mongoose from 'mongoose';
@@ -12,7 +15,7 @@ import Delivery from '../src/models/Delivery.js';
 import { addLibraryAssets } from '../src/controllers/delivery.controller.js';
 import { collaborationSchema, latestAcceptedReturns, validateChoices } from '../src/services/libraryWorkflow.service.js';
 import { confirmStorageAsset, listStorage, resolveLibraryPhotos } from '../src/controllers/storage.controller.js';
-import { createLibraryCollaboration, getPublicLibraryContent, savePublicSelectionDraft, submitPublicPreselection, reopenLibraryPreselection, reviseLibraryPreselection, signPublicEditorUpload, confirmPublicEditorUpload, renewPublicEditorUpload, cleanupPublicEditorUpload, reviewEditorReturn } from '../src/controllers/libraryCollaboration.controller.js';
+import { createLibraryCollaboration, getPublicLibraryContent, savePublicSelectionDraft, submitPublicPreselection, reopenLibraryPreselection, reviseLibraryPreselection, signPublicEditorUpload, confirmPublicEditorUpload, renewPublicEditorUpload, cleanupPublicEditorUpload, reviewEditorReturn, getLibraryShareMeta, getLibraryShareCover, deleteLibraryCollaboration, sendLibraryInvitation, submitPublicEditorEdits } from '../src/controllers/libraryCollaboration.controller.js';
 import { createStorageUploadSignature, renewStorageUploadSignature } from '../src/services/storageMedia.service.js';
 import { commitLibraryAsset } from '../src/services/libraryAssetCommit.service.js';
 import { migrateLibraryWorkspaces } from '../src/services/libraryMigration.service.js';
@@ -21,11 +24,12 @@ import { verifyMediaWorkerToken } from '../src/services/cloudflareMedia.service.
 
 process.env.NODE_ENV = 'test';
 const secret = 'library-regression-only-signing-value-at-least-32-characters';
-Object.assign(process.env, { JWT_SECRET: secret, R2_MEDIA_OFFLOAD_ENABLED: 'true', R2_IMAGE_WORKER_URL: 'https://media.example.test', R2_IMAGE_WORKER_SECRET: secret, R2_ACCOUNT_ID: 'offline', R2_ACCESS_KEY_ID: 'offline', R2_SECRET_ACCESS_KEY: 'offline', R2_BUCKET_NAME: 'veylo' });
-let mongo, owner, other, photos, failedCopySource;
+Object.assign(process.env, { JWT_SECRET: secret, R2_MEDIA_OFFLOAD_ENABLED: 'true', R2_IMAGE_WORKER_URL: 'https://media.example.test', R2_IMAGE_WORKER_SECRET: secret, R2_ACCOUNT_ID: 'offline', R2_ACCESS_KEY_ID: 'offline', R2_SECRET_ACCESS_KEY: 'offline', R2_BUCKET_NAME: 'veylo', RESEND_API_KEY: 're_fixture_not_a_real_key' });
+let mongo, owner, other, photos, failedCopySource, emailFails = false;
+const emailMessages = [];
 const actualFetch = globalThis.fetch;
 const objects = new Map();
-function response() { return { code: 200, status(code) { this.code = code; return this; }, set() { return this; }, json(body) { this.body = body; return this; } }; }
+function response() { return { code: 200, status(code) { this.code = code; return this; }, set(...args) { this.headers = args; return this; }, redirect(code, url) { this.code = code; this.url = url; return this; }, json(body) { this.body = body; return this; } }; }
 async function call(handler, options = {}) {
   const res = response();
   const req = { user: { id: String(owner._id) }, params: {}, query: {}, body: {}, get() { return ''; }, ...options };
@@ -39,14 +43,15 @@ async function link(values = {}) { return LibraryCollaboration.create({ userId: 
 const ids = () => photos.map(photo => String(photo._id));
 before(async () => {
   mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 } }); await mongoose.connect(mongo.getUri());
-  await Promise.all([User, StorageAsset, LibraryShoot, LibraryCollaboration, Delivery].map(model => model.init()));
+  await Promise.all([User, StorageAsset, LibraryShoot, LibraryCollaboration, Delivery, EmailDelivery].map(model => model.init()));
   globalThis.fetch = async (input, options = {}) => {
     const url = new URL(String(input));
+    if (url.hostname === 'api.resend.com') { emailMessages.push(JSON.parse(options.body)); return emailFails ? Response.json({ name: 'application_error', message: 'Fixture provider unavailable' }, { status: 503 }) : Response.json({ id: 'fixture-email-' + emailMessages.length }); }
     if (url.hostname === 'media.example.test') {
       const data = JSON.parse(options.body || '{}');
       if (url.pathname.endsWith('/inspect')) return Response.json({ format: 'jpeg', width: 1200, height: 1600, bytes: 1000, sha256: 'a'.repeat(64), etag: 'etag' });
       if (url.pathname.endsWith('/delete-prefix')) return Response.json({ deleted: 0 });
-      return Response.json({ success: true });
+      return Response.json({ success: true, selectionMarks: true });
     }
     const key = decodeURIComponent(url.pathname.split('/').slice(2).join('/'));
     if (options.method === 'PUT' && options.headers?.['x-amz-copy-source']) {
@@ -60,12 +65,83 @@ before(async () => {
   };
 });
 beforeEach(async () => {
-  await Promise.all([User, StorageAsset, LibraryShoot, LibraryCollaboration, Delivery].map(model => model.deleteMany({}))); objects.clear(); failedCopySource = '';
+  await Promise.all([User, StorageAsset, LibraryShoot, LibraryCollaboration, Delivery, EmailDelivery].map(model => model.deleteMany({}))); objects.clear(); failedCopySource = ''; emailMessages.length = 0; emailFails = false;
   [owner, other] = await User.create([{ name: 'Amara', email: 'amara@example.test', accountStatus: 'active', planOverride: { plan: 'pro' } }, { name: 'Another studio', email: 'other@example.test', accountStatus: 'active', planOverride: { plan: 'pro' } }]);
   photos = await StorageAsset.create(Array.from({ length: 3 }, (_, index) => ({ userId: owner._id, publicId: `veylo/users/${owner._id}/library/${crypto.randomUUID()}`, originalFilename: 'portrait-' + (index + 1) + '.jpg', format: 'jpg', bytes: 1000, width: 1200, height: 1600, folder: 'Ada at 30' })));
   photos.forEach(photo => objects.set(photo.publicId, true));
 });
 after(async () => { globalThis.fetch = actualFetch; await mongoose.disconnect(); await mongo?.stop(); });
+
+test('share previews expose only a marked cover and never count as an opening', async () => {
+  const job = await link({ coverAssetId: photos[1]._id, note: 'Private editing brief', recipientEmail: 'private@example.test', pinDigest: 'private-digest' });
+  const metadata = await call(getLibraryShareMeta, { params: { publicId: job.publicId } });
+  assert.equal(metadata.code, 200); assert.match(metadata.body.data.title, /Ada at 30/);
+  assert.doesNotMatch(JSON.stringify(metadata.body), /Private editing brief|private@example|private-digest/);
+  const cover = await call(getLibraryShareCover, { params: { publicId: job.publicId } });
+  const claims = verifyMediaWorkerToken(new URL(cover.url).pathname.split('/').at(-1));
+  assert.equal(claims.access.assetId, ids()[1]); assert.equal(await authorizedMediaClaims(claims), true);
+  assert.equal(await authorizedMediaClaims({ ...claims, preset: '1600' }), false);
+  assert.equal(await authorizedMediaClaims({ ...claims, action: 'file' }), false);
+  assert.equal(await authorizedMediaClaims({ ...claims, access: { ...claims.access, mark: '' } }), false);
+  assert.equal(await authorizedMediaClaims({ ...claims, key: photos[0].publicId, access: { ...claims.access, assetId: ids()[0] } }), false);
+  assert.equal(await EmailDelivery.countDocuments(), 0); assert.equal((await LibraryCollaboration.findById(job._id)).openedAt, undefined);
+  await call(getPublicLibraryContent, access(job)); await call(getPublicLibraryContent, access(job));
+  assert.equal(await EmailDelivery.countDocuments({ kind: 'library-opened' }), 1); assert.equal(emailMessages.length, 1);
+  assert.deepEqual([].concat(emailMessages[0].to), ['amara@example.test']);
+  await call(deleteLibraryCollaboration, { params: { id: String(job._id) } });
+  assert.equal(await authorizedMediaClaims(claims), false); assert.equal((await call(getLibraryShareMeta, { params: { publicId: job.publicId } })).code, 410);
+  assert.equal(await StorageAsset.countDocuments(), 3);
+});
+
+test('invitations retry once per recipient and correction emails contain the review', async () => {
+  const edit = await StorageAsset.create({ userId: owner._id, publicId: `veylo/users/${owner._id}/library/editor-return`, format: 'jpg', bytes: 1000 });
+  const job = await link({ kind: 'editor-handoff', returnedAssets: [{ sourceAssetId: photos[0]._id, assetId: edit._id }] });
+  let review = await call(reviewEditorReturn, { params: { id: String(job._id), assetId: String(edit._id) }, body: { status: 'changes-requested', note: 'Keep the skin texture.' } });
+  assert.equal(review.body.notification.status, 'no-address');
+  const invite = { params: { id: String(job._id) }, body: { email: 'editor@example.test', requestKey: crypto.randomUUID() } };
+  await call(sendLibraryInvitation, invite); await call(sendLibraryInvitation, invite);
+  assert.equal(await EmailDelivery.countDocuments({ kind: 'library-invite' }), 1);
+  await call(sendLibraryInvitation, { ...invite, body: { ...invite.body, email: 'second-editor@example.test' } });
+  assert.equal(await EmailDelivery.countDocuments({ kind: 'library-invite' }), 2);
+  review = await call(reviewEditorReturn, { params: { id: String(job._id), assetId: String(edit._id) }, body: { status: 'changes-requested', note: 'Reduce the highlights. <script>alert(1)</script>' } });
+  assert.equal(review.body.notification.status, 'sent');
+  assert.match(emailMessages.at(-1).html, /Reduce the highlights/); assert.doesNotMatch(emailMessages.at(-1).html, /<script>/);
+  assert.deepEqual([].concat(emailMessages.at(-1).to), ['second-editor@example.test']);
+});
+
+test('notification failures keep encrypted retry content and deletion stops queued mail', async () => {
+  const job = await link(); emailFails = true;
+  assert.equal((await call(getPublicLibraryContent, access(job))).code, 200);
+  const queued = await EmailDelivery.findOne({ kind: 'library-opened' }).select('+messageEncrypted');
+  assert.equal(queued.status, 'failed'); assert.ok(queued.messageEncrypted); assert.doesNotMatch(queued.messageEncrypted, /Ada|opened/);
+  emailFails = false; await EmailDelivery.updateOne({ _id: queued._id }, { $set: { retryAfter: new Date(0) } });
+  await retryLibraryEmails(); await retryLibraryEmails(); assert.equal(emailMessages.length, 2);
+  assert.equal((await EmailDelivery.findById(queued._id)).status, 'sent');
+  emailFails = true;
+  const invite = await call(sendLibraryInvitation, { params: { id: String(job._id) }, body: { email: 'client@example.test', requestKey: crypto.randomUUID() } });
+  assert.equal(invite.body.notification.status, 'queued');
+  await call(deleteLibraryCollaboration, { params: { id: String(job._id) } }); emailFails = false;
+  await retryLibraryEmails(); assert.equal(emailMessages.length, 3);
+  assert.equal((await EmailDelivery.findOne({ kind: 'library-invite' })).status, 'skipped');
+});
+
+test('partial returns and accepted alternatives track source coverage and one Library folder', async () => {
+  const returns = await StorageAsset.create([1, 2, 3].map(index => ({ userId: owner._id, publicId: `veylo/users/${owner._id}/library/variation-${index}`, format: 'jpg', bytes: 1000 })));
+  const job = await link({ kind: 'editor-handoff', assetIds: photos.slice(0, 2).map(photo => photo._id), returnedAssets: returns.map((asset, index) => ({ sourceAssetId: photos[index === 2 ? 1 : 0]._id, assetId: asset._id, variationId: index === 1 ? 'bw' : 'main', variationName: index === 1 ? 'Black and white' : 'Main edit' })) });
+  assert.equal((await call(submitPublicEditorEdits, access(job))).body.data.notification.status, 'sent');
+  assert.equal(await EmailDelivery.countDocuments({ kind: 'library-returned' }), 1);
+  const accept = asset => saveEditorReview({ userId: owner._id, collaborationId: job._id, assetId: String(asset._id), status: 'accepted', note: '' });
+  await accept(returns[0]); let reviewed = await accept(returns[1]); assert.notEqual(reviewed.editorState, 'complete');
+  reviewed = await accept(returns[2]); assert.equal(reviewed.editorState, 'complete'); assert.equal(reviewed.approvedReturns.length, 3);
+  await accept(returns[2]); assert.equal(await LibraryShoot.countDocuments(), 1);
+  assert.equal(await StorageAsset.countDocuments({ shootId: reviewed.acceptedFolderId }), 3);
+  const next = await commitLibraryAsset({ userId: owner._id, resource: { public_id: `veylo/users/${owner._id}/library/main-revision`, bytes: 1000, format: 'jpg' }, fields: { originalFilename: 'revision.jpg' }, limitBytes: 100000, collaborationId: job._id, sourceAssetId: ids()[0], variationId: 'main', variationName: 'Main edit' });
+  reviewed = await LibraryCollaboration.findById(job._id);
+  assert.deepEqual(latestAcceptedReturns(reviewed).sort(), returns.slice(1).map(asset => String(asset._id)).sort());
+  assert.equal((await StorageAsset.findById(returns[0]._id)).folder, 'Editor returns');
+  await accept(next.asset); assert.equal(await LibraryShoot.countDocuments(), 1);
+  assert.equal(await StorageAsset.countDocuments({ shootId: reviewed.acceptedFolderId }), 3);
+});
 
 test('exactly, up-to and unlimited choices enforce count, duplicates, and membership', () => {
   const base = { assetIds: ids(), selectionRule: { mode: 'exactly', count: 2 } };

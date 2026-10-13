@@ -1,0 +1,28 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { FileImage, Upload, X } from 'lucide-react';
+import { toast } from 'react-toastify';
+import { useDialogFocus } from '../useDialogFocus.js';
+import { formatBytes } from './libraryHelpers.js';
+
+function LocalPhoto({ file }) {
+  const [url, setUrl] = useState(''), [failed, setFailed] = useState(false);
+  useEffect(() => { const preview = URL.createObjectURL(file); setUrl(preview); setFailed(false); return () => URL.revokeObjectURL(preview); }, [file]);
+  return url && !failed ? <img src={url} alt={'Returned edit: ' + file.name} onError={() => setFailed(true)} /> : <FileImage size={30} />;
+}
+
+export default function EditorReturnMatching({ mapping, setMapping, assets, returned, media, onUpload, onClose }) {
+  const dialog = useRef(null); useDialogFocus(true, dialog, onClose);
+  const [choosing, setChoosing] = useState(mapping.find(row => !row.sourceAssetId)?.id || ''), [search, setSearch] = useState('');
+  const edit = (id, changes) => setMapping(current => current.map(row => row.id === id ? { ...row, ...changes } : row));
+  function upload() {
+    if (mapping.some(row => !row.sourceAssetId || !row.variationName.trim())) { toast.error('Match every edit to an original and name each new alternative before uploading.'); return; }
+    onUpload();
+  }
+  return <div className="lib-backdrop"><section ref={dialog} className="lib-dialog lib-mapping-dialog" role="dialog" aria-modal="true" aria-labelledby="editor-mapping-title"><header><div><p className="lib-eyebrow">RETURN EDITS</p><h2 id="editor-mapping-title">Match edits to their originals</h2></div><button type="button" aria-label="Close file matching" onClick={onClose}><X size={20} /></button></header><p>You can return part of the job now. Match each edit visually, then choose whether it is a revision or a separate alternative.</p><ul className="lib-file-mapping">{mapping.map(item => {
+    const source = assets.find(photo => photo.id === item.sourceAssetId);
+    const variants = [...new Map(returned.filter(row => row.sourceAssetId === item.sourceAssetId).map(row => [row.variationId || 'main', { id: row.variationId || 'main', name: row.variationName || 'Main edit' }])).values()];
+    if (!variants.some(row => row.id === 'main')) variants.unshift({ id: 'main', name: 'Main edit' });
+    const alternative = !variants.some(row => row.id === item.variationId);
+    return <li key={item.id} className="lib-match-row"><div className="lib-match-pair"><div><LocalPhoto file={item.file} /><span>Returned edit</span></div><div>{source ? <img src={media(source.id, 'thumb')} alt={'Original: ' + source.originalFilename} /> : <FileImage size={30} />}<span>{source ? 'Original photograph' : 'Choose an original'}</span></div></div><div className="lib-match-details"><strong>{item.file.name}</strong><small>{formatBytes(item.file.size)}</small><button type="button" className="lib-button" onClick={() => { setChoosing(choosing === item.id ? '' : item.id); setSearch(''); }}>{source ? 'Change original' : 'Choose original'}</button>{source && <small>{source.originalFilename}</small>}<label>Edit version<select aria-label={'Edit version for ' + item.file.name} value={alternative ? '__new' : item.variationId} onChange={event => { const variant = variants.find(row => row.id === event.target.value); edit(item.id, variant ? { variationId: variant.id, variationName: variant.name } : { variationId: crypto.randomUUID(), variationName: '' }); }}>{variants.map(row => <option key={row.id} value={row.id}>{row.name}{returned.some(edit => edit.sourceAssetId === item.sourceAssetId && (edit.variationId || 'main') === row.id) ? ' · New revision' : ''}</option>)}<option value="__new">New alternative edit…</option></select></label>{alternative && <label>Alternative name<input maxLength={80} value={item.variationName} placeholder="For example, black and white" onChange={event => edit(item.id, { variationName: event.target.value })} /></label>}<small>{alternative ? 'A separate edit that can be accepted alongside the main edit.' : 'A revision belongs to this edit version. Earlier revisions stay available for comparison.'}</small></div><button type="button" className="lib-match-remove" aria-label={'Remove ' + item.file.name + ' from batch'} onClick={() => setMapping(current => current.filter(row => row.id !== item.id))}><X size={18} /></button>{choosing === item.id && <div className="lib-source-chooser"><label>Find an original<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search filenames" /></label><div className="lib-photo-grid">{assets.filter(photo => photo.originalFilename.toLowerCase().includes(search.toLowerCase())).map(photo => <button type="button" className={'lib-photo ' + (photo.id === item.sourceAssetId ? 'is-selected' : '')} key={photo.id} aria-label={'Match to ' + photo.originalFilename} onClick={() => { const duplicate = mapping.some(row => row.id !== item.id && row.sourceAssetId === photo.id && row.variationId === item.variationId); edit(item.id, { sourceAssetId: photo.id, ...(duplicate ? { variationId: crypto.randomUUID(), variationName: 'Alternative edit' } : {}) }); setChoosing(''); }}><img src={media(photo.id, 'thumb')} alt={photo.originalFilename} loading="lazy" /><span>{photo.originalFilename}</span></button>)}</div></div>}</li>;
+  })}</ul><footer><span>{mapping.filter(item => item.sourceAssetId).length} of {mapping.length} matched</span><button type="button" className="lib-button lib-primary" onClick={upload}><Upload size={17} />Upload {mapping.length} edits</button></footer></section></div>;
+}

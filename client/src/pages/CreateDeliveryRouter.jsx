@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useLocation, useSearchParams } from 'react-router-dom';
-import LibraryDeliveryImport from '../components/library/LibraryDeliveryImport.jsx';
+import { useSearchParams } from 'react-router-dom';
 import api from '../services/api.js';
 import CreateDelivery from './CreateDelivery.jsx';
 import CreateDeliveryV3 from './CreateDeliveryV3.jsx';
@@ -11,7 +10,6 @@ import CreateVideoDelivery from './CreateVideoDelivery.jsx';
 
 export default function CreateDeliveryRouter({ user }) {
   const [params] = useSearchParams();
-  const location = useLocation();
   const draftId = params.get('draft');
   const requestedType = params.get('type');
   const [state, setState] = useState({ loading: Boolean(draftId), delivery: null, error: '' });
@@ -26,7 +24,6 @@ export default function CreateDeliveryRouter({ user }) {
   }, [draftId]);
   if (state.loading) return <div className="v-page-loading" role="status">Opening your draft…</div>;
   if (state.error) return <div className="v-page-loading" role="alert">{state.error}</div>;
-  if (!draftId && location.state?.libraryAssetIds?.length) return <LibraryDeliveryImport source={location.state} user={user} />;
   if (state.delivery?.kind === 'video' || (!state.delivery && requestedType === 'video')) return <CreateVideoDelivery key={draftId || 'new-video'} user={user} initialDelivery={state.delivery} />;
   if (state.delivery && state.delivery.schemaVersion !== 3) return <CreateDelivery user={user} />;
   if (state.delivery?.kind === 'pinboard' || (!state.delivery && requestedType === 'pinboard')) return <CreatePinboardV3 key={draftId || 'new-pinboard'} user={user} initialDelivery={state.delivery} />;

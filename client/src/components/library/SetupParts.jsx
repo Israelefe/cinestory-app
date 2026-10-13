@@ -5,6 +5,9 @@ import { toast } from 'react-toastify';
 import api, { apiMessage } from '../../services/api.js';
 import { libraryUploads } from '../../utils/libraryUploadQueue.js';
 import { collaborationUrl } from './LinkActions.jsx';
+import FolderDestination from './FolderDestination.jsx';
+import { useLibraryPhotos } from './useLibraryPhotos.js';
+import LinkActions from './LinkActions.jsx';
 import { workflowPath } from './libraryHelpers.js';
 
 export function useWorkflowDraft(kind, user, defaults, { revising = false } = {}) {
@@ -12,7 +15,7 @@ export function useWorkflowDraft(kind, user, defaults, { revising = false } = {}
   const key = 'veylo_library_setup:' + (user?.id || user?._id) + ':' + kind + ':' + (id || 'new');
   const [draft, setDraft] = useState(() => {
     let remembered; try { remembered = JSON.parse(localStorage.getItem(key)); } catch { /* Storage is optional. */ }
-    return { ...defaults, ...(remembered || {}), ...(location.state?.assetIds ? { assetIds: location.state.assetIds } : {}), pin: '', password: '', creationKey: remembered?.creationKey || crypto.randomUUID() };
+    return { ...defaults, ...(remembered || {}), ...(location.state?.assetIds ? { assetIds: location.state.assetIds } : {}), recipientEmail: remembered?.recipientEmail || '', coverAssetId: remembered?.coverAssetId || '', pin: '', password: '', creationKey: remembered?.creationKey || crypto.randomUUID() };
   });
   const [serverId, setServerId] = useState(id || draft.serverId || '');
   const [step, setStep] = useState(1), [busy, setBusy] = useState(false), [error, setError] = useState(''), [created, setCreated] = useState(null);
@@ -32,39 +35,42 @@ export function useWorkflowDraft(kind, user, defaults, { revising = false } = {}
   useEffect(() => {
     if (created) return;
     const timer = setTimeout(() => { try {
-      const { title, clientName, note, assetIds, expiresInDays, selectionRule, dueAt, creationKey } = draft;
-      localStorage.setItem(key, JSON.stringify({ title, clientName, note, assetIds, expiresInDays, selectionRule, dueAt, creationKey, serverId }));
+      const { title, clientName, note, assetIds, expiresInDays, selectionRule, dueAt, recipientEmail, coverAssetId, creationKey } = draft;
+      localStorage.setItem(key, JSON.stringify({ title, clientName, note, assetIds, expiresInDays, selectionRule, dueAt, recipientEmail, coverAssetId, creationKey, serverId }));
     } catch { /* The form still works without local storage. */ } }, 300);
     return () => clearTimeout(timer);
   }, [draft, serverId, key, created]);
+  function showError(message) { setError(message); if (toast.isActive('library-setup-validation')) toast.update('library-setup-validation', { render: message, type: 'error', autoClose: 5000 }); else toast.error(message, { toastId: 'library-setup-validation' }); requestAnimationFrame(() => document.querySelector('.lib-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' })); }
   async function save(status) {
     if (busy || loadingDraft || id && loaded.current !== id) return;
-    if (!draft.title.trim()) { setError('Give this link a name.'); setStep(2); return; }
-    if (!draft.assetIds.length) { setError('Choose at least one photograph.'); setStep(1); return; }
-    if (kind === 'preselection' && draft.selectionRule.mode !== 'unlimited' && (!Number.isInteger(Number(draft.selectionRule.count)) || Number(draft.selectionRule.count) < 1 || Number(draft.selectionRule.count) > draft.assetIds.length)) { setError('Set a selection count between 1 and ' + draft.assetIds.length + '.'); setStep(2); return; }
-    if (status === 'active' && kind === 'preselection' && draft.pin && !/^\d{6}$/.test(draft.pin)) { setError('Use a six-digit PIN or leave it blank.'); setStep(2); return; }
-    if (status === 'active' && kind === 'editor-handoff' && (draft.password.length < 8 || new TextEncoder().encode(draft.password).length > 72)) { setError('Set an editor password with at least 8 characters and no more than 72 bytes.'); setStep(2); return; }
+    if (!draft.title.trim()) { showError('Give this link a name.'); setStep(2); return; }
+    if (!draft.assetIds.length) { showError('Choose at least one photograph.'); setStep(1); return; }
+    if (kind === 'preselection' && draft.selectionRule.mode !== 'unlimited' && (!Number.isInteger(Number(draft.selectionRule.count)) || Number(draft.selectionRule.count) < 1 || Number(draft.selectionRule.count) > draft.assetIds.length)) { showError(Number(draft.selectionRule.count) > draft.assetIds.length ? 'You have added ' + draft.assetIds.length + ' photographs. Add more photographs or reduce the selection allowance to ' + draft.assetIds.length + '.' : 'Set a selection count between 1 and ' + draft.assetIds.length + '.'); setStep(2); return; }
+    if (status === 'active' && kind === 'preselection' && draft.pin && !/^\d{6}$/.test(draft.pin)) { showError('Use a six-digit PIN or leave it blank.'); setStep(2); return; }
+    if (status === 'active' && kind === 'editor-handoff' && (draft.password.length < 8 || new TextEncoder().encode(draft.password).length > 72)) { showError('Set an editor password with at least 8 characters and no more than 72 bytes.'); setStep(2); return; }
+    if (draft.recipientEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.recipientEmail)) { showError('Enter a valid email address or leave it blank.'); setStep(2); return; }
     setBusy(true); setError('');
     try {
-      const body = { kind, title: draft.title, clientName: draft.clientName, note: draft.note, assetIds: draft.assetIds, expiresInDays: Number(draft.expiresInDays), status, creationKey: draft.creationKey };
+      const body = { kind, title: draft.title, clientName: draft.clientName, note: draft.note, recipientEmail: draft.recipientEmail || '', coverAssetId: draft.assetIds.includes(draft.coverAssetId) ? draft.coverAssetId : draft.assetIds[0], assetIds: draft.assetIds, expiresInDays: Number(draft.expiresInDays), status, creationKey: draft.creationKey };
       if (kind === 'preselection') { body.selectionRule = { mode: draft.selectionRule.mode, ...(draft.selectionRule.mode !== 'unlimited' ? { count: Number(draft.selectionRule.count) } : {}) }; if (status === 'active') body.pin = draft.pin; }
       else { body.dueAt = draft.dueAt ? new Date(draft.dueAt + 'T12:00:00Z').toISOString() : null; if (draft.password && status === 'active') body.password = draft.password; }
       if (revising) { body.revision = draft.revision; if (!draft.pin) delete body.pin; }
       const { data } = serverId ? await api.patch('/v1/storage/collaborations/' + serverId + (revising ? '/revise' : ''), body) : await api.post('/v1/storage/collaborations', body);
       setServerId(data.data._id);
-      if (status === 'active') { setCreated(data.data); localStorage.removeItem(key); }
+      if (status === 'active') { setCreated(data.data); try { localStorage.removeItem(key); } catch {} }
       else toast.success('Draft saved. It is not shared yet.');
-    } catch (failure) { setError(apiMessage(failure, 'This link could not be saved.')); } finally { setBusy(false); }
+    } catch (failure) { showError(apiMessage(failure, 'This link could not be saved.')); } finally { setBusy(false); }
   }
   const edit = (name, value) => setDraft(current => ({ ...current, [name]: value }));
   const goStep = next => {
     if (busy) return;
-    if (next > 1 && !draft.assetIds.length) { setError('Choose at least one photograph.'); return; }
+    if (next > 1 && !draft.assetIds.length) { showError('Choose at least one photograph.'); return; }
     if (next === 3) {
-      if (!draft.title.trim()) { setError('Give this link a name.'); setStep(2); return; }
-      if (kind === 'preselection' && draft.selectionRule.mode !== 'unlimited' && (!Number.isInteger(Number(draft.selectionRule.count)) || Number(draft.selectionRule.count) < 1 || Number(draft.selectionRule.count) > draft.assetIds.length)) { setError('Set a selection count between 1 and ' + draft.assetIds.length + '.'); setStep(2); return; }
-      if (kind === 'preselection' && draft.pin && !/^\d{6}$/.test(draft.pin)) { setError('Use a six-digit PIN or leave it blank.'); setStep(2); return; }
-      if (kind === 'editor-handoff' && (draft.password.length < 8 || new TextEncoder().encode(draft.password).length > 72)) { setError('Set an editor password with at least 8 characters.'); setStep(2); return; }
+      if (draft.recipientEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.recipientEmail)) { showError('Enter a valid email address or leave it blank.'); setStep(2); return; }
+      if (!draft.title.trim()) { showError('Give this link a name.'); setStep(2); return; }
+      if (kind === 'preselection' && draft.selectionRule.mode !== 'unlimited' && (!Number.isInteger(Number(draft.selectionRule.count)) || Number(draft.selectionRule.count) < 1 || Number(draft.selectionRule.count) > draft.assetIds.length)) { showError(Number(draft.selectionRule.count) > draft.assetIds.length ? 'You have added ' + draft.assetIds.length + ' photographs. Add more photographs or reduce the selection allowance to ' + draft.assetIds.length + '.' : 'Set a selection count between 1 and ' + draft.assetIds.length + '.'); setStep(2); return; }
+      if (kind === 'preselection' && draft.pin && !/^\d{6}$/.test(draft.pin)) { showError('Use a six-digit PIN or leave it blank.'); setStep(2); return; }
+      if (kind === 'editor-handoff' && (draft.password.length < 8 || new TextEncoder().encode(draft.password).length > 72)) { showError('Set an editor password with at least 8 characters.'); setStep(2); return; }
     }
     setError(''); setStep(next);
   };
@@ -77,11 +83,12 @@ export function SetupSteps({ step, onStep }) {
 
 export function UploadIntoShoot({ initialFolder = '' }) {
   const input = useRef(null), [folder, setFolder] = useState(initialFolder || 'Unfiled');
-  return <div className="lib-setup-upload"><label>Save new uploads to shoot<input value={folder} maxLength={100} onChange={event => setFolder(event.target.value)} placeholder="Shoot name" /></label><button type="button" className="lib-button" onClick={() => input.current?.click()}><Upload size={16} />Upload photographs</button><input hidden ref={input} type="file" multiple accept="image/jpeg,image/png,image/webp,.arw,.cr2,.cr3,.dng,.nef,.nrw,.orf,.rw2,.raf,.pef,.srw,.3fr,.iiq,.mos,.mef,.mrw,.rwl,.x3f" onChange={event => { libraryUploads.add(event.target.files, { folder: folder.trim() || 'Unfiled' }); event.target.value = ''; }} /></div>;
+  const library = useLibraryPhotos();
+  return <div className="lib-setup-upload"><FolderDestination value={folder} onChange={setFolder} folders={library.shoots} /><button type="button" className="lib-button" onClick={() => folder.trim() ? input.current?.click() : toast.error('Give the new folder a name first.')}><Upload size={16} />Upload photographs</button><input hidden ref={input} type="file" multiple accept="image/jpeg,image/png,image/webp,.arw,.cr2,.cr3,.dng,.nef,.nrw,.orf,.rw2,.raf,.pef,.srw,.3fr,.iiq,.mos,.mef,.mrw,.rwl,.x3f" onChange={event => { libraryUploads.add(event.target.files, { folder: folder.trim() || 'Unfiled' }); event.target.value = ''; }} /></div>;
 }
 
 export function ShareReceipt({ item, secret, kind }) {
   const selection = kind === 'preselection';
   async function copy(value) { try { await navigator.clipboard.writeText(value); toast.success('Copied.'); } catch { toast.error('Select the text below and copy it.'); } }
-  return <section className="lib-share-receipt"><div className="lib-receipt-check"><Check size={26} /></div><p className="lib-eyebrow">LINK READY</p><h2>{item.title}</h2><p>{selection ? 'Send this link to your client when you are ready.' : 'Send this link to your editor when you are ready.'}</p><label>Private link<input readOnly value={collaborationUrl(item)} onFocus={event => event.target.select()} /></label><button type="button" className="lib-button lib-primary" onClick={() => copy(collaborationUrl(item))}><Copy size={17} />Copy link</button>{secret && <><label>{selection ? 'Six-digit PIN' : 'Editor password'}<input readOnly value={secret} onFocus={event => event.target.select()} /></label><button type="button" className="lib-button" onClick={() => copy(secret)}><Copy size={15} />Copy {selection ? 'PIN' : 'password'}</button><small>Share the access detail separately from the link.</small></>}<Link className="lib-text-link" to={workflowPath(kind) + '/' + item._id}>Open {selection ? 'selection results' : 'editor job'}<ArrowLeft className="lib-arrow-forward" size={16} /></Link></section>;
+  return <section className="lib-share-receipt"><div className="lib-receipt-check"><Check size={26} /></div><p className="lib-eyebrow">LINK READY</p><h2>{item.title}</h2><p>{selection ? 'Send this link to your client when you are ready.' : 'Send this link to your editor when you are ready.'}</p><LinkActions item={item} sharingOnly />{secret && <><label>{selection ? 'Six-digit PIN' : 'Editor password'}<input readOnly value={secret} onFocus={event => event.target.select()} /></label><button type="button" className="lib-button" onClick={() => copy(secret)}><Copy size={15} />Copy {selection ? 'PIN' : 'password'}</button><small>Share the access detail separately from the link.</small></>}<Link className="lib-button" to={workflowPath(kind)}>Back to {selection ? 'Photo Pre-selection' : 'Editor Links'}</Link><Link className="lib-text-link" to={workflowPath(kind) + '/' + item._id}>Open {selection ? 'selection results' : 'editor job'}<ArrowLeft className="lib-arrow-forward" size={16} /></Link></section>;
 }

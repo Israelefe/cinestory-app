@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Check, Clapperboard, ExternalLink, Grid2X2, Images, Layers3 } from 'lucide-react';
 import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import DeliveryOpeningPreview from '../components/delivery/DeliveryOpeningPreview.jsx';
@@ -14,6 +14,7 @@ const types = [
 ];
 
 export default function CreateDeliveryChoice() {
+  const location = useLocation();
   const reduced = useVeyloReducedMotion();
   const [selected, setSelected] = useState('showcase');
   const current = types.find(type => type.id === selected);
@@ -44,7 +45,7 @@ export default function CreateDeliveryChoice() {
           <div className="v-choice-gallery-note"><Images size={17} strokeWidth={1.5} /><span>Your finished photos stay in the full gallery.</span></div>
         </section>
       </div>
-      <div className="v-choice-actions"><div><span>YOUR CHOICE</span><strong>{current.title}</strong></div><Link className="v-choice-continue" to={'/create?type=' + selected}>Continue with {current.shortName}<ArrowRight size={17} /></Link></div>
+      <div className="v-choice-actions"><div><span>YOUR CHOICE</span><strong>{current.title}</strong></div><Link className="v-choice-continue" state={location.state} to={'/create?type=' + selected}>Continue with {current.shortName}<ArrowRight size={17} /></Link></div>
     </div>
   </main>;
 }

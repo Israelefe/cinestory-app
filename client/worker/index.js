@@ -10,6 +10,7 @@
  */
 import { handleApiProxy } from './apiProxy.js';
 import { handleDeliveryShell } from './deliveryShell.js';
+import { handleLibraryShell } from './libraryShell.js';
 import { handlePortfolioShell, handlePortfolioSitemap, PORTFOLIO_PATH } from './portfolioShell.js';
 
 const DELIVERY_PATH = /^\/(d|v)\/([^/]+)\/?$/;
@@ -27,6 +28,8 @@ export default {
     }
 
     const delivery = pathname.match(DELIVERY_PATH);
+    const library = pathname.match(/^\/(select|edit)\/([^/]+)\/?$/);
+    if (library) return handleLibraryShell(request, env, library[2], library[1]);
     if (delivery) {
       return handleDeliveryShell(request, env, ctx, decodeURIComponent(delivery[2]), delivery[1]);
     }

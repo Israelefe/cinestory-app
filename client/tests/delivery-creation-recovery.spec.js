@@ -7,7 +7,7 @@ test.use({ timezoneId: 'Africa/Lagos' });
 for (const kind of ['showcase', 'pinboard']) for (const width of [320, 834, 1440]) {
   test(`${kind} keeps local expiry, allows PIN removal and recovers a lost publish response at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: width === 320 ? 740 : 900 });
-    await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 3, necessary: true, serviceAnalytics: true })));
+    await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 4, necessary: true, serviceAnalytics: true })));
     const photos = Array.from({ length: 6 }, (_, index) => ({ assetId: `photo-${index}`, url: '/veylo/web/demo-lora-1-960.webp', thumbnailUrl: '/veylo/web/demo-lora-1-480.webp' }));
     let draft = { _id: id, kind, publicId: 'recovered-client-link', schemaVersion: 3, status: 'review', clientName: 'Convennant', format: 'canvas', title: 'Birthday portraits',
       assets: photos, curatedAssetIds: photos.map(photo => photo.assetId), hasPin: false, v3: { step: 'access', revision: 2, approvedRevision: 2 },
@@ -30,7 +30,7 @@ for (const kind of ['showcase', 'pinboard']) for (const width of [320, 834, 1440
       if (path.endsWith(`/deliveries/${id}`)) return reply(draft);
       return reply([]);
     });
-    await page.goto(`/create?draft=${id}`);
+    await page.goto(`/create?draft=${id}`, { waitUntil: 'domcontentloaded' });
     if (kind === 'pinboard' && width === 1440) await expect(page.frameLocator('.pb-create-preview iframe').locator('.pb-brand')).toContainText('Amara Photography');
     const expiry = page.locator('input[type="datetime-local"]');
     await expect(expiry).toHaveValue('2030-10-01T19:30');
@@ -57,7 +57,7 @@ for (const kind of ['showcase', 'pinboard']) for (const width of [320, 834, 1440
 }
 
 test('oversized or unsupported music is rejected before requesting an upload signature', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
   let signatures = 0;
   await page.route('**/api/v1/deliveries/*/soundtrack/sign', route => { signatures += 1; return route.abort(); });
   const errors = await page.evaluate(async () => {
@@ -73,7 +73,7 @@ test('oversized or unsupported music is rejected before requesting an upload sig
 });
 
 test('a lost photo confirmation recovers the saved asset without a second transfer or confirmation', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
   let transfers = 0, confirmations = 0, recoveries = 0;
   const signature = { uploadUrl: 'https://offline.r2.cloudflarestorage.com/veylo/photo', objectKey: 'veylo/users/owner/deliveries/draft/photo', uploadToken: 'offline-upload-token', contentType: 'image/jpeg', maxConcurrentUploads: 6, uploadExpiresAt: new Date(Date.now() + 20 * 60 * 1000).toISOString() };
   await page.route('https://offline.r2.cloudflarestorage.com/**', route => { transfers += 1; return route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*' } }); });

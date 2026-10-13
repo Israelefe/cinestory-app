@@ -48,17 +48,110 @@ async function fixture(page, overrides = {}) {
 test('decision undo restores count and deck position; matching never guesses duplicate basenames', () => {
   const original = { selected: [], reviewed: [], cursor: 0, history: [] };
   const chosen = decidePhoto(original, 'one', true, 1, 1);
-  expect(chosen.selected).toEqual(['one']); expect(decidePhoto(chosen, 'two', true, 2, 1)).toBe(chosen);
+  expect(chosen.selected).toEqual(['one']); const replaced = decidePhoto(chosen, 'two', true, 2, 1); expect(replaced.selected).toEqual(['two']); expect(undoDecision(replaced)).toMatchObject(chosen);
   expect(undoDecision(chosen)).toMatchObject(original);
   const files = [{ name: 'portrait-1-edit.jpg' }, { name: 'duplicate-edit.jpg' }];
   const matches = matchEditorReturns(files, [{ id: 'one', originalFilename: 'portrait-1.CR2' }, { id: 'two', originalFilename: 'duplicate.CR2' }, { id: 'three', originalFilename: 'duplicate.JPG' }]);
   expect(matches[0].sourceAssetId).toBe('one'); expect(matches[1].sourceAssetId).toBe('');
 });
 
+test('grid replacement preserves the view, asks which choice to replace, and supports Undo', async ({ page }) => {
+  const state = await fixture(page); await page.goto('/select/client', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'View all photographs' }).click();
+  for (const number of [1, 2]) await page.getByRole('button', { name: `Choose portrait-${number}.jpg`, exact: true }).click();
+  await page.getByRole('button', { name: 'Choose portrait-3.jpg', exact: true }).click();
+  const replacement = page.getByRole('dialog', { name: 'Which choice should this replace?' });
+  await expect(replacement.getByAltText('New choice')).toBeVisible();
+  await replacement.getByRole('button', { name: 'Replace portrait-1.jpg', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Remove portrait-3.jpg', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'View all photographs' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Remove portrait-1.jpg', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Choose portrait-3.jpg', exact: true })).toBeVisible();
+  await expect.poll(() => state.selectionDraft.selectedAssetIds).toEqual([photo(0).id, photo(1).id]);
+  await page.getByRole('button', { name: 'Swipe', exact: true }).click(); await expect(page.locator('.sel-card-photograph')).toBeVisible();
+});
+
+test('one-photo choices replace automatically and Undo restores the previous photograph', async ({ page }) => {
+  await fixture(page, { rule: { mode: 'exactly', count: 1 } }); await page.goto('/select/client', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'View all photographs' }).click();
+  await page.getByRole('button', { name: 'Choose portrait-1.jpg', exact: true }).click();
+  await page.getByRole('button', { name: 'Choose portrait-2.jpg', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0); await expect(page.getByRole('button', { name: 'Remove portrait-2.jpg', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Choose portrait-1.jpg', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Undo', exact: true }).click(); await expect(page.getByRole('button', { name: 'Remove portrait-1.jpg', exact: true })).toBeVisible();
+});
+
+test('folder explanations and invalid allowances give visible feedback', async ({ page }) => {
+  await fixture(page); await page.goto('/library', { waitUntil: 'domcontentloaded' }); await page.getByRole('button', { name: 'Add photographs', exact: true }).click();
+  const add = page.getByRole('dialog'); await expect(add.getByText('Folders keep photographs from the same client or session together. You can organise them later too.')).toBeVisible();
+  await add.getByRole('combobox').selectOption('__new'); await expect(add.getByRole('textbox', { name: 'Folder name' })).toBeVisible(); await page.keyboard.press('Escape');
+  await page.goto('/pre-selection/new', { waitUntil: 'domcontentloaded' }); for (const number of [1, 2, 3]) await page.getByRole('button', { name: `Select portrait-${number}.jpg`, exact: true }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click(); await page.getByRole('textbox', { name: 'Selection name', exact: true }).fill('Ada'); await page.getByRole('spinbutton', { name: 'Number of photographs' }).fill('4');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.locator('.lib-error')).toContainText('You have added 3 photographs'); await expect(page.locator('.Toastify__toast')).toContainText('reduce the selection allowance to 3');
+});
+
+test('six uploads run together, a seventh waits, and failed previews show a file icon', async ({ page }) => {
+  await fixture(page);
+  await page.addInitScript(() => {
+    const Native = window.XMLHttpRequest; window.uploadActive = 0; window.uploadPeak = 0; window.uploadCompletions = [];
+    window.XMLHttpRequest = class extends Native {
+      open(method, url, ...rest) { this.fixture = String(url).includes('fixture.r2.cloudflarestorage.com'); if (!this.fixture) return super.open(method, url, ...rest); }
+      setRequestHeader(...args) { if (!this.fixture) return super.setRequestHeader(...args); }
+      send(file) { if (!this.fixture) return super.send(file); window.uploadActive++; window.uploadPeak = Math.max(window.uploadPeak, window.uploadActive); window.uploadCompletions.push(() => { window.uploadActive--; Object.defineProperty(this, 'status', { value: 200 }); this.onload?.(new Event('load')); this.onloadend?.(new Event('loadend')); }); }
+    };
+  });
+  await page.goto('/library', { waitUntil: 'domcontentloaded' }); await page.getByRole('button', { name: 'Add photographs', exact: true }).click();
+  await page.getByRole('dialog').locator('input[type=file]').setInputFiles(Array.from({ length: 7 }, (_, i) => ({ name: `batch-${i}.jpg`, mimeType: 'image/jpeg', buffer: Buffer.from('invalid-thumbnail-fixture') })));
+  await expect.poll(() => page.evaluate(() => window.uploadActive)).toBe(6); await expect(page.locator('.lib-upload-thumb img')).toHaveCount(0);
+  await page.evaluate(() => window.uploadCompletions.shift()()); await expect.poll(() => page.evaluate(() => window.uploadCompletions.length)).toBe(6);
+  await page.evaluate(() => window.uploadCompletions.splice(0).forEach(complete => complete()));
+  await expect(page.getByRole('complementary', { name: 'Photograph uploads' })).toContainText('7 photographs added'); expect(await page.evaluate(() => window.uploadPeak)).toBe(6);
+});
+
+test('link sharing and dashboard deletion work on phones and tablets', async ({ page }) => {
+  const state = await fixture(page); let removed = false, invitations = 0;
+  const job = { _id: jobId, kind: 'editor-handoff', publicId: 'editor', title: 'Ada edits', status: 'active', assets: state.sourceAssets, returned: [], approvedAssetIds: [], covers: state.sourceAssets, assetIds: state.sourceAssets.map(photo => photo.id), expiresAt: new Date(Date.now() + 86400000).toISOString() };
+  await page.route('**/api/v1/storage/collaborations**', route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/remove')) { removed = true; return route.fulfill({ json: { success: true } }); }
+    if (path.endsWith('/invite')) { invitations++; return route.fulfill({ json: { success: true, notification: { status: 'queued' } } }); }
+    return route.fulfill({ json: { success: true, data: path.endsWith('/collaborations') ? removed ? [] : [job] : job, hasMore: false } });
+  });
+  for (const width of [320, 768, 834]) {
+    await page.setViewportSize({ width, height: 900 }); await page.goto('/editor-links/' + jobId, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('link', { name: 'WhatsApp', exact: true })).toHaveAttribute('href', /https:\/\/wa.me\//);
+    await page.getByRole('button', { name: 'Email', exact: true }).click();
+    const email = page.getByRole('dialog', { name: 'Send a private link' }); await email.getByRole('textbox', { name: 'Recipient email' }).fill('editor@example.test'); await email.getByRole('button', { name: 'Send email invitation' }).click(); await expect(email).toHaveCount(0);
+    await page.goto('/editor-links', { waitUntil: 'domcontentloaded' }); await page.getByRole('button', { name: 'Delete Editor Link', exact: true }).click();
+    const confirmation = page.getByRole('dialog', { name: 'Delete this link?' }), bounds = await confirmation.boundingBox();
+    expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(width); expect(bounds.y + bounds.height).toBeLessThanOrEqual(900);
+    if (width === 834) { await confirmation.getByRole('button', { name: 'Delete link', exact: true }).click(); await expect(page.locator('.lib-job-card')).toHaveCount(0); }
+    else await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  expect(invitations).toBe(3); expect(removed).toBe(true);
+});
+
+test('Product examples use current selection and accepted edit controls', async ({ page }) => {
+  await fixture(page); const errors = []; page.on('pageerror', failure => errors.push(failure.message));
+  for (const width of [390, 834, 1440]) {
+    await page.setViewportSize({ width, height: 1000 }); await page.goto('/product', { waitUntil: 'domcontentloaded' });
+    const selection = page.locator('#client-preselection'); await selection.scrollIntoViewIfNeeded();
+    await expect(selection.locator('.sel-card-photograph')).toBeVisible(); await selection.getByRole('button', { name: 'Choose', exact: true }).click(); await expect(selection.locator('.sel-progress')).toContainText('1 of 2 chosen');
+    mkdirSync('../.visual-review/library-refinements', { recursive: true }); await page.screenshot({ path: `../.visual-review/library-refinements/product-selection-${width}.png` });
+    const editor = page.locator('#editor-handoff'); await editor.getByRole('button', { name: 'Review returned edits' }).click(); await editor.getByRole('button', { name: 'Accept & save to Library' }).first().click();
+    await expect(editor.getByRole('button', { name: 'Saved to Photo Library' })).toBeDisabled();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  expect(errors).toEqual([]);
+});
+
 for (const width of [320, 390, 640, 768, 834, 1024, 1440]) test(`Library, selection setup and viewer fit ${width}px`, async ({ page }) => {
   const height = width === 1024 ? 768 : 1000;
   await page.setViewportSize({ width, height }); await fixture(page);
-  await page.goto('/library'); await expect(page.getByRole('heading', { name: 'Photo Library', exact: true })).toBeVisible();
+  await page.goto('/library', { waitUntil: 'domcontentloaded' }); await expect(page.getByRole('heading', { name: 'Photo Library', exact: true })).toBeVisible();
   await expect(page.locator('.lib-photo-grid .lib-photo').first()).toBeVisible();
   if ([320, 834, 1440].includes(width)) { mkdirSync('../.visual-review/image-library-rebuild', { recursive: true }); await page.screenshot({ path: `../.visual-review/image-library-rebuild/library-${width}.png`, fullPage: false }); }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -67,26 +160,26 @@ for (const width of [320, 390, 640, 768, 834, 1024, 1440]) test(`Library, select
   const dialog = page.getByRole('dialog'); await expect(dialog).toBeVisible();
   const bounds = await dialog.boundingBox(); expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.y).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(width); expect(bounds.y + bounds.height).toBeLessThanOrEqual(height);
   await page.keyboard.press('Escape'); await expect(dialog).toHaveCount(0);
-  await page.goto('/pre-selection/new'); await expect(page.getByRole('heading', { name: 'What should your client choose from?' })).toBeVisible();
+  await page.goto('/pre-selection/new', { waitUntil: 'domcontentloaded' }); await expect(page.getByRole('heading', { name: 'What should your client choose from?' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   if ([390, 834, 1440].includes(width)) { mkdirSync('../.visual-review/image-library-rebuild', { recursive: true }); await page.screenshot({ path: `../.visual-review/image-library-rebuild/setup-${width}.png`, fullPage: true }); }
 });
 
 test('server search and selected-only picker include photographs beyond the first page', async ({ page }) => {
-  await fixture(page); await page.goto('/pre-selection/new');
+  await fixture(page); await page.goto('/pre-selection/new', { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Select portrait-1.jpg', exact: true }).click();
   await page.getByRole('button', { name: 'Load more photographs' }).click();
   await page.getByRole('button', { name: 'Select portrait-65.jpg', exact: true }).click();
   await page.getByRole('button', { name: 'Selected only', exact: true }).click();
   await expect(page.locator('.lib-picker-grid>.lib-photo')).toHaveCount(2);
   await expect(page.getByRole('button', { name: 'Select portrait-65.jpg', exact: true })).toBeVisible();
-  await page.goto('/library'); await page.getByRole('textbox', { name: 'Search photo library' }).fill('portrait-65');
+  await page.goto('/library', { waitUntil: 'domcontentloaded' }); await page.getByRole('textbox', { name: 'Search photo library' }).fill('portrait-65');
   await expect(page.locator('.lib-photo-grid .lib-photo')).toHaveCount(1); await expect(page.locator('.lib-photo-grid')).toContainText('portrait-65.jpg');
 });
 
 test('client swipe, undo, saved progress, exact allowance and visual submission', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); const state = await fixture(page);
-  await page.goto('/select/client'); const choose = page.getByRole('button', { name: 'Choose', exact: true });
+  await page.goto('/select/client', { waitUntil: 'domcontentloaded' }); const choose = page.getByRole('button', { name: 'Choose', exact: true });
   await expect(choose).toBeEnabled();
   const box = await page.locator('.sel-card').boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down(); await page.mouse.move(box.x + box.width / 2 + 130, box.y + box.height / 2 + 3, { steps: 12 }); await page.mouse.up();
@@ -95,6 +188,8 @@ test('client swipe, undo, saved progress, exact allowance and visual submission'
   await expect(choose).toBeEnabled(); await choose.click(); await expect.poll(() => state.selectionDraft.selectedAssetIds.length).toBe(1);
   await page.reload(); await expect(page.locator('.sel-progress')).toContainText('1 of 2 chosen');
   await expect(choose).toBeEnabled(); await choose.click();
+  await expect(page.getByRole('button', { name: 'Swipe', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Your choices 2' }).click();
   await expect(page.locator('.sel-review-grid img')).toHaveCount(2);
   await page.getByRole('button', { name: 'Review & send', exact: true }).click(); await expect(page.getByRole('dialog').locator('img')).toHaveCount(2);
   await page.getByRole('button', { name: 'Send my selection', exact: true }).click();
@@ -103,7 +198,7 @@ test('client swipe, undo, saved progress, exact allowance and visual submission'
 });
 
 test('offline selections survive reload and save after reconnection', async ({ page }) => {
-  const state = await fixture(page); await page.goto('/select/client'); await expect(page.getByRole('button', { name: 'Choose', exact: true })).toBeEnabled();
+  const state = await fixture(page); await page.goto('/select/client', { waitUntil: 'domcontentloaded' }); await expect(page.getByRole('button', { name: 'Choose', exact: true })).toBeEnabled();
   await page.evaluate(() => { Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false }); window.dispatchEvent(new Event('offline')); });
   await page.getByRole('button', { name: 'Choose', exact: true }).click(); await expect(page.locator('.sel-progress')).toContainText('Offline');
   await page.reload(); await expect(page.locator('.sel-progress')).toContainText('1 of 2 chosen'); await expect.poll(() => state.selectionDraft.selectedAssetIds.length).toBe(1);
@@ -112,7 +207,7 @@ test('offline selections survive reload and save after reconnection', async ({ p
 test('client count, full-photo viewing and motion remain usable at tablet and phone sizes', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' }); await fixture(page);
   for (const width of [320, 768, 834, 1024, 1440]) {
-    await page.setViewportSize({ width, height: width === 1024 ? 768 : 900 }); await page.goto('/select/client');
+    await page.setViewportSize({ width, height: width === 1024 ? 768 : 900 }); await page.goto('/select/client', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('button', { name: 'Choose', exact: true })).toBeEnabled();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const controls = await page.locator('.sel-deck-controls').boundingBox();
@@ -123,12 +218,12 @@ test('client count, full-photo viewing and motion remain usable at tablet and ph
 });
 
 test('photographer must set an allowance and can try the swipe view before sharing', async ({ page }) => {
-  const state = await fixture(page); await page.goto('/pre-selection/new');
+  const state = await fixture(page); await page.goto('/pre-selection/new', { waitUntil: 'domcontentloaded' });
   for (const number of [1, 2, 3]) await page.getByRole('button', { name: `Select portrait-${number}.jpg`, exact: true }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('textbox', { name: 'Selection name', exact: true }).fill('Ada portraits');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('Set a selection count');
+  await expect(page.locator('.lib-error[role=alert]')).toContainText('Set a selection count');
   await page.getByRole('spinbutton', { name: 'Number of photographs' }).fill('2');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('button', { name: 'Try the client swipe view' }).click();
@@ -146,7 +241,7 @@ test('photographer must set an allowance and can try the swipe view before shari
 });
 
 test('conflicting choices can load the saved set and continue without losing count', async ({ page }) => {
-  const state = await fixture(page, { conflict: true }); await page.goto('/select/client');
+  const state = await fixture(page, { conflict: true }); await page.goto('/select/client', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('button', { name: 'Choose', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Choose', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Load saved choices' })).toBeVisible();
@@ -156,39 +251,42 @@ test('conflicting choices can load the saved set and continue without losing cou
   await expect(page.locator('.sel-progress')).toContainText('1 of 2 chosen');
   await expect(page.getByRole('button', { name: 'Choose', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Choose', exact: true }).click();
-  await expect(page.locator('.sel-review-grid img')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Your choices 2' }).click(); await expect(page.locator('.sel-review-grid img')).toHaveCount(2);
 });
 
-test('accepted edits create one delivery draft and retry the same photograph batch', async ({ page }) => {
-  const state = await fixture(page);
-  const returned = photo(10), draftId = '507f1f77bcf86cd799439088';
+test('accepted edits enter normal delivery setup and retry the existing draft', async ({ page }) => {
+  const state = await fixture(page), returned = photo(10), draftId = '507f1f77bcf86cd799439088'; state.photos.push(returned);
   let accepted = false, creates = 0, copies = 0;
   await page.route('**/api/v1/storage/collaborations/' + jobId + '**', route => {
     if (route.request().method() === 'PATCH') accepted = true;
-    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data: { _id: jobId, publicId: 'editor', kind: 'editor-handoff', title: 'Ada edits', status: 'active', expiresAt: new Date(Date.now() + 86400000).toISOString(), assets: [state.sourceAssets[0]], returned: [{ assetId: returned.id, sourceAssetId: state.sourceAssets[0].id, reviewStatus: accepted ? 'accepted' : 'pending', uploadedAt: new Date().toISOString(), photo: returned }], approvedAssetIds: accepted ? [returned.id] : [] } }) });
+    return route.fulfill({ json: { success: true, data: { _id: jobId, publicId: 'editor', kind: 'editor-handoff', title: 'Ada edits', status: 'active', editorVersion: accepted ? 1 : 0, expiresAt: new Date(Date.now() + 86400000).toISOString(), assets: [state.sourceAssets[0]], returned: [{ assetId: returned.id, sourceAssetId: state.sourceAssets[0].id, reviewStatus: accepted ? 'accepted' : 'pending', uploadedAt: new Date().toISOString(), photo: returned }], acceptedFolder: 'Ada accepted edits', approvedAssetIds: accepted ? [returned.id] : [] } } });
   });
   await page.route('**/api/v1/deliveries/**', route => {
     const path = new URL(route.request().url()).pathname;
-    if (path.endsWith('/v3')) { creates++; return route.fulfill({ json: { success: true, data: { _id: draftId } } }); }
+    if (path.endsWith('/v3')) { creates++; return route.fulfill({ json: { success: true, data: { _id: draftId, kind: 'pinboard', schemaVersion: 3, assets: [] } } }); }
     if (path.endsWith('/uploads/from-library')) { copies++; expect(route.request().postDataJSON().assetIds).toEqual([returned.id]); return route.fulfill({ status: copies === 1 ? 503 : 200, json: { success: copies > 1, message: 'Please retry this batch.', data: [] } }); }
-    return route.fulfill({ json: { success: true, data: { _id: draftId, kind: 'showcase', format: 'photo-story', clientName: 'Ada', shootType: 'Studio portraits', purpose: 'Birthday portraits for Ada', schemaVersion: 3, assets: [] } } });
+    return route.fulfill({ json: { success: true, data: { _id: draftId, kind: 'pinboard', clientName: 'Ada', shootType: 'Studio portraits', purpose: 'Birthday portraits for Ada', schemaVersion: 3, assets: [] } } });
   });
-  await page.goto('/editor-links/' + jobId);
+  await page.goto('/editor-links/' + jobId, { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('button', { name: 'Create a delivery', exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Accept edit', exact: true }).click();
+  await page.getByRole('button', { name: 'Accept & save to Library', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Saved to Photo Library' })).toBeDisabled();
   await page.getByRole('button', { name: 'Create a delivery', exact: true }).click();
-  await expect(page.locator('.lib-review-filmstrip img')).toHaveCount(1);
+  await expect(page.getByRole('heading', { name: /How should this/ })).toBeVisible();
+  await page.getByRole('radio', { name: 'GridBoard Delivery' }).check(); await page.getByRole('link', { name: 'Continue with GridBoard' }).click();
   await page.getByRole('textbox', { name: 'Client name', exact: true }).fill('Ada');
-  await page.getByRole('textbox', { name: 'What was this shoot for?' }).fill('Birthday portraits for Ada');
-  await page.getByRole('button', { name: 'Create delivery draft' }).click();
-  await expect(page.locator('.lib-error[role=alert]')).toContainText('Please retry this batch');
-  await page.getByRole('button', { name: 'Retry adding photographs' }).click();
-  await expect(page).toHaveURL(new RegExp('/create\\?draft=' + draftId));
+  await page.getByRole('textbox', { name: 'Gallery title', exact: true }).fill('Ada at 30');
+  await page.getByRole('button', { name: /Continue to photos/ }).click();
+  await page.getByRole('button', { name: 'Choose from Photo Library' }).click();
+  const picker = page.getByRole('dialog', { name: 'Add photographs to this delivery' });
+  await expect(picker.locator('.lib-picker-count')).toContainText('1 selected');
+  await picker.getByRole('button', { name: 'Add 1 photographs' }).click(); await expect(picker.locator('.lib-error')).toContainText('Please retry this batch');
+  await picker.getByRole('button', { name: 'Add 1 photographs' }).click(); await expect(picker).toHaveCount(0);
   expect(creates).toBe(1); expect(copies).toBe(2);
 });
 
 test('owner sees selected images and creates a separate editor job from those IDs', async ({ page }) => {
-  const state = await fixture(page); await page.goto('/pre-selection/' + jobId);
+  const state = await fixture(page); await page.goto('/pre-selection/' + jobId, { waitUntil: 'domcontentloaded' });
   await expect(page.locator('.lib-result-grid img')).toHaveCount(2);
   await page.getByRole('button', { name: 'Create Editor Link', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'New Editor Link', exact: true })).toBeVisible(); await expect(page.locator('.lib-picker-count')).toContainText('2 selected');
@@ -198,12 +296,16 @@ test('owner sees selected images and creates a separate editor job from those ID
 });
 
 test('editor batch matching shows sources and keeps ambiguous files unassigned', async ({ page }) => {
-  await fixture(page, { kind: 'editor-handoff', secret: true }); await page.goto('/edit/editor');
+  await fixture(page, { kind: 'editor-handoff', secret: true }); await page.goto('/edit/editor', { waitUntil: 'domcontentloaded' });
   await page.getByLabel('Editor password', { exact: true }).fill('private-editor-pass'); await page.getByRole('button', { name: 'Open editor job' }).click();
   await expect(page.locator('.editor-source-grid img')).toHaveCount(4);
   await page.locator('input[type=file]').setInputFiles([{ name: 'portrait-1-edit.jpg', mimeType: 'image/jpeg', buffer: image }, { name: 'unknown.jpg', mimeType: 'image/jpeg', buffer: image }]);
-  const dialog = page.getByRole('dialog'); await expect(dialog.getByLabel('Source for portrait-1-edit.jpg')).toHaveValue(photo(0).id); await expect(dialog.getByLabel('Source for unknown.jpg')).toHaveValue(''); await expect(dialog.getByRole('button', { name: 'Upload 2 edits' })).toBeDisabled();
-  await dialog.getByLabel('Source for unknown.jpg').selectOption(photo(1).id); await expect(dialog.getByRole('button', { name: 'Upload 2 edits' })).toBeEnabled();
+  const dialog = page.getByRole('dialog'); await expect(dialog.getByAltText('Original: portrait-1.jpg')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Upload 2 edits' }).click(); await expect(page.getByText('Match every edit to an original and name each new alternative before uploading.')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Match to portrait-2.jpg' }).click();
+  await expect(dialog.getByAltText('Original: portrait-2.jpg')).toBeVisible();
+  await dialog.getByLabel('Edit version for unknown.jpg').selectOption('__new'); await dialog.getByLabel('Alternative name').fill('Black and white');
+  await expect(dialog.getByRole('button', { name: 'Upload 2 edits' })).toBeEnabled();
 });
 
 test('upload shows real byte progress, inserts each success, survives navigation and isolates a failure', async ({ page }) => {
@@ -220,7 +322,7 @@ test('upload shows real byte progress, inserts each success, survives navigation
       abort() { if (!this.fixtureUpload) return super.abort(); this.tasks?.forEach(clearTimeout); this.onabort?.(new Event('abort')); this.onloadend?.(new Event('loadend')); }
     };
   });
-  await page.goto('/library'); await page.getByRole('button', { name: 'Add photographs', exact: true }).click();
+  await page.goto('/library', { waitUntil: 'domcontentloaded' }); await page.getByRole('button', { name: 'Add photographs', exact: true }).click();
   await page.getByRole('dialog').locator('input[type=file]').setInputFiles(['first.jpg', 'rejected.jpg', 'later.jpg'].map(name => ({ name, mimeType: 'image/jpeg', buffer: image })));
   const tray = page.getByRole('complementary', { name: 'Photograph uploads' }); await expect(tray.getByRole('progressbar').first()).toHaveAttribute('aria-valuenow', '50');
   await expect.poll(() => state.photos.some(photo => photo.originalFilename === 'first.jpg')).toBe(true); await expect(page.locator('.lib-photo-grid')).toContainText('first.jpg');
@@ -244,7 +346,7 @@ test('confirmation retries reuse uploaded bytes and sign-out clears private file
       send(file) { if (!this.fixtureUpload) return super.send(file); window.fixtureTransfers++; setTimeout(() => { Object.defineProperty(this, 'status', { value: 200 }); this.onload?.(new Event('load')); this.onloadend?.(new Event('loadend')); }, 100); }
     };
   });
-  await page.goto('/library'); await page.getByRole('button', { name: 'Add photographs', exact: true }).click();
+  await page.goto('/library', { waitUntil: 'domcontentloaded' }); await page.getByRole('button', { name: 'Add photographs', exact: true }).click();
   await page.getByRole('dialog').locator('input[type=file]').setInputFiles({ name: 'private-shoot.jpg', mimeType: 'image/jpeg', buffer: image });
   const tray = page.getByRole('complementary', { name: 'Photograph uploads' });
   await expect(tray).toContainText('Trying again');

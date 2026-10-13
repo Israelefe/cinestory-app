@@ -93,7 +93,7 @@ test('visitors can learn about the Product page, client preselection and editor 
   assert.match(product, /does not save a project, submit client choices, or upload files/);
   for (const query of ['How does client preselection work?', 'Can my editor download originals and return finished edits?']) {
     const knowledge = buildAssistantKnowledge({ query, audience: 'visitor' });
-    assert.match(knowledge, /Pro Image Library/);
+    assert.match(knowledge, /Pro Photo Library/);
     assert.match(knowledge, /without download controls/);
     assert.match(knowledge, /Editor Links require a password/);
     assert.match(knowledge, /\/pre-selection/);
@@ -141,7 +141,7 @@ test('subscription help covers resuming before expiry, a deferred first charge, 
 });
 
 test('default help limits match the shared plans and distinguish library and delivery upload sizes', () => {
-  const library = buildAssistantKnowledge({ query: 'RAW Image Library file size limit', audience: 'studio' });
+  const library = buildAssistantKnowledge({ query: 'RAW Photo Library file size limit', audience: 'studio' });
   assert.match(library, /100 MB per file/);
   assert.match(library, new RegExp(`${PLAN_DEFINITIONS.pro.personalStorageBytes / 1024 ** 3} GB`));
   assert.doesNotMatch(library, /10 MB per file/);
@@ -177,7 +177,7 @@ test('safe account facts include billing availability while excluding retired fe
   assert.match(context, /Subscription status: canceling/);
   assert.match(context, /Resume subscription currently available: yes/);
   assert.match(context, /Manage payment method currently available: no/);
-  assert.match(context, /Image Library access: read-only/);
+  assert.match(context, /Photo Library access: read-only/);
   assert.match(context, /Photo Story, Album/);
   assert.doesNotMatch(context, /private-.*marker|volumeDeliveries/);
 });

@@ -91,9 +91,9 @@ export default function AssistantTools({ session, state, surface, onMessage, onC
   return <section className="veylo-assistant-tools" aria-label="Workspace assistance">
     {isStudio && <details className="veylo-assistant-workspace"><summary>Account and drafts{loading ? <LoaderCircle size={14} className="veylo-assistant-spin" /> : <RefreshCw size={14} />}</summary>
       <button type="button" onClick={refreshWorkspace} disabled={loading}>Refresh account details</button>
-      {workspace?.account && <p>{workspace.account.deliveriesRemaining === null ? `${workspace.account.deliveriesThisMonth} deliveries published this month · Pro` : `${workspace.account.deliveriesRemaining} deliveries remaining this month`}<br />{workspace.account.storageLimitBytes ? `${(workspace.account.storageUsedBytes / 1024 ** 3).toLocaleString('en-NG', { maximumFractionDigits: 2 })} / ${(workspace.account.storageLimitBytes / 1024 ** 3).toLocaleString('en-NG')} GB in Image Library` : 'Your current plan has no Image Library upload allowance.'}</p>}
+      {workspace?.account && <p>{workspace.account.deliveriesRemaining === null ? `${workspace.account.deliveriesThisMonth} deliveries published this month · Pro` : `${workspace.account.deliveriesRemaining} deliveries remaining this month`}<br />{workspace.account.storageLimitBytes ? `${(workspace.account.storageUsedBytes / 1024 ** 3).toLocaleString('en-NG', { maximumFractionDigits: 2 })} / ${(workspace.account.storageLimitBytes / 1024 ** 3).toLocaleString('en-NG')} GB in Photo Library` : 'Your current plan has no Photo Library upload allowance.'}</p>}
       {(workspace?.drafts || []).map(draft => <button type="button" key={draft._id} onClick={() => openDraft(draft._id)}>{draft.title || ({ photoswap: 'PhotoSwap', pinboard: 'GridBoard', showcase: 'Showcase' }[draft.kind] + ' draft')}<ArrowUpRight size={14} /></button>)}
-      {!loading && !workspace && <p>Account details are unavailable. Use Billing or Image Library to check them.</p>}
+      {!loading && !workspace && <p>Account details are unavailable. Use Billing or Photo Library to check them.</p>}
     </details>}
     <div className="veylo-assistant-tool-buttons">
       {isStudio && deliveryId && <button type="button" onClick={check} disabled={Boolean(working)}><ClipboardCheck size={16} />{working === 'check' ? 'Checking…' : 'Check delivery'}</button>}

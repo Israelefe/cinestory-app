@@ -714,7 +714,7 @@ export default function CreateDelivery({ user }) {
   async function openLibrary() {
     setLibraryPicker(true); setLibraryLoading(true);
     try { const { data } = await api.get('/v1/storage'); setLibraryAssets(data.data || []); }
-    catch (requestError) { setError(apiMessage(requestError, 'We could not open your image library.')); setLibraryPicker(false); }
+    catch (requestError) { setError(apiMessage(requestError, 'We could not open your photo library.')); setLibraryPicker(false); }
     finally { setLibraryLoading(false); }
   }
 

@@ -6,7 +6,7 @@ import { storageCapacityFilter } from './videoQuota.service.js';
 
 // Quota, the saved photo, and an editor return must agree after retries and
 // concurrent confirmations. The original bytes stay in R2 throughout.
-export async function commitLibraryAsset({ userId, resource, rawResource, fields, limitBytes, collaborationId, sourceAssetId }) {
+export async function commitLibraryAsset({ userId, resource, rawResource, fields, limitBytes, collaborationId, sourceAssetId, variationId = 'main', variationName = 'Main edit' }) {
   const session = await mongoose.startSession();
   let result;
   const replay = async (existing, databaseSession) => {
@@ -24,7 +24,12 @@ export async function commitLibraryAsset({ userId, resource, rawResource, fields
       if (!user) throw Object.assign(new Error('This photograph would exceed your personal storage. Remove files or download them before trying again.'), { status: 403, code: 'STORAGE_LIMIT_REACHED' });
       const [asset] = await StorageAsset.create([{ ...fields, userId, publicId: resource.public_id, rawPublicId: rawResource?.public_id, rawFormat: rawResource?.format, rawBytes: rawResource?.bytes || 0, format: resource.format, width: resource.width, height: resource.height, bytes, contentHash: resource.etag || undefined, hashAlgorithm: resource.hashAlgorithm, hashVerifiedAt: resource.etag ? new Date() : undefined }], { session });
       if (collaborationId) {
-        const linked = await LibraryCollaboration.updateOne({ _id: collaborationId, userId, kind: 'editor-handoff', status: 'active', expiresAt: { $gt: new Date() }, assetIds: sourceAssetId }, { $set: { editorState: 'awaiting-edits' }, $inc: { editorVersion: 1 }, $pull: { approvedReturns: { sourceAssetId } }, $push: { returnedAssets: { sourceAssetId, assetId: asset._id, uploadedAt: new Date() } } }, { session });
+        const job = await LibraryCollaboration.findOne({ _id: collaborationId, userId, kind: 'editor-handoff', status: 'active', expiresAt: { $gt: new Date() }, assetIds: sourceAssetId }).session(session);
+        if (!job) throw Object.assign(new Error('This editor link has closed.'), { status: 410 });
+        const replaced = (job.approvedReturns || []).filter(item => String(item.sourceAssetId) === String(sourceAssetId) && (item.variationId || 'main') === variationId);
+        if (replaced.length && job.acceptedFolderId) await StorageAsset.updateMany({ _id: { $in: replaced.map(item => item.assetId) }, userId, shootId: job.acceptedFolderId }, { $set: { folder: 'Editor returns' }, $unset: { shootId: 1 } }, { session });
+        const variationFilter = variationId === 'main' ? { sourceAssetId, $or: [{ variationId: 'main' }, { variationId: { $exists: false } }] } : { sourceAssetId, variationId };
+        const linked = await LibraryCollaboration.updateOne({ _id: collaborationId, userId, kind: 'editor-handoff', status: 'active', expiresAt: { $gt: new Date() }, assetIds: sourceAssetId }, { $set: { editorState: 'awaiting-edits' }, $inc: { editorVersion: 1 }, $pull: { approvedReturns: variationFilter }, $push: { returnedAssets: { sourceAssetId, assetId: asset._id, variationId, variationName, uploadedAt: new Date() } } }, { session });
         if (!linked.modifiedCount) throw Object.assign(new Error('This editor link has closed. Ask the photographer for a new link.'), { status: 410 });
       }
       result = { asset, user, replayed: false };

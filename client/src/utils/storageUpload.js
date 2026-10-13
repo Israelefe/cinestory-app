@@ -16,7 +16,17 @@ function canvasBlob(canvas, type, quality) {
   return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Veylo could not prepare a JPEG preview for this camera file.')), type, quality));
 }
 
-async function makeRawPreview(file) {
+let rawPreviewQueue = Promise.resolve();
+async function makeRawPreview(file, signal) {
+  const previous = rawPreviewQueue;
+  let release;
+  rawPreviewQueue = new Promise(resolve => { release = resolve; });
+  await previous;
+  try { signal?.throwIfAborted(); return await decodeRawPreview(file); }
+  finally { release(); }
+}
+
+async function decodeRawPreview(file) {
   const { default: LibRaw } = await import('libraw-wasm');
   const decoder = new LibRaw();
   try {
@@ -83,7 +93,7 @@ export async function uploadLibraryPhoto(file, { folder = 'All photographs', sig
   signal?.throwIfAborted();
   if (isRawPhoto(file) && !record.preview) {
     onChange({ state: 'preparing' });
-    record.preview = await makeRawPreview(file);
+    record.preview = await makeRawPreview(file, signal);
     signal?.throwIfAborted();
   }
   const image = record.preview || file;
@@ -93,8 +103,8 @@ export async function uploadLibraryPhoto(file, { folder = 'All photographs', sig
   const loaded = { image: record.uploadedImage ? image.size : 0, raw: record.uploadedRaw ? file.size : 0 };
   const report = (part, amount) => { loaded[part] = amount; onChange({ state: 'uploading', loaded: loaded.image + loaded.raw, total }); };
   if (!record.uploadedImage || isRawPhoto(file) && !record.uploadedRaw) onChange({ state: 'uploading', loaded: loaded.image + loaded.raw, total });
-  // Originals and previews use the same per-file admission slot. RAW decoding
-  // stays serial in the queue to keep browser memory bounded.
+  // RAW decoding has its own serial queue; prepared originals can transfer
+  // alongside other photographs without starting six decoders at once.
   if (isRawPhoto(file) && !record.uploadedRaw) {
     record.rawSignature ||= (await api.post('/v1/storage/uploads/sign', { resourceType: 'raw', format: extension(file.name) }, { signal })).data.data;
     record.uploadedRaw = await uploadOne(file, record.rawSignature, amount => report('raw', amount), signal);
@@ -173,14 +183,14 @@ export async function uploadLibraryPhotos(files, { folder = 'All photographs', o
   return completed;
 }
 
-export async function uploadEditorReturn(file, sourceAssetId, token, publicId, { signal, onChange = () => {}, record = {} } = {}) {
+export async function uploadEditorReturn(file, sourceAssetId, token, publicId, { signal, onChange = () => {}, record = {}, variationId = 'main', variationName = 'Main edit' } = {}) {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > MAX_LIBRARY_FILE_BYTES) {
     throw new Error('Choose a JPEG, PNG, or WebP edit that is 100 MB or smaller.');
   }
   const headers = { Authorization: `Bearer ${token}` };
   const endpoint = `/v1/storage/public/${encodeURIComponent(publicId)}/uploads`;
-  await renewRecord(record, '', endpoint, { sourceAssetId, editorGrant: record.signature?.editorGrant }, headers);
-  record.signature ||= (await api.post(`${endpoint}/sign`, { sourceAssetId, contentType: file.type }, { headers, signal })).data.data;
+  await renewRecord(record, '', endpoint, { sourceAssetId, variationId, variationName, editorGrant: record.signature?.editorGrant }, headers);
+  record.signature ||= (await api.post(`${endpoint}/sign`, { sourceAssetId, variationId, variationName, contentType: file.type }, { headers, signal })).data.data;
   onChange({ state: 'uploading', loaded: record.uploaded ? file.size : 0, total: file.size });
   record.uploaded ||= await uploadOne(file, record.signature, loaded => onChange({ state: 'uploading', loaded, total: file.size }), signal);
   const uploaded = record.uploaded;
@@ -189,7 +199,7 @@ export async function uploadEditorReturn(file, sourceAssetId, token, publicId, {
   const response = await api.post(`${endpoint}/confirm`, {
     objectKey: uploaded.objectKey,
     uploadToken: uploaded.uploadToken,
-    sourceAssetId,
+    sourceAssetId, variationId, variationName,
     editorGrant: record.signature.editorGrant,
     originalFilename: file.name
   }, { headers });

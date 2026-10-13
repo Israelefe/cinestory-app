@@ -1,4 +1,6 @@
 import api, { apiMessage } from '../services/api.js';
+import { toast } from 'react-toastify';
+import { createAdaptivePhotoUpload } from './adaptivePhotoUpload.js';
 import { isRawPhoto, uploadEditorReturn, uploadLibraryPhoto, validLibraryPhoto } from './storageUpload.js';
 
 const entries = [];
@@ -7,15 +9,21 @@ let snapshot = { entries: [], paused: false, offline: false };
 let paused = false;
 let offline = typeof navigator !== 'undefined' && navigator.onLine === false;
 let active = 0;
-let rawActive = false;
 let ownerId;
 const terminal = new Set(['added', 'failed', 'cancelled']);
+const transfers = createAdaptivePhotoUpload({ maxConcurrent: 6, onChange: () => { emit(); queueMicrotask(pump); } });
 
 function emit() {
-  snapshot = { entries: entries.map(entry => ({ ...entry })), paused, offline };
+  snapshot = { entries: entries.map(entry => ({ ...entry })), paused, offline, transferLimit: transfers.state().limit };
   listeners.forEach(listener => listener());
 }
-function change(entry, values) { Object.assign(entry, values); emit(); }
+function change(entry, values) {
+  if (values.state === 'uploading') {
+    if (!entry.transferring) { entry.transferring = true; transfers.start(entry.id, values.total || entry.total); }
+    transfers.progress(entry.id, values.loaded || 0);
+  } else if (values.state && entry.transferring) { entry.transferring = false; transfers.finish(entry.id); }
+  Object.assign(entry, values); emit();
+}
 function transient(error) {
   const status = error.response?.status || error.status;
   return !status || status === 408 || status === 429 || status >= 500;
@@ -32,8 +40,7 @@ async function clean(entry) {
   if (uploads.length) await api.post('/v1/storage/uploads/cleanup', { uploads }).catch(() => {});
 }
 async function run(entry) {
-  const raw = entry.scope === 'library' && isRawPhoto(entry.file);
-  active++; if (raw) rawActive = true;
+  active++;
   entry.controller = new AbortController();
   try {
     if (!validLibraryPhoto(entry.file) || entry.scope !== 'library' && isRawPhoto(entry.file)) throw new Error('Use a supported photograph up to 100 MB. Editor returns must be JPEG, PNG, or WebP.');
@@ -42,7 +49,7 @@ async function run(entry) {
         const options = { signal: entry.controller.signal, record: entry.record, onChange: values => { if (!entry.disposed) change(entry, values); } };
         const result = entry.scope === 'library'
           ? await uploadLibraryPhoto(entry.file, { ...options, folder: entry.folder })
-          : await uploadEditorReturn(entry.file, entry.sourceAssetId, entry.token, entry.publicId, options);
+          : await uploadEditorReturn(entry.file, entry.sourceAssetId, entry.token, entry.publicId, { ...options, variationId: entry.variationId, variationName: entry.variationName });
         if (entry.disposed) break;
         change(entry, { state: 'added', loaded: entry.total, result, error: '' });
         window.dispatchEvent(new CustomEvent(entry.scope === 'library' ? 'veylo:library-photo-added' : 'veylo:editor-photo-added', { detail: { ...result, publicId: entry.publicId } }));
@@ -52,6 +59,7 @@ async function run(entry) {
         if (entry.controller.signal.aborted || error.code === 'UPLOAD_CANCELLED') { change(entry, { state: 'cancelled', error: '' }); await clean(entry); break; }
         if (offline) { change(entry, { state: 'queued', error: '' }); break; }
         if (attempt < 2 && transient(error)) {
+          transfers.failure(error.response?.status === 429 ? 'busy' : 'connection');
           change(entry, { state: 'retrying', error: 'Connection interrupted. Trying again…' });
           await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
           continue;
@@ -62,16 +70,22 @@ async function run(entry) {
     }
   } catch (error) { change(entry, { state: 'failed', error: error.message }); }
   finally {
-    active--; if (raw) rawActive = false; entry.controller = null; emit(); pump();
+    if (entry.transferring) { entry.transferring = false; transfers.finish(entry.id); }
+    active--; entry.controller = null; emit(); pump();
+    const batch = entries.filter(item => item.batchId === entry.batchId);
+    if (batch.length && !batch.some(item => !terminal.has(item.state) || item.batchNotified)) {
+      batch.forEach(item => { item.batchNotified = true; });
+      const added = batch.filter(item => item.state === 'added').length, failed = batch.filter(item => item.state === 'failed').length;
+      if (added || failed) toast[failed ? 'info' : 'success'](added + ' photograph' + (added === 1 ? '' : 's') + ' saved.' + (failed ? ' ' + failed + ' need another try. See the upload tray.' : ''));
+    }
     if (!entries.some(item => item.scope === 'library' && !terminal.has(item.state))) window.dispatchEvent(new Event('veylo:library-uploads-settled'));
   }
 }
 function pump() {
   if (paused || offline) return;
   for (const entry of entries) {
-    if (active >= 3) break;
+    if (active >= transfers.state().limit) break;
     if (entry.state !== 'queued' || entry.controller) continue;
-    if (entry.scope === 'library' && isRawPhoto(entry.file) && rawActive) continue;
     entry.state = 'preparing'; run(entry);
   }
   emit();
@@ -93,9 +107,12 @@ export const libraryUploads = {
   subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
   getSnapshot: () => snapshot,
   add(files, options = {}) {
-    const added = [...files].map(file => ({ id: crypto.randomUUID(), scope: options.scope || 'library', folder: options.folder || 'All photographs', ...options, file,
-      preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : '', state: 'queued', loaded: 0, total: file.size, record: {}, error: '' }));
+    if (!files?.length) return [];
+    const batchId = crypto.randomUUID();
+    const added = [...files].map(file => ({ id: crypto.randomUUID(), batchId, scope: options.scope || 'library', folder: options.folder || 'Unfiled', ...options, file,
+      preview: !isRawPhoto(file) && ['image/jpeg', 'image/png', 'image/webp'].includes(file.type) ? URL.createObjectURL(file) : '', state: 'queued', loaded: 0, total: file.size, record: {}, error: '' }));
     entries.push(...added); emit(); pump();
+    toast.info(added.length + ' photograph' + (added.length === 1 ? '' : 's') + ' added to the upload queue.');
     return added.map(entry => entry.id);
   },
   retry(id) {
@@ -118,8 +135,9 @@ export const libraryUploads = {
   }
 };
 if (typeof window !== 'undefined') {
-  window.addEventListener('offline', () => { offline = true; emit(); });
-  window.addEventListener('online', () => { offline = false; emit(); pump(); });
+  window.addEventListener('offline', () => { offline = true; transfers.setOffline(true); emit(); });
+  window.addEventListener('online', () => { offline = false; transfers.setOffline(false); emit(); pump(); });
+  window.setInterval(() => { if (active) transfers.tick({ queued: entries.filter(entry => entry.state === 'queued').length }); }, 5000);
   window.addEventListener('beforeunload', event => {
     if (entries.some(entry => !terminal.has(entry.state))) { event.preventDefault(); event.returnValue = ''; }
   });

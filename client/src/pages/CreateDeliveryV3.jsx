@@ -1,10 +1,11 @@
+import LibraryDeliveryPicker from '../components/library/LibraryDeliveryPicker.jsx';
 import { useAssistantWorkflow } from '../components/AssistantContext.jsx';
 import { ProPrice } from '../components/ProPricing.jsx';
 import { deliveryPreparationMessage } from '../utils/deliveryPreparation.js';
 import { pollDeliveryProgress } from '../utils/deliveryProgress.js';
 import { usePurposeWording } from '../hooks/usePurposeWording.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { Plus, AlertCircle, ArrowLeft, ArrowRight, AudioLines, Check, ChevronLeft, ChevronRight, Clock3, ExternalLink, Image, LoaderCircle, Mail, Mic2, Music2, Pause, Play, QrCode, RefreshCw, RotateCcw, Search, Share2, Trash2, Upload } from 'lucide-react';
@@ -103,7 +104,7 @@ function Head({ eyebrow, title, children }) {
 }
 
 export default function CreateDeliveryV3({ user, initialDelivery }) {
-  const navigate = useNavigate();
+  const navigate = useNavigate(), location = useLocation();
   const reduced = useVeyloReducedMotion();
   const [draft, setDraft] = useState(initialDelivery || null);
   const [entitlements, setEntitlements] = useState(null);
@@ -334,7 +335,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
       if (draft?._id) await api.patch('/v1/deliveries/' + draft._id + '/v3/details', body);
       else {
         const { data } = await api.post('/v1/deliveries/v3', body);
-        setDraft(data.data); navigate('/create?draft=' + data.data._id, { replace: true });
+        setDraft(data.data); navigate('/create?draft=' + data.data._id, { replace: true, state: location.state });
       }
       setStage('format');
     });
@@ -703,6 +704,7 @@ export default function CreateDeliveryV3({ user, initialDelivery }) {
             <label className="v3-drop"><span className="v3-drop-icon"><Upload size={25} /></span><strong>Add finished photographs</strong><span>Choose as many as you need, up to {limits} total.</span><b>Browse photos</b><input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={event => { uploadFiles(event.target.files); event.target.value = ''; }} disabled={!!busy} /></label>
             <div className="v3-upload-side-note"><span>YOUR ORIGINALS STAY INTACT</span><h2>Full gallery and showcase are separate.</h2><p>Every photo you upload remains available to the client. The smaller showcase is selected after all photos have been reviewed.</p><div><Image size={17} /><span>Only finished JPEG, PNG or WebP photos</span></div></div>
           </div>
+          <LibraryDeliveryPicker deliveryId={draft?._id} disabled={!!busy} maxPhotos={limits} existingCount={assets.length} onAdded={refresh} onBusyChange={active => setBusy(active ? 'library-import' : '')} />
           {busy === 'upload' && <div className="v3-upload-progress" role="status"><span>Uploading photographs · {uploadPercent}%</span><div><i style={{ transform: 'scaleX(' + uploadPercent / 100 + ')' }} /></div>{Object.entries(uploads).filter(([, item]) => item.status === 'retrying').map(([index, item]) => <small key={index}>Trying {item.name} again · attempt {item.attempt} of 3. {item.error}</small>)}</div>}
           {busy === 'upload' && <UploadConnectionStatus batch={uploadBatch} />}
           {failedFiles.length > 0 && <StepButton secondary onClick={() => uploadFiles(failedFiles)} disabled={!!busy}><RefreshCw size={16} /> Retry {failedFiles.length} failed photo{failedFiles.length > 1 ? 's' : ''}</StepButton>}

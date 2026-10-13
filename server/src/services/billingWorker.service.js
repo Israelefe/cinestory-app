@@ -8,7 +8,7 @@ import { withBillingLock } from './billingLock.service.js';
 import PaidUsage from '../models/PaidUsage.js';
 import { processStoredBillingEvent, processWebhookEvent, reconcilePayment, syncBillingPlan } from '../controllers/billing.controller.js';
 import { billingConfigured, paystackRequest } from './paystack.service.js';
-import { retryBillingEmails } from './email.service.js';
+import { retryBillingEmails, retryLibraryEmails } from './email.service.js';
 import { stopRecurringSubscription, recoverSubscriptionLink, confirmScheduledResumption } from './billingCancellation.service.js';
 let running = false, timer;
 export async function runBillingMaintenance() {
@@ -21,6 +21,7 @@ export async function runBillingMaintenance() {
   const attempt = async operation => { try { await operation(); } catch (error) { failures++; console.error('[billing/recovery]', error.message); } };
   try {
     for (const model of [Payment, Subscription, Refund, RefundRequest, BillingEvent, PaidUsage]) await model.deleteMany({ accountDeletedAt: { $ne: null }, retainUntil: { $lte: now } });
+    await attempt(() => retryLibraryEmails());
     if (!billingConfigured()) return;
     // A crash before creating the payment cannot have contacted Paystack.
     const orphaned = await Subscription.find({ status: 'checkout_pending', createdAt: { $lt: new Date(Date.now() - 120000) }, accountDeletedAt: null }).limit(20);

@@ -1,3 +1,6 @@
+import crypto from 'node:crypto';
+import EmailDelivery from '../models/EmailDelivery.js';
+import { notifyLibrary, libraryWebUrl } from '../services/libraryNotifications.service.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
@@ -20,6 +23,8 @@ const uploadConfirmSchema = z.object({
   uploadToken: z.string().min(20).max(4000),
   sourceAssetId: z.string().regex(/^[a-f\d]{24}$/i),
   originalFilename: z.string().trim().max(180).default('edited-photograph'),
+  variationId: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/).default('main'),
+  variationName: z.string().trim().min(1).max(80).default('Main edit'),
   editorGrant: z.string().min(20).max(4000)
 }).strict();
 
@@ -113,7 +118,8 @@ async function ownerDetail(collaboration) {
     selectedPhotos: (collaboration.selectedAssetIds || []).map(id => byId.get(String(id))).filter(Boolean),
     returned: (collaboration.returnedAssets || []).map(item => ({ ...(item.toObject ? item.toObject() : item), photo: byId.get(String(item.assetId)), source: byId.get(String(item.sourceAssetId)) })),
     submissions: (collaboration.submissions || []).map(item => ({ ...(item.toObject ? item.toObject() : item), photos: item.selectedAssetIds.map(id => byId.get(String(id))).filter(Boolean) })),
-    approvedAssetIds: latestAcceptedReturns(collaboration).filter(id => byId.has(id))
+    approvedAssetIds: latestAcceptedReturns(collaboration).filter(id => byId.has(id)),
+    returnedSourceCount: new Set((collaboration.returnedAssets || []).map(item => String(item.sourceAssetId))).size
   };
 }
 
@@ -124,7 +130,7 @@ async function publicSourceAsset(collaboration, assetId) {
 
 export async function listLibraryCollaborations(req, res) {
   try {
-    const query = { userId: req.user.id };
+    const query = { userId: req.user.id, status: { $ne: 'deleted' } };
     if (['preselection', 'editor-handoff'].includes(req.query.kind)) query.kind = req.query.kind;
     const page = Math.max(1, Math.min(10000, Math.floor(Number(req.query.page) || 1)));
     const rows = await LibraryCollaboration.find(query).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * 24).limit(25).lean();
@@ -167,6 +173,8 @@ export async function createLibraryCollaboration(req, res) {
       dueAt: parsed.data.dueAt || undefined,
       title: parsed.data.title,
       clientName: parsed.data.clientName,
+      recipientEmail: parsed.data.recipientEmail,
+      coverAssetId: parsed.data.coverAssetId || assetIds[0],
       note: parsed.data.note,
       assetIds,
       pinDigest,
@@ -207,7 +215,7 @@ export async function reopenLibraryPreselection(req, res) {
 export async function revokeLibraryCollaboration(req, res) {
   try {
     const collaboration = await LibraryCollaboration.findOneAndUpdate(
-      { _id: req.params.id, userId: req.user.id, status: { $ne: 'revoked' } },
+      { _id: req.params.id, userId: req.user.id, status: { $nin: ['revoked', 'deleted'] } },
       { $set: { status: 'revoked', revokedAt: new Date() } },
       { new: true }
     );
@@ -261,6 +269,7 @@ export async function getPublicLibraryContent(req, res) {
       selectionDraft: collaboration.selectionDraft || { selectedAssetIds: [], reviewedAssetIds: [], cursor: 0, version: 0 },
       dueAt: collaboration.dueAt,
       editorState: collaboration.editorState || 'awaiting-edits',
+      editorVersion: collaboration.editorVersion || 0,
       photographerName: user.studio?.name || user.name,
       status: collaboration.status,
       submitted: collaboration.status === 'submitted',
@@ -270,9 +279,12 @@ export async function getPublicLibraryContent(req, res) {
     if (collaboration.kind === 'editor-handoff') {
       const returns = await StorageAsset.find({ userId: collaboration.userId, _id: { $in: collaboration.returnedAssets.map(item => item.assetId) } }).select('originalFilename').lean();
       const filenames = new Map(returns.map(item => [String(item._id), item.originalFilename || 'Edited photograph']));
-      data.returned = collaboration.returnedAssets.map(item => ({ sourceAssetId: String(item.sourceAssetId), assetId: String(item.assetId), filename: filenames.get(String(item.assetId)) || 'Edited photograph', uploadedAt: item.uploadedAt, reviewStatus: item.reviewStatus || 'pending', reviewNote: item.reviewNote || '' }));
+      data.returned = collaboration.returnedAssets.map(item => ({ sourceAssetId: String(item.sourceAssetId), assetId: String(item.assetId), filename: filenames.get(String(item.assetId)) || 'Edited photograph', uploadedAt: item.uploadedAt, reviewStatus: item.reviewStatus || 'pending', reviewNote: item.reviewNote || '', variationId: item.variationId || 'main', variationName: item.variationName || 'Main edit' }));
     }
-    if (!collaboration.openedAt) await LibraryCollaboration.updateOne({ _id: collaboration._id, openedAt: { $exists: false } }, { $set: { openedAt: new Date() } });
+    if (!collaboration.openedAt) {
+      const firstOpen = await LibraryCollaboration.updateOne({ _id: collaboration._id, openedAt: { $exists: false }, status: { $in: ['active', 'submitted'] } }, { $set: { openedAt: new Date() } });
+      if (firstOpen.modifiedCount) await notifyLibrary(collaboration, 'opened');
+    }
     res.set({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' }).json({ success: true, data });
   } catch (error) {
     res.status(error.status || 500).json({ success: false, message: error.message || 'We could not open these photographs.' });
@@ -300,7 +312,8 @@ export async function submitPublicPreselection(req, res) {
       { new: true }
     );
     if (!updated) return res.status(409).json({ success: false, code: 'SELECTION_CHANGED', message: 'This selection changed. Reload its saved choices before sending.' });
-    res.json({ success: true, data: { submitted: true, selectedCount: unique.length } });
+    const notification = await notifyLibrary(updated, 'selected');
+    res.json({ success: true, data: { submitted: true, selectedCount: unique.length, notification } });
   } catch (error) {
     res.status(error.status || 500).json({ success: false, message: error.message || 'We could not send this selection.' });
   }
@@ -352,10 +365,12 @@ export async function signPublicEditorUpload(req, res) {
   try {
     const { collaboration } = await authorizedPublic(req);
     if (collaboration.kind !== 'editor-handoff' || collaboration.status !== 'active') return res.status(403).json({ success: false, message: 'This editor link is closed to uploads.' });
-    const sourceAssetId = String(req.body?.sourceAssetId || '');
+    const returnDetails = uploadConfirmSchema.pick({ sourceAssetId: true, variationId: true, variationName: true }).safeParse({ sourceAssetId: req.body?.sourceAssetId, variationId: req.body?.variationId, variationName: req.body?.variationName });
+    if (!returnDetails.success) return res.status(400).json({ success: false, message: 'Choose an original and name this edit variation.' });
+    const { sourceAssetId, variationId, variationName } = returnDetails.data;
     if (!collaboration.assetIds.some(id => String(id) === sourceAssetId)) return res.status(400).json({ success: false, message: 'Choose a source photograph from this link.' });
     const signature = createStorageUploadSignature(collaboration.userId, { resourceType: 'image', contentType: req.body?.contentType });
-    const editorGrant = jwt.sign({ purpose: 'editor-return', collaborationId: String(collaboration._id), sourceAssetId, objectKey: signature.objectKey }, process.env.JWT_SECRET, { expiresIn: '20m', issuer: 'veylo-api', audience: 'veylo-editor-upload' });
+    const editorGrant = jwt.sign({ purpose: 'editor-return', collaborationId: String(collaboration._id), sourceAssetId, variationId, variationName, objectKey: signature.objectKey }, process.env.JWT_SECRET, { expiresIn: '20m', issuer: 'veylo-api', audience: 'veylo-editor-upload' });
     res.json({ success: true, data: { ...signature, editorGrant, sourceAssetId } });
   } catch (error) {
     res.status(error.status || 500).json({ success: false, message: error.message || 'We could not prepare this upload.' });
@@ -371,7 +386,7 @@ export async function confirmPublicEditorUpload(req, res) {
     if (!collaboration.assetIds.some(id => String(id) === parsed.data.sourceAssetId)) return res.status(400).json({ success: false, message: 'Choose a source photograph from this link.' });
     let grant;
     try { grant = jwt.verify(parsed.data.editorGrant, process.env.JWT_SECRET, { issuer: 'veylo-api', audience: 'veylo-editor-upload' }); } catch { return res.status(401).json({ success: false, message: 'This upload has expired. Retry the returned edit.' }); }
-    if (grant.purpose !== 'editor-return' || grant.collaborationId !== String(collaboration._id) || grant.sourceAssetId !== parsed.data.sourceAssetId || grant.objectKey !== parsed.data.objectKey) return res.status(403).json({ success: false, message: 'This upload belongs to a different editor job or source photograph.' });
+    if (grant.purpose !== 'editor-return' || grant.collaborationId !== String(collaboration._id) || grant.sourceAssetId !== parsed.data.sourceAssetId || grant.objectKey !== parsed.data.objectKey || (grant.variationId || 'main') !== parsed.data.variationId || (grant.variationName || 'Main edit') !== parsed.data.variationName) return res.status(403).json({ success: false, message: 'This upload belongs to a different editor job or source photograph.' });
     const existingAsset = await StorageAsset.findOne({ userId: collaboration.userId, publicId: parsed.data.objectKey });
     if (existingAsset) {
       if (!collaboration.returnedAssets.some(item => String(item.assetId) === String(existingAsset._id) && String(item.sourceAssetId) === parsed.data.sourceAssetId)) return res.status(409).json({ success: false, message: 'That file is already saved in a different upload.' });
@@ -381,7 +396,7 @@ export async function confirmPublicEditorUpload(req, res) {
     if (!imageFormats.has(String(resource.format).toLowerCase()) || Number(resource.bytes) > 100 * 1024 * 1024) throw Object.assign(new Error('Choose a JPEG, PNG, or WebP edit that is 100 MB or smaller.'), { status: 400 });
     const { entitlements } = await activeProFor(collaboration.userId);
     const storageLimitBytes = Number(entitlements.limits.personalStorageBytes || 0);
-    const { asset, user, replayed } = await commitLibraryAsset({ userId: collaboration.userId, resource, limitBytes: storageLimitBytes, collaborationId: collaboration._id, sourceAssetId: parsed.data.sourceAssetId, fields: { originalFilename: parsed.data.originalFilename, folder: 'Editor returns', tags: ['edited'] } });
+    const { asset, user, replayed } = await commitLibraryAsset({ userId: collaboration.userId, resource, limitBytes: storageLimitBytes, collaborationId: collaboration._id, sourceAssetId: parsed.data.sourceAssetId, variationId: parsed.data.variationId, variationName: parsed.data.variationName, fields: { originalFilename: parsed.data.originalFilename, folder: 'Editor returns', tags: ['edited'] } });
     await recordPaidUsage(user._id, 'storage', resource.public_id).catch(() => {});
     res.status(replayed ? 200 : 201).json({ success: true, replayed, data: { asset: { id: String(asset._id), originalFilename: asset.originalFilename }, sourceAssetId: parsed.data.sourceAssetId } });
   } catch (error) {
@@ -397,9 +412,9 @@ export async function renewPublicEditorUpload(req, res) {
     const body = parsed.data;
     let grant;
     try { grant = jwt.verify(body.editorGrant, process.env.JWT_SECRET, { issuer: 'veylo-api', audience: 'veylo-editor-upload', ignoreExpiration: true }); } catch { return res.status(403).json({ success: false, message: 'This upload belongs to a different editor job.' }); }
-    if (collaboration.kind !== 'editor-handoff' || collaboration.status !== 'active' || grant.purpose !== 'editor-return' || grant.collaborationId !== String(collaboration._id) || grant.sourceAssetId !== body.sourceAssetId || grant.objectKey !== body.objectKey || !collaboration.assetIds.some(id => String(id) === body.sourceAssetId)) return res.status(403).json({ success: false, message: 'This upload belongs to a different editor job or source.' });
+    if (collaboration.kind !== 'editor-handoff' || collaboration.status !== 'active' || grant.purpose !== 'editor-return' || grant.collaborationId !== String(collaboration._id) || grant.sourceAssetId !== body.sourceAssetId || grant.objectKey !== body.objectKey || (grant.variationId || 'main') !== body.variationId || (grant.variationName || 'Main edit') !== body.variationName || !collaboration.assetIds.some(id => String(id) === body.sourceAssetId)) return res.status(403).json({ success: false, message: 'This upload belongs to a different editor job or source.' });
     const signature = renewStorageUploadSignature(collaboration.userId, body);
-    const editorGrant = jwt.sign({ purpose: 'editor-return', collaborationId: String(collaboration._id), sourceAssetId: body.sourceAssetId, objectKey: signature.objectKey }, process.env.JWT_SECRET, { expiresIn: '20m', issuer: 'veylo-api', audience: 'veylo-editor-upload' });
+    const editorGrant = jwt.sign({ purpose: 'editor-return', collaborationId: String(collaboration._id), sourceAssetId: body.sourceAssetId, variationId: grant.variationId || 'main', variationName: grant.variationName || 'Main edit', objectKey: signature.objectKey }, process.env.JWT_SECRET, { expiresIn: '20m', issuer: 'veylo-api', audience: 'veylo-editor-upload' });
     res.json({ success: true, data: { ...signature, editorGrant } });
   } catch (error) { res.status(error.status || 500).json({ success: false, message: error.message || 'This upload could not be renewed.' }); }
 }
@@ -417,7 +432,7 @@ export async function cleanupPublicEditorUpload(req, res) {
 
 export async function getLibraryCollaboration(req, res) {
   try {
-    const item = await LibraryCollaboration.findOne({ _id: req.params.id, userId: req.user.id });
+    const item = await LibraryCollaboration.findOne({ _id: req.params.id, userId: req.user.id, status: { $ne: 'deleted' } });
     if (!item) return res.status(404).json({ success: false, message: 'This link was not found.' });
     res.set('Cache-Control', 'no-store').json({ success: true, data: await ownerDetail(item) });
   } catch (error) { res.status(error.status || 500).json({ success: false, message: 'We could not open this link.' }); }
@@ -434,7 +449,7 @@ export async function updateLibraryCollaboration(req, res) {
     if (body.kind !== item.kind) return res.status(400).json({ success: false, message: 'Create a separate link for this kind of work.' });
     if (await StorageAsset.countDocuments({ userId: req.user.id, _id: { $in: body.assetIds } }) !== body.assetIds.length) return res.status(400).json({ success: false, message: 'Choose photographs from your own library.' });
     if (item.kind === 'editor-handoff' && body.status === 'active' && !body.password && !item.passwordDigest) return res.status(400).json({ success: false, message: 'Set a password before sharing with your editor.' });
-    const fields = { title: body.title, clientName: body.clientName, note: body.note, assetIds: body.assetIds, selectionRule: selectionRule(body.selectionRule), status: body.status, dueAt: body.dueAt || null, expiresAt: new Date(Date.now() + body.expiresInDays * 86400000) };
+    const fields = { title: body.title, clientName: body.clientName, note: body.note, recipientEmail: body.recipientEmail, coverAssetId: body.coverAssetId || body.assetIds[0], assetIds: body.assetIds, selectionRule: selectionRule(body.selectionRule), status: body.status, dueAt: body.dueAt || null, expiresAt: new Date(Date.now() + body.expiresInDays * 86400000) };
     if (item.kind === 'preselection') fields.pinDigest = body.pin ? await bcrypt.hash(body.pin, 12) : null;
     if (item.kind === 'editor-handoff' && body.password) fields.passwordDigest = await bcrypt.hash(body.password, 12);
     const updated = await LibraryCollaboration.findOneAndUpdate({ _id: item._id, userId: req.user.id, status: 'draft' }, { $set: fields }, { new: true });
@@ -455,7 +470,7 @@ export async function reviseLibraryPreselection(req, res) {
     if (await StorageAsset.countDocuments({ userId: req.user.id, _id: { $in: body.assetIds } }) !== body.assetIds.length) return res.status(400).json({ success: false, message: 'Choose photographs from your own library.' });
     const submissions = [...(current.submissions || [])];
     if (current.status === 'submitted' && !submissions.some(item => item.revision === body.revision)) submissions.push({ revision: body.revision, selectedAssetIds: current.selectedAssetIds, submittedAt: current.submittedAt });
-    const fields = { title: body.title, clientName: body.clientName, note: body.note, assetIds: body.assetIds, selectionRule: selectionRule(body.selectionRule), status: 'active', revision: body.revision + 1, selectedAssetIds: [], selectionDraft: { selectedAssetIds: [], reviewedAssetIds: [], cursor: 0, version: 0 }, submissions, expiresAt: new Date(Date.now() + body.expiresInDays * 86400000) };
+    const fields = { title: body.title, clientName: body.clientName, note: body.note, recipientEmail: body.recipientEmail, coverAssetId: body.coverAssetId || body.assetIds[0], assetIds: body.assetIds, selectionRule: selectionRule(body.selectionRule), status: 'active', revision: body.revision + 1, selectedAssetIds: [], selectionDraft: { selectedAssetIds: [], reviewedAssetIds: [], cursor: 0, version: 0 }, submissions, expiresAt: new Date(Date.now() + body.expiresInDays * 86400000) };
     // Leaving this field out keeps the existing access PIN. A supplied PIN is
     // deliberately changed by the photographer and invalidates older access.
     if (body.pin) { fields.pinDigest = await bcrypt.hash(body.pin, 12); fields.accessVersion = (current.accessVersion || 0) + 1; }
@@ -515,10 +530,11 @@ export async function submitPublicEditorEdits(req, res) {
   try {
     const { collaboration } = await authorizedPublic(req);
     if (collaboration.kind !== 'editor-handoff' || collaboration.status !== 'active' || !collaboration.returnedAssets.length) return res.status(400).json({ success: false, message: 'Return at least one edited photograph first.' });
-    const updated = await LibraryCollaboration.findOneAndUpdate({ _id: collaboration._id, status: 'active', expiresAt: { $gt: new Date() }, editorState: { $ne: 'complete' } }, { $set: { editorState: 'ready-for-review', editsSubmittedAt: new Date() }, $inc: { editorVersion: 1 } }, { new: true });
+    const updated = await LibraryCollaboration.findOneAndUpdate({ _id: collaboration._id, status: 'active', expiresAt: { $gt: new Date() }, editorVersion: collaboration.editorVersion || 0, editorState: { $ne: 'complete' } }, { $set: { editorState: 'ready-for-review', editsSubmittedAt: new Date() }, $inc: { editorVersion: 1 } }, { new: true });
     if (!updated && collaboration.editorState === 'complete') return res.json({ success: true, data: { editorState: 'complete' } });
-    if (!updated) return res.status(410).json({ success: false, message: 'This editor link has closed.' });
-    res.json({ success: true, data: { editorState: updated.editorState } });
+    if (!updated) return res.status(410).json({ success: false, message: 'This job changed while you were sending. Refresh and send the current batch.' });
+    const notification = await notifyLibrary(updated, 'returned');
+    res.json({ success: true, data: { editorState: updated.editorState, notification } });
   } catch (error) { res.status(error.status || 500).json({ success: false, message: error.message || 'We could not send these edits for review.' }); }
 }
 
@@ -529,6 +545,51 @@ export async function reviewEditorReturn(req, res) {
     if (!parsed.success) return res.status(400).json({ success: false, message: 'Choose an edit review result and a note under 1,000 characters.' });
     if (parsed.data.status === 'changes-requested' && !parsed.data.note) return res.status(400).json({ success: false, message: 'Tell your editor what to correct.' });
     const updated = await saveEditorReview({ userId: req.user.id, collaborationId: req.params.id, assetId: req.params.assetId, status: parsed.data.status, note: parsed.data.note });
-    res.json({ success: true, data: await ownerDetail(updated) });
+    const notification = parsed.data.status === 'changes-requested' ? await notifyLibrary(updated, 'corrections', { key: crypto.createHash('sha256').update(req.params.assetId + ':' + parsed.data.note).digest('hex').slice(0, 32), note: parsed.data.note }) : undefined;
+    res.json({ success: true, data: await ownerDetail(updated), notification });
   } catch (error) { res.status(error.status || 500).json({ success: false, message: error.message || 'We could not save this review.' }); }
+}
+
+export async function deleteLibraryCollaboration(req, res) {
+  try {
+    const item = await LibraryCollaboration.findOneAndUpdate({ _id: req.params.id, userId: req.user.id, status: { $ne: 'deleted' } }, { $set: { status: 'deleted', deletedAt: new Date() }, $inc: { accessVersion: 1 } }, { new: true });
+    if (!item) return res.status(404).json({ success: false, message: 'This link was not found.' });
+    await EmailDelivery.updateMany({ eventKey: { $regex: `^library:${item._id}:` }, status: { $in: ['pending', 'failed'] } }, { $set: { status: 'skipped', skippedAt: new Date() }, $unset: { messageEncrypted: 1 } });
+    res.json({ success: true, message: 'Link deleted. Stored photographs are kept in Photo Library.' });
+  } catch { res.status(500).json({ success: false, message: 'This link could not be deleted. Please try again.' }); }
+}
+
+export async function sendLibraryInvitation(req, res) {
+  try {
+    await activeProFor(req.user.id);
+    const body = z.object({ email: z.string().trim().toLowerCase().email().max(254), requestKey: z.string().uuid() }).strict().parse(req.body);
+    const job = await LibraryCollaboration.findOneAndUpdate({ _id: req.params.id, userId: req.user.id, status: { $in: ['active', 'submitted'] }, expiresAt: { $gt: new Date() } }, { $set: { recipientEmail: body.email } }, { new: true });
+    if (!job) return res.status(404).json({ success: false, message: 'Open an active link before sending an invitation.' });
+    const notification = await notifyLibrary(job, 'invite', { to: body.email, key: body.requestKey + ':' + crypto.createHash('sha256').update(body.email).digest('hex').slice(0, 24) });
+    if (notification.status === 'unavailable' || notification.status === 'skipped') return res.status(503).json({ success: false, message: 'Email could not be sent. Copy the link or try again shortly.' });
+    res.json({ success: true, notification });
+  } catch (error) { res.status(error instanceof z.ZodError ? 400 : error.status || 500).json({ success: false, message: error instanceof z.ZodError ? 'Enter a valid recipient email address.' : 'The email invitation could not be sent.' }); }
+}
+
+export async function getLibraryShareMeta(req, res) {
+  try {
+    const { collaboration: job, user } = await publicCollaboration(req.params.publicId, { includePin: true });
+    const brandName = user.studio?.name || user.name;
+    const selection = job.kind === 'preselection';
+    const url = libraryWebUrl(job);
+    const image = `${new URL(url).origin}/api/v1/storage/public/${encodeURIComponent(job.publicId)}/share-cover`;
+    const description = selection ? `${brandName} shared ${job.assetIds.length} photographs. ${selectionRule(job.selectionRule).mode === 'unlimited' ? 'Choose your photographs' : `Choose ${selectionRule(job.selectionRule).mode === 'up-to' ? 'up to ' : 'exactly '}${selectionRule(job.selectionRule).count} photographs`}.` : `${brandName} shared ${job.assetIds.length} originals for editing. Open the password-protected Editor Link to read the brief and return your edits.`;
+    res.set({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' }).json({ success: true, data: { kind: job.kind, title: `${job.title} | ${brandName}`, description, image, brandName, url, locked: !selection || Boolean(job.pinDigest) } });
+  } catch (error) { res.status(error.status || 500).json({ success: false, message: 'This link preview is unavailable.' }); }
+}
+
+export async function getLibraryShareCover(req, res) {
+  try {
+    const { collaboration: job } = await publicCollaboration(req.params.publicId);
+    await requireMarkedSelectionPreviews();
+    const coverId = String(job.coverAssetId || job.assetIds[0]);
+    const asset = await publicSourceAsset(job, coverId);
+    if (!asset) return res.status(404).end();
+    return streamMedia(req, res, asset.publicId, { width: 480, access: { type: 'library', collaborationId: String(job._id), accessVersion: job.accessVersion || 0, assetId: coverId, mode: 'share-cover', mark: 'selection' } });
+  } catch (error) { res.status(error.status || 500).json({ success: false, message: 'This link preview is unavailable.' }); }
 }

@@ -4,14 +4,14 @@ const plans = [{ id: 'free', deliveriesPerMonth: 3, photosPerDelivery: 100 }, { 
 async function setup(page, { user = null, publicPlans = plans, price = 40000 } = {}) {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 3, necessary: true, serviceAnalytics: true })));
+  await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 4, necessary: true, serviceAnalytics: true })));
   await page.route('**/api/v1/**', route => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith('/auth/me')) return route.fulfill({ json: { success: true, user } });
     if (path.endsWith('/billing/plans')) return route.fulfill({ json: { success: true, data: publicPlans, pricing: { monthlyPriceNaira: price, amountKobo: price * 100 } } });
     return route.fulfill({ json: { success: true, data: {} } });
   });
-  await page.goto('/product');
+  await page.goto('/product', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { level: 1 })).toContainText('From client choices');
   return errors;
 }
@@ -21,7 +21,7 @@ for (const width of [320, 390, 640, 768, 834, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const errors = await setup(page);
-    await expect(page).toHaveTitle(/Client selection, editor handoff and photo delivery/);
+    await expect(page).toHaveTitle(/Client selection, editor handoff and finished delivery/);
     await page.evaluate(() => document.fonts.ready);
     const [title, visual, after] = await page.evaluate(() => ['.vp-hero-title', '.vp-hero-visual', '.vp-hero-after'].map(selector => {
       const rect = document.querySelector(selector).getBoundingClientRect();
@@ -52,16 +52,19 @@ test('sample client choices and editor views respond without saving or uploading
   page.on('request', request => { if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method()) && !request.url().includes('analytics')) writes.push(request.url()); });
   await setup(page);
   const selection = page.locator('#client-preselection');
-  await selection.getByRole('button', { name: 'Choose portrait 2' }).click();
-  await expect(selection.getByRole('status')).toHaveText('3 of 3 chosen');
-  await selection.getByRole('button', { name: 'Choose portrait 1' }).click();
-  await expect(selection.getByRole('status')).toHaveText('2 of 3 chosen');
-  await expect(selection.getByRole('button', { name: 'Choose portrait 1' })).toHaveAttribute('aria-pressed', 'false');
+  await selection.getByRole('button', { name: 'All photographs', exact: true }).click();
+  await selection.getByRole('button', { name: 'Choose Portrait_01.jpg', exact: true }).click();
+  await selection.getByRole('button', { name: 'Choose Portrait_02.jpg', exact: true }).click();
+  await expect(selection.locator('.sel-progress')).toContainText('2 of 2 chosen');
+  await selection.getByRole('button', { name: 'Choose Portrait_01.jpg', exact: true }).click();
+  await expect(selection.locator('.sel-progress')).toContainText('1 of 2 chosen');
+  await expect(selection.getByRole('button', { name: 'Choose Portrait_01.jpg', exact: true })).toHaveAttribute('aria-pressed', 'false');
   const editor = page.locator('#editor-handoff');
-  await editor.getByRole('button', { name: 'Returned edits' }).click();
-  await expect(editor.locator('.vp-editor-files')).toContainText('Portrait_01.jpg');
-  await editor.getByRole('button', { name: 'Source files' }).click();
-  await expect(editor.locator('.vp-editor-files')).toContainText('Portrait_01.CR3');
+  await editor.getByRole('button', { name: 'Review returned edits', exact: true }).click();
+  await editor.getByRole('button', { name: 'Accept & save to Library' }).first().click();
+  await expect(editor.getByRole('button', { name: 'Saved to Photo Library' })).toBeDisabled();
+  await editor.getByRole('button', { name: 'Source photographs', exact: true }).click();
+  await expect(editor.locator('.vp-editor-photos')).toContainText('Portrait_01.CR3');
   await page.getByRole('group', { name: 'Explore the shoot workflow' }).getByRole('button', { name: /Client choices/ }).click();
   await expect(page.locator('.vp-hero-receipt')).toContainText('Ready for editing');
   expect(writes).toEqual([]);
@@ -80,12 +83,12 @@ test('product navigation supports keyboard dismissal and mobile section links', 
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
   await expect(trigger).toBeFocused();
   await trigger.click();
-  await menu.getByRole('link', { name: /Editor handoff/ }).click();
+  await menu.getByRole('link', { name: /Editor Links/ }).click();
   await expect(page).toHaveURL(/\/product#editor-handoff$/);
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Open menu', exact: true }).click();
-  await page.getByRole('navigation', { name: 'Mobile navigation' }).getByRole('link', { name: 'Client preselection', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Mobile navigation' }).getByRole('link', { name: 'Photo Pre-selection', exact: true }).click();
   await expect(page).toHaveURL(/\/product#client-preselection$/);
   await expect(page.getByRole('dialog', { name: 'Navigation menu' })).toHaveCount(0);
 });
@@ -129,7 +132,7 @@ test('Assistant uses product context, offers both Library workflows and opens sa
 
 test('signed-in photographers can open their Library and billing from Product', async ({ page }) => {
   await setup(page, { user: { id: '111111111111111111111111', emailVerified: true, onboardingComplete: true, plan: 'pro' } });
-  await expect(page.locator('#client-preselection').getByRole('link', { name: 'Open client and editor links' })).toHaveAttribute('href', '/library');
+  await expect(page.locator('#client-preselection').getByRole('link', { name: 'Open Photo Pre-selection' })).toHaveAttribute('href', '/pre-selection');
   await expect(page.locator('#plans').getByRole('link', { name: 'Get started with Pro' })).toHaveAttribute('href', '/billing');
   await expect(page.locator('.vp-hero-after').getByRole('link', { name: 'Create a delivery' })).toHaveAttribute('href', '/create');
 });

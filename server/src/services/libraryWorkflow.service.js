@@ -6,6 +6,8 @@ export const selectionRuleSchema = z.object({ mode: z.enum(['exactly', 'up-to', 
 export const collaborationSchema = z.object({
   kind: z.enum(['preselection', 'editor-handoff']), title: z.string().trim().min(1).max(100),
   clientName: z.string().trim().max(100).default(''), note: z.string().trim().max(500).default(''),
+  recipientEmail: z.string().trim().toLowerCase().max(254).email().or(z.literal('')).default(''),
+  coverAssetId: libraryId.optional(),
   assetIds: photoIds, status: z.enum(['draft', 'active']).default('active'),
   selectionRule: selectionRuleSchema.optional(), dueAt: z.string().datetime().nullable().optional(),
   expiresInDays: z.union([z.literal(1), z.literal(3), z.literal(7), z.literal(14), z.literal(30), z.literal(60), z.literal(90)]).default(30),
@@ -13,6 +15,7 @@ export const collaborationSchema = z.object({
   password: z.string().min(8).max(72).refine(value => Buffer.byteLength(value, 'utf8') <= 72).optional(),
   creationKey: z.string().regex(/^[a-zA-Z0-9_-]{8,80}$/).optional()
 }).strict().superRefine((value, ctx) => {
+  if (value.coverAssetId && !value.assetIds.includes(value.coverAssetId)) ctx.addIssue({ code: 'custom', message: 'Choose a link preview from the shared photographs.' });
   if (value.status === 'active' && !value.assetIds.length) ctx.addIssue({ code: 'custom', message: 'Choose at least one photograph.' });
   if (value.kind === 'preselection' && value.selectionRule?.mode !== 'unlimited' && value.selectionRule?.count > value.assetIds.length) ctx.addIssue({ code: 'custom', message: 'The selection allowance cannot exceed the photographs shared.' });
 });
@@ -40,6 +43,6 @@ export function revisionFilter(revision = 1) {
 export function latestAcceptedReturns(collaboration) {
   if (Array.isArray(collaboration.approvedReturns)) return collaboration.approvedReturns.map(item => String(item.assetId));
   const bySource = new Map();
-  for (const item of collaboration.returnedAssets || []) bySource.set(String(item.sourceAssetId), item);
+  for (const item of collaboration.returnedAssets || []) bySource.set(String(item.sourceAssetId) + ':' + (item.variationId || 'main'), item);
   return [...bySource.values()].filter(item => item.reviewStatus === 'accepted').map(item => String(item.assetId));
 }

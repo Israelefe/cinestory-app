@@ -1,10 +1,27 @@
 import { Resend } from 'resend';
+import crypto from 'node:crypto';
 import EmailDelivery from '../models/EmailDelivery.js';
 import { recordAnalyticsEventAsync } from './analytics.service.js';
 import { emailTemplateEnabled } from './runtimeConfig.service.js';
 import { encryptBillingToken, decryptBillingToken } from './paystack.service.js';
 
 let client;
+
+function libraryEmailKey() {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.length < 32) throw new Error('Secure email storage is unavailable.');
+  return crypto.createHash('sha256').update('veylo-library-email-v1:').update(secret).digest();
+}
+function encryptLibraryEmail(message) {
+  const iv = crypto.randomBytes(12), cipher = crypto.createCipheriv('aes-256-gcm', libraryEmailKey(), iv);
+  const body = Buffer.concat([cipher.update(JSON.stringify(message), 'utf8'), cipher.final()]);
+  return [iv, cipher.getAuthTag(), body].map(value => value.toString('base64url')).join('.');
+}
+function decryptLibraryEmail(value) {
+  const [iv, tag, body] = value.split('.').map(part => Buffer.from(part, 'base64url'));
+  const cipher = crypto.createDecipheriv('aes-256-gcm', libraryEmailKey(), iv); cipher.setAuthTag(tag);
+  return JSON.parse(Buffer.concat([cipher.update(body), cipher.final()]).toString('utf8'));
+}
 
 function resend() {
   if (!process.env.RESEND_API_KEY) throw new Error('RESEND_API_KEY is not configured.');
@@ -100,7 +117,7 @@ async function send(kind, message, idempotencyKey) {
 export async function sendOnce({ eventKey, kind, to, userId, deliveryId, subject, text, html }) {
   const recipientEmail = String(to || '').trim().toLowerCase();
   if (!eventKey || !recipientEmail) throw new Error('An email event key and recipient are required.');
-  const messageEncrypted = eventKey.startsWith('billing:') ? encryptBillingToken(JSON.stringify({ subject, text, html })) : undefined;
+  const messageEncrypted = eventKey.startsWith('billing:') ? encryptBillingToken(JSON.stringify({ subject, text, html })) : eventKey.startsWith('library:') ? encryptLibraryEmail({ subject, text, html }) : undefined;
   let record;
   try {
     record = await EmailDelivery.findOneAndUpdate(
@@ -170,6 +187,19 @@ export async function retryBillingEmails() {
       await sendOnce({ eventKey: record.eventKey, kind: record.kind, to: record.recipientEmail, userId: record.userId, ...message });
     } catch (error) { console.error('[email/billing-retry]', error.message); }
   }
+}
+
+export async function retryLibraryEmails() {
+  const now = new Date();
+  const rows = await EmailDelivery.find({ eventKey: /^library:/, messageEncrypted: { $exists: true }, $or: [{ status: 'pending' }, { status: 'failed', retryAfter: { $lte: now } }, { status: 'sending', leaseUntil: { $lte: now } }] }).sort({ createdAt: 1 }).limit(20).select('+messageEncrypted');
+  for (const row of rows) {
+    try { await sendOnce({ eventKey: row.eventKey, kind: row.kind, to: row.recipientEmail, userId: row.userId, ...decryptLibraryEmail(row.messageEncrypted) }); }
+    catch { console.error('[email/library-retry] Notification remains queued.'); }
+  }
+}
+
+export function sendLibraryEmail({ to, userId, eventKey, kind, title, message, url, action = 'Open photographs' }) {
+  return sendOnce({ to, userId, eventKey, kind, subject: String(title).replace(/[\r\n]/g, ' ').slice(0, 180), text: `${message}\n\n${url}`, html: shell(`<h1 style="margin:0 0 18px;font-size:28px;font-weight:500">${escapeHtml(title)}</h1>${paragraph(escapeHtml(message))}${button(action, url)}`, { preheader: message }) });
 }
 
 export function sendPasswordResetEmail({ to, name, code }) {

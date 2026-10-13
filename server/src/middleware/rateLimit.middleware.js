@@ -96,6 +96,8 @@ export const emailCodeLimit = limiter({
   identifier: 'email-codes'
 });
 
+export const libraryEmailLimit = limiter({ windowMs: 60 * 60 * 1000, limit: 30, message: 'Many email invitations were requested. Please wait before sending another.', identifier: 'library-email-invitations' });
+
 // A generous per-account burst guard protects the AI provider without turning
 // the photographer's delivery workflow into a hidden hourly quota. The real
 // product entitlement remains the Free/Pro plan and the job queue controls
