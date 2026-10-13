@@ -19,6 +19,13 @@ export async function storeImage(config, db, buffer, { name, source = 'upload', 
   return assetRecord(db.prepare('SELECT * FROM assets WHERE id=?').get(id));
 }
 export function assetRecord(row) { return row ? { ...row, metadata: JSON.parse(row.metadata), url: '/api/assets/' + row.id + '/media' } : null; }
+export function acceptOwnerUpload(db, asset) {
+  if (!asset || asset.source !== 'upload' || asset.rights === 'blocked') return asset;
+  const metadata = { ...asset.metadata, ownerSelected: true, ownerSelectedAt: new Date().toISOString() };
+  db.prepare("UPDATE assets SET rights='cleared',license_note=?,metadata=? WHERE id=?").run(asset.license_note || 'Owner uploaded this asset for use in the local studio. No independent license verification.', JSON.stringify(metadata), asset.id);
+  return assetRecord(db.prepare('SELECT * FROM assets WHERE id=?').get(asset.id));
+}
+export function demoAssetEligible(asset) { return Boolean(asset && asset.rights === 'cleared' && (asset.metadata?.generated || asset.metadata?.consent || asset.metadata?.ownerSelected)); }
 export async function indexSamples(config, db, progress = () => {}) {
   // Only explicitly public demonstration material, never product/customer storage.
   const folders = ['client/public/veylo/web', 'client/public/veylo/demo/event', 'client/public/veylo/demo/campaign', 'client/public/photos'];

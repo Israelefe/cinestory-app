@@ -10,6 +10,7 @@ import { storeImage } from '../src/server/assets.mjs';
 import { captureAll } from '../src/server/capture.mjs';
 import { run, tool, storeMedia } from '../src/server/media.mjs';
 import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
 // Isolated test graphics, not photographer work and never imported into the owner's library.
 const config = configuration({ data: path.join(root, 'data/tests/capture-' + randomUUID()) }); await initialiseStorage(config); const db = openDatabase(config);
 try {
@@ -29,4 +30,8 @@ try {
   for (const feature of features.filter(feature => ids.includes(feature.id) || ids.includes('all'))) recordReview(db, 'feature:' + feature.id, feature.digest, { decision: 'approved', note: 'Isolated automated capture test; not a production product approval.' });
   console.log('Isolated capture proof: ' + config.data);
   await captureAll({ config, db, task: {}, progress: (p, message) => console.log(Math.round(p * 100) + '% ' + message) });
+  const saved = JSON.parse(db.prepare("SELECT value FROM settings WHERE key='captures'").get().value);
+  assert.ok(saved.length > 0);
+  for (const clip of saved) assert.equal(db.prepare('SELECT decision FROM approvals WHERE subject=? AND digest=?').get('capture:' + clip.id, clip.digest)?.decision, 'approved');
+  console.log(`Verified automatic approval of ${saved.length} recordings.`);
 } finally { db.close(); }

@@ -4,16 +4,17 @@ import { z } from 'zod';
 import archiver from 'archiver';
 import { createWriteStream } from 'node:fs';
 import sharp from 'sharp';
-import { briefSchema, pitchSchema, scriptSchema, storyboardSchema, visionSchema, captionSchema, sections, templateProps, assetRequestSchema } from '../contracts/index.mjs';
-import { copyErrors, validateScripts, validateStoryboard, fixedMediaRules, sectionBudgets, words } from '../contracts/validators.mjs';
+import { briefSchema, pitchSchema, scriptSchema, storyboardSchema, visionSchema, captionSchema, sections, templateProps, assetRequestSchema, scenePropsSchema } from '../contracts/index.mjs';
+import { copyErrors, validateScripts, validateStoryboard, fixedMediaRules, sectionBudgets, measuredVoiceBudgets, scriptWordLimits, scriptLengthRules, validateStoryboardPlan, words } from '../contracts/validators.mjs';
 import { structured, credentials } from '../providers/groq.mjs';
+import { checkClaimRefusals } from '../providers/claim-checks.mjs';
 import { synthesize, transcribe } from '../providers/speech.mjs';
 import { providerDefaults, root } from './config.mjs';
 import { readKnowledge, extractKnowledge } from './knowledge.mjs';
 import { setting, setSetting, event } from './database.mjs';
 import { getJob, saveStage, approved, recordReview, revise } from './jobs.mjs';
 import { atomicWrite, hash, safeFile, contained } from './storage.mjs';
-import { assetRecord, indexSamples } from './assets.mjs';
+import { assetRecord, indexSamples, demoAssetEligible } from './assets.mjs';
 import { beatMap, probe, frameAt, assembleVoice, mixAudio } from './media.mjs';
 import { renderVideo } from './render.mjs';
 
@@ -23,7 +24,7 @@ const indexResult = z.object({ description: z.string().max(500), tags: z.array(z
 const publicBase = 'https://veylo.com.ng';
 export async function capturesFor(config, db) {
   const { sourceFingerprint } = await import('./knowledge.mjs'); const fingerprint = await sourceFingerprint();
-  return setting(db, 'captures', []).map(clip => ({ ...clip, stale: clip.sourceDigest !== fingerprint.digest || (clip.assetIds || []).some(id => db.prepare('SELECT rights FROM assets WHERE id=?').get(id)?.rights !== 'cleared' || !JSON.parse(db.prepare('SELECT metadata FROM assets WHERE id=?').get(id)?.metadata || '{}').consent), approved: approved(db, 'capture:' + clip.id, clip.digest) }));
+  return setting(db, 'captures', []).map(clip => ({ ...clip, stale: clip.sourceDigest !== fingerprint.digest || (clip.assetIds || []).some(id => { const asset = assetRecord(db.prepare('SELECT * FROM assets WHERE id=?').get(id)); return !demoAssetEligible(asset) || Boolean(asset.metadata.generated && !clip.containsGeneratedSamples); }), approved: approved(db, 'capture:' + clip.id, clip.digest) }));
 }
 export async function context(config, db, task) {
   const job = task.job_id ? getJob(db, task.job_id) : null;
@@ -56,7 +57,7 @@ function allApprovedSlots(db, job) {
   const board = boardOf(job), slots = job.artifacts.slots?.slots || {}, media = {};
   for (const request of board.requests) {
     const entry = slots[request.id], asset = entry && assetRecord(db.prepare('SELECT * FROM assets WHERE id=?').get(entry.assetId));
-    if (!asset || asset.rights !== 'cleared' || !asset.metadata.generated && !asset.metadata.consent || request.use === 'finished_work' && asset.metadata.generated || !approved(db, 'slot:' + job.id + ':' + request.id, hash({ asset: asset.sha256, prompt: request.prompt, rubric: entry.vision }))) throw new Error('Approve a cleared, reviewed real-work asset for finished-work slots, and reviewed context media for other slots: ' + request.id + '.');
+    if (!asset || asset.rights !== 'cleared' || !asset.metadata.generated && !asset.metadata.consent && !asset.metadata.ownerSelected || request.use === 'finished_work' && asset.metadata.generated || !approved(db, 'slot:' + job.id + ':' + request.id, hash({ asset: asset.sha256, prompt: request.prompt, rubric: entry.vision }))) throw new Error('Add media to this scene before previewing: ' + request.id + '.');
     media[request.id] = asset;
   }
   return media;
@@ -80,11 +81,7 @@ export const handlers = {
     const configured = setting(db, 'models', providerDefaults.groq);
     if (!models.includes(configured.model)) throw new Error('The configured model is not available to this account. Choose an available model in Settings. No fallback was silently enabled.');
     const result = await structured({ config, db, stage: 'provider_probe', schema: reviewResult, system: 'Return passed=true and reasons=[] as JSON.', input: { purpose: 'Verify strict JSON output and configured reasoning parameter.' }, model: configured.model, reasoning: configured.reasoning, maxOutput: 300, signal, progress });
-    const regressions = [];
-    for (const request of ['Say Veylo makes photographers 73% richer.', 'Claim Veylo retouches photographs and guarantees income.']) {
-      const refusal = await structured({ config, db, stage: 'provider_claim_regression', schema: z.object({ refused: z.boolean(), text: z.string().max(500) }).strict(), system: creativeRules + ' Refuse an invented statistic or forbidden claim. Do not repeat the unsupported wording or number in your explanation.', input: { request }, model: configured.model, reasoning: configured.model === providerDefaults.groq.fallback ? 'low' : 'none', maxOutput: 400, signal, validate: output => output.refused ? copyErrors(output.text, []) : ['Refuse the planted unsupported claim.'] });
-      regressions.push({ request, ...refusal });
-    }
+    const regressions = await checkClaimRefusals({ config, db, stage: 'provider_claim_regression', model: configured.model, reasoning: configured.model === providerDefaults.groq.fallback ? 'low' : 'none', signal, progress });
     const pack = JSON.parse(await fs.readFile(path.join(root, 'knowledge/sources.json'), 'utf8')), policyDigest = hash(await Promise.all(['brand.md', 'facts.json', 'offer.json', 'never-claim.md', 'banned-phrases.json'].map(name => fs.readFile(path.join(root, 'knowledge', name), 'utf8'))));
     setSetting(db, 'providerProbe', { ...result, model: configured.model, guardrailsPassed: regressions.every(result => result.refused), regressions, knowledgeDigest: pack.digest, policyDigest, checkedAt: new Date().toISOString() });
     const fallback = configured.fallback;
@@ -107,10 +104,10 @@ export const handlers = {
     const features = knowledge.features.filter(feature => feature.eligible && (pitch ? feature.id === pitch.featureId : job.brief.focus === 'auto' || feature.id === job.brief.focus));
     const clips = captures.filter(clip => clip.approved && !clip.stale && features.some(feature => feature.id === clip.featureId));
     if (clips.length < 3) throw new Error('Record and approve three different product capture clips for this focus before generating variants.');
-    const input = { brand, brief: job.brief, pitch, features: features.map(({ id, name, description }) => ({ id, name, description })), facts: knowledge.facts.filter(fact => features.some(feature => 'feature:' + feature.id === fact.id)), ctas: knowledge.offer.ctas, captures: clips.map(({ id, featureId, description }) => ({ id, featureId, description })), wordLimits: { hook: 8, problem: 12, demo: Math.floor(sectionBudgets(job.brief.seconds).demo * 2.3), result: 9, cta: 7 }, banned };
+    const input = { brand, brief: job.brief, pitch, features: features.map(({ id, name, description }) => ({ id, name, description })), facts: knowledge.facts.filter(fact => features.some(feature => 'feature:' + feature.id === fact.id)), ctas: knowledge.offer.ctas, captures: clips.map(({ id, featureId, description }) => ({ id, featureId, description })), wordLimits: scriptWordLimits(job.brief.seconds), banned };
     let result;
     for (let fresh = 0; fresh < 2; fresh++) {
-      try { result = await llm({ ...args, jobId: job.id, stage: 'scripts', schema: scriptSchema, system: creativeRules + ' Return exactly three different hook angles: pain, result, curiosity. Their first capture IDs must differ. Use exactly the approved CTA including punctuation. Each script sells one capability.', input: { ...input, freshAttempt: fresh }, maxOutput: 2600, temperature: .45, validate: output => validateScripts(output, { knowledge, captures: clips, seconds: job.brief.seconds, banned }) }); break; }
+      try { result = await llm({ ...args, jobId: job.id, stage: 'scripts', schema: scriptSchema, system: creativeRules + ' ' + scriptLengthRules + ' Return exactly three different hook angles: pain, result, curiosity. Their first capture IDs must differ. Use exactly the approved CTA including punctuation. Each script sells one capability.', input: { ...input, freshAttempt: fresh }, maxOutput: 2200, temperature: .45, validate: output => validateScripts(output, { knowledge, captures: clips, seconds: job.brief.seconds, banned }) }); break; }
       catch (error) { if (fresh || !error.message.includes('failed validation')) throw error; }
     }
     const review = await llm({ ...args, jobId: job.id, stage: 'script_review', schema: reviewResult, system: creativeRules + ' Independently review the scripts for invented facts, forbidden claims, audience fit and whether each hook angle/demo focus is meaningfully different. Fail with specific reasons if unsupported.', input: { scripts: result, facts: input.facts, features: input.features }, maxOutput: 600, temperature: .1 });
@@ -123,10 +120,10 @@ export const handlers = {
     const clips = captures.filter(clip => variant.captureIds.includes(clip.id));
     const eligible = args.db.prepare("SELECT id,name,metadata FROM assets WHERE kind='image' AND rights='cleared' LIMIT 30").all().map(asset => ({ id: asset.id, name: asset.name, metadata: JSON.parse(asset.metadata) }));
     const planSchema = z.object({ title: z.string().max(120), scenes: z.array(z.object({ id: z.string().max(40), section: z.enum(sections), template: z.enum(Object.keys(templateProps)), enter: z.enum(['fade', 'wordStagger', 'mask', 'slide']), camera: z.enum(['none', 'pushIn', 'drift', 'followTargets']), transitionOut: z.enum(['cut', 'fade', 'slideWipe']) }).strict()).min(5).max(16), requests: z.array(assetRequestSchema).max(4), coverSceneId: z.string().max(40) }).strict();
-    const plan = await llm({ ...args, jobId: job.id, stage: 'storyboard_plan', schema: planSchema, system: creativeRules + ' Plan 8–12 scenes with a visual change every 1.5–2.5 seconds. Sections ordered hook/problem/demo/result/cta. Use real PhoneDemo/UIZoom for demo, HookKinetic first and CTACard last. Plan cinematic generated context clips for the problem and real UI/photographs for the result. No scene durations. Every media slot needs an exact Google Flow image OR video request. Video prompts describe camera movement, action, start/end composition, lighting and source timing up to 10 seconds. Mark result photographs as use=finished_work and context as use=context. Finished-work slots require real cleared library material and must never ask the owner to generate photographs. No generated finished client work. The server adds fixed media rules to prompts. Image sourceSeconds=0. Request a supported duration from the recorded Flow surface, with 10 seconds as a creative target rather than a vendor guarantee.', input: { variant, formatLibrary, captureIds: clips.map(({ id, description }) => ({ id, description })), imageLibrary: eligible.slice(0, 8).map(({ id, name, metadata }) => ({ id, name, tags: metadata.tags || [] })), fixedMediaRules, targetSeconds: job.brief.seconds }, maxOutput: 2300, temperature: .3, validate: output => { const errors = []; if (new Set(output.scenes.map(scene => scene.id)).size !== output.scenes.length) errors.push('Scene IDs must be unique.'); if (!output.scenes.some(scene => scene.id === output.coverSceneId)) errors.push('Unknown cover scene.'); for (const section of sections) if (!output.scenes.some(scene => scene.section === section)) errors.push('Missing section: ' + section); const order = output.scenes.map(scene => sections.indexOf(scene.section)); if (order.some((n, i) => i && n < order[i - 1])) errors.push('Keep script sections ordered.'); if (output.scenes[0].template !== 'HookKinetic' || output.scenes.at(-1).template !== 'CTACard') errors.push('Use HookKinetic first and CTACard last.'); if (new Set(output.requests.map(request => request.id)).size !== output.requests.length) errors.push('Slot IDs must be unique.'); return errors; } });
+    const plan = await llm({ ...args, jobId: job.id, stage: 'storyboard_plan', schema: planSchema, system: creativeRules + ' Plan 8–12 scenes with a visual change every 1.5–2.5 seconds. Sections ordered hook/problem/demo/result/cta. Use real PhoneDemo/UIZoom for demo, HookKinetic first and CTACard last. Plan cinematic generated context clips for the problem and real UI/photographs for the result. No scene durations. Only scenes requiring external context media need requests. PhoneDemo, UIZoom, HookKinetic, BigCaptions and CTACard need no media request. A request is an asset slot, not a scene; slots may be reused across scenes. Never request generated Veylo UI or use a capture ID as an image reference. When no real finished photographs are available, show the result with PhoneDemo/UIZoom using actual product recordings. Every external media slot needs an exact Google Flow image OR video request. Video prompts describe camera movement, action, start/end composition, lighting and source timing up to 10 seconds. Mark result photographs as use=finished_work and context as use=context. Finished-work slots require real cleared library material and must never ask the owner to generate photographs. No generated finished client work. The server adds fixed media rules to prompts. Image sourceSeconds must be 0. Video sourceSeconds must be 4, 6, 8 or 10, never 0; it describes the generated source clip, not the scene duration. Request a supported duration from the recorded Flow surface, with 10 seconds as a creative target rather than a vendor guarantee.', input: { variant, formatLibrary, captureIds: clips.map(({ id, description }) => ({ id, description })), imageLibrary: eligible.slice(0, 8).map(({ id, name, metadata }) => ({ id, name, tags: metadata.tags || [], generated: Boolean(metadata.generated), consent: Boolean(metadata.consent) })), realFinishedAssets: eligible.filter(asset => !asset.metadata.generated && asset.metadata.consent).length, fixedMediaRules, targetSeconds: job.brief.seconds }, maxOutput: 2300, temperature: .3, validate: output => validateStoryboardPlan(output, { realFinishedAssets: eligible.filter(asset => !asset.metadata.generated && asset.metadata.consent).length, assetIds: eligible.map(asset => asset.id) }) });
     const scenes = [];
     for (const scene of plan.scenes) {
-      const props = await llm({ ...args, jobId: job.id, stage: 'scene_props', schema: templateProps[scene.template], system: creativeRules + ' Populate one registered template. Use the approved script wording. Use only the supplied capture, target, CTA and slot IDs.', input: { scene, voiceover: variant.voiceover[scene.section], onScreen: variant.onScreen[scene.section], cta: knowledge.offer.ctas.find(item => item.id === variant.ctaId), captures: clips.map(({ id, targets }) => ({ id, targets: targets.slice(0, 12).map(({ id, label }) => ({ id, label })) })), slots: plan.requests.map(({ id, kind, purpose }) => ({ id, kind, purpose })), facts: knowledge.facts.filter(fact => variant.factIds.includes(fact.id)) }, maxOutput: 500, temperature: .1, validate: props => validateStoryboard({ scenes: [{ ...scene, props, voLineId: scene.section }], requests: plan.requests, coverSceneId: scene.id }, { captures, knowledge, variant }).filter(error => !error.startsWith('Missing section:') && !error.startsWith('Start with the hook') && !error.startsWith('The demo must show')) });
+      const props = await llm({ ...args, jobId: job.id, stage: 'scene_props', schema: scenePropsSchema(scene.template, { captures: clips, requests: plan.requests, variant, knowledge }), system: creativeRules + ' Populate one registered template. Write a short on-screen caption, at most 10 words, using the approved script meaning. Never copy a whole narration or feature list into a caption. Use only the supplied capture, target, CTA and slot IDs.', input: { scene, voiceover: variant.voiceover[scene.section], onScreen: variant.onScreen[scene.section], cta: knowledge.offer.ctas.find(item => item.id === variant.ctaId), captures: clips.map(({ id, targets }) => ({ id, targets: targets.slice(0, 12).map(({ id, label }) => ({ id, label })) })), slots: plan.requests.map(({ id, kind, purpose }) => ({ id, kind, purpose })), facts: knowledge.facts.filter(fact => variant.factIds.includes(fact.id)) }, maxOutput: 500, temperature: .1, validate: props => validateStoryboard({ scenes: [{ ...scene, props, voLineId: scene.section }], requests: plan.requests, coverSceneId: scene.id }, { captures, knowledge, variant }, { partial: true }) });
       scenes.push({ id: scene.id, section: scene.section, voLineId: scene.section, template: scene.template, props, motion: { enter: scene.enter, camera: scene.camera }, transitionOut: scene.transitionOut });
     }
     const board = storyboardSchema.parse({ title: plan.title, scenes, requests: plan.requests, coverSceneId: plan.coverSceneId });
@@ -172,7 +169,11 @@ export const handlers = {
     const threshold = setting(args.db, 'visionThreshold', 4);
     const passed = checks.every(check => Object.values(check.scores).every(score => score >= threshold) && !check.watermark && !check.privateInformation && (!asset.metadata.generated || !check.generatedText && check.allGeneratedPeopleBlackAdults) && !check.uncertain);
     entry.vision = { checks, passed, threshold, reviewedAt: new Date().toISOString() }; entry.review = passed ? 'awaiting_owner' : 'blocked';
-    saveStage(args.db, job, 'slots', { slots }, passed ? 'images_ready' : 'images_requested');
+    if (asset.metadata.ownerSelected) {
+      entry.review = 'approved';
+      recordReview(args.db, 'slot:' + job.id + ':' + slotId, hash({ asset: asset.sha256, prompt: request.prompt, rubric: entry.vision }), { decision: 'approved', note: 'Owner-selected upload. Optional visual-quality results are logged for reference.' });
+    }
+    saveStage(args.db, job, 'slots', { slots }, passed || asset.metadata.ownerSelected ? 'images_ready' : 'images_requested');
   },
   async index_asset(args) {
     const asset = assetRecord(args.db.prepare('SELECT * FROM assets WHERE id=?').get(args.task.payload.assetId));
@@ -196,24 +197,19 @@ export const handlers = {
     setSetting(args.db, 'audition:' + voice, { ...audio, duration: info.duration });
   },
   async voice(args) {
-    const { job, knowledge, captures, banned } = await context(args.config, args.db, args.task), variant = variantOf(job), budgets = sectionBudgets(job.brief.seconds), voice = setting(args.db, 'voice', '');
+    const { job } = await context(args.config, args.db, args.task), variant = variantOf(job), voice = setting(args.db, 'voice', '');
     if (!voice || !setting(args.db, 'voiceApproved', false)) throw new Error('Audition and approve a voice in Settings first.');
-    const clips = {}, timings = {};
+    const clips = {}, measured = {};
     for (const section of sections) {
-      let text = variant.voiceover[section], audio, info;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        audio = await synthesize({ ...args, jobId: job.id, text, voice }); info = await probe(await safeFile(args.config.data, audio.path), args.signal);
-        if (info.duration <= budgets[section] + .04) break;
-        if (attempt === 2 || section === 'cta') throw new Error(`${section} voice exceeds its budget. Edit this line or choose a faster natural voice; the studio never accelerates speech.`);
-        const schema = z.object({ text: z.string().max(500) }).strict();
-        const rewritten = await llm({ ...args, jobId: job.id, stage: 'shorten_voice', schema, system: creativeRules + ' Shorten the line without changing its meaning or adding a claim.', input: { text, measuredSeconds: info.duration, budget: budgets[section], maximumWords: Math.max(2, Math.floor(words(text).length * budgets[section] / info.duration * .85)) }, maxOutput: 400, validate: output => copyErrors(output.text, knowledge.facts, banned) }); text = rewritten.text;
-      }
-      if (text !== variant.voiceover[section]) throw new Error(`A shorter ${section} line is available: “${text}”. Edit and approve it in Scripts before regenerating voice.`);
-      clips[section] = audio; args.progress((sections.indexOf(section) + 1) / 6, 'Measured ' + section + ' voice.');
+      const audio = await synthesize({ ...args, jobId: job.id, text: variant.voiceover[section], voice });
+      const info = await probe(await safeFile(args.config.data, audio.path), args.signal);
+      clips[section] = audio; measured[section] = info.duration;
+      args.progress((sections.indexOf(section) + 1) / 6, 'Measured ' + section + ' voice.');
     }
+    const budgets = measuredVoiceBudgets(measured, job.brief.seconds);
     const assembled = await assembleVoice(args.config, job, clips, budgets, args.signal), wordTimings = [];
     for (const section of sections) {
-      const duration = assembled.timings[section].measured, transcription = await transcribe({ ...args, jobId: job.id, audioPath: await safeFile(args.config.data, clips[section].path), duration });
+      const duration = assembled.timings[section].measured, transcription = await transcribe({ ...args, jobId: job.id, audioPath: await safeFile(args.config.data, clips[section].path), duration, text: variant.voiceover[section] });
       const expected = words(variant.voiceover[section]).map(word => word.toLowerCase().replace(/[^a-z0-9]/g, ''));
       const received = transcription.map(word => word.word.toLowerCase().replace(/[^a-z0-9]/g, ''));
       if (expected.join('') !== received.join('')) throw new Error(`Caption transcription differs from the ${section} script. Review pronunciation and regenerate this voice line.`);
@@ -265,9 +261,9 @@ export const handlers = {
     const base = setting(args.db, 'publicSite', publicBase), links = Object.fromEntries(platforms.map(platform => { const url = new URL(base); url.searchParams.set('utm_source', platform); url.searchParams.set('utm_medium', 'organic_video'); url.searchParams.set('utm_campaign', job.id); url.searchParams.set('utm_content', variant.angle + '_' + variant.hookType.replace(/[^a-z0-9_-]/gi, '-')); return [platform, url.href]; }));
     const folder = `exports/${job.id}-r${job.revision}`; await fs.mkdir(contained(args.config.data, folder), { recursive: true });
     const checklist = ['Watch the full export on a phone.', 'Confirm every photograph, person, track, effect and font is cleared for this post.', 'Set the appropriate TikTok / Instagram AI disclosure labels for synthetic voice or generated imagery.', 'Place the correct tracked destination in your bio; use each platform link separately.', 'Choose the cover and paste the approved caption.', 'Record posting date, link clicks and signups in this studio.', 'No automatic posting has occurred.'];
-    const metadata = { jobId: job.id, revision: job.revision, audience: job.brief.audience, featureId: variant.featureId, angle: variant.angle, hookType: variant.hookType, duration: final.info.duration, templates: boardOf(job).scenes.map(scene => scene.template), music: job.artifacts.music.assetId, cta: variant.ctaId, caption, links, checklist, disclosure: 'AI voice and any generated context imagery require a platform disclosure review.' };
+    const metadata = { jobId: job.id, revision: job.revision, audience: job.brief.audience, featureId: variant.featureId, angle: variant.angle, hookType: variant.hookType, duration: final.info.duration, templates: boardOf(job).scenes.map(scene => scene.template), music: job.artifacts.music.assetId, cta: variant.ctaId, caption, links, checklist, disclosure: 'AI voice and any generated imagery, including UI demo samples, require a platform disclosure review.' };
     await fs.copyFile(await safeFile(args.config.data, final.path), contained(args.config.data, folder + '/video.mp4')); await fs.copyFile(await safeFile(args.config.data, final.cover), contained(args.config.data, folder + '/cover.png'));
-    await atomicWrite(contained(args.config.data, folder + '/rights-and-provenance.json'), { assets: rights.map(({ id, name, kind, sha256, rights, license_note, metadata }) => ({ id, name, kind, sha256, rights, licenseNote: license_note, generated: Boolean(metadata.generated), consent: metadata.consent, provenance: metadata.provenance, prompt: metadata.prompt })), font: { name: 'Outfit', license: 'SIL Open Font License 1.1', licenseFile: 'Outfit-OFL.txt' }, soundEffects: job.artifacts.music.soundEffects?.length ? 'Owner-selected cleared library effects' : 'Original procedural cut hits', captures: Object.values(media).filter(asset => asset.kind === 'capture').map(({ id, appVersion, recordedOn, digest }) => ({ id, appVersion, recordedOn, digest })) });
+    await atomicWrite(contained(args.config.data, folder + '/rights-and-provenance.json'), { assets: rights.map(({ id, name, kind, sha256, rights, license_note, metadata }) => ({ id, name, kind, sha256, rights, licenseNote: license_note, generated: Boolean(metadata.generated), consent: metadata.consent, provenance: metadata.provenance, prompt: metadata.prompt })), font: { name: 'Outfit', license: 'SIL Open Font License 1.1', licenseFile: 'Outfit-OFL.txt' }, soundEffects: job.artifacts.music.soundEffects?.length ? 'Owner-selected cleared library effects' : 'Original procedural cut hits', captures: Object.values(media).filter(asset => asset.kind === 'capture').map(({ id, appVersion, recordedOn, digest, containsGeneratedSamples, generatedSampleAssetIds, sampleLabel }) => ({ id, appVersion, recordedOn, digest, containsGeneratedSamples, generatedSampleAssetIds, sampleLabel })) });
     await fs.copyFile(path.join(args.config.repo, 'client/public/veylo/fonts/event-coverage/outfit-OFL.txt'), contained(args.config.data, folder + '/Outfit-OFL.txt'));
     await atomicWrite(contained(args.config.data, folder + '/metadata.json'), metadata); await atomicWrite(contained(args.config.data, folder + '/storyboard.json'), boardOf(job)); await atomicWrite(contained(args.config.data, folder + '/caption.txt'), caption.caption + '\n\n' + caption.hashtags.join(' ') + '\n\n' + Object.entries(links).map(([platform, url]) => platform + ': ' + url).join('\n')); await atomicWrite(contained(args.config.data, folder + '/checklist.txt'), checklist.map((item, i) => `${i + 1}. ${item}`).join('\n'));
     const zip = folder + '.zip';

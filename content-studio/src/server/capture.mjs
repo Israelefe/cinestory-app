@@ -6,9 +6,11 @@ import react from '@vitejs/plugin-react';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import { readKnowledge, sourceFingerprint } from './knowledge.mjs';
-import { setting, setSetting, event } from './database.mjs';
+import { setting, setSetting, event, transaction } from './database.mjs';
+import { recordReview } from './jobs.mjs';
 import { hash, atomicWrite, safeFile, contained } from './storage.mjs';
 import { tool, run, probe, frameAt } from './media.mjs';
+import { demoAssetEligible } from './assets.mjs';
 
 export async function browserOptions() {
   const chrome = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
@@ -76,14 +78,24 @@ async function clickFirst(page, patterns) {
   }
   return false;
 }
+export function registerCaptureBatch(db, manifest, report) {
+  return transaction(db, () => {
+    const old = setting(db, 'captures', []).filter(clip => !manifest.some(next => next.id === clip.id)), combined = [...old, ...manifest];
+    setSetting(db, 'captures', combined); setSetting(db, 'captureReport', report);
+    for (const clip of manifest) recordReview(db, 'capture:' + clip.id, clip.digest, { decision: 'approved', note: 'Automatically approved after successful capture, per owner instruction on 2026-10-13.' });
+    event(db, null, 'capture.complete', `${manifest.length} clips recorded and approved automatically.`, { report });
+    return combined;
+  });
+}
 export async function captureAll({ config, db, signal, progress = () => {}, task }) {
   const knowledge = await readKnowledge(config, db), fingerprint = await sourceFingerprint();
   if (knowledge.stale) throw new Error('Refresh the knowledge pack before recording.');
-  const photos = db.prepare("SELECT * FROM assets WHERE kind='image' AND rights='cleared'").all().map(row => ({ ...row, metadata: JSON.parse(row.metadata) })).filter(photo => !photo.metadata.generated && photo.metadata.consent && photo.metadata.width >= 1080);
-  const demoVideo = db.prepare("SELECT * FROM assets WHERE kind='video' AND rights='cleared' ORDER BY created_at DESC").all().map(row => ({ ...row, metadata: JSON.parse(row.metadata) })).find(video => !video.metadata.generated && video.metadata.consent);
-  if (photos.length < 6) throw new Error('Clear at least six real sample photographs with recorded consent before automated capture. Existing generated/demo images do not count as finished client work.');
+  const photos = db.prepare("SELECT * FROM assets WHERE kind='image' AND rights='cleared'").all().map(row => ({ ...row, metadata: JSON.parse(row.metadata) })).filter(photo => demoAssetEligible(photo) && photo.metadata.width >= 1080);
+  const demoVideo = db.prepare("SELECT * FROM assets WHERE kind='video' AND rights='cleared' ORDER BY created_at DESC").all().map(row => ({ ...row, metadata: JSON.parse(row.metadata) })).find(demoAssetEligible);
+  if (photos.length < 6) throw new Error('Capture needs six cleared sample images at least 1080 pixels wide. AI-generated images are accepted; real photographs also need recorded consent.');
   const features = knowledge.features.filter(feature => feature.eligible);
   if (!features.length) throw new Error('Approve the product catalog entries to record first.');
+  const generatedSamples = photos.some(photo => photo.metadata.generated), expected = features.filter(feature => feature.id !== 'video' || demoVideo).length * 3;
   const fixtureModule = await import(pathToFileURL(path.join(config.repo, 'client/src/constants/deliveryDemoFixtures.js')).href);
   const fixture = fixtureModule.ALBUM_DEMO;
   const clientRequire = createRequire(path.join(config.repo, 'client/package.json'));
@@ -95,10 +107,17 @@ export async function captureAll({ config, db, signal, progress = () => {}, task
   try {
     for (const feature of features) {
       if (signal?.aborted) throw new Error('Cancelled.');
-      if (feature.id === 'video' && !demoVideo) { report.push({ id: 'video', error: 'Add and clear one real sample film with consent before recording video delivery.' }); continue; }
+      if (feature.id === 'video' && !demoVideo) { report.push({ id: 'video', skipped: true, note: 'Video delivery was skipped because no cleared sample clip is available. Photo recordings can be used now.' }); continue; }
       for (const treatment of ['opening', 'interaction', 'gallery']) {
         const id = feature.id.replaceAll(':', '-') + '-' + treatment, folder = contained(config.data, 'temp/capture-' + id); await fs.mkdir(folder, { recursive: true });
-        const context = await browser.newContext({ viewport: { width: 540, height: 960 }, deviceScaleFactor: 2, recordVideo: { dir: folder, size: { width: 720, height: 1280 } }, serviceWorkers: 'block', acceptDownloads: false });
+        const context = await browser.newContext({ viewport: { width: 540, height: 960 }, deviceScaleFactor: 2, recordVideo: { dir: folder, size: { width: 540, height: 960 } }, serviceWorkers: 'block', acceptDownloads: false });
+        if (generatedSamples || feature.id === 'video' && demoVideo?.metadata.generated) await context.addInitScript(() => {
+          document.addEventListener('DOMContentLoaded', () => {
+            const label = document.createElement('div'); label.textContent = 'AI-generated demo samples'; label.dataset.studioDemoLabel = 'true';
+            Object.assign(label.style, { position: 'fixed', bottom: '12px', left: '12px', zIndex: '2147483647', padding: '6px 10px', borderRadius: '5px', background: 'rgba(7,7,9,.85)', color: '#fff', font: '12px/1.4 sans-serif', pointerEvents: 'none' });
+            document.body.append(label);
+          }, { once: true });
+        });
         const api = demoApi({ origin, photos, fixture }), used = new Set(), unsupported = new Set(); let photoIndex = 0;
         await context.route('**/*', async route => {
           const request = route.request(), url = new URL(request.url());
@@ -162,16 +181,18 @@ export async function captureAll({ config, db, signal, progress = () => {}, task
         // DOM boxes are recorded in viewport coordinates; scale to the actual encoded clip.
         const scaled = targets.filter(target => target.at >= clipStart && target.at <= clipStart + info.duration).map(target => ({ ...target, at: Math.max(0, target.at - clipStart), box: Object.fromEntries(Object.entries(target.box).map(([key, value]) => [key, value * info.width / 540])) }));
         const data = { id, featureId: feature.id, flow: treatment, screen: feature.route, description: `${feature.name}: ${treatment} in the real frontend, using local rehearsed demo data.`, path: relative, duration: info.duration, fps: info.fps, width: info.width, height: info.height, targets: scaled, safeCrop: { x: 0, y: 0, width: info.width, height: info.height }, recordedOn: new Date().toISOString(), sourceDigest: fingerprint.digest, appVersion: fingerprint.digest, assetIds: [...used], benchmarkEligible: false, mode: 'local-rehearsal' };
+        data.generatedSampleAssetIds = [...used].filter(id => (id === demoVideo?.id ? demoVideo : photos.find(photo => photo.id === id))?.metadata.generated);
+        data.containsGeneratedSamples = data.generatedSampleAssetIds.length > 0;
+        data.sampleLabel = generatedSamples || feature.id === 'video' && demoVideo?.metadata.generated ? 'AI-generated demo samples' : null;
+        if (data.containsGeneratedSamples) data.description += ' Includes AI-generated demo samples, not client photographs.';
         data.reference = { id: id + '-screen', path: reference, description: data.description };
         data.digest = hash(data); manifest.push(data);
-        progress(manifest.length / (features.length * 3), 'Recorded ' + feature.name + ' / ' + treatment + '.');
+        progress(manifest.length / expected, 'Recorded ' + feature.name + ' / ' + treatment + '.');
       }
     }
-    const old = setting(db, 'captures', []).filter(clip => !manifest.some(next => next.id === clip.id));
-    setSetting(db, 'captures', [...old, ...manifest]); setSetting(db, 'captureReport', { entries: report, recorded: manifest.length, expected: features.length * 3, createdAt: new Date().toISOString() });
-    await atomicWrite(contained(config.data, 'captures/manifest.json'), [...old, ...manifest]);
-    await atomicWrite(contained(config.data, 'knowledge/ui-reference/index.json'), [...old, ...manifest].filter(clip => clip.reference).map(clip => ({ ...clip.reference, captureId: clip.id, appVersion: clip.appVersion })));
-    event(db, null, 'capture.complete', `${manifest.length} clips recorded. Review each before use.`, { report });
+    const combined = registerCaptureBatch(db, manifest, { entries: report, recorded: manifest.length, expected, planned: features.length * 3, createdAt: new Date().toISOString() });
+    await atomicWrite(contained(config.data, 'captures/manifest.json'), combined);
+    await atomicWrite(contained(config.data, 'knowledge/ui-reference/index.json'), combined.filter(clip => clip.reference).map(clip => ({ ...clip.reference, captureId: clip.id, appVersion: clip.appVersion })));
     if (report.some(item => item.error)) throw new Error(`Recorded ${manifest.length} clips; ${report.filter(item => item.error).length} capture recipes need attention. Successful clips were saved. See capture report.`);
   } finally { signal?.removeEventListener('abort', stop); await browser.close(); await vite.close(); }
 }

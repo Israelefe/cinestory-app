@@ -49,11 +49,11 @@ export async function structured({ config, db, jobId, stage, schema, system, inp
   if (!rates) throw new Error('Verify this model’s official price and capabilities in config before using it.');
   if (images.length && !rates.vision) throw new Error('The selected model is text-only. Select a verified vision model for image review.');
   if (images.length > 3) throw new Error('A vision request can contain at most three images.');
-  let errors = [];
+  let errors = [], previousOutput, transportAttempt = 0;
   const rawInput = JSON.stringify(input);
   if (Object.values(keys).some(value => value.length > 8 && rawInput.includes(value)) || /\bgsk_[A-Za-z0-9_-]+\b|\b(?:Bearer|Token)\s+[A-Za-z0-9_-]{20,}/i.test(rawInput)) throw new Error('Remove credentials from the job notes or media metadata before generation.');
   for (let attempt = 0; attempt < 3; attempt++) {
-    const text = JSON.stringify({ input, validatorErrors: errors });
+    const text = JSON.stringify({ input, validatorErrors: errors, ...(errors.length ? { previousOutput, repairInstruction: 'Correct the previous output using every validator error. Return the complete corrected JSON. Preserve fields that already pass.' } : {}) });
     const responseSchema = jsonSchema(schema);
     // Conservative text estimate; actual usage is recorded after the call.
     const estimate = Math.ceil((system.length + text.length + JSON.stringify(responseSchema).length) / 3) + images.length * 2048 + maxOutput;
@@ -70,17 +70,30 @@ export async function structured({ config, db, jobId, stage, schema, system, inp
     if (headerTokens > 0) setSetting(db, 'groqLimits', { ...providerDefaults.groq, ...setting(db, 'groqLimits', {}), tpm: headerTokens, ...(headerRequests > 0 ? { rpd: headerRequests } : {}), verifiedAt: new Date().toISOString() });
     if (!response.ok) {
       db.prepare("UPDATE provider_calls SET state='released',actual=0 WHERE id=?").run(cost);
-      if (response.status === 429 && attempt < 2) { progress?.(undefined, 'Groq asked the studio to wait before retrying.'); await sleep(Math.min(120000, Math.max(1000, Number(response.headers.get('retry-after') || 60) * 1000)), signal); continue; }
+      if ([429, 500, 502, 503, 504].includes(response.status) && transportAttempt < 2) {
+        transportAttempt++;
+        const retryAfter = response.headers.get('retry-after'), seconds = Number(retryAfter);
+        const headerWait = retryAfter ? Number.isFinite(seconds) ? seconds * 1000 : Date.parse(retryAfter) - Date.now() : 0;
+        const backoff = response.status === 429 ? 60000 : 1000 * 2 ** (transportAttempt - 1);
+        const wait = Math.max(backoff, Number.isFinite(headerWait) ? headerWait : 0);
+        progress?.(undefined, response.status === 429 ? 'Groq asked the studio to wait before retrying.' : 'Groq is temporarily unavailable. Retrying the same request.');
+        await sleep(wait, signal); attempt--; continue;
+      }
+      if (response.status >= 500) throw new Error(`Groq is temporarily unavailable (${response.status}). Retry this stage shortly; your saved settings are unchanged.`);
+      if (response.status === 401) throw new Error('Groq rejected the API key (401). Check the saved key in Settings.');
+      if (response.status === 429) throw new Error('Groq rate limits were reached (429). Wait before retrying, and check the recorded account limits.');
       throw new Error(`Groq refused this request (${response.status}). Check the model, account limits and credentials in Settings.`);
     }
+    transportAttempt = 0;
     const result = await response.json();
     const usage = result.usage || {};
     settleCost(db, cost, (usage.prompt_tokens || estimate - maxOutput) * inputRate / 1e6 + (usage.completion_tokens || maxOutput) * outputRate / 1e6, { model, usage });
     let parsed;
-    try { parsed = schema.parse(JSON.parse(result.choices?.[0]?.message?.content || '{}')); errors = validate(parsed); }
+    previousOutput = result.choices?.[0]?.message?.content || '{}';
+    try { previousOutput = JSON.parse(previousOutput); parsed = schema.parse(previousOutput); errors = validate(parsed); }
     catch (error) { errors = [redact(error.message).slice(0, 3000)]; }
     const scrub = value => typeof value === 'string' ? redact(value) : Array.isArray(value) ? value.map(scrub) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, /secret|password|api.?key|authorization/i.test(key) ? '[redacted]' : scrub(item)])) : value;
-    const log = scrub({ stage, attempt, model, reasoning, seed: null, system, input, output: parsed || result.choices?.[0]?.message?.content, errors, usage, createdAt: new Date().toISOString() });
+    const log = scrub({ stage, attempt, model, reasoning, seed: null, system, request: JSON.parse(text), input, output: parsed || result.choices?.[0]?.message?.content, errors, usage, createdAt: new Date().toISOString() });
     await atomicWrite(path.join(config.data, 'jobs', jobId || 'calibration', 'calls', cost + '.json'), log);
     event(db, jobId, 'validation', errors.length ? `${stage}: ${errors.length} validation errors.` : `${stage}: validation passed.`, { attempt, model, errors });
     if (!errors.length) return parsed;

@@ -4,6 +4,10 @@ import { credentials, reserveCost, settleCost, sleep } from './groq.mjs';
 import { providerDefaults } from '../server/config.mjs';
 import { atomicWrite, hash } from '../server/storage.mjs';
 
+export function clipCaptionTail(words, duration) {
+  return words.map((word, index) => index === words.length - 1 && Number.isFinite(word.end) && Number.isFinite(word.start) && word.start < duration && word.end > duration && word.end <= duration + .5 ? { ...word, end: duration } : word);
+}
+
 export async function synthesize({ config, db, jobId, text, voice, signal }) {
   const key = (await credentials(config)).deepgram;
   if (!key) throw new Error('Add your Deepgram API key in Settings.');
@@ -29,13 +33,13 @@ export async function synthesize({ config, db, jobId, text, voice, signal }) {
     await atomicWrite(target, buffer); return { path: relative, digest };
   }
 }
-export async function transcribe({ config, db, jobId, audioPath, duration, signal }) {
+export async function transcribe({ config, db, jobId, audioPath, duration, text = '', signal }) {
   const key = (await credentials(config)).groq;
   if (!key) throw new Error('Add your Groq API key in Settings.');
   const form = new FormData();
   form.set('file', new Blob([await fs.readFile(audioPath)], { type: 'audio/wav' }), 'narration.wav');
   form.set('model', providerDefaults.stt.model); form.set('response_format', 'verbose_json'); form.append('timestamp_granularities[]', 'word'); form.set('language', 'en'); form.set('temperature', '0');
-  form.set('prompt', 'Veylo. Photo Story. Nigerian photographers and media studios.');
+  form.set('prompt', 'Veylo. Photo Story. Nigerian photographers and media studios. ' + text);
   let response, cost;
   for (let attempt = 0; attempt < 3; attempt++) {
     cost = reserveCost(db, jobId, 'groq-whisper', 'captions', Math.max(10, duration) / 3600 * .04);
@@ -48,9 +52,11 @@ export async function transcribe({ config, db, jobId, audioPath, duration, signa
   }
   const result = await response.json(); settleCost(db, cost, Math.max(10, duration) / 3600 * .04, { model: providerDefaults.stt.model, duration });
   if (!Array.isArray(result.words) || !result.words.length) throw new Error('The transcription contained no word timings.');
+  const rawWords = result.words;
+  result.words = clipCaptionTail(rawWords, duration);
   let last = 0; const errors = [];
   for (const word of result.words) { if (!Number.isFinite(word.start) || !Number.isFinite(word.end) || typeof word.word !== 'string' || word.start < last || word.end < word.start || word.end > duration + .2) errors.push('Caption timestamps are invalid.'); last = word.end; }
-  await atomicWrite(path.join(config.data, 'jobs', jobId || 'auditions', 'calls', cost + '.json'), { provider: 'groq-whisper', model: providerDefaults.stt.model, stage: 'captions', audioDigest: hash(await fs.readFile(audioPath)), duration, output: result.words, errors: [...new Set(errors)], cost: Math.max(10, duration) / 3600 * .04, createdAt: new Date().toISOString() });
+  await atomicWrite(path.join(config.data, 'jobs', jobId || 'auditions', 'calls', cost + '.json'), { provider: 'groq-whisper', model: providerDefaults.stt.model, stage: 'captions', audioDigest: hash(await fs.readFile(audioPath)), duration, rawOutput: rawWords, output: result.words, errors: [...new Set(errors)], cost: Math.max(10, duration) / 3600 * .04, createdAt: new Date().toISOString() });
   if (errors.length) throw new Error('Caption timestamps are invalid.');
   return result.words;
 }

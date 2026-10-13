@@ -24,7 +24,7 @@ export function createJob(db, brief) {
 export function saveStage(db, job, stage, data, state) {
   if (db.prepare('SELECT revision FROM jobs WHERE id=?').get(job.id).revision !== job.revision) throw new Error('This job changed. The old result was discarded.');
   const digest = hash(data); artifact(db, job, stage, data, digest);
-  db.prepare('UPDATE jobs SET state=?,updated_at=?,error=NULL WHERE id=?').run(state || job.state, Date.now(), job.id);
+  db.prepare('UPDATE jobs SET state=COALESCE(?,state),updated_at=?,error=NULL WHERE id=?').run(state || null, Date.now(), job.id);
   return digest;
 }
 export function revise(db, id, from, changes = {}, keepTaskId = '') {

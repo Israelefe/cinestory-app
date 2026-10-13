@@ -1,4 +1,4 @@
 @echo off
 cd /d "%~dp0"
 node scripts/start.mjs --open
-pause
+if errorlevel 1 pause

@@ -15,7 +15,7 @@ import { briefSchema, reviewSchema, credentialsSchema, rightsSchema, storyboardS
 import { getJob, createJob, saveStage, revise, approved, recordReview } from './jobs.mjs';
 import { capturesFor, handlers, validateEditedScripts } from './pipeline.mjs';
 import { credentials } from '../providers/groq.mjs';
-import { assetRecord, storeImage } from './assets.mjs';
+import { assetRecord, storeImage, acceptOwnerUpload } from './assets.mjs';
 import { storeMedia } from './media.mjs';
 import { startWorker } from './worker.mjs';
 import { validateStoryboard } from '../contracts/validators.mjs';
@@ -26,10 +26,12 @@ const approvalActions = new Set(['preview', 'final']);
 const metricsSchema = z.object({ postedAt: z.string().max(40).default(''), views: z.number().int().min(0).max(1e12).default(0), likes: z.number().int().min(0).max(1e12).default(0), saves: z.number().int().min(0).max(1e12).default(0), profileClicks: z.number().int().min(0).max(1e12).default(0), linkClicks: z.number().int().min(0).max(1e12).default(0), signups: z.number().int().min(0).max(1e12).default(0), notes: z.string().max(2000).default('') }).strict();
 function multipart(req) {
   return new Promise((resolve, reject) => {
-    const parser = busboy({ headers: req.headers, limits: { files: 1, fileSize: 250 * 1024 * 1024, fields: 0, parts: 1 } });
+    // Busboy emits partsLimit when the limit is reached, including a valid last part.
+    // Allow the next boundary to be inspected; file/field limits still enforce one file only.
+    const parser = busboy({ headers: req.headers, limits: { files: 1, fileSize: 250 * 1024 * 1024, fields: 0, parts: 2 } });
     let file, chunks = [], size = 0, truncated = false;
     parser.on('file', (field, stream, info) => { file = info; stream.on('data', data => { size += data.length; chunks.push(data); }); stream.on('limit', () => { truncated = true; }); stream.on('error', reject); });
-    parser.on('filesLimit', () => { truncated = true; }); parser.on('partsLimit', () => { truncated = true; }); parser.on('error', reject);
+    parser.on('filesLimit', () => { truncated = true; }); parser.on('fieldsLimit', () => { truncated = true; }); parser.on('partsLimit', () => { truncated = true; }); parser.on('error', reject);
     parser.on('close', () => !file || truncated ? reject(new Error('Upload one file under 250 MB at a time.')) : resolve({ ...file, buffer: Buffer.concat(chunks, size) }));
     req.on('aborted', () => reject(new Error('Upload interrupted.'))); req.pipe(parser);
   });
@@ -73,7 +75,11 @@ export async function createStudio(overrides = {}) {
     const input = z.object({ credentials: credentialsSchema.optional(), limits: z.object({ rpm: z.number().int().min(1).max(10000), rpd: z.number().int().min(1).max(1e9), tpm: z.number().int().min(1000).max(1e8), tpd: z.number().int().min(1000).max(1e10) }).strict().optional(), model: z.string().regex(/^[a-zA-Z0-9/_.-]{1,100}$/).optional(), reasoning: z.enum(['none', 'low', 'medium', 'high', 'default']).optional(), setup: z.object({ limitsConfirmed: z.boolean(), soloLicense: z.boolean(), imageSurface: z.string().max(200), imageModel: z.string().max(200), imagePlan: z.string().max(200), imageQuota: z.string().max(200), visibleWatermark: z.boolean() }).strict().optional(), voiceApproved: z.boolean().optional(), visionThreshold: z.number().min(0).max(5).optional(), publicSite: z.string().url().optional() }).strict().parse(req.body);
     if (input.credentials) { const old = await credentials(config), next = { groq: input.credentials.groq || old.groq, deepgram: input.credentials.deepgram || old.deepgram }; await atomicWrite(path.join(config.data, 'credentials.json'), next); if (input.credentials.groq && input.credentials.groq !== old.groq) { setSetting(db, 'providerProbe', null); setSetting(db, 'fallbackProbe', null); } if (input.credentials.voice !== undefined) { if (input.credentials.voice !== setting(db, 'voice', '')) setSetting(db, 'voiceApproved', false); setSetting(db, 'voice', input.credentials.voice); } if (input.credentials.jobCap || input.credentials.dayCap) setSetting(db, 'caps', { ...setting(db, 'caps', providerDefaults.caps), ...(input.credentials.jobCap ? { job: input.credentials.jobCap } : {}), ...(input.credentials.dayCap ? { day: input.credentials.dayCap } : {}) }); }
     if (input.limits) setSetting(db, 'groqLimits', { ...providerDefaults.groq, ...input.limits, recordedAt: new Date().toISOString() });
-    if (input.model || input.reasoning) { setSetting(db, 'models', { ...setting(db, 'models', providerDefaults.groq), ...(input.model ? { model: input.model } : {}), ...(input.reasoning ? { reasoning: input.reasoning } : {}) }); setSetting(db, 'providerProbe', null); }
+    if (input.model || input.reasoning) {
+      const previous = setting(db, 'models', providerDefaults.groq), next = { ...previous, ...(input.model ? { model: input.model } : {}), ...(input.reasoning ? { reasoning: input.reasoning } : {}) };
+      setSetting(db, 'models', next);
+      if (next.model !== previous.model || next.reasoning !== previous.reasoning) setSetting(db, 'providerProbe', null);
+    }
     for (const key of ['setup', 'visionThreshold']) if (input[key] !== undefined) setSetting(db, key, input[key]);
     if (input.voiceApproved !== undefined) { if (input.voiceApproved && !setting(db, 'audition:' + setting(db, 'voice', ''))) throw new Error('Listen to an audition before approving the voice.'); setSetting(db, 'voiceApproved', input.voiceApproved); }
     if (input.publicSite) { const url = new URL(input.publicSite); if (url.protocol !== 'https:' || !/^(?:www\.)?veylo\.(?:com\.ng|co|app|com)$/.test(url.hostname) || url.username || url.password || url.port) throw new Error('Use the public HTTPS Veylo site address.'); setSetting(db, 'publicSite', url.origin); }
@@ -98,7 +104,7 @@ export async function createStudio(overrides = {}) {
     let asset;
     if (options.kind === 'image') asset = await storeImage(config, db, uploaded.buffer, details);
     else { const id = await storeMedia(config, db, uploaded.buffer, { ...details, kind: options.kind }); asset = assetRecord(db.prepare('SELECT * FROM assets WHERE id=?').get(id)); }
-    res.json(asset);
+    res.json(acceptOwnerUpload(db, asset));
   }));
   app.get('/api/assets/:id/media', asyncRoute(async (req, res) => { const row = db.prepare('SELECT path FROM assets WHERE id=?').get(idSchema.parse(req.params.id)); if (!row) return res.sendStatus(404); res.sendFile(await safeFile(config.data, row.path)); }));
   app.put('/api/assets/:id/rights', (req, res, next) => { try { const input = rightsSchema.parse(req.body), asset = assetRecord(db.prepare('SELECT * FROM assets WHERE id=?').get(idSchema.parse(req.params.id))); if (!asset) throw new Error('Asset not found.'); if (asset.metadata.generated && !input.generated) throw new Error('Generated provenance cannot be removed.'); if (['image', 'video'].includes(asset.kind) && input.rights === 'cleared' && !input.generated && !input.consent) throw new Error('Confirm consent for identifiable people, or confirm this asset contains none.'); db.prepare('UPDATE assets SET rights=?,license_note=?,metadata=? WHERE id=?').run(input.rights, input.licenseNote, JSON.stringify({ ...asset.metadata, generated: input.generated, consent: input.consent, rightsReviewedAt: new Date().toISOString() }), asset.id); event(db, null, 'rights.reviewed', 'Asset rights reviewed.', { assetId: asset.id, rights: input.rights }); res.json({ ok: true }); } catch (error) { next(error); } });
@@ -135,7 +141,11 @@ export async function createStudio(overrides = {}) {
     if (request.use === 'finished_work' && asset.metadata.generated) throw new Error('Choose real cleared work for this slot. Generated media belongs in context scenes.');
     const entry = slots[slotId] || { attempts: 0 }; if (entry.attempts >= 3 && asset.metadata.generated) throw new Error('Three attempts reached. Change the scene or choose a cleared library asset.');
     slots[slotId] = { ...entry, assetId, attempts: entry.attempts + 1, vision: null, review: 'pending' };
-    job = revise(db, job.id, 'slots', { slots: { slots } }); db.prepare("UPDATE jobs SET state='images_requested' WHERE id=?").run(job.id); res.json(getJob(db, job.id));
+    if (asset.metadata.ownerSelected && asset.rights === 'cleared') {
+      slots[slotId].review = 'approved';
+      recordReview(db, 'slot:' + job.id + ':' + slotId, hash({ asset: asset.sha256, prompt: request.prompt, rubric: null }), { decision: 'approved', note: 'Owner selected this upload for the scene. No separate rights form or media approval required.' });
+    }
+    job = revise(db, job.id, 'slots', { slots: { slots } }); db.prepare("UPDATE jobs SET state=? WHERE id=?").run(board.requests.every(request => slots[request.id]?.review === 'approved') ? 'images_ready' : 'images_requested', job.id); res.json(getJob(db, job.id));
   } catch (error) { next(error); } });
   app.post('/api/jobs/:id/slots/:slotId/review', (req, res, next) => { try {
     const job = getJob(db, req.params.id), review = reviewSchema.parse(req.body), slotId = req.params.slotId, entry = job.artifacts.slots?.slots?.[slotId], request = job.artifacts.storyboard?.board.requests.find(item => item.id === slotId), asset = assetRecord(db.prepare('SELECT * FROM assets WHERE id=?').get(entry?.assetId));
