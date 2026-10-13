@@ -12,9 +12,11 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
   const playIntent = useRef(false); const mediaRecovery = useRef(false);
   const suspended = useRef(false);
   const sourceOpenedAt = useRef(0);
+  const bufferHold = useRef({ active: false, target: 0, count: 0, at: 0 });
   const progress = useRef({ at: Date.now(), position: 0, buffered: 0 });
   const [loading, setLoading] = useState(false); const [error, setError] = useState(''); const [started, setStarted] = useState(false);
   const [paused, setPaused] = useState(true); const [position, setPosition] = useState(0);
+  const [buffering, setBuffering] = useState(false);
   const installSource = useCallback(async (url, { resumeAt = 0, play = false, generationId } = {}) => {
     const video = element.current; if (!video || generationId !== generation.current) return;
     restoreCleanup.current?.(); clearTimeout(recovery.current.timer);
@@ -22,6 +24,7 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
     mediaRecovery.current = false;
     suspended.current = false;
     sourceOpenedAt.current = Date.now();
+    bufferHold.current.active = false; setBuffering(false);
     hls.current?.destroy(); hls.current = null;
     const restore = () => {
       if (generationId !== generation.current) return;
@@ -51,11 +54,12 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
             return;
           }
           if (data.type === Hls.ErrorTypes.MEDIA_ERROR && recovery.current.media++ < 2) { mediaRecovery.current = true; player.recoverMediaError(); return; }
+          bufferHold.current.active = false; setBuffering(false);
           playIntent.current = false; video.pause(); setLoading(false); setError('The film could not continue. Check your connection and try again.');
         });
         player.on(Hls.Events.FRAG_BUFFERED, () => { if (hls.current === player) recovery.current.network = 0; });
         player.on(Hls.Events.MEDIA_ATTACHED, () => {
-          if (hls.current === player && mediaRecovery.current && playIntent.current && !document.hidden) void video.play().catch(() => {});
+          if (hls.current === player && mediaRecovery.current && playIntent.current && !bufferHold.current.active && !document.hidden) void video.play().catch(() => {});
         });
         player.loadSource(url); player.attachMedia(video);
       }
@@ -99,7 +103,7 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
       nextRenewAt.current = Date.now() + Math.max(15_000, Math.min((media.renewAfterSeconds || remaining / 2000) * 1000, remaining - 60_000));
       if (previousSession?.sessionId && previousSession.sessionId !== media.sessionId) void endPlayback?.(previousSession.sessionId)?.catch(() => {});
       if (forceReload || sourceId.current !== item.id || sourceUrl.current !== media.hlsUrl) {
-        const continuePlaying = shouldPlay || renew && !element.current?.paused;
+        const continuePlaying = shouldPlay || renew && playIntent.current;
         await installSource(media.hlsUrl, { resumeAt: sourceId.current === item.id ? element.current?.currentTime || resumeAt : resumeAt, play: continuePlaying && !document.hidden, generationId });
       } else if (shouldPlay && !document.hidden) { void element.current?.play().catch(() => setPaused(true)); }
       if (generationId === generation.current) setStarted(true);
@@ -109,6 +113,7 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
         if (renew && !forceReload && (!failure.response || failure.response.status >= 500) && new Date(session.current?.expiresAt).getTime() > Date.now() + 15_000) {
           nextRenewAt.current = Date.now() + 15_000; return;
         }
+        bufferHold.current.active = false; setBuffering(false);
         playIntent.current = false; element.current?.pause(); setLoading(false); setError(failure.response?.data?.message || failure.message || 'This film could not be opened. Please try again.');
       }
     } finally { if (generationId === generation.current) renewing.current = false; }
@@ -116,7 +121,7 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
   useEffect(() => {
     const video = element.current;
     return () => {
-      generation.current++; request.current?.abort(); hls.current?.destroy(); video?.pause();
+      generation.current++; bufferHold.current.active = false; request.current?.abort(); hls.current?.destroy(); video?.pause();
       clearTimeout(recovery.current.timer); restoreCleanup.current?.();
       renewing.current = false; playIntent.current = false; sourceId.current = ''; sourceUrl.current = ''; nextRenewAt.current = Infinity;
       const previousSession = session.current; session.current = null;
@@ -129,6 +134,28 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
     queueMicrotask(() => { if (active && autoPlay && !document.hidden) void start(); });
     return () => { active = false; };
   }, [autoPlay, start]);
+  useEffect(() => {
+    if (!buffering) return;
+    const generationId = generation.current;
+    const timer = setInterval(() => {
+      const video = element.current; const hold = bufferHold.current;
+      if (!video || !hold.active || !playIntent.current || document.hidden || generationId !== generation.current) return;
+      let ahead = 0;
+      for (let index = 0; index < video.buffered.length; index++) {
+        if (video.buffered.start(index) <= video.currentTime && video.buffered.end(index) > video.currentTime) {
+          ahead = video.buffered.end(index) - video.currentTime; break;
+        }
+      }
+      const remaining = Number.isFinite(video.duration) ? video.duration - video.currentTime : Infinity;
+      if (video.readyState < 3 || ahead + .1 < Math.min(hold.target, remaining)) return;
+      hold.active = false; setBuffering(false);
+      void video.play().catch(failure => {
+        if (generationId !== generation.current || failure.name === 'AbortError' || video.error) return;
+        playIntent.current = false; setLoading(false); setPaused(true);
+      });
+    }, 250);
+    return () => clearInterval(timer);
+  }, [buffering]);
   useEffect(() => {
     if (!loading) return;
     const received = new WeakMap();
@@ -148,6 +175,7 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
       if (!hls.current && video?.readyState === 0 && video.networkState === 2 && Date.now() - sourceOpenedAt.current < 120_000) return;
       if (Date.now() - progress.current.at < 30_000) return;
       generation.current++; request.current?.abort(); renewing.current = false; sourceId.current = '';
+      bufferHold.current.active = false; setBuffering(false);
       playIntent.current = false; mediaRecovery.current = false;
       sourceUrl.current = ''; clearTimeout(recovery.current.timer); restoreCleanup.current?.();
       hls.current?.destroy(); hls.current = null;
@@ -158,9 +186,9 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
   }, [loading]);
   useEffect(() => {
     const timer = setInterval(() => {
-      if (!element.current?.paused && !document.hidden && session.current?.sessionId && Date.now() >= nextRenewAt.current) void start({ renew: true, shouldPlay: false });
+      if ((!element.current?.paused || bufferHold.current.active) && playIntent.current && !document.hidden && session.current?.sessionId && Date.now() >= nextRenewAt.current) void start({ renew: true, shouldPlay: false });
     }, 15_000);
-    const hidden = () => { if (document.hidden) { playIntent.current = false; mediaRecovery.current = false; clearTimeout(recovery.current.timer); hls.current?.stopLoad(); suspended.current = Boolean(hls.current); element.current?.pause(); setLoading(false); } };
+    const hidden = () => { if (document.hidden) { bufferHold.current.active = false; setBuffering(false); playIntent.current = false; mediaRecovery.current = false; clearTimeout(recovery.current.timer); hls.current?.stopLoad(); suspended.current = Boolean(hls.current); element.current?.pause(); setPaused(true); setLoading(false); } };
     document.addEventListener('visibilitychange', hidden);
     return () => { clearInterval(timer); document.removeEventListener('visibilitychange', hidden); };
   }, [start]);
@@ -171,7 +199,25 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
       progress.current = { at: Date.now(), position: video.currentTime, buffered };
     }
   };
-  const toggle = () => { if (element.current?.paused) void start(); else { playIntent.current = false; mediaRecovery.current = false; element.current?.pause(); } };
+  const waiting = () => {
+    const video = element.current;
+    if (error || !video) return;
+    if (!loading) progress.current.at = Date.now();
+    setLoading(true);
+    // Keep the fast first-frame path. After a real HLS underrun, retain play
+    // intent while filling a short reserve rather than restarting on each chunk.
+    // Native preload can stop while paused, so its browser owns rebuffering.
+    if (!hls.current || !playIntent.current || video.paused || video.currentTime < .3 || bufferHold.current.active) return;
+    const hold = bufferHold.current;
+    hold.count = Date.now() - hold.at < 30_000 ? Math.min(hold.count + 1, 3) : 1;
+    hold.at = Date.now(); hold.target = (original ? 3 : 1.5) * hold.count;
+    hold.active = true; setBuffering(true); video.pause();
+  };
+  const toggle = () => {
+    if (bufferHold.current.active) { bufferHold.current.active = false; setBuffering(false); playIntent.current = false; mediaRecovery.current = false; hls.current?.stopLoad(); suspended.current = Boolean(hls.current); setPaused(true); setLoading(false); }
+    else if (element.current?.paused) void start();
+    else { playIntent.current = false; mediaRecovery.current = false; element.current?.pause(); }
+  };
   const mediaError = () => {
     if (hls.current || !element.current?.getAttribute('src')) return;
     const code = element.current.error?.code;
@@ -184,17 +230,17 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
     playIntent.current = false; setLoading(false); setError(original && code === 4 ? 'This browser cannot play the original format. Ask your photographer for a compatible MP4 or adaptive playback.' : 'This film could not play. Check your connection and try again.');
   };
   return <div className={'vv-playback' + (portrait ? ' is-vertical' : '')}>
-    <video ref={element} controls={started && !portrait} controlsList="nodownload" playsInline preload="auto" muted={muted} poster={videoMediaUrl(item.posterUrl)} aria-label={item.title}
-      onClick={portrait ? toggle : undefined} onWaiting={() => { if (!error) { if (!loading) progress.current.at = Date.now(); setLoading(true); } }} onCanPlay={() => setLoading(false)} onProgress={() => { progress.current.at = Date.now(); noteProgress(); }}
-      onPlaying={() => { mediaRecovery.current = false; nativeFailures.current = 0; setLoading(false); setError(''); setPaused(false); }} onPause={() => { if (!mediaRecovery.current && !element.current?.error) { playIntent.current = false; setLoading(false); } setPaused(true); }}
+    <video ref={element} controls={started && !portrait && !buffering} controlsList="nodownload" playsInline preload="auto" muted={muted} poster={videoMediaUrl(item.posterUrl)} aria-label={item.title}
+      onClick={portrait ? toggle : undefined} onWaiting={waiting} onCanPlay={() => { if (!bufferHold.current.active) setLoading(false); }} onProgress={() => { progress.current.at = Date.now(); noteProgress(); }}
+      onPlaying={() => { if (bufferHold.current.active) return; mediaRecovery.current = false; nativeFailures.current = 0; setLoading(false); setError(''); setPaused(false); }} onPause={() => { if (bufferHold.current.active) return; if (!mediaRecovery.current && !element.current?.error) { playIntent.current = false; setLoading(false); } setPaused(true); }}
       onVolumeChange={() => onMutedChange?.(Boolean(element.current?.muted))}
       onTimeUpdate={() => { noteProgress(); setPosition(element.current?.currentTime || 0); }} onEnded={() => { playIntent.current = false; setPaused(true); setLoading(false); }}
-      onPlay={() => { playIntent.current = true; if (suspended.current) { suspended.current = false; hls.current?.startLoad(); } setPaused(false); if (session.current?.sessionId && Date.now() >= nextRenewAt.current) void start({ renew: true, shouldPlay: false }); }}
+      onPlay={() => { bufferHold.current.active = false; setBuffering(false); playIntent.current = true; if (suspended.current) { suspended.current = false; hls.current?.startLoad(); } setPaused(false); if (session.current?.sessionId && Date.now() >= nextRenewAt.current) void start({ renew: true, shouldPlay: false }); }}
       onError={mediaError} />
     {(!started || (portrait && paused)) && !loading && !error && <button className="vv-play" type="button" onClick={() => start()} aria-label={started ? 'Resume film' : 'Play film'}><span><Play size={26} fill="currentColor" /></span>{!portrait && <small>{started ? 'Resume film' : 'Play film'}</small>}</button>}
-    {loading && <span className="vv-buffer" role="status"><RefreshCw className="v-spin" size={20} />{started ? 'Loading film…' : 'Opening film…'}</span>}
+    {loading && <div className="vv-buffer" role="status"><RefreshCw className="v-spin" size={20} /><span>{started ? 'Loading film…' : 'Opening film…'}</span>{buffering && <button type="button" onClick={toggle} aria-label="Pause buffering" title="Pause buffering"><Pause size={16} /></button>}</div>}
     {error && <div className="vv-error" role="alert"><p>{error}</p><button type="button" onClick={() => { void start({ renew: Boolean(session.current), forceReload: true }); }}><RefreshCw size={16} />Try again</button></div>}
-    {item.hasAudio !== false && muted && started && <button className="vv-sound" type="button" onClick={() => { if (element.current) { element.current.muted = false; void element.current.play().catch(() => setPaused(true)); } onMutedChange?.(false); }}><VolumeX size={16} />Enable sound</button>}
+    {item.hasAudio !== false && muted && started && <button className="vv-sound" type="button" onClick={() => { if (element.current) { element.current.muted = false; if (!bufferHold.current.active) void element.current.play().catch(() => setPaused(true)); } onMutedChange?.(false); }}><VolumeX size={16} />Enable sound</button>}
     {portrait && started && <div className="vv-reel-controls">
       <input className="vv-seek" type="range" min="0" max={item.duration || 1} step="0.1" value={Math.min(position, item.duration || 1)} aria-label="Seek video" onChange={event => { if (element.current) element.current.currentTime = Number(event.target.value); setPosition(Number(event.target.value)); }} />
       <div><button type="button" onClick={toggle} aria-label={paused ? 'Play video' : 'Pause video'}>{paused ? <Play size={19} /> : <Pause size={19} />}</button><span>{videoDuration(position)} / {videoDuration(item.duration)}</span>{item.hasAudio !== false && <button type="button" onClick={() => { if (element.current) element.current.muted = !muted; onMutedChange?.(!muted); }} aria-label={muted ? 'Unmute video' : 'Mute video'}>{muted ? <VolumeX size={19} /> : <Volume2 size={19} />}</button>}<button type="button" aria-label="Full screen" onClick={() => { const video = element.current; if (video?.webkitEnterFullscreen) video.webkitEnterFullscreen(); else void video?.requestFullscreen?.()?.catch(() => {}); }}><Maximize size={18} /></button></div>

@@ -264,6 +264,88 @@ for (const scenario of [cases[4], cases[5]]) test(`${scenario.name} does not tim
   } finally { release(); for (const timer of timers) clearInterval(timer); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });
 
+for (const [scenario, action] of [[cases[0], 'resume'], [cases[0], 'renew'], [cases[1], 'pause'], [cases[1], 'hide'], [cases[2], 'resume']]) test(`${scenario.name} rebuilds a playable buffer after an underrun (${action})`, async ({ page }) => {
+  test.setTimeout(45000);
+  const fixture = new URL(`../../.visual-review/video-hls/${scenario.directory}/`, import.meta.url);
+  test.skip(!existsSync(fileURLToPath(new URL('master.m3u8', fixture))), 'Requires video fixtures.');
+  let releaseMore; let releaseRest;
+  const more = new Promise(resolve => { releaseMore = resolve; }); const rest = new Promise(resolve => { releaseRest = resolve; });
+  const server = createServer(async (request, response) => {
+    const file = new URL(request.url, 'http://localhost').pathname.slice('/__playback__/'.length);
+    if (!/^(master\.m3u8|q\d+\/(?:index\.m3u8|s\d{6}\.ts))$/.test(file)) { response.writeHead(404); response.end(); return; }
+    try {
+      const body = await readFile(new URL(file, fixture));
+      response.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': file.endsWith('.ts') ? 'video/mp2t' : 'application/vnd.apple.mpegurl', 'Content-Length': body.length });
+      if (file.endsWith('s000000.ts')) {
+        const first = Math.floor(body.length * .45); const middle = Math.min(body.length - 1, Math.max(Math.floor(body.length * .55), first + 2 ** 17));
+        response.write(body.subarray(0, first)); await more;
+        if (!response.destroyed) response.write(body.subarray(first, middle));
+        await rest; if (!response.destroyed) response.end(body.subarray(middle));
+      } else response.end(body);
+    } catch { if (!response.destroyed) response.destroy(); }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    await page.setViewportSize({ width: 320, height: 700 });
+    const state = await setup(page, scenario, { mediaOrigin: `http://127.0.0.1:${server.address().port}` });
+    await page.unroute('**/__playback__/**');
+    if (action === 'renew') await page.clock.install();
+    await page.goto('/v/playback-check');
+    await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(.5);
+    await expect(page.getByRole('button', { name: 'Pause buffering', exact: true })).toBeVisible({ timeout: 12000 });
+    const before = await page.locator('video').evaluate(video => ({ time: video.currentTime, buffer: video.buffered.end(video.buffered.length - 1) }));
+    await page.locator('video').evaluate(video => {
+      window.rebufferStarts = [];
+      video.addEventListener('playing', () => window.rebufferStarts.push(video.buffered.end(video.buffered.length - 1) - video.currentTime));
+    });
+    expect(before.time).toBeGreaterThan(.3);
+    expect(await page.locator('video').evaluate(video => video.paused)).toBe(true);
+    const panel = await page.locator('.vv-buffer').boundingBox(); const screen = await page.locator('.vv-screen').boundingBox();
+    expect(panel.x).toBeGreaterThanOrEqual(screen.x); expect(panel.x + panel.width).toBeLessThanOrEqual(screen.x + screen.width);
+    if (action === 'renew') {
+      await page.locator('video').evaluate(video => {
+        window.rebufferLoads = [];
+        for (const event of ['emptied', 'loadstart']) video.addEventListener(event, () => window.rebufferLoads.push(event));
+      });
+      await page.clock.fastForward(16000);
+      await expect.poll(() => state.starts.length).toBe(2);
+      expect(await page.locator('video').evaluate(video => video.paused)).toBe(true);
+      expect(await page.evaluate(() => window.rebufferLoads)).toEqual([]);
+    }
+    if (action === 'pause') await page.getByRole('button', { name: 'Pause buffering', exact: true }).click();
+    if (action === 'hide') await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); document.dispatchEvent(new Event('visibilitychange')); });
+    releaseMore();
+    if (action === 'resume' || action === 'renew') {
+      await expect.poll(() => page.locator('video').evaluate(video => video.buffered.end(video.buffered.length - 1))).toBeGreaterThan(before.buffer);
+      // A few newly received frames must not cause another automatic restart.
+      await page.waitForTimeout(750);
+      if (scenario.mode === 'original') {
+        expect(await page.locator('video').evaluate(video => video.paused)).toBe(true);
+        expect(await page.locator('video').evaluate(video => video.currentTime)).toBeCloseTo(before.time, 1);
+      } else {
+        const starts = await page.evaluate(() => window.rebufferStarts);
+        expect(starts.length).toBeLessThanOrEqual(1);
+        if (starts.length) expect(starts[0]).toBeGreaterThan(1);
+      }
+    }
+    releaseRest();
+    if (action === 'hide') {
+      await page.waitForTimeout(750); expect(await page.locator('video').evaluate(video => video.paused)).toBe(true);
+      await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); document.dispatchEvent(new Event('visibilitychange')); });
+    }
+    if (action === 'pause' || action === 'hide') {
+      if (action === 'pause') await page.waitForTimeout(750);
+      expect(await page.locator('video').evaluate(video => video.paused)).toBe(true);
+      await page.getByRole('button', { name: 'Resume film', exact: true }).click();
+    }
+    await expect.poll(() => page.locator('video').evaluate(video => video.currentTime), { timeout: 10000 }).toBeGreaterThan(before.time + 1);
+    await expect(page.getByRole('button', { name: 'Pause buffering', exact: true })).toHaveCount(0);
+    await expect(page.locator('.vv-error')).toHaveCount(0);
+    if (scenario.mode === 'original') expect(await page.locator('video').evaluate(video => [video.videoWidth, video.videoHeight])).toEqual([scenario.width, scenario.height]);
+    expect(state.starts).toHaveLength(action === 'renew' ? 2 : 1); expect(state.errors).toEqual([]);
+  } finally { releaseMore(); releaseRest(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+});
+
 test('a stopped original segment still times out and offers retry', async ({ page }) => {
   await setup(page, cases[0]);
   await page.route('**/__playback__/**/*.ts', () => {});
