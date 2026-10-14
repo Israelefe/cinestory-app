@@ -9,6 +9,7 @@
  * a Worker invocation.
  */
 import { handleApiProxy } from './apiProxy.js';
+import { handleBlogShell, handleBlogSitemap } from './blogShell.js';
 import { handleDeliveryShell } from './deliveryShell.js';
 import { handleLibraryShell } from './libraryShell.js';
 import { handlePortfolioShell, handlePortfolioSitemap, PORTFOLIO_PATH } from './portfolioShell.js';
@@ -18,7 +19,14 @@ const DELIVERY_PATH = /^\/(d|v)\/([^/]+)\/?$/;
 export default {
   async fetch(request, env, ctx) {
     const { pathname } = new URL(request.url);
-    if (pathname === '/robots.txt') return new Response(`User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /portfolio/manage\nDisallow: /portfolio/enquiries\nSitemap: ${String(env.VEYLO_WEB_ORIGIN || 'https://veylo.com.ng').replace(/\/$/, '')}/portfolio-sitemap.xml\n`, { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+    if (pathname === '/blog' || pathname.startsWith('/blog/')) return handleBlogShell(request, env);
+    if (pathname === '/blog-sitemap.xml') return handleBlogSitemap(request, env);
+    const blogSitemap = pathname.match(/^\/blog-sitemap-([1-9]\d{0,5})\.xml$/);
+    if (blogSitemap) return handleBlogSitemap(request, env, Number(blogSitemap[1]));
+    if (pathname === '/robots.txt') {
+      const web = String(env.VEYLO_WEB_ORIGIN || 'https://veylo.com.ng').replace(/\/$/, '');
+      return new Response(`User-agent: *\nAllow: /\nDisallow: /api/\nAllow: /api/v1/blog/media/\nDisallow: /portfolio/manage\nDisallow: /portfolio/enquiries\nSitemap: ${web}/portfolio-sitemap.xml\nSitemap: ${web}/blog-sitemap.xml\n`, { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+    }
     if (pathname === '/portfolio-sitemap.xml') return handlePortfolioSitemap(request, env);
     const sitemap = pathname.match(/^\/portfolio-sitemap-(\d{1,6})\.xml$/);
     if (sitemap) return handlePortfolioSitemap(request, env, Number(sitemap[1]));

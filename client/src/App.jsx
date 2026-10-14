@@ -64,6 +64,7 @@ const PhotoSwapDelivery = lazyWithRecovery(() => import('./pages/PhotoSwapDelive
 const PortfolioPage = lazyWithRecovery(() => import('./pages/PortfolioPage.jsx'), 'portfolio');
 const ContactSupport = lazyWithRecovery(() => import('./pages/ContactSupport.jsx'), 'contact');
 const Changelog = lazyWithRecovery(() => import('./pages/Changelog.jsx'), 'changelog');
+const Blog = lazyWithRecovery(() => import('./pages/Blog.jsx'), 'blog');
 const NotFound = lazyWithRecovery(() => import('./pages/NotFound.jsx'), 'not-found');
 const routeScrollPositions = new Map();
 
@@ -131,7 +132,7 @@ function RoutePosition() {
     if (pathname.startsWith('/edit/')) names[pathname] = 'Editor photo handoff';
     if (pathname === '/portfolio/manage') names[pathname] = 'Manage portfolio';
     if (pathname === '/portfolio/enquiries') names[pathname] = 'Enquiry inbox';
-    if (publicPortfolioHandle(pathname)) return;
+    if (publicPortfolioHandle(pathname) || pathname === '/blog' || pathname.startsWith('/blog/')) return;
     const label = names[pathname] || (pathname.startsWith('/for/') ? `For ${pathname.split('/').pop().replaceAll('-', ' ')}` : 'Photo delivery');
     document.title = `Veylo — ${label}`;
   }, [pathname]);
@@ -200,6 +201,8 @@ function WebsiteShell({ user, authLoading, onAuthenticated, onLogout, onAccountD
     {(productRoutes.has(pathname) || libraryWorkflow) && pathname !== '/create' && <ProductHeader user={user} onLogout={onLogout} />}
     <main id="main-content"><Routes>
       <Route path="/" element={<LandingPage />} />
+      <Route path="/blog" element={<Blog />} />
+      <Route path="/blog/:slug" element={<Blog />} />
       <Route path="/product" element={<ProductPage user={user} />} />
       <Route path="/video-delivery" element={<VideoDeliveryPage />} />
       <Route path="/videos/library" element={<ProtectedRoute user={user} loading={authLoading}><VideoLibrary /></ProtectedRoute>} />

@@ -7,7 +7,7 @@ import './AdminWorkspace.css';
 export const ADMIN_NAVIGATION = [
   { label: 'Today', items: [['overview', LayoutDashboard, 'Overview'], ['operations', Activity, 'Operations'], ['issues', CircleHelp, 'Errors & incidents']] },
   { label: 'People & work', items: [['users', Users, 'Accounts'], ['support', MessageCircle, 'Support inbox'], ['deliveries', Film, 'Deliveries'], ['portfolio', Globe2, 'Portfolios'], ['volume', Users, 'Volume delivery'], ['access', LockKeyhole, 'Client access']] },
-  { label: 'Business', items: [['payments', ReceiptText, 'Payments & billing'], ['productAnalytics', Activity, 'Product analytics'], ['visitorTraffic', Globe2, 'Visitors & traffic']] },
+  { label: 'Business', items: [['blog', FileText, 'Blog'], ['payments', ReceiptText, 'Payments & billing'], ['productAnalytics', Activity, 'Product analytics'], ['visitorTraffic', Globe2, 'Visitors & traffic']] },
   { label: 'Platform', items: [['aiJobs', Bot, 'Processing jobs'], ['storage', HardDrive, 'Storage'], ['musicNarration', AudioLines, 'Music & narration'], ['configuration', Settings2, 'Configuration'], ['security', ShieldCheck, 'Security & audit']] }
 ];
 export const sectionLabel = key => ADMIN_NAVIGATION.flatMap(group => group.items).find(item => item[0] === key)?.[2] || 'Overview';

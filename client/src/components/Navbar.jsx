@@ -5,7 +5,7 @@ import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { Menu, X, ArrowUpRight, ArrowRight, ChevronDown, LayoutDashboard, LogOut } from 'lucide-react';
 import { useDialogFocus } from './useDialogFocus.js';
 import './Header.css';
-const links = [['Client experience', '/client-experience'], ['Pricing', '/pricing'], ['About', '/about']];
+const links = [['Client experience', '/client-experience'], ['Pricing', '/pricing'], ['Blog', '/blog'], ['About', '/about']];
 const productLinks = [['Product overview', '/product', 'From client choices to finished delivery'], ['Photo Pre-selection', '/product#client-preselection', 'A private link to choose photos for editing'], ['Editor Links', '/product#editor-handoff', 'Send originals and receive finished edits'], ['Photo Library', '/product#image-library', 'Keep originals, previews and returned edits'], ['Delivery formats', '/formats', 'Compare three types and eight Showcase formats'], ['GridBoard', '/gridboard', 'The complete photo board, first'], ['Photo Swap', '/photoswap', 'A swipe through the finished photographs'], ['Video delivery', '/video-delivery', 'Finished films with private playback · Pro'], ['Veylo Portfolio', '/portfolio', 'Your selected work at your studio’s address']];
 export default function Navbar({ user, onLogout }) {
  const [open, setOpen] = useState(false);

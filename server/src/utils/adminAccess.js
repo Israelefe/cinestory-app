@@ -1,5 +1,6 @@
 const roles = (...values) => Object.freeze(values);
 export const ADMIN_READ_ACCESS = Object.freeze({
+  blog: roles('superadmin', 'operations', 'read-only'),
   operations: roles('superadmin', 'operations', 'read-only'),
   analytics: roles('superadmin', 'finance', 'analyst', 'read-only'),
   accounts: roles('superadmin', 'operations', 'support', 'finance'),
@@ -13,7 +14,7 @@ export const ADMIN_READ_ACCESS = Object.freeze({
 });
 export function adminSections(role) {
   const has = area => ADMIN_READ_ACCESS[area].includes(role);
-  return ['overview', ...(has('operations') ? ['operations', 'issues'] : []),
+  return ['overview', ...(has('blog') ? ['blog'] : []), ...(has('operations') ? ['operations', 'issues'] : []),
     ...(has('accounts') ? ['users'] : []), ...(has('deliveries') ? ['deliveries', 'portfolio', 'volume', 'access'] : []),
     ...(has('support') ? ['support'] : []), ...(has('finance') ? ['payments'] : []),
     ...(has('jobs') ? ['aiJobs'] : []), ...(has('storage') ? ['storage', 'musicNarration'] : []),

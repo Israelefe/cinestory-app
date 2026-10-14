@@ -3,6 +3,10 @@ import { requestMetricsMiddleware, captureOperationalError, metricRoute } from '
 import { startOperationalMonitoring } from './src/services/operationalMonitoring.service.js';
 import { readiness } from './src/controllers/adminOperations.controller.js';
 import express from 'express';
+import blogRoutes from './src/routes/blog.routes.js';
+import BlogPost from './src/models/BlogPost.js';
+import BlogGenerationJob from './src/models/BlogGenerationJob.js';
+import { startBlogWorker, stopBlogWorker } from './src/services/blogGeneration.service.js';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
@@ -133,6 +137,7 @@ app.use('/api/v1/product', productControlsRoutes);
 app.use('/api/v1/assistant', assistantRoutes);
 app.use('/api/v1/media', mediaRoutes);
 app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/blog', blogRoutes);
 app.use('/api/v1/admin/content-studio', adminAuthMiddleware, requireAdminRoles('superadmin', 'operations', 'admin'), contentStudioRoutes);
 
 app.use((error, req, res, next) => {
@@ -154,6 +159,7 @@ connectDB().then(async connection => {
     }
   }
   if (connection) {
+    await Promise.all([BlogPost.createIndexes(), BlogGenerationJob.createIndexes()]);
     await ensureVideoIndexes();
     await Promise.all([
       AnalyticsEvent.collection.createIndex({ eventKey: 1 }, { unique: true, sparse: true }),
@@ -171,6 +177,7 @@ connectDB().then(async connection => {
       else console.error(`[r2] Configuration rejected: ${result.reason}`);
     });
     startPortfolioWorker();
+    startBlogWorker();
     if (process.env.DELIVERY_PIPELINE_ENABLED === 'true' && process.env.DELIVERY_WORKER_MODE !== 'external') {
       startDeliveryWorker();
     }
@@ -181,6 +188,7 @@ connectDB().then(async connection => {
     void startOperationalMonitoring();
   });
   const shutdown = async () => {
+    stopBlogWorker();
     server.close();
     await stopDeliveryWorker();
     process.exit(0);

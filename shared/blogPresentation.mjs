@@ -1,0 +1,35 @@
+export const BLOG_ORIGIN = 'https://veylo.com.ng';
+export const escapeBlogHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+export const blogScriptJson = value => JSON.stringify(value).replace(/[<>&\u2028\u2029]/g, c => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+const e = escapeBlogHtml;
+export const blogDate = value => value ? new Intl.DateTimeFormat('en-NG', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Africa/Lagos' }).format(new Date(value)) : '';
+export function blogMetadata(data, origin = BLOG_ORIGIN) {
+  const web = new URL(origin).origin;
+  if (data.kind === 'article') {
+    const p = data.post;
+    return { title: p.seoTitle || p.title, description: p.metaDescription || p.excerpt, canonical: `${web}/blog/${encodeURIComponent(p.slug)}`, image: p.cover ? `${web}${p.cover.og}` : `${web}/veylo/veylo-logo.jpg`, type: 'article' };
+  }
+  return { title: `${data.page > 1 ? `Page ${data.page} · ` : ''}Photography guides · Veylo Blog`, description: 'Practical guides on photo delivery, client experience and studio business for Nigerian photographers.', canonical: `${web}/blog${data.page > 1 ? `?page=${data.page}` : ''}`, image: `${web}/veylo/veylo-logo.jpg`, type: 'website' };
+}
+export function blogStructuredData(data, origin = BLOG_ORIGIN) {
+  if (data.kind !== 'article') return [];
+  const p = data.post, meta = blogMetadata(data, origin), web = new URL(origin).origin;
+  return [
+    { '@context': 'https://schema.org', '@type': 'BlogPosting', headline: p.title, description: meta.description, mainEntityOfPage: meta.canonical, url: meta.canonical,
+      ...(p.cover ? { image: [`${web}${p.cover.og}`] } : {}), datePublished: p.publishedAt, dateModified: p.updatedAt,
+      author: { '@type': 'Organization', name: 'Veylo', url: `${web}/about` }, publisher: { '@type': 'Organization', name: 'Veylo', url: web, logo: { '@type': 'ImageObject', url: `${web}/veylo/veylo-logo.jpg` } } },
+    { '@context': 'https://schema.org', '@type': 'BreadcrumbList', itemListElement: [{ '@type': 'ListItem', position: 1, name: 'Home', item: web }, { '@type': 'ListItem', position: 2, name: 'Blog', item: `${web}/blog` }, { '@type': 'ListItem', position: 3, name: p.title, item: meta.canonical }] }
+  ];
+}
+const photo = (post, eager = false) => post.cover ? `<img src="${e(post.cover.src)}" srcset="${e(post.cover.srcSet)}" sizes="${e(eager ? '(max-width: 768px) 100vw, 960px' : '(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 400px')}" width="${Number(post.cover.width) || 1440}" height="${Number(post.cover.height) || 960}" alt="${e(post.coverAlt)}" loading="${eager ? 'eager' : 'lazy'}"${eager ? ' fetchpriority="high"' : ''} decoding="async" />` : '<div class="vb-card-placeholder" aria-hidden="true"><img src="/veylo/veylo-mark.svg" alt="" width="40" height="40" /></div>';
+const card = p => `<article class="vb-card"><a class="vb-card-photo" href="/blog/${e(p.slug)}" tabindex="-1" aria-hidden="true">${photo(p)}</a><div class="vb-card-copy"><p class="vb-meta">${e(blogDate(p.publishedAt))} <span>·</span> ${Number(p.readingMinutes) || 1} min read</p><h2><a href="/blog/${e(p.slug)}">${e(p.title)}</a></h2><p>${e(p.excerpt)}</p><a class="vb-text-link" href="/blog/${e(p.slug)}">Read article <span aria-hidden="true">↗</span></a></div></article>`;
+export function renderBlogArticle(p) {
+  return `<article class="vb-article"><header class="vb-article-header"><nav class="vb-breadcrumb" aria-label="Breadcrumb"><a href="/">Veylo</a><span aria-hidden="true">/</span><a href="/blog">Blog</a></nav><p class="vb-eyebrow">THE VEYLO BLOG</p><h1>${e(p.title)}</h1><p class="vb-deck">${e(p.excerpt)}</p><div class="vb-byline"><a href="/about">Veylo team</a>${p.publishedAt ? `<span>·</span><time datetime="${e(p.publishedAt)}">${e(blogDate(p.publishedAt))}</time>` : '<span>·</span><span>Draft preview</span>'}<span>·</span><span>${Number(p.readingMinutes) || 1} min read</span></div>${p.updatedAt && p.updatedAt !== p.publishedAt ? `<p class="vb-updated">Updated ${e(blogDate(p.updatedAt))}</p>` : ''}</header>${p.cover ? `<figure class="vb-hero-photo">${photo(p, true)}${p.coverCredit ? `<figcaption>${e(p.coverCredit)}</figcaption>` : ''}</figure>` : ''}<div class="vb-reading-layout">${p.toc?.length ? `<aside class="vb-toc"><p>In this article</p><nav aria-label="Article sections">${p.toc.map(t => `<a href="#${e(t.id)}" class="${t.level === 3 ? 'vb-toc-sub' : ''}">${e(t.text)}</a>`).join('')}</nav></aside>` : ''}<div class="vb-prose">${p.bodyHtml || '<p>Your article will appear here.</p>'}</div></div><aside class="vb-cta"><div><p class="vb-eyebrow">FOR YOUR NEXT FINISHED SHOOT</p><h2>Give your photographs a proper home.</h2><p>See how a finished shoot looks when you deliver it with Veylo.</p></div><a class="vb-button" href="/formats">Explore delivery formats <span aria-hidden="true">↗</span></a></aside></article>`;
+}
+export function renderBlogContent(data) {
+  if (data.kind === 'article') return `<div class="vb-page">${renderBlogArticle(data.post)}${data.related?.length ? `<section class="vb-related" aria-labelledby="vb-related-title"><div class="vb-section-heading"><p class="vb-eyebrow">KEEP READING</p><h2 id="vb-related-title">More for your studio.</h2></div><div class="vb-grid">${data.related.map(card).join('')}</div></section>` : ''}</div>`;
+  return `<div class="vb-page"><header class="vb-index-header"><p class="vb-eyebrow">THE VEYLO BLOG</p><h1>Good photographs.<br /><em>Better delivery.</em></h1><p>Practical notes on looking after your clients, presenting your photographs, and running your studio.</p></header>${data.posts.length ? `<section class="vb-grid" aria-label="Articles">${data.posts.map(card).join('')}</section>` : '<div class="vb-empty"><h2>Our first article is on its way.</h2><p>Come back for practical guides for your studio.</p><a class="vb-text-link" href="/formats">Explore Veylo in the meantime <span aria-hidden="true">↗</span></a></div>'}${data.pages > 1 ? `<nav class="vb-pagination" aria-label="Blog pages">${data.page > 1 ? `<a class="vb-button vb-button-secondary" rel="prev" href="/blog${data.page > 2 ? `?page=${data.page - 1}` : ''}">Previous</a>` : '<span></span>'}<span>Page ${Number(data.page)} of ${Number(data.pages)}</span>${data.page < data.pages ? `<a class="vb-button vb-button-secondary" rel="next" href="/blog?page=${data.page + 1}">Next</a>` : '<span></span>'}</nav>` : ''}</div>`;
+}
+export function renderBlogShell(data) {
+  return `<div id="blog-server-content"><a class="vb-skip" href="#blog-server-main">Skip to article</a><header class="vb-server-nav"><a href="/" class="vb-server-brand"><img src="/veylo/veylo-mark.svg" width="25" height="25" alt="" />veylo.</a><nav aria-label="Main navigation"><a href="/formats">Delivery formats</a><a href="/blog" aria-current="page">Blog</a><a href="/pricing">Pricing</a></nav></header><main id="blog-server-main">${renderBlogContent(data)}</main><footer class="vb-server-footer"><a href="/">Veylo</a><p>Don’t just deliver photos. Showcase them.</p><a href="/about">About us</a></footer></div>`;
+}

@@ -1,5 +1,6 @@
 import { getSystemOverview, getOperationalIssues, updateOperationalIssue, acknowledgeOperationalAlert, monitorCheckIn } from '../controllers/adminOperations.controller.js';
 import express from 'express';
+import blogAdminRoutes from './blogAdmin.routes.js';
 import { getProductControls, saveProductControls, testAlertEmail } from '../controllers/productControls.controller.js';
 import jwt from 'jsonwebtoken';
 import {
@@ -143,6 +144,7 @@ router.post('/auth/logout', adminLogout);
 
 // Protected routes
 router.use(adminAuthMiddleware);
+router.use('/blog', blogAdminRoutes);
 router.get('/video-operations', requireAdminRoles('superadmin', 'operations', 'admin'), videoOperations);
 router.get('/auth/me', getAdminMe);
 router.post('/auth/verify-2fa', authAttemptLimit, verifyAdminSessionMfa);

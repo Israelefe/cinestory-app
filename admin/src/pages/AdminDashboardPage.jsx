@@ -47,6 +47,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api from '../services/api.js';
+const BlogWorkspace = React.lazy(() => import('../components/BlogWorkspace.jsx'));
 
 const formatNames = {
   'photo-story': 'Photo Story',
@@ -396,7 +397,10 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const sections = useMemo(() => admin?.sections || ['overview'], [admin?.sections]);
   const requestedTab = searchParams.get('section') || 'overview';
   const tab = sections.includes(requestedTab) ? requestedTab : 'overview';
-  const setTab = key => { setSearch(''); setSearchParams(key === 'overview' ? {} : { section: key }); };
+  const setTab = key => {
+    if (tab === 'blog' && !window.dispatchEvent(new Event('veylo:leave-blog', { cancelable: true }))) return;
+    setSearch(''); setSearchParams(key === 'overview' ? {} : { section: key });
+  };
   const [system, setSystem] = useState(null);
   const [issues, setIssues] = useState(null);
   const [issueStatus, setIssueStatus] = useState('open');
@@ -477,6 +481,7 @@ export default function AdminDashboardPage({ admin, onLogout }) {
   const [aiJobTypeFilter, setAiJobTypeFilter] = useState('all');
 
   const fetchAdminData = useCallback(async () => {
+    if (tab === 'blog') { setUpdatedAt(previous => ({ ...previous, blog: Date.now() })); setPanelErrors({}); setLoading(false); return; }
     requestRef.current.controller?.abort();
     const controller = new AbortController();
     const sequence = ++requestRef.current.sequence;
@@ -1237,7 +1242,8 @@ export default function AdminDashboardPage({ admin, onLogout }) {
     support: 'Find the customer request, inspect the account and record the next step.',
     productAnalytics: 'Ordered journeys, repeat publishing and accounts that may need help.',
     users: 'Find a photographer, check access and help with account problems.',
-    payments: 'Review subscription access, payment records and billing issues.'
+    payments: 'Review subscription access, payment records and billing issues.',
+    blog: 'Write, review and publish practical guides for photographers.'
   };
   return (
     <AdminShell admin={admin} sections={sections} tab={tab} onNavigate={setTab} onLogout={onLogout}>
@@ -1247,8 +1253,9 @@ export default function AdminDashboardPage({ admin, onLogout }) {
       {tab === 'operations' && <AdminOperations system={visibleSystem} operations={visibleOperations} onRefresh={fetchAdminData} canOperate={['superadmin', 'operations'].includes(admin?.role)} />}
       {tab === 'issues' && <BrowserErrors fingerprint={searchParams.get("error") || ""} onAccount={['superadmin', 'operations'].includes(admin?.role) ? openAccount : undefined} refreshKey={updatedAt.issues} />}
       {tab === 'issues' && <AdminIssues data={issues} status={issueStatus} setStatus={value => { setIssueStatus(value); setIssuePage(1); }} onPage={setIssuePage} loading={loading} onRefresh={fetchAdminData} canOperate={['superadmin', 'operations'].includes(admin?.role)} />}
+      {tab === 'blog' && <React.Suspense fallback={<p className="aw-load-state" role="status">Opening blog workspace…</p>}><BlogWorkspace admin={admin} refreshKey={updatedAt.blog} /></React.Suspense>}
       <section>
-        {!['overview', 'operations', 'issues', 'configuration', 'security', 'productAnalytics', 'visitorTraffic'].includes(tab) && <label className="aw-search"><Search size={16} /><input aria-label="Search this section" value={search} onChange={event => setSearch(event.target.value)} placeholder={`Search ${sectionLabel(tab).toLowerCase()}?`} /></label>}
+        {!['overview', 'operations', 'issues', 'configuration', 'security', 'productAnalytics', 'visitorTraffic', 'blog'].includes(tab) && <label className="aw-search"><Search size={16} /><input aria-label="Search this section" value={search} onChange={event => setSearch(event.target.value)} placeholder={`Search ${sectionLabel(tab).toLowerCase()}?`} /></label>}
         {loading && !['overview', 'operations', 'issues'].includes(tab) && <div className="aw-load-state" role="status">Loading current records?</div>}
           {/* Deliveries Tab */}
           {!loading && tab === 'deliveries' && (
