@@ -63,8 +63,8 @@ test('Editorial repairs a saved photo when its combined headline and caption fai
   const editorial = { ...delivery, format: 'editorial' };
   const observations = rows.map(row => ({ ...row, summary: 'An emerald suit and an ivory telephone in a studio portrait.' }));
   const rejected = { assetId: ids[0], headline: 'The emerald suit', caption: 'An ivory telephone appears in this birthday portrait.' };
-  // Neither field alone reaches the description threshold; the full photo does.
-  assert.deepEqual(shootWritingIssues(rejected.caption, editorial, { caption: true, observation: observations[0].summary }), []);
+  // Saved wording from the old rules must now be rejected and repaired.
+  assert.ok(shootWritingIssues(rejected.caption, editorial, { caption: true, observation: observations[0].summary }).length);
   assert.ok(shootWritingIssues(rejected.headline + '. ' + rejected.caption, editorial, { caption: true, observation: observations[0].summary }).some(issue => /purpose/.test(issue)));
   const draft = { title: "Ada's birthday portraits", openingLine: 'A birthday portrait feature for Ada.', closingLine: 'Your complete birthday collection follows.', introduction: '', frames: [rejected, ...frames.slice(1)], sections: [{ title: 'Birthday portraits for Ada', body: '', assetIds: ids }] };
   let photoRepairs = 0;

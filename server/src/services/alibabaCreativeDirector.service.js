@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { DELIVERY_SOUNDTRACKS, recommendSoundtracks } from '../constants/deliverySoundtracks.js';
 import { supportsDeliveryMusic, supportsDeliveryNarration } from '../constants/deliveryCapabilities.js';
-import { deliveryWritingPolicy, supportsVisualWriting, shootWritingIssues, FORMAT_WRITING_PROFILES } from '../constants/deliveryWriting.js';
+import { deliveryWritingPolicy, deliveryWritingCue, supportsVisualWriting, shootWritingIssues, FORMAT_WRITING_PROFILES } from '../constants/deliveryWriting.js';
 import { hasDetailedWriting, DELIVERY_WRITING_VERSION } from '../constants/deliveryWritingLimits.js';
 import { SECTION_BODY_LIMITS } from '../constants/deliveryPresentationCore.js';
 import { detailedFrameIssues, repeatsWriting } from '../utils/deliveryWritingQuality.js';
@@ -1117,6 +1117,7 @@ Return one frame per photograph in the supplied order.`;
 
   const photographInputs = (imageInsights || []).map(insight => {
     const assetId = String(insight.assetId || '');
+    if (format === 'editorial' && !supportsVisualWriting({ format, brief, shootType, clientName })) return { assetId, summary: deliveryWritingCue(insight, { format, brief, shootType, clientName }) };
     return {
       assetId,
       photographerCaption: insight.photographerCaption || '',

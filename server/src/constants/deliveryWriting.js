@@ -1,5 +1,5 @@
 import { hasDetailedWriting, photoCaptionLimit } from './deliveryWritingLimits.js';
-import { detailedWritingFactsIssues } from '../utils/deliveryWritingQuality.js';
+import { detailedWritingFactsIssues, personalCaptionMeaningIssues } from '../utils/deliveryWritingQuality.js';
 
 const profile = (focus, style = 'personal') => Object.freeze({ focus, style });
 
@@ -28,7 +28,7 @@ export const SHOOT_WRITING_PROFILES = Object.freeze({
 export const FORMAT_WRITING_PROFILES = Object.freeze({
   'photo-story': { caption: 150, opening: 140, closing: 160, focus: 'Short personal thoughts that develop through the sequence. Keep the photographs primary.' },
   photoswap: { caption: 180, opening: 0, closing: 0, focus: 'Write one short, standalone caption for each finished photograph. Keep the photographer’s purpose central and let each caption make sense on its own.' },
-  editorial: { caption: photoCaptionLimit('editorial'), opening: 300, closing: 280, focus: 'Write a magazine feature with a clear subject. Section paragraphs explain the connection or development across their photographs; each photo caption adds a particular supported detail or thought not already explained in that paragraph. Give the cover, introduction, section bodies and captions different information. Use specific section headlines that identify their subject. Third-person prose is welcome. A birthday magazine remains a birthday feature; this format does not turn every shoot into fashion. Develop useful section context when the supplied facts support it; omit paragraphs that would merely repeat other writing.' },
+  editorial: { caption: photoCaptionLimit('editorial'), opening: 300, closing: 280, focus: 'Use the same purpose-first writing as Photo Story, with room for a cover and section paragraphs. For personal shoots, each caption is a meaningful message about why these photographs were made. Address the recipient naturally and give each caption a different thought. Do not report clothes, props, poses or camera views, even when they appear in the brief. A brief image cue may support the message when useful; the message must stand on its own without it. Headings introduce the thought rather than label an outfit. Section paragraphs develop the supplied occasion without repeating photo captions. Documentary and commercial shoots follow their actual purpose: an event record or product lookbook can describe supported activity or product details. Omit optional paragraphs that add no useful information.' },
   'photo-reveal': { caption: 180, opening: 140, closing: 160, focus: 'Each photograph gets a short heading, usually 2–5 words, and a concise caption that stands on its own. Usually one useful sentence is enough. The heading introduces the thought; the caption adds to it. Keep each reveal personal or factual according to the shoot purpose, with variety across the set. Do not narrate a transition, invent a reaction, or repeatedly describe clothes and poses.' },
   canvas: { caption: 180, opening: 140, closing: 160, focus: 'Brief useful captions and clear labels for freely exploring the collection.' },
   chapters: { caption: photoCaptionLimit('chapters'), opening: 140, closing: 160, focus: 'Write for a client reading through distinct parts of a shoot. Name the actual part, place or activity in each chapter title when supported. Give each chapter a short introduction connecting its photographs to the supplied purpose, usually two or three natural sentences. Give each photograph a specific short headline and a developed caption, usually two or three useful sentences within 320 characters. Lead each personal caption with the reason for the shoot or a thought for the recipient. Use an observed detail only when it supports that thought; do not narrate poses, clothes or scenery. Each caption must add a different detail or thought from its chapter introduction and neighbouring captions. Use fewer sentences when the facts support less; never pad the caption with gallery instructions or invent chronology, relationships, feelings or personal history.' },
@@ -39,7 +39,7 @@ export const FORMAT_WRITING_PROFILES = Object.freeze({
 
 const DEVELOPMENT_EXAMPLES = Object.freeze({
   chapters: 'Style example only, not facts for this shoot: for a birthday portrait chapter, a caption can say: "This birthday is yours to mark in your own way. Keep these portraits as a record of the occasion." The supplied purpose determines the message. An observed setting or detail can support it, but do not narrate poses or describe the next photograph.',
-  editorial: 'Style example only, not facts for this shoot: if the brief says the subject chose a particular garment and prop for a birthday feature, the section can explain that choice and how it connects the group. A photo caption should then identify this photograph’s particular view or action and add a second supported point, rather than repeating the shared garment description. Useful section context should be written as a paragraph, not left empty when the brief supplies it.',
+  editorial: 'Style example only, not facts for this shoot: for a birthday portrait session, a caption can say "This birthday is yours to mark in your own way. Make room for what you want this year to bring." Another caption should offer a different thought about the occasion. Keep the person and purpose central; the magazine layout does not change a personal message into a report of what someone is wearing.',
   'event-coverage': 'Style example only, not facts for this shoot: with a confirmed conference registration photograph of a badge handover, write "An attendee receives a badge at registration. This photograph records the check-in stage of the conference coverage before the programme photographs." The second sentence requires those stages and order to be supplied. Without them, keep the factual handover sentence; do not invent a queue, staff role or conversations.',
   campaign: 'Style example only, not facts for this shoot: when the notes confirm a jacket front view with an open collar and patch pockets, write "The front view shows the jacket with its open collar and patch pockets. It gives the clothing team a complete front reference alongside the separate detail photographs." The team, wider set and detail photographs must also be supplied. Do not turn a product caption into an unsupported claim about fit or construction.'
 });
@@ -56,6 +56,11 @@ export function deliveryWritingContext(delivery) {
     shoot = ['memorial', 'traditional-wedding', 'bridal-shower', 'pre-wedding', 'anniversary', 'engagement', 'birthday', 'graduation', 'maternity', 'newborn', 'wedding', 'personal-branding', 'lookbook', 'commercial', 'fashion', 'corporate', 'portrait'].find(key => source.includes(key)) || (/\b(?:conference|concert|owambe|church service|event coverage)\b/i.test(`${rawType.replace(/-/g, ' ')} ${brief}`) ? 'event' : 'other');
   }
   const commercialBrief = /\b(?:lookbook|product|commercial|campaign|catalogue|catalog|brand assets|product launch)\b/i.test(brief);
+  // A fashion treatment does not turn a stated personal occasion into a lookbook.
+  if (SHOOT_WRITING_PROFILES[shoot].style === 'commercial' && !commercialBrief) {
+    const occasion = ['memorial', 'traditional-wedding', 'pre-wedding', 'anniversary', 'engagement', 'birthday', 'graduation', 'maternity', 'newborn', 'wedding'].find(key => new RegExp(`\\b${key}\\b`).test(normalize(brief)));
+    if (occasion) shoot = occasion;
+  }
   const commercial = SHOOT_WRITING_PROFILES[shoot].style === 'commercial' || commercialBrief && ['other', 'corporate', 'personal-branding', 'portrait'].includes(shoot);
   const separateSubject = /\b(?:studio|company|agency|school|organisation|organization|brand|limited|ltd)\b/i.test(delivery.clientName || '') || (() => {
     const named = brief.match(/\b([\p{Lu}][\p{L}\p{M}-]+)[’']s\s+(?:\d+(?:st|nd|rd|th)?\s+)?(?:birthday|portraits?|graduation|wedding|anniversary)/u)?.[1];
@@ -66,12 +71,21 @@ export function deliveryWritingContext(delivery) {
 
 export function requiresDirectAddress(delivery) {
   const context = deliveryWritingContext(delivery);
-  return context.style === 'personal' && !context.separateSubject && !['editorial', 'event-coverage', 'campaign'].includes(context.format);
+  return context.style === 'personal' && !context.separateSubject && !['event-coverage', 'campaign'].includes(context.format);
 }
 
 export function supportsVisualWriting(delivery) {
   const { style } = deliveryWritingContext(delivery);
   return ['commercial', 'documentary', 'professional'].includes(style);
+}
+
+export function deliveryWritingCue(insight, delivery) {
+  const summary = String(insight?.summary || '');
+  if (supportsVisualWriting(delivery) || hasDetailedWriting(delivery.format) && !['chapters', 'editorial'].includes(delivery.format)) return summary.slice(0, 600);
+  const sentences = summary.split(/[.!?\n]+/).filter(sentence => !/\b(?:not|no|without|unclear|cannot|can't|unable)\b/i.test(sentence));
+  if (sentences.some(sentence => /\b(?:laughs?|laughing|laughter)\b/i.test(sentence))) return 'visible laughter';
+  if (sentences.some(sentence => /\b(?:smiles?|smiling)\b/i.test(sentence))) return 'visible smile';
+  return '';
 }
 
 export function deliveryWritingPolicy(delivery) {
@@ -88,6 +102,7 @@ export function deliveryWritingPolicy(delivery) {
     `FORMAT GUIDANCE (${context.format}): ${format.focus} Caption maximum ${format.caption} characters, opening maximum ${format.opening}, closing maximum ${format.closing}. Delivery title maximum 80; photo headlines maximum 70. Useful short writing is welcome; no minimum word count and no filler. Headings usually use 2–7 words.`,
     ...(hasDetailedWriting(context.format) ? ['Develop the supplied purpose when there is useful context. For a personal shoot, lead with the occasion and use at most a brief supporting visual cue. For documentary or commercial work, explain supported activity or asset purpose. One useful sentence is enough when facts are limited. Every concrete claim must match that photograph’s own observation or the approved brief; other captions and earlier drafts are not sources of facts. Never invent chronology, attendance, actions, product features or personal history.'] : []),
     ...(DEVELOPMENT_EXAMPLES[context.format] ? [DEVELOPMENT_EXAMPLES[context.format]] : []),
+    ...(context.format === 'editorial' && context.style === 'personal' ? ['A visible smile is optional context, not the subject of a caption or evidence of someone\'s feelings. Do not write about what a smile, grin or expression reveals, suggests or expresses. Do not infer joy, gratitude, love, confidence, plans or personal history. Write most captions from the supplied purpose alone. Avoid stock headings such as Inner Glow, Quiet Joy, Timeless Joy and Heartfelt Moment. For a birthday, thoughtful messages about marking the occasion, making time for yourself and wishes for the coming year are appropriate; do not turn them into claims about the person.'] : []),
     'Give headings and captions different jobs. Do not repeat the headline inside its caption, repeat the same outfit or prop across the collection, or make every message a variation of one wish. A line may carry the purpose without repeating the name and occasion in both fields. Avoid generic headings such as The photograph, Photo 01, The moment, New Beginnings and The Year Ahead. No stock praise, decorative metaphors or AI clichés.',
     'Review the complete set for shoot emphasis, variety and unsupported facts. Repair only the affected wording, preserving useful approved text. Notes, credits, permissions and usage rights must be supplied by the photographer, never generated.'
   ].join('\n');
@@ -101,6 +116,8 @@ export function shootWritingIssues(text, delivery, { caption = false, observatio
   if (context.shoot === 'memorial' && /\b(?:happy birthday|congratulations|cheers to|celebrate your|year ahead|birthday wish)\b/i.test(value)) issues.push('celebration language in a memorial');
   if (context.style !== 'personal' && context.shoot !== 'birthday' && /\b(?:happy birthday|birthday wish|your birthday)\b/i.test(value) && !/\bbirthday\b/i.test(context.purpose)) issues.push('birthday language unrelated to the brief');
   if (caption && context.style === 'personal') {
+    if (context.format === 'editorial') issues.push(...personalCaptionMeaningIssues(value, context.purpose));
+    if (context.format === 'editorial' && /\b(?:wears?|wearing|posing|posed|seated|sits?|stands?|holding|holds?|outfits?|wardrobe|suits?|dresses?|gowns?|blazers?|earrings?|cuffs?|telephones?|plinths?|backdrops?|lighting|composition|full[- ]length|close[- ]up|in hand|looking at the camera|looks at the camera)\b/i.test(value)) issues.push('personal Editorial wording must focus on the shoot purpose instead of clothes, props or poses');
     const details = value.match(/\b(?:emerald|green|ivory|burgundy|plum|gold|outfit|suit|dress|gown|blazer|earrings|cuff|telephone|plinth|backdrop|lighting|pose|full-length|close-up|composition)\b/gi) || [];
     const description = /\b(?:wears?|wearing|posing|posed|seated|sits?|stands?|holding|holds?|in hand|looking at the camera|looks at the camera)\b/i;
     const purposeThought = value.split(/[.!?]+/).some(sentence => !description.test(sentence) && /\b(?:you|your|yours|may|wish|hope|marks?|marking|celebrate|celebrating|celebration|remember|keep|occasion|honours?|honoring|honouring)\b/i.test(sentence));

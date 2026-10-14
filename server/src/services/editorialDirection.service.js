@@ -1,13 +1,29 @@
 import { EDITORIAL_LIMITS as L, EDITORIAL_LAYOUTS, EDITORIAL_POLICY } from '../constants/editorial.js';
-import { deliveryWritingContext, deliveryWritingPolicy, shootWritingIssues, writingFallback } from '../constants/deliveryWriting.js';
+import { deliveryWritingContext, deliveryWritingPolicy, deliveryWritingCue, requiresDirectAddress, shootWritingIssues } from '../constants/deliveryWriting.js';
+import { purposeHeadline, purposeCaption, headlineHasPurposeAnchor } from '../utils/deliveryPurposeWriting.js';
 import { detailedFrameIssues, repeatsWriting } from '../utils/deliveryWritingQuality.js';
 import { orderWritingFrames } from '../utils/deliveryWritingIdentity.js';
 
 const clean = value => typeof value === 'string' ? value.trim() : '';
 const incomplete = () => Object.assign(new Error('The Editorial wording needs another pass. Your current text is unchanged; please retry.'), { code: 'V3_EDITORIAL_WRITING_INCOMPLETE', status: 502 });
 const within = (value, max, min = 0) => typeof value === 'string' && value.trim().length >= min && value.trim().length <= max;
-const context = (delivery, rows) => JSON.stringify({ ...deliveryWritingContext(delivery), photographs: rows.filter(Boolean).map(row => ({ assetId: row.assetId, observation: row.summary || '', width: row.width, height: row.height })) });
+const context = (delivery, rows) => JSON.stringify({ ...deliveryWritingContext(delivery), photographs: rows.filter(Boolean).map(row => ({ assetId: row.assetId, cue: deliveryWritingCue(row, delivery) })) });
 const policy = delivery => EDITORIAL_POLICY + '\n' + deliveryWritingPolicy(delivery);
+const draftWritingContext = (delivery, draft) => ({
+  // Mongoose fields are getters, so spreading the document drops these facts.
+  kind: delivery.kind, format: delivery.format, clientName: delivery.clientName,
+  brief: delivery.brief, shootType: delivery.shootType,
+  creativeDirection: { openingLine: draft.openingLine, editorial: { introduction: draft.introduction }, sections: Array.isArray(draft.sections) ? draft.sections.filter(section => section && typeof section === 'object' && !Array.isArray(section)) : [] }
+});
+const readCreationText = async (request, ...args) => {
+  try { return await request(...args); } catch (error) {
+    // An unusable model response is a writing failure, not a provider outage.
+    // Creation can recover from the supplied purpose; interactive rewrites
+    // still fail safely without changing the photographer's approved text.
+    if (error.code !== 'V3_INVALID_AI_RESPONSE') throw error;
+    return {};
+  }
+};
 
 export function editorialDraftIssues(draft, selected, factsIssue = () => false, delivery = {}, rows = []) {
   if (!draft || typeof draft !== 'object' || Array.isArray(draft)) return ['invalid magazine draft'];
@@ -20,7 +36,7 @@ export function editorialDraftIssues(draft, selected, factsIssue = () => false, 
   if (draft.introduction !== undefined && !within(draft.introduction, L.introduction)) issues.push('introduction');
   const frames = Array.isArray(draft.frames) ? draft.frames : [];
   if (frames.length !== selected.length || frames.some((frame, index) => frame.assetId !== selected[index])) issues.push('photograph order');
-  const draftContext = { ...delivery, creativeDirection: { openingLine: draft.openingLine, editorial: { introduction: draft.introduction }, sections: draft.sections } };
+  const draftContext = draftWritingContext(delivery, draft);
   for (const frame of frames) {
     issues.push(...editorialCaptionIssues(frame, [], factsIssue, draftContext, rows.find(row => row.assetId === frame.assetId) || {}));
   }
@@ -44,6 +60,8 @@ function editorialCaptionIssues(result, existing, factsIssue, delivery, insight)
   const issues = [];
   if (!within(result?.headline, L.sectionTitle, 2)) issues.push('headline length');
   if (!within(result?.caption, L.caption, 5)) issues.push('caption length');
+  if (!headlineHasPurposeAnchor(result?.headline || '', delivery, result?.caption || '')) issues.push('connect the message to the supplied shoot purpose');
+  if (requiresDirectAddress(delivery) && !/\b(?:you|your|yours|yourself|yourselves)\b/i.test(result?.caption || '')) issues.push('address the personal recipient naturally with you or your');
   if (result && factsIssue(`${result.headline || ''}. ${result.caption || ''}`)) issues.push('unsupported names or occasion facts');
   // Validate the same photo text during full-feature checks, targeted repair
   // and regeneration. Otherwise a rejected headline survives every retry.
@@ -67,15 +85,15 @@ function logRejectedEditorial(flow, issues) {
 }
 
 export async function writeEditorialDirection(request, delivery, rows, selected, factsIssue, { resume, checkpoint = async () => {} } = {}) {
-  const shape = 'Return JSON {"title":"...","openingLine":"...","introduction":"...","closingLine":"...","frames":[{"assetId":"...","headline":"...","caption":"..."}],"sections":[{"title":"...","body":"...","layout":"auto","assetIds":["..."]}]}. Include every supplied asset ID once in frames in the exact supplied order. Group the same order into 1-4 consecutive sections; no duplicates or missing photographs. Use useful section headings, not generic photo group names. Layout is auto, hero, pair, triptych, feature or wide. The cover summary (openingLine) must contain 5-300 characters and the closing note must contain 5-280 characters. Develop a useful section paragraph from the shared shoot context when it is supplied, and use photo captions to add distinct details. Only omit an introduction or section body when it adds no supported information. Never output placeholder dots. Keep the writing grounded in the supplied context; if details are limited, use restrained factual wording. Do not generate a photographer note, issue number, credits or attributed quotes.';
+  const shape = 'Return JSON {"title":"...","openingLine":"...","introduction":"...","closingLine":"...","frames":[{"assetId":"...","headline":"...","caption":"..."}],"sections":[{"title":"...","body":"...","layout":"auto","assetIds":["..."]}]}. Include every supplied asset ID once in frames in the exact supplied order. Group the same order into 1-4 consecutive sections; no duplicates or missing photographs. Use useful section headings, not generic photo group names. Layout is auto, hero, pair, triptych, feature or wide. The cover summary (openingLine) must contain 5-300 characters and the closing note must contain 5-280 characters. Develop useful section context from the supplied shoot purpose. Give each personal photo caption a distinct meaningful thought about that purpose, as in Photo Story. Do not describe outfits, props or poses. For documentary or commercial work, supported activity or product details can serve the actual purpose. Only omit an introduction or section body when it adds no supported information. Never output placeholder dots. Keep the writing grounded in the supplied context; if details are limited, use restrained factual wording. Do not generate a photographer note, issue number, credits or attributed quotes.';
   const prompt = context(delivery, selected.map(id => rows.find(row => row.assetId === id)));
   const normalize = value => ({ ...value, frames: orderWritingFrames(value?.frames, selected) });
-  let draft = normalize(resume || await request(shape + policy(delivery), prompt, { maxTokens: 2000 + selected.length * 300 }));
+  let draft = normalize(resume || await readCreationText(request, shape + policy(delivery), prompt, { maxTokens: 2000 + selected.length * 300 }));
   await checkpoint(draft);
   let issues = editorialDraftIssues(draft, selected, factsIssue, delivery, rows);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     if (!issues.length) break;
-    const next = normalize(await request(shape + policy(delivery), prompt + '\nRevise these problems: ' + issues.join(', ') + '. Section assetIds, concatenated in section order, must equal ' + JSON.stringify(selected) + ' exactly. Group consecutive photographs only; do not regroup similar views across non-adjacent positions. The cover summary and closing note are required; only the introduction and section body may be empty.\nUntrusted draft (not a source of facts): ' + JSON.stringify(draft), { maxTokens: 2000 + selected.length * 300 }));
+    const next = normalize(await readCreationText(request, shape + policy(delivery), prompt + '\nRevise these problems: ' + issues.join(', ') + '. Section assetIds, concatenated in section order, must equal ' + JSON.stringify(selected) + ' exactly. Group consecutive photographs only; do not regroup similar views across non-adjacent positions. The cover summary and closing note are required; only the introduction and section body may be empty.\nUntrusted draft (not a source of facts): ' + JSON.stringify(draft), { maxTokens: 2000 + selected.length * 300 }));
     // Preserve checked photo words even if a full-draft retry drops them.
     next.frames = next.frames.map((frame, index) => editorialCaptionIssues(frame, [], factsIssue, delivery, rows.find(row => row.assetId === frame.assetId) || {}).length && !editorialCaptionIssues(draft.frames[index], [], factsIssue, delivery, rows.find(row => row.assetId === frame.assetId) || {}).length ? draft.frames[index] : frame);
     draft = next;
@@ -86,7 +104,7 @@ export async function writeEditorialDirection(request, delivery, rows, selected,
     // Repair small, independent blocks after whole-feature attempts. A single
     // rejected sentence must not discard the rest of a finished feature.
     const accepted = [];
-    const draftContext = { ...delivery, creativeDirection: { openingLine: draft.openingLine, editorial: { introduction: draft.introduction }, sections: draft.sections } };
+    const draftContext = draftWritingContext(delivery, draft);
     for (const [index, original] of draft.frames.entries()) {
       const insight = rows.find(row => row.assetId === original.assetId) || { assetId: original.assetId };
       let frame = original;
@@ -94,9 +112,9 @@ export async function writeEditorialDirection(request, delivery, rows, selected,
         try {
           frame = { assetId: original.assetId, ...await rewriteEditorialCaption(request, { ...draftContext, creativeDirection: { ...draftContext.creativeDirection, frames: accepted } }, insight, 'Lead with the supplied purpose. Use only a short supporting visual cue.', original, factsIssue) };
         } catch (error) {
-          if (error.code !== 'V3_EDITORIAL_WRITING_INCOMPLETE') throw error;
+          if (!['V3_EDITORIAL_WRITING_INCOMPLETE', 'V3_INVALID_AI_RESPONSE'].includes(error.code)) throw error;
           for (let slot = index; slot < index + 24; slot += 1) {
-            const candidate = { assetId: original.assetId, ...writingFallback(delivery, slot, L.caption) };
+            const candidate = { assetId: original.assetId, headline: purposeHeadline(delivery, slot), caption: purposeCaption(delivery, L.caption, slot) };
             if (!editorialCaptionIssues(candidate, accepted, factsIssue, draftContext, insight).length) { frame = candidate; break; }
           }
         }
@@ -112,9 +130,9 @@ export async function writeEditorialDirection(request, delivery, rows, selected,
       if (!within(value, limit, minimum) || factsIssue(value) || shootWritingIssues(value, delivery, { observation: rows.map(row => row.summary || '').join(' ') }).length) {
         if (key === 'introduction') draft[key] = '';
         else {
-          const result = await request(`Return JSON {"text":"..."}. Write only the ${key}, ${minimum}-${limit} characters. Keep to the supplied purpose. ` + policy(delivery), prompt, { maxTokens: 450, temperature: .2 });
+          const result = await readCreationText(request, `Return JSON {"text":"..."}. Write only the ${key}, ${minimum}-${limit} characters. Keep to the supplied purpose. ` + policy(delivery), prompt, { maxTokens: 450, temperature: .2 });
           draft[key] = clean(result?.text);
-          if (!within(draft[key], limit, minimum) || factsIssue(draft[key]) || shootWritingIssues(draft[key], delivery).length) draft[key] = key === 'title' ? writingFallback(delivery).headline : key === 'openingLine' ? 'Your finished photographs are brought together in this feature.' : 'Your complete collection is here to view and keep.';
+          if (!within(draft[key], limit, minimum) || factsIssue(draft[key]) || shootWritingIssues(draft[key], delivery).length) draft[key] = key === 'title' ? purposeHeadline(delivery) : key === 'openingLine' ? 'Your finished photographs are brought together in this feature.' : 'Your complete collection is here to view and keep.';
         }
         await checkpoint(draft);
       }
@@ -144,12 +162,14 @@ export async function writeEditorialDirection(request, delivery, rows, selected,
 
 export async function rewriteEditorialCaption(request, delivery, insight, instruction, previous, factsIssue) {
   const deadline = Date.now() + 45000;
-  const existing = (delivery.creativeDirection?.frames || []).filter(frame => frame.assetId !== insight.assetId).map(frame => ({ headline: frame.headline, caption: frame.caption }));
-  const prompt = context(delivery, [insight]) + '\nInstruction: ' + JSON.stringify(instruction) + '\nExisting text to avoid repeating, never a source of facts: ' + JSON.stringify({ frames: existing, sections: delivery.creativeDirection?.sections, introduction: delivery.creativeDirection?.editorial?.introduction }) + '\nCurrent untrusted text: ' + JSON.stringify(previous);
+  const existing = (delivery.creativeDirection?.frames || []).filter(frame => frame.assetId !== insight.assetId);
+  const checked = existing.filter(frame => !editorialCaptionIssues(frame, [], factsIssue, delivery, {}).length).map(frame => ({ headline: frame.headline, caption: frame.caption }));
+  if (previous && !editorialCaptionIssues(previous, [], factsIssue, delivery, insight).length) checked.push({ headline: previous.headline, caption: previous.caption });
+  const prompt = context(delivery, [insight]) + '\nInstruction: ' + JSON.stringify(instruction) + '\nChecked text to avoid repeating, never a source of facts: ' + JSON.stringify(checked);
   let issues = [];
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const retryPrompt = attempt ? '\nThe previous suggestion failed these checks: ' + issues.join(', ') + '. Correct each one, keep the wording grounded in the supplied shoot details, and return the requested JSON.' : '';
-    const result = await request('Return JSON {"headline":"...","caption":"..."}. The headline must be 2-70 characters and the caption 5-320 characters. Write only this photograph\'s words. Review shoot emphasis, repetition and grounding, and repair the current text when needed. ' + policy(delivery), prompt + retryPrompt, { maxTokens: 700, deadline });
+    const result = await request('Return JSON {"headline":"...","caption":"..."}. The headline must be 2-70 characters and the caption 5-320 characters. Write only this photograph\'s words. Review shoot emphasis, repetition and grounding, and repair the current text when needed. ' + policy(delivery), prompt + retryPrompt, { maxTokens: 1200, deadline });
     issues = editorialCaptionIssues(result, existing, factsIssue, delivery, insight);
     if (!issues.length) return { headline: clean(result.headline), caption: clean(result.caption) };
   }
@@ -168,7 +188,7 @@ export async function rewriteEditorialBlock(request, delivery, rows, block, prev
   let issues = [];
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const retryPrompt = attempt ? '\nThe previous suggestion failed these checks: ' + issues.join(', ') + '. Correct each one, preserve the supplied facts, and return the requested JSON.' : '';
-    const result = await request(`Return JSON {"text":"..."}. Rewrite only the requested ${block} block, 5-${limit} characters. No headings, credits or invented facts. ` + policy(delivery), prompt + retryPrompt, { maxTokens: 700, deadline });
+    const result = await request(`Return JSON {"text":"..."}. Rewrite only the requested ${block} block, 5-${limit} characters. No headings, credits or invented facts. ` + policy(delivery), prompt + retryPrompt, { maxTokens: 1200, deadline });
     issues = editorialBlockIssues(result, limit, factsIssue, delivery, surrounding, rows);
     if (!issues.length) return { text: clean(result.text) };
   }
