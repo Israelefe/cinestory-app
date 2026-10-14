@@ -46,3 +46,13 @@ export function latestAcceptedReturns(collaboration) {
   for (const item of collaboration.returnedAssets || []) bySource.set(String(item.sourceAssetId) + ':' + (item.variationId || 'main'), item);
   return [...bySource.values()].filter(item => item.reviewStatus === 'accepted').map(item => String(item.assetId));
 }
+
+export function libraryPhotoQuery(userId, filters = {}) {
+  const query = { userId };
+  if (filters.folder === 'Unfiled') query.folder = { $in: ['All photographs', 'Unfiled', '', null] };
+  else if (filters.folder && filters.folder !== 'All photographs') query.folder = String(filters.folder).slice(0, 100);
+  if (filters.type === 'raw') query.rawPublicId = { $exists: true };
+  if (filters.type === 'image') query.rawPublicId = { $exists: false };
+  if (filters.search) { const search = String(filters.search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); query.$or = [{ originalFilename: { $regex: search, $options: 'i' } }, { tags: { $regex: search, $options: 'i' } }]; }
+  return query;
+}

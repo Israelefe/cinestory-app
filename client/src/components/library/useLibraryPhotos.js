@@ -44,7 +44,9 @@ export function useLibraryPhotos({ folder = '', search = '', type = '' } = {}) {
       }).catch(() => {});
     };
     window.addEventListener('veylo:library-uploads-settled', settled);
-    return () => { window.removeEventListener('veylo:library-photo-added', onAdded); window.removeEventListener('veylo:library-uploads-settled', settled); };
+    const foldersChanged = () => load(1);
+    window.addEventListener('veylo:library-folders-changed', foldersChanged);
+    return () => { window.removeEventListener('veylo:library-photo-added', onAdded); window.removeEventListener('veylo:library-uploads-settled', settled); window.removeEventListener('veylo:library-folders-changed', foldersChanged); };
   }, [folder, search, type]);
   return { ...state, loading, error, reload: () => load(1), loadMore: () => load(state.page + 1), setState };
 }

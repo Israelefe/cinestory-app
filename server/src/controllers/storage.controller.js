@@ -1,14 +1,13 @@
+import { removeLibraryPhotograph } from '../services/libraryRemoval.service.js';
 import { recordPaidUsage } from '../services/paidUsage.service.js';
 import { commitLibraryAsset } from '../services/libraryAssetCommit.service.js';
-import { schedulePortfolioRemoval, finishPortfolioRemoval } from '../services/portfolioLifecycle.service.js';
 import { z } from 'zod';
 import User from '../models/User.js';
 import StorageAsset from '../models/StorageAsset.js';
 import LibraryCollaboration from '../models/LibraryCollaboration.js';
-import Portfolio from '../models/Portfolio.js';
 import LibraryShoot from '../models/LibraryShoot.js';
 import { ensureLibraryShoot } from '../services/libraryShoot.service.js';
-import { photoIds } from '../services/libraryWorkflow.service.js';
+import { photoIds, libraryPhotoQuery } from '../services/libraryWorkflow.service.js';
 import { signedArchiveUrl } from '../services/deliveryMedia.service.js';
 import { resolveEntitlements } from '../services/entitlement.service.js';
 import { confirmStorageUpload, createStorageUploadSignature, renewStorageUploadSignature, removeStorageAsset, storageAssetUrls, storageFolder, STORAGE_RAW_FORMATS } from '../services/storageMedia.service.js';
@@ -18,8 +17,6 @@ const r2UploadSchema = z.object({ objectKey: z.string().min(5).max(1000), upload
 const confirmSchema = z.object({ ...r2UploadSchema.shape, rawOriginal: r2UploadSchema.extend({ format: z.string().min(2).max(12), resourceType: z.literal('raw') }).optional(), originalFilename: z.string().trim().max(180).default('photograph'), folder: z.string().trim().max(100).default('All photographs'), tags: z.array(z.string().trim().min(1).max(40)).max(12).default([]) }).strict();
 const cleanupSchema = z.object({ uploads: z.array(z.object({ publicId: z.string().min(5).max(500), resourceType: z.enum(['image', 'raw']) }).strict()).max(2).min(1) }).strict();
 const editSchema = z.object({ folder: z.string().trim().min(1).max(100), tags: z.array(z.string().trim().min(1).max(40)).max(12), caption: z.string().trim().max(180).default('') }).strict();
-
-function escaped(value) { return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 async function storageAccess(userId) {
   const user = await User.findById(userId);
@@ -33,12 +30,7 @@ export async function listStorage(req, res) {
   try {
     const { user, entitlements } = await storageAccess(req.user.id);
     if (entitlements.features.storageMode === 'unavailable') return res.json({ success: true, data: [], access: entitlements.features.storageMode, usage: { usedBytes: user.storageUsedBytes || 0, reservedBytes: user.storageReservedBytes || 0, videoBytes: user.videoUsedBytes || 0, limitBytes: entitlements.limits.personalStorageBytes } });
-    const query = { userId: user._id };
-    if (req.query.folder === 'Unfiled') query.folder = { $in: ['All photographs', 'Unfiled', '', null] };
-    else if (req.query.folder && req.query.folder !== 'All photographs') query.folder = String(req.query.folder).slice(0, 100);
-    if (req.query.type === 'raw') query.rawPublicId = { $exists: true };
-    if (req.query.type === 'image') query.rawPublicId = { $exists: false };
-    if (req.query.search) query.$or = [{ originalFilename: { $regex: escaped(req.query.search), $options: 'i' } }, { tags: { $regex: escaped(req.query.search), $options: 'i' } }];
+    const query = libraryPhotoQuery(user._id, req.query);
     const page = Math.max(1, Math.min(10000, Math.floor(Number(req.query.page) || 1)));
     const [assets, folders, total, groups, shoots] = await Promise.all([
       StorageAsset.find(query).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * 60).limit(61),
@@ -129,23 +121,9 @@ export async function editStorageAsset(req, res) {
 
 export async function deleteStorageAsset(req, res) {
   try {
-    const asset = await StorageAsset.findOne({ _id: req.params.id, userId: req.user.id });
-    if (!asset) return res.status(404).json({ success: false, message: 'Photograph not found.' });
-    const activeLink = await LibraryCollaboration.exists({ userId: req.user.id, status: { $in: ['active', 'submitted'] }, expiresAt: { $gt: new Date() }, $or: [{ assetIds: asset._id }, { 'returnedAssets.assetId': asset._id }] });
-    if (activeLink) {
-      const links = await LibraryCollaboration.find({ userId: req.user.id, status: { $in: ['active', 'submitted'] }, expiresAt: { $gt: new Date() }, $or: [{ assetIds: asset._id }, { 'returnedAssets.assetId': asset._id }] }).select('title kind').lean();
-      return res.status(409).json({ success: false, message: `Close the active link${links.length > 1 ? 's' : ''} before removing this photo: ${links.map(link => link.title).join(', ')}.`, links });
-    }
-    const cleanup = await schedulePortfolioRemoval(req.user.id, [asset.publicId]);
-    await removeStorageAsset(asset.publicId);
-    if (asset.rawPublicId) await removeStorageAsset(asset.rawPublicId, 'raw');
-    const removed = await StorageAsset.deleteOne({ _id: asset._id, userId: req.user.id });
-    await finishPortfolioRemoval(cleanup);
-    if (removed.deletedCount) await User.updateOne(
-      { _id: req.user.id, storageUsedBytes: { $gte: asset.bytes } },
-      { $inc: { storageUsedBytes: -asset.bytes } }
-    );
-    recordAnalyticsEventAsync({ name: 'storage.delete.completed', source: 'server', actorType: 'photographer', userId: req.user?.id, status: 'completed', bytes: asset.bytes, metadata: { surface: 'library' } });
+    const result = await removeLibraryPhotograph(req.user.id, req.params.id);
+    if (result.status === 'missing') return res.status(404).json({ success: false, message: 'Photograph not found.' });
+    if (result.status === 'protected') return res.status(409).json({ success: false, message: result.message, links: result.links });
     res.json({ success: true, message: 'Photograph removed from your library.' });
   } catch (error) {
     recordAnalyticsEventAsync({ name: 'storage.delete.failed', source: 'server', actorType: 'photographer', userId: req.user?.id, status: 'failed', errorCode: error.code || 'LIBRARY_DELETE_FAILED', metadata: { surface: 'library', assetId: String(req.params.id || '').slice(0, 80) } });

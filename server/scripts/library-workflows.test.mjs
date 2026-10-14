@@ -1,4 +1,5 @@
 import EmailDelivery from '../src/models/EmailDelivery.js';
+import { deleteLibraryFolders, deleteLibraryLinkBatch, deleteLibraryPhotoBatch, selectAllLibraryPhotos, selectAllLibraryLinks } from '../src/controllers/libraryBulk.controller.js';
 import { retryLibraryEmails } from '../src/services/email.service.js';
 import { authorizedMediaClaims } from '../src/services/mediaAuthorization.service.js';
 import assert from 'node:assert/strict';
@@ -54,6 +55,7 @@ before(async () => {
       return Response.json({ success: true, selectionMarks: true });
     }
     const key = decodeURIComponent(url.pathname.split('/').slice(2).join('/'));
+    if (url.searchParams.get('list-type') === '2') return new Response('<ListBucketResult><IsTruncated>false</IsTruncated></ListBucketResult>', { headers: { 'Content-Type': 'application/xml' } });
     if (options.method === 'PUT' && options.headers?.['x-amz-copy-source']) {
       if (options.headers['x-amz-copy-source'].endsWith(failedCopySource || 'never-fail')) return new Response('<Error><Code>AccessDenied</Code></Error>');
       objects.set(key, true);
@@ -71,6 +73,73 @@ beforeEach(async () => {
   photos.forEach(photo => objects.set(photo.publicId, true));
 });
 after(async () => { globalThis.fetch = actualFetch; await mongoose.disconnect(); await mongo?.stop(); });
+
+test('deleting folders keeps originals, active links and quota while clearing editor folder references', async () => {
+  const folder = await LibraryShoot.create({ userId: owner._id, name: 'Ada at 30' });
+  const empty = await LibraryShoot.create({ userId: owner._id, name: 'Empty session' });
+  await StorageAsset.updateMany({ userId: owner._id }, { $set: { shootId: folder._id } });
+  await User.updateOne({ _id: owner._id }, { $set: { storageUsedBytes: 3000 } });
+  const job = await link({ kind: 'editor-handoff', acceptedFolder: folder.name, acceptedFolderId: folder._id });
+  const foreign = await LibraryShoot.create({ userId: other._id, name: folder.name });
+  const foreignPhoto = await StorageAsset.create({ userId: other._id, publicId: 'foreign-keep-original', folder: foreign.name, shootId: foreign._id, format: 'jpg', bytes: 1000 });
+  const before = photos.map(photo => photo.publicId);
+  const result = await call(deleteLibraryFolders, { body: { names: [folder.name, empty.name] } });
+  assert.equal(result.code, 200); assert.equal(result.body.data.movedCount, 3);
+  const retained = await StorageAsset.find({ userId: owner._id });
+  assert.deepEqual(retained.map(photo => photo.publicId).sort(), [...before].sort()); assert.ok(retained.every(photo => photo.folder === 'Unfiled' && !photo.shootId));
+  assert.equal(await LibraryShoot.countDocuments({ userId: owner._id }), 0);
+  assert.equal((await StorageAsset.findById(foreignPhoto._id)).folder, folder.name); assert.ok(await LibraryShoot.exists({ _id: foreign._id }));
+  const retainedJob = await LibraryCollaboration.findById(job._id); assert.equal(retainedJob.status, 'active'); assert.equal(retainedJob.acceptedFolderId, undefined); assert.equal(retainedJob.acceptedFolder, undefined); assert.deepEqual(retainedJob.assetIds.map(String), ids());
+  assert.equal((await User.findById(owner._id)).storageUsedBytes, 3000);
+  assert.equal((await call(deleteLibraryFolders, { body: { names: [folder.name] } })).code, 200, 'A lost response can be retried safely');
+  assert.equal((await call(deleteLibraryFolders, { body: { names: ['Unfiled'] } })).code, 400);
+});
+
+test('select all photos pages through IDs only, keeps filters and excludes later uploads and other owners', async () => {
+  await StorageAsset.insertMany(Array.from({ length: 1004 }, (_, index) => ({ userId: owner._id, publicId: 'selection-' + index, folder: 'Other session', format: 'jpg', originalFilename: `frame-${index}.jpg`, bytes: 1 })));
+  const foreign = await StorageAsset.create({ userId: other._id, publicId: 'foreign-selection', folder: 'Other session', format: 'jpg', bytes: 1 });
+  const first = await call(selectAllLibraryPhotos); assert.equal(first.body.data.length, 1000); assert.equal(first.body.hasMore, true);
+  const later = await StorageAsset.create({ userId: owner._id, publicId: 'later-upload', format: 'jpg', bytes: 1, createdAt: new Date(Date.now() + 10000) });
+  const second = await call(selectAllLibraryPhotos, { query: { after: first.body.nextCursor, before: first.body.before } });
+  const all = [...first.body.data, ...second.body.data]; assert.equal(all.length, 1007); assert.equal(new Set(all).size, 1007); assert.equal(all.includes(String(foreign._id)), false); assert.equal(all.includes(String(later._id)), false);
+  assert.ok(all.every(id => typeof id === 'string' && /^[a-f0-9]{24}$/.test(id)));
+  const filtered = await call(selectAllLibraryPhotos, { query: { folder: 'Ada at 30', search: 'portrait-2' } }); assert.deepEqual(filtered.body.data, [ids()[1]]);
+  assert.deepEqual((await call(selectAllLibraryPhotos, { query: { search: '.*' } })).body.data, []);
+  assert.equal((await call(selectAllLibraryPhotos, { query: { folder: { $ne: '' } } })).code, 400);
+});
+
+test('bulk photo removal protects active links and foreign photographs and replays without changing quota twice', async () => {
+  await link({ assetIds: [photos[1]._id], selectionRule: { mode: 'exactly', count: 1 } });
+  await User.updateOne({ _id: owner._id }, { $set: { storageUsedBytes: 3000 } });
+  const foreign = await StorageAsset.create({ userId: other._id, publicId: 'foreign-bulk-delete', format: 'jpg', bytes: 1000 });
+  const result = await call(deleteLibraryPhotoBatch, { body: { assetIds: [ids()[0], ids()[1], String(foreign._id)] } });
+  assert.equal(result.code, 200); assert.equal(result.body.data.failed.length, 1); assert.equal(result.body.data.failed[0].status, 'protected');
+  assert.equal(await StorageAsset.exists({ _id: photos[0]._id }), null); assert.ok(await StorageAsset.exists({ _id: photos[1]._id })); assert.ok(await StorageAsset.exists({ _id: foreign._id }));
+  assert.equal((await User.findById(owner._id)).storageUsedBytes, 2000);
+  await call(deleteLibraryPhotoBatch, { body: { assetIds: [ids()[0]] } }); assert.equal((await User.findById(owner._id)).storageUsedBytes, 2000);
+});
+
+test('concurrent bulk removals free each photograph’s storage once', async () => {
+  await User.updateOne({ _id: owner._id }, { $set: { storageUsedBytes: 3000 } });
+  const request = { body: { assetIds: ids() } };
+  const results = await Promise.all([call(deleteLibraryPhotoBatch, request), call(deleteLibraryPhotoBatch, request)]);
+  assert.ok(results.every(result => result.code === 200 && result.body.data.failed.length === 0));
+  assert.equal(await StorageAsset.countDocuments({ userId: owner._id }), 0);
+  assert.equal((await User.findById(owner._id)).storageUsedBytes, 0);
+});
+
+test('select all links includes later pages and bulk deletion stays in the owner and chosen workspace', async () => {
+  const jobs = await Promise.all(Array.from({ length: 27 }, () => link()));
+  const editor = await link({ kind: 'editor-handoff' }), foreign = await link({ userId: other._id });
+  await EmailDelivery.create([{ userId: owner._id, eventKey: `library:${jobs[0]._id}:invite:retry`, kind: 'library-invite', recipientEmail: 'client@example.test', status: 'failed' }, { userId: other._id, eventKey: `library:${foreign._id}:invite:retry`, kind: 'library-invite', recipientEmail: 'other-client@example.test', status: 'failed' }]);
+  const selected = await call(selectAllLibraryLinks, { query: { kind: 'preselection' } }); assert.equal(selected.body.data.length, 27);
+  const remove = { body: { kind: 'preselection', assetIds: [...selected.body.data, String(editor._id), String(foreign._id)] } };
+  assert.equal((await call(deleteLibraryLinkBatch, remove)).code, 200); assert.equal(await LibraryCollaboration.countDocuments({ userId: owner._id, kind: 'preselection', status: 'deleted' }), 27);
+  assert.equal((await LibraryCollaboration.findById(editor._id)).status, 'active'); assert.equal((await LibraryCollaboration.findById(foreign._id)).status, 'active');
+  assert.equal((await EmailDelivery.findOne({ userId: owner._id })).status, 'skipped'); assert.equal((await EmailDelivery.findOne({ userId: other._id })).status, 'failed');
+  assert.equal((await call(getPublicLibraryContent, access(jobs[0]))).code, 410); assert.equal(await StorageAsset.countDocuments(), 3);
+  await call(deleteLibraryLinkBatch, remove); assert.equal((await LibraryCollaboration.findById(jobs[0]._id)).accessVersion, 1);
+});
 
 test('share previews expose only a marked cover and never count as an opening', async () => {
   const job = await link({ coverAssetId: photos[1]._id, note: 'Private editing brief', recipientEmail: 'private@example.test', pinDigest: 'private-digest' });

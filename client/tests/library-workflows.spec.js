@@ -9,7 +9,7 @@ const image = readFileSync(new URL('../public/veylo/web/demo-lora-1-480.webp', i
 const emptyDraft = () => ({ selectedAssetIds: [], reviewedAssetIds: [], cursor: 0, version: 0 });
 async function fixture(page, overrides = {}) {
   const photos = Array.from({ length: 65 }, (_, index) => photo(index));
-  const state = { photos, drafts: [], submissions: [], creates: [], sourceAssets: photos.slice(0, 4), selectionDraft: emptyDraft(), status: 'active', rule: { mode: 'exactly', count: 2 }, returned: [], ...overrides };
+  const state = { photos, drafts: [], submissions: [], creates: [], sourceAssets: photos.slice(0, 4), selectionDraft: emptyDraft(), status: 'active', rule: { mode: 'exactly', count: 2 }, returned: [], deletedFolders: [], deleteBatches: [], ...overrides };
   await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 4, necessary: true, serviceAnalytics: true })));
   await page.route('**/api/v1/**', async route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname, method = request.method();
@@ -26,11 +26,26 @@ async function fixture(page, overrides = {}) {
       state.photos.unshift(asset);
       return json(path.includes('/public/') ? { asset, sourceAssetId: body.sourceAssetId } : asset, { usage: { usedBytes: state.photos.length * 2000000 } });
     }
+    if (path.endsWith('/photos/selection')) {
+      const filtered = state.photos.filter(photo => (!url.searchParams.get('folder') || photo.folder === url.searchParams.get('folder')) && (!url.searchParams.get('search') || photo.originalFilename.includes(url.searchParams.get('search'))));
+      const offset = Number(url.searchParams.get('after') || 0), chunk = filtered.slice(offset, offset + 40);
+      return json(chunk.map(photo => photo.id), { hasMore: filtered.length > offset + 40, nextCursor: String(offset + 40), before: new Date().toISOString() });
+    }
+    if (path.endsWith('/photos/delete')) {
+      const ids = request.postDataJSON().assetIds; state.deleteBatches.push(ids);
+      const failed = ids.filter(id => state.protectedIds?.includes(id)).map(id => ({ id, status: 'protected', message: 'Close the active link before removing this photo.' }));
+      const removedIds = ids.filter(id => !failed.some(row => row.id === id)); state.photos = state.photos.filter(photo => !removedIds.includes(photo.id));
+      return json({ removedIds, failed });
+    }
+    if (path.endsWith('/shoots/delete')) {
+      const names = request.postDataJSON().names; state.deletedFolders.push(...names); state.photos = state.photos.map(photo => names.includes(photo.folder) ? { ...photo, folder: 'Unfiled' } : photo);
+      return json({ removedNames: names, movedCount: state.photos.length });
+    }
     if (path.endsWith('/photos/resolve')) return json(request.postDataJSON().assetIds.map(id => state.photos.find(photo => photo._id === id)).filter(Boolean));
     if (path.endsWith('/storage') && method === 'GET') {
       let filtered = state.photos.filter(photo => (!url.searchParams.get('folder') || photo.folder === url.searchParams.get('folder')) && (!url.searchParams.get('search') || photo.originalFilename.includes(url.searchParams.get('search'))));
       const offset = (Number(url.searchParams.get('page') || 1) - 1) * 60;
-      return json(filtered.slice(offset, offset + 60), { total: filtered.length, libraryTotal: state.photos.length, access: 'read-write', shoots: [{ name: 'Ada at 30', count: state.photos.length }], usage: { usedBytes: state.photos.length * 2000000, limitBytes: 100e9 }, hasMore: filtered.length > offset + 60 });
+      return json(filtered.slice(offset, offset + 60), { total: filtered.length, libraryTotal: state.photos.length, access: 'read-write', shoots: [...new Set(state.photos.map(photo => photo.folder))].map(name => ({ name, count: state.photos.filter(photo => photo.folder === name).length })), usage: { usedBytes: state.photos.length * 2000000, limitBytes: 100e9 }, hasMore: filtered.length > offset + 60 });
     }
     if (path.endsWith('/collaborations') && method === 'POST') { const body = request.postDataJSON(); state.creates.push(body); return json({ ...body, _id: jobId, publicId: 'shared-link', expiresAt: new Date(Date.now() + 86400000).toISOString() }); }
     if (path.endsWith('/collaborations') && method === 'GET') return json([], { hasMore: false });
@@ -53,6 +68,65 @@ test('decision undo restores count and deck position; matching never guesses dup
   const files = [{ name: 'portrait-1-edit.jpg' }, { name: 'duplicate-edit.jpg' }];
   const matches = matchEditorReturns(files, [{ id: 'one', originalFilename: 'portrait-1.CR2' }, { id: 'two', originalFilename: 'duplicate.CR2' }, { id: 'three', originalFilename: 'duplicate.JPG' }]);
   expect(matches[0].sourceAssetId).toBe('one'); expect(matches[1].sourceAssetId).toBe('');
+});
+
+for (const width of [320, 768, 834, 1440]) test(`folder deletion and selecting every photo fit ${width}px`, async ({ page }) => {
+  const state = await fixture(page); await page.setViewportSize({ width, height: 1000 }); await page.goto('/library', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Manage folders', exact: true }).click();
+  const folders = page.getByRole('dialog', { name: 'Manage folders', exact: true });
+  await folders.getByRole('button', { name: 'Select all folders' }).click(); await expect(folders).toContainText('1 selected');
+  await folders.getByRole('button', { name: 'Delete 1 selected' }).click();
+  const confirmation = page.getByRole('dialog', { name: 'Delete this folder?' });
+  await expect(confirmation).toContainText('Not in a folder');
+  const bounds = await confirmation.boundingBox(); expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(width); expect(bounds.y + bounds.height).toBeLessThanOrEqual(1000);
+  await confirmation.getByRole('button', { name: 'Delete folders', exact: true }).click(); await expect(confirmation).toHaveCount(0);
+  await expect(page.locator('.lib-photo-grid .lib-photo')).toHaveCount(60); expect(state.photos).toHaveLength(65); expect(state.photos.every(photo => photo.folder === 'Unfiled')).toBe(true);
+  await page.getByRole('button', { name: 'Select all photographs', exact: true }).click(); await expect(page.locator('.lib-bulk')).toContainText('65 selected');
+  await page.getByRole('button', { name: 'Delete selected photographs', exact: true }).click();
+  const remove = page.getByRole('dialog', { name: 'Remove 65 photographs?' }); await remove.getByRole('button', { name: 'Remove photographs', exact: true }).click(); await expect(remove).toHaveCount(0);
+  await expect(page.locator('.lib-photo-grid .lib-photo')).toHaveCount(0); expect(state.photos).toHaveLength(0); expect(state.deleteBatches.flat()).toHaveLength(65); expect(state.deleteBatches.every(ids => ids.length <= 25)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('bulk removal keeps protected photographs selected and explains what to do next', async ({ page }) => {
+  const state = await fixture(page, { protectedIds: [photo(0).id] }); await page.goto('/library', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Select all photographs', exact: true }).click(); await page.getByRole('button', { name: 'Delete selected photographs', exact: true }).click(); await page.getByRole('dialog').getByRole('button', { name: 'Remove photographs', exact: true }).click();
+  await expect(page.locator('.lib-bulk')).toContainText('1 selected'); await expect(page.locator('.lib-photo-grid .lib-photo')).toHaveCount(1);
+  await expect(page.getByText('1 kept. Close the active link before removing this photo.')).toBeVisible(); expect(state.photos.map(photo => photo.id)).toEqual([photo(0).id]);
+});
+
+test('a failed bulk batch can retry without losing the remaining selection', async ({ page }) => {
+  const state = await fixture(page); let attempts = 0;
+  await page.route('**/api/v1/storage/photos/delete', route => { attempts++; return attempts === 2 ? route.fulfill({ status: 503, json: { success: false, message: 'Please retry the remaining photographs.' } }) : route.fallback(); });
+  await page.goto('/library', { waitUntil: 'domcontentloaded' }); await page.getByRole('button', { name: 'Select all photographs', exact: true }).click(); await page.getByRole('button', { name: 'Delete selected photographs', exact: true }).click();
+  const dialog = page.getByRole('dialog'); await dialog.getByRole('button', { name: 'Remove photographs', exact: true }).click(); await expect(dialog.locator('.lib-error')).toContainText('Please retry the remaining photographs'); expect(state.photos).toHaveLength(45);
+  await dialog.getByRole('button', { name: 'Remove photographs', exact: true }).click(); await expect(dialog).toHaveCount(0); expect(state.photos).toHaveLength(0);
+});
+
+test('stopping a bulk deletion finishes its current batch and keeps the remaining photos selected', async ({ page }) => {
+  const state = await fixture(page); let release;
+  await page.route('**/api/v1/storage/photos/delete', async route => { await new Promise(resolve => { release = resolve; }); await route.fallback(); });
+  await page.goto('/library', { waitUntil: 'domcontentloaded' }); await page.getByRole('button', { name: 'Select all photographs', exact: true }).click(); await page.getByRole('button', { name: 'Delete selected photographs', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Remove photographs', exact: true }).click(); await expect.poll(() => Boolean(release)).toBe(true);
+  await page.getByRole('button', { name: 'Stop after current batch' }).click(); release();
+  await expect(page.getByRole('dialog')).toHaveCount(0); await expect(page.locator('.lib-bulk')).toContainText('45 selected');
+  expect(state.photos).toHaveLength(45); expect(state.deleteBatches).toHaveLength(1);
+});
+
+for (const kind of ['preselection', 'editor-handoff']) test(`select all ${kind} links includes hidden pages before deleting`, async ({ page }) => {
+  await fixture(page); await page.setViewportSize({ width: 390, height: 1000 });
+  let jobs = Array.from({ length: 27 }, (_, i) => ({ _id: (100 + i).toString(16).padStart(24, '0'), publicId: 'job-' + i, title: 'Session ' + (i + 1), kind, status: 'active', expiresAt: new Date(Date.now() + 86400000).toISOString(), assetIds: [photo(0).id] }));
+  const deleted = [];
+  await page.route('**/api/v1/storage/collaborations**', route => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/selection')) return route.fulfill({ json: { success: true, data: jobs.map(job => job._id), hasMore: false } });
+    if (url.pathname.endsWith('/delete')) { const body = route.request().postDataJSON(); expect(body.kind).toBe(kind); deleted.push(...body.assetIds); jobs = jobs.filter(job => !body.assetIds.includes(job._id)); return route.fulfill({ json: { success: true, data: { removedIds: body.assetIds, failed: [] } } }); }
+    return route.fulfill({ json: { success: true, data: jobs.slice(0, 24), hasMore: jobs.length > 24 } });
+  });
+  await page.goto(kind === 'preselection' ? '/pre-selection' : '/editor-links', { waitUntil: 'domcontentloaded' }); await expect(page.locator('.lib-job-card')).toHaveCount(24);
+  await page.getByRole('button', { name: 'Select all links' }).click(); await page.getByRole('button', { name: 'Delete 27 selected' }).click();
+  const dialog = page.getByRole('dialog'); await expect(dialog).toContainText('Stored originals, returned edits and accepted photographs are kept'); await dialog.getByRole('button', { name: 'Delete 27 links', exact: true }).click();
+  await expect(page.locator('.lib-job-card')).toHaveCount(0); expect(deleted).toHaveLength(27); expect(jobs).toHaveLength(0);
 });
 
 test('grid replacement preserves the view, asks which choice to replace, and supports Undo', async ({ page }) => {

@@ -1,3 +1,4 @@
+import { deleteLibraryFolders, selectAllLibraryPhotos, selectAllLibraryLinks, deleteLibraryPhotoBatch, deleteLibraryLinkBatch } from '../controllers/libraryBulk.controller.js';
 import express from 'express';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { cleanupUnconfirmedStorageUploads, confirmStorageAsset, createLibraryShoot, deleteStorageAsset, downloadLibraryArchive, downloadStorageAsset, editStorageAsset, listStorage, moveLibraryPhotos, resolveLibraryPhotos, renewLibraryUpload, signStorageUpload } from '../controllers/storage.controller.js';
@@ -28,6 +29,11 @@ router.post('/public/:publicId/uploads/confirm', privateLinkUploadLimit, confirm
 router.use(authMiddleware);
 router.get('/', listStorage);
 router.post('/shoots', createLibraryShoot);
+router.post('/shoots/delete', deleteLibraryFolders);
+router.get('/photos/selection', selectAllLibraryPhotos);
+router.post('/photos/delete', deleteLibraryPhotoBatch);
+router.get('/collaborations/selection', selectAllLibraryLinks);
+router.post('/collaborations/delete', deleteLibraryLinkBatch);
 router.patch('/photos/move', moveLibraryPhotos);
 router.post('/photos/archive', downloadLibraryArchive);
 router.post('/photos/resolve', resolveLibraryPhotos);
