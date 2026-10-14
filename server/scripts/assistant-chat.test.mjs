@@ -226,8 +226,11 @@ test('video help describes the built Pro feature and its actual limits', () => {
   assert.match(knowledge, /original downloads are enabled by default on new deliveries/);
   assert.match(knowledge, /three steps are Upload, Details, Preview & send/);
   assert.match(knowledge, /Existing saved choices remain unchanged/);
-  assert.match(knowledge, /Original quality is the default/);
-  assert.match(knowledge, /explicitly enable adaptive playback/);
+  assert.match(knowledge, /Playback qualities prepare automatically after upload/);
+  assert.match(knowledge, /2K \(1440p\).*4K adds 4K/);
+  assert.match(knowledge, /Clients start on Auto/);
+  assert.match(knowledge, /uploaded originals and permitted original downloads stay untouched/i);
+  assert.doesNotMatch(knowledge, /explicitly enable adaptive playback|compressed versions up to 1080p/);
   assert.match(knowledge, /without a Veylo delivery credit/);
 });
 

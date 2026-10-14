@@ -1,8 +1,8 @@
-import { mkdir, open, readFile, stat, statfs } from 'node:fs/promises';
+import { mkdir, open, readFile, stat, statfs, rm } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import { runMediaTool } from './videoMedia.service.js';
-import { parseHlsPlaylist } from './videoEncode.service.js';
+import { parseHlsPlaylist } from './videoPlaylist.service.js';
 import { putR2Object, putR2ObjectStream } from './r2.service.js';
 import { HLS_SEGMENT_SECONDS } from './videoHls.service.js';
 
@@ -39,8 +39,13 @@ async function startsWithIndependentPicture(file) {
 
 // No encoder, scaling, frame-rate conversion or audio conversion is used here.
 // Difficult GOP layouts, rotation and non-AAC audio retain native MP4 playback.
-export async function packageOriginalVideo({ file, directory, metadata, bytes, prefix, guard = async () => {} }) {
+export async function packageOriginalVideo({ file, directory, metadata, bytes, prefix, guard = async () => {}, hlsOnly = false, segmentSeconds = HLS_SEGMENT_SECONDS, maxSegmentSeconds = 12, maxBandwidth = Infinity, onProgress }) {
   await guard();
+  const outputDirectory = path.resolve(directory, 'original-stream');
+  const cleanupCopy = async () => {
+    if (path.dirname(outputDirectory) !== path.resolve(directory)) throw new Error('Unsafe original playback cleanup directory.');
+    await rm(outputDirectory, { recursive: true, force: true });
+  };
   const space = await statfs(directory);
   if (space.bavail * space.bsize < bytes * 1.3 + 512 * 1024 ** 2) throw Object.assign(new Error('Video preparation is waiting for temporary disk space.'), { code: 'VIDEO_DISK_BUSY' });
   const input = ['-v', 'error', '-nostdin', '-protocol_whitelist', 'file', '-format_whitelist', 'mov,matroska,webm', '-i', file];
@@ -48,18 +53,20 @@ export async function packageOriginalVideo({ file, directory, metadata, bytes, p
     await guard(); const free = await statfs(directory);
     if (free.bavail * free.bsize < 512 * 1024 ** 2) throw Object.assign(new Error('Video preparation ran out of temporary disk space.'), { code: 'VIDEO_DISK_BUSY' });
   };
-  if (metadata.videoCodec === 'h264' && !metadata.rotation && (!metadata.audioCodec || metadata.audioCodec === 'aac')) {
+  if (metadata.videoCodec === 'h264' && (!metadata.pixelFormat || ['yuv420p', 'yuvj420p'].includes(metadata.pixelFormat)) && !metadata.rotation && (!metadata.audioCodec || metadata.audioCodec === 'aac')) {
     const name = `q${Math.min(metadata.width, metadata.height)}`;
     const output = path.join(directory, 'original-stream'); await mkdir(output);
     await runMediaTool('ffmpeg', [...input, '-map', '0:v:0', '-map', '0:a:0?', '-map_metadata', '0', '-c', 'copy',
-      '-f', 'hls', '-hls_time', String(HLS_SEGMENT_SECONDS), '-hls_playlist_type', 'vod',
-      '-hls_segment_filename', path.join(output, 's%06d.ts'), '-y', path.join(output, 'index.m3u8')], { timeoutMs: 30 * 60_000, guard: check });
+      ...(onProgress ? ['-progress', 'pipe:1', '-nostats'] : []),
+      '-f', 'hls', '-hls_time', String(segmentSeconds), '-hls_playlist_type', 'vod',
+      '-hls_segment_filename', path.join(output, 's%06d.ts'), '-y', path.join(output, 'index.m3u8')], { timeoutMs: 30 * 60_000, guard: check, onProgress });
     await guard();
     const text = await readFile(path.join(output, 'index.m3u8'), 'utf8');
     let segments;
     // Existing keyframes determine the boundaries. Never re-encode an original
     // just to force short segments; use fast-start MP4 when the source won't fit.
     try { segments = parseHlsPlaylist(text, metadata.duration); } catch { segments = null; }
+    if (segments?.some(segment => segment.seconds > maxSegmentSeconds)) segments = null;
     if (segments) {
       let generatedBytes = 0;
       for (let index = 0; index < segments.length; index++) {
@@ -70,6 +77,7 @@ export async function packageOriginalVideo({ file, directory, metadata, bytes, p
         segments[index].bytes = info.size;
       }
     }
+    if (segments?.some(segment => segment.bytes * 8 / segment.seconds > maxBandwidth)) segments = null;
     if (segments) {
       let totalBytes = 0;
       for (let offset = 0; offset < segments.length; offset += 4) {
@@ -87,9 +95,11 @@ export async function packageOriginalVideo({ file, directory, metadata, bytes, p
       const variant = { name, width: metadata.width, height: metadata.height, bandwidth, playlistBytes: playlist.length, segments };
       const master = Buffer.from(`#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=${bandwidth},RESOLUTION=${metadata.width}x${metadata.height}\n${name}/index.m3u8\n`);
       await guard(); await putR2Object(prefix + 'master.m3u8', master, { contentType: 'application/vnd.apple.mpegurl' });
+      if (hlsOnly) await cleanupCopy();
       return { bytes: totalBytes + playlist.length + master.length, hls: { prefix, masterBytes: master.length, bytes: totalBytes + playlist.length + master.length, variants: [variant] } };
     }
   }
+  if (hlsOnly) { await cleanupCopy(); return null; }
   const output = path.join(directory, 'playback.mp4');
   await guard();
   await runMediaTool('ffmpeg', [...input, '-map', '0:v:0', '-map', '0:a?', '-map_metadata', '0', '-c', 'copy', '-movflags', '+faststart', '-y', output], { timeoutMs: 30 * 60_000, guard: check });

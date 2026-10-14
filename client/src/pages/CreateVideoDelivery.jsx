@@ -7,13 +7,16 @@ import { useVeyloReducedMotion } from '../utils/motionPolicy.js';
 import { useAssistantWorkflow } from '../components/AssistantContext.jsx';
 import VideoUploadQueue from '../components/video/VideoUploadQueue.jsx';
 import VideoActivity, { VideoBusyIcon } from '../components/video/VideoActivity.jsx';
+import VideoPreparation from '../components/video/VideoPreparation.jsx';
+import { playbackReady, previewReady } from '../utils/videoQuality.js';
 import VideoViewer from '../components/delivery/VideoViewer.jsx';
 import { videoBytes, videoDuration, videoMediaUrl } from '../services/videoDelivery.js';
 import './CreateVideoDelivery.css';
 import '../components/video/VideoCreatorDetails.css';
 
-const empty = { clientName: '', brief: '', presentation: { title: '', introduction: '', items: [], allowDownloads: true, playbackMode: 'original', featuredAssetId: null } };
-const formOf = delivery => delivery ? { clientName: delivery.clientName || '', brief: delivery.brief || '', presentation: { ...delivery.video.draft, playbackMode: delivery.video.draft.playbackMode || 'original', featuredAssetId: delivery.video.draft.featuredAssetId || null, items: delivery.video.draft.items.map(item => ({ assetId: String(item.assetId), title: item.title || '', description: item.description || '', posterSeconds: item.posterSeconds || 0, allowDownload: item.allowDownload ?? null })) } } : structuredClone(empty);
+const empty = { clientName: '', brief: '', presentation: { title: '', introduction: '', items: [], allowDownloads: true, playbackMode: 'adaptive', featuredAssetId: null } };
+const complete = delivery => Boolean(delivery?.publishedAt || delivery?.video?.published || delivery?.status === 'published');
+const formOf = delivery => delivery ? { clientName: delivery.clientName || '', brief: delivery.brief || '', presentation: { ...delivery.video.draft, playbackMode: delivery.status === 'published' ? delivery.video.draft.playbackMode || 'original' : 'adaptive', featuredAssetId: delivery.video.draft.featuredAssetId || null, items: delivery.video.draft.items.map(item => ({ assetId: String(item.assetId), title: item.title || '', description: item.description || '', posterSeconds: item.posterSeconds || 0, allowDownload: item.allowDownload ?? null })) } } : structuredClone(empty);
 function VideoPreview({ deliveryId, onClose }) {
   const dialog = useRef(null); const [data, setData] = useState(null); const [error, setError] = useState(''); const [size, setSize] = useState('desktop'); const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -49,6 +52,7 @@ export default function CreateVideoDelivery({ user, initialDelivery }) {
     return creating.current;
   }, []);
   const saveNow = useCallback(async () => {
+    if (complete(record.current)) return record.current;
     const value = current.current; const content = JSON.stringify(value);
     if (content === saved.current && record.current) return record.current;
     const target = await ensure(); setStatus('Saving…');
@@ -67,12 +71,12 @@ export default function CreateVideoDelivery({ user, initialDelivery }) {
     revision.current = data.data.video.revision; record.current = data.data; if (mounted.current) setDelivery(data.data);
   }), [serialize]);
   useEffect(() => {
-    if (JSON.stringify(form) === saved.current || !config?.writeAvailable || entitlements?.plan !== 'pro' || busy) return;
+    if (complete(delivery) || JSON.stringify(form) === saved.current || !config?.writeAvailable || entitlements?.plan !== 'pro' || busy) return;
     const timer = setTimeout(() => { void save().catch(failure => { if (mounted.current) { setStatus('Not saved'); setError(apiMessage(failure, 'Your latest changes could not be saved.')); } }); }, 1800);
     return () => clearTimeout(timer);
-  }, [form, save, config, entitlements, busy]);
+  }, [form, save, config, entitlements, busy, delivery?.status]);
   useEffect(() => {
-    if (!delivery?._id || !delivery.assets?.some(asset => ['uploading', 'queued', 'verifying', 'processing', 'deleting', 'reserved'].includes(asset.state) || ['queued', 'running'].includes(asset.cover?.state) || ['queued', 'running'].includes(asset.adaptive?.state))) return;
+    if (!delivery?._id || !delivery.assets?.some(asset => ['uploading', 'queued', 'verifying', 'processing', 'deleting', 'reserved'].includes(asset.state) || ['queued', 'running'].includes(asset.cover?.state) || ['queued', 'running'].includes(asset.adaptive?.state) || asset.state === 'ready' && !playbackReady(asset) && asset.adaptive?.state !== 'failed')) return;
     let stopped = false; let timer;
     const poll = async () => {
       try { await refresh(); if (!stopped) setRefreshError(''); }
@@ -82,7 +86,7 @@ export default function CreateVideoDelivery({ user, initialDelivery }) {
     timer = setTimeout(poll, 5000);
     return () => { stopped = true; clearTimeout(timer); };
   }, [delivery, refresh]);
-  useEffect(() => { const leave = event => { if (JSON.stringify(current.current) !== saved.current) { event.preventDefault(); event.returnValue = ''; } }; window.addEventListener('beforeunload', leave); return () => window.removeEventListener('beforeunload', leave); }, []);
+  useEffect(() => { const leave = event => { if (!complete(record.current) && JSON.stringify(current.current) !== saved.current) { event.preventDefault(); event.returnValue = ''; } }; window.addEventListener('beforeunload', leave); return () => window.removeEventListener('beforeunload', leave); }, []);
   const initialize = useCallback(input => serialize(async () => {
     const target = await saveNow(); const { data } = await api.post(`/v1/videos/deliveries/${target._id}/uploads`, input);
     const updated = (await api.get(`/v1/videos/deliveries/${target._id}`)).data.data;
@@ -120,7 +124,8 @@ export default function CreateVideoDelivery({ user, initialDelivery }) {
     return '';
   }
   const uploadIssue = uploadRequirement();
-  const ready = !uploadIssue && selected.every(item => !['queued', 'running'].includes(assets.get(item.assetId)?.cover?.state) && (form.presentation.playbackMode === 'adaptive' ? assets.get(item.assetId)?.hasAdaptive : assets.get(item.assetId)?.originalCompatible !== false));
+  const ready = !uploadIssue && selected.every(item => !['queued', 'running'].includes(assets.get(item.assetId)?.cover?.state) && playbackReady(assets.get(item.assetId)));
+  const canPreview = !uploadIssue && selected.every(item => previewReady(assets.get(item.assetId)));
   function detailsRequirement() {
     if (uploadIssue) return uploadIssue;
     if (!form.presentation.title.trim()) return 'Add a delivery title before continuing.';
@@ -130,14 +135,12 @@ export default function CreateVideoDelivery({ user, initialDelivery }) {
     if (expiry && (!Number.isFinite(expiryTime) || expiryTime <= Date.now())) return 'Choose a link expiry date that has not passed.';
     if (selected.some(item => item.posterSeconds > (assets.get(item.assetId)?.duration || 10800))) return 'Choose cover frames within each video’s duration.';
     if (selected.some(item => assets.get(item.assetId)?.cover?.state === 'failed' && !assets.get(item.assetId)?.posterUrl)) return 'This video has no cover. Remove it and add it again in Upload.';
-    if (form.presentation.playbackMode === 'original' && selected.some(item => assets.get(item.assetId)?.originalCompatible === false)) return 'Enable adaptive playback or replace the incompatible original before continuing.';
-    if (!ready) return 'Wait for the selected playback copies and covers to finish preparing.';
     return '';
   }
   const detailsIssue = detailsRequirement();
   const stepIssue = step === 0 ? uploadIssue : detailsIssue;
   async function goToStep(target) {
-    if (busy || target === step) return;
+    if (complete(delivery) || busy || target === step) return;
     if (target < step) { setStep(target); return; }
     const issue = target === 2 ? detailsIssue : target === 1 ? uploadIssue : '';
     if (issue) { setError(issue); return; }
@@ -145,8 +148,15 @@ export default function CreateVideoDelivery({ user, initialDelivery }) {
   }
   const shareUrl = delivery?.publicId ? `${window.location.origin}/v/${delivery.publicId}` : '';
   const steps = [['Upload', Upload], ['Details', Film], ['Preview & send', Eye]];
-  const preparedCount = form.presentation.items.filter(item => assets.get(item.assetId)?.state === 'ready').length;
+  const preparedCount = form.presentation.items.filter(item => playbackReady(assets.get(item.assetId))).length;
   const retry = assetId => action(async () => { await api.post(`/v1/videos/assets/${assetId}/retry`, {}); await refresh(); });
+  if (complete(delivery)) return <main className="vc-page vc-completed"><motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .3 }} className="vc-complete-card">
+    <span className="vc-complete-check"><Check size={30} /></span><p>VIDEO DELIVERY</p><h1>{delivery.status === 'published' ? 'Your delivery is ready.' : 'This delivery has been created.'}</h1><p>{delivery.video.published?.title || form.presentation.title}</p><span className="vc-complete-detail">{delivery.status === 'published' ? 'Your client link is ready to share. Manage this delivery from your dashboard.' : 'This client link is closed. Return to your dashboard to manage the delivery.'}</span>
+    {delivery.status === 'published' && <><a className="vc-open-client" href={shareUrl} target="_blank" rel="noreferrer">Open delivery<ExternalLink size={18} /></a>
+    <div className="vc-complete-share"><button type="button" onClick={() => action(async () => { await navigator.clipboard.writeText(shareUrl); setStatus('Client link copied'); })}><Copy size={17} />Copy link</button><a href={'https://wa.me/?text=' + encodeURIComponent(`Your videos are ready: ${shareUrl}`)} target="_blank" rel="noreferrer"><MessageCircle size={17} />Share on WhatsApp</a></div></>}
+    {status === 'Client link copied' && <p role="status">Client link copied</p>}{error && <p role="alert">{error}</p>}
+    <Link className="vc-primary vc-dashboard-return" to="/dashboard" replace><ArrowLeft size={17} />Back to dashboard</Link>
+  </motion.section></main>;
   return <main className="vc-page vc-simple">
     <header className="vc-top"><Link to="/dashboard"><ArrowLeft size={17} />Dashboard</Link><span><Film size={17} />VIDEO DELIVERY</span><div role="status">{(status === 'Saving…') && <VideoBusyIcon />}{status || (delivery ? 'Saved draft' : 'New draft')}</div></header>
     <div className="vc-shell"><aside className="vc-sidebar"><p>YOUR FINISHED VIDEOS</p><h1>Your video delivery.</h1><nav className="vc-steps" aria-label="Video creation steps">{steps.map(([label, Icon], index) => <button type="button" key={label} className={step === index ? 'is-active' : ''} aria-current={step === index ? 'step' : undefined} disabled={busy || (index > step && Boolean(index === 2 ? detailsIssue : uploadIssue))} onClick={() => void goToStep(index)}><span>{(index === 0 && !uploadIssue) || (index === 1 && !detailsIssue) ? <Check size={16} /> : <Icon size={16} />}</span><strong>{label}</strong><small>{index + 1}</small></button>)}</nav><div className="vc-limits"><span>10 videos per delivery</span><span>Up to 5 GB each</span><Link to="/videos/library">Your video library<ArrowRight size={14} /></Link></div></aside>
@@ -161,12 +171,12 @@ export default function CreateVideoDelivery({ user, initialDelivery }) {
         <VideoUploadQueue deliveryId={delivery?._id} assets={delivery?.assets?.filter(asset => selected.some(item => item.assetId === asset.id))} selectedCount={selected.length} initialize={initialize} onRefresh={refresh} onRemoveAsset={removeUploadAsset} onState={setUploadFacts} disabled={!canWrite} maxBytes={config?.maxFileBytes} accountTransfers={config?.accountTransfers} statusUnavailable={Boolean(refreshError)} />
         <button type="button" className="vc-subtle" disabled={busy} onClick={() => action(async () => { await save(); setLibrary((await api.get('/v1/videos/assets')).data.data); }, 'Opening your video library...')}><Film size={17} />Choose from your video library</button>
         {library && <div className="vc-library-picker"><div><h3>Your ready videos</h3><button type="button" onClick={() => setLibrary(null)} aria-label="Close video library"><X size={18} /></button></div>{library.assets.filter(asset => asset.state === 'ready').map(asset => <button type="button" key={asset.id} disabled={form.presentation.items.some(item => item.assetId === asset.id) || form.presentation.items.length >= 10} onClick={() => present({ items: [...form.presentation.items, { assetId: asset.id, title: asset.filename.replace(/\.[^.]+$/, '').slice(0, 100), description: '', posterSeconds: 0, allowDownload: null }] })}><Film size={18} /><span>{asset.filename}<small>{videoDuration(asset.duration)} / {videoBytes(asset.bytes)}</small></span><span>{form.presentation.items.some(item => item.assetId === asset.id) ? 'Added' : 'Add'}</span></button>)}{!library.assets.some(asset => asset.state === 'ready') && <p>No ready videos in your library yet.</p>}{library.nextCursor && <button type="button" onClick={() => action(async () => { const next = (await api.get('/v1/videos/assets', { params: { cursor: library.nextCursor } })).data.data; setLibrary(current => ({ ...next, assets: [...current.assets, ...next.assets] })); })}>Load more videos</button>}</div>}
-        <div className="vc-upload-guide"><strong>What happens after uploading?</strong><p>Veylo checks that each file can play and creates its cover image. Wait until every video says “Ready for playback” before adding details. Your original file stays unchanged.</p><p>Adaptive playback copies are optional. You can choose them in Details.</p></div>
+        <div className="vc-upload-guide"><strong>Playback is prepared automatically.</strong><p>After uploading, Veylo checks each video, creates its cover and prepares its playback qualities, up to your uploaded resolution. Add your delivery details while preparation runs. Your original stays unchanged.</p></div>
       </>}
       {step === 1 && <>
         <div className="vc-section-heading" ref={heading}><p>STEP 2 OF 3</p><h2 tabIndex={-1}>A few details for your client.</h2><span>Name the delivery, check the video order and choose what your client can download.</span></div>
         <div className="vc-fields"><label className="is-wide">Delivery title<input maxLength={120} value={form.presentation.title} onChange={event => present({ title: event.target.value })} placeholder="Ada & Emeka - the wedding films" /></label><label className="is-wide">A message for your client <small>Optional</small><textarea rows={3} maxLength={1500} value={form.presentation.introduction} onChange={event => present({ introduction: event.target.value })} placeholder="Your wedding films are ready. We hope you enjoy watching them." /></label></div>
-        <section className="vc-quality"><h3>Playback quality</h3><p>Your client watches the original picture and audio quality. Veylo prepares compatible MP4s for streaming without re-encoding them. Large originals still need a good connection.</p><label className="vc-check"><input type="checkbox" checked={form.presentation.playbackMode === 'adaptive'} onChange={event => present({ playbackMode: event.target.checked ? 'adaptive' : 'original' })} /><span>Create adaptive playback copies<small>Optional. Let the player change quality to suit the connection.</small></span></label><div><strong>What changes when enabled</strong><p>Veylo creates compressed playback versions up to 1080p. They load more easily on mobile networks, but may show less detail than your original and take extra time to prepare. Your uploaded file and original downloads stay unchanged.</p></div></section>
+        <section className="vc-quality"><h3>Playback prepares itself.</h3><p>Clients start on Auto. The player chooses a suitable quality for their connection, and they can select a quality themselves. Veylo prepares 720p, 1080p, 2K and 4K where supported by your upload.</p><div className="vc-preparation-summary" role="status"><Check size={17} /><span>{preparedCount} of {selected.length} videos ready{preparedCount < selected.length ? ' · Preparation continues while you add details' : ' · All playback qualities prepared'}</span></div></section>
         <div className="vc-list-heading"><h3>Your videos</h3><span>{form.presentation.items.length} / 10</span></div>
         {!form.presentation.items.length && <p className="vc-empty">Add a video in the Upload step first.</p>}
         <div className="vc-video-list">{form.presentation.items.map((item, index) => { const asset = assets.get(item.assetId); return <article className="vc-video-card" key={item.assetId} draggable onDragStart={() => { dragging.current = index; }} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); reorder(dragging.current, index); dragging.current = null; }}>
@@ -174,8 +184,7 @@ export default function CreateVideoDelivery({ user, initialDelivery }) {
           <div className="vc-video-edit"><div className="vc-video-tools"><small>VIDEO {index + 1}{form.presentation.featuredAssetId === item.assetId || (!form.presentation.featuredAssetId && index === 0) ? ' / OPENS FIRST' : ''}</small><div><button type="button" disabled={index === 0} onClick={() => reorder(index, index - 1)} aria-label={`Move video ${index + 1} up`}><ChevronUp size={17} /></button><button type="button" disabled={index === form.presentation.items.length - 1} onClick={() => reorder(index, index + 1)} aria-label={`Move video ${index + 1} down`}><ChevronDown size={17} /></button><button type="button" onClick={() => present({ items: form.presentation.items.filter(row => row.assetId !== item.assetId), featuredAssetId: form.presentation.featuredAssetId === item.assetId ? null : form.presentation.featuredAssetId })} aria-label={`Remove video ${index + 1} from this delivery`}><Trash2 size={15} /></button></div></div>
             <label>Video title<input value={item.title} maxLength={100} onChange={event => editItem(item.assetId, { title: event.target.value })} /></label>
             <label>Description <small>Optional</small><textarea rows={2} value={item.description} maxLength={2000} onChange={event => editItem(item.assetId, { description: event.target.value })} placeholder="What should your client know about this video?" /></label>
-            {asset?.state === 'ready' && form.presentation.playbackMode === 'original' && asset.originalCompatible === false && <p className="vc-compatibility" role="alert">This original format may not play in every browser. Upload an H.264/AAC MP4 or enable adaptive playback above before sending.</p>}
-            {form.presentation.playbackMode === 'adaptive' && asset?.state === 'ready' && !asset.hasAdaptive && <div className="vc-step-note" role="status"><VideoActivity state={asset.adaptive?.state === 'failed' ? 'error' : refreshError ? 'paused' : 'working'} title={asset.adaptive?.state === 'failed' ? asset.adaptive.errorMessage : 'Preparing adaptive playback copies...'} detail="Continue when the selected playback copies are ready." />{asset.adaptive?.state === 'failed' && <button type="button" className="vc-subtle" disabled={busy} onClick={() => action(async () => { await save(); await api.post(`/v1/videos/assets/${item.assetId}/adaptive`, {}); await refresh(); })}>Retry adaptive preparation</button>}</div>}
+            <VideoPreparation asset={asset} statusUnavailable={Boolean(refreshError)} disabled={busy} onRetry={() => action(async () => { await save(); await api.post(`/v1/videos/assets/${item.assetId}/adaptive`, {}); await refresh(); })} />
             {asset?.cover?.state === 'failed' && asset.posterUrl && <p className="vc-step-note">The cover change could not finish. The existing cover will be used.</p>}
             {asset?.errorMessage && <div className="vc-error"><p>{asset.errorMessage}</p><button type="button" disabled={busy} onClick={() => retry(item.assetId)}>Retry preparation</button></div>}
             <button type="button" className="vc-opening" aria-pressed={form.presentation.featuredAssetId === item.assetId || (!form.presentation.featuredAssetId && index === 0)} onClick={() => present({ featuredAssetId: item.assetId })}>{form.presentation.featuredAssetId === item.assetId || (!form.presentation.featuredAssetId && index === 0) ? <Check size={17} /> : <Play size={17} />}<span>{form.presentation.featuredAssetId === item.assetId || (!form.presentation.featuredAssetId && index === 0) ? 'Opens first' : 'Open this video first'}</span></button>
@@ -188,14 +197,13 @@ export default function CreateVideoDelivery({ user, initialDelivery }) {
       </>}
       {step === 2 && <>
         <div className="vc-section-heading" ref={heading}><p>STEP 3 OF 3</p><h2 tabIndex={-1}>Take a look. Then send it.</h2><span>Check the client view before creating your link.</span></div>
-        <div className="vc-publish-summary"><Film size={28} /><h3>{form.presentation.title || 'Add a delivery title in Details'}</h3><p>{form.presentation.items.length} {form.presentation.items.length === 1 ? 'video' : 'videos'} / {ready ? 'Ready for playback' : `${preparedCount} ready`}</p><div><span>{delivery?.access?.hasPin ? 'PIN protected' : 'Anyone with the link'}</span><span>{form.presentation.allowDownloads ? 'Downloads enabled' : 'Playback only'}</span><span>{form.presentation.playbackMode === 'adaptive' ? 'Adaptive playback' : 'Original quality'}</span>{expiry && <span>Expires {expiry}</span>}</div>
-          {!ready && <p className="vc-step-note">{!form.presentation.items.length ? 'Add a video in Upload first.' : form.presentation.items.some(item => assets.get(item.assetId)?.state === 'failed') ? 'A video needs attention. Return to Upload to retry preparation.' : form.presentation.playbackMode === 'original' && form.presentation.items.some(item => assets.get(item.assetId)?.originalCompatible === false) ? 'Check the original format warning in Details before sending.' : 'Your selected playback version is still being prepared. This page updates automatically.'}</p>}
+        <div className="vc-publish-summary"><Film size={28} /><h3>{form.presentation.title || 'Add a delivery title in Details'}</h3><p>{form.presentation.items.length} {form.presentation.items.length === 1 ? 'video' : 'videos'} / {ready ? 'Ready for playback' : `${preparedCount} ready`}</p><div><span>{delivery?.access?.hasPin ? 'PIN protected' : 'Anyone with the link'}</span><span>{form.presentation.allowDownloads ? 'Downloads enabled' : 'Playback only'}</span><span>Auto quality</span>{expiry && <span>Expires {expiry}</span>}</div>
+          {!ready && <p className="vc-step-note">{!form.presentation.items.length ? 'Add a video in Upload first.' : form.presentation.items.some(item => assets.get(item.assetId)?.state === 'failed') ? 'A video needs attention. Return to Upload to retry preparation.' : 'Playback qualities are still being prepared. This page updates automatically.'}</p>}
           {!form.presentation.title.trim() && <p className="vc-step-note">Add a delivery title in Details before sending.</p>}
           {form.presentation.items.some(item => !item.title.trim()) && <p className="vc-step-note">Give each video a title in Details before sending.</p>}
-          <button type="button" className="vc-subtle" disabled={Boolean(detailsIssue) || busy} onClick={() => action(async () => { if (detailsIssue) return; const value = await save(); await saveAccess(); if (value) setPreview(true); }, 'Opening preview...')}><Eye size={17} />Preview client view</button>
-          <button type="button" className="vc-primary" disabled={Boolean(detailsIssue) || busy} onClick={() => action(async () => { if (detailsIssue) return; const value = await save(); await saveAccess(); const { data } = await api.post(`/v1/videos/deliveries/${value._id}/publish`, { revision: revision.current }); record.current = data.data; revision.current = data.data.video.revision; setDelivery(data.data); setStatus('Client link ready'); }, 'Creating client link...')}>{busy && <VideoBusyIcon />}{busy ? busyLabel : delivery?.status === 'published' ? 'Update client link' : 'Create client link'}<ArrowRight size={17} /></button>
+          <button type="button" className="vc-subtle" disabled={Boolean(detailsIssue) || !canPreview || busy} onClick={() => action(async () => { if (detailsIssue || !canPreview) return; const value = await save(); await saveAccess(); if (value) setPreview(true); }, 'Opening preview...')}><Eye size={17} />Preview client view</button>
+          <button type="button" className="vc-primary" disabled={Boolean(detailsIssue) || !ready || busy} onClick={() => action(async () => { if (detailsIssue || !ready) return; const value = await save(); await saveAccess(); const { data } = await api.post(`/v1/videos/deliveries/${value._id}/publish`, { revision: revision.current }); record.current = data.data; revision.current = data.data.video.revision; setDelivery(data.data); setStatus('Client link ready'); }, 'Creating client link...')}>{busy && <VideoBusyIcon />}{busy ? busyLabel : !ready ? 'Preparing playback qualities...' : 'Create client link'}<ArrowRight size={17} /></button>
         </div>
-        {delivery?.status === 'published' && <div className="vc-share"><p>YOUR CLIENT LINK IS READY</p><a className="vc-open-client" href={shareUrl} target="_blank" rel="noreferrer">Open the client view<ExternalLink size={18} /></a><div><button type="button" onClick={() => action(async () => { await navigator.clipboard.writeText(shareUrl); setStatus('Client link copied'); })}><Copy size={16} />Copy link</button><a href={'https://wa.me/?text=' + encodeURIComponent(`Your videos are ready: ${shareUrl}`)} target="_blank" rel="noreferrer"><MessageCircle size={17} />Send on WhatsApp</a></div><button type="button" className="vc-subtle" onClick={() => action(async () => { await api.post(`/v1/videos/deliveries/${delivery._id}/close`, {}); await refresh(); })}>Close client link</button></div>}
       </>}
       </motion.div>
       {stepIssue && <p id="vc-step-requirement" className="vc-step-requirement" role="status">{stepIssue}</p>}

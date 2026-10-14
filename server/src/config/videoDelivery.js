@@ -56,5 +56,5 @@ export function publicVideoSettings(settings) {
   const configured = infrastructure.storage && infrastructure.playback && infrastructure.media;
   return { ...Object.fromEntries(['maxVideos', 'maxFileBytes', 'maxDurationSeconds', 'storedSeconds', 'monthlyDeliveredMinutes', 'accountTransfers', 'recoveryDays'].map(key => [key, settings[key]])),
     available: Boolean(settings.enabled && settings.publicAvailable && configured && process.env.VIDEO_DELIVERY_QUALIFIED === 'true'),
-    configured, writeAvailable: Boolean(settings.enabled && configured), aiAvailable: false, defaultPlaybackMode: 'original', playbackResolution: 'original', adaptivePlaybackResolution: '1080p' };
+    configured, writeAvailable: Boolean(settings.enabled && configured), aiAvailable: false, defaultPlaybackMode: 'adaptive', playbackResolution: 'source', adaptivePlaybackResolution: '4K', playbackQualities: [720, 1080, 1440, 2160] };
 }

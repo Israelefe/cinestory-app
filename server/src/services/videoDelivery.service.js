@@ -12,6 +12,7 @@ import { signedHlsMedia, verifyHlsToken, hlsFile, VIDEO_MEDIA_SECONDS } from './
 import { acquireVideoLease, releaseVideoLease } from './videoLease.service.js';
 import { videoReadinessFilter } from './videoProcessingAuth.js';
 import { originalVideoCompatible, originalPlaybackFile, originalVideoRange } from './videoOriginal.service.js';
+import { VIDEO_QUALITY_VERSION, encodingVariants, playbackQualities } from './videoQuality.service.js';
 
 export const videoError = (message, status = 400, code = 'VIDEO_REQUEST_FAILED') => Object.assign(new Error(message), { status, code });
 export function videoId(value) {
@@ -56,7 +57,8 @@ export function videoAssetDTO(asset, { owner = false, posterUrl } = {}) {
   }
   return { id: String(asset._id), filename: owner ? asset.filename : undefined, bytes: asset.bytes,
     duration: asset.duration || 0, width: asset.width || 0, height: asset.height || 0,
-    state: asset.state, posterUrl, ...(owner ? { originalCompatible: originalVideoCompatible(asset), hasAdaptive: Boolean(asset.hls?.version), adaptive: asset.adaptive, cover: asset.cover, errorCode: asset.errorCode, errorMessage: asset.errorMessage, analysis: asset.analysis ? { state: asset.analysis.state, includeSpeech: asset.analysis.includeSpeech, suggestions: asset.analysis.suggestions, frames: asset.analysis.frames, errorMessage: asset.analysis.errorMessage } : { state: 'idle' } } : {}) };
+    state: asset.state, posterUrl, qualities: playbackQualities(asset), autoPlayback: asset.hls?.ladderVersion === VIDEO_QUALITY_VERSION,
+    ...(owner ? { playbackReady: asset.hls?.ladderVersion === VIDEO_QUALITY_VERSION, previewReady: Boolean(asset.hls?.version || asset.previewHls?.version), expectedQualities: asset.width && asset.height ? encodingVariants(asset).map(row => row.name) : [], originalCompatible: originalVideoCompatible(asset), hasAdaptive: Boolean(asset.hls?.version), adaptive: asset.adaptive, cover: asset.cover, errorCode: asset.errorCode, errorMessage: asset.errorMessage, analysis: asset.analysis ? { state: asset.analysis.state, includeSpeech: asset.analysis.includeSpeech, suggestions: asset.analysis.suggestions, frames: asset.analysis.frames, errorMessage: asset.analysis.errorMessage } : { state: 'idle' } } : {}) };
 }
 function safeVideoDetails(value) {
   const video = value?.toObject ? value.toObject() : structuredClone(value);
@@ -153,11 +155,16 @@ export async function assertVideoPlaybackUsage(userId, settings, now = new Date(
 }
 export async function videoPlayback({ delivery, asset, settings, sessionId, preview = false }) {
   const presentation = preview ? delivery.video.draft : delivery.video.published;
-  const mode = presentation?.playbackMode || 'original';
-  if (mode === 'adaptive' && !asset.hls?.version) throw videoError('This film is preparing for adaptive playback. Please try again shortly.', 409, 'VIDEO_NOT_READY');
+  const availableHls = preview && asset.previewHls?.version ? asset.previewHls : asset.hls;
+  let mode = presentation?.playbackMode === 'adaptive' || asset.hls?.ladderVersion === VIDEO_QUALITY_VERSION ? 'adaptive' : 'original';
+  if (mode === 'adaptive' && !availableHls?.version) throw videoError('This film is preparing its first playback quality. Please try again shortly.', 409, 'VIDEO_NOT_READY');
   await assertVideoPlaybackUsage(delivery.userId, settings);
-  let session = sessionId && /^[a-f\d-]{36}$/i.test(sessionId) ? await VideoPlayback.findOne({ _id: sessionId, deliveryId: delivery._id, assetId: asset._id, accessVersion: delivery.video.accessVersion, playbackMode: mode, preview, expiresAt: { $gt: new Date() } }) : null;
+  let session = sessionId && /^[a-f\d-]{36}$/i.test(sessionId) ? await VideoPlayback.findOne({ _id: sessionId, deliveryId: delivery._id, assetId: asset._id, accessVersion: delivery.video.accessVersion, preview, expiresAt: { $gt: new Date() } }) : null;
   if (sessionId && !session) throw videoError('Open the video again to continue playback.', 401, 'VIDEO_SESSION_EXPIRED');
+  if (session) {
+    if (presentation?.playbackMode === 'adaptive' && session.playbackMode === 'original') throw videoError('Open the video again to continue playback.', 401, 'VIDEO_SESSION_EXPIRED');
+    mode = session.playbackMode;
+  }
   if (session?.mediaExpiresAt && session.mediaExpiresAt.getTime() <= Date.now() + 60_000) throw videoError('Open the video again to continue playback.', 401, 'VIDEO_SESSION_EXPIRED');
   const id = session?._id || crypto.randomUUID();
   const leaseId = await acquireVideoLease('view:' + delivery.userId, settings.accountViewers, { ownerId: delivery.userId, resourceId: id, ttlSeconds: settings.tokenSeconds });
@@ -165,14 +172,16 @@ export async function videoPlayback({ delivery, asset, settings, sessionId, prev
   try {
     const prepared = asset.originalPlayback?.state === 'ready' ? asset.originalPlayback : null;
     const format = session?.mediaFormat || (mode === 'adaptive' || prepared?.hls?.version ? 'hls' : 'file');
-    const version = session?.mediaVersion || (mode === 'adaptive' ? asset.hls.version : prepared?.version || 'original');
+    const version = session?.mediaVersion || (mode === 'adaptive' ? availableHls.version : prepared?.version || 'original');
     const issuedAt = session?.mediaIssuedAt || new Date();
     media = signedHlsMedia({ assetId: asset._id, sessionId: id, version, format, original: mode === 'original', renewable: true, seconds: VIDEO_MEDIA_SECONDS, now: issuedAt.getTime() });
     const expiresAt = new Date(Math.min(Date.now() + settings.tokenSeconds * 1000, media.expiresAt.getTime()));
     session = await VideoPlayback.findOneAndUpdate({ _id: id }, { $set: { userId: delivery.userId, deliveryId: delivery._id, assetId: asset._id, accessVersion: delivery.video.accessVersion, playbackMode: mode, preview, leaseId, expiresAt,
       mediaVersion: version, mediaFormat: format, mediaIssuedAt: issuedAt, mediaExpiresAt: media.expiresAt } }, { upsert: true, new: true });
   } catch (error) { await releaseVideoLease(leaseId, id); throw error; }
-  return { sessionId: session._id, ...media, expiresAt: session.expiresAt, playbackMode: mode, renewAfterSeconds: Math.floor(settings.tokenSeconds / 2), preview };
+  const issuedHls = mode === 'adaptive' && [availableHls, asset.hls, ...(asset.previousHls || [])].find(row => row?.version === session.mediaVersion);
+  const qualities = issuedHls ? playbackQualities({ hls: issuedHls, frameRate: asset.frameRate }) : [];
+  return { sessionId: session._id, ...media, qualities, expiresAt: session.expiresAt, playbackMode: mode, renewAfterSeconds: Math.floor(settings.tokenSeconds / 2), preview };
 }
 export async function authorizeHlsRequest({ token, file, method, range }) {
   const claims = verifyHlsToken(token);
@@ -186,10 +195,11 @@ export async function authorizeHlsRequest({ token, file, method, range }) {
   const delivery = await Delivery.findOne({ _id: session.deliveryId, userId: session.userId, kind: 'video', 'video.accessVersion': session.accessVersion }).lean();
   if (!delivery || delivery.status === 'archived' || (!session.preview && (delivery.status !== 'published' || delivery.access?.revokedAt || (delivery.access?.expiresAt && delivery.access.expiresAt <= new Date())))) throw videoError('This video link is no longer available.', 410, 'VIDEO_LINK_CLOSED');
   const presentation = session.preview ? delivery.video.draft : delivery.video.published;
-  if ((presentation?.playbackMode || 'original') !== (original ? 'original' : 'adaptive')) throw videoError('Reopen this film to use its current playback setting.', 401, 'VIDEO_SESSION_EXPIRED');
+  if (session.playbackMode !== (original ? 'original' : 'adaptive') || original && presentation?.playbackMode === 'adaptive') throw videoError('Reopen this film to use its current playback setting.', 401, 'VIDEO_SESSION_EXPIRED');
   if (!presentation?.items.some(item => String(item.assetId) === claims.assetId)) throw videoError('Video not found in this delivery.', 404);
-  const asset = await VideoAsset.findOne({ _id: claims.assetId, userId: session.userId, state: 'ready', ...(!original ? { 'hls.version': claims.version } : claims.version !== 'original' ? { 'originalPlayback.version': claims.version, 'originalPlayback.state': 'ready' } : {}) }).lean();
-  const resource = asset && (filePlayback ? originalPlaybackFile(asset, claims.version) : hlsFile(asset, file, original));
+  const asset = await VideoAsset.findOne({ _id: claims.assetId, userId: session.userId, state: 'ready', ...(original && claims.version !== 'original' ? { 'originalPlayback.version': claims.version, 'originalPlayback.state': 'ready' } : {}) }).lean();
+  const selectedHls = !original && asset && (asset.hls?.version === claims.version ? asset.hls : session.preview && asset.previewHls?.version === claims.version ? asset.previewHls : asset.previousHls?.find(row => row.version === claims.version));
+  const resource = asset && (filePlayback ? originalPlaybackFile(asset, claims.version) : hlsFile(!original ? { ...asset, hls: selectedHls } : asset, file, original));
   if (!resource || !Number.isSafeInteger(resource.bytes) || resource.bytes < 1) throw videoError('Playback file not found.', 404);
   const requestedRange = filePlayback ? originalVideoRange(range, resource.bytes) : null;
   const deliveredBytes = requestedRange?.length || resource.bytes;
@@ -208,9 +218,9 @@ export async function queueOriginalPlayback(asset) {
   if (queued) await queueVideoJob(queued, 'prepare', { originalPlayback: true, generation }, 'original-playback:' + generation);
 }
 export async function queueAdaptiveVideo(asset) {
-  if (asset.hls?.version || asset.state !== 'ready') return;
+  if (asset.hls?.ladderVersion === VIDEO_QUALITY_VERSION || asset.state !== 'ready') return;
   const generation = crypto.randomUUID();
-  const queued = await VideoAsset.findOneAndUpdate({ _id: asset._id, userId: asset.userId, state: 'ready', 'hls.version': { $exists: false }, 'adaptive.state': { $nin: ['queued', 'running'] } }, { $set: { adaptive: { state: 'queued', generation, errorMessage: '' } } }, { new: true });
+  const queued = await VideoAsset.findOneAndUpdate({ _id: asset._id, userId: asset.userId, state: 'ready', 'hls.ladderVersion': { $ne: VIDEO_QUALITY_VERSION }, 'adaptive.state': { $nin: ['queued', 'running'] } }, { $set: { adaptive: { state: 'queued', generation, errorMessage: '', completed: [], total: asset.width && asset.height ? encodingVariants(asset).length : 0, updatedAt: new Date() } } }, { new: true });
   if (queued) await queueVideoJob(queued, 'prepare', { adaptive: true, generation }, 'adaptive:' + generation);
 }
 export async function queueVideoJob(asset, type, options = {}, keySuffix = '') {

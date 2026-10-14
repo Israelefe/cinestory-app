@@ -13,7 +13,7 @@ export function frameTimestamps(duration) {
   return Array.from({ length: count }, (_, index) => Math.round((duration * (index + .5) / count) * 100) / 100);
 }
 
-export function runMediaTool(tool, args, { timeoutMs = 120_000, maxOutput = 1_000_000, guard } = {}) {
+export function runMediaTool(tool, args, { timeoutMs = 120_000, maxOutput = 1_000_000, guard, onProgress } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.env[tool === 'ffprobe' ? 'FFPROBE_PATH' : 'FFMPEG_PATH'] || tool, args, { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, TEMP: process.env.TEMP, TMP: process.env.TMP } });
     const chunks = []; let bytes = 0; let settled = false;
@@ -26,10 +26,21 @@ export function runMediaTool(tool, args, { timeoutMs = 120_000, maxOutput = 1_00
     watch?.unref?.();
     const finish = (error, value) => { if (settled) return; settled = true; clearTimeout(timer); clearInterval(watch); error ? reject(error) : resolve(value); };
     const timer = setTimeout(() => { stop(Object.assign(new Error('This video took too long to prepare. Try a shorter or smaller export.'), { code: 'VIDEO_MEDIA_TIMEOUT' })); }, timeoutMs);
-    child.stdout.on('data', chunk => { bytes += chunk.length; if (bytes > maxOutput) { stop(new Error('Video inspection output exceeded its limit.')); } else chunks.push(chunk); });
+    let progressText = ''; let reporting = Promise.resolve();
+    child.stdout.on('data', chunk => {
+      if (onProgress) {
+        progressText += chunk.toString('utf8');
+        if (progressText.length > 65536) { stop(new Error('Video progress output exceeded its limit.')); return; }
+        const lines = progressText.split(/\r?\n/); progressText = lines.pop();
+        for (const line of lines) if (/^out_time_(us|ms)=/.test(line)) {
+          const seconds = Number(line.slice(12)) / 1_000_000;
+          if (Number.isFinite(seconds) && seconds >= 0) reporting = reporting.then(() => onProgress(seconds)).catch(stop);
+        }
+      } else { bytes += chunk.length; if (bytes > maxOutput) stop(new Error('Video inspection output exceeded its limit.')); else chunks.push(chunk); }
+    });
     child.stderr.on('data', () => {}); // Provider paths and media metadata never enter logs.
     child.once('error', () => finish(Object.assign(new Error('The video media worker is unavailable.'), { code: 'VIDEO_MEDIA_UNAVAILABLE' })));
-    child.once('close', code => finish(failure || (code ? Object.assign(new Error('This export could not be decoded. Try MP4 with H.264 video and AAC audio.'), { code: 'VIDEO_INVALID_MEDIA' }) : null), Buffer.concat(chunks).toString('utf8')));
+    child.once('close', code => { void reporting.then(() => finish(failure || (code ? Object.assign(new Error('This export could not be decoded. Try MP4 with H.264 video and AAC audio.'), { code: 'VIDEO_INVALID_MEDIA' }) : null), Buffer.concat(chunks).toString('utf8'))); });
   });
 }
 

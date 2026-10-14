@@ -1,6 +1,6 @@
 ﻿import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Play, Download, Film, ArrowUpRight, ArrowLeft, ChevronDown } from 'lucide-react';
+import { Play, Download, Film, ArrowUpRight, ArrowLeft, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
 import { videoBytes, videoDuration, videoMediaUrl } from '../../services/videoDelivery.js';
 import VideoPlayback from '../video/VideoPlayback.jsx';
@@ -25,6 +25,7 @@ export default function VideoViewer({ delivery, requestPlayback, endPlayback, do
   }, [delivery.items, delivery.featuredAssetId]);
   const initial = orderedItems[0];
   const [selected, setSelected] = useState(initial?.id || '');
+  const [endedId, setEndedId] = useState('');
   const item = delivery.items.find(video => video.id === selected) || initial;
   const vertical = item && isPortrait(item);
   const portraitItems = orderedItems.filter(isPortrait); const wideItems = orderedItems.filter(video => !isPortrait(video));
@@ -47,7 +48,7 @@ export default function VideoViewer({ delivery, requestPlayback, endPlayback, do
     root.querySelectorAll('[data-video-id]').forEach(node => observer.observe(node));
     return () => { observing = false; observer.disconnect(); };
   }, [vertical, desktop, select, orderedItems]);
-  const player = item && <VideoPlayback key={item.id} item={item} portrait={vertical} original={delivery.playbackMode !== 'adaptive'} autoPlay muted={muted} onMutedChange={setMuted} requestPlayback={requestPlayback} endPlayback={endPlayback} />;
+  const player = item && <VideoPlayback key={item.id} item={item} portrait={vertical} original={!item.autoPlayback && delivery.playbackMode !== 'adaptive'} autoPlay muted={muted} onMutedChange={setMuted} onEnded={() => setEndedId(item.id)} onPlaybackStart={() => setEndedId('')} requestPlayback={requestPlayback} endPlayback={endPlayback} />;
   if (!item) return <div className="vv-state"><Film /><h1>No videos are ready yet.</h1><p>Finish preparing a video before opening this preview.</p></div>;
   if (vertical) { const portraitView = <main className="vv-page vv-vertical-page">
     <div className="vv-feed" ref={feed} role="region" aria-label="Vertical videos" tabIndex={0} onKeyDown={event => {
@@ -60,7 +61,12 @@ export default function VideoViewer({ delivery, requestPlayback, endPlayback, do
         <div className="vv-screen is-portrait">{item.id === video.id ? player : video.posterUrl && <img className="vv-reel-poster" src={videoMediaUrl(video.posterUrl)} alt="" loading="lazy" />}</div>
         <header className="vv-brand vv-reel-brand"><Photographer branding={branding} /><span className="vv-reel-count">{index + 1} / {portraitItems.length}</span></header>
         {wideItems.length > 0 && <button type="button" className="vv-all-films" onClick={() => select(wideItems[0].id)}><ArrowLeft size={15} />All films</button>}
-        <div className="vv-reel-caption"><p>{delivery.title}{demo ? ' / DEMO' : ''}</p><h1>{video.title}</h1>{(video.description || delivery.introduction) && <details className="vv-reel-description"><summary>About this film<ChevronDown size={14} /></summary><div>{video.description}{delivery.introduction && <p className="vv-reel-message">{delivery.introduction}</p>}</div></details>}</div>
+        <div className="vv-reel-caption"><p>{delivery.title}{demo ? ' / DEMO' : ''}</p><h1>{video.title}</h1>{(video.description || delivery.introduction) && <details className="vv-reel-description"><summary>About this film<ChevronDown size={14} /></summary><div>{video.description}{delivery.introduction && <p className="vv-reel-message">{delivery.introduction}</p>}</div></details>}
+          {item.id === video.id && <div className="vv-discovery">
+            {endedId === video.id && index < portraitItems.length - 1 && <motion.button type="button" className="vv-next-reel" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} onClick={() => { setEndedId(''); feed.current?.scrollTo({ top: feed.current.scrollTop + feed.current.children[index + 1].getBoundingClientRect().top - feed.current.getBoundingClientRect().top, behavior: 'smooth' }); }}><motion.span animate={{ y: [3, -3, 3] }} transition={{ duration: .9, repeat: 2 }}><ChevronUp size={20} /></motion.span><span>Swipe up for the next video<small>{portraitItems[index + 1].title}</small></span></motion.button>}
+            {wideItems.length > 0 && <button type="button" className="vv-other-films" onClick={() => select(wideItems[0].id)}><Film size={17} /><span>Other films<small>{wideItems.length} {wideItems.length === 1 ? 'film' : 'films'} in other formats</small></span><ArrowRight size={17} /></button>}
+          </div>}
+        </div>
         <div className="vv-reel-actions"><OriginalDownload item={video} downloadUrl={demo ? undefined : downloadUrl} compact />{/^https?:\/\//.test(branding.website || '') && <a href={branding.website} target="_blank" rel="noreferrer" aria-label="Visit the photographer's website"><ArrowUpRight size={21} /><span>Studio</span></a>}</div>
       </article>)}
     </div>
@@ -73,7 +79,7 @@ export default function VideoViewer({ delivery, requestPlayback, endPlayback, do
     <div className={'vv-layout' + (delivery.items.length === 1 ? ' is-single' : '')} style={{ '--vv-aspect-ratio': videoRatio(item) }}>
       <section className="vv-film" aria-label={item.title}>
         <div className="vv-screen">{player}</div>
-        <div className="vv-film-caption"><div><p>{videoDuration(item.duration)} / {delivery.playbackMode === 'adaptive' ? 'Adaptive playback' : 'Original quality'}</p><h2>{item.title}</h2></div><OriginalDownload item={item} downloadUrl={demo ? undefined : downloadUrl} /></div>
+        <div className="vv-film-caption"><div><p>{videoDuration(item.duration)} / {item.autoPlayback || delivery.playbackMode === 'adaptive' ? 'Auto quality' : 'Original quality'}</p><h2>{item.title}</h2></div><OriginalDownload item={item} downloadUrl={demo ? undefined : downloadUrl} /></div>
         {item.description && <div className="vv-description">{item.description}</div>}
       </section>
       {delivery.items.length > 1 && <aside className="vv-playlist" aria-label="Films in this delivery"><div className="vv-playlist-title"><span>IN THIS DELIVERY</span><small>{delivery.items.length} films</small></div>{orderedItems.map((video, index) => <button type="button" key={video.id} aria-pressed={video.id === item.id} className={'vv-playlist-item' + (video.id === item.id ? ' is-current' : '')} onClick={() => select(video.id)}><span className="vv-playlist-image">{video.posterUrl ? <img src={videoMediaUrl(video.posterUrl)} alt="" loading="lazy" /> : <Film size={24} />}<i>{videoDuration(video.duration)}</i></span><span className="vv-playlist-copy"><strong>{video.title}</strong><small>{isPortrait(video) ? 'Vertical video' : isSquare(video) ? 'Square video' : `Film ${String(index + 1).padStart(2, '0')}`}{video.id === item.id ? ' / Selected' : ''}</small></span><Play size={15} /></button>)}</aside>}

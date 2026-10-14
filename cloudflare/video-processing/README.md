@@ -1,6 +1,6 @@
 # Veylo video processing on Cloudflare
 
-This is a **new** Worker, `veylo-video-processing`. It manages Linux FFmpeg containers on Cloudflare. The existing `veylo-delivery-images` Worker still serves private images, original video playback and optional HLS. Photographers upload from their own devices; processing runs on Cloudflare after upload, independently of your computer.
+This is a **new** Worker, `veylo-video-processing`. It manages Linux FFmpeg containers on Cloudflare. The existing `veylo-delivery-images` Worker still serves private images, legacy original video playback and automatic HLS qualities. Photographers upload from their own devices; processing runs on Cloudflare after upload, independently of your computer.
 
 ## Deploy with Cloudflare Workers Builds
 
@@ -44,7 +44,11 @@ No Cloudflare Stream subscription, Render background worker or permanently runni
 
 ## Playback quality
 
-Original-quality playback is the default. The container checks the upload and makes a cover without creating alternate videos. Adaptive HLS is generated only after a photographer enables it in Details. The same private media Worker serves both original byte ranges and adaptive segments. Failed adaptive conversion leaves the original available; opting out prevents new conversion work when no other delivery has opted in.
+Every upload automatically queues its supported qualities: 720p; 720p and 1080p; 720p, 1080p and 2K (1440p); or those three plus 4K (2160p). The encoder preserves aspect ratio and frame rate and never enlarges a source. It creates no compressed 360p or 480p versions. Nonstandard dimensions retain a native top quality up to 4K; older smaller compatible files retain their source-only stream. The highest quality reuses an original H.264/AAC stream only when its pixel format, keyframes, segment sizes and bitrate suit streaming; otherwise it encodes at the uploaded resolution. Original files and downloads remain unchanged.
+
+Qualities encode one at a time, starting at 720p, into approximately two-second segments. Real progress is saved per quality. The first complete quality enables owner preview; public publishing waits for all required qualities. Clients start on Auto and can select a quality manually. Upgrades retain older manifests for existing sessions through their absolute media lifetime, then maintenance removes the retired files. Failed preparation exposes retry while keeping the original and any previously published playback available.
+
+The queue, runtime budgets, disk guards and access checks still apply to every automatic preparation. The generated output bound is 64 GB per asset, with at most 6,000 segments per quality and 32 MB per segment. Scratch remains 20 GB, so long high-resolution encodes must be qualified against available disk and runtime before increasing the supported limits.
 
 ## Cost and queue controls
 

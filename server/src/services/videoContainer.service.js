@@ -1,5 +1,6 @@
 import http from 'node:http';
 import { processingAuthorized } from './videoProcessingAuth.js';
+import { VIDEO_QUALITY_VERSION } from './videoQuality.service.js';
 
 // This HTTP server is reachable only through its owning Durable Object. It
 // accepts no file paths, shell commands, user IDs or job payloads from callers.
@@ -20,7 +21,7 @@ export function createVideoContainerServer({ runJob, heartbeat, terminate, now =
   const server = http.createServer(async (req, res) => {
     const reply = (status, value) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
     if (!processingAuthorized(req.headers.authorization)) { req.resume(); return reply(401, { error: 'Unauthorised.' }); }
-    if (req.method === 'GET' && req.url === '/status') return reply(200, { ready: !stopping, busy, lastWorked });
+    if (req.method === 'GET' && req.url === '/status') return reply(200, { ready: !stopping, busy, lastWorked, qualityVersion: VIDEO_QUALITY_VERSION });
     if (req.method === 'POST' && req.url === '/lease') {
       let raw = ''; let bytes = 0;
       try {
@@ -42,7 +43,7 @@ export function createVideoContainerServer({ runJob, heartbeat, terminate, now =
   server.headersTimeout = 5000;
   const watch = setInterval(() => {
     if (!stopping && now() >= deadline) { stopping = true; terminate(); }
-    else if (!stopping && now() - heartbeatAt >= 30_000) { heartbeatAt = now(); void heartbeat({ status: busy ? 'busy' : 'idle', stage: 'cloudflare-encoder' }).catch(() => {}); }
+    else if (!stopping && now() - heartbeatAt >= 30_000) { heartbeatAt = now(); void heartbeat({ status: busy ? 'busy' : 'idle', stage: 'cloudflare-encoder', details: { qualityVersion: VIDEO_QUALITY_VERSION } }).catch(() => {}); }
   }, 5000);
   watch.unref();
   server.on('close', () => { stopping = true; clearInterval(watch); });

@@ -14,6 +14,8 @@ import { abortR2Multipart, deleteR2Object, deleteR2Prefix, putR2Object } from '.
 import { deleteLegacyStreamVideo } from './videoProvider.service.js';
 import { encodeAdaptiveVideo } from './videoEncode.service.js';
 import { packageOriginalVideo } from './videoPackage.service.js';
+import { VIDEO_QUALITY_VERSION, encodingVariants } from './videoQuality.service.js';
+import { VIDEO_MEDIA_SECONDS } from './videoHls.service.js';
 import { withLocalVideo, inspectLocalVideo, extractVideoFrame, runMediaTool, cleanupVideoTemps } from './videoMedia.service.js';
 
 export async function prepareVideo(asset, settings, job) {
@@ -50,8 +52,7 @@ export async function prepareVideo(asset, settings, job) {
       });
     });
     const prepared = await VideoAsset.findById(asset._id);
-    await queueOriginalPlayback(prepared);
-    if (await adaptiveConsent(asset)) await queueAdaptiveVideo(prepared);
+    await queueAdaptiveVideo(prepared);
   } catch (error) {
     // Only remove this attempt's immutable outputs; another attempt may be live.
     await deleteR2Prefix(prefix).catch(() => {});
@@ -85,41 +86,46 @@ async function prepareOriginalPlayback(asset, settings, job) {
     });
   } catch (error) { await deleteR2Prefix(prefix).catch(() => {}); throw error; }
 }
-function adaptiveConsent(asset, session) {
-  const query = Delivery.exists({ userId: asset.userId, kind: 'video', status: { $ne: 'archived' }, $or: [
-    { 'video.draft.playbackMode': 'adaptive', 'video.draft.items.assetId': asset._id },
-    { status: 'published', 'video.published.playbackMode': 'adaptive', 'video.published.items.assetId': asset._id }
-  ] });
-  return session ? query.session(session) : query;
-}
 async function prepareAdaptiveVideo(asset, settings, job) {
   await videoContext(asset.userId, { write: true, worker: true });
   const generation = job.options.generation;
-  if (asset.state !== 'ready' || asset.hls?.version || asset.adaptive?.generation !== generation) return;
-  if (!await adaptiveConsent(asset)) {
-    await VideoAsset.updateOne({ _id: asset._id, 'adaptive.generation': generation }, { $set: { 'adaptive.state': 'idle' } });
-    return;
-  }
+  if (asset.state !== 'ready' || asset.hls?.ladderVersion === VIDEO_QUALITY_VERSION || asset.adaptive?.generation !== generation) return;
   const version = crypto.randomUUID();
   const prefix = asset.objectKey.replace(/original\.(mp4|mov|webm)$/, '') + 'hls/' + version + '/';
   if (!prefix.endsWith(`/${asset._id}/hls/${version}/`)) throw new Error('Invalid playback directory.');
   await VideoAsset.updateOne({ _id: asset._id, state: 'ready', 'adaptive.generation': generation }, { $set: { 'adaptive.state': 'running' } });
   const guard = async () => {
     if (!await VideoJob.exists({ _id: job._id, leaseToken: job.leaseToken, state: 'running', leaseUntil: { $gt: new Date() } }) || !await VideoAsset.exists({ _id: asset._id, state: 'ready', 'adaptive.generation': generation })) throw Object.assign(new Error('Video preparation was superseded.'), { code: 'VIDEO_JOB_SUPERSEDED' });
-    if (!await adaptiveConsent(asset)) throw Object.assign(new Error('Adaptive playback was turned off.'), { code: 'VIDEO_ADAPTIVE_DISABLED' });
+  };
+  let lastReport = 0;
+  const onProgress = async progress => {
+    if (progress.percent !== 0 && progress.percent !== 100 && Date.now() - lastReport < 1000) return;
+    lastReport = Date.now(); await guard();
+    await VideoAsset.updateOne({ _id: asset._id, state: 'ready', 'adaptive.generation': generation }, { $set: {
+      'adaptive.quality': progress.quality, 'adaptive.percent': progress.percent, 'adaptive.completed': progress.completed,
+      'adaptive.total': encodingVariants(asset).length, 'adaptive.updatedAt': new Date(),
+    } });
   };
   try {
     await withLocalVideo(asset, async ({ file, directory }) => {
       await guard(); const metadata = await inspectLocalVideo(file, settings.maxDurationSeconds);
-      const hls = await encodeAdaptiveVideo({ file, directory, metadata, prefix, guard });
+      const onRendition = async playback => {
+        await guard();
+        await VideoAsset.updateOne({ _id: asset._id, state: 'ready', 'adaptive.generation': generation }, { $set: { previewHls: { ...playback, version, readyAt: new Date() } } });
+      };
+      const hls = await encodeAdaptiveVideo({ file, directory, metadata, prefix, guard, onProgress, onRendition });
       await guard(); await videoContext(asset.userId, { write: true, worker: true });
       await videoTransaction(async session => {
-        if (!await adaptiveConsent(asset, session) || !await VideoJob.exists({ _id: job._id, leaseToken: job.leaseToken, state: 'running', leaseUntil: { $gt: new Date() } }).session(session)) throw Object.assign(new Error('Adaptive playback was superseded.'), { code: 'VIDEO_ADAPTIVE_DISABLED' });
-        const saved = await VideoAsset.updateOne({ _id: asset._id, state: 'ready', 'adaptive.generation': generation }, { $set: { hls: { ...hls, version, readyAt: new Date() }, 'adaptive.state': 'ready', 'adaptive.errorMessage': '' } }, { session });
+        if (!await VideoJob.exists({ _id: job._id, leaseToken: job.leaseToken, state: 'running', leaseUntil: { $gt: new Date() } }).session(session)) throw Object.assign(new Error('Video preparation was superseded.'), { code: 'VIDEO_JOB_SUPERSEDED' });
+        const saved = await VideoAsset.updateOne({ _id: asset._id, state: 'ready', 'adaptive.generation': generation }, { $set: { hls: { ...hls, version, readyAt: new Date() }, 'adaptive.state': 'ready', 'adaptive.percent': 100, 'adaptive.completed': hls.variants.map(row => row.name), 'adaptive.updatedAt': new Date(), 'adaptive.errorMessage': '' },
+          $unset: { previewHls: 1 }, ...(asset.hls?.version ? { $push: { previousHls: { ...(asset.hls.toObject ? asset.hls.toObject() : asset.hls), retiredAt: new Date() } } } : {}) }, { session });
         if (!saved.modifiedCount) throw Object.assign(new Error('Video preparation was superseded.'), { code: 'VIDEO_JOB_SUPERSEDED' });
       });
     });
-  } catch (error) { await deleteR2Prefix(prefix).catch(() => {}); throw error; }
+  } catch (error) {
+    await VideoAsset.updateOne({ _id: asset._id, 'adaptive.generation': generation, 'previewHls.version': version }, { $unset: { previewHls: 1 } });
+    await deleteR2Prefix(prefix).catch(() => {}); throw error;
+  }
 }
 async function preparePoster(asset, job) {
   await videoContext(asset.userId, { write: true, worker: true });
@@ -158,7 +164,7 @@ export async function deleteVideoOriginal(asset, { force = false } = {}) {
   await deleteR2Prefix(prefix);
   await releaseVideoQuota(asset._id);
   await VideoAnalysisPart.deleteMany({ assetId: asset._id });
-  await VideoAsset.updateOne({ _id: asset._id, state: 'deleting' }, { $set: { state: 'deleted', deletedAt: new Date() }, $unset: { analysis: 1, posterKey: 1, streamUid: 1, hls: 1, originalPlayback: 1, encodingId: 1, cover: 1 } });
+  await VideoAsset.updateOne({ _id: asset._id, state: 'deleting' }, { $set: { state: 'deleted', deletedAt: new Date() }, $unset: { analysis: 1, posterKey: 1, streamUid: 1, hls: 1, previewHls: 1, previousHls: 1, originalPlayback: 1, encodingId: 1, cover: 1 } });
   await Delivery.updateMany({ userId: asset.userId, kind: 'video', 'video.draft.items.assetId': asset._id }, { $pull: { 'video.draft.items': { assetId: asset._id } }, $inc: { 'video.revision': 1 } });
   await VideoLease.updateMany({ resourceId: String(asset._id), _id: /^encode:platform:/ }, { $set: { expiresAt: new Date(0) } });
 }
@@ -206,7 +212,7 @@ export async function runVideoJob() {
     const retryDelay = ['VIDEO_PRO_REQUIRED', 'VIDEO_UNAVAILABLE', 'VIDEO_WORKER_UNAVAILABLE'].includes(error.code) ? 3600_000 : Math.min(3600_000, 15_000 * Math.max(1, job.attempts));
     await VideoJob.updateOne({ _id: job._id, leaseToken: token }, { $set: { state: retry ? 'queued' : 'failed', errorCode: error.code || 'VIDEO_JOB_FAILED', leaseUntil: new Date(0), runAfter: new Date(Date.now() + retryDelay) }, ...(admission ? { $inc: { attempts: -1 } } : {}) });
     if (!retry && job.options?.originalPlayback) await VideoAsset.updateOne({ _id: job.assetId, state: 'ready', 'originalPlayback.generation': job.options.generation }, { $set: { 'originalPlayback.state': 'failed' } });
-    else if (!retry && job.options?.adaptive) await VideoAsset.updateOne({ _id: job.assetId, 'adaptive.generation': job.options.generation }, { $set: { 'adaptive.state': error.code === 'VIDEO_ADAPTIVE_DISABLED' ? 'idle' : 'failed', 'adaptive.errorMessage': error.code === 'VIDEO_ADAPTIVE_DISABLED' ? '' : 'Adaptive versions could not be prepared. Retry or choose original quality.' } });
+    else if (!retry && job.options?.adaptive) await VideoAsset.updateOne({ _id: job.assetId, 'adaptive.generation': job.options.generation }, { $set: { 'adaptive.state': 'failed', 'adaptive.errorMessage': error.code === 'VIDEO_RESOLUTION_TOO_SMALL' ? 'Upload a video at 720p or higher for automatic playback.' : 'Playback qualities could not finish preparing. Your original is safe. Retry preparation.' } });
     else if (!retry && job.type === 'poster') await VideoAsset.updateOne({ _id: job.assetId, 'cover.generation': job.options?.generation }, { $set: { 'cover.state': 'failed', 'cover.errorMessage': 'This cover could not be prepared. Try again or upload a cover image.' } });
     else if (!retry && job.type !== 'present') await VideoAsset.updateOne({ _id: job.assetId, state: { $nin: ['deleting', 'deleted'] } }, { $set: job.type === 'analyze' ? { 'analysis.state': 'failed', 'analysis.errorMessage': error.code === 'VIDEO_AI_BUDGET' ? error.message : 'Suggestions could not be completed. Your own titles and descriptions are unchanged.' } : { state: 'failed', errorCode: error.code || 'VIDEO_PREPARATION_FAILED', errorMessage: 'This video could not be prepared. You can retry or download the original.' } });
   } finally { clearInterval(renew); await Promise.all([releaseVideoLease(globalLease, String(job._id)), releaseVideoLease(accountLease, String(job._id)), releaseVideoLease(encodingLease, String(job._id))]); }
@@ -227,6 +233,19 @@ export async function reconcileVideoLibrary() {
   }
   for (const asset of await VideoAsset.find({ state: 'deleting' }).limit(100)) await queueVideoJob(asset, 'delete');
   for (const upload of await VideoUpload.find({ state: 'aborting' }).limit(100)) await queueVideoJob({ _id: upload.assetId, userId: upload.userId }, 'delete');
+  // Old grants have an absolute six-hour lifetime. Keep their files through that
+  // lifetime plus a renewal grace, then remove only this asset's retired version.
+  const retiredBefore = new Date(Date.now() - (VIDEO_MEDIA_SECONDS + 900) * 1000);
+  for (const asset of await VideoAsset.find({ state: 'ready', 'previousHls.retiredAt': { $lt: retiredBefore } }).limit(100)) {
+    for (const previous of asset.previousHls || []) {
+      if (!previous.retiredAt || previous.retiredAt >= retiredBefore || previous.version === asset.hls?.version || previous.version === asset.previewHls?.version) continue;
+      if (await VideoPlayback.exists({ assetId: asset._id, mediaVersion: previous.version, expiresAt: { $gt: new Date() } })) continue;
+      const prefix = asset.objectKey.replace(/original\.(mp4|mov|webm)$/, '') + `hls/${previous.version}/`;
+      if (previous.prefix !== prefix || !prefix.endsWith(`/${asset._id}/hls/${previous.version}/`)) continue;
+      await deleteR2Prefix(prefix);
+      await VideoAsset.updateOne({ _id: asset._id, 'hls.version': { $ne: previous.version }, 'previewHls.version': { $ne: previous.version } }, { $pull: { previousHls: { version: previous.version } } });
+    }
+  }
   // Original-only assets are ready without HLS. Recover interrupted inspection.
   for (const asset of await VideoAsset.find({ state: { $in: ['processing', 'verifying'] } }).limit(100)) {
     if (!await VideoJob.exists({ assetId: asset._id, type: 'prepare', state: { $in: ['running', 'queued'] } })) {
@@ -234,15 +253,14 @@ export async function reconcileVideoLibrary() {
       await queueVideoJob(asset, 'prepare', {}, crypto.randomUUID());
     }
   }
-  const consentedAssets = [...await Delivery.distinct('video.draft.items.assetId', { kind: 'video', status: { $ne: 'archived' }, 'video.draft.playbackMode': 'adaptive' }), ...await Delivery.distinct('video.published.items.assetId', { kind: 'video', status: 'published', 'video.published.playbackMode': 'adaptive' })];
   // Backfill without taking a published original offline or changing its bytes.
-  for (const asset of await VideoAsset.find({ state: 'ready', videoCodec: 'h264', objectKey: /\.mp4$/, pixelFormat: { $in: [null, '', 'yuv420p', 'yuvj420p'] }, audioCodec: { $in: [null, '', 'aac', 'mp3'] }, $or: [{ 'originalPlayback.state': { $exists: false } }, { 'originalPlayback.state': { $in: ['queued', 'running'] } }] }).limit(100)) {
+  const legacyOriginals = await Delivery.distinct('video.published.items.assetId', { kind: 'video', status: 'published', 'video.published.playbackMode': 'original' });
+  for (const asset of await VideoAsset.find({ _id: { $in: legacyOriginals }, state: 'ready', 'hls.ladderVersion': { $ne: VIDEO_QUALITY_VERSION }, videoCodec: 'h264', objectKey: /\.mp4$/, pixelFormat: { $in: [null, '', 'yuv420p', 'yuvj420p'] }, audioCodec: { $in: [null, '', 'aac', 'mp3'] }, $or: [{ 'originalPlayback.state': { $exists: false } }, { 'originalPlayback.state': { $in: ['queued', 'running'] } }] }).limit(100)) {
     if (['queued', 'running'].includes(asset.originalPlayback?.state)) {
       if (!await VideoJob.exists({ assetId: asset._id, 'options.originalPlayback': true, 'options.generation': asset.originalPlayback.generation, state: { $in: ['running', 'queued'] } })) await queueVideoJob(asset, 'prepare', { originalPlayback: true, generation: asset.originalPlayback.generation }, 'original-playback:' + asset.originalPlayback.generation + ':recover:' + crypto.randomUUID());
     } else await queueOriginalPlayback(asset);
   }
-  for (const asset of await VideoAsset.find({ _id: { $in: consentedAssets }, state: 'ready', 'hls.version': { $exists: false } }).limit(100)) {
-    if (!await adaptiveConsent(asset)) continue;
+  for (const asset of await VideoAsset.find({ state: 'ready', 'hls.ladderVersion': { $ne: VIDEO_QUALITY_VERSION }, 'adaptive.state': { $ne: 'failed' } }).limit(100)) {
     if (['queued', 'running'].includes(asset.adaptive?.state)) {
       if (!await VideoJob.exists({ assetId: asset._id, 'options.adaptive': true, 'options.generation': asset.adaptive.generation, state: { $in: ['running', 'queued'] } })) await queueVideoJob(asset, 'prepare', { adaptive: true, generation: asset.adaptive.generation }, 'adaptive:' + asset.adaptive.generation);
     } else if (asset.adaptive?.state !== 'failed') await queueAdaptiveVideo(asset);

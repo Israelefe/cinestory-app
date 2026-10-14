@@ -68,9 +68,11 @@ for (const width of [390, 768, 834]) test(`creation opens each step at its headi
   expect(state.project.video.draft.featuredAssetId).toBe(secondId);
   await page.getByRole('button', { name: 'Create client link', exact: true }).click();
   expect(state.project.video.published.featuredAssetId).toBe(secondId);
-  await page.locator('.vc-bottom').getByRole('button', { name: 'Back', exact: true }).click();
-  await expect(heading).toBeFocused();
-  await expect(page.locator('.vc-video-card').nth(1).getByRole('button', { name: 'Opens first', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('heading', { name: 'Your delivery is ready.' })).toBeVisible();
+  await expect(page.locator('.vc-steps')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Back to dashboard' })).toBeVisible();
+  await page.reload(); await expect(page.getByRole('heading', { name: 'Your delivery is ready.' })).toBeVisible();
+  expect(state.saves.at(-1).presentation.featuredAssetId).toBe(secondId);
   await noOverflow(page); expect(errors).toEqual([]);
 });
 
@@ -124,7 +126,7 @@ test('a stalled original offers retry and resumes playback instead of loading fo
   await page.locator('video').evaluate(video => video.dispatchEvent(new Event('waiting')));
   await expect(page.locator('.vv-buffer')).toBeVisible();
   await page.clock.fastForward(31000);
-  await expect(page.getByText(/The film is taking too long to load/)).toBeVisible();
+  await expect(page.getByText(/Video data stopped arriving/)).toBeVisible();
   await expect(page.locator('.vv-buffer')).toHaveCount(0);
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
   await expect.poll(() => page.locator('video').evaluate(video => !video.paused && video.currentTime > .1)).toBe(true);
@@ -177,30 +179,65 @@ test('three creation steps keep optional settings tucked away and retain a saved
   await expect.poll(() => state.project.video.draft.allowDownloads).toBe(false);
   await page.reload(); await page.getByRole('button', { name: /Add details/ }).click(); await expect(downloads).not.toBeChecked();
 });
-test('original quality is the default and adaptive publishing waits for the opted-in copies', async ({ page }) => {
-  const { state } = await mock(page); state.project.assets[0].hasAdaptive = false;
-  await page.clock.install(); await page.goto(`/create?draft=${id}`);
-  await page.getByRole('button', { name: /Add details/ }).click();
-  const adaptive = page.getByRole('checkbox', { name: /Create adaptive playback copies/ }); await expect(adaptive).not.toBeChecked();
-  await page.getByRole('button', { name: 'Preview & send', exact: true }).first().click();
-  await expect(page.getByRole('button', { name: 'Create client link', exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: 'Details', exact: false }).first().click();
-  state.project.assets[0].adaptive = { state: 'queued' };
-  await adaptive.check(); await page.getByRole('button', { name: 'Save draft', exact: true }).click();
-  await expect.poll(() => state.project.video.draft.playbackMode).toBe('adaptive');
-  await expect(page.getByRole('button', { name: 'Preview & send', exact: true })).toBeDisabled();
-  await expect(page.locator('.vc-steps button').nth(2)).toBeDisabled();
-  state.project.assets[0].hasAdaptive = true; state.project.assets[0].adaptive.state = 'ready';
-  await page.clock.fastForward(6000);
-  await page.getByRole('button', { name: 'Preview & send', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Create client link', exact: true })).toBeEnabled();
+
+for (const width of [320, 834, 1440]) test(`a vertical opener reveals other formats and guides the next swipe at ${width}px`, async ({ page }) => {
+  const { errors } = await mock(page); const starts = [];
+  const films = [
+    { ...asset, id: '3'.repeat(24), title: 'First vertical film', width: 540, height: 960 },
+    { ...asset, id: '4'.repeat(24), title: 'Second vertical film', width: 540, height: 960 },
+    { ...asset, id: '5'.repeat(24), title: 'The landscape film', width: 960, height: 540 },
+  ];
+  await page.route('**/api/v1/videos/public/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/playback/end')) return route.fulfill({ json: { success: true, data: {} } });
+    if (path.endsWith('/playback')) {
+      const id = path.split('/').at(-2); starts.push(id);
+      return route.fulfill({ json: { success: true, data: { sessionId: id, hlsUrl: `/veylo/video/${id === films[2].id ? 'light-study' : 'portrait-study'}.mp4`, expiresAt: new Date(Date.now() + 600000).toISOString() } } });
+    }
+    return route.fulfill({ json: { success: true, data: { title: 'Wedding films', playbackMode: 'adaptive', items: films, featuredAssetId: films[0].id, branding: { name: 'Amara Studio' } } } });
+  });
+  await page.setViewportSize({ width, height: 900 }); await page.goto('/v/discovery-check');
+  await expect(page.locator('.vv-other-films')).toBeVisible();
+  await expect(page.locator('.vv-next-reel')).toHaveCount(0);
+  await expect.poll(() => page.locator('video').evaluate(video => video.readyState >= 2)).toBe(true);
+  await page.locator('video').evaluate(video => { video.currentTime = video.duration - .1; });
+  await expect(page.getByRole('button', { name: /Swipe up for the next video/ })).toBeVisible();
+  await page.getByRole('button', { name: /Swipe up for the next video/ }).click();
+  await expect(page.locator('.vv-reel.is-active')).toHaveAttribute('data-video-id', films[1].id);
+  await expect(page.locator('.vv-next-reel')).toHaveCount(0);
+  await page.getByRole('button', { name: /Other films/ }).click();
+  await expect(page.locator('.vv-wide-page')).toBeVisible();
+  await expect(page.locator('.vv-film-caption')).toContainText('The landscape film');
+  await expect(page.locator('video')).toHaveCount(1); await noOverflow(page);
+  expect(starts).toContain(films[0].id); expect(starts).toContain(films[1].id); expect(starts).toContain(films[2].id);
+  expect(errors).toEqual([]);
 });
-test('an incompatible original needs a compatible upload or explicit adaptive choice', async ({ page }) => {
+test('automatic qualities show real progress while details remain editable and publishing waits', async ({ page }) => {
+  const { state } = await mock(page);
+  Object.assign(state.project.assets[0], { hasAdaptive: false, playbackReady: false, previewReady: true, expectedQualities: ['q720', 'q1080'], adaptive: { state: 'running', quality: 'q1080', percent: 37, completed: ['q720'] } });
+  await page.clock.install(); await page.goto(`/create?draft=${id}`);
+  await expect(page.locator('.vc-upload-row')).toContainText('Preparing 1080p');
+  await expect(page.locator('.vc-quality-progress')).toContainText('37% prepared');
+  await page.getByRole('button', { name: 'Add details', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: /Create adaptive playback copies/ })).toHaveCount(0);
+  await page.getByLabel('Delivery title', { exact: true }).fill('Wedding films');
+  await page.getByRole('button', { name: 'Preview & send', exact: true }).first().click();
+  await expect(page.getByRole('button', { name: 'Preview client view', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Preparing playback qualities...', exact: true })).toBeDisabled();
+  Object.assign(state.project.assets[0], { hasAdaptive: true, playbackReady: true, adaptive: { state: 'ready', completed: ['q720', 'q1080'], percent: 100 } });
+  await page.clock.fastForward(6000);
+  await expect(page.getByRole('button', { name: 'Create client link', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Create client link', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Your delivery is ready.' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Back to dashboard' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save draft' })).toHaveCount(0);
+  await page.reload(); await expect(page.getByRole('heading', { name: 'Your delivery is ready.' })).toBeVisible();
+});
+
+test('a prepared compatible playback version handles an incompatible original without an opt-in', async ({ page }) => {
   const { state } = await mock(page); state.project.assets[0].originalCompatible = false;
-  await page.goto(`/create?draft=${id}`); await page.getByRole('button', { name: /Add details/ }).click();
-  await expect(page.getByText('This original format may not play in every browser.', { exact: false })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Preview & send', exact: true })).toBeDisabled();
-  await page.getByRole('checkbox', { name: /Create adaptive playback copies/ }).check();
+  await page.goto(`/create?draft=${id}`); await page.getByRole('button', { name: 'Add details', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: /Create adaptive playback copies/ })).toHaveCount(0);
   await page.getByRole('button', { name: 'Preview & send', exact: true }).first().click();
   await expect(page.getByRole('button', { name: 'Create client link', exact: true })).toBeEnabled();
 });
@@ -215,7 +252,7 @@ test('upload step follows real preparation state and offers failed originals a r
   await expect(page.locator('.vc-steps button').nth(1)).toBeDisabled();
   await expect(page.locator('.vc-steps button').nth(2)).toBeDisabled();
   await expect(page.getByRole('progressbar', { name: 'Preparation progress for ceremony.mp4' })).not.toHaveAttribute('value');
-  await expect(page.locator('.vc-upload-guide')).toContainText('Your original file stays unchanged');
+  await expect(page.locator('.vc-upload-guide')).toContainText('Your original stays unchanged');
   state.project.assets[0].state = 'processing';
   await page.clock.fastForward(6000);
   await expect(page.locator('.vc-upload-row')).toContainText('Checking video and preparing cover');
@@ -236,7 +273,7 @@ test('upload step follows real preparation state and offers failed originals a r
   await page.clock.fastForward(6000);
   await expect(page.locator('.vc-upload-row')).toContainText('Ready for playback');
   await expect(page.getByRole('button', { name: 'Add details', exact: true })).toBeEnabled();
-  await expect(page.getByRole('progressbar', { name: 'Preparation progress for ceremony.mp4' })).toHaveAttribute('aria-valuenow', '100');
+  await expect(page.locator('.vc-upload-row [role=progressbar]')).toHaveAttribute('aria-valuenow', '100');
   await expect(page.locator('.vc-upload-row')).not.toContainText('preparing playback');
   await page.reload();
   await expect(page.locator('.vc-upload-row')).toContainText('Ready for playback');
@@ -291,10 +328,10 @@ test('required titles, cover readiness, PIN and expiry gate both forward navigat
   await expect(next).toBeEnabled();
   state.project.assets[0].cover = { state: 'queued' };
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
-  await expect(next).toBeDisabled(); await expect(sidebarNext).toBeDisabled();
+  await expect(next).toBeEnabled(); await expect(sidebarNext).toBeEnabled();
+  await sidebarNext.click(); await expect(page.getByRole('button', { name: 'Preparing playback qualities...', exact: true })).toBeDisabled();
   state.project.assets[0].cover.state = 'ready'; await page.clock.fastForward(6000);
-  await expect(next).toBeEnabled();
-  await sidebarNext.click(); await expect(page.getByRole('button', { name: 'Create client link', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Create client link', exact: true })).toBeEnabled();
 });
 
 for (const width of [390, 834, 1440]) test(`real adaptive HLS plays, seeks and keeps original audio at ${width}px`, async ({ page }) => {
@@ -391,7 +428,7 @@ for (const width of [320, 768, 834]) test(`creator saves, reviews and publishes 
    await expect(page.getByLabel('Video title', { exact: true })).toHaveValue('The ceremony'); await noOverflow(page);
   await page.getByRole('textbox', { name: 'Description', exact: false }).fill('The vows, readings and final walk together, in the order they happened.');
   await page.getByRole('button', { name: 'Preview & send', exact: true }).first().click(); await page.getByRole('button', { name: /Create client link|Update client link/ }).click();
-  await expect.poll(() => state.publishes).toBe(1); await expect(page.getByRole('link', { name: 'Open the client view' })).toBeVisible();
+  await expect.poll(() => state.publishes).toBe(1); await expect(page.getByRole('link', { name: 'Open delivery', exact: true })).toBeVisible();
   expect(state.project.video.published.items[0].description).toContain('The vows'); await noOverflow(page);
   if (width === 834) await page.screenshot({ path: '../.visual-review/video-creator-834.png', fullPage: true });
   expect(errors).toEqual([]);
@@ -401,6 +438,17 @@ test('PIN protection hides all film titles until the recipient unlocks the deliv
   await expect(page.getByRole('heading', { name: 'Your films are private.' })).toBeVisible(); await expect(page.locator('video')).toHaveCount(0); await expect(page.getByText('The ceremony', { exact: true })).toHaveCount(0);
   await page.getByLabel('Access PIN').fill('123456'); await page.getByRole('button', { name: 'Open films' }).click();
   await expect(page.locator('video')).toHaveCount(1); expect(state.unlocks).toBe(1); await expect(page.locator('.vv-brand')).toContainText('Amara Studio');
+});
+test('a previously created closed delivery cannot reopen upload or details on a direct visit or refresh', async ({ page }) => {
+  const { state } = await mock(page);
+  state.project.publishedAt = new Date().toISOString(); state.project.video.published = structuredClone(state.project.video.draft);
+  await page.goto(`/create?draft=${id}`);
+  await expect(page.getByText('This client link is closed.', { exact: false })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Back to dashboard' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Video creation steps' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Add details', exact: true })).toHaveCount(0);
+  await page.reload(); await expect(page.getByRole('link', { name: 'Back to dashboard' })).toBeVisible();
+  expect(state.saves).toEqual([]); expect(state.publishes).toBe(0);
 });
 test('video stays a Pro feature while unconfigured upload controls remain unavailable', async ({ page }) => {
   await mock(page, { available: false }); await page.goto('/video-delivery'); await expect(page.getByText('Video delivery included with Pro', { exact: true })).toBeVisible();

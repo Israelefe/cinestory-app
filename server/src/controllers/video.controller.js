@@ -14,6 +14,7 @@ import { acquireVideoLease, releaseVideoLease } from '../services/videoLease.ser
 import { presignR2Object, createR2Multipart, listR2Parts, completeR2Multipart, headR2Object, getR2ObjectStream, getR2ObjectBuffer, putR2Object } from '../services/r2.service.js';
 import { originalVideoCompatible } from '../services/videoOriginal.service.js';
 import { trustedVideoEdge } from '../services/videoHls.service.js';
+import { VIDEO_QUALITY_VERSION } from '../services/videoQuality.service.js';
 import { lagosMonthWindow } from '../services/entitlement.service.js';
 import { recordPaidUsage } from '../services/paidUsage.service.js';
 import { videoEvent, recordVideoVisit } from '../services/videoEvents.service.js';
@@ -37,6 +38,9 @@ export const videoAction = handler => async (req, res) => {
 const ok = (res, data) => res.json({ success: true, data });
 const writable = req => videoContext(req.user.id, { write: true });
 function editable(delivery) { if (delivery.status === 'archived') throw videoError('Restore this delivery before making changes.', 409); }
+function unfinished(delivery) {
+  if (delivery.publishedAt || delivery.video?.published || delivery.status === 'published') throw videoError('This delivery is complete. Return to your dashboard to manage it.', 409, 'VIDEO_DELIVERY_COMPLETE');
+}
 
 export const getVideoConfig = videoAction(async (req, res) => ok(res, publicVideoSettings((await getRuntimeConfig()).videoDelivery)));
 export const authorizeVideoMedia = videoAction(async (req, res) => {
@@ -48,7 +52,7 @@ export const createVideoDelivery = videoAction(async (req, res) => {
   const { settings } = await writable(req);
   if (!settings.uploadsEnabled) throw videoError('New video uploads are temporarily paused.', 503);
   parse(z.object({}).strict(), req.body);
-  const delivery = await Delivery.create({ userId: req.user.id, kind: 'video', schemaVersion: 3, video: { draft: { title: '', items: [], allowDownloads: true } } });
+  const delivery = await Delivery.create({ userId: req.user.id, kind: 'video', schemaVersion: 3, video: { draft: { title: '', items: [], allowDownloads: true, playbackMode: 'adaptive' } } });
   res.status(201); ok(res, await ownerVideoDTO(delivery));
 });
 export const getVideoDelivery = videoAction(async (req, res) => {
@@ -84,17 +88,18 @@ export const saveVideoDraft = videoAction(async (req, res) => {
   const { settings } = await writable(req);
   const input = parse(draftSchema, req.body);
   const delivery = await ownedVideoDelivery(req.params.id, req.user.id); editable(delivery);
+  unfinished(delivery);
   input.presentation.allowDownloads ??= delivery.video.draft.allowDownloads;
-  input.presentation.playbackMode ??= delivery.video.draft.playbackMode || 'original';
+  input.presentation.playbackMode = 'adaptive';
   const ids = input.presentation.items.map(item => item.assetId);
   if (new Set(ids).size !== ids.length || ids.length > settings.maxVideos) throw videoError('Choose each video once, up to ' + settings.maxVideos + ' videos.');
   const assets = await VideoAsset.find({ _id: { $in: ids }, userId: req.user.id, state: { $nin: ['deleted', 'deleting'] } }).select('_id userId duration state hls adaptive');
   if (assets.length !== ids.length) throw videoError('Choose videos from your own library.');
   if (input.presentation.featuredAssetId && !ids.includes(input.presentation.featuredAssetId)) throw videoError('Choose a featured video from this delivery.');
   for (const item of input.presentation.items) { const asset = assets.find(row => String(row._id) === item.assetId); if (asset.duration && item.posterSeconds > asset.duration) throw videoError('Choose a cover frame within the video.'); }
-  const updated = await Delivery.findOneAndUpdate({ _id: delivery._id, userId: req.user.id, kind: 'video', 'video.revision': input.revision }, { $set: { clientName: input.clientName, brief: input.brief, title: input.presentation.title, 'video.draft': { ...input.presentation, featuredAssetId: input.presentation.featuredAssetId || ids[0] || undefined } }, $inc: { 'video.revision': 1 } }, { new: true, runValidators: true }).select('+access.pinDigest');
+  const updated = await Delivery.findOneAndUpdate({ _id: delivery._id, userId: req.user.id, kind: 'video', publishedAt: null, 'video.published': { $exists: false }, 'video.revision': input.revision }, { $set: { clientName: input.clientName, brief: input.brief, title: input.presentation.title, 'video.draft': { ...input.presentation, featuredAssetId: input.presentation.featuredAssetId || ids[0] || undefined } }, $inc: { 'video.revision': 1 } }, { new: true, runValidators: true }).select('+access.pinDigest');
   if (!updated) throw videoError('This draft changed in another tab. Reload it before saving.', 409, 'VIDEO_DRAFT_CONFLICT');
-  if (input.presentation.playbackMode === 'adaptive') for (const asset of assets) await queueAdaptiveVideo(asset);
+  for (const asset of assets) await queueAdaptiveVideo(asset);
   ok(res, await ownerVideoDTO(updated));
 });
 export const saveVideoAccess = videoAction(async (req, res) => {
@@ -112,17 +117,19 @@ export const publishVideoDelivery = videoAction(async (req, res) => {
   if (!settings.publishingEnabled) throw videoError('Video publishing is temporarily paused.', 503);
   const { revision } = parse(z.object({ revision: z.number().int().nonnegative() }).strict(), req.body);
   const delivery = await ownedVideoDelivery(req.params.id, req.user.id, { withPin: true }); editable(delivery);
+  if (delivery.status === 'published') { ok(res, await ownerVideoDTO(delivery)); return; }
+  unfinished(delivery);
   const draft = delivery.video.draft;
   if (!draft?.title?.trim() || draft.items.length < 1 || draft.items.length > settings.maxVideos || draft.items.some(item => !item.title?.trim())) throw videoError('Add a delivery title and a title for every video before publishing.');
   if (delivery.access?.expiresAt && delivery.access.expiresAt <= new Date()) throw videoError('Update the expired access date before publishing.');
   // The snapshot and asset states are read and committed in one transaction.
   await videoTransaction(async session => {
-    const readyAssets = await VideoAsset.find({ _id: { $in: draft.items.map(item => item.assetId) }, userId: req.user.id, state: 'ready', ...(draft.playbackMode === 'adaptive' ? { 'hls.version': { $exists: true } } : {}), 'cover.state': { $nin: ['queued', 'running'] }, duration: { $lte: settings.maxDurationSeconds }, bytes: { $lte: settings.maxFileBytes } }).select('_id posterKey filename objectKey videoCodec audioCodec pixelFormat').session(session).lean();
-    if (draft.playbackMode !== 'adaptive' && readyAssets.some(asset => !originalVideoCompatible(asset))) throw videoError('An original uses a format that may not play in every browser. Upload an H.264/AAC MP4 or enable adaptive playback in Details.', 409, 'VIDEO_ORIGINAL_INCOMPATIBLE');
+    const readyAssets = await VideoAsset.find({ _id: { $in: draft.items.map(item => item.assetId) }, userId: req.user.id, state: 'ready', 'hls.ladderVersion': VIDEO_QUALITY_VERSION, 'cover.state': { $nin: ['queued', 'running'] }, duration: { $lte: settings.maxDurationSeconds }, bytes: { $lte: settings.maxFileBytes } }).select('_id posterKey').session(session).lean();
     const snapshot = draft.toObject();
+    snapshot.playbackMode = 'adaptive';
     snapshot.items = snapshot.items.map(item => ({ ...item, posterKey: readyAssets.find(asset => String(asset._id) === String(item.assetId))?.posterKey }));
     if (readyAssets.length !== draft.items.length) throw videoError('Wait for every video and cover to finish preparing before publishing.', 409);
-    const updated = await Delivery.updateOne({ _id: delivery._id, userId: req.user.id, 'video.revision': revision }, { $set: { 'video.published': snapshot, status: 'published', publishedAt: delivery.publishedAt || new Date(), 'access.revokedAt': null }, $inc: { 'video.accessVersion': 1, 'video.revision': 1 } }, { session });
+    const updated = await Delivery.updateOne({ _id: delivery._id, userId: req.user.id, publishedAt: null, 'video.published': { $exists: false }, 'video.revision': revision }, { $set: { 'video.published': snapshot, status: 'published', publishedAt: new Date(), 'access.revokedAt': null }, $inc: { 'video.accessVersion': 1, 'video.revision': 1 } }, { session });
     if (!updated.modifiedCount) throw videoError('The draft changed. Save your latest changes and publish again.', 409, 'VIDEO_DRAFT_CONFLICT');
     // Updating assets participates in the deletion/reuse race without changing them visually.
     await VideoAsset.updateMany({ _id: { $in: draft.items.map(item => item.assetId) }, userId: req.user.id, state: 'ready' }, { $set: { updatedAt: new Date() } }, { session });
@@ -163,6 +170,7 @@ export const initializeVideoUpload = videoAction(async (req, res) => {
   const input = parse(initSchema, req.body);
   if (input.bytes > settings.maxFileBytes) throw videoError('Each video must be 5 GB or smaller.', 413);
   const delivery = await ownedVideoDelivery(req.params.id, req.user.id); editable(delivery);
+  unfinished(delivery);
   let upload = await VideoUpload.findOne({ userId: req.user.id, requestKey: input.requestKey });
   if (upload) {
     const asset = await VideoAsset.findById(upload.assetId);
@@ -179,7 +187,7 @@ export const initializeVideoUpload = videoAction(async (req, res) => {
       await reserveVideoBytes({ assetId, userId: req.user.id, bytes: input.bytes, limit: entitlements.limits.personalStorageBytes }, session);
       await VideoAsset.create([{ _id: assetId, userId: req.user.id, filename: input.filename, bytes: input.bytes, contentType, objectKey }], { session });
       upload = (await VideoUpload.create([{ userId: req.user.id, assetId, deliveryId: delivery._id, requestKey: input.requestKey, fingerprint: input.fingerprint, partBytes: settings.partBytes, partCount: Math.ceil(input.bytes / settings.partBytes), expiresAt: new Date(Date.now() + settings.reservationHours * 3600_000) }], { session }))[0];
-      const added = await Delivery.updateOne({ _id: delivery._id, userId: req.user.id, status: { $ne: 'archived' }, $expr: { $lt: [{ $size: { $ifNull: ['$video.draft.items', []] } }, settings.maxVideos] } }, { $push: { 'video.draft.items': { assetId, title: input.filename.replace(/\.[^.]+$/, '').slice(0, 100) } }, $inc: { 'video.revision': 1 } }, { session });
+      const added = await Delivery.updateOne({ _id: delivery._id, userId: req.user.id, status: { $nin: ['archived', 'published'] }, publishedAt: null, 'video.published': { $exists: false }, $expr: { $lt: [{ $size: { $ifNull: ['$video.draft.items', []] } }, settings.maxVideos] } }, { $push: { 'video.draft.items': { assetId, title: input.filename.replace(/\.[^.]+$/, '').slice(0, 100) } }, $inc: { 'video.revision': 1 } }, { session });
       if (!added.modifiedCount) throw videoError('This delivery already has ' + settings.maxVideos + ' videos.');
     });
   } catch (error) {
@@ -283,7 +291,7 @@ export const retryVideoAsset = videoAction(async (req, res) => {
 export const retryAdaptiveVideo = videoAction(async (req, res) => {
   await writable(req);
   const asset = await ownedVideoAsset(req.params.assetId, req.user.id);
-  if (!await Delivery.exists({ userId: req.user.id, kind: 'video', 'video.draft.playbackMode': 'adaptive', 'video.draft.items.assetId': asset._id })) throw videoError('Enable adaptive playback in this delivery before requesting copies.', 409);
+  if (asset.state !== 'ready') throw videoError('Finish uploading and checking this video before retrying its playback qualities.', 409);
   await queueAdaptiveVideo(asset);
   ok(res, { queued: true });
 });

@@ -174,7 +174,7 @@ export function processingClasses(DurableObject) {
       try {
         this.operation = 'encoder-status';
         const status = await this.control('status');
-        console.info('[video-processing] Encoder status ' + JSON.stringify({ ready: status.ready === true, busy: status.busy === true, lastWorked: status.lastWorked === true ? true : status.lastWorked === false ? false : null }));
+        console.info('[video-processing] Encoder status ' + JSON.stringify({ ready: status.ready === true, busy: status.busy === true, lastWorked: status.lastWorked === true ? true : status.lastWorked === false ? false : null, qualityVersion: Number.isSafeInteger(status.qualityVersion) ? status.qualityVersion : 0 }));
         if (!status.ready) throw new Error('Encoder not ready.');
         this.operation = 'encoder-lease';
         await this.control('lease', { until: credit.until });

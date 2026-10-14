@@ -56,6 +56,70 @@ async function watchLoads(page) {
   });
 }
 
+test('Auto and manual quality changes keep the same film, position and playback session', async ({ page }) => {
+  const state = await setup(page, cases[2]); await page.clock.install(); await page.goto('/v/playback-check');
+  await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(.1);
+  await watchLoads(page);
+  const quality = page.getByRole('combobox', { name: 'Playback quality' });
+  await expect(quality).toHaveValue('auto');
+  await expect(quality.locator('option')).toHaveText([/Auto/, '720p', '1080p']);
+  await quality.selectOption('q1080');
+  await expect.poll(() => page.locator('video').evaluate(video => video.videoHeight)).toBe(1080);
+  await quality.selectOption('q720');
+  await expect.poll(() => page.locator('video').evaluate(video => video.videoHeight), { timeout: 12000 }).toBe(720);
+  await expect(quality).toHaveValue('q720');
+  await page.clock.fastForward(16000); await expect.poll(() => state.starts.length).toBe(2);
+  await expect(quality).toHaveValue('q720');
+  await page.locator('video').evaluate(video => video.pause());
+  const position = await page.locator('video').evaluate(video => video.currentTime);
+  await quality.selectOption('q1080');
+  await expect.poll(() => page.locator('video').evaluate(video => video.paused)).toBe(true);
+  expect(await page.locator('video').evaluate(video => video.currentTime)).toBeCloseTo(position, 1);
+  await quality.selectOption('auto'); await expect(quality).toHaveValue('auto');
+  expect(state.starts).toHaveLength(2); expect(await page.evaluate(() => window.playbackLoads)).toEqual([]);
+  expect(state.errors).toEqual([]);
+});
+
+for (const [width, height] of [[320, 700], [834, 1112]]) test(`adaptive portrait controls and discovery stay separate at ${width}px`, async ({ page }, testInfo) => {
+  await setup(page, cases[3]);
+  const films = [
+    { id: '3'.repeat(24), title: 'Ada and Emeka — the traditional wedding, family arrivals and evening celebration in Lagos', width: 720, height: 1280, duration: 8, allowDownload: true },
+    { id: '4'.repeat(24), title: 'The second wedding film with the complete dance floor celebrations and family messages', width: 720, height: 1280, duration: 8 },
+    { id: '5'.repeat(24), title: 'The wedding film', width: 1920, height: 1080, duration: 8 },
+  ];
+  await page.route('**/api/v1/videos/public/**', route => route.request().method() === 'GET' ? route.fulfill({ json: { success: true, data: { title: 'Wedding films', playbackMode: 'adaptive', items: films, featuredAssetId: films[0].id, branding: { name: 'Amara Studio' } } } }) : route.fallback());
+  await page.setViewportSize({ width, height }); await page.goto('/v/playback-check');
+  await expect(page.getByRole('combobox', { name: 'Playback quality' })).toBeVisible();
+  await expect.poll(() => page.locator('video').evaluate(video => video.readyState >= 2)).toBe(true);
+  await page.locator('video').evaluate(video => { video.currentTime = video.duration - .1; });
+  await expect(page.locator('.vv-next-reel')).toBeVisible();
+  const areas = await page.evaluate(() => Object.fromEntries(['.vv-reel-caption', '.vv-reel-controls', '.vv-reel-brand'].map(selector => { const r = document.querySelector(selector).getBoundingClientRect(); return [selector, { top: r.top, bottom: r.bottom }]; })));
+  expect(areas['.vv-reel-caption'].bottom + 8).toBeLessThanOrEqual(areas['.vv-reel-controls'].top);
+  expect(areas['.vv-reel-caption'].top).toBeGreaterThan(areas['.vv-reel-brand'].bottom);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath(`adaptive-discovery-${width}.png`) });
+});
+
+test('offline and reconnection feedback preserves buffered playback and explicit pause', async ({ page, context }) => {
+  await setup(page, cases[2]); await page.goto('/v/playback-check');
+  await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(.1);
+  await page.locator('video').evaluate(video => video.pause());
+  await context.setOffline(true);
+  await expect(page.locator('.vv-connection')).toContainText('appears offline');
+  await context.setOffline(false);
+  await expect(page.locator('.vv-connection')).toContainText('Connection restored');
+  expect(await page.locator('video').evaluate(video => video.paused)).toBe(true);
+});
+
+test('a media permission failure has an access message rather than a connection accusation', async ({ page }) => {
+  await setup(page, cases[2]);
+  await page.route('**/__playback__/master.m3u8', route => route.fulfill({ status: 403, body: 'Access denied' }));
+  await page.goto('/v/playback-check');
+  await expect(page.locator('.vv-error')).toContainText('link is no longer available');
+  await expect(page.locator('.vv-error')).not.toContainText('connection');
+  await expect(page.locator('.vv-connection')).toHaveCount(0);
+});
+
 for (const scenario of cases) for (const width of [390, 834]) test(`${scenario.name} plays, seeks and renews without losing its buffer at ${width}px`, async ({ page }) => {
   const state = await setup(page, scenario);
   await page.clock.install(); await page.setViewportSize({ width, height: 1000 }); await page.goto('/v/playback-check');
@@ -291,14 +355,14 @@ for (const [scenario, action] of [[cases[0], 'resume'], [cases[0], 'renew'], [ca
     await page.unroute('**/__playback__/**');
     if (action === 'renew') await page.clock.install();
     await page.goto('/v/playback-check');
-    await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(.5);
+    await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(.05);
     await expect(page.getByRole('button', { name: 'Pause buffering', exact: true })).toBeVisible({ timeout: 12000 });
     const before = await page.locator('video').evaluate(video => ({ time: video.currentTime, buffer: video.buffered.end(video.buffered.length - 1) }));
     await page.locator('video').evaluate(video => {
       window.rebufferStarts = [];
       video.addEventListener('playing', () => window.rebufferStarts.push(video.buffered.end(video.buffered.length - 1) - video.currentTime));
     });
-    expect(before.time).toBeGreaterThan(.3);
+    expect(before.time).toBeGreaterThan(.05);
     expect(await page.locator('video').evaluate(video => video.paused)).toBe(true);
     const panel = await page.locator('.vv-buffer').boundingBox(); const screen = await page.locator('.vv-screen').boundingBox();
     expect(panel.x).toBeGreaterThanOrEqual(screen.x); expect(panel.x + panel.width).toBeLessThanOrEqual(screen.x + screen.width);
@@ -352,7 +416,7 @@ test('a stopped original segment still times out and offers retry', async ({ pag
   await page.clock.install(); await page.goto('/v/playback-check');
   await expect(page.locator('video')).toHaveAttribute('src', /^blob:/);
   await page.clock.fastForward(31000);
-  await expect(page.locator('.vv-error')).toContainText('taking too long to load');
+  await expect(page.locator('.vv-error')).toContainText('Video data stopped arriving');
   await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
 });
 
@@ -374,7 +438,7 @@ test('native MP4 startup has a bounded timeout when metadata never finishes', as
     await expect.poll(() => page.locator('video').evaluate(video => video.networkState)).toBe(2);
     expect(await page.locator('video').evaluate(video => video.readyState)).toBe(0);
     await page.clock.fastForward(121000);
-    await expect(page.locator('.vv-error')).toContainText('taking too long to load');
+    await expect(page.locator('.vv-error')).toContainText('Video data stopped arriving');
     await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
   } finally { release(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });

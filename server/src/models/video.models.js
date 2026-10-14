@@ -4,20 +4,23 @@ const { Schema } = mongoose;
 const owner = { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true };
 const model = (name, schema) => mongoose.models[name] || mongoose.model(name, schema);
 const hlsOutput = {
-  version: String, prefix: String, bytes: Number, masterBytes: Number, readyAt: Date,
-  variants: [{ _id: false, name: String, width: Number, height: Number, bitrate: Number, bandwidth: Number, playlistBytes: Number, segments: [{ _id: false, seconds: Number, bytes: Number }] }]
+  version: String, ladderVersion: Number, prefix: String, bytes: Number, masterBytes: Number, readyAt: Date, retiredAt: Date,
+  variants: [{ _id: false, name: String, width: Number, height: Number, bitrate: Number, bandwidth: Number, frameRate: Number, source: Boolean, playlistBytes: Number, segments: [{ _id: false, seconds: Number, bytes: Number }] }]
 };
 const assetSchema = new Schema({
   userId: owner, objectKey: { type: String, required: true, unique: true },
   filename: { type: String, maxlength: 180, required: true }, contentType: String,
   bytes: { type: Number, min: 1, required: true }, checksum: String,
   duration: Number, width: Number, height: Number, rotation: Number, frameRate: Number, videoCodec: String, audioCodec: String, pixelFormat: String,
-  adaptive: { state: String, generation: String, errorMessage: String },
+  adaptive: { state: String, generation: String, errorMessage: String, quality: String, percent: Number,
+    completed: [String], total: Number, updatedAt: Date },
+  previousHls: [hlsOutput],
   state: { type: String, enum: ['reserved', 'uploading', 'verifying', 'queued', 'processing', 'ready', 'failed', 'deleting', 'deleted'], default: 'reserved', index: true },
   errorCode: String, errorMessage: String, streamUid: { type: String, index: true },
   streamImportedAt: Date, streamReadyAt: Date, posterKey: String, posterKeys: [String],
   encodingId: String,
   hls: hlsOutput,
+  previewHls: hlsOutput,
   originalPlayback: { state: String, generation: String, version: String, bytes: Number,
     key: String, contentType: String, hls: hlsOutput, readyAt: Date },
   cover: { state: String, generation: String, seconds: Number, errorMessage: String },
