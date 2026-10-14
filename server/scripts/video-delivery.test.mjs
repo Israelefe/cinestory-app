@@ -189,6 +189,18 @@ test('partial qualities allow an owner preview while public creation waits for t
   const clientView = { ...project.toObject(), video: { ...project.video.toObject(), published: project.video.draft.toObject() } };
   await assert.rejects(videoPlayback({ delivery: clientView, asset: await VideoAsset.findById(film._id), settings }), { code: 'VIDEO_NOT_READY' });
 });
+test('automatic preparation recovers a completed stale-processor job without resetting a failed generation', async () => {
+  const film = await asset(); await queueAdaptiveVideo(film);
+  const queued = await VideoAsset.findById(film._id), generation = queued.adaptive.generation;
+  await VideoJob.updateMany({ assetId: film._id, 'options.generation': generation }, { $set: { state: 'done' } });
+  await reconcileVideoLibrary();
+  const recovered = await VideoJob.find({ assetId: film._id, 'options.generation': generation });
+  assert.equal(recovered.length, 2); assert.equal(recovered.filter(row => row.state === 'queued').length, 1);
+  await VideoJob.updateMany({ assetId: film._id, 'options.generation': generation }, { $set: { state: 'failed' } });
+  await reconcileVideoLibrary();
+  assert.equal((await VideoAsset.findById(film._id)).adaptive.state, 'failed');
+  assert.equal(await VideoJob.countDocuments({ assetId: film._id, 'options.generation': generation }), 2);
+});
 
 test('background ladder upgrades retain issued sessions and start new viewers on Auto', async () => {
   const film = await asset(); const project = await delivery(film); project.status = 'published'; project.video.published = project.video.draft; await project.save();

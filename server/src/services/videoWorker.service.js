@@ -261,7 +261,16 @@ export async function reconcileVideoLibrary() {
     } else await queueOriginalPlayback(asset);
   }
   for (const asset of await VideoAsset.find({ state: 'ready', 'hls.ladderVersion': { $ne: VIDEO_QUALITY_VERSION }, 'adaptive.state': { $in: ['queued', 'running'] } }).limit(100)) {
-    if (!await VideoJob.exists({ assetId: asset._id, 'options.adaptive': true, 'options.generation': asset.adaptive.generation, state: { $in: ['running', 'queued'] } })) await queueVideoJob(asset, 'prepare', { adaptive: true, generation: asset.adaptive.generation }, 'adaptive:' + asset.adaptive.generation);
+    const scope = { assetId: asset._id, 'options.adaptive': true, 'options.generation': asset.adaptive.generation };
+    if (await VideoJob.exists({ ...scope, state: { $in: ['running', 'queued'] } })) continue;
+    if (await VideoJob.exists({ ...scope, state: 'failed' })) {
+      await VideoAsset.updateOne({ _id: asset._id, 'adaptive.generation': asset.adaptive.generation }, { $set: { 'adaptive.state': 'failed', 'adaptive.errorMessage': 'Playback qualities could not finish preparing. Your original is safe. Retry preparation.' } });
+      continue;
+    }
+    // A previous processor can finish a no-op while a newer image rolls out.
+    // A fresh key recovers that incomplete generation; an existing done key
+    // cannot be reopened by the job queue's insert-only upsert.
+    await queueVideoJob(asset, 'prepare', { adaptive: true, generation: asset.adaptive.generation }, 'adaptive:' + asset.adaptive.generation + ':recover:' + crypto.randomUUID());
   }
   // Existing waiting jobs must not consume the next migration admission batch.
   for (const asset of await VideoAsset.find({ state: 'ready', 'hls.ladderVersion': { $ne: VIDEO_QUALITY_VERSION }, 'adaptive.state': { $nin: ['queued', 'running'] }, $or: [{ 'adaptive.state': { $ne: 'failed' } }, { 'adaptive.qualityVersion': { $ne: VIDEO_QUALITY_VERSION } }] }).limit(100)) await queueAdaptiveVideo(asset);
