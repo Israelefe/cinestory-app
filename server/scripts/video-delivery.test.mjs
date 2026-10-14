@@ -1,3 +1,4 @@
+import { VIDEO_QUALITY_VERSION } from '../src/services/videoQuality.service.js';
 import assert from 'node:assert/strict';
 import { before, after, test } from 'node:test';
 import crypto from 'node:crypto';
@@ -53,7 +54,7 @@ async function asset() {
   return VideoAsset.create({ _id: id, userId: owner._id, objectKey: `veylo/video/${owner._id}/${id}/original.mp4`, filename: 'finished-film.mp4', videoCodec: 'h264', audioCodec: 'aac', bytes: 100, duration: 60, width: 1920, height: 1080, state: 'ready', posterKey: `veylo/video/${owner._id}/${id}/poster.webp`,
     hls: { version, prefix: `veylo/video/${owner._id}/${id}/hls/${version}/`, bytes: 1234, masterBytes: 100, variants: [{ name: 'q360', width: 640, height: 360, bandwidth: 1000000, playlistBytes: 100, segments: Array.from({ length: 10 }, () => ({ bytes: 20, seconds: 6 })) }] } });
 }
-async function automaticAsset() { const film = await asset(); film.hls.ladderVersion = 2; await film.save(); return film; }
+async function automaticAsset() { const film = await asset(); film.hls.ladderVersion = VIDEO_QUALITY_VERSION; await film.save(); return film; }
 async function delivery(film) { return Delivery.create({ userId: owner._id, kind: 'video', video: { draft: { title: 'Wedding films', items: [{ assetId: film._id, title: 'The ceremony', description: 'The complete ceremony.', allowDownload: null }], featuredAssetId: film._id, allowDownloads: false } } }); }
 
 test('limits stay within the approved upload ceiling and availability fails closed', () => {
@@ -175,7 +176,7 @@ test('automatic preparation queues without an opt-in and deduplicates requests',
 });
 
 test('partial qualities allow an owner preview while public creation waits for the complete ladder', async () => {
-  const film = await asset(); const partial = { ...film.hls.toObject(), version: crypto.randomUUID(), ladderVersion: 2 };
+  const film = await asset(); const partial = { ...film.hls.toObject(), version: crypto.randomUUID(), ladderVersion: VIDEO_QUALITY_VERSION };
   partial.prefix = `veylo/video/${owner._id}/${film._id}/hls/${partial.version}/`;
   await VideoAsset.updateOne({ _id: film._id }, { $set: { previewHls: partial, adaptive: { state: 'running', quality: 'q1080', percent: 36, completed: ['q720'] } }, $unset: { hls: 1 } });
   const project = await delivery(film); project.video.draft.playbackMode = 'adaptive'; await project.save();
@@ -192,7 +193,7 @@ test('partial qualities allow an owner preview while public creation waits for t
 test('background ladder upgrades retain issued sessions and start new viewers on Auto', async () => {
   const film = await asset(); const project = await delivery(film); project.status = 'published'; project.video.published = project.video.draft; await project.save();
   const old = await videoPlayback({ delivery: project, asset: film, settings }); assert.equal(old.playbackMode, 'original');
-  const upgraded = { ...film.hls.toObject(), version: crypto.randomUUID(), ladderVersion: 2 };
+  const upgraded = { ...film.hls.toObject(), version: crypto.randomUUID(), ladderVersion: VIDEO_QUALITY_VERSION };
   upgraded.prefix = `veylo/video/${owner._id}/${film._id}/hls/${upgraded.version}/`;
   await VideoAsset.updateOne({ _id: film._id }, { $set: { hls: upgraded } });
   const current = await VideoAsset.findById(film._id);
@@ -205,7 +206,7 @@ test('background ladder upgrades retain issued sessions and start new viewers on
 test('a retained adaptive version stays authorized only for its issued session', async () => {
   const film = await asset(); const project = await delivery(film); project.video.draft.playbackMode = 'adaptive'; project.status = 'published'; project.video.published = project.video.draft; await project.save();
   const old = await videoPlayback({ delivery: project, asset: film, settings });
-  const previous = film.hls.toObject(); const next = { ...previous, ladderVersion: 2, version: crypto.randomUUID() };
+  const previous = film.hls.toObject(); const next = { ...previous, ladderVersion: VIDEO_QUALITY_VERSION, version: crypto.randomUUID() };
   next.prefix = `veylo/video/${owner._id}/${film._id}/hls/${next.version}/`;
   next.variants = [{ ...previous.variants[0], name: 'q720', width: 1280, height: 720 }];
   await VideoAsset.updateOne({ _id: film._id }, { $set: { hls: next, previousHls: [previous] } });
@@ -505,7 +506,7 @@ test('creation waits for all qualities and covers, then publishes once', async (
   await VideoAsset.updateOne({ _id: film._id }, { $set: { 'cover.state': 'ready', 'cover.generation': crypto.randomUUID() }, $unset: { hls: 1 } });
   assert.notEqual((await ownerVideoDTO(project)).assets[0].posterUrl, beforeCover);
   const missing = response(); await publishVideoDelivery(request(project._id, { revision: 0 }), missing); assert.equal(missing.statusCode, 409);
-  await VideoAsset.updateOne({ _id: film._id }, { $set: { hls: { ...film.hls.toObject(), ladderVersion: 2 } } });
+  await VideoAsset.updateOne({ _id: film._id }, { $set: { hls: { ...film.hls.toObject(), ladderVersion: VIDEO_QUALITY_VERSION } } });
   const published = response(); await publishVideoDelivery(request(project._id, { revision: 0 }), published); assert.equal(published.statusCode, 200);
   assert.equal(published.body.data.video.published.playbackMode, 'adaptive');
   const duplicate = response(); await publishVideoDelivery(request(project._id, { revision: 0 }), duplicate); assert.equal(duplicate.statusCode, 200);
@@ -559,7 +560,7 @@ test('upload inspection queues automatic qualities and keeps originals safe thro
   const adaptiveJob = await VideoJob.findOneAndUpdate({ assetId: film._id, 'options.adaptive': true }, { $set: { state: 'running', leaseToken: crypto.randomUUID(), leaseUntil: new Date(Date.now() + 120000) } }, { new: true });
   await prepareVideo(await VideoAsset.findById(film._id), settings, adaptiveJob);
   ready = await VideoAsset.findById(film._id);
-  assert.equal(ready.state, 'ready'); assert.equal(ready.adaptive.state, 'ready'); assert.equal(ready.hls.variants.length, 1); assert.equal(ready.hls.ladderVersion, 2); assert.ok(stored.has(ready.hls.prefix + 'master.m3u8'));
+  assert.equal(ready.state, 'ready'); assert.equal(ready.adaptive.state, 'ready'); assert.equal(ready.hls.variants.length, 1); assert.equal(ready.hls.ladderVersion, VIDEO_QUALITY_VERSION); assert.ok(stored.has(ready.hls.prefix + 'master.m3u8'));
   assert.equal((await VideoQuota.findById(String(film._id))).durationState, 'committed');
   for (const variant of ready.hls.variants) for (let index = 0; index < variant.segments.length; index++) assert.equal(stored.get(ready.hls.prefix + variant.name + '/s' + String(index).padStart(6, '0') + '.ts').length, variant.segments[index].bytes);
   const stale = await asset(); await VideoAsset.updateOne({ _id: stale._id }, { $set: { state: 'queued', bytes: original.length }, $unset: { hls: 1 } });
@@ -733,4 +734,17 @@ test('retired playback cleanup keeps active sessions and removes only expired as
   assert.deepEqual(prefixes, [base + expiredVersion + '/']);
   const saved = await VideoAsset.findById(film._id);
   assert.deepEqual(saved.previousHls.map(row => row.version), [activeVersion, unsafeVersion]); assert.equal(saved.hls.version, film.hls.version);
+});
+test('a new quality version keeps earlier Auto playback available and retries an old failure once behind existing jobs', async () => {
+  const film = await asset(); film.hls.ladderVersion = 2; film.adaptive = { state: 'failed', qualityVersion: 2 }; await film.save();
+  const project = await delivery(film); project.status = 'published'; project.video.published = project.video.draft; await project.save();
+  const playing = await videoPlayback({ delivery: project, asset: film, settings }); assert.equal(playing.playbackMode, 'adaptive');
+  const dto = await ownerVideoDTO(project); assert.equal(dto.assets[0].autoPlayback, true); assert.equal(dto.assets[0].playbackReady, false);
+  await reconcileVideoLibrary();
+  const queued = await VideoAsset.findById(film._id); assert.equal(queued.adaptive.state, 'queued'); assert.equal(queued.adaptive.qualityVersion, VIDEO_QUALITY_VERSION);
+  assert.equal(await VideoJob.countDocuments({ assetId: film._id, 'options.adaptive': true }), 1);
+  await VideoAsset.updateOne({ _id: film._id }, { $set: { 'adaptive.state': 'failed' } });
+  await VideoJob.updateMany({ assetId: film._id, 'options.adaptive': true }, { $set: { state: 'failed' } });
+  await reconcileVideoLibrary(); assert.equal(await VideoJob.countDocuments({ assetId: film._id, 'options.adaptive': true }), 1);
+  await authorizeHlsRequest({ token: new URL(playing.hlsUrl).pathname.split('/')[2], file: 'q360/s000000.ts', method: 'HEAD' });
 });

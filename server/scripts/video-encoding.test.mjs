@@ -1,3 +1,4 @@
+import { VIDEO_QUALITY_VERSION } from '../src/services/videoQuality.service.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { spawnSync } from 'node:child_process';
@@ -80,6 +81,22 @@ test('quality ladders preserve portrait framing and never upscale small films', 
   assert.deepEqual(encodingVariants({ width: 1440, height: 2560 }).map(row => Math.min(row.width, row.height)), [720, 1080, 1440]);
   assert.deepEqual(encodingVariants({ width: 320, height: 240 }).map(row => [row.width, row.height]), [[320, 240]]);
   assert.deepEqual(encodingVariants({ width: 8192, height: 16 }).map(row => [row.width, row.height]), [[8192, 16]]);
+  assert.ok(encodingVariants({ width: 3840, height: 2160, frameRate: 60 })[0].bitrate < 4_000_000);
+});
+test('a moving 60 fps film retains every frame with 720p segment peaks suitable for a 6 Mbps connection', { skip: !hasEncoder && 'Requires full FFmpeg and FFprobe.', timeout: 180000 }, async t => {
+  await mkdir(root, { recursive: true }); const directory = await mkdtemp(path.join(root, 'auto-720-mobile-'));
+  const source = path.join(directory, 'source.mp4');
+  await runMediaTool('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=1280x720:rate=60', '-t', '8', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '10', '-pix_fmt', 'yuv420p', '-g', '120', '-threads', '2', '-y', source]);
+  const original = await readFile(source), metadata = await inspectLocalVideo(source, 10800), uploads = new Map(), previous = { ...process.env };
+  Object.assign(process.env, { R2_ACCOUNT_ID: 'a'.repeat(32), R2_ACCESS_KEY_ID: 'test', R2_SECRET_ACCESS_KEY: 'test', R2_BUCKET_NAME: 'test' });
+  t.after(() => { for (const key of Object.keys(process.env)) if (!(key in previous)) delete process.env[key]; Object.assign(process.env, previous); });
+  t.mock.method(globalThis, 'fetch', async (url, options) => { uploads.set(decodeURIComponent(new URL(url).pathname.slice('/test/'.length)), Buffer.from(await new Response(options.body).arrayBuffer())); return new Response(null, { status: 200 }); });
+  const result = await encodeAdaptiveVideo({ file: source, directory, metadata, prefix: 'mobile/' });
+  assert.equal(result.variants.length, 1); assert.ok(result.variants[0].segments.every(row => row.bytes * 8 / row.seconds < 5_500_000));
+  const segment = path.join(directory, 'encoded.ts'); await writeFile(segment, uploads.get('mobile/q720/s000000.ts'));
+  const probe = JSON.parse(await runMediaTool('ffprobe', ['-v', 'error', '-show_streams', '-of', 'json', segment]));
+  const stream = probe.streams.find(row => row.codec_type === 'video'); const [rate, divisor] = stream.avg_frame_rate.split('/').map(Number);
+  assert.equal(rate / divisor, 60); assert.equal(stream.width, 1280); assert.equal(stream.height, 720); assert.deepEqual(await readFile(source), original);
 });
 test('a high-bitrate 720p upload gets one bounded 720p quality instead of an oversized lossless stream', { skip: !hasEncoder && 'Requires full FFmpeg and FFprobe.', timeout: 180000 }, async t => {
   await mkdir(root, { recursive: true }); const directory = await mkdtemp(path.join(root, 'auto-720-'));
@@ -115,7 +132,7 @@ for (const [label, width, height, expected] of [['2K', 2560, 1440, [720, 1080, 1
     return new Response(null, { status: 200 });
   });
   const result = await encodeAdaptiveVideo({ file: source, directory, metadata, prefix: 'fixture/', onProgress: async value => progress.push(value), onRendition: async value => previews.push(value.variants.map(row => row.name)) });
-  assert.equal(result.ladderVersion, 2);
+  assert.equal(result.ladderVersion, VIDEO_QUALITY_VERSION);
   assert.deepEqual(result.variants.map(row => Math.min(row.width, row.height)), expected);
   assert.deepEqual(previews.map(row => row.length), expected.map((_, index) => index + 1));
   assert.ok(progress.some(row => row.percent > 0 && row.percent < 100));

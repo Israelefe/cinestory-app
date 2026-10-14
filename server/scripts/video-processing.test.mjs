@@ -1,3 +1,4 @@
+import { VIDEO_QUALITY_VERSION } from '../src/services/videoQuality.service.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import crypto from 'node:crypto';
@@ -102,7 +103,7 @@ test('container HTTP control allows one pump and requires a bounded lease', asyn
     await Promise.all([call('/run', {}), call('/run', {})]);
     assert.equal(count, 1);
     assert.equal((await (await call('/status')).json()).busy, true);
-    assert.equal((await (await call('/status')).json()).qualityVersion, 2);
+    assert.equal((await (await call('/status')).json()).qualityVersion, VIDEO_QUALITY_VERSION);
     release();
     for (let i = 0; i < 20; i++) { if (!(await (await call('/status')).json()).busy) break; await new Promise(resolve => setTimeout(resolve, 5)); }
     assert.equal(count, 2);

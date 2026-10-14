@@ -202,7 +202,11 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
       if (!video || !hold.active || !playIntent.current || document.hidden || generationId !== generation.current) return;
       let ahead = 0;
       for (let index = 0; index < video.buffered.length; index++) {
-        if (video.buffered.start(index) <= video.currentTime && video.buffered.end(index) > video.currentTime) {
+        const first = video.buffered.start(index);
+        if (first <= video.currentTime + (hasPlayed.current ? 0 : .25) && video.buffered.end(index) > video.currentTime) {
+          // MPEG-TS can begin just after zero. Align a paused initial frame to
+          // that start so its playable reserve can be measured before playing.
+          if (!hasPlayed.current && first > video.currentTime) video.currentTime = first;
           ahead = video.buffered.end(index) - video.currentTime; break;
         }
       }
@@ -269,11 +273,15 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
     if (error || !video) return;
     if (!loading) progress.current.at = Date.now();
     setLoading(true);
-    // Keep the fast first-frame path. After a real HLS underrun, retain play
-    // intent while filling a short reserve rather than restarting on each chunk.
-    // Native preload can stop while paused, so its browser owns rebuffering.
-    if (!hls.current || !playIntent.current || video.paused || !hasPlayed.current || bufferHold.current.active) return;
+    // Automatic HLS opens with a short playable reserve. Starting on a few
+    // progressive frames can otherwise cause repeated pauses in the first second.
+    // Native preload can stop while paused, so its browser owns buffering.
+    if (!hls.current || !playIntent.current || video.paused || bufferHold.current.active || original && !hasPlayed.current) return;
     const hold = bufferHold.current;
+    if (!hasPlayed.current) {
+      hold.count = 0; hold.at = Date.now(); hold.target = 2;
+      hold.active = true; setBuffering(true); video.pause(); return;
+    }
     hold.count = Date.now() - hold.at < 30_000 ? Math.min(hold.count + 1, 3) : 1;
     if (hold.count > 1 && navigator.onLine) setConnection('Your connection to the video appears unstable. Auto can help reduce interruptions.');
     hold.at = Date.now(); hold.target = (original ? 3 : 1.5) * hold.count;
@@ -308,11 +316,11 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
       onPlay={() => { setEnded(false); onPlaybackStart?.(); bufferHold.current.active = false; setBuffering(false); playIntent.current = true; if (suspended.current) { suspended.current = false; hls.current?.startLoad(); } setPaused(false); if (session.current?.sessionId && Date.now() >= nextRenewAt.current) void start({ renew: true, shouldPlay: false }); }}
       onError={mediaError} />
     {started && !portrait && <div className="vv-wide-quality">{qualityControl}</div>}
-    {connection && (started || offline) && <div className="vv-connection" role="status">{offline ? <WifiOff size={16} /> : <Info size={16} />}<span>{connection}</span>{quality !== 'auto' && !offline && <button type="button" onClick={() => chooseQuality('auto')}>Switch to Auto</button>}<button type="button" aria-label="Dismiss connection message" onClick={() => setConnection('')}><X size={15} /></button></div>}
+    {connection && !loading && !error && (started || offline) && <div className="vv-connection" role="status">{offline ? <WifiOff size={16} /> : <Info size={16} />}<span>{connection}</span>{quality !== 'auto' && !offline && <button type="button" onClick={() => chooseQuality('auto')}>Switch to Auto</button>}<button type="button" aria-label="Dismiss connection message" onClick={() => setConnection('')}><X size={15} /></button></div>}
     {(!started || (portrait && paused && !ended)) && !loading && !error && <button className="vv-play" type="button" onClick={() => start()} aria-label={started ? 'Resume film' : 'Play film'}><span><Play size={26} fill="currentColor" /></span>{!portrait && <small>{started ? 'Resume film' : 'Play film'}</small>}</button>}
-    {loading && <div className="vv-buffer" role="status"><RefreshCw className="v-spin" size={20} /><span>{started ? 'Loading film…' : 'Opening film…'}</span>{buffering && <button type="button" onClick={toggle} aria-label="Pause buffering" title="Pause buffering"><Pause size={16} /></button>}</div>}
+    {loading && <div className="vv-buffer" role="status"><RefreshCw className="v-spin" size={20} /><span>{connection || (started ? 'Loading film…' : 'Opening film…')}</span>{quality !== 'auto' && <button type="button" onClick={() => chooseQuality('auto')} aria-label="Switch to Auto" title="Switch to Auto">Auto</button>}{buffering && <button type="button" onClick={toggle} aria-label="Pause buffering" title="Pause buffering"><Pause size={16} /></button>}</div>}
     {error && <div className="vv-error" role="alert"><p>{error}</p><button type="button" onClick={() => { void start({ renew: Boolean(session.current), forceReload: true }); }}><RefreshCw size={16} />Try again</button></div>}
-    {item.hasAudio !== false && muted && started && <button className="vv-sound" type="button" onClick={() => { if (element.current) { element.current.muted = false; if (!bufferHold.current.active) void element.current.play().catch(() => setPaused(true)); } onMutedChange?.(false); }}><VolumeX size={16} />Enable sound</button>}
+    {item.hasAudio !== false && muted && started && !loading && <button className="vv-sound" type="button" onClick={() => { if (element.current) { element.current.muted = false; if (!bufferHold.current.active) void element.current.play().catch(() => setPaused(true)); } onMutedChange?.(false); }}><VolumeX size={16} />Enable sound</button>}
     {portrait && started && <div className="vv-reel-controls">
       {qualityControl}
       <input className="vv-seek" type="range" min="0" max={item.duration || 1} step="0.1" value={Math.min(position, item.duration || 1)} aria-label="Seek video" onChange={event => { if (element.current) element.current.currentTime = Number(event.target.value); setPosition(Number(event.target.value)); }} />

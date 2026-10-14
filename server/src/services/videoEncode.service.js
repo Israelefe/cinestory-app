@@ -46,7 +46,7 @@ export async function encodeAdaptiveVideo({ file, directory, metadata, prefix, g
     await runMediaTool('ffmpeg', ['-v', 'error', '-nostdin', '-threads', '2', '-protocol_whitelist', 'file', '-format_whitelist', 'mov,matroska,webm', '-i', file,
       '-map', '0:v:0', '-map', '0:a:0?', '-sn', '-dn', '-vf', `scale=${variant.width}:${variant.height},setsar=1`, '-vsync', '0',
       '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-profile:v', 'high', '-pix_fmt', 'yuv420p', '-threads', '2',
-      '-maxrate', String(variant.bitrate), '-bufsize', String(variant.bitrate * 2), '-sc_threshold', '0', '-force_key_frames', `expr:gte(t,n_forced*${PLAYBACK_SEGMENT_SECONDS})`,
+      '-maxrate', String(variant.bitrate), '-bufsize', String(variant.bitrate * (variant.name === 'q720' ? 1 : 2)), '-sc_threshold', '0', '-force_key_frames', `expr:gte(t,n_forced*${PLAYBACK_SEGMENT_SECONDS})`,
       '-c:a', 'aac', '-b:a', '128k', '-ac', '2', '-ar', '48000', '-max_muxing_queue_size', '1024',
       '-progress', 'pipe:1', '-nostats', '-f', 'hls', '-hls_time', String(PLAYBACK_SEGMENT_SECONDS), '-hls_playlist_type', 'vod', '-hls_flags', 'independent_segments',
       '-hls_segment_filename', path.join(output, 's%06d.ts'), '-y', path.join(output, 'index.m3u8')], { timeoutMs: 12 * 3600_000, guard: check, onProgress: report });

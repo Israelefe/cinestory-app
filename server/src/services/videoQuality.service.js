@@ -1,4 +1,5 @@
-export const VIDEO_QUALITY_VERSION = 2;
+export const VIDEO_QUALITY_VERSION = 3;
+export const AUTOMATIC_QUALITY_MIN_VERSION = 2;
 export const PLAYBACK_SEGMENT_SECONDS = 2;
 const ladder = [[720, 2_800_000], [1080, 5_500_000], [1440, 10_000_000], [2160, 20_000_000]];
 
@@ -11,8 +12,11 @@ export function encodingVariants({ width, height, frameRate = 30 }) {
   else if (short < 2160 && !levels.some(([size]) => size === short)) levels.push([short, levels.at(-1)[1]]);
   return levels.map(([size, bitrate]) => {
     const scale = Math.min(size / short, 1);
+    const frameMultiplier = Math.max(1, Math.min(frameRate, 120) / 30);
+    // The lowest quality must leave room for request latency on mobile data,
+    // including 60 fps sources. Keep every frame without doubling its bitrate.
     return { name: `q${size}`, width: Math.max(2, Math.floor(width * scale / 2) * 2), height: Math.max(2, Math.floor(height * scale / 2) * 2),
-      bitrate: Math.ceil(bitrate * Math.max(1, Math.min(frameRate, 120) / 30)), frameRate,
+      bitrate: Math.ceil(bitrate * (size === 720 ? Math.min(frameMultiplier, 1.25) : frameMultiplier)), frameRate,
       source: size === short };
   });
 }

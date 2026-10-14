@@ -14,7 +14,7 @@ import { abortR2Multipart, deleteR2Object, deleteR2Prefix, putR2Object } from '.
 import { deleteLegacyStreamVideo } from './videoProvider.service.js';
 import { encodeAdaptiveVideo } from './videoEncode.service.js';
 import { packageOriginalVideo } from './videoPackage.service.js';
-import { VIDEO_QUALITY_VERSION, encodingVariants } from './videoQuality.service.js';
+import { VIDEO_QUALITY_VERSION, AUTOMATIC_QUALITY_MIN_VERSION, encodingVariants } from './videoQuality.service.js';
 import { VIDEO_MEDIA_SECONDS } from './videoHls.service.js';
 import { withLocalVideo, inspectLocalVideo, extractVideoFrame, runMediaTool, cleanupVideoTemps } from './videoMedia.service.js';
 
@@ -255,16 +255,16 @@ export async function reconcileVideoLibrary() {
   }
   // Backfill without taking a published original offline or changing its bytes.
   const legacyOriginals = await Delivery.distinct('video.published.items.assetId', { kind: 'video', status: 'published', 'video.published.playbackMode': 'original' });
-  for (const asset of await VideoAsset.find({ _id: { $in: legacyOriginals }, state: 'ready', 'hls.ladderVersion': { $ne: VIDEO_QUALITY_VERSION }, videoCodec: 'h264', objectKey: /\.mp4$/, pixelFormat: { $in: [null, '', 'yuv420p', 'yuvj420p'] }, audioCodec: { $in: [null, '', 'aac', 'mp3'] }, $or: [{ 'originalPlayback.state': { $exists: false } }, { 'originalPlayback.state': { $in: ['queued', 'running'] } }] }).limit(100)) {
+  for (const asset of await VideoAsset.find({ _id: { $in: legacyOriginals }, state: 'ready', 'hls.ladderVersion': { $not: { $gte: AUTOMATIC_QUALITY_MIN_VERSION } }, videoCodec: 'h264', objectKey: /\.mp4$/, pixelFormat: { $in: [null, '', 'yuv420p', 'yuvj420p'] }, audioCodec: { $in: [null, '', 'aac', 'mp3'] }, $or: [{ 'originalPlayback.state': { $exists: false } }, { 'originalPlayback.state': { $in: ['queued', 'running'] } }] }).limit(100)) {
     if (['queued', 'running'].includes(asset.originalPlayback?.state)) {
       if (!await VideoJob.exists({ assetId: asset._id, 'options.originalPlayback': true, 'options.generation': asset.originalPlayback.generation, state: { $in: ['running', 'queued'] } })) await queueVideoJob(asset, 'prepare', { originalPlayback: true, generation: asset.originalPlayback.generation }, 'original-playback:' + asset.originalPlayback.generation + ':recover:' + crypto.randomUUID());
     } else await queueOriginalPlayback(asset);
   }
-  for (const asset of await VideoAsset.find({ state: 'ready', 'hls.ladderVersion': { $ne: VIDEO_QUALITY_VERSION }, 'adaptive.state': { $ne: 'failed' } }).limit(100)) {
-    if (['queued', 'running'].includes(asset.adaptive?.state)) {
-      if (!await VideoJob.exists({ assetId: asset._id, 'options.adaptive': true, 'options.generation': asset.adaptive.generation, state: { $in: ['running', 'queued'] } })) await queueVideoJob(asset, 'prepare', { adaptive: true, generation: asset.adaptive.generation }, 'adaptive:' + asset.adaptive.generation);
-    } else if (asset.adaptive?.state !== 'failed') await queueAdaptiveVideo(asset);
+  for (const asset of await VideoAsset.find({ state: 'ready', 'hls.ladderVersion': { $ne: VIDEO_QUALITY_VERSION }, 'adaptive.state': { $in: ['queued', 'running'] } }).limit(100)) {
+    if (!await VideoJob.exists({ assetId: asset._id, 'options.adaptive': true, 'options.generation': asset.adaptive.generation, state: { $in: ['running', 'queued'] } })) await queueVideoJob(asset, 'prepare', { adaptive: true, generation: asset.adaptive.generation }, 'adaptive:' + asset.adaptive.generation);
   }
+  // Existing waiting jobs must not consume the next migration admission batch.
+  for (const asset of await VideoAsset.find({ state: 'ready', 'hls.ladderVersion': { $ne: VIDEO_QUALITY_VERSION }, 'adaptive.state': { $nin: ['queued', 'running'] }, $or: [{ 'adaptive.state': { $ne: 'failed' } }, { 'adaptive.qualityVersion': { $ne: VIDEO_QUALITY_VERSION } }] }).limit(100)) await queueAdaptiveVideo(asset);
   for (const asset of await VideoAsset.find({ state: 'ready', 'cover.state': { $in: ['queued', 'running'] } }).limit(100)) {
     const job = await VideoJob.findOne({ assetId: asset._id, type: 'poster', 'options.generation': asset.cover.generation });
     if (!job && Number.isFinite(asset.cover.seconds)) await queueVideoJob(asset, 'poster', { seconds: asset.cover.seconds, generation: asset.cover.generation }, asset.cover.generation);

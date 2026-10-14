@@ -12,7 +12,7 @@ const assetSchema = new Schema({
   filename: { type: String, maxlength: 180, required: true }, contentType: String,
   bytes: { type: Number, min: 1, required: true }, checksum: String,
   duration: Number, width: Number, height: Number, rotation: Number, frameRate: Number, videoCodec: String, audioCodec: String, pixelFormat: String,
-  adaptive: { state: String, generation: String, errorMessage: String, quality: String, percent: Number,
+  adaptive: { state: String, generation: String, qualityVersion: Number, errorMessage: String, quality: String, percent: Number,
     completed: [String], total: Number, updatedAt: Date },
   previousHls: [hlsOutput],
   state: { type: String, enum: ['reserved', 'uploading', 'verifying', 'queued', 'processing', 'ready', 'failed', 'deleting', 'deleted'], default: 'reserved', index: true },

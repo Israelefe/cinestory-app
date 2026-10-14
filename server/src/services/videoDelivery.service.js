@@ -12,7 +12,7 @@ import { signedHlsMedia, verifyHlsToken, hlsFile, VIDEO_MEDIA_SECONDS } from './
 import { acquireVideoLease, releaseVideoLease } from './videoLease.service.js';
 import { videoReadinessFilter } from './videoProcessingAuth.js';
 import { originalVideoCompatible, originalPlaybackFile, originalVideoRange } from './videoOriginal.service.js';
-import { VIDEO_QUALITY_VERSION, encodingVariants, playbackQualities } from './videoQuality.service.js';
+import { VIDEO_QUALITY_VERSION, AUTOMATIC_QUALITY_MIN_VERSION, encodingVariants, playbackQualities } from './videoQuality.service.js';
 
 export const videoError = (message, status = 400, code = 'VIDEO_REQUEST_FAILED') => Object.assign(new Error(message), { status, code });
 export function videoId(value) {
@@ -57,7 +57,7 @@ export function videoAssetDTO(asset, { owner = false, posterUrl } = {}) {
   }
   return { id: String(asset._id), filename: owner ? asset.filename : undefined, bytes: asset.bytes,
     duration: asset.duration || 0, width: asset.width || 0, height: asset.height || 0,
-    state: asset.state, posterUrl, qualities: playbackQualities(asset), autoPlayback: asset.hls?.ladderVersion === VIDEO_QUALITY_VERSION,
+    state: asset.state, posterUrl, qualities: playbackQualities(asset), autoPlayback: asset.hls?.ladderVersion >= AUTOMATIC_QUALITY_MIN_VERSION,
     ...(owner ? { playbackReady: asset.hls?.ladderVersion === VIDEO_QUALITY_VERSION, previewReady: Boolean(asset.hls?.version || asset.previewHls?.version), expectedQualities: asset.width && asset.height ? encodingVariants(asset).map(row => row.name) : [], originalCompatible: originalVideoCompatible(asset), hasAdaptive: Boolean(asset.hls?.version), adaptive: asset.adaptive, cover: asset.cover, errorCode: asset.errorCode, errorMessage: asset.errorMessage, analysis: asset.analysis ? { state: asset.analysis.state, includeSpeech: asset.analysis.includeSpeech, suggestions: asset.analysis.suggestions, frames: asset.analysis.frames, errorMessage: asset.analysis.errorMessage } : { state: 'idle' } } : {}) };
 }
 function safeVideoDetails(value) {
@@ -156,7 +156,7 @@ export async function assertVideoPlaybackUsage(userId, settings, now = new Date(
 export async function videoPlayback({ delivery, asset, settings, sessionId, preview = false }) {
   const presentation = preview ? delivery.video.draft : delivery.video.published;
   const availableHls = preview && asset.previewHls?.version ? asset.previewHls : asset.hls;
-  let mode = presentation?.playbackMode === 'adaptive' || asset.hls?.ladderVersion === VIDEO_QUALITY_VERSION ? 'adaptive' : 'original';
+  let mode = presentation?.playbackMode === 'adaptive' || asset.hls?.ladderVersion >= AUTOMATIC_QUALITY_MIN_VERSION ? 'adaptive' : 'original';
   if (mode === 'adaptive' && !availableHls?.version) throw videoError('This film is preparing its first playback quality. Please try again shortly.', 409, 'VIDEO_NOT_READY');
   await assertVideoPlaybackUsage(delivery.userId, settings);
   let session = sessionId && /^[a-f\d-]{36}$/i.test(sessionId) ? await VideoPlayback.findOne({ _id: sessionId, deliveryId: delivery._id, assetId: asset._id, accessVersion: delivery.video.accessVersion, preview, expiresAt: { $gt: new Date() } }) : null;
@@ -220,7 +220,7 @@ export async function queueOriginalPlayback(asset) {
 export async function queueAdaptiveVideo(asset) {
   if (asset.hls?.ladderVersion === VIDEO_QUALITY_VERSION || asset.state !== 'ready') return;
   const generation = crypto.randomUUID();
-  const queued = await VideoAsset.findOneAndUpdate({ _id: asset._id, userId: asset.userId, state: 'ready', 'hls.ladderVersion': { $ne: VIDEO_QUALITY_VERSION }, 'adaptive.state': { $nin: ['queued', 'running'] } }, { $set: { adaptive: { state: 'queued', generation, errorMessage: '', completed: [], total: asset.width && asset.height ? encodingVariants(asset).length : 0, updatedAt: new Date() } } }, { new: true });
+  const queued = await VideoAsset.findOneAndUpdate({ _id: asset._id, userId: asset.userId, state: 'ready', 'hls.ladderVersion': { $ne: VIDEO_QUALITY_VERSION }, 'adaptive.state': { $nin: ['queued', 'running'] } }, { $set: { adaptive: { state: 'queued', generation, qualityVersion: VIDEO_QUALITY_VERSION, errorMessage: '', completed: [], total: asset.width && asset.height ? encodingVariants(asset).length : 0, updatedAt: new Date() } } }, { new: true });
   if (queued) await queueVideoJob(queued, 'prepare', { adaptive: true, generation }, 'adaptive:' + generation);
 }
 export async function queueVideoJob(asset, type, options = {}, keySuffix = '') {

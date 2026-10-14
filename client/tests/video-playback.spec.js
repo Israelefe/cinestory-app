@@ -58,7 +58,7 @@ async function watchLoads(page) {
 
 test('Auto and manual quality changes keep the same film, position and playback session', async ({ page }) => {
   const state = await setup(page, cases[2]); await page.clock.install(); await page.goto('/v/playback-check');
-  await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(.1);
+  await expect.poll(() => page.locator('video').evaluate(video => video.currentTime), { timeout: 10000 }).toBeGreaterThan(.1);
   await watchLoads(page);
   const quality = page.getByRole('combobox', { name: 'Playback quality' });
   await expect(quality).toHaveValue('auto');
@@ -328,7 +328,7 @@ for (const scenario of [cases[4], cases[5]]) test(`${scenario.name} does not tim
   } finally { release(); for (const timer of timers) clearInterval(timer); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });
 
-for (const [scenario, action] of [[cases[0], 'resume'], [cases[0], 'renew'], [cases[1], 'pause'], [cases[1], 'hide'], [cases[2], 'resume']]) test(`${scenario.name} rebuilds a playable buffer after an underrun (${action})`, async ({ page }) => {
+for (const [scenario, action] of [[cases[0], 'resume'], [cases[0], 'renew'], [cases[1], 'pause'], [cases[1], 'hide'], [cases[2], 'resume'], [cases[2], 'pause'], [cases[3], 'renew']]) test(`${scenario.name} ${scenario.mode === 'adaptive' ? 'builds a short startup reserve' : 'rebuilds a playable buffer after an underrun'} (${action})`, async ({ page }) => {
   test.setTimeout(45000);
   const fixture = new URL(`../../.visual-review/video-hls/${scenario.directory}/`, import.meta.url);
   test.skip(!existsSync(fileURLToPath(new URL('master.m3u8', fixture))), 'Requires video fixtures.');
@@ -355,14 +355,16 @@ for (const [scenario, action] of [[cases[0], 'resume'], [cases[0], 'renew'], [ca
     await page.unroute('**/__playback__/**');
     if (action === 'renew') await page.clock.install();
     await page.goto('/v/playback-check');
-    await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(.05);
+    if (scenario.mode === 'original') await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(.05);
     await expect(page.getByRole('button', { name: 'Pause buffering', exact: true })).toBeVisible({ timeout: 12000 });
+    await expect.poll(() => page.locator('video').evaluate(video => video.buffered.length)).toBeGreaterThan(0);
     const before = await page.locator('video').evaluate(video => ({ time: video.currentTime, buffer: video.buffered.end(video.buffered.length - 1) }));
     await page.locator('video').evaluate(video => {
       window.rebufferStarts = [];
       video.addEventListener('playing', () => window.rebufferStarts.push(video.buffered.end(video.buffered.length - 1) - video.currentTime));
     });
-    expect(before.time).toBeGreaterThan(.05);
+    if (scenario.mode === 'original') expect(before.time).toBeGreaterThan(.05);
+    else expect(before.time).toBeLessThan(.25);
     expect(await page.locator('video').evaluate(video => video.paused)).toBe(true);
     const panel = await page.locator('.vv-buffer').boundingBox(); const screen = await page.locator('.vv-screen').boundingBox();
     expect(panel.x).toBeGreaterThanOrEqual(screen.x); expect(panel.x + panel.width).toBeLessThanOrEqual(screen.x + screen.width);
@@ -383,14 +385,10 @@ for (const [scenario, action] of [[cases[0], 'resume'], [cases[0], 'renew'], [ca
       await expect.poll(() => page.locator('video').evaluate(video => video.buffered.end(video.buffered.length - 1))).toBeGreaterThan(before.buffer);
       // A few newly received frames must not cause another automatic restart.
       await page.waitForTimeout(750);
-      if (scenario.mode === 'original') {
-        expect(await page.locator('video').evaluate(video => video.paused)).toBe(true);
-        expect(await page.locator('video').evaluate(video => video.currentTime)).toBeCloseTo(before.time, 1);
-      } else {
-        const starts = await page.evaluate(() => window.rebufferStarts);
-        expect(starts.length).toBeLessThanOrEqual(1);
-        if (starts.length) expect(starts[0]).toBeGreaterThan(1);
-      }
+      expect(await page.locator('video').evaluate(video => video.paused)).toBe(true);
+      if (scenario.mode === 'original') expect(await page.locator('video').evaluate(video => video.currentTime)).toBeCloseTo(before.time, 1);
+      else expect(await page.locator('video').evaluate(video => video.currentTime)).toBeLessThan(.25);
+      expect(await page.evaluate(() => window.rebufferStarts)).toEqual([]);
     }
     releaseRest();
     if (action === 'hide') {
@@ -400,7 +398,8 @@ for (const [scenario, action] of [[cases[0], 'resume'], [cases[0], 'renew'], [ca
     if (action === 'pause' || action === 'hide') {
       if (action === 'pause') await page.waitForTimeout(750);
       expect(await page.locator('video').evaluate(video => video.paused)).toBe(true);
-      await page.getByRole('button', { name: 'Resume film', exact: true }).click();
+      if (scenario.width < scenario.height) await page.getByRole('button', { name: 'Resume film', exact: true }).click();
+      else await page.locator('video').evaluate(video => video.play());
     }
     await expect.poll(() => page.locator('video').evaluate(video => video.currentTime), { timeout: 10000 }).toBeGreaterThan(before.time + 1);
     await expect(page.getByRole('button', { name: 'Pause buffering', exact: true })).toHaveCount(0);
