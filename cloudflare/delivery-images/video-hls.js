@@ -36,9 +36,15 @@ export async function handleVideoHls(request, env) {
   if (!url.pathname.startsWith('/video/')) return null;
   const origin = request.headers.get('Origin');
   const allowedOrigin = String(env.VEYLO_WEB_ORIGIN || '').replace(/\/$/, '');
-  const cors = { 'Access-Control-Allow-Origin': allowedOrigin, 'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS', 'Access-Control-Allow-Headers': 'Range', 'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges', Vary: 'Origin' };
+  // Both Veylo hostnames serve the client. Keep the API grant bound to its
+  // configured origin, while allowing either exact first-party browser origin.
+  const browserOrigins = new Set([allowedOrigin]);
+  if (['https://veylo.com.ng', 'https://www.veylo.com.ng'].includes(allowedOrigin)) {
+    browserOrigins.add('https://veylo.com.ng'); browserOrigins.add('https://www.veylo.com.ng');
+  }
+  const cors = { 'Access-Control-Allow-Origin': origin && browserOrigins.has(origin) ? origin : allowedOrigin, 'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS', 'Access-Control-Allow-Headers': 'Range', 'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges', Vary: 'Origin' };
   const reply = response => { const headers = new Headers(response.headers); for (const [name, value] of Object.entries(cors)) if (value) headers.set(name, value); return new Response(response.body, { status: response.status, headers }); };
-  if (!allowedOrigin || (origin && origin !== allowedOrigin)) return fail(403, 'This video cannot be opened from this site.');
+  if (!allowedOrigin || (origin && !browserOrigins.has(origin))) return fail(403, 'This video cannot be opened from this site.');
   if (request.method === 'OPTIONS') return reply(new Response(null, { status: 204, headers: noStore }));
   if (!['GET', 'HEAD'].includes(request.method)) return reply(fail(405, 'Method not allowed.'));
   const match = /^\/video\/([^/]+)\/(original|master\.m3u8|q\d{1,4}\/(?:index\.m3u8|s\d{6}\.ts))$/.exec(url.pathname);
