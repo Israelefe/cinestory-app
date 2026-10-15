@@ -10,6 +10,10 @@ const schema = new mongoose.Schema({
   inputRevision: Number,
   result: mongoose.Schema.Types.Mixed,
   error: { type: String, default: '' },
+  errorCode: { type: String, default: '' },
+  conflicts: { type: [{ id: String, title: String, url: String, _id: false }], default: [] },
+  stage: { type: String, default: '' },
+  cover: mongoose.Schema.Types.Mixed,
   leaseId: String,
   heartbeatAt: Date,
   completedAt: Date

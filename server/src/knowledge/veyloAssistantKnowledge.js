@@ -240,6 +240,25 @@ export function buildMarketingKnowledge() {
   return DOCUMENTS.filter(document => topics.has(document.id)).map(document => `${document.title}\n${documentText(document)}`).join('\n\n');
 }
 
+// Blog writing shares the maintained product descriptions and reads current
+// settings for each job. Never include provider configuration or account data.
+export function buildBlogKnowledge(runtimeConfig = {}) {
+  const topics = new Set(['what-veylo-is', 'product-overview', 'image-library-sharing', 'plans-and-storage', 'delivery-formats', 'photo-swap', 'gridboard', 'create-delivery', 'review-captions-and-design', 'publish-and-access', 'retired-volume-delivery', 'emails-and-notifications']);
+  if (runtimeConfig.featureFlags?.portfolio !== false) topics.add('portfolio');
+  if (runtimeConfig.videoDelivery?.enabled && runtimeConfig.videoDelivery?.publicAvailable) topics.add('video-delivery');
+  if (runtimeConfig.featureFlags?.veyloAssistant !== false) topics.add('assistant-workspace');
+  if (runtimeConfig.featureFlags?.music !== false || runtimeConfig.featureFlags?.narration !== false) topics.add('music-and-narration');
+  const availability = {
+    portfolio: runtimeConfig.featureFlags?.portfolio !== false,
+    videoDelivery: Boolean(runtimeConfig.videoDelivery?.enabled && runtimeConfig.videoDelivery?.publicAvailable),
+    music: runtimeConfig.featureFlags?.music !== false && runtimeConfig.music?.enabled !== false,
+    narration: runtimeConfig.featureFlags?.narration !== false && runtimeConfig.narration?.enabled !== false,
+    showcaseFormats: SHOWCASE_FORMATS.filter(([id]) => runtimeConfig.formats?.[id]?.enabled !== false).map(([, name]) => name)
+  };
+  const distinctions = 'EDITORIAL FACTS: Showcase, GridBoard and Photo Swap are three final photo delivery types. Photo Swap means swiping through finished photographs, never replacing files, requesting edits, collaborative editing or approval. GridBoard shows the complete finished collection; optional likes are not client preselection for editing. Photo Library preselection and editor handoff are separate Pro workflows. Every finished photograph in a delivery remains in its complete collection, even when a Showcase presentation groups or highlights photographs. A delivery PIN has six digits. Do not invent print ordering, saved custom layout templates or interface controls that are not described below.';
+  return `CURRENT AVAILABILITY (takes precedence over general descriptions): ${JSON.stringify(availability)}\nDo not recommend disabled features or formats.\n${distinctions}\n${DOCUMENTS.filter(document => topics.has(document.id)).map(document => `${document.title}\n${documentText(document, runtimeConfig)}`).join('\n\n')}`;
+}
+
 export function buildAssistantKnowledge({ query = '', audience = 'visitor', runtimeConfig } = {}) {
   const queryTerms = terms(query);
   const selected = DOCUMENTS

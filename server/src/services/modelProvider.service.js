@@ -101,9 +101,9 @@ export async function requestModelCompletion(body, options = {}) {
   const workload = options.workload || context.workload || (hasImages ? 'analysis' : 'writing');
   const state = modelProviderState();
   const providers = [];
-  if (groqKey()) providers.push({ name: GROQ_PROVIDER_NAME, model: hasImages ? state.visionModel : state.textModel, apiKey: groqKey(), endpoint: GROQ_API_BASE + '/chat/completions' });
+  if (groqKey()) providers.push({ name: GROQ_PROVIDER_NAME, model: hasImages ? state.visionModel : options.primaryTextModel || state.textModel, apiKey: groqKey(), endpoint: GROQ_API_BASE + '/chat/completions' });
   const alibaba = alibabaSettings();
-  if (alibaba) providers.push({ name: ALIBABA_PROVIDER_NAME, model: state.fallbackModel, ...alibaba });
+  if (alibaba) providers.push({ name: ALIBABA_PROVIDER_NAME, model: options.fallbackModel || state.fallbackModel, ...alibaba });
   if (!providers.length) throw Object.assign(new Error('Configure Groq or Alibaba Model Studio to use Veylo AI.'), { code: 'AI_NOT_CONFIGURED' });
   const timeoutMs = Math.max(1, Math.min(600_000, Math.ceil(Number(options.timeoutMs) || 90_000)));
   const background = options.background ?? context.background ?? false;

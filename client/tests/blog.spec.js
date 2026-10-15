@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 const id = '0123456789abcdef01234567';
 const article = { slug: 'deliver-wedding-photos', title: 'How to deliver wedding photographs to your clients', excerpt: 'A practical guide to sending finished photographs through a private link, with a message that makes sense.', bodyHtml: '<p>You have finished the edit. Your client is waiting to see their photographs.</p><h2 id="section-prepare">Prepare the photographs</h2><p>Check your exports and make sure the delivery contains the finished photographs you agreed to provide.</p><h2 id="section-message">Write a clear delivery message</h2><p>Explain how to open the link and where to find the downloads. <a href="/formats">Explore Veylo delivery formats</a>.</p>', toc: [{ id: 'section-prepare', text: 'Prepare the photographs', level: 2 }, { id: 'section-message', text: 'Write a clear delivery message', level: 2 }], seoTitle: 'How to deliver wedding photos to clients · Veylo', metaDescription: 'A practical guide for Nigerian photographers on preparing finished wedding photos, sending a private link and helping clients find their downloads.', readingMinutes: 4, publishedAt: '2026-10-14T10:00:00Z', updatedAt: '2026-10-14T10:00:00Z', cover: null, coverId: null, coverAlt: '', coverCredit: '', keyword: 'deliver wedding photos' };
 const draft = () => { const { slug, publishedAt, updatedAt, cover, ...value } = article; return { ...value, markdown: '## Prepare the photographs\n\nCheck the exports.\n\n## Write a clear delivery message\n\nSend a [private link](/formats).' }; };
@@ -58,6 +58,8 @@ async function mockAdmin(page, role = 'superadmin') {
   await page.addInitScript(() => localStorage.setItem('veylo_admin_token', 'offline-browser-test-token'));
   let post = { id, slug: 'deliver-wedding-photos', status: 'draft', draft: draft(), notes: '', revision: 1, publishedRevision: 0, hasUnpublishedChanges: true, checks: { errors: [], warnings: [] }, activeJobId: null };
   let exists = false, job = null, generationCount = 0; const requests = [];
+  const photoBytes = await readFile(new URL('../public/veylo/web/demo-ada-1-480.webp', import.meta.url));
+  await page.route('https://veylo.com.ng/veylo/web/**', route => route.fulfill({ contentType: 'image/webp', body: photoBytes }));
   await page.route('**/api/v1/admin/**', async route => {
     const req = route.request(), url = new URL(req.url()), path = url.pathname, method = req.method();
     const input = req.postData() && !req.headers()['content-type']?.includes('multipart') ? req.postDataJSON() : null;
@@ -67,6 +69,16 @@ async function mockAdmin(page, role = 'superadmin') {
     else if (path.endsWith('/blog/generations') && method === 'GET') data = { jobs: [] };
     else if (path.endsWith('/blog/posts') && method === 'GET') data = { posts: exists ? [{ ...post, title: post.draft.title }] : [], page: 1, pages: 1, activeJobs: [], aiConfigured: true };
     else if (path.endsWith('/blog/posts') && method === 'POST') { exists = true; data = { post }; }
+    else if (path.endsWith('/blog/articles/generate')) {
+      exists = true;
+      job = { id: `generation-${++generationCount}`, postId: id, kind: 'article', status: 'queued', active: true };
+      post = { ...post, draft: { ...draft(), title: input.topic }, activeJobId: job.id };
+      data = { post, job };
+    }
+    else if (path.endsWith('/blog/cover-photos')) data = { photos: [{ id: 'fashion-1', label: 'Fashion portrait', alt: 'A fashion portrait from Veylo', thumbnailUrl: 'https://veylo.com.ng/veylo/web/demo-ada-1-480.webp' }, { id: 'wedding-1', label: 'Wedding portrait', alt: 'A wedding portrait from Veylo', thumbnailUrl: 'https://veylo.com.ng/veylo/web/demo-wedding-1-480.webp' }] };
+    else if (path.includes('/blog/media/')) return route.fulfill({ contentType: 'image/webp', body: photoBytes });
+    else if (path.endsWith('/cover/generate')) data = { coverId: '111111111111111111111111', coverAlt: 'A fashion portrait with the article title', coverCredit: 'Veylo' };
+    else if (path.endsWith('/cover') && method === 'POST') data = { coverId: '222222222222222222222222' };
     else if (path.endsWith(`/posts/${id}`) && method === 'GET') data = { post };
     else if (path.endsWith(`/posts/${id}`) && method === 'PATCH') {
       expect(input.draft.bodyHtml).toBeUndefined(); expect(input.draft.toc).toBeUndefined();
@@ -75,7 +87,7 @@ async function mockAdmin(page, role = 'superadmin') {
       job = { id: `generation-${++generationCount}`, postId: input.postId || null, kind: input.kind, status: 'queued', active: true }; data = { job };
     } else if (/\/generations\/generation-\d+$/.test(path)) {
       job = { ...job, status: 'ready', active: false, topics: [{ title: article.title, keyword: article.keyword, angle: article.excerpt }] };
-      if (job.kind === 'article') post = { ...post, draft: draft(), revision: post.revision + 1, activeJobId: null }; data = { job };
+      if (job.kind === 'article') post = { ...post, draft: { ...draft(), coverId: '111111111111111111111111', coverAlt: 'A wedding portrait with the article title', coverCredit: 'Veylo' }, revision: post.revision + 1, activeJobId: null }; data = { job };
     } else if (path.endsWith('/publish')) { expect(input.reviewed).toBe(true); post = { ...post, status: 'published', publishedRevision: post.revision, hasUnpublishedChanges: false, firstPublishedAt: '2026-10-14T10:00:00Z' }; data = { post }; }
     else if (path.endsWith('/preview')) data = { bodyHtml: article.bodyHtml, toc: article.toc, readingMinutes: 4 };
     else if (path.endsWith('/unpublish')) { post = { ...post, status: 'draft' }; data = { post }; }
@@ -83,19 +95,19 @@ async function mockAdmin(page, role = 'superadmin') {
     else if (path.endsWith('/restore')) { post = { ...post, status: 'draft' }; data = { post }; }
     return route.fulfill({ json: data });
   });
-  return { requests, setExists: () => { exists = true; } };
+  return { requests, setExists: () => { exists = true; }, setPublished: () => { exists = true; post = { ...post, status: 'published', publishedRevision: post.revision, hasUnpublishedChanges: false, firstPublishedAt: '2026-10-14T10:00:00Z' }; } };
 }
 test('admin can suggest a topic, generate, edit, preview, publish and unpublish', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 }); const { requests } = await mockAdmin(page);
   await page.goto('http://127.0.0.1:5184/?section=blog');
   await page.getByRole('button', { name: 'Suggest topics', exact: true }).click();
   await expect(page.locator('.bw-topics h3').first()).toHaveText(article.title);
-  await page.getByRole('button', { name: 'Use this topic' }).click();
+  await page.getByRole('button', { name: 'Write this article' }).click();
   await expect(page.getByLabel('Article title', { exact: true })).toHaveValue(article.title);
-  await page.getByRole('button', { name: 'Write with AI' }).click();
-  // Existing text is explicitly replaced only after confirmation.
-  await page.getByRole('button', { name: 'Generate new draft', exact: true }).click();
   await expect(page.getByText('Your draft is ready.', { exact: false })).toBeVisible();
+  expect(requests.filter(r => r.path.endsWith('/articles/generate'))).toHaveLength(1);
+  expect(requests.filter(r => r.path.endsWith('/generations') && r.method === 'POST')).toHaveLength(1);
+  await expect(page.getByAltText('Article cover preview')).toBeVisible();
   await page.getByLabel('Article title', { exact: true }).fill('A practical guide to delivering finished wedding photos');
   await expect(page.getByRole('button', { name: 'Publish article', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
@@ -110,10 +122,63 @@ test('admin can suggest a topic, generate, edit, preview, publish and unpublish'
   await page.getByRole('button', { name: 'Confirm unpublish', exact: true }).click();
   await expect(page.getByText('Article unpublished. Your draft is saved.', { exact: true })).toBeVisible();
 });
+
+test('an admin topic starts writing immediately and cover choices use real photographs', async ({ page }) => {
+  await page.setViewportSize({ width: 834, height: 1000 }); const { requests } = await mockAdmin(page);
+  await page.goto('http://127.0.0.1:5184/?section=blog');
+  await page.getByLabel('What would you like to write about?').fill('How to send finished birthday portraits');
+  await page.getByRole('button', { name: 'Generate article', exact: true }).click();
+  await expect(page.getByText('Your draft is ready.', { exact: false })).toBeVisible();
+  const creation = requests.find(r => r.path.endsWith('/articles/generate'));
+  expect(creation.input.topic).toBe('How to send finished birthday portraits');
+  await page.getByLabel('Article title', { exact: true }).fill('Sending birthday portraits through a private link');
+  await page.getByRole('button', { name: 'Fashion portrait', exact: true }).click();
+  await expect(page.getByText('Cover ready. Save the draft to keep it.')).toBeVisible();
+  const designIndex = requests.findIndex(r => r.path.endsWith('/cover/generate'));
+  expect(requests[designIndex].input.photoId).toBe('fashion-1');
+  expect(requests.slice(0, designIndex).filter(r => r.method === 'PATCH').at(-1).input.draft.title).toBe('Sending birthday portraits through a private link');
+  await page.getByLabel('Upload cover photo', { exact: true }).setInputFiles({ name: 'portrait.webp', mimeType: 'image/webp', buffer: await readFile(new URL('../public/veylo/web/demo-ada-1-480.webp', import.meta.url)) });
+  await expect(page.getByText('Cover designed from your photo.', { exact: false })).toBeVisible();
+  await expect(page.getByLabel('Photo description (alt text)')).toHaveValue('');
+  await expect(page.getByAltText('Article cover preview')).toBeVisible(); await noOverflow(page);
+});
+
+test('topic suggestions include the admin seed and duplicate topics link to existing coverage', async ({ page }) => {
+  const { requests } = await mockAdmin(page);
+  await page.goto('http://127.0.0.1:5184/?section=blog');
+  await page.getByLabel('What would you like to write about?').fill('Traditional wedding delivery');
+  await page.getByRole('button', { name: 'Suggest topics', exact: true }).click();
+  await expect(page.locator('.bw-topics h3').first()).toBeVisible();
+  expect(requests.find(r => r.path.endsWith('/generations') && r.method === 'POST').input.topic).toBe('Traditional wedding delivery');
+  await page.route('**/api/v1/admin/blog/articles/generate', route => route.fulfill({ status: 409, json: { message: 'This topic is already covered by a published article.', code: 'BLOG_TOPIC_DUPLICATE', conflicts: [{ id, title: article.title, url: `/blog/${article.slug}` }] } }));
+  await page.getByRole('button', { name: 'Write this article' }).click();
+  await expect(page.getByRole('alert')).toContainText('already covered');
+  await expect(page.getByRole('link', { name: 'Read published article' })).toHaveAttribute('href', `https://veylo.com.ng/blog/${article.slug}`);
+  await page.getByRole('button', { name: 'Open existing article' }).click();
+  await expect(page.getByLabel('Article title', { exact: true })).toHaveValue(article.title);
+});
+test('published articles can be rewritten in one click and require Publish update to go live', async ({ page }) => {
+  const fixture = await mockAdmin(page); fixture.setPublished();
+  await page.goto(`http://127.0.0.1:5184/?section=blog&post=${id}`);
+  await page.getByLabel('Your notes').fill('Correct the Photo Swap description. It presents finished photos in a swipeable stack.');
+  await page.getByRole('button', { name: 'Rewrite article', exact: true }).click();
+  await expect(page.getByText('Your draft is ready.', { exact: false })).toBeVisible();
+  const generations = fixture.requests.filter(r => r.path.endsWith('/generations') && r.method === 'POST');
+  expect(generations).toHaveLength(1); expect(generations[0].input.rewrite).toBe(true);
+  expect(generations[0].input.notes).toContain('Correct the Photo Swap');
+  expect(fixture.requests.filter(r => r.path.endsWith('/publish'))).toHaveLength(0);
+  await expect(page.getByAltText('Article cover preview')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Publish update', exact: true })).toBeDisabled();
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Publish update', exact: true }).click();
+  expect(fixture.requests.filter(r => r.path.endsWith('/publish'))).toHaveLength(1);
+});
 for (const width of [320, 390, 768, 834, 1024, 1440]) test(`admin editor stays spacious at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 1000 }); const fixture = await mockAdmin(page); fixture.setExists();
   await page.goto(`http://127.0.0.1:5184/?section=blog&post=${id}`);
   await expect(page.getByLabel('Article title', { exact: true })).toBeVisible(); await noOverflow(page);
+  await expect(page.getByRole('button', { name: 'Fashion portrait', exact: true })).toBeVisible();
+  await noOverflow(page);
   await page.getByRole('button', { name: 'Preview', exact: true }).click();
   await expect(page.locator('.bw-preview .vb-prose')).toBeVisible(); await noOverflow(page);
   if ([320, 834, 1440].includes(width)) { await mkdir('../.visual-review/blog', { recursive: true }); await page.screenshot({ path: `../.visual-review/blog/admin-${width}.png`, fullPage: true }); }
