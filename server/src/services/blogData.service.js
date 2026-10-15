@@ -29,7 +29,7 @@ export async function presentPublicPosts(posts, full = false) {
   const byId = new Map(assets.map(a => [String(a._id), a]));
   return posts.map(post => presentPublicPost(post, byId.get(String(post.published.coverId)), full));
 }
-export const publishedBlogFilter = { status: 'published', published: { $ne: null } };
+export const publishedBlogFilter = { status: 'published', published: { $ne: null }, deletedAt: null };
 export async function publicBlogPage(page) {
   const total = await BlogPost.countDocuments(publishedBlogFilter), pages = Math.max(1, Math.ceil(total / 12));
   if (page > pages) return null;

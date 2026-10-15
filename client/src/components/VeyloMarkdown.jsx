@@ -9,7 +9,7 @@ const HELP_PATHS = new Set([
   '/signup', '/signin', '/forgot-password', '/changelog', '/demo', '/demo/gridboard',
   '/demo/photoswap', '/demo/editorial', '/demo/reveal', '/demo/canvas', '/demo/chapters',
   '/demo/album', '/demo/event-coverage', '/demo/campaign',
-  '/video-delivery', '/videos/library', '/demo/video'
+  '/video-delivery', '/videos/library', '/demo/video', '/blog'
 ]);
 
 function safeHref(rawHref) {
@@ -18,8 +18,11 @@ function safeHref(rawHref) {
   try {
     const url = new URL(href, 'https://veylo.com.ng');
     if (url.protocol !== 'https:') return '';
-    if (url.username || url.password || url.port || !HELP_PATHS.has(url.pathname)) return '';
+    const blogArticle = /^\/blog\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(url.pathname) && url.pathname.length <= 126;
+    const blogLink = blogArticle || url.pathname === '/blog';
+    if (url.username || url.password || url.port || !HELP_PATHS.has(url.pathname) && !blogArticle) return '';
     const host = url.hostname.toLowerCase();
+    if (blogLink && (host !== 'veylo.com.ng' || blogArticle && url.search || !blogArticle && url.search && !/^\?page=[1-9]\d{0,5}$/.test(url.search))) return '';
     if (host === 'veylo.com.ng' || host.endsWith('.veylo.com.ng')) return href.startsWith('/') ? `${url.pathname}${url.search}${url.hash}` : url.toString();
   } catch {}
   return '';

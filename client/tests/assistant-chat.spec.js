@@ -6,7 +6,7 @@ const answer = 'Open **Settings** to update your studio profile.\n\n1. Choose th
 const reply = (route, text = answer) => route.fulfill({ json: { success: true, data: { answer: text, suggestions: ['How do I publish a delivery?', 'What is included with Pro?'] } } });
 
 async function setup(page, { user = null } = {}) {
-  await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 3, necessary: true, serviceAnalytics: true })));
+  await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 4, necessary: true, serviceAnalytics: true })));
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.route('**/api/v1/**', route => {
     if (route.request().url().endsWith('/auth/me')) return route.fulfill({ json: { success: true, user } });
@@ -275,6 +275,29 @@ test('reading older messages keeps your position until you choose the latest mes
   await expect(panel.getByRole('button', { name: 'Latest message' })).toHaveCount(0);
 });
 
+for (const width of [320, 768, 834]) test(`assistant blog references open the article at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 900 }); await setup(page);
+  await page.route('**/assistant/chat', route => reply(route, 'Send your client the private delivery link. For a detailed walkthrough, read [Sending finished wedding photographs through WhatsApp](/blog/wedding-photos-whatsapp).'));
+  await page.route('**/api/v1/blog/posts/wedding-photos-whatsapp', route => route.fulfill({ json: { data: { kind: 'article', post: { slug: 'wedding-photos-whatsapp', title: 'Sending finished wedding photographs through WhatsApp', excerpt: 'A clear message for your client.', bodyHtml: '<p>Send the private delivery link.</p>', toc: [], readingMinutes: 2, publishedAt: '2026-10-15T10:00:00Z', updatedAt: '2026-10-15T10:00:00Z', seoTitle: 'Wedding photos on WhatsApp · Veylo', metaDescription: 'Send a private photo delivery link through WhatsApp.', cover: null }, related: [] } } }));
+  const panel = await openChat(page);
+  await ask(page, 'Do you have an article about sending wedding photos on WhatsApp?');
+  const link = panel.getByRole('link', { name: 'Sending finished wedding photographs through WhatsApp', exact: true });
+  await expect(link).toHaveAttribute('href', '/blog/wedding-photos-whatsapp'); await link.focus(); await expect(link).toBeFocused();
+  expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await link.click();
+  await expect(page).toHaveURL(/\/blog\/wedding-photos-whatsapp$/);
+  await expect(page.getByRole('dialog', { name: 'Veylo Assistant', exact: true })).toHaveCount(0);
+  await expect(page.locator('.vb-article h1')).toHaveText('Sending finished wedding photographs through WhatsApp');
+});
+
+test('blog links keep the existing URL safety rules', async ({ page }) => {
+  await setup(page);
+  await page.route('**/assistant/chat', route => reply(route, '[Blog](/blog) [Published guide](https://veylo.com.ng/blog/wedding-photos) [Bad query](/blog/wedding-photos?token=secret) [Nested route](/blog/wedding/photos) [Third party](https://example.test/blog/wedding-photos) [Subdomain](https://other.veylo.com.ng/blog/wedding-photos) [Unsafe](javascript:alert(1))'));
+  const panel = await openChat(page); await ask(page, 'Where is the blog?');
+  await expect(panel.getByRole('link', { name: 'Blog', exact: true })).toHaveAttribute('href', '/blog');
+  await expect(panel.getByRole('link', { name: 'Published guide', exact: true })).toHaveAttribute('href', 'https://veylo.com.ng/blog/wedding-photos');
+  for (const name of ['Bad query', 'Nested route', 'Third party', 'Subdomain', 'Unsafe']) await expect(panel.getByRole('link', { name, exact: true })).toHaveCount(0);
+});
 test('capture the starting screen and conversation at mobile, tablet and desktop sizes', async ({ page }) => {
   await setup(page, { user: account });
   await page.route('**/assistant/chat', route => reply(route));

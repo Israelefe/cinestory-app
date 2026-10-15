@@ -12,6 +12,10 @@ The blog is available at `/blog`. In the admin, choose **Blog** (`/?section=blog
 
 The URL can be edited before first publication and is then fixed to preserve shared links. **Unpublish** removes an article from the public blog. **Archive** also locks editing until **Restore as draft** is chosen. Neither action deletes the article.
 
+**Delete article** is available for drafts, published and archived posts. Confirm with **Delete permanently** to erase the article. A current revision is required, and an active writing job must finish or be cancelled first. Deletion closes the public URL and cover endpoints immediately, removes it from admin lists, sitemaps and assistant references, and cannot be restored. The worker removes its blog cover variants, private source uploads and generation records. A small content-free deletion record persists only while storage cleanup needs retry; failed cleanup retries after five minutes. Other deliveries and their media are untouched. Existing browser image caches can last up to five minutes.
+
+Veylo Assistant searches the complete published catalogue for relevant titles, excerpts and headings, then reads short passages from up to three matching published articles. It can link those articles in answers through the existing chat link renderer. Draft fields and editorial notes never enter its context. Current product help and verified account facts take precedence over editorial claims in articles. References refresh for each answer and links are checked again before replying, so deleted or unpublished articles are not offered as current references. A blog outage does not prevent ordinary help answers.
+
 Concurrent saves return a conflict instead of overwriting another editor. Keep your unsaved text if a conflict occurs, reload the current draft, and apply the changes again.
 
 ## AI and storage

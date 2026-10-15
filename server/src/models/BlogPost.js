@@ -26,9 +26,12 @@ const schema = new mongoose.Schema({
   firstPublishedAt: Date,
   publishedUpdatedAt: Date,
   activeJobId: { type: mongoose.Schema.Types.ObjectId, default: null },
+  deletedAt: { type: Date, default: null },
+  deletionCleanupAt: { type: Date, default: null },
   createdBy: { type: mongoose.Schema.Types.ObjectId, required: true },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, required: true },
   publishedBy: mongoose.Schema.Types.ObjectId
 }, { timestamps: true });
 schema.index({ status: 1, firstPublishedAt: -1, _id: -1 });
+schema.index({ deletedAt: 1, deletionCleanupAt: 1 });
 export default mongoose.model('BlogPost', schema);

@@ -15,6 +15,7 @@ import { anyModelProviderConfigured } from '../services/modelProvider.service.js
 import { createBlogCover, blogCoverPhotoList } from '../services/blogCover.service.js';
 import { BLOG_COVER_PHOTOS } from '../constants/blogCoverPhotos.js';
 import { assertExactBlogTopicAvailable } from '../services/blogTopics.service.js';
+import { deleteBlogArticle } from '../services/blogDeletion.service.js';
 
 const router = express.Router();
 const action = fn => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
@@ -29,7 +30,7 @@ async function audit(req, name, id, details = {}) {
 }
 async function getPost(id) {
   if (!mongoose.isValidObjectId(id)) throw blogError('Article not found.', 404);
-  const post = await BlogPost.findById(id).lean();
+  const post = await BlogPost.findOne({ _id: id, deletedAt: null }).lean();
   if (!post) throw blogError('Article not found.', 404);
   return post;
 }
@@ -49,7 +50,7 @@ router.use((req, res, next) => {
 });
 router.get('/posts', action(async (req, res) => {
   const page = Math.max(1, Math.min(10000, Math.floor(Number(req.query.page) || 1)));
-  const filter = {};
+  const filter = { deletedAt: null };
   if (['draft', 'published', 'archived'].includes(req.query.status)) filter.status = req.query.status;
   const query = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 120) : '';
   if (query) filter['draft.title'] = { $regex: query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
@@ -83,6 +84,12 @@ router.post('/articles/generate', edit, limited, action(async (req, res) => {
   }
 }));
 router.get('/posts/:id', action(async (req, res) => res.json({ post: presentAdminPost(await getPost(req.params.id)) })));
+router.delete('/posts/:id', edit, action(async (req, res) => {
+  const { revision } = revisionSchema.parse(req.body), post = await getPost(req.params.id);
+  await deleteBlogArticle(post._id, revision);
+  await audit(req, 'deleted', post._id, { wasPublished: post.status === 'published' });
+  res.json({ deleted: true });
+}));
 router.patch('/posts/:id', edit, action(async (req, res) => {
   const input = saveSchema.parse(req.body), post = await getPost(req.params.id);
   const slug = slugify(input.slug);
@@ -136,7 +143,9 @@ router.post('/posts/:id/cover/generate', edit, uploadLimited, action(async (req,
 }));
 router.get('/media/:id/:variant', action(async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) throw blogError('Photo not found.', 404);
-  await sendBlogImage(res, await BlogAsset.findById(req.params.id).lean(), req.params.variant, true);
+  const asset = await BlogAsset.findById(req.params.id).lean();
+  if (!asset || !await BlogPost.exists({ _id: asset.postId, deletedAt: null })) throw blogError('Photo not found.', 404);
+  await sendBlogImage(res, asset, req.params.variant, true);
 }));
 router.post('/generations', edit, limited, action(async (req, res) => {
   const input = generationSchema.parse(req.body);

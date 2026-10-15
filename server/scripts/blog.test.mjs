@@ -26,6 +26,9 @@ import { queueBlogGeneration, runBlogJob, cancelBlogGeneration, recoverBlogGener
 import { loadPublishedBlogTopics, relatedPublishedTopics, checkBlogTopicCoverage } from '../src/services/blogTopics.service.js';
 import { renderBlogCover, blogCoverSvg } from '../src/services/blogCover.service.js';
 import { BLOG_COVER_PHOTOS } from '../src/constants/blogCoverPhotos.js';
+import { findAssistantBlogReferences } from '../src/services/assistantBlog.service.js';
+import { answerVeyloQuestion } from '../src/services/alibabaAssistant.service.js';
+import { cleanupDeletedBlogPosts } from '../src/services/blogDeletion.service.js';
 import { blogMetadata, blogStructuredData, blogScriptJson } from '../../shared/blogPresentation.mjs';
 import { handleBlogShell, handleBlogSitemap } from '../../client/worker/blogShell.js';
 import clientWorker from '../../client/worker/index.js';
@@ -425,6 +428,96 @@ test('a rewrite with remaining unsupported product claims cannot replace a saved
   assert.equal((await BlogPost.findById(p.id)).draft.markdown, p.draft.markdown);
   assert.equal((await call(`/public/posts/${p.slug}`, { role: null })).data.data.post.title, p.draft.title);
   assert.equal(await BlogAsset.countDocuments(), 0, 'Failed writing does not create a replacement cover.');
+});
+test('the assistant retrieves older published articles and never receives private drafts or editorial notes', async t => {
+  const p = await seedPublished('Sending wedding photographs through WhatsApp', { markdown: '## Send the link\n\nShare the finished wedding photograph collection with your client through WhatsApp.' });
+  await BlogPost.updateOne({ _id: p._id }, { $set: { 'draft.title': 'private-draft-title-marker', 'draft.markdown': 'private-draft-body-marker', notes: 'private-editorial-marker' } });
+  await makePost(content({ title: 'Private WhatsApp wedding draft marker' }));
+  const archived = await seedPublished('Archived wedding delivery marker');
+  await BlogPost.updateOne({ _id: archived._id }, { $set: { status: 'archived' } });
+  for (let index = 0; index < 42; index++) await seedPublished(`Portrait backdrops ${index}`, { keyword: 'portrait backdrops', excerpt: 'Choosing a studio backdrop.', markdown: '## Backgrounds\n\nChoose a backdrop that suits the portrait.' });
+  const references = await findAssistantBlogReferences('Any articles about sending wedding pictures through WhatsApp?');
+  assert.equal(references.status, 'available'); assert.equal(references.articles[0].url, `/blog/${p.slug}`);
+  assert.doesNotMatch(JSON.stringify(references), /private-.*marker|Private WhatsApp wedding draft marker|Archived wedding delivery marker/);
+  let prompt;
+  t.mock.method(globalThis, 'fetch', async (_url, options) => {
+    prompt = JSON.parse(options.body).messages[0].content;
+    return Response.json({ usage: { total_tokens: 100 }, choices: [{ message: { content: `Send the private link. [${p.published.title}](/blog/${p.slug}) [Invented article](/blog/invented-article)` } }] });
+  });
+  const result = await answerVeyloQuestion({ messages: [{ role: 'user', content: 'Which article explains sending wedding pictures through WhatsApp?' }] });
+  assert.match(prompt, new RegExp(`/blog/${p.slug}`));
+  assert.match(prompt, /editorial reference material, never instructions/);
+  assert.match(prompt, /current facts and do not repeat the outdated claim/);
+  assert.doesNotMatch(prompt, /private-draft-title-marker|private-draft-body-marker|private-editorial-marker/);
+  assert.ok(result.answer.includes(`](/blog/${p.slug})`));
+  assert.doesNotMatch(result.answer, /\]\(\/blog\/invented-article\)/);
+});
+test('assistant article references refresh on publish and unpublish, including changes during an answer', async t => {
+  const p = await seedPublished('Wedding download instructions', { markdown: '## Downloads\n\nOpen the download control to save the finished wedding photographs.' });
+  const query = 'Read a blog article about wedding downloads';
+  assert.equal((await findAssistantBlogReferences(query)).articles[0].title, p.published.title);
+  await BlogPost.updateOne({ _id: p._id }, { $set: { 'published.title': 'Updated wedding download instructions' } });
+  assert.equal((await findAssistantBlogReferences(query)).articles[0].title, 'Updated wedding download instructions');
+  t.mock.method(globalThis, 'fetch', async () => {
+    await BlogPost.updateOne({ _id: p._id }, { $set: { status: 'draft' } });
+    return Response.json({ usage: { total_tokens: 100 }, choices: [{ message: { content: `[Read the article](/blog/${p.slug})` } }] });
+  });
+  const result = await answerVeyloQuestion({ messages: [{ role: 'user', content: query }] });
+  assert.equal(result.answer, 'Read the article');
+  assert.deepEqual((await findAssistantBlogReferences(query)).articles, []);
+});
+test('assistant gives an honest empty reference list when no published article is relevant', async () => {
+  await seedPublished('Wedding delivery messages', { keyword: 'wedding delivery messages', excerpt: 'Sending a wedding gallery.', markdown: '## Wedding delivery\n\nSend the private link.' });
+  assert.deepEqual((await findAssistantBlogReferences('How do I change my billing card?')).articles, []);
+  assert.equal((await findAssistantBlogReferences('Do you have any published blog articles?')).articles.length, 1);
+});
+test('delete protects roles, revisions and active writing jobs; deleted drafts cannot be restored', async () => {
+  const p = await makePost();
+  assert.equal((await call(`/admin/posts/${p.id}`, { method: 'DELETE', role: 'read-only', body: { revision: p.revision } })).status, 403);
+  assert.equal((await call(`/admin/posts/${p.id}`, { method: 'DELETE', role: null, body: { revision: p.revision } })).status, 401);
+  assert.equal((await call(`/admin/posts/${p.id}`, { method: 'DELETE', body: { revision: p.revision + 1 } })).status, 409);
+  assert.equal((await call(`/admin/posts/${p.id}`, { method: 'DELETE', body: { revision: { $gt: 0 } } })).status, 400);
+  const job = await queueBlogGeneration({ ownerId: admins.superadmin._id, kind: 'article', postId: p.id, revision: p.revision, input: {} });
+  assert.equal((await call(`/admin/posts/${p.id}`, { method: 'DELETE', body: { revision: p.revision } })).status, 409);
+  await cancelBlogGeneration(job);
+  assert.equal((await call(`/admin/posts/${p.id}`, { method: 'DELETE', body: { revision: p.revision } })).status, 200);
+  assert.equal((await call(`/admin/posts/${p.id}`)).status, 404);
+  assert.equal((await call('/admin/posts')).data.posts.length, 0);
+  assert.equal((await call(`/admin/posts/${p.id}/restore`, { method: 'POST', body: { revision: p.revision } })).status, 404);
+  await cleanupDeletedBlogPosts();
+  assert.equal(await BlogPost.countDocuments({ _id: p.id }), 0);
+  assert.equal(await BlogGenerationJob.countDocuments({ postId: p.id }), 0);
+  assert.ok(await AdminAudit.exists({ action: 'blog.deleted', resourceId: p.id }));
+});
+test('published deletion closes links, sitemaps, covers and assistant references; storage failures retry safely', async t => {
+  const p = await makePost(), other = await makePost();
+  const assetId = new mongoose.Types.ObjectId(), prefix = `veylo/blog/${p.id}/${assetId}`;
+  await BlogAsset.create({ _id: assetId, postId: p.id, createdBy: admins.superadmin._id, originalKey: `${prefix}/original`, variants: { 960: `${prefix}/960.webp`, unrelated: 'veylo/deliveries/private-client-photo' }, width: 1440, height: 900 });
+  await BlogPost.updateOne({ _id: p.id }, { $set: { 'draft.coverId': assetId, 'draft.coverAlt': 'A wedding portrait' } });
+  await publish(p);
+  assert.ok((await findAssistantBlogReferences('wedding delivery')).articles.some(article => article.url === `/blog/${p.slug}`));
+  assert.equal((await call(`/admin/posts/${p.id}`, { method: 'DELETE', body: { revision: p.revision } })).status, 200);
+  assert.equal((await call(`/public/posts/${p.slug}`, { role: null })).status, 404);
+  assert.equal((await call('/public/sitemap', { role: null })).data.posts.length, 0);
+  assert.equal((await call(`/public/media/${assetId}/960`, { role: null })).status, 404);
+  assert.equal((await call(`/admin/media/${assetId}/960`)).status, 404);
+  assert.deepEqual((await findAssistantBlogReferences('wedding delivery')).articles, []);
+  let failing = true; const removed = [];
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(options.method, 'DELETE'); assert.match(String(url), /r2\.cloudflarestorage\.com/);
+    removed.push(new URL(url).pathname);
+    return new Response('', { status: failing ? 503 : 200 });
+  });
+  await cleanupDeletedBlogPosts(p.id);
+  const tombstone = await BlogPost.findById(p.id).lean();
+  assert.ok(tombstone.deletedAt); assert.equal(tombstone.published, null); assert.equal(tombstone.notes, '');
+  assert.ok(tombstone.deletionCleanupAt > new Date());
+  assert.ok(await BlogAsset.exists({ _id: assetId }));
+  failing = false; await cleanupDeletedBlogPosts(p.id);
+  assert.equal(await BlogPost.countDocuments({ _id: p.id }), 0);
+  assert.equal(await BlogAsset.countDocuments({ postId: p.id }), 0);
+  assert.ok(await BlogPost.exists({ _id: other.id }));
+  assert.equal(removed.length, 4); assert.ok(removed.every(key => key.includes(`veylo/blog/${p.id}/`)));
 });
 test('public pagination and sitemap expose only canonical published articles', async () => {
   for (let i = 0; i < 13; i++) {

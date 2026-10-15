@@ -80,6 +80,7 @@ async function mockAdmin(page, role = 'superadmin') {
     else if (path.endsWith('/cover/generate')) data = { coverId: '111111111111111111111111', coverAlt: 'A fashion portrait with the article title', coverCredit: 'Veylo' };
     else if (path.endsWith('/cover') && method === 'POST') data = { coverId: '222222222222222222222222' };
     else if (path.endsWith(`/posts/${id}`) && method === 'GET') data = { post };
+    else if (path.endsWith(`/posts/${id}`) && method === 'DELETE') { expect(input.revision).toBe(post.revision); exists = false; data = { deleted: true }; }
     else if (path.endsWith(`/posts/${id}`) && method === 'PATCH') {
       expect(input.draft.bodyHtml).toBeUndefined(); expect(input.draft.toc).toBeUndefined();
       post = { ...post, ...input, draft: { ...input.draft, bodyHtml: article.bodyHtml, toc: article.toc, readingMinutes: 4 }, revision: post.revision + 1 }; data = { post };
@@ -183,11 +184,29 @@ for (const width of [320, 390, 768, 834, 1024, 1440]) test(`admin editor stays s
   await expect(page.locator('.bw-preview .vb-prose')).toBeVisible(); await noOverflow(page);
   if ([320, 834, 1440].includes(width)) { await mkdir('../.visual-review/blog', { recursive: true }); await page.screenshot({ path: `../.visual-review/blog/admin-${width}.png`, fullPage: true }); }
 });
+for (const published of [false, true]) test(`admin can permanently delete a ${published ? 'published article' : 'draft'} after confirmation`, async ({ page }) => {
+  await page.setViewportSize({ width: published ? 834 : 320, height: 1000 });
+  const fixture = await mockAdmin(page); if (published) fixture.setPublished(); else fixture.setExists();
+  await page.goto(`http://127.0.0.1:5184/?section=blog&post=${id}`);
+  await page.getByRole('button', { name: 'Delete article', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('This cannot be undone.');
+  if (published) await expect(page.getByRole('alert')).toContainText('Readers will no longer be able to open its link.');
+  await noOverflow(page);
+  await page.getByRole('button', { name: 'Keep article', exact: true }).click();
+  expect(fixture.requests.filter(r => r.method === 'DELETE')).toHaveLength(0);
+  await page.getByRole('button', { name: 'Delete article', exact: true }).click();
+  await page.getByRole('button', { name: 'Delete permanently', exact: true }).click();
+  await expect(page).toHaveURL('http://127.0.0.1:5184/?section=blog');
+  await expect(page.getByText('Article deleted.', { exact: true })).toBeVisible();
+  await expect(page.locator('.bw-post-row')).toHaveCount(0);
+  expect(fixture.requests.filter(r => r.method === 'DELETE')).toHaveLength(1);
+});
 test('read-only administrators can inspect and preview but cannot edit or publish', async ({ page }) => {
   const fixture = await mockAdmin(page, 'read-only'); fixture.setExists();
   await page.goto(`http://127.0.0.1:5184/?section=blog&post=${id}`);
   await expect(page.getByLabel('Article title', { exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Publish article', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Delete article', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Preview', exact: true }).click();
   await expect(page.locator('.bw-preview .vb-prose')).toBeVisible();
 });

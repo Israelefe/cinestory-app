@@ -6,7 +6,7 @@ export const ASSISTANT_PAGES = Object.freeze({
   '/portfolio/enquiries': 'Portfolio enquiries', '/portfolio': 'About Portfolio', '/settings': 'Settings',
   '/formats': 'Delivery types', '/photoswap': 'About Photo Swap', '/gridboard': 'About GridBoard',
   '/pricing': 'Plans and pricing', '/contact': 'Support', '/signup': 'Create an account',
-  '/signin': 'Sign in', '/onboarding': 'Studio setup', '/changelog': 'Product updates',
+  '/signin': 'Sign in', '/onboarding': 'Studio setup', '/changelog': 'Product updates', '/blog': 'Veylo blog',
   '/forgot-password': 'Reset password', '/verify-email': 'Verify email', '/reset-password': 'Choose a password',
   '/privacy': 'Privacy', '/terms': 'Terms', '/refund-policy': 'Refund policy', '/fair-use': 'Fair use',
   '/about': 'About Veylo', '/client-experience': 'Client experience', '/product': 'Veylo product', '/video-delivery': 'About video delivery', '/videos/library': 'Video library'
@@ -17,6 +17,7 @@ export const ASSISTANT_KINDS = ['showcase', 'pinboard', 'photoswap', 'portfolio'
 export const CONTEXT_TTL = 30 * 60 * 1000;
 export function safeAssistantPage(path) {
   if (Object.hasOwn(ASSISTANT_PAGES, path)) return path;
+  if (/^\/blog\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(path) && path.length <= 126) return '/blog';
   // Share the workspace name, never a private link or record identifier.
   if (/^\/pre-selection\/(?:new|[a-f0-9]{24}(?:\/(?:setup|revise))?)$/i.test(path)) return '/pre-selection';
   if (/^\/editor-links\/(?:new|[a-f0-9]{24}(?:\/setup)?)$/i.test(path)) return '/editor-links';

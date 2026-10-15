@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test';
 import { existsSync } from 'node:fs';
 const chrome = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 export default defineConfig({
-  testDir: './tests', testMatch: 'blog.spec.js', timeout: 45000, expect: { timeout: 15000 }, workers: 2, reporter: 'list',
+  testDir: './tests', testMatch: ['blog.spec.js', 'assistant-chat.spec.js'], timeout: 45000, expect: { timeout: 15000 }, workers: 2, reporter: 'list',
   outputDir: '../.visual-review/blog/test-results',
   use: { baseURL: 'http://127.0.0.1:5178', headless: true, screenshot: 'only-on-failure', launchOptions: existsSync(chrome) ? { executablePath: chrome } : {} },
   webServer: [

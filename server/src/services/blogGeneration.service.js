@@ -11,6 +11,7 @@ import { generatedArticleSchema, topicSchema, prepareDraft, slugify, blogError }
 import { writeGroundedBlogContent } from './blogWriting.service.js';
 import { assertExactBlogTopicAvailable } from './blogTopics.service.js';
 import { prepareGeneratedBlogCover } from './blogCover.service.js';
+import { cleanupDeletedBlogPosts } from './blogDeletion.service.js';
 
 export function presentBlogJob(job) {
   return { id: String(job._id), postId: job.postId ? String(job.postId) : null, kind: job.kind, status: job.status, active: job.active, error: job.error,
@@ -115,6 +116,7 @@ export function startBlogWorker() {
     busy = true;
     try {
       await recoverBlogGeneration();
+      await cleanupDeletedBlogPosts();
       const job = await BlogGenerationJob.findOneAndUpdate({ status: 'queued' }, { $set: { status: 'running', leaseId: crypto.randomUUID(), heartbeatAt: new Date() } }, { sort: { createdAt: 1 }, new: true }).lean();
       if (job) await runBlogJob(job);
     } catch (error) { console.error('[blog/worker]', error.safe ? error.message : 'A writing job could not be processed.'); }
