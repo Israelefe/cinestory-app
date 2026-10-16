@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { chooseVideoFilm, showVideoControls } from './helpers/videoClient.js';
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -148,7 +149,7 @@ for (const width of [320, 390, 768, 834, 1440]) test(`vertical feed hands playba
   await expect(page.locator('.vv-desktop-device .v-phone-device')).toHaveCount(width > 1024 ? 1 : 0);
   await expect(page.getByText('Delivered with Veylo', { exact: true })).toHaveCount(0);
   await expect.poll(() => starts.length).toBe(1);
-  const avatar = await page.locator('.vv-reel.is-active .vv-avatar img').evaluate(img => {
+  const avatar = await page.locator('.vv-brand .vv-avatar img').evaluate(img => {
     const style = getComputedStyle(img), image = img.getBoundingClientRect(), circle = img.parentElement.getBoundingClientRect();
     return { fit: style.objectFit, radius: style.borderRadius, width: image.width, height: image.height, circle: circle.width };
   });
@@ -159,8 +160,8 @@ for (const width of [320, 390, 768, 834, 1440]) test(`vertical feed hands playba
   await expect(page.locator('video')).toHaveCount(1);
   await expect.poll(() => starts.length).toBe(2); await expect.poll(() => ends.length).toBe(1);
   await expect.poll(() => page.locator('video').evaluate(video => !video.paused && video.currentTime > .1)).toBe(true);
-  await page.getByRole('button', { name: 'Pause video' }).click(); expect(await page.locator('video').evaluate(video => video.paused)).toBe(true);
-  await page.locator('.vv-reel.is-active summary').click(); await expect(page.locator('.vv-reel.is-active details')).toHaveAttribute('open', '');
+  await showVideoControls(page); await page.getByRole('button', { name: 'Pause video' }).click(); expect(await page.locator('video').evaluate(video => video.paused)).toBe(true);
+  await page.getByRole('button', { name: 'Open film details' }).click(); await expect(page.getByRole('dialog', { name: videos[1].title })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Download Vertical film 2', exact: true })).toBeVisible();
   await noOverflow(page);
   if ([390, 834, 1440].includes(width)) await page.screenshot({ path: `../.visual-review/video-vertical-${width}.png` });
@@ -197,17 +198,17 @@ for (const width of [320, 834, 1440]) test(`a vertical opener reveals other form
     return route.fulfill({ json: { success: true, data: { title: 'Wedding films', playbackMode: 'adaptive', items: films, featuredAssetId: films[0].id, branding: { name: 'Amara Studio' } } } });
   });
   await page.setViewportSize({ width, height: 900 }); await page.goto('/v/discovery-check');
-  await expect(page.locator('.vv-other-films')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Choose a film' })).toBeVisible();
   await expect(page.locator('.vv-next-reel')).toHaveCount(0);
   await expect.poll(() => page.locator('video').evaluate(video => video.readyState >= 2)).toBe(true);
   await page.locator('video').evaluate(video => { video.currentTime = video.duration - .1; });
-  await expect(page.getByRole('button', { name: /Swipe up for the next video/ })).toBeVisible();
-  await page.getByRole('button', { name: /Swipe up for the next video/ }).click();
+  await expect(page.getByRole('button', { name: /Play next film:/ })).toBeVisible();
+  await page.getByRole('button', { name: /Play next film:/ }).click();
   await expect(page.locator('.vv-reel.is-active')).toHaveAttribute('data-video-id', films[1].id);
   await expect(page.locator('.vv-next-reel')).toHaveCount(0);
-  await page.getByRole('button', { name: /Other films/ }).click();
-  await expect(page.locator('.vv-wide-page')).toBeVisible();
-  await expect(page.locator('.vv-film-caption')).toContainText('The landscape film');
+  await chooseVideoFilm(page, /The landscape film/);
+  await expect(page.locator('.vv-vertical-page')).toBeVisible();
+  await expect(page.locator('.vv-reel.is-active .vv-film-caption')).toContainText('The landscape film');
   await expect(page.locator('video')).toHaveCount(1); await noOverflow(page);
   expect(starts).toContain(films[0].id); expect(starts).toContain(films[1].id); expect(starts).toContain(films[2].id);
   expect(errors).toEqual([]);
@@ -354,7 +355,7 @@ for (const width of [390, 834, 1440]) test(`real adaptive HLS plays, seeks and k
   await expect(page.locator('video')).toHaveCount(1);
   await expect.poll(() => page.locator('video').evaluate(video => video.currentTime), { timeout: 15000 }).toBeGreaterThan(.2);
   expect(await page.locator('video').evaluate(video => video.muted)).toBe(true);
-  await page.getByRole('button', { name: 'Enable sound', exact: true }).click();
+  await page.getByRole('button', { name: 'Unmute video', exact: true }).click();
   expect(await page.locator('video').evaluate(video => video.muted)).toBe(false);
   if (width === 1440) await expect.poll(() => new Set(requested.filter(file => file.endsWith('.ts')).map(file => file.split('/')[0])).size, { timeout: 10000 }).toBeGreaterThan(1);
   await page.locator('video').evaluate(video => { video.pause(); video.currentTime = 6.2; });
@@ -367,13 +368,13 @@ for (const width of [390, 834, 1440]) test(`real adaptive HLS plays, seeks and k
 
 for (const width of [320, 390, 768, 834, 1024, 1440]) test(`client demo fits ${width}px with muted autoplay and photographer branding`, async ({ page }) => {
   const { errors, demoMedia } = await mock(page); await page.setViewportSize({ width, height: 950 }); await page.emulateMedia({ reducedMotion: 'reduce' }); await page.goto('/demo/video');
-  await expect(page.getByRole('heading', { name: 'A place for the finished film.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'A celebration, in full view' })).toBeVisible();
   await expect(page.locator('video')).toHaveCount(1); await expect.poll(() => page.locator('video').evaluate(video => !video.paused && video.muted)).toBe(true);
   await expect(page.locator('.vv-brand')).toContainText('Example studio');
   await expect(page.locator('.vv-download')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Enable sound', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Unmute video', exact: true })).toHaveCount(0);
   expect(demoMedia).toContain('celebration-a1a6b543.mp4'); await noOverflow(page);
-  await page.getByRole('button', { name: /The drummer, up close/ }).click(); await expect(page.locator('.vv-reel.is-active .vv-screen')).toHaveClass(/is-portrait/);
+  await chooseVideoFilm(page, /The drummer, up close/); await expect(page.locator('.vv-reel.is-active .vv-screen')).toHaveClass(/is-portrait/);
   await expect(page.locator('.vv-download')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Unmute video|Mute video|Enable sound/ })).toHaveCount(0);
   await expect.poll(() => page.locator('video').evaluate(video => !video.paused)).toBe(true);
@@ -385,10 +386,10 @@ test('Pexels demo seeks, has no downloads or audio controls and keeps one player
   await mock(page); await page.goto('/demo/video');
   await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(.1);
   expect(await page.locator('video').evaluate(video => video.muted)).toBe(true);
-  await expect(page.getByRole('button', { name: 'Enable sound', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Unmute video', exact: true })).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Download/ })).toHaveCount(0);
   await page.locator('video').evaluate(video => { video.pause(); video.currentTime = 4; }); await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(3.9);
-  await page.getByRole('button', { name: /The drummer, up close/ }).click(); await expect(page.locator('video')).toHaveCount(1);
+  await chooseVideoFilm(page, /The drummer, up close/); await expect(page.locator('video')).toHaveCount(1);
   await expect.poll(() => page.locator('video').evaluate(video => !video.paused && video.muted)).toBe(true);
   await expect(page.getByRole('link', { name: /Download/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Unmute video|Mute video|Enable sound/ })).toHaveCount(0);
@@ -418,7 +419,7 @@ test('expired playback sessions reopen on the same player and preserve the playb
   await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(3.9);
   await expect.poll(() => page.locator('video').evaluate(video => video.paused)).toBe(false);
   await expect.poll(() => ended).toBe(1); // The expired session is released after replacement.
-  await page.getByRole('button', { name: /Reception film/ }).click();
+  await chooseVideoFilm(page, /Reception film/);
   await expect.poll(() => ended).toBe(2); expect(errors).toEqual([]);
 });
 for (const width of [320, 768, 834]) test(`creator saves, reviews and publishes a separate snapshot at ${width}px`, async ({ page }) => {

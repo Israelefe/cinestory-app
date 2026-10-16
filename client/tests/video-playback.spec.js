@@ -1,5 +1,6 @@
 import { test, expect, webkit } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { openVideoQuality, showVideoControls } from './helpers/videoClient.js';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
@@ -60,6 +61,7 @@ test('Auto and manual quality changes keep the same film, position and playback 
   const state = await setup(page, cases[2]); await page.clock.install(); await page.goto('/v/playback-check');
   await expect.poll(() => page.locator('video').evaluate(video => video.currentTime), { timeout: 10000 }).toBeGreaterThan(.1);
   await watchLoads(page);
+  await openVideoQuality(page);
   const quality = page.getByRole('combobox', { name: 'Playback quality' });
   await expect(quality).toHaveValue('auto');
   await expect(quality.locator('option')).toHaveText([/Auto/, '720p', '1080p']);
@@ -89,13 +91,13 @@ for (const [width, height] of [[320, 700], [834, 1112]]) test(`adaptive portrait
   ];
   await page.route('**/api/v1/videos/public/**', route => route.request().method() === 'GET' ? route.fulfill({ json: { success: true, data: { title: 'Wedding films', playbackMode: 'adaptive', items: films, featuredAssetId: films[0].id, branding: { name: 'Amara Studio' } } } }) : route.fallback());
   await page.setViewportSize({ width, height }); await page.goto('/v/playback-check');
-  await expect(page.getByRole('combobox', { name: 'Playback quality' })).toBeVisible();
+  await openVideoQuality(page);
   await expect.poll(() => page.locator('video').evaluate(video => video.readyState >= 2)).toBe(true);
   await page.locator('video').evaluate(video => { video.currentTime = video.duration - .1; });
   await expect(page.locator('.vv-next-reel')).toBeVisible();
-  const areas = await page.evaluate(() => Object.fromEntries(['.vv-reel-caption', '.vv-reel-controls', '.vv-reel-brand'].map(selector => { const r = document.querySelector(selector).getBoundingClientRect(); return [selector, { top: r.top, bottom: r.bottom }]; })));
-  expect(areas['.vv-reel-caption'].bottom + 8).toBeLessThanOrEqual(areas['.vv-reel-controls'].top);
-  expect(areas['.vv-reel-caption'].top).toBeGreaterThan(areas['.vv-reel-brand'].bottom);
+  const areas = await page.evaluate(() => Object.fromEntries(['.vv-reel.is-active .vv-reel-caption', '.vv-reel-controls', '.vv-brand'].map(selector => { const r = document.querySelector(selector).getBoundingClientRect(); return [selector, { top: r.top, bottom: r.bottom }]; })));
+  expect(areas['.vv-reel-controls'].bottom).toBeLessThanOrEqual(areas['.vv-reel.is-active .vv-reel-caption'].top + 1);
+  expect(areas['.vv-reel.is-active .vv-reel-caption'].top).toBeGreaterThan(areas['.vv-brand'].bottom);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath(`adaptive-discovery-${width}.png`) });
 });
@@ -132,8 +134,8 @@ for (const scenario of cases) for (const width of [390, 834]) test(`${scenario.n
   expect(await page.evaluate(() => window.playbackLoads)).toEqual([]);
   expect(await page.locator('video').evaluate(video => !video.paused && video.buffered.length > 0)).toBe(true);
   if (!scenario.file) expect(state.media.filter(file => file === 'master.m3u8')).toHaveLength(1);
-  if (scenario.silent) await expect(page.getByRole('button', { name: 'Enable sound', exact: true })).toHaveCount(0);
-  else { await page.getByRole('button', { name: 'Enable sound', exact: true }).click(); expect(await page.locator('video').evaluate(video => video.muted)).toBe(false); }
+  if (scenario.silent) await expect(page.getByRole('button', { name: 'Unmute video', exact: true })).toHaveCount(0);
+  else { await showVideoControls(page); await page.getByRole('button', { name: 'Unmute video', exact: true }).click(); expect(await page.locator('video').evaluate(video => video.muted)).toBe(false); }
   const seek = scenario.duration > 2 ? scenario.duration - 2 : .5;
   await page.locator('video').evaluate((video, time) => { video.pause(); video.currentTime = time; }, seek);
   await expect.poll(() => page.locator('video').evaluate(video => Math.abs(video.currentTime - video.duration) > 0 && !video.seeking)).toBe(true);
@@ -196,7 +198,7 @@ test('a pending renewal keeps the pause and resume controls usable', async ({ pa
   await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(.1);
   await watchLoads(page); await page.clock.fastForward(16000);
   await expect.poll(() => state.starts.length).toBe(2);
-  await page.getByRole('button', { name: 'Pause video', exact: true }).click();
+  await showVideoControls(page); await page.getByRole('button', { name: 'Pause video', exact: true }).click();
   expect(await page.locator('video').evaluate(video => video.paused)).toBe(true);
   await page.getByRole('button', { name: 'Play video', exact: true }).click();
   await expect.poll(() => page.locator('video').evaluate(video => video.paused)).toBe(false);
@@ -398,7 +400,7 @@ for (const [scenario, action] of [[cases[0], 'resume'], [cases[0], 'renew'], [ca
     if (action === 'pause' || action === 'hide') {
       if (action === 'pause') await page.waitForTimeout(750);
       expect(await page.locator('video').evaluate(video => video.paused)).toBe(true);
-      if (scenario.width < scenario.height) await page.getByRole('button', { name: 'Resume film', exact: true }).click();
+      if (scenario.width < scenario.height) await page.getByRole('button', { name: 'Play video', exact: true }).click();
       else await page.locator('video').evaluate(video => video.play());
     }
     await expect.poll(() => page.locator('video').evaluate(video => video.currentTime), { timeout: 10000 }).toBeGreaterThan(before.time + 1);

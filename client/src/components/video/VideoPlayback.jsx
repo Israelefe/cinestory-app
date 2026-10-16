@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Play, Pause, RefreshCw, Volume2, VolumeX, Maximize, WifiOff, Info, X } from 'lucide-react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Play, Pause, RefreshCw, RotateCcw, Settings2, Volume2, VolumeX, Maximize, Minimize, WifiOff, Info, X } from 'lucide-react';
 import { videoDuration, videoMediaUrl } from '../../services/videoDelivery.js';
 import { qualityLabel } from '../../utils/videoQuality.js';
 
 // Only the selected film mounts a player or requests a playback session.
-export default function VideoPlayback({ item, requestPlayback, endPlayback, portrait = false, original = true, autoPlay = false, muted = true, onMutedChange, onEnded, onPlaybackStart }) {
+export default function VideoPlayback({ item, requestPlayback, endPlayback, portrait = false, original = true, autoPlay = false, muted = true, onMutedChange, onEnded, onPlaybackStart, pausedForPanel = false }) {
   const element = useRef(null); const hls = useRef(null); const session = useRef(null);
   const request = useRef(null); const generation = useRef(0); const renewing = useRef(false); const sourceId = useRef('');
   const sourceUrl = useRef(''); const nextRenewAt = useRef(Infinity); const restoreCleanup = useRef(null);
@@ -24,6 +25,35 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
   const [paused, setPaused] = useState(true); const [position, setPosition] = useState(0);
   const [buffering, setBuffering] = useState(false);
   const [ended, setEnded] = useState(false);
+  const container = useRef(null); const hideControls = useRef(null); const keyboardFocus = useRef(false);
+  const settingsId = useId();
+  const settings = useRef(null); const settingsButton = useRef(null); const panelResume = useRef(false);
+  const panelPaused = useRef(pausedForPanel); panelPaused.current = pausedForPanel;
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [duration, setDuration] = useState(item.duration || 0);
+  const controlState = useRef(null);
+  controlState.current = { paused, loading, buffering, error, started, settingsOpen };
+  const showControls = useCallback(() => {
+    setControlsVisible(true); clearTimeout(hideControls.current);
+    const state = controlState.current;
+    if (state.started && !state.paused && !state.loading && !state.buffering && !state.error && !state.settingsOpen) {
+      hideControls.current = setTimeout(() => { if (!keyboardFocus.current) setControlsVisible(false); }, 3000);
+    }
+  }, []);
+  useEffect(() => { showControls(); return () => clearTimeout(hideControls.current); }, [paused, loading, buffering, error, started, settingsOpen, showControls]);
+  useEffect(() => {
+    const changed = () => setFullscreen(document.fullscreenElement === container.current);
+    document.addEventListener('fullscreenchange', changed);
+    return () => document.removeEventListener('fullscreenchange', changed);
+  }, []);
+  useEffect(() => {
+    if (!settingsOpen) return undefined;
+    const dismiss = event => { if (!settings.current?.contains(event.target) && !settingsButton.current?.contains(event.target)) setSettingsOpen(false); };
+    document.addEventListener('pointerdown', dismiss);
+    return () => document.removeEventListener('pointerdown', dismiss);
+  }, [settingsOpen]);
   const installSource = useCallback(async (url, { resumeAt = 0, play = false, generationId } = {}) => {
     const video = element.current; if (!video || generationId !== generation.current) return;
     restoreCleanup.current?.(); clearTimeout(recovery.current.timer);
@@ -100,7 +130,7 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
     sourceUrl.current = url;
     progress.current = { at: Date.now(), position: resumeAt, buffered: 0 };
     // Calling play starts fetching on browsers that defer metadata until playback.
-    if (play) void video.play().catch(failure => {
+    if (play && !panelPaused.current) void video.play().catch(failure => {
       if (generationId !== generation.current || failure.name === 'AbortError') return;
       // HLS and native recovery own media/network failures. A rejected initial
       // play promise must not cancel their retry or turn a brief drop into an error.
@@ -138,7 +168,7 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
       if (forceReload || sourceId.current !== item.id || sourceUrl.current !== media.hlsUrl) {
         const continuePlaying = shouldPlay || renew && playIntent.current;
         await installSource(media.hlsUrl, { resumeAt: sourceId.current === item.id ? element.current?.currentTime || resumeAt : resumeAt, play: continuePlaying && !document.hidden, generationId });
-      } else if (shouldPlay && !document.hidden) { void element.current?.play().catch(() => setPaused(true)); }
+      } else if (shouldPlay && !document.hidden && !panelPaused.current) { void element.current?.play().catch(() => setPaused(true)); }
       if (generationId === generation.current) setStarted(true);
     } catch (failure) {
       if (!controller.signal.aborted && generationId === generation.current) {
@@ -153,6 +183,20 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
       }
     } finally { if (generationId === generation.current) renewing.current = false; }
   }, [item, requestPlayback, endPlayback, installSource]);
+  useEffect(() => {
+    if (pausedForPanel) {
+      panelResume.current = playIntent.current;
+      bufferHold.current.active = false; setBuffering(false);
+      playIntent.current = false; mediaRecovery.current = false;
+      clearTimeout(recovery.current.timer);
+      hls.current?.stopLoad(); suspended.current = Boolean(hls.current);
+      element.current?.pause(); setPaused(true); setLoading(false);
+      setSettingsOpen(false);
+    } else if (panelResume.current) {
+      panelResume.current = false;
+      void start();
+    }
+  }, [pausedForPanel, start]);
   useEffect(() => {
     const lost = () => { setOffline(true); setConnection('Your device appears offline. Reconnect to continue watching.'); };
     const restored = () => {
@@ -305,26 +349,91 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
     reconnectIntent.current = !navigator.onLine && playIntent.current;
     playIntent.current = false; setLoading(false); setError(code === 4 ? 'This playback format is not supported by your browser. Try a current Safari, Chrome or Firefox browser.' : !navigator.onLine ? 'Your device appears offline. Reconnect to continue watching.' : 'This video could not play. Please try again.');
   };
-  const qualityControl = levels.length > 0 && <label className="vv-quality-control"><span>Quality</span><select aria-label="Playback quality" value={quality} onChange={event => chooseQuality(event.target.value)}><option value="auto">Auto{activeQuality ? ` (${activeQuality})` : ''}</option>{levels.map(level => <option key={level.index} value={level.name}>{qualityLabel(level.height)}</option>)}</select></label>;
-  return <div className={'vv-playback' + (portrait ? ' is-vertical' : '')}>
-    <video ref={element} controls={started && !portrait && !buffering} controlsList="nodownload" playsInline preload="auto" muted={muted} poster={videoMediaUrl(item.posterUrl)} aria-label={item.title}
-      onClick={portrait ? toggle : undefined} onWaiting={waiting} onCanPlay={() => { if (!bufferHold.current.active) setLoading(false); }} onProgress={() => { progress.current.at = Date.now(); noteProgress(); }}
-      onPlaying={() => { if (bufferHold.current.active) return; hasPlayed.current = true; mediaRecovery.current = false; nativeFailures.current = 0; setLoading(false); setError(''); setPaused(false); if (navigator.onLine) setConnection(''); const video = element.current; if (video) setActiveQuality(qualityLabel(Math.min(video.videoWidth, video.videoHeight))); }} onPause={() => { if (bufferHold.current.active) return; if (!mediaRecovery.current && !element.current?.error) { playIntent.current = false; setLoading(false); } setPaused(true); }}
+  const seekTo = value => {
+    const video = element.current;
+    if (!video || !Number.isFinite(value)) return;
+    const total = Number.isFinite(video.duration) ? video.duration : duration;
+    const target = Math.max(0, Math.min(total || value, value));
+    video.currentTime = target; setPosition(target); showControls();
+  };
+  const toggleSound = () => {
+    if (!element.current) return;
+    element.current.muted = !muted;
+    onMutedChange?.(!muted);
+    showControls();
+  };
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement === container.current) await document.exitFullscreen();
+      else if (container.current?.requestFullscreen) await container.current.requestFullscreen();
+      else if (element.current?.webkitEnterFullscreen) element.current.webkitEnterFullscreen();
+      else setConnection('Full screen is unavailable in this browser.');
+    } catch { setConnection('Full screen is unavailable in this browser.'); }
+    showControls();
+  };
+  const qualityControl = levels.length > 0 && <label className="vv-quality-control"><span>Playback quality</span>
+    <select aria-label="Playback quality" value={quality} onChange={event => chooseQuality(event.target.value)}>
+      <option value="auto">Auto{activeQuality ? ' (' + activeQuality + ')' : ''}</option>
+      {levels.map(level => <option key={level.index} value={level.name}>{qualityLabel(level.height)}</option>)}
+    </select>
+  </label>;
+  return <div ref={container} className={'vv-playback' + (portrait ? ' is-vertical' : '') + (!controlsVisible ? ' is-controls-hidden' : '')}
+    role="group" aria-label={item.title + ' player'} tabIndex={0}
+    onMouseMove={showControls}
+    onPointerDown={() => { keyboardFocus.current = false; showControls(); }}
+    onFocusCapture={event => { keyboardFocus.current = event.target.matches(':focus-visible'); showControls(); }}
+    onKeyDown={event => {
+      if (event.key === 'Escape' && settingsOpen) { event.preventDefault(); event.stopPropagation(); setSettingsOpen(false); settingsButton.current?.focus(); return; }
+      if (event.target !== event.currentTarget && event.target !== element.current) return;
+      keyboardFocus.current = true; showControls();
+      if ([' ', 'k', 'K'].includes(event.key)) { event.preventDefault(); toggle(); }
+      else if (event.key === 'ArrowRight') { event.preventDefault(); seekTo((element.current?.currentTime || 0) + 5); }
+      else if (event.key === 'ArrowLeft') { event.preventDefault(); seekTo((element.current?.currentTime || 0) - 5); }
+      else if (['m', 'M'].includes(event.key) && item.hasAudio !== false) { event.preventDefault(); toggleSound(); }
+      else if (['f', 'F'].includes(event.key)) { event.preventDefault(); void toggleFullscreen(); }
+    }}>
+    <video ref={element} controls={false} controlsList="nodownload" playsInline preload="auto" muted={muted} poster={videoMediaUrl(item.posterUrl)} aria-label={item.title}
+      onClick={() => { if (paused || ended || controlsVisible) toggle(); else showControls(); }}
+      onLoadedMetadata={() => { if (Number.isFinite(element.current?.duration)) setDuration(element.current.duration); }}
+      onDurationChange={() => { if (Number.isFinite(element.current?.duration)) setDuration(element.current.duration); }}
+      onWaiting={waiting} onCanPlay={() => { if (!bufferHold.current.active) setLoading(false); }} onProgress={() => { progress.current.at = Date.now(); noteProgress(); }}
+      onPlaying={() => { if (bufferHold.current.active) return; hasPlayed.current = true; mediaRecovery.current = false; nativeFailures.current = 0; setLoading(false); setError(''); setPaused(false); if (navigator.onLine) setConnection(''); const video = element.current; if (video) setActiveQuality(qualityLabel(Math.min(video.videoWidth, video.videoHeight))); }}
+      onPause={() => { if (bufferHold.current.active) return; if (!mediaRecovery.current && !element.current?.error) { playIntent.current = false; setLoading(false); } setPaused(true); }}
       onVolumeChange={() => onMutedChange?.(Boolean(element.current?.muted))}
       onResize={() => { const video = element.current; if (video) setActiveQuality(qualityLabel(Math.min(video.videoWidth, video.videoHeight))); }}
-      onTimeUpdate={() => { noteProgress(); setPosition(element.current?.currentTime || 0); }} onEnded={() => { playIntent.current = false; setEnded(true); setPaused(true); setLoading(false); onEnded?.(); }}
+      onTimeUpdate={() => { noteProgress(); setPosition(element.current?.currentTime || 0); }}
+      onEnded={() => { playIntent.current = false; setEnded(true); setPaused(true); setLoading(false); onEnded?.(); }}
       onPlay={() => { setEnded(false); onPlaybackStart?.(); bufferHold.current.active = false; setBuffering(false); playIntent.current = true; if (suspended.current) { suspended.current = false; hls.current?.startLoad(); } setPaused(false); if (session.current?.sessionId && Date.now() >= nextRenewAt.current) void start({ renew: true, shouldPlay: false }); }}
       onError={mediaError} />
-    {started && !portrait && <div className="vv-wide-quality">{qualityControl}</div>}
-    {connection && !loading && !error && (started || offline) && <div className="vv-connection" role="status">{offline ? <WifiOff size={16} /> : <Info size={16} />}<span>{connection}</span>{quality !== 'auto' && !offline && <button type="button" onClick={() => chooseQuality('auto')}>Switch to Auto</button>}<button type="button" aria-label="Dismiss connection message" onClick={() => setConnection('')}><X size={15} /></button></div>}
-    {(!started || (portrait && paused && !ended)) && !loading && !error && <button className="vv-play" type="button" onClick={() => start()} aria-label={started ? 'Resume film' : 'Play film'}><span><Play size={26} fill="currentColor" /></span>{!portrait && <small>{started ? 'Resume film' : 'Play film'}</small>}</button>}
-    {loading && <div className="vv-buffer" role="status"><RefreshCw className="v-spin" size={20} /><span>{connection || (started ? 'Loading film…' : 'Opening film…')}</span>{quality !== 'auto' && <button type="button" onClick={() => chooseQuality('auto')} aria-label="Switch to Auto" title="Switch to Auto">Auto</button>}{buffering && <button type="button" onClick={toggle} aria-label="Pause buffering" title="Pause buffering"><Pause size={16} /></button>}</div>}
-    {error && <div className="vv-error" role="alert"><p>{error}</p><button type="button" onClick={() => { void start({ renew: Boolean(session.current), forceReload: true }); }}><RefreshCw size={16} />Try again</button></div>}
-    {item.hasAudio !== false && muted && started && !loading && <button className="vv-sound" type="button" onClick={() => { if (element.current) { element.current.muted = false; if (!bufferHold.current.active) void element.current.play().catch(() => setPaused(true)); } onMutedChange?.(false); }}><VolumeX size={16} />Enable sound</button>}
-    {portrait && started && <div className="vv-reel-controls">
-      {qualityControl}
-      <input className="vv-seek" type="range" min="0" max={item.duration || 1} step="0.1" value={Math.min(position, item.duration || 1)} aria-label="Seek video" onChange={event => { if (element.current) element.current.currentTime = Number(event.target.value); setPosition(Number(event.target.value)); }} />
-      <div><button type="button" onClick={toggle} aria-label={paused ? 'Play video' : 'Pause video'}>{paused ? <Play size={19} /> : <Pause size={19} />}</button><span>{videoDuration(position)} / {videoDuration(item.duration)}</span>{item.hasAudio !== false && <button type="button" onClick={() => { if (element.current) element.current.muted = !muted; onMutedChange?.(!muted); }} aria-label={muted ? 'Unmute video' : 'Mute video'}>{muted ? <VolumeX size={19} /> : <Volume2 size={19} />}</button>}<button type="button" aria-label="Full screen" onClick={() => { const video = element.current; if (video?.webkitEnterFullscreen) video.webkitEnterFullscreen(); else void video?.requestFullscreen?.()?.catch(() => {}); }}><Maximize size={18} /></button></div>
+
+    {connection && !loading && !error && (started || offline) && <div className="vv-connection" role="status">
+      {offline ? <WifiOff size={16} /> : <Info size={16} />}<span>{connection}</span>
+      {quality !== 'auto' && !offline && <button type="button" onClick={() => chooseQuality('auto')}>Switch to Auto</button>}
+      <button type="button" aria-label="Dismiss connection message" onClick={() => setConnection('')}><X size={15} /></button>
     </div>}
+    {!started && !loading && !error && <button className="vv-play" type="button" onClick={() => start()} aria-label="Play film"><Play size={26} fill="currentColor" /></button>}
+    {loading && <div className="vv-buffer" role="status"><RefreshCw className="v-spin" size={20} /><span>{connection || (started ? 'Loading film…' : 'Opening film…')}</span>
+      {quality !== 'auto' && <button type="button" onClick={() => chooseQuality('auto')} aria-label="Switch to Auto" title="Switch to Auto">Auto</button>}
+      {buffering && <button type="button" onClick={toggle} aria-label="Pause buffering" title="Pause buffering"><Pause size={16} /></button>}
+    </div>}
+    {error && <div className="vv-error" role="alert"><p>{error}</p><button type="button" onClick={() => { void start({ renew: Boolean(session.current), forceReload: true }); }}><RefreshCw size={16} />Try again</button></div>}
+
+    {started && !error && <div className="vv-controls vv-reel-controls">
+      <input className="vv-seek" type="range" min="0" max={Math.max(duration, 1)} step="0.1" value={Math.min(position, duration || 1)}
+        aria-label="Seek video" aria-valuetext={videoDuration(position) + ' of ' + videoDuration(duration)}
+        onChange={event => seekTo(Number(event.target.value))} />
+      <div className="vv-control-row">
+        <button type="button" onClick={() => { toggle(); showControls(); }} aria-label={ended ? 'Replay video' : paused ? 'Play video' : 'Pause video'} title={ended ? 'Replay' : paused ? 'Play' : 'Pause'}>
+          {ended ? <RotateCcw size={18} /> : paused ? <Play size={19} fill="currentColor" /> : <Pause size={19} />}
+        </button>
+        <span className="vv-control-time">{videoDuration(position)} <span>/ {videoDuration(duration)}</span></span>
+        {item.hasAudio !== false && <button type="button" onClick={toggleSound} aria-label={muted ? 'Unmute video' : 'Mute video'} title={muted ? 'Turn sound on' : 'Turn sound off'}>{muted ? <VolumeX size={19} /> : <Volume2 size={19} />}</button>}
+        {levels.length > 0 && <button ref={settingsButton} type="button" aria-label="Playback settings" aria-expanded={settingsOpen} aria-controls={settingsId} onClick={() => { setSettingsOpen(value => !value); showControls(); }}><Settings2 size={18} /></button>}
+        <button type="button" aria-label={fullscreen ? 'Exit full screen' : 'Full screen'} title="Full screen" onClick={() => void toggleFullscreen()}>{fullscreen ? <Minimize size={18} /> : <Maximize size={18} />}</button>
+      </div>
+    </div>}
+    {settingsOpen && createPortal(<div ref={settings} id={settingsId} className="vv-settings" role="group" aria-label="Playback settings" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setSettingsOpen(false); settingsButton.current?.focus(); } }}>
+      {qualityControl}<p className="vv-quality-note">Auto adjusts to your connection.</p>
+    </div>, fullscreen ? container.current : container.current?.closest('.vv-page') || container.current)}
   </div>;
 }

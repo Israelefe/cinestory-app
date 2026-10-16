@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { chooseVideoFilm } from './helpers/videoClient.js';
 import { readFile } from 'node:fs/promises';
 
 const shapes = [
@@ -44,33 +45,29 @@ for (const [width, height] of [[320, 700], [390, 844], [768, 1024], [834, 1112],
       expect(actual.width).toBe(film.width || 640); expect(actual.height).toBe(film.height || 360);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     }
-    for (const film of films.slice(0, 6)) {
-      if (film !== films[0]) await page.getByRole('button', { name: new RegExp(film.title) }).click();
-      await checkVideo(film);
-      const screen = await page.locator('.vv-film .vv-screen').boundingBox();
-      expect(screen.width / screen.height).toBeCloseTo(film.width && film.height ? film.width / film.height : 16 / 9, 1);
-      expect(screen.height).toBeLessThanOrEqual(Math.max(160, Math.min(height - 300, 720)) + 1);
-      const caption = await page.locator('.vv-film-caption').boundingBox();
-      expect(caption.y).toBeGreaterThanOrEqual(screen.y + screen.height - 1);
-      expect(caption.x).toBeCloseTo(screen.x, 0); expect(caption.width).toBeCloseTo(screen.width, 0);
-      if (film === films[0]) {
-        const column = await page.locator('.vv-layout').evaluate(layout => ({ x: layout.getBoundingClientRect().x, width: parseFloat(getComputedStyle(layout).gridTemplateColumns.split(' ')[0]) }));
-        expect(screen.x + screen.width / 2).toBeCloseTo(column.x + column.width / 2, 0);
-        await expect(page.getByText('Square video / Selected', { exact: true })).toBeVisible();
-      }
-    }
-    await page.getByRole('button', { name: /Portrait 4:5/ }).click();
-    for (const [index, film] of films.slice(6).entries()) {
-      if (index) await page.locator('.vv-feed').evaluate((feed, offset) => feed.scrollTo({ top: feed.clientHeight * offset, behavior: 'instant' }), index);
+    for (const film of films) {
+      if (film !== films[0]) await chooseVideoFilm(page, new RegExp(film.title));
       await expect(page.locator('.vv-reel.is-active')).toHaveAttribute('data-video-id', film.id);
       await checkVideo(film);
-      await expect(page.locator('.v-phone-device')).toHaveCount(width > 1024 ? 1 : 0);
+      const picture = await page.locator('.vv-playback').boundingBox();
+      const screen = await page.locator('.vv-reel.is-active .vv-screen').boundingBox();
+      expect(picture.width / picture.height).toBeCloseTo(film.width && film.height ? film.width / film.height : 16 / 9, 1);
+      expect(picture.x).toBeGreaterThanOrEqual(screen.x - 1);
+      expect(picture.y).toBeGreaterThanOrEqual(screen.y - 1);
+      expect(picture.x + picture.width).toBeLessThanOrEqual(screen.x + screen.width + 1);
+      expect(picture.y + picture.height).toBeLessThanOrEqual(screen.y + screen.height + 1);
+      const caption = await page.locator('.vv-reel.is-active .vv-film-caption').boundingBox();
+      expect(caption.y).toBeGreaterThanOrEqual(screen.y + screen.height - 1);
+      expect(caption.y + caption.height).toBeLessThanOrEqual(height + 1);
+      await expect(page.getByRole('button', { name: 'Open film details' })).toBeInViewport();
+      // A square opening keeps the same presentation when a portrait is selected.
+      await expect(page.locator('.v-phone-device')).toHaveCount(0);
     }
-    await page.locator('.vv-reel.is-active').getByRole('button', { name: 'All films', exact: true }).click();
+    await chooseVideoFilm(page, /Square 1:1/);
     await checkVideo(films[0]);
     await expect.poll(() => starts.length).toBe(10); await expect.poll(() => ends.length).toBe(9);
     expect(errors).toEqual([]);
-    await page.locator('.vv-film').scrollIntoViewIfNeeded();
+    await page.locator('.vv-reel.is-active').scrollIntoViewIfNeeded();
     await page.screenshot({ path: `../.visual-review/video-ratios-${width}-${height}.png` });
   });
 }
