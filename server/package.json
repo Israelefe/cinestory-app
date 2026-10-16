@@ -16,7 +16,7 @@
     "dev": "nodemon server.js",
     "delivery:worker": "node delivery-worker.js",
     "video:worker": "node video-worker.js",
-    "verify:video": "node --test scripts/video-delivery.test.mjs scripts/video-encoding.test.mjs scripts/video-processing.test.mjs",
+    "verify:video": "node --test scripts/video-delivery.test.mjs scripts/video-encoding.test.mjs scripts/video-processing.test.mjs scripts/video-performance.test.mjs",
     "content:worker": "node content-worker.js",
     "render": "node content-worker.js",
     "content:local": "node content-local.js",

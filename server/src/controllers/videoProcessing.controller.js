@@ -32,7 +32,9 @@ export async function videoProcessingStatus(req, res, next) {
       VideoJob.find({ errorCode: { $exists: true, $ne: '' } }).sort({ updatedAt: -1 }).limit(5).select('type state errorCode attempts runAfter updatedAt').lean(),
       VideoJob.findOne({ state: 'queued' }).sort({ runAfter: 1 }).select('runAfter').lean()
     ]);
-    const owners = new Set(jobs.map(job => String(job.userId))).size;
+    const owners = new Map();
+    for (const job of jobs) owners.set(String(job.userId), (owners.get(String(job.userId)) || 0) + 1);
+    const pending = [...owners.values()].reduce((sum, count) => sum + Math.min(count, settings.workerConcurrency), 0);
     // Only the authenticated coordinator receives these operational summaries.
     // Never include account IDs, filenames, object keys or raw provider errors.
     const diagnostics = {
@@ -42,7 +44,7 @@ export async function videoProcessingStatus(req, res, next) {
       failures: failures.map(row => ({ type: row.type, state: row.state, attempts: row.attempts, runAfter: row.runAfter, updatedAt: row.updatedAt,
         code: /^VIDEO_[A-Z_]{1,60}$|^R2_[A-Z_]{1,60}$/.test(row.errorCode) ? row.errorCode : 'VIDEO_JOB_FAILED' }))
     };
-    res.set('Cache-Control', 'no-store').json({ success: true, data: { pending: owners, concurrency: settings.workerConcurrency, cleanupOnly: !settings.enabled, diagnostics } });
+    res.set('Cache-Control', 'no-store').json({ success: true, data: { pending, concurrency: settings.workerConcurrency, cleanupOnly: !settings.enabled, diagnostics } });
   } catch (error) { next(error); }
 }
 

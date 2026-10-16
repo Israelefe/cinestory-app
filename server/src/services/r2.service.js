@@ -170,7 +170,7 @@ export async function putR2Object(key, buffer, { contentType = 'application/octe
   return { key, bytes: bytes.length, etag: response.headers.get('etag')?.replace(/^"|"$/g, '') || '' };
 }
 
-export async function putR2ObjectStream(key, body, { contentType = 'application/octet-stream', bytes, timeoutMs = 15 * 60 * 1000 } = {}) {
+export async function putR2ObjectStream(key, body, { contentType = 'application/octet-stream', bytes, timeoutMs = 15 * 60 * 1000, signal } = {}) {
   const length = Number(bytes);
   if (!Number.isSafeInteger(length) || length < 1) throw Object.assign(new Error('The file size could not be verified.'), { status: 400, code: 'R2_CONTENT_LENGTH_REQUIRED' });
   const signed = presignR2Object(key, { method: 'PUT', contentType });
@@ -179,7 +179,7 @@ export async function putR2ObjectStream(key, body, { contentType = 'application/
     headers: { 'Content-Type': contentType, 'Content-Length': String(length) },
     body,
     duplex: 'half',
-    signal: AbortSignal.timeout(Math.max(1_000, Number(timeoutMs) || 15 * 60 * 1000))
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(Math.max(1_000, Number(timeoutMs) || 15 * 60 * 1000))]) : AbortSignal.timeout(Math.max(1_000, Number(timeoutMs) || 15 * 60 * 1000))
   });
   if (!response.ok) throw Object.assign(new Error('Image storage could not complete this request.'), { status: 502, code: 'R2_REQUEST_FAILED' });
   return { key, bytes: length, etag: response.headers.get('etag')?.replace(/^"|"$/g, '') || '' };

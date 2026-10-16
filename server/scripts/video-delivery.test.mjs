@@ -625,6 +625,23 @@ test('Cloudflare readiness accepts sleeping encoders only with a fresh verified 
   }
 });
 
+test('a six-video batch can wake four workers for the same photographer without exposing account details', async () => {
+  const waiting = await VideoJob.find({ state: 'queued' }).select('_id runAfter').lean();
+  await VideoJob.updateMany({ _id: { $in: waiting.map(row => row._id) } }, { $set: { runAfter: new Date(Date.now() + 86400_000) } });
+  const keys = Array.from({ length: 6 }, (_, index) => 'parallel-batch-' + index + ':' + crypto.randomUUID());
+  try {
+    await VideoJob.insertMany(keys.map(key => ({ key, userId: owner._id, assetId: new mongoose.Types.ObjectId(), type: 'prepare', runAfter: new Date(0) })));
+    const res = response();
+    await videoProcessingStatus({ body: { verifiedAt: Date.now(), remainingSeconds: 1000 } }, res, error => { throw error; });
+    assert.equal(res.body.data.pending, 4);
+    assert.equal(res.body.data.concurrency, 4);
+    assert.doesNotMatch(JSON.stringify(res.body.data), /userId|assetId|filename|objectKey/);
+  } finally {
+    await VideoJob.deleteMany({ key: { $in: keys } });
+    for (const row of waiting) await VideoJob.updateOne({ _id: row._id }, { $set: { runAfter: row.runAfter } });
+  }
+});
+
 test('a repeatedly crashed encode stops at its attempt limit before another expensive preparation', async () => {
   // Isolate the due queue from jobs retained by the preceding integration cases.
   await VideoJob.updateMany({}, { $set: { runAfter: new Date(Date.now() + 86400_000) } });

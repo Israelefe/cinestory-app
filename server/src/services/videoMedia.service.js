@@ -6,25 +6,106 @@ import path from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import crypto from 'node:crypto';
+import http from 'node:http';
+import { once } from 'node:events';
 import { getR2ObjectStream } from './r2.service.js';
+
+const inspectionInputs = new Set();
+function mediaInputOptions(file) {
+  return ['-protocol_whitelist', inspectionInputs.has(file) ? 'http,tcp' : 'file',
+    ...(inspectionInputs.has(file) ? ['-rw_timeout', '30000000', '-seekable', '1'] : []),
+    '-format_whitelist', 'mov,matroska,webm'];
+}
+
+export async function withVideoInspection(asset, work) {
+  // Small files are cheaper to read once than through several range requests.
+  if (asset.bytes <= 8 * 1024 ** 2) return withLocalVideo(asset, work);
+  if (!Number.isSafeInteger(asset.bytes) || asset.bytes < 1 || asset.bytes > 5_000_000_000) throw new Error('Invalid video inspection size.');
+  const directory = await mkdtemp(path.join(tmpdir(), 'veylo-video-'));
+  const route = '/' + crypto.randomUUID();
+  let requests = 0; let readBytes = 0; let sourceError;
+  const server = http.createServer(async (req, res) => {
+    req.resume();
+    if (req.url !== route || !['GET', 'HEAD'].includes(req.method)) { res.writeHead(404); res.end(); return; }
+    if (req.method === 'HEAD') { res.writeHead(200, { 'Content-Length': asset.bytes, 'Accept-Ranges': 'bytes' }); res.end(); return; }
+    const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range || 'bytes=0-');
+    const start = Number(range?.[1]);
+    const end = Math.min(asset.bytes - 1, range?.[2] ? Number(range[2]) : asset.bytes - 1);
+    const length = end - start + 1;
+    if (!range || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start >= asset.bytes || length < 1) { res.writeHead(416); res.end(); return; }
+    if (++requests > 128) {
+      sourceError = Object.assign(new Error('This export needs a full inspection.'), { code: 'VIDEO_INSPECTION_LIMIT' });
+      res.writeHead(413); res.end(); return;
+    }
+    try {
+      const resource = await getR2ObjectStream(asset.objectKey, { range: `bytes=${start}-${end}`, timeoutMs: 30000 });
+      if (resource.status !== 206 || resource.bytes !== length || resource.contentRange !== `bytes ${start}-${end}/${asset.bytes}`) {
+        await resource.body?.cancel();
+        throw Object.assign(new Error('Storage range reads are unavailable.'), { code: 'VIDEO_INSPECTION_RANGE' });
+      }
+      if (res.destroyed) { await resource.body?.cancel(); return; }
+      res.writeHead(206, { 'Content-Length': length, 'Content-Range': resource.contentRange, 'Accept-Ranges': 'bytes', 'Content-Type': 'application/octet-stream' });
+      const stream = Readable.fromWeb(resource.body);
+      const budget = new Transform({ transform(chunk, encoding, done) {
+        readBytes += chunk.length;
+        if (readBytes > 128 * 1024 ** 2) {
+          sourceError = Object.assign(new Error('This export needs a full inspection.'), { code: 'VIDEO_INSPECTION_LIMIT' });
+          done(sourceError);
+        } else done(null, chunk);
+      } });
+      const close = () => stream.destroy();
+      res.once('close', close);
+      try { await pipeline(stream, budget, res); } finally { res.off('close', close); }
+    } catch (error) {
+      if (/^(VIDEO_INSPECTION_|R2_)/.test(error.code || '')) sourceError = error;
+      if (!res.headersSent) res.writeHead(502);
+      res.end();
+    }
+  });
+  server.requestTimeout = 35000; server.headersTimeout = 5000;
+  let file;
+  try {
+    server.listen(0, '127.0.0.1'); await once(server, 'listening');
+    file = `http://127.0.0.1:${server.address().port}${route}`;
+    inspectionInputs.add(file);
+    try { return await work({ file, directory }); }
+    catch (error) {
+      if (!sourceError) throw error;
+      if (!['VIDEO_INSPECTION_LIMIT', 'VIDEO_INSPECTION_RANGE'].includes(sourceError.code)) throw sourceError;
+      // Unusual exports may need more metadata than the bounded range budget.
+      // Keep a full-file fallback without weakening validation.
+      return await withLocalVideo(asset, work);
+    }
+  } finally {
+    inspectionInputs.delete(file);
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+    const target = path.resolve(directory);
+    if (path.dirname(target) !== path.resolve(tmpdir()) || !path.basename(target).startsWith('veylo-video-')) throw new Error('Unsafe inspection cleanup path.');
+    await rm(target, { recursive: true, force: true });
+  }
+}
 
 export function frameTimestamps(duration) {
   const count = duration <= 60 ? 12 : duration <= 600 ? 24 : duration <= 3600 ? 60 : 120;
   return Array.from({ length: count }, (_, index) => Math.round((duration * (index + .5) / count) * 100) / 100);
 }
 
-export function runMediaTool(tool, args, { timeoutMs = 120_000, maxOutput = 1_000_000, guard, onProgress } = {}) {
+export function runMediaTool(tool, args, { timeoutMs = 120_000, maxOutput = 1_000_000, guard, onProgress, signal } = {}) {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(signal.reason); return; }
     const child = spawn(process.env[tool === 'ffprobe' ? 'FFPROBE_PATH' : 'FFMPEG_PATH'] || tool, args, { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, TEMP: process.env.TEMP, TMP: process.env.TMP } });
     const chunks = []; let bytes = 0; let settled = false;
     let checking = false; let failure;
     const stop = error => { if (settled || failure) return; failure = error; child.kill('SIGKILL'); };
+    const abort = () => stop(signal.reason || new Error('Video preparation stopped.'));
+    signal?.addEventListener('abort', abort, { once: true });
     const watch = guard && setInterval(async () => {
       if (checking || settled) return; checking = true;
       try { await guard(); } catch (error) { stop(error); } finally { checking = false; }
     }, 10_000);
     watch?.unref?.();
-    const finish = (error, value) => { if (settled) return; settled = true; clearTimeout(timer); clearInterval(watch); error ? reject(error) : resolve(value); };
+    const finish = (error, value) => { if (settled) return; settled = true; clearTimeout(timer); clearInterval(watch); signal?.removeEventListener('abort', abort); error ? reject(error) : resolve(value); };
     const timer = setTimeout(() => { stop(Object.assign(new Error('This video took too long to prepare. Try a shorter or smaller export.'), { code: 'VIDEO_MEDIA_TIMEOUT' })); }, timeoutMs);
     let progressText = ''; let reporting = Promise.resolve();
     child.stdout.on('data', chunk => {
@@ -79,7 +160,7 @@ export async function cleanupVideoTemps(now = Date.now()) {
 }
 
 export async function inspectLocalVideo(file, maxDuration) {
-  const output = await runMediaTool('ffprobe', ['-v', 'error', '-protocol_whitelist', 'file', '-format_whitelist', 'mov,matroska,webm', '-show_streams', '-show_format', '-of', 'json', file]);
+  const output = await runMediaTool('ffprobe', ['-v', 'error', ...mediaInputOptions(file), '-show_streams', '-show_format', '-of', 'json', file]);
   const metadata = JSON.parse(output);
   const video = metadata.streams?.find(stream => stream.codec_type === 'video' && !stream.disposition?.attached_pic);
   const audio = metadata.streams?.find(stream => stream.codec_type === 'audio');
@@ -93,7 +174,7 @@ export async function inspectLocalVideo(file, maxDuration) {
 
 export async function extractVideoFrame(file, directory, seconds, index = 0) {
   const output = path.join(directory, 'frame-' + index + '.jpg');
-  await runMediaTool('ffmpeg', ['-v', 'error', '-nostdin', '-threads', '1', '-protocol_whitelist', 'file', '-format_whitelist', 'mov,matroska,webm', '-ss', String(seconds), '-i', file, '-map', '0:v:0', '-frames:v', '1', '-vf', 'scale=768:768:force_original_aspect_ratio=decrease', '-q:v', '4', '-y', output], { timeoutMs: 60_000 });
+  await runMediaTool('ffmpeg', ['-v', 'error', '-nostdin', '-threads', '1', ...mediaInputOptions(file), '-ss', String(seconds), '-i', file, '-map', '0:v:0', '-frames:v', '1', '-vf', 'scale=768:768:force_original_aspect_ratio=decrease', '-q:v', '4', '-y', output], { timeoutMs: 60_000 });
   const buffer = await readFile(output);
   if (buffer.length > 2_000_000) throw new Error('Frame exceeded its size limit.');
   return buffer;

@@ -7,7 +7,7 @@ export const VIDEO_DEFAULTS = Object.freeze({
   accountTransfers: 2, platformTransfers: 100, platformEncodes: 100, accountViewers: 100,
   partBytes: 16 * 1024 * 1024, reservationHours: 24, recoveryDays: 30,
   tokenSeconds: 600, usageMaxLagSeconds: 1800, aiMonthlyBudgetUsd: 10,
-  aiPlatformDailyBudgetUsd: 20, workerConcurrency: 1
+  aiPlatformDailyBudgetUsd: 20, workerConcurrency: 4
 });
 
 const bounds = {

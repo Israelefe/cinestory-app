@@ -87,7 +87,7 @@ export function processingClasses(DurableObject) {
       const responses = await Promise.all(slots.map(stub => stub.fetch('https://internal/state').then(value => value.json())));
       const active = responses.filter(value => value.running).length;
       const desired = Math.min(activeLimit, active + state.pending + (needsProbe ? 1 : 0));
-      await Promise.all(slots.map((stub, slot) => stub.fetch('https://internal/tick', { method: 'POST', body: JSON.stringify({ slot, start: slot < desired, enabled: slot < activeLimit }) })));
+      await Promise.all(slots.map((stub, slot) => stub.fetch('https://internal/tick', { method: 'POST', body: JSON.stringify({ slot, start: slot < desired, workPending: state.pending > 0, enabled: slot < activeLimit }) })));
       const maintenanceAt = await this.ctx.storage.get('maintenanceAt') || 0;
       if (Date.now() - maintenanceAt > 600_000) {
         // Maintenance failure retries on the next minute; no busy-wait loop.
@@ -144,7 +144,7 @@ export function processingClasses(DurableObject) {
         await this.ctx.storage.put('nextStartAt', Date.now() + Math.min(1800_000, 30_000 * 2 ** failures));
       }
     }
-    async tick({ start = false, slot, enabled = true } = {}) {
+    async tick({ start = false, slot, enabled = true, workPending = false } = {}) {
       this.operation = 'configuration';
       const container = this.ctx.container;
       if (!enabled) { await this.stop(); return; }
@@ -187,6 +187,11 @@ export function processingClasses(DurableObject) {
           await this.control('run', {});
           run.launched = true;
           await this.ctx.storage.put('run', run);
+        } else if (!status.busy && workPending) {
+          // A new upload can arrive after the previous pump emptied its queue.
+          // Reuse the warm encoder instead of stopping it and waiting for cron.
+          this.operation = 'encoder-run';
+          await this.control('run', {});
         } else if (!status.busy) await this.stop();
       } catch {
         // Log only a fixed operation label, never provider errors or credentials.

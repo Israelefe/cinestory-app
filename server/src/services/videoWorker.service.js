@@ -16,7 +16,7 @@ import { encodeAdaptiveVideo } from './videoEncode.service.js';
 import { packageOriginalVideo } from './videoPackage.service.js';
 import { VIDEO_QUALITY_VERSION, AUTOMATIC_QUALITY_MIN_VERSION, encodingVariants } from './videoQuality.service.js';
 import { VIDEO_MEDIA_SECONDS } from './videoHls.service.js';
-import { withLocalVideo, inspectLocalVideo, extractVideoFrame, runMediaTool, cleanupVideoTemps } from './videoMedia.service.js';
+import { withLocalVideo, withVideoInspection, inspectLocalVideo, extractVideoFrame, runMediaTool, cleanupVideoTemps } from './videoMedia.service.js';
 
 export async function prepareVideo(asset, settings, job) {
   if (job.options?.originalPlayback) return prepareOriginalPlayback(asset, settings, job);
@@ -33,7 +33,7 @@ export async function prepareVideo(asset, settings, job) {
   };
   try {
     // Inspection and a poster do not create a replacement video.
-    await withLocalVideo(asset, async ({ file, directory, checksum }) => {
+    await withVideoInspection(asset, async ({ file, directory, checksum }) => {
       await guard();
       const metadata = await inspectLocalVideo(file, settings.maxDurationSeconds);
       await reserveVideoDuration(asset._id, metadata.duration, settings.storedSeconds);
@@ -102,7 +102,7 @@ async function prepareAdaptiveVideo(asset, settings, job) {
     if (progress.percent !== 0 && progress.percent !== 100 && Date.now() - lastReport < 1000) return;
     lastReport = Date.now(); await guard();
     await VideoAsset.updateOne({ _id: asset._id, state: 'ready', 'adaptive.generation': generation }, { $set: {
-      'adaptive.quality': progress.quality, 'adaptive.percent': progress.percent, 'adaptive.completed': progress.completed,
+      'adaptive.quality': progress.quality, 'adaptive.preparing': progress.preparing || [], 'adaptive.percent': progress.percent, 'adaptive.completed': progress.completed,
       'adaptive.total': encodingVariants(asset).length, 'adaptive.updatedAt': new Date(),
     } });
   };
@@ -132,7 +132,7 @@ async function preparePoster(asset, job) {
   const generation = job.options?.generation;
   if (asset.state !== 'ready' || asset.cover?.generation !== generation) return;
   await VideoAsset.updateOne({ _id: asset._id, 'cover.generation': generation }, { $set: { 'cover.state': 'running' } });
-  await withLocalVideo(asset, async ({ file, directory }) => {
+  await withVideoInspection(asset, async ({ file, directory }) => {
     const image = await extractVideoFrame(file, directory, Math.min(asset.duration - .05, job.options.seconds));
     const buffer = await sharp(image).webp({ quality: 84 }).toBuffer();
     const key = asset.objectKey.replace(/original\.[^.]+$/, `cover-${generation}.webp`);
@@ -184,15 +184,16 @@ export async function runVideoJob() {
   const token = crypto.randomUUID();
   const runnable = { runAfter: { $lte: new Date() }, $or: [{ state: 'queued' }, { state: 'running', leaseUntil: { $lte: new Date() } }] };
   if (!settings.enabled) runnable.type = 'delete';
-  const job = await VideoJob.findOneAndUpdate(runnable, { $set: { state: 'running', leaseToken: token, leaseUntil: new Date(Date.now() + 120_000) }, $inc: { attempts: 1 } }, { new: true, sort: { type: -1, runAfter: 1 } });
+  const job = await VideoJob.findOneAndUpdate(runnable, { $set: { state: 'running', leaseToken: token, leaseUntil: new Date(Date.now() + 120_000) }, $inc: { attempts: 1 } }, { new: true, sort: { priority: -1, runAfter: 1 } });
   if (!job) return false;
-  let globalLease; let accountLease; let encodingLease;
-  const renew = setInterval(() => { void Promise.all([VideoJob.updateOne({ _id: job._id, leaseToken: token }, { $set: { leaseUntil: new Date(Date.now() + 120_000) } }), VideoLease.updateMany({ _id: { $in: [globalLease, accountLease, encodingLease].filter(Boolean) }, resourceId: String(job._id) }, { $set: { expiresAt: new Date(Date.now() + 120_000) } })]).catch(() => {}); }, 30_000); renew.unref?.();
+  let globalLease; let accountLease; let encodingLease; let assetLease;
+  const renew = setInterval(() => { void Promise.all([VideoJob.updateOne({ _id: job._id, leaseToken: token }, { $set: { leaseUntil: new Date(Date.now() + 120_000) } }), VideoLease.updateMany({ _id: { $in: [globalLease, accountLease, encodingLease, assetLease].filter(Boolean) }, resourceId: String(job._id) }, { $set: { expiresAt: new Date(Date.now() + 120_000) } })]).catch(() => {}); }, 30_000); renew.unref?.();
   try {
     if (['analyze', 'present'].includes(job.type)) throw Object.assign(new Error('Video writing suggestions have been removed.'), { code: 'VIDEO_AI_UNAVAILABLE' });
     if (job.type !== 'delete' && job.attempts > 6) throw Object.assign(new Error('Video preparation reached its retry limit.'), { code: 'VIDEO_RETRY_LIMIT' });
     globalLease = await acquireVideoLease('media:platform', settings.workerConcurrency, { ownerId: job.userId, resourceId: job._id, ttlSeconds: 120 });
-    accountLease = await acquireVideoLease('media:' + job.userId, 1, { ownerId: job.userId, resourceId: job._id, ttlSeconds: 120 });
+    accountLease = await acquireVideoLease('media:' + job.userId, Math.min(4, settings.workerConcurrency), { ownerId: job.userId, resourceId: job._id, ttlSeconds: 120 });
+    assetLease = await acquireVideoLease('media:asset:' + job.assetId, 1, { ownerId: job.userId, resourceId: job._id, ttlSeconds: 120 });
     if (job.type === 'prepare') encodingLease = await acquireVideoLease('encode:platform', settings.platformEncodes, { ownerId: job.userId, resourceId: job._id, ttlSeconds: 120 });
     const asset = await VideoAsset.findById(job.assetId);
     if (asset && asset.state !== 'deleted') {
@@ -215,7 +216,7 @@ export async function runVideoJob() {
     else if (!retry && job.options?.adaptive) await VideoAsset.updateOne({ _id: job.assetId, 'adaptive.generation': job.options.generation }, { $set: { 'adaptive.state': 'failed', 'adaptive.errorMessage': error.code === 'VIDEO_RESOLUTION_TOO_SMALL' ? 'Upload a video at 720p or higher for automatic playback.' : 'Playback qualities could not finish preparing. Your original is safe. Retry preparation.' } });
     else if (!retry && job.type === 'poster') await VideoAsset.updateOne({ _id: job.assetId, 'cover.generation': job.options?.generation }, { $set: { 'cover.state': 'failed', 'cover.errorMessage': 'This cover could not be prepared. Try again or upload a cover image.' } });
     else if (!retry && job.type !== 'present') await VideoAsset.updateOne({ _id: job.assetId, state: { $nin: ['deleting', 'deleted'] } }, { $set: job.type === 'analyze' ? { 'analysis.state': 'failed', 'analysis.errorMessage': error.code === 'VIDEO_AI_BUDGET' ? error.message : 'Suggestions could not be completed. Your own titles and descriptions are unchanged.' } : { state: 'failed', errorCode: error.code || 'VIDEO_PREPARATION_FAILED', errorMessage: 'This video could not be prepared. You can retry or download the original.' } });
-  } finally { clearInterval(renew); await Promise.all([releaseVideoLease(globalLease, String(job._id)), releaseVideoLease(accountLease, String(job._id)), releaseVideoLease(encodingLease, String(job._id))]); }
+  } finally { clearInterval(renew); await Promise.all([releaseVideoLease(globalLease, String(job._id)), releaseVideoLease(accountLease, String(job._id)), releaseVideoLease(encodingLease, String(job._id)), releaseVideoLease(assetLease, String(job._id))]); }
   return true;
 }
 

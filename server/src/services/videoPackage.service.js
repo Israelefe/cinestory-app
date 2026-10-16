@@ -80,9 +80,9 @@ export async function packageOriginalVideo({ file, directory, metadata, bytes, p
     if (segments?.some(segment => segment.bytes * 8 / segment.seconds > maxBandwidth)) segments = null;
     if (segments) {
       let totalBytes = 0;
-      for (let offset = 0; offset < segments.length; offset += 4) {
+      for (let offset = 0; offset < segments.length; offset += 12) {
         await guard();
-        const results = await Promise.allSettled(segments.slice(offset, offset + 4).map((segment, index) => {
+        const results = await Promise.allSettled(segments.slice(offset, offset + 12).map((segment, index) => {
           const filename = `s${String(offset + index).padStart(6, '0')}.ts`;
           totalBytes += segment.bytes;
           return putR2ObjectStream(prefix + name + '/' + filename, createReadStream(path.join(output, filename)), { bytes: segment.bytes, contentType: 'video/mp2t' });

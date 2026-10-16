@@ -13,7 +13,7 @@ const assetSchema = new Schema({
   bytes: { type: Number, min: 1, required: true }, checksum: String,
   duration: Number, width: Number, height: Number, rotation: Number, frameRate: Number, videoCodec: String, audioCodec: String, pixelFormat: String,
   adaptive: { state: String, generation: String, qualityVersion: Number, errorMessage: String, quality: String, percent: Number,
-    completed: [String], total: Number, updatedAt: Date },
+    completed: [String], preparing: [String], total: Number, updatedAt: Date },
   previousHls: [hlsOutput],
   state: { type: String, enum: ['reserved', 'uploading', 'verifying', 'queued', 'processing', 'ready', 'failed', 'deleting', 'deleted'], default: 'reserved', index: true },
   errorCode: String, errorMessage: String, streamUid: { type: String, index: true },
@@ -52,10 +52,11 @@ const jobSchema = new Schema({
   assetId: { type: Schema.Types.ObjectId, required: true },
   type: { type: String, enum: ['prepare', 'analyze', 'present', 'poster', 'delete'], required: true },
   state: { type: String, enum: ['queued', 'running', 'done', 'failed'], default: 'queued' },
-  attempts: { type: Number, default: 0 }, leaseUntil: Date, leaseToken: String,
+  attempts: { type: Number, default: 0 }, priority: { type: Number, default: 0 }, leaseUntil: Date, leaseToken: String,
   runAfter: { type: Date, default: Date.now }, errorCode: String, options: Schema.Types.Mixed, result: Schema.Types.Mixed
 }, { timestamps: true });
 jobSchema.index({ state: 1, runAfter: 1, leaseUntil: 1 });
+jobSchema.index({ state: 1, priority: -1, runAfter: 1 });
 
 const leaseSchema = new Schema({ _id: String, ownerId: String, resourceId: String, expiresAt: { type: Date, index: true } }, { timestamps: true });
 const usageSchema = new Schema({

@@ -131,6 +131,10 @@ export default function CreateVideoDelivery({ user, initialDelivery }) {
     if (selected.length > 10) return 'Choose up to 10 videos for this delivery.';
     if (selected.some(item => assets.get(item.assetId)?.state === 'failed')) return 'A video needs attention. Retry preparation or remove it before continuing.';
     if (selected.some(item => assets.get(item.assetId)?.state !== 'ready')) return 'Wait for video checks and cover preparation to finish. This page updates automatically.';
+    if (selected.some(item => !playbackReady(assets.get(item.assetId)) && assets.get(item.assetId)?.adaptive?.state === 'failed')) return 'Playback preparation needs attention. Retry it or remove the video before continuing.';
+    if (selected.some(item => !playbackReady(assets.get(item.assetId)))) return 'Wait for every playback quality to finish. This page updates automatically.';
+    if (selected.some(item => ['queued', 'running'].includes(assets.get(item.assetId)?.cover?.state))) return 'Wait for the video covers to finish. This page updates automatically.';
+    if (selected.some(item => assets.get(item.assetId)?.cover?.state === 'failed' && !assets.get(item.assetId)?.posterUrl)) return 'A video needs a cover. Retry it or remove the video before continuing.';
     return '';
   }
   const uploadIssue = uploadRequirement();

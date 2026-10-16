@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import { once } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { createVideoContainerServer } from '../src/services/videoContainer.service.js';
-import { processingAuthorized } from '../src/services/videoProcessingAuth.js';
+import { processingAuthorized, wakeVideoProcessing } from '../src/services/videoProcessingAuth.js';
 import { authorized, apiRequest, containerEnvironment, processingClasses, processingLimits, reserveCredit, handleProcessing } from '../../cloudflare/video-processing/processing.js';
 
 const secret = crypto.randomBytes(32).toString('hex');
@@ -40,6 +40,29 @@ test('processing entry points reject anonymous callers and ignore supplied jobs'
   assert.equal((await handleProcessing(req, bindings)).status, 200);
   assert.equal(called[1].body, undefined);
   assert.equal((await handleProcessing(request('credit', {}), bindings)).status, 404);
+});
+
+test('queued uploads coalesce an immediate wake and retain work arriving during dispatch', async t => {
+  const previous = { ...process.env };
+  Object.assign(process.env, { VIDEO_PROCESSING_MODE: 'cloudflare-containers', VIDEO_PROCESSING_SECRET: secret, VIDEO_PROCESSING_WORKER_URL: 'https://processing.example.test', VIDEO_PLAYBACK_WORKER_URL: 'https://media.example.test' });
+  t.after(() => { for (const key of Object.keys(process.env)) if (!(key in previous)) delete process.env[key]; Object.assign(process.env, previous); });
+  const calls = []; let release;
+  const held = new Promise(resolve => { release = resolve; });
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    calls.push(url);
+    assert.equal(url, 'https://processing.example.test/dispatch');
+    assert.equal(options.redirect, 'manual');
+    assert.equal(options.headers.Authorization, 'Bearer ' + secret);
+    assert.equal(options.body, undefined);
+    if (calls.length === 1) await held;
+    return Response.json({ success: true });
+  });
+  wakeVideoProcessing(); wakeVideoProcessing(); wakeVideoProcessing();
+  for (let index = 0; index < 40 && !calls.length; index++) await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(calls.length, 1);
+  wakeVideoProcessing(); release();
+  for (let index = 0; index < 40 && calls.length < 2; index++) await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(calls.length, 2);
 });
 
 test('runtime credentials use an explicit allowlist and limits fail closed', () => {
@@ -136,12 +159,12 @@ function harness() {
   environment.VIDEO_ENCODERS = { idFromName: value => value, get: name => {
     const index = Number(name.split('-')[1]);
     if (!slots[index]) {
-      const container = { running: false, starts: 0, destroys: 0, busy: false,
+      const container = { running: false, starts: 0, runs: 0, destroys: 0, busy: false,
         start() { this.starts++; this.running = true; },
         async destroy() { this.destroys++; this.running = false; },
         async setInactivityTimeout() {}, async monitor() {},
         getTcpPort() { return { fetch: async (url) => {
-          if (url.endsWith('/run')) { container.busy = true; return Response.json({ busy: true }, { status: 202 }); }
+          if (url.endsWith('/run')) { container.runs++; container.busy = true; return Response.json({ busy: true }, { status: 202 }); }
           return Response.json({ ready: true, busy: container.busy });
         } }; }
       };
@@ -175,6 +198,20 @@ test('scheduler stays asleep when empty, scales within both caps and stops idle 
     await coordinator.dispatch();
     assert.equal(slots[1].ctx.container.running, false, 'lowering cap must stop out-of-range slots');
   } finally { globalThis.fetch = originalFetch; }
+});
+
+test('new queued work reuses an idle warm encoder without waiting for another cold start', async t => {
+  const { coordinator, slots } = harness();
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ success: true, data: { pending: 1, concurrency: 1 } }));
+  await coordinator.ctx.storage.put('verifiedAt', Date.now());
+  await coordinator.dispatch();
+  assert.equal(slots[0].ctx.container.starts, 1);
+  assert.equal(slots[0].ctx.container.runs, 1);
+  slots[0].ctx.container.busy = false;
+  await coordinator.dispatch();
+  assert.equal(slots[0].ctx.container.starts, 1);
+  assert.equal(slots[0].ctx.container.runs, 2);
+  assert.equal(slots[0].ctx.container.destroys, 0);
 });
 
 test('cold-start probe verifies the encoder before launching jobs, budget exhaustion stops it', async () => {

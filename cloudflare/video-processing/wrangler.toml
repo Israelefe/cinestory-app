@@ -14,8 +14,8 @@ VIDEO_MEDIA_WORKER_ENABLED = "true"
 VIDEO_DELIVERY_ENABLED = "true"
 VIDEO_DELIVERY_PUBLIC = "true"
 VIDEO_DELIVERY_QUALIFIED = "true"
-# Raise deliberately after measuring preparation time and Cloudflare usage.
-VIDEO_MAX_CONTAINERS = "1"
+# Prepare batches in parallel within the same aggregate daily allowance.
+VIDEO_MAX_CONTAINERS = "4"
 VIDEO_DAILY_CONTAINER_SECONDS = "21600"
 VIDEO_MAX_JOB_SECONDS = "21600"
 VIDEO_AI_MODEL_READY = "false"

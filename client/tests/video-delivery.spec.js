@@ -337,20 +337,35 @@ for (const width of [320, 834, 1440]) test(`a vertical opener reveals other form
   expect(starts).toContain(films[0].id); expect(starts).toContain(films[1].id); expect(starts).toContain(films[2].id);
   expect(errors).toEqual([]);
 });
-test('automatic qualities show real progress while details remain editable and publishing waits', async ({ page }) => {
+test('every video quality and cover must finish before either forward navigation path unlocks', async ({ page }) => {
   const { state } = await mock(page);
-  Object.assign(state.project.assets[0], { hasAdaptive: false, playbackReady: false, previewReady: true, expectedQualities: ['q720', 'q1080'], adaptive: { state: 'running', quality: 'q1080', percent: 37, completed: ['q720'] } });
+  state.project.assets.push({ ...asset, id: '555555555555555555555555', filename: 'reception.mp4' });
+  state.project.video.draft.items.push({ ...presentation.items[0], assetId: '555555555555555555555555', title: 'The reception' });
+  Object.assign(state.project.assets[0], { hasAdaptive: false, playbackReady: false, previewReady: false, expectedQualities: ['q720', 'q1080', 'q1440'], adaptive: { state: 'running', quality: 'q720', preparing: ['q720', 'q1080'], percent: 37, completed: [] } });
   await page.clock.install(); await page.goto(`/create?draft=${id}`);
-  await expect(page.locator('.vc-upload-row')).toContainText('Preparing 1080p');
+  await expect(page.locator('.vc-upload-row').first()).toContainText('Preparing 720p & 1080p');
+  await expect(page.locator('.vc-quality-progress .is-preparing')).toHaveCount(2);
   await expect(page.locator('.vc-quality-progress')).toContainText('37% prepared');
-  await page.getByRole('button', { name: 'Add details', exact: true }).click();
+  const next = page.getByRole('button', { name: 'Add details', exact: true });
+  const details = page.locator('.vc-steps button').nth(1);
+  const review = page.locator('.vc-steps button').nth(2);
+  await expect(next).toBeDisabled(); await expect(details).toBeDisabled(); await expect(review).toBeDisabled();
+  await expect(page.locator('#vc-step-requirement')).toContainText('every playback quality');
+  Object.assign(state.project.assets[0], { hasAdaptive: true, previewReady: true, adaptive: { state: 'running', quality: 'q1440', preparing: ['q1440'], percent: 67, completed: ['q720', 'q1080'] } });
+  await page.clock.fastForward(6000);
+  await expect(page.locator('.vc-quality-progress')).toContainText('67% prepared');
+  await expect(next).toBeDisabled(); await expect(details).toBeDisabled(); await expect(review).toBeDisabled();
+  expect(state.publishes).toBe(0);
+  Object.assign(state.project.assets[0], { playbackReady: true, adaptive: { state: 'ready', completed: ['q720', 'q1080', 'q1440'], percent: 100 }, cover: { state: 'running' } });
+  await page.clock.fastForward(6000);
+  await expect(next).toBeDisabled(); await expect(details).toBeDisabled(); await expect(review).toBeDisabled();
+  await expect(page.locator('#vc-step-requirement')).toContainText('video covers');
+  state.project.assets[0].cover.state = 'ready'; await page.clock.fastForward(6000);
+  await expect(next).toBeEnabled(); await next.click();
   await expect(page.getByRole('checkbox', { name: /Create adaptive playback copies/ })).toHaveCount(0);
   await page.getByLabel('Delivery title', { exact: true }).fill('Wedding films');
   await page.getByRole('button', { name: 'Preview & send', exact: true }).first().click();
   await expect(page.getByRole('button', { name: 'Preview client view', exact: true })).toBeEnabled();
-  await expect(page.getByRole('button', { name: 'Preparing playback qualities...', exact: true })).toBeDisabled();
-  Object.assign(state.project.assets[0], { hasAdaptive: true, playbackReady: true, adaptive: { state: 'ready', completed: ['q720', 'q1080'], percent: 100 } });
-  await page.clock.fastForward(6000);
   await expect(page.getByRole('button', { name: 'Create client link', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Create client link', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your delivery is ready.' })).toBeVisible();
@@ -453,9 +468,10 @@ test('required titles, cover readiness, PIN and expiry gate both forward navigat
   await expect(next).toBeEnabled();
   state.project.assets[0].cover = { state: 'queued' };
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
-  await expect(next).toBeEnabled(); await expect(sidebarNext).toBeEnabled();
-  await sidebarNext.click(); await expect(page.getByRole('button', { name: 'Preparing playback qualities...', exact: true })).toBeDisabled();
+  await expect(next).toBeDisabled(); await expect(sidebarNext).toBeDisabled();
   state.project.assets[0].cover.state = 'ready'; await page.clock.fastForward(6000);
+  await expect(next).toBeEnabled(); await expect(sidebarNext).toBeEnabled();
+  await sidebarNext.click();
   await expect(page.getByRole('button', { name: 'Create client link', exact: true })).toBeEnabled();
 });
 
