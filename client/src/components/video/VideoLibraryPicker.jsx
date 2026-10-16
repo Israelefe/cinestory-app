@@ -1,16 +1,14 @@
-import React, { useId, useLayoutEffect, useRef, useState } from 'react';
+import React, { useId, useLayoutEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Check, Film, Plus, X } from 'lucide-react';
-import { videoBytes, videoDuration, videoMediaUrl } from '../../services/videoDelivery.js';
+import { Check, Plus, X } from 'lucide-react';
+import { videoBytes, videoDuration } from '../../services/videoDelivery.js';
 import { useVeyloReducedMotion } from '../../utils/motionPolicy.js';
+import VideoPosterImage from './VideoPosterImage.jsx';
 import './VideoLibraryPicker.css';
 
 function VideoCover({ asset }) {
-  const [unavailable, setUnavailable] = useState(false);
   return <span className="vc-library-cover">
-    {asset.posterUrl && !unavailable
-      ? <img src={videoMediaUrl(asset.posterUrl)} alt="" loading="lazy" onError={() => setUnavailable(true)} />
-      : <span className="vc-library-no-cover"><Film size={28} /><span>Cover unavailable</span></span>}
+    <VideoPosterImage src={asset.posterUrl} loading="lazy" />
     <span className="vc-library-duration">{videoDuration(asset.duration)}</span>
   </span>;
 }

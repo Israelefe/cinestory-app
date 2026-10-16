@@ -1,0 +1,10 @@
+.vc-poster-image { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; }
+.vc-poster-image > img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; min-height: 0; max-height: none; object-fit: contain; transition: opacity .18s; }
+.vc-poster-placeholder { position: relative; display: grid; justify-items: center; gap: 10px; max-width: 100%; padding: 16px; color: #a99b90; text-align: center; }
+.vc-poster-placeholder small { font-size: 11px; line-height: 1.5; }
+.vc-poster-placeholder button { min-height: 44px; padding: 10px 12px; border: 1px solid #ffffff30; border-radius: 8px; background: #070709; color: #eee5dd; font-size: 11px; cursor: pointer; transition: transform .18s, border-color .18s; }
+.vc-poster-placeholder button:hover { transform: translateY(-1px); border-color: #ff9b8e80; }
+.vc-poster-placeholder button:active { transform: scale(.97); }
+.vc-poster-placeholder button:focus-visible { outline: 2px solid #ff9b8e; outline-offset: 3px; }
+.vc-poster-image:focus { outline: none; }
+.vc-poster-image:focus-visible { outline: 2px solid #ff9b8e; outline-offset: -3px; }

@@ -47,6 +47,85 @@ async function mock(page, options = {}) {
 }
 async function noOverflow(page) { expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true); }
 
+for (const failure of ['temporary', 'expired sign-in']) test(`delivery detail covers recover from ${failure} without refreshing or losing edits`, async ({ page }) => {
+  const { state, errors } = await mock(page);
+  await page.addInitScript(() => {
+    window.revokedVideoCovers = [];
+    const revoke = URL.revokeObjectURL.bind(URL);
+    URL.revokeObjectURL = url => { window.revokedVideoCovers.push(url); revoke(url); };
+  });
+  state.project.assets[0].posterUrl = `/api/v1/videos/assets/${assetId}/poster`;
+  let requests = 0, refreshes = 0, documents = 0;
+  page.on('request', request => { if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documents++; });
+  await page.route('**/api/v1/auth/refresh', route => { refreshes++; return route.fulfill({ json: { success: true } }); });
+  await page.route(`**/api/v1/videos/assets/${assetId}/poster*`, async route => {
+    requests++;
+    if (failure === 'expired sign-in' && !refreshes) return route.fulfill({ status: 401, json: { success: false, code: 'SESSION_EXPIRED', message: 'Please sign in again.' } });
+    if (failure === 'temporary' && requests <= 2) return route.fulfill({ status: 503, json: { success: false, message: 'Cover temporarily unavailable.' } });
+    return route.fulfill({ contentType: 'image/webp', body: await readFile(new URL('../public/veylo/video/celebration.webp', import.meta.url)) });
+  });
+  await page.goto(`/create?draft=${id}`);
+  await page.locator('.vc-bottom').getByRole('button', { name: 'Add details', exact: true }).click();
+  await page.getByLabel('Video title', { exact: true }).fill('Ada and Emeka — final film');
+  await expect.poll(() => page.locator('.vc-video-poster img').evaluateAll(images => images[0]?.naturalWidth || 0), { timeout: 12000 }).toBeGreaterThan(0);
+  await expect(page.getByLabel('Video title', { exact: true })).toHaveValue('Ada and Emeka — final film');
+  expect(requests).toBeGreaterThan(1);
+  expect(refreshes).toBe(failure === 'expired sign-in' ? 1 : 0);
+  expect(documents).toBe(1);
+  const loadedCover = await page.locator('.vc-video-poster img').getAttribute('src');
+  expect(loadedCover).toMatch(/^blob:/);
+  await page.locator('.vc-bottom').getByRole('button', { name: 'Back', exact: true }).click();
+  await expect.poll(() => page.evaluate(url => window.revokedVideoCovers.includes(url), loadedCover)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('a failed library cover retries automatically and remains selectable without reopening the picker', async ({ page }) => {
+  const { state, errors } = await mock(page);
+  const video = { ...asset, id: '777777777777777777777777', filename: 'Reception.mp4', posterUrl: '/api/v1/videos/assets/777777777777777777777777/poster' };
+  let requests = 0;
+  await page.route('**/api/v1/videos/assets', route => route.fulfill({ json: { success: true, data: { assets: [video], nextCursor: null } } }));
+  await page.route(`**/api/v1/videos/assets/${video.id}/poster*`, async route => {
+    if (++requests === 1) return route.fulfill({ status: 503, json: { success: false } });
+    return route.fulfill({ contentType: 'image/webp', body: await readFile(new URL('../public/veylo/video/celebration.webp', import.meta.url)) });
+  });
+  await page.goto(`/create?draft=${id}`);
+  await page.getByRole('button', { name: 'Choose from your video library' }).click();
+  const choice = page.getByRole('button', { name: 'Add Reception.mp4', exact: true });
+  await expect.poll(() => choice.locator('img').evaluateAll(images => images[0]?.naturalWidth || 0), { timeout: 10000 }).toBeGreaterThan(0);
+  await choice.click();
+  await expect(page.getByRole('button', { name: 'Reception.mp4 added', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Close video library' }).click();
+  await page.locator('.vc-bottom').getByRole('button', { name: 'Add details', exact: true }).click();
+  await expect(page.getByLabel('Video title', { exact: true })).toHaveCount(2);
+  expect(state.project.video.draft.items.some(item => item.assetId === video.id)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('unavailable covers stop retrying and can be retried without refreshing the delivery', async ({ page }) => {
+  const { state, errors } = await mock(page);
+  state.project.assets[0].posterUrl = `/api/v1/videos/assets/${assetId}/poster`;
+  let available = false, requests = 0;
+  await page.route(`**/api/v1/videos/assets/${assetId}/poster*`, async route => {
+    requests++;
+    if (!available) return route.fulfill({ status: 503, json: { success: false } });
+    return route.fulfill({ contentType: 'image/webp', body: await readFile(new URL('../public/veylo/video/celebration.webp', import.meta.url)) });
+  });
+  await page.goto(`/create?draft=${id}`);
+  await page.locator('.vc-bottom').getByRole('button', { name: 'Add details', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Retry cover', exact: true })).toBeVisible({ timeout: 15000 });
+  const stoppedAt = requests;
+  await page.getByLabel('Video title', { exact: true }).fill('Keep my video title');
+  await expect.poll(() => state.project.video.draft.items[0].title).toBe('Keep my video title');
+  expect(requests).toBe(stoppedAt);
+  expect(requests).toBeLessThanOrEqual(4);
+  available = true;
+  await page.getByRole('button', { name: 'Retry cover', exact: true }).click();
+  await expect.poll(() => page.locator('.vc-video-poster img').evaluateAll(images => images[0]?.naturalWidth || 0)).toBeGreaterThan(0);
+  await expect(page.getByLabel('Video title', { exact: true })).toHaveValue('Keep my video title');
+  await expect(page.getByRole('group', { name: 'Video cover' })).toBeFocused();
+  expect(errors).toEqual([]);
+});
+
 for (const width of [320, 390, 640, 768, 834, 1024, 1440]) test(`delivery details show complete landscape and portrait covers at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 1000 });
   const { state, errors } = await mock(page);
@@ -606,7 +685,7 @@ test('library pagination keeps cover fallbacks selectable and enforces ten uniqu
   await picker.getByRole('button', { name: 'Load more videos', exact: true }).click();
   const extraChoice = picker.getByRole('button', { name: 'Add ' + extra.filename, exact: true });
   await extraChoice.scrollIntoViewIfNeeded();
-  await expect(extraChoice.getByText('Cover unavailable', { exact: true })).toBeVisible();
+  await expect(extraChoice.getByText('Cover unavailable', { exact: true })).toBeVisible({ timeout: 15000 });
   await expect(extraChoice).toBeEnabled();
   await picker.getByRole('button', { name: 'Add ' + tenth.filename, exact: true }).click();
   await expect(picker.getByText('10 / 10 added', { exact: true })).toBeVisible();

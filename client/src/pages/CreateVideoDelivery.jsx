@@ -9,6 +9,7 @@ import VideoUploadQueue from '../components/video/VideoUploadQueue.jsx';
 import VideoActivity, { VideoBusyIcon } from '../components/video/VideoActivity.jsx';
 import VideoPreparation from '../components/video/VideoPreparation.jsx';
 import VideoLibraryPicker from '../components/video/VideoLibraryPicker.jsx';
+import VideoPosterImage from '../components/video/VideoPosterImage.jsx';
 import { playbackReady, previewReady } from '../utils/videoQuality.js';
 import VideoViewer from '../components/delivery/VideoViewer.jsx';
 import { videoDuration, videoMediaUrl } from '../services/videoDelivery.js';
@@ -188,7 +189,7 @@ export default function CreateVideoDelivery({ user, initialDelivery }) {
         <div className="vc-list-heading"><h3>Your videos</h3><span>{form.presentation.items.length} / 10</span></div>
         {!form.presentation.items.length && <p className="vc-empty">Add a video in the Upload step first.</p>}
         <div className="vc-video-list">{form.presentation.items.map((item, index) => { const asset = assets.get(item.assetId); return <article className="vc-video-card" key={item.assetId} draggable onDragStart={() => { dragging.current = index; }} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); reorder(dragging.current, index); dragging.current = null; }}>
-          <div className="vc-video-poster">{asset?.posterUrl && asset.state === 'ready' ? <img src={videoMediaUrl(asset.posterUrl)} alt="" /> : <Film size={30} />}<span>{asset?.state === 'ready' ? videoDuration(asset.duration) : asset?.state === 'failed' ? 'Needs attention' : 'Preparing video'}</span></div>
+          <div className="vc-video-poster">{asset?.posterUrl && asset.state === 'ready' ? <VideoPosterImage src={asset.posterUrl} retryable /> : <Film size={30} />}<span className="vc-video-duration">{asset?.state === 'ready' ? videoDuration(asset.duration) : asset?.state === 'failed' ? 'Needs attention' : 'Preparing video'}</span></div>
           <div className="vc-video-edit"><div className="vc-video-tools"><small>VIDEO {index + 1}{form.presentation.featuredAssetId === item.assetId || (!form.presentation.featuredAssetId && index === 0) ? ' / OPENS FIRST' : ''}</small><div><button type="button" disabled={index === 0} onClick={() => reorder(index, index - 1)} aria-label={`Move video ${index + 1} up`}><ChevronUp size={17} /></button><button type="button" disabled={index === form.presentation.items.length - 1} onClick={() => reorder(index, index + 1)} aria-label={`Move video ${index + 1} down`}><ChevronDown size={17} /></button><button type="button" onClick={() => present({ items: form.presentation.items.filter(row => row.assetId !== item.assetId), featuredAssetId: form.presentation.featuredAssetId === item.assetId ? null : form.presentation.featuredAssetId })} aria-label={`Remove video ${index + 1} from this delivery`}><Trash2 size={15} /></button></div></div>
             <label>Video title<input value={item.title} maxLength={100} onChange={event => editItem(item.assetId, { title: event.target.value })} /></label>
             <label>Description <small>Optional</small><textarea rows={2} value={item.description} maxLength={2000} onChange={event => editItem(item.assetId, { description: event.target.value })} /></label>
