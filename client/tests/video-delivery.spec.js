@@ -47,6 +47,51 @@ async function mock(page, options = {}) {
 }
 async function noOverflow(page) { expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true); }
 
+for (const width of [320, 390, 640, 768, 834, 1024, 1440]) test(`delivery details show complete landscape and portrait covers at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 1000 });
+  const { state, errors } = await mock(page);
+  const films = [
+    { id: assetId, filename: 'wedding-film.mp4', width: 1920, height: 1080, cover: 'celebration.webp' },
+    { id: '444444444444444444444444', filename: 'vertical-highlight.mp4', width: 1080, height: 1920, cover: 'drummer.webp' }
+  ];
+  state.project.assets = films.map(film => ({ ...asset, ...film, posterUrl: `/api/v1/videos/assets/${film.id}/poster` }));
+  state.project.video.draft.items = films.map(film => ({ ...presentation.items[0], assetId: film.id, title: film.filename }));
+  await page.route('**/api/v1/videos/assets/*/poster', async route => {
+    const film = films.find(film => route.request().url().includes(film.id));
+    return route.fulfill({ contentType: 'image/webp', body: await readFile(new URL(`../public/veylo/video/${film.cover}`, import.meta.url)) });
+  });
+  await page.goto(`/create?draft=${id}`);
+  await page.locator('.vc-bottom').getByRole('button', { name: 'Add details', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Delivery details.', exact: true })).toBeVisible();
+  await expect(page.locator('.vc-video-poster img')).toHaveCount(2);
+  for (const card of await page.locator('.vc-video-card').all()) {
+    const poster = card.locator('.vc-video-poster');
+    await expect.poll(() => poster.locator('img').evaluate(img => img.naturalWidth)).toBeGreaterThan(0);
+    const layout = await card.evaluate(node => {
+      const poster = node.querySelector('.vc-video-poster'), image = poster.querySelector('img'), editor = node.querySelector('.vc-video-edit');
+      const rect = element => { const box = element.getBoundingClientRect(); return { x: box.x, y: box.y, right: box.right, bottom: box.bottom, width: box.width, height: box.height }; };
+      return { card: rect(node), poster: rect(poster), image: rect(image), editor: rect(editor), fit: getComputedStyle(image).objectFit };
+    });
+    expect(layout.fit).toBe('contain');
+    expect(layout.image.x).toBeGreaterThanOrEqual(layout.poster.x - 1);
+    expect(layout.image.y).toBeGreaterThanOrEqual(layout.poster.y - 1);
+    expect(layout.image.right).toBeLessThanOrEqual(layout.poster.right + 1);
+    expect(layout.image.bottom).toBeLessThanOrEqual(layout.poster.bottom + 1);
+    if (width < 640) {
+      expect(layout.poster.width).toBeGreaterThanOrEqual(layout.card.width - 3);
+      expect(layout.editor.y).toBeGreaterThanOrEqual(layout.poster.bottom - 1);
+    } else {
+      expect(layout.editor.x).toBeGreaterThanOrEqual(layout.poster.right - 1);
+      expect(Math.abs(layout.editor.y - layout.poster.y)).toBeLessThan(2);
+      expect(layout.editor.width).toBeGreaterThan(300);
+    }
+    await expect(card.getByLabel('Video title', { exact: true })).toHaveValue(/\.mp4$/);
+  }
+  await page.screenshot({ path: `../.visual-review/video-details/covers-${width}.png`, fullPage: true });
+  await noOverflow(page);
+  expect(errors).toEqual([]);
+});
+
 for (const width of [390, 768, 834]) test(`creation opens each step at its heading and saves the opening film at ${width}px`, async ({ page }) => {
   const { state, errors } = await mock(page, { aiAvailable: true });
   const secondId = '444444444444444444444444';
