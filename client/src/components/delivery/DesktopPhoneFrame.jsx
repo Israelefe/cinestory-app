@@ -6,7 +6,7 @@ const DESKTOP_QUERY = '(min-width: 1025px)';
 const PREVIEW_READY = 'veylo:phone-preview-ready';
 const PREVIEW_DATA = 'veylo:phone-preview-data';
 const PHONE_FRAME_WIDTH = 444;
-const PHONE_FRAME_HEIGHT = 851;
+const PHONE_FRAME_HEIGHT = 916;
 
 export function useDesktopPhoneMode() {
   const [desktop, setDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia(DESKTOP_QUERY).matches);
@@ -36,8 +36,8 @@ export function DesktopPhoneFrame({ src, title, message, device = true, children
       // Creation previews can start below the fold, then become sticky or
       // scroll into view. Their initial page position must not shrink them.
       const pageTop = Math.max(0, element.getBoundingClientRect().top);
-      const top = inCreation ? Math.min(pageTop, 96) : pageTop;
-      const bottomSpace = inCreation ? 18 : children ? 66 : 30;
+      const top = inCreation ? Math.min(pageTop, 32) : pageTop;
+      const bottomSpace = children ? 66 : 30;
       const availableHeight = Math.max(1, window.innerHeight - top - bottomSpace);
       const availableWidth = Math.max(1, (element.parentElement?.getBoundingClientRect().width || window.innerWidth) - 32);
       const nextScale = Math.min(1.05, availableHeight / PHONE_FRAME_HEIGHT, availableWidth / PHONE_FRAME_WIDTH);
@@ -76,8 +76,18 @@ export function DesktopPhoneFrame({ src, title, message, device = true, children
   return <main className={'v-phone-presentation' + (!device ? ' is-inline' : '')} aria-label={title}>
     <section ref={phoneDevice} className="v-phone-device" style={phoneStyle} aria-label={`${title}, shown at mobile size`}>
       <div className="v-phone-device-scale">
-        <div className="v-phone-status" aria-hidden="true"><strong>9:41</strong><span className="v-phone-island" /><span className="v-phone-status-icons"><Signal size={14} /><Wifi size={15} /><BatteryFull size={18} /></span></div>
-        <div className="v-phone-screen">{children || <iframe ref={frame} src={src} title={title} allow="autoplay; clipboard-read; clipboard-write; fullscreen; web-share" onLoad={() => { ready.current = true; if (messageRef.current !== undefined) frame.current?.contentWindow?.postMessage({ type: PREVIEW_DATA, payload: messageRef.current }, window.location.origin); }} />}</div>
+        <div className="v-phone-hardware" aria-hidden="true">
+          <span className="v-phone-button is-action" />
+          <span className="v-phone-button is-volume-up" />
+          <span className="v-phone-button is-volume-down" />
+          <span className="v-phone-button is-power" />
+          <span className="v-phone-button is-camera" />
+        </div>
+        <div className="v-phone-display">
+          <div className="v-phone-status" aria-hidden="true"><strong>9:41</strong><span className="v-phone-island" /><span className="v-phone-status-icons"><Signal size={17} /><Wifi size={18} /><BatteryFull size={25} /></span></div>
+          <div className="v-phone-screen">{children || <iframe ref={frame} src={src} title={title} allow="autoplay; clipboard-read; clipboard-write; fullscreen; web-share" onLoad={() => { ready.current = true; if (messageRef.current !== undefined) frame.current?.contentWindow?.postMessage({ type: PREVIEW_DATA, payload: messageRef.current }, window.location.origin); }} />}</div>
+          <div className="v-phone-home" aria-hidden="true"><span /></div>
+        </div>
       </div>
     </section>
     <p className="v-phone-caption"><strong>Mobile client view</strong><span>420 × 800 px</span></p>
