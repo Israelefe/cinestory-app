@@ -4,8 +4,8 @@ import './PhonePresentation.css';
 const DESKTOP_QUERY = '(min-width: 1025px)';
 const PREVIEW_READY = 'veylo:phone-preview-ready';
 const PREVIEW_DATA = 'veylo:phone-preview-data';
-const PHONE_FRAME_WIDTH = 444;
-const PHONE_FRAME_HEIGHT = 916;
+const PHONE_FRAME_WIDTH = 436;
+const PHONE_FRAME_HEIGHT = 894;
 
 export function useDesktopPhoneMode() {
   const [desktop, setDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia(DESKTOP_QUERY).matches);
