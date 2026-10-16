@@ -12,9 +12,9 @@ export default function VideoPreparation({ asset, compact = false, statusUnavail
   const title = ready ? 'Ready for playback' : failed ? 'Playback preparation needs attention' : running && progress.quality ? `Preparing ${qualityLabel(progress.quality)}` : 'Upload complete · playback preparation queued';
   return <div className="vc-playback-preparation" aria-label={`Playback preparation for ${asset.filename || 'video'}`}>
     {!compact && <VideoActivity title={title} state={statusUnavailable ? 'paused' : ready ? 'ready' : failed ? 'error' : running ? 'working' : 'waiting'}
-      detail={statusUnavailable ? 'Status updates are paused. Refresh to check preparation.' : ready ? 'All playback qualities are ready. Your original is unchanged.' : failed ? progress.errorMessage || 'Your original is safe. Retry preparation.' : 'You can add delivery details while Veylo prepares the playback qualities.'}
+      detail={statusUnavailable ? 'Refresh to update the status.' : failed ? progress.errorMessage : undefined}
       progress={ready ? 100 : running && Number.isFinite(progress.percent) ? progress.percent : undefined} label={`${progress.quality ? qualityLabel(progress.quality) : 'Playback'} preparation progress`} />}
-    {qualities.length > 0 && <ol className="vc-quality-progress" aria-label="Playback qualities">{qualities.map(name => {
+    {!ready && qualities.length > 0 && <ol className="vc-quality-progress" aria-label="Playback qualities">{qualities.map(name => {
       const done = completed.has(name); const active = !done && running && name === progress.quality;
       const Icon = done ? Check : active ? RefreshCw : Clock3;
       return <li key={name} className={done ? 'is-ready' : active ? 'is-preparing' : ''}><Icon size={14} className={active && !statusUnavailable ? 'v-spin' : undefined} /><span>{qualityLabel(name)}<small>{done ? 'Ready' : active ? `${progress.percent || 0}% prepared` : 'Waiting'}</small></span></li>;
