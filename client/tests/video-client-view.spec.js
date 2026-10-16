@@ -52,6 +52,8 @@ for (const [width, height] of [[320, 568], [390, 844], [768, 1024], [834, 1112],
       expect(await page.locator('video').evaluate(video => getComputedStyle(video).objectFit)).toBe('contain');
       await expect(page.getByRole('button', { name: 'Open film details' })).toBeInViewport();
       await expect(page.getByRole('button', { name: 'Choose a film' })).toBeInViewport();
+      if (film.allowDownload) await expect(page.getByRole('link', { name: 'Download ' + film.title, exact: true })).toBeInViewport();
+      else await expect(page.locator('.vv-reel.is-active .vv-caption-download')).toHaveCount(0);
       expect(await page.locator('.v-phone-device').count()).toBe(originalFrameCount);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const header = await page.locator('.vv-brand').boundingBox();
@@ -98,6 +100,91 @@ test('details pause and resume the same player, retain a deliberate pause and en
   await expect(page.getByRole('dialog').getByRole('link', { name: /Download/ })).toHaveCount(0);
   expect(state.starts).toHaveLength(2);
   expect(state.errors).toEqual([]);
+});
+
+test.describe('phone fullscreen', () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  for (const scenario of ['orientation lock', 'phone sideways', 'rotation denied', 'rotation unavailable', 'fullscreen unavailable', 'fullscreen denied']) {
+    test('landscape turns sideways and vertical fills the screen with ' + scenario, async ({ page }) => {
+      await page.addInitScript(scenario => {
+        window.orientationCalls = [];
+        Object.defineProperty(screen.orientation, 'lock', { configurable: true, value: async direction => {
+          window.orientationCalls.push({ direction, fullscreen: Boolean(document.fullscreenElement) });
+          if (scenario === 'rotation denied') throw new DOMException('Unavailable', 'NotSupportedError');
+        } });
+        Object.defineProperty(screen.orientation, 'unlock', { configurable: true, value: () => window.orientationCalls.push({ unlock: true }) });
+        if (scenario === 'rotation unavailable') Object.defineProperty(screen.orientation, 'lock', { configurable: true, value: undefined });
+        if (scenario === 'fullscreen unavailable') Object.defineProperty(Element.prototype, 'requestFullscreen', { configurable: true, value: undefined });
+        if (scenario === 'fullscreen denied') Object.defineProperty(Element.prototype, 'requestFullscreen', { configurable: true, value: async () => { throw new DOMException('Unavailable', 'NotAllowedError'); } });
+      }, scenario);
+      if (scenario === 'phone sideways') await page.setViewportSize({ width: 844, height: 390 });
+      const state = await openDelivery(page);
+      for (const film of [films[0], films[1], films[2]]) {
+        if (film !== films[0]) await chooseVideoFilm(page, new RegExp(film.title));
+        await expect.poll(() => page.locator('video').evaluate(video => video.readyState >= 2)).toBe(true);
+        await page.locator('video').evaluate(video => { video.loop = true; video.pause(); });
+        const media = await page.locator('video').elementHandle();
+        await showVideoControls(page);
+        await page.getByRole('button', { name: 'Full screen', exact: true }).click();
+        const player = page.locator('.vv-playback');
+        const surface = page.locator('.vv-playback-surface');
+        await expect(page.getByRole('button', { name: 'Exit full screen', exact: true })).toBeInViewport();
+        expect(await media.evaluate(video => video === document.querySelector('video'))).toBe(true);
+        expect(await page.locator('video').evaluate(video => video.paused)).toBe(true);
+        const bounds = await surface.evaluate(node => ({ width: node.clientWidth, height: node.clientHeight }));
+        if (film === films[0]) {
+          await expect(player).toHaveClass(/is-landscape-fullscreen/);
+          expect(bounds.width).toBeGreaterThan(bounds.height);
+          expect(bounds.height).toBe(390);
+        } else if (film === films[1]) {
+          await expect(player).toHaveClass(/is-portrait-fullscreen/);
+          expect(bounds.width).toBe(390); expect(bounds.height).toBe(844);
+          expect(await page.locator('video').evaluate(video => getComputedStyle(video).objectFit)).toBe('cover');
+          await page.getByRole('button', { name: 'Show whole video', exact: true }).click();
+          expect(await page.locator('video').evaluate(video => getComputedStyle(video).objectFit)).toBe('contain');
+          await page.getByRole('button', { name: 'Fill screen', exact: true }).click();
+          expect(await page.locator('video').evaluate(video => getComputedStyle(video).objectFit)).toBe('cover');
+        } else {
+          await expect(player).not.toHaveClass(/is-(portrait|landscape)-fullscreen/);
+          expect(await page.locator('video').evaluate(video => getComputedStyle(video).objectFit)).toBe('contain');
+        }
+        if (scenario.startsWith('fullscreen')) {
+          await expect(player).toHaveAttribute('popover', 'manual');
+          await page.keyboard.press('Escape');
+          await expect(player).not.toHaveAttribute('popover', 'manual');
+        } else if (film === films[1]) await page.evaluate(() => document.exitFullscreen());
+        else await page.getByRole('button', { name: 'Exit full screen', exact: true }).click();
+        await expect(page.getByRole('button', { name: 'Full screen', exact: true })).toBeInViewport();
+        expect(await media.evaluate(video => video === document.querySelector('video'))).toBe(true);
+      }
+      const calls = await page.evaluate(() => window.orientationCalls);
+      if (scenario === 'orientation lock' || scenario === 'phone sideways') {
+        expect(calls.filter(call => call.direction)).toEqual([{ direction: 'landscape', fullscreen: true }, { direction: 'portrait', fullscreen: true }]);
+        expect(calls.filter(call => call.unlock)).toHaveLength(2);
+      } else if (scenario.startsWith('fullscreen') || scenario === 'rotation unavailable') expect(calls).toEqual([]);
+      expect(state.starts).toHaveLength(3);
+      expect(state.errors).toEqual([]);
+    });
+  }
+
+  test('exiting releases a pending orientation request without reopening fullscreen', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.orientationUnlocks = 0;
+      Object.defineProperty(screen.orientation, 'lock', { configurable: true, value: () => new Promise(resolve => { window.finishOrientation = resolve; }) });
+      Object.defineProperty(screen.orientation, 'unlock', { configurable: true, value: () => { window.orientationUnlocks++; } });
+    });
+    const state = await openDelivery(page);
+    await showVideoControls(page);
+    await page.getByRole('button', { name: 'Full screen', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => typeof window.finishOrientation)).toBe('function');
+    await page.getByRole('button', { name: 'Exit full screen', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.orientationUnlocks)).toBe(1);
+    await page.evaluate(() => window.finishOrientation());
+    await expect(page.locator('.vv-playback')).not.toHaveClass(/is-landscape-fullscreen/);
+    expect(await page.evaluate(() => document.fullscreenElement)).toBe(null);
+    expect(state.starts).toHaveLength(1);
+    expect(state.errors).toEqual([]);
+  });
 });
 
 test('one sound control, keyboard seeking and fullscreen work for landscape and portrait', async ({ page }) => {

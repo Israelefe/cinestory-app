@@ -5,6 +5,33 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 
+test('phone landscape fullscreen keeps quality settings reachable and preserves the streaming player', async ({ browser }) => {
+  const context = await browser.newContext({ baseURL: 'http://127.0.0.1:5178', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  try {
+    const page = await context.newPage();
+    const state = await setup(page, cases[2]);
+    await page.goto('/v/fullscreen-quality-check');
+    await expect.poll(() => page.locator('video').evaluate(video => video.currentTime)).toBeGreaterThan(.1);
+    await watchLoads(page);
+    const media = await page.locator('video').elementHandle();
+    await showVideoControls(page);
+    await page.getByRole('button', { name: 'Full screen', exact: true }).click();
+    await openVideoQuality(page);
+    const popup = await page.locator('.vv-settings').boundingBox();
+    expect(popup.x).toBeGreaterThanOrEqual(0); expect(popup.y).toBeGreaterThanOrEqual(0);
+    expect(popup.x + popup.width).toBeLessThanOrEqual(391);
+    expect(popup.y + popup.height).toBeLessThanOrEqual(845);
+    await page.getByRole('combobox', { name: 'Playback quality' }).selectOption('q720');
+    await expect(page.getByRole('combobox', { name: 'Playback quality' })).toHaveValue('q720');
+    await page.getByRole('combobox', { name: 'Playback quality' }).press('Escape');
+    await page.getByRole('button', { name: 'Exit full screen', exact: true }).click();
+    expect(await media.evaluate(video => video === document.querySelector('video'))).toBe(true);
+    expect(await page.evaluate(() => window.playbackLoads)).toEqual([]);
+    expect(state.starts).toHaveLength(1);
+    expect(state.errors).toEqual([]);
+  } finally { await context.close(); }
+});
+
 const cases = [
   { name: 'original landscape', directory: 'original-landscape', mode: 'original', width: 640, height: 360, duration: 8 },
   { name: 'original portrait', directory: 'original-portrait', mode: 'original', width: 360, height: 640, duration: 8 },

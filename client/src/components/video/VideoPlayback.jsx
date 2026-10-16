@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Play, Pause, RefreshCw, RotateCcw, Settings2, Volume2, VolumeX, Maximize, Minimize, WifiOff, Info, X } from 'lucide-react';
+import { Play, Pause, RefreshCw, RotateCcw, Scan, Shrink, Settings2, Volume2, VolumeX, Maximize, Minimize, WifiOff, Info, X } from 'lucide-react';
 import { videoDuration, videoMediaUrl } from '../../services/videoDelivery.js';
 import { qualityLabel } from '../../utils/videoQuality.js';
+import { useVideoFullscreen } from './useVideoFullscreen.js';
 
 // Only the selected film mounts a player or requests a playback session.
 export default function VideoPlayback({ item, requestPlayback, endPlayback, portrait = false, original = true, autoPlay = false, muted = true, onMutedChange, onEnded, onPlaybackStart, pausedForPanel = false }) {
@@ -26,12 +27,14 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
   const [buffering, setBuffering] = useState(false);
   const [ended, setEnded] = useState(false);
   const container = useRef(null); const hideControls = useRef(null); const keyboardFocus = useRef(false);
+  const surface = useRef(null); const fullscreenButton = useRef(null);
   const settingsId = useId();
   const settings = useRef(null); const settingsButton = useRef(null); const panelResume = useRef(false);
   const panelPaused = useRef(pausedForPanel); panelPaused.current = pausedForPanel;
   const [controlsVisible, setControlsVisible] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
+  const { fullscreen, overlay, orientation, toggle: changeFullscreen } = useVideoFullscreen(container, element, fullscreenButton, item, setConnection);
+  const [fillFullscreen, setFillFullscreen] = useState(true);
   const [duration, setDuration] = useState(item.duration || 0);
   const controlState = useRef(null);
   controlState.current = { paused, loading, buffering, error, started, settingsOpen };
@@ -43,11 +46,6 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
     }
   }, []);
   useEffect(() => { showControls(); return () => clearTimeout(hideControls.current); }, [paused, loading, buffering, error, started, settingsOpen, showControls]);
-  useEffect(() => {
-    const changed = () => setFullscreen(document.fullscreenElement === container.current);
-    document.addEventListener('fullscreenchange', changed);
-    return () => document.removeEventListener('fullscreenchange', changed);
-  }, []);
   useEffect(() => {
     if (!settingsOpen) return undefined;
     const dismiss = event => { if (!settings.current?.contains(event.target) && !settingsButton.current?.contains(event.target)) setSettingsOpen(false); };
@@ -363,13 +361,8 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
     showControls();
   };
   const toggleFullscreen = async () => {
-    try {
-      if (document.fullscreenElement === container.current) await document.exitFullscreen();
-      else if (container.current?.requestFullscreen) await container.current.requestFullscreen();
-      else if (element.current?.webkitEnterFullscreen) element.current.webkitEnterFullscreen();
-      else setConnection('Full screen is unavailable in this browser.');
-    } catch { setConnection('Full screen is unavailable in this browser.'); }
-    showControls();
+    await changeFullscreen();
+    if (container.current) showControls();
   };
   const qualityControl = levels.length > 0 && <label className="vv-quality-control"><span>Playback quality</span>
     <select aria-label="Playback quality" value={quality} onChange={event => chooseQuality(event.target.value)}>
@@ -377,13 +370,14 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
       {levels.map(level => <option key={level.index} value={level.name}>{qualityLabel(level.height)}</option>)}
     </select>
   </label>;
-  return <div ref={container} className={'vv-playback' + (portrait ? ' is-vertical' : '') + (!controlsVisible ? ' is-controls-hidden' : '')}
-    role="group" aria-label={item.title + ' player'} tabIndex={0}
+  return <div ref={container} className={'vv-playback' + (portrait ? ' is-vertical' : '') + (!controlsVisible ? ' is-controls-hidden' : '') + (fullscreen && orientation ? ' is-' + orientation + '-fullscreen' : '') + (!fillFullscreen ? ' is-fullscreen-fit' : '')}
+    role={overlay ? 'dialog' : 'group'} aria-modal={overlay || undefined} aria-label={item.title + ' player'} tabIndex={0}
     onMouseMove={showControls}
     onPointerDown={() => { keyboardFocus.current = false; showControls(); }}
     onFocusCapture={event => { keyboardFocus.current = event.target.matches(':focus-visible'); showControls(); }}
     onKeyDown={event => {
       if (event.key === 'Escape' && settingsOpen) { event.preventDefault(); event.stopPropagation(); setSettingsOpen(false); settingsButton.current?.focus(); return; }
+      if (event.key === 'Escape' && overlay) { event.preventDefault(); event.stopPropagation(); void toggleFullscreen(); return; }
       if (event.target !== event.currentTarget && event.target !== element.current) return;
       keyboardFocus.current = true; showControls();
       if ([' ', 'k', 'K'].includes(event.key)) { event.preventDefault(); toggle(); }
@@ -392,6 +386,7 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
       else if (['m', 'M'].includes(event.key) && item.hasAudio !== false) { event.preventDefault(); toggleSound(); }
       else if (['f', 'F'].includes(event.key)) { event.preventDefault(); void toggleFullscreen(); }
     }}>
+    <div ref={surface} className="vv-playback-surface">
     <video ref={element} controls={false} controlsList="nodownload" playsInline preload="auto" muted={muted} poster={videoMediaUrl(item.posterUrl)} aria-label={item.title}
       onClick={() => { if (paused || ended || controlsVisible) toggle(); else showControls(); }}
       onLoadedMetadata={() => { if (Number.isFinite(element.current?.duration)) setDuration(element.current.duration); }}
@@ -429,11 +424,13 @@ export default function VideoPlayback({ item, requestPlayback, endPlayback, port
         <span className="vv-control-time">{videoDuration(position)} <span>/ {videoDuration(duration)}</span></span>
         {item.hasAudio !== false && <button type="button" onClick={toggleSound} aria-label={muted ? 'Unmute video' : 'Mute video'} title={muted ? 'Turn sound on' : 'Turn sound off'}>{muted ? <VolumeX size={19} /> : <Volume2 size={19} />}</button>}
         {levels.length > 0 && <button ref={settingsButton} type="button" aria-label="Playback settings" aria-expanded={settingsOpen} aria-controls={settingsId} onClick={() => { setSettingsOpen(value => !value); showControls(); }}><Settings2 size={18} /></button>}
-        <button type="button" aria-label={fullscreen ? 'Exit full screen' : 'Full screen'} title="Full screen" onClick={() => void toggleFullscreen()}>{fullscreen ? <Minimize size={18} /> : <Maximize size={18} />}</button>
+        {fullscreen && orientation === 'portrait' && <button type="button" aria-label={fillFullscreen ? 'Show whole video' : 'Fill screen'} title={fillFullscreen ? 'Show whole video' : 'Fill screen'} onClick={() => { setFillFullscreen(value => !value); showControls(); }}>{fillFullscreen ? <Shrink size={18} /> : <Scan size={18} />}</button>}
+        <button ref={fullscreenButton} type="button" aria-label={fullscreen ? 'Exit full screen' : 'Full screen'} title={fullscreen ? 'Exit full screen' : 'Full screen'} onClick={() => void toggleFullscreen()}>{fullscreen ? <Minimize size={18} /> : <Maximize size={18} />}</button>
       </div>
     </div>}
     {settingsOpen && createPortal(<div ref={settings} id={settingsId} className="vv-settings" role="group" aria-label="Playback settings" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setSettingsOpen(false); settingsButton.current?.focus(); } }}>
       {qualityControl}<p className="vv-quality-note">Auto adjusts to your connection.</p>
-    </div>, fullscreen ? container.current : container.current?.closest('.vv-page') || container.current)}
+    </div>, fullscreen ? surface.current : container.current?.closest('.vv-page') || surface.current)}
+    </div>
   </div>;
 }

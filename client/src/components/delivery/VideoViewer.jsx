@@ -152,7 +152,10 @@ export default function VideoViewer({ delivery, requestPlayback, endPlayback, do
               </div>
               <footer className="vv-film-caption vv-reel-caption">
                 <div className="vv-film-title"><span aria-label={'Film ' + (index + 1) + ' of ' + orderedItems.length}>{String(index + 1).padStart(2, '0')} / {String(orderedItems.length).padStart(2, '0')}</span><h1>{film.title}</h1></div>
-                <button type="button" className="vv-details-button" onClick={() => setPanel('details')} aria-label="Open film details" aria-haspopup="dialog"><Info size={17} /><span>Details</span></button>
+                <div className="vv-film-actions">
+                  {!demo && film.allowDownload && downloadUrl && <a className="vv-caption-download" href={downloadUrl(film)} download aria-label={'Download ' + film.title}><Download size={17} /><span>Download original</span></a>}
+                  <button type="button" className="vv-details-button" onClick={() => setPanel('details')} aria-label="Open film details" aria-haspopup="dialog"><Info size={17} /><span>Details</span></button>
+                </div>
               </footer>
             </article>;
           })}
