@@ -633,7 +633,8 @@ test('desktop demo and public delivery fit the phone mockup on an 800px screen a
   let frame = page.locator('.v-phone-screen iframe');
   await expect.poll(() => frame.evaluate(element => element.contentWindow.innerWidth)).toBe(420);
   await expect.poll(() => frame.evaluate(element => element.contentWindow.innerHeight)).toBe(800);
-  await expect(page.locator('.v-phone-caption')).toContainText('420 × 800 px');
+  await expect(page.getByText('Mobile client view', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('420 × 800 px', { exact: true })).toHaveCount(0);
   await expect(page.frameLocator('.v-phone-screen iframe').locator('.v-story-shell')).toBeVisible();
   await page.screenshot({ path: '../.visual-review/delivery-v3/demo-phone-desktop.png' });
 

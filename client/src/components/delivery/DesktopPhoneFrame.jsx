@@ -1,5 +1,4 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { BatteryFull, Signal, Wifi } from 'lucide-react';
 import './PhonePresentation.css';
 
 const DESKTOP_QUERY = '(min-width: 1025px)';
@@ -84,12 +83,32 @@ export function DesktopPhoneFrame({ src, title, message, device = true, children
           <span className="v-phone-button is-camera" />
         </div>
         <div className="v-phone-display">
-          <div className="v-phone-status" aria-hidden="true"><strong>9:41</strong><span className="v-phone-island" /><span className="v-phone-status-icons"><Signal size={17} /><Wifi size={18} /><BatteryFull size={25} /></span></div>
+          <div className="v-phone-status" aria-hidden="true">
+            <strong>9:41</strong>
+            <span className="v-phone-island" />
+            <span className="v-phone-status-icons">
+              <svg width="20" height="14" viewBox="0 0 20 14" fill="currentColor" focusable="false">
+                <rect x="1" y="9" width="3" height="4" rx=".8" />
+                <rect x="6" y="6.5" width="3" height="6.5" rx=".8" />
+                <rect x="11" y="3.5" width="3" height="9.5" rx=".8" />
+                <rect x="16" y="1" width="3" height="12" rx=".8" />
+              </svg>
+              <svg width="20" height="14" viewBox="0 0 20 14" fill="currentColor" focusable="false">
+                <path d="M.8 3.5C6-1.1 14-1.1 19.2 3.5L16.9 5.8C13 2.4 7 2.4 3.1 5.8Z" />
+                <path d="M4.5 7.2C7.6 4.5 12.4 4.5 15.5 7.2L13.2 9.5C11.4 8 8.6 8 6.8 9.5Z" />
+                <path d="M8.1 10.9C9.2 10 10.8 10 11.9 10.9L10.4 12.5Q10 12.9 9.6 12.5Z" />
+              </svg>
+              <svg width="28" height="14" viewBox="0 0 28 14" fill="currentColor" focusable="false">
+                <rect x=".5" y="1" width="24" height="12" rx="3.5" fill="none" stroke="currentColor" strokeOpacity=".45" />
+                <rect x="2.5" y="3" width="20" height="8" rx="1.6" />
+                <path d="M26 4.5C28 4.5 28 9.5 26 9.5Z" opacity=".45" />
+              </svg>
+            </span>
+          </div>
           <div className="v-phone-screen">{children || <iframe ref={frame} src={src} title={title} allow="autoplay; clipboard-read; clipboard-write; fullscreen; web-share" onLoad={() => { ready.current = true; if (messageRef.current !== undefined) frame.current?.contentWindow?.postMessage({ type: PREVIEW_DATA, payload: messageRef.current }, window.location.origin); }} />}</div>
           <div className="v-phone-home" aria-hidden="true"><span /></div>
         </div>
       </div>
     </section>
-    <p className="v-phone-caption"><strong>Mobile client view</strong><span>420 × 800 px</span></p>
   </main>;
 }
