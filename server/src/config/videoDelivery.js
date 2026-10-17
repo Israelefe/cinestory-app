@@ -4,20 +4,20 @@ export const VIDEO_DEFAULTS = Object.freeze({
   enabled: false, publicAvailable: false, uploadsEnabled: true, publishingEnabled: true,
   playbackEnabled: true, aiEnabled: false, maxVideos: 10, maxFileBytes: 5_000_000_000,
   maxDurationSeconds: 10_800, storedSeconds: 60_000, monthlyDeliveredMinutes: 5_000,
-  accountTransfers: 2, platformTransfers: 100, platformEncodes: 100, accountViewers: 100,
+  accountTransfers: 10, platformTransfers: 1000, platformEncodes: 100, accountViewers: 100,
   partBytes: 16 * 1024 * 1024, reservationHours: 24, recoveryDays: 30,
   tokenSeconds: 600, usageMaxLagSeconds: 1800, aiMonthlyBudgetUsd: 10,
-  aiPlatformDailyBudgetUsd: 20, workerConcurrency: 4
+  aiPlatformDailyBudgetUsd: 20, workerConcurrency: 100
 });
 
 const bounds = {
   maxVideos: [1, 10], maxFileBytes: [1, 5_000_000_000], maxDurationSeconds: [1, 10_800],
   storedSeconds: [60, 600_000], monthlyDeliveredMinutes: [1, 1_000_000],
-  accountTransfers: [1, 2], platformTransfers: [1, 100], platformEncodes: [1, 100],
+  accountTransfers: [1, 10], platformTransfers: [1, 1000], platformEncodes: [1, 100],
   accountViewers: [1, 1000], partBytes: [5 * 1024 * 1024, 32 * 1024 * 1024],
   reservationHours: [1, 72], recoveryDays: [1, 30], tokenSeconds: [300, 900],
   usageMaxLagSeconds: [300, 7200], aiMonthlyBudgetUsd: [0, 100],
-  aiPlatformDailyBudgetUsd: [0, 1000], workerConcurrency: [1, 4]
+  aiPlatformDailyBudgetUsd: [0, 1000], workerConcurrency: [1, 100]
 };
 
 export function normalizeVideoSettings(value = {}) {

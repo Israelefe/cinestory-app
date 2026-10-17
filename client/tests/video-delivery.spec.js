@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const id = '222222222222222222222222', assetId = '333333333333333333333333';
-const config = { configured: true, available: true, writeAvailable: true, aiAvailable: false, maxVideos: 10, maxFileBytes: 5_000_000_000, accountTransfers: 2 };
+const config = { configured: true, available: true, writeAvailable: true, aiAvailable: false, maxVideos: 10, maxFileBytes: 5_000_000_000, accountTransfers: 10 };
 const user = { id: '111111111111111111111111', name: 'Amara', emailVerified: true, onboardingComplete: true, plan: 'pro' };
 const asset = { originalCompatible: true, hasAdaptive: true, id: assetId, filename: 'ceremony.mp4', bytes: 10000000, duration: 10, width: 960, height: 540, state: 'ready', posterUrl: '/veylo/video/light-study.webp', analysis: { state: 'idle' } };
 const presentation = { title: 'Ada and Emeka', introduction: 'Your finished films are ready.', featuredAssetId: assetId, allowDownloads: false, items: [{ assetId, title: 'The ceremony', description: 'The complete ceremony film.', posterSeconds: 0, allowDownload: null }] };
@@ -418,6 +418,40 @@ test('upload step follows real preparation state and offers failed originals a r
   await page.reload();
   await expect(page.locator('.vc-upload-row')).toContainText('Ready for playback');
   expect(errors).toEqual([]);
+});
+
+test('all ten selected videos transfer together without a two-file or connection-preference queue', async ({ page }) => {
+  const { state, errors } = await mock(page);
+  state.project.assets = []; state.project.video.draft.items = []; state.project.video.draft.featuredAssetId = null;
+  await page.addInitScript(() => Object.defineProperty(navigator, 'connection', { configurable: true, value: { saveData: true, effectiveType: '2g' } }));
+  const uploads = new Map(); const started = new Set();
+  await page.route(`**/api/v1/videos/deliveries/${id}/uploads`, route => {
+    const body = route.request().postDataJSON(); const index = uploads.size;
+    const upload = { id: 'parallel-upload-' + index, assetId: (index + 100).toString(16).padStart(24, '0'), state: 'uploading', parts: [], partCount: 1, partBytes: 1024 };
+    uploads.set(upload.id, upload);
+    state.project.video.draft.items.push({ assetId: upload.assetId, title: body.filename, description: '', posterSeconds: 0, allowDownload: null });
+    state.project.assets.push({ ...asset, id: upload.assetId, filename: body.filename, state: 'uploading', bytes: 1024 });
+    return route.fulfill({ json: { success: true, data: upload } });
+  });
+  await page.route('**/api/v1/videos/uploads/parallel-upload-*', route => {
+    const uploadId = new URL(route.request().url()).pathname.split('/').at(-1);
+    return route.fulfill({ json: { success: true, data: uploads.get(uploadId) } });
+  });
+  await page.route('**/api/v1/videos/uploads/parallel-upload-*/part', route => {
+    const uploadId = new URL(route.request().url()).pathname.split('/').at(-2);
+    return route.fulfill({ json: { success: true, data: { url: 'https://upload-test.example/parts/' + uploadId } } });
+  });
+  await page.route('https://upload-test.example/parts/*', route => {
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'PUT', 'Access-Control-Allow-Headers': '*' } });
+    started.add(new URL(route.request().url()).pathname);
+    // Hold every transfer open: the tenth must start before the first finishes.
+  });
+  await page.goto(`/create?draft=${id}`);
+  await page.locator('.vc-upload input[type=file]').first().setInputFiles(Array.from({ length: 10 }, (_, index) => ({ name: `batch-${index}.mp4`, mimeType: 'video/mp4', buffer: Buffer.alloc(1024, index) })));
+  await expect.poll(() => started.size).toBe(10);
+  await expect(page.getByRole('button', { name: /^Pause batch-\d+\.mp4$/ })).toHaveCount(10);
+  await expect(page.getByRole('button', { name: 'Add details', exact: true })).toBeDisabled();
+  expect(state.project.video.draft.items).toHaveLength(10); expect(errors).toEqual([]);
 });
 
 test('an extra uploading or paused file blocks navigation even when another video is ready', async ({ page }) => {

@@ -6,7 +6,7 @@ import { playbackReady } from '../../utils/videoQuality.js';
 import api, { apiMessage } from '../../services/api.js';
 import { videoBytes, videoFingerprint, persistVideoUpload, savedVideoUploads, forgetVideoUpload, transferVideo } from '../../services/videoDelivery.js';
 
-export default function VideoUploadQueue({ deliveryId, assets = [], selectedCount = 0, initialize, onRefresh, onRemoveAsset, onState, disabled, maxBytes = 5_000_000_000, accountTransfers = 2, statusUnavailable = false }) {
+export default function VideoUploadQueue({ deliveryId, assets = [], selectedCount = 0, initialize, onRefresh, onRemoveAsset, onState, disabled, maxBytes = 5_000_000_000, accountTransfers = 10, statusUnavailable = false }) {
   const [queue, setQueue] = useState([]); const [error, setError] = useState('');
   const [retrying, setRetrying] = useState('');
   const active = useRef(new Map()); const input = useRef(null); const mounted = useRef(true); const initializeRef = useRef(initialize); const refreshRef = useRef(onRefresh);
@@ -30,8 +30,7 @@ export default function VideoUploadQueue({ deliveryId, assets = [], selectedCoun
   }, [deliveryId]);
   useEffect(() => {
     if (disabled) return;
-    const slow = navigator.connection?.saveData || ['slow-2g', '2g'].includes(navigator.connection?.effectiveType);
-    const capacity = slow ? 1 : accountTransfers;
+    const capacity = Math.max(1, Math.min(10, Math.floor(Number(accountTransfers) || 10)));
     const waiting = queue.filter(row => row.status === 'waiting' && row.file && !active.current.has(row.requestKey));
     for (const row of waiting.slice(0, Math.max(0, capacity - active.current.size))) {
       const controller = new AbortController(); active.current.set(row.requestKey, controller);

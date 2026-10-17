@@ -1,5 +1,4 @@
 import mongoose from 'mongoose';
-import { ensureVideoIndexes } from './src/models/video.models.js';
 import { verifyVideoMediaTools, runVideoJob } from './src/services/videoWorker.service.js';
 import { recordWorkerHeartbeat } from './src/services/workerHeartbeat.service.js';
 import { createVideoContainerServer } from './src/services/videoContainer.service.js';
@@ -7,8 +6,12 @@ import { createVideoContainerServer } from './src/services/videoContainer.servic
 try {
   if (!process.env.MONGODB_URI || (process.env.VIDEO_PROCESSING_SECRET || '').length < 32) throw new Error('Missing configuration.');
   mongoose.set('bufferCommands', false);
-  await mongoose.connect(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 15_000 });
-  await ensureVideoIndexes();
+  mongoose.set('autoIndex', false);
+  // Each container runs one media job. Bound its database connections as the
+  // pool scales, rather than allowing every encoder a 100-connection pool.
+  await mongoose.connect(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 15_000, maxPoolSize: 1, minPoolSize: 0, maxIdleTimeMS: 30_000 });
+  // The API creates required indexes before serving processing requests. Each
+  // cold encoder must not repeat those builds during a large batch startup.
   await verifyVideoMediaTools();
   const terminate = () => process.exit(0); // Hard stop kills FFmpeg with the VM; Mongo leases recover jobs.
   const server = createVideoContainerServer({ runJob: runVideoJob, heartbeat: value => recordWorkerHeartbeat('video', value), terminate });

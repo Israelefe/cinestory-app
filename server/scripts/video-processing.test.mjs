@@ -72,7 +72,9 @@ test('runtime credentials use an explicit allowlist and limits fail closed', () 
   assert.equal(values.OTHER_BINDING, undefined);
   assert.equal(values.NODE_ENV, 'production');
   assert.throws(() => containerEnvironment({ ...env(), MONGODB_URI: '' }));
-  for (const value of ['0', '5', '1.5', 'garbage']) assert.throws(() => processingLimits({ VIDEO_MAX_CONTAINERS: value }));
+  for (const value of ['0', '101', '1.5', 'garbage']) assert.throws(() => processingLimits({ VIDEO_MAX_CONTAINERS: value }));
+  assert.equal(processingLimits({ VIDEO_MAX_CONTAINERS: '100' }).slots, 100);
+  assert.equal(processingLimits({ VIDEO_MAX_CONTAINERS: '100' }).dailySeconds, 8640000);
   assert.throws(() => processingLimits({ VIDEO_DAILY_CONTAINER_SECONDS: '0' }));
 });
 
@@ -139,13 +141,13 @@ test('container HTTP control allows one pump and requires a bounded lease', asyn
 });
 
 class Storage {
-  values = new Map(); alarm;
+  values = new Map(); alarm; transactions = Promise.resolve();
   async get(key) { return structuredClone(this.values.get(key)); }
   async put(key, value) { this.values.set(key, structuredClone(value)); }
   async delete(key) { this.values.delete(key); }
   async setAlarm(value) { this.alarm = value; }
   async deleteAlarm() { this.alarm = undefined; }
-  async transaction(fn) { return fn(this); }
+  async transaction(fn) { const result = this.transactions.then(() => fn(this)); this.transactions = result.catch(() => {}); return result; }
 }
 function harness() {
   const environment = env();
@@ -212,6 +214,52 @@ test('new queued work reuses an idle warm encoder without waiting for another co
   assert.equal(slots[0].ctx.container.starts, 1);
   assert.equal(slots[0].ctx.container.runs, 2);
   assert.equal(slots[0].ctx.container.destroys, 0);
+});
+
+test('a hundred queued videos start exactly a hundred workers and the empty pool shrinks again', async t => {
+  const { environment, coordinator, slots } = harness();
+  environment.VIDEO_MAX_CONTAINERS = '100';
+  let pending = 1000; let statusWrites = 0;
+  t.mock.method(console, 'info', () => {});
+  t.mock.method(globalThis, 'fetch', async url => {
+    if (url.endsWith('/status')) statusWrites++;
+    return Response.json({ success: true, data: { pending, concurrency: 100 } });
+  });
+  await coordinator.ctx.storage.put('verifiedAt', Date.now());
+  await coordinator.dispatch();
+  assert.equal(slots.filter(row => row.ctx.container.running).length, 100);
+  assert.equal(slots.reduce((sum, row) => sum + row.ctx.container.starts, 0), 100);
+  assert.equal((await coordinator.snapshot()).reservedSeconds, 9000, 'Every concurrent worker must reserve its own startup credit.');
+  assert.equal(statusWrites, 2, 'The startup burst shares one readiness write after its initial queue read.');
+  await coordinator.dispatch();
+  assert.equal(slots.reduce((sum, row) => sum + row.ctx.container.starts, 0), 100);
+  pending = 0;
+  for (const row of slots) row.ctx.container.busy = false;
+  await coordinator.dispatch();
+  assert.equal(slots.filter(row => row.ctx.container.running).length, 0);
+  await coordinator.dispatch();
+  assert.equal(await coordinator.ctx.storage.get('knownSlots'), 1, 'An empty queue must not keep polling a hundred dormant encoder objects.');
+});
+
+test('demand starts only the workers needed and counts active high-numbered slots correctly', async t => {
+  const { environment, coordinator, slots } = harness();
+  environment.VIDEO_MAX_CONTAINERS = '100';
+  let pending = 3;
+  t.mock.method(console, 'info', () => {});
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ success: true, data: { pending, concurrency: 100 } }));
+  await coordinator.ctx.storage.put('verifiedAt', Date.now());
+  await coordinator.dispatch();
+  assert.equal(slots.filter(row => row.ctx.container.running).length, 3);
+  pending = 0;
+  slots[0].ctx.container.busy = false; slots[1].ctx.container.busy = false;
+  await coordinator.dispatch();
+  assert.equal(slots[2].ctx.container.running, true);
+  await coordinator.dispatch();
+  assert.equal(slots.filter(row => row.ctx.container.running).length, 1);
+  assert.equal(slots.reduce((sum, row) => sum + row.ctx.container.starts, 0), 3, 'An active slot must not start replacements merely because its number is high.');
+  environment.VIDEO_MAX_CONTAINERS = '1';
+  await coordinator.dispatch();
+  assert.equal(slots.filter(row => row.ctx.container.running).length, 0);
 });
 
 test('cold-start probe verifies the encoder before launching jobs, budget exhaustion stops it', async () => {

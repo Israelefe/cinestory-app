@@ -192,7 +192,7 @@ export async function runVideoJob() {
     if (['analyze', 'present'].includes(job.type)) throw Object.assign(new Error('Video writing suggestions have been removed.'), { code: 'VIDEO_AI_UNAVAILABLE' });
     if (job.type !== 'delete' && job.attempts > 6) throw Object.assign(new Error('Video preparation reached its retry limit.'), { code: 'VIDEO_RETRY_LIMIT' });
     globalLease = await acquireVideoLease('media:platform', settings.workerConcurrency, { ownerId: job.userId, resourceId: job._id, ttlSeconds: 120 });
-    accountLease = await acquireVideoLease('media:' + job.userId, Math.min(4, settings.workerConcurrency), { ownerId: job.userId, resourceId: job._id, ttlSeconds: 120 });
+    accountLease = await acquireVideoLease('media:' + job.userId, Math.min(10, settings.workerConcurrency), { ownerId: job.userId, resourceId: job._id, ttlSeconds: 120 });
     assetLease = await acquireVideoLease('media:asset:' + job.assetId, 1, { ownerId: job.userId, resourceId: job._id, ttlSeconds: 120 });
     if (job.type === 'prepare') encodingLease = await acquireVideoLease('encode:platform', settings.platformEncodes, { ownerId: job.userId, resourceId: job._id, ttlSeconds: 120 });
     const asset = await VideoAsset.findById(job.assetId);

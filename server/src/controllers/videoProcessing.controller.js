@@ -25,16 +25,19 @@ export async function videoProcessingStatus(req, res, next) {
     const runnable = { runAfter: { $lte: new Date() }, $or: [{ state: 'queued' }, { state: 'running', leaseUntil: { $lte: new Date() } }] };
     // Cleanup must still run when uploads/AI are paused.
     if (!settings.enabled) runnable.type = 'delete';
-    const [jobs, jobStates, assetStates, failures, nextJob] = await Promise.all([
-      VideoJob.find(runnable).select('userId').limit(100).lean(),
+    const [queuedOwners, activeOwners, jobStates, assetStates, failures, nextJob] = await Promise.all([
+      VideoJob.aggregate([{ $match: runnable }, { $group: { _id: { userId: '$userId', assetId: '$assetId' } } },
+        { $group: { _id: '$_id.userId', count: { $sum: 1 } } }, { $limit: settings.workerConcurrency * 2 }]),
+      VideoJob.aggregate([{ $match: { state: 'running', runAfter: { $lte: new Date() }, leaseUntil: { $gt: new Date() } } },
+        { $group: { _id: '$userId', count: { $sum: 1 } } }]),
       VideoJob.aggregate([{ $group: { _id: '$state', count: { $sum: 1 } } }]),
       VideoAsset.aggregate([{ $match: { state: { $ne: 'deleted' } } }, { $group: { _id: '$state', count: { $sum: 1 } } }]),
       VideoJob.find({ errorCode: { $exists: true, $ne: '' } }).sort({ updatedAt: -1 }).limit(5).select('type state errorCode attempts runAfter updatedAt').lean(),
       VideoJob.findOne({ state: 'queued' }).sort({ runAfter: 1 }).select('runAfter').lean()
     ]);
-    const owners = new Map();
-    for (const job of jobs) owners.set(String(job.userId), (owners.get(String(job.userId)) || 0) + 1);
-    const pending = [...owners.values()].reduce((sum, count) => sum + Math.min(count, settings.workerConcurrency), 0);
+    const active = new Map(activeOwners.map(row => [String(row._id), row.count]));
+    const accountCapacity = Math.min(10, settings.workerConcurrency);
+    const pending = Math.min(settings.workerConcurrency, queuedOwners.reduce((sum, row) => sum + Math.min(row.count, Math.max(0, accountCapacity - (active.get(String(row._id)) || 0))), 0));
     // Only the authenticated coordinator receives these operational summaries.
     // Never include account IDs, filenames, object keys or raw provider errors.
     const diagnostics = {

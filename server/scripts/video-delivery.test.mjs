@@ -60,6 +60,12 @@ async function delivery(film) { return Delivery.create({ userId: owner._id, kind
 test('limits stay within the approved upload ceiling and availability fails closed', () => {
   assert.throws(() => normalizeVideoSettings({ maxFileBytes: 5_000_000_001 }));
   assert.throws(() => normalizeVideoSettings({ maxVideos: 11 }));
+  assert.equal(settings.workerConcurrency, 100);
+  assert.equal(settings.accountTransfers, 10);
+  assert.equal(settings.platformTransfers, 1000);
+  assert.throws(() => normalizeVideoSettings({ workerConcurrency: 101 }));
+  assert.throws(() => normalizeVideoSettings({ accountTransfers: 11 }));
+  assert.throws(() => normalizeVideoSettings({ platformTransfers: 1001 }));
   assert.equal(publicVideoSettings({ ...settings, publicAvailable: true }).available, false);
   assert.equal(publicVideoSettings(settings).aiAvailable, false);
   assert.equal(publicVideoSettings(settings).maxFileBytes, 5_000_000_000);
@@ -116,6 +122,18 @@ test('fixed capacity leases reject overflow and can be released only by their re
   await releaseVideoLease(accepted[0].value, String(accepted[0].index));
   assert.ok(await acquireVideoLease('test-transfer', 2, { ownerId: owner._id, resourceId: 'new' }));
 });
+test('one hundred photographers can reserve separate processing slots without exceeding the platform cap', async () => {
+  const scope = 'hundred-encoders:' + crypto.randomUUID();
+  const owners = Array.from({ length: 101 }, () => new mongoose.Types.ObjectId());
+  const results = await Promise.allSettled(owners.map((id, index) => acquireVideoLease(scope, settings.workerConcurrency, { ownerId: id, resourceId: String(index), ttlSeconds: 120 })));
+  const accepted = results.flatMap((row, index) => row.status === 'fulfilled' ? [{ lease: row.value, resource: String(index) }] : []);
+  assert.equal(accepted.length, 100);
+  assert.equal(new Set(accepted.map(row => row.lease)).size, 100);
+  const rejected = results.filter(row => row.status === 'rejected');
+  assert.equal(rejected.length, 1); assert.equal(rejected[0].reason.code, 'VIDEO_CAPACITY_BUSY');
+  await Promise.all(accepted.map(row => releaseVideoLease(row.lease, row.resource)));
+});
+
 test('ownership and active entitlement checks reject another owner and Free accounts', async () => {
   const film = await asset();
   await assert.rejects(ownedVideoAsset(film._id, outsider._id), { status: 404 });
@@ -625,19 +643,46 @@ test('Cloudflare readiness accepts sleeping encoders only with a fresh verified 
   }
 });
 
-test('a six-video batch can wake four workers for the same photographer without exposing account details', async () => {
-  const waiting = await VideoJob.find({ state: 'queued' }).select('_id runAfter').lean();
+test('a six-video batch can wake six workers for the same photographer without exposing account details', async () => {
+  const waiting = await VideoJob.find({ state: { $in: ['queued', 'running'] } }).select('_id runAfter').lean();
   await VideoJob.updateMany({ _id: { $in: waiting.map(row => row._id) } }, { $set: { runAfter: new Date(Date.now() + 86400_000) } });
   const keys = Array.from({ length: 6 }, (_, index) => 'parallel-batch-' + index + ':' + crypto.randomUUID());
   try {
     await VideoJob.insertMany(keys.map(key => ({ key, userId: owner._id, assetId: new mongoose.Types.ObjectId(), type: 'prepare', runAfter: new Date(0) })));
     const res = response();
     await videoProcessingStatus({ body: { verifiedAt: Date.now(), remainingSeconds: 1000 } }, res, error => { throw error; });
-    assert.equal(res.body.data.pending, 4);
-    assert.equal(res.body.data.concurrency, 4);
+    assert.equal(res.body.data.pending, 6);
+    assert.equal(res.body.data.concurrency, 100);
     assert.doesNotMatch(JSON.stringify(res.body.data), /userId|assetId|filename|objectKey/);
   } finally {
     await VideoJob.deleteMany({ key: { $in: keys } });
+    for (const row of waiting) await VideoJob.updateOne({ _id: row._id }, { $set: { runAfter: row.runAfter } });
+  }
+});
+
+test('a hundred photographers remain visible behind a large queue and occupied account slots do not wake extra workers', async () => {
+  const waiting = await VideoJob.find({ state: { $in: ['queued', 'running'] } }).select('_id runAfter').lean();
+  await VideoJob.updateMany({ _id: { $in: waiting.map(row => row._id) } }, { $set: { runAfter: new Date(Date.now() + 86400_000) } });
+  const prefix = 'hundred-photographers:' + crypto.randomUUID() + ':';
+  const rows = Array.from({ length: 150 }, (_, index) => ({ key: prefix + index, userId: owner._id, assetId: new mongoose.Types.ObjectId(), type: 'prepare', runAfter: new Date(0) }));
+  for (let index = 0; index < 100; index++) rows.push({ key: prefix + 'other-' + index, userId: new mongoose.Types.ObjectId(), assetId: new mongoose.Types.ObjectId(), type: 'prepare', runAfter: new Date(0) });
+  try {
+    await VideoJob.insertMany(rows);
+    const report = async () => { const res = response(); await videoProcessingStatus({ body: { verifiedAt: Date.now(), remainingSeconds: 8640000 } }, res, error => { throw error; }); return res.body.data; };
+    assert.equal((await report()).pending, 100);
+    await VideoJob.updateMany({ key: { $in: rows.slice(0, 10).map(row => row.key) } }, { $set: { state: 'running', leaseUntil: new Date(Date.now() + 120000) } });
+    assert.equal((await report()).pending, 100, 'A busy account must not hide other photographers behind the first hundred jobs.');
+    await VideoJob.deleteMany({ key: { $in: rows.slice(150).map(row => row.key) } });
+    assert.equal((await report()).pending, 0, 'A full account has no spare slots even when it has many queued jobs.');
+    await VideoJob.deleteMany({ key: { $in: rows.slice(0, 10).map(row => row.key) } });
+    assert.equal((await report()).pending, 10);
+    const duplicate = { key: prefix + 'duplicate', userId: owner._id, assetId: rows[10].assetId, type: 'poster', runAfter: new Date(0) };
+    await VideoJob.deleteMany({ key: { $in: rows.slice(11, 150).map(row => row.key) } });
+    await VideoJob.create(duplicate);
+    const result = await report(); assert.equal(result.pending, 1, 'Two jobs for one asset need only one worker.');
+    assert.doesNotMatch(JSON.stringify(result), /userId|assetId|filename|objectKey/);
+  } finally {
+    await VideoJob.deleteMany({ key: { $regex: '^' + prefix } });
     for (const row of waiting) await VideoJob.updateOne({ _id: row._id }, { $set: { runAfter: row.runAfter } });
   }
 });
