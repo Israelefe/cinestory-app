@@ -9,14 +9,15 @@ const image = readFileSync(new URL('../public/veylo/web/demo-lora-1-480.webp', i
 const emptyDraft = () => ({ selectedAssetIds: [], reviewedAssetIds: [], cursor: 0, version: 0 });
 async function fixture(page, overrides = {}) {
   const photos = Array.from({ length: 65 }, (_, index) => photo(index));
-  const state = { photos, drafts: [], submissions: [], creates: [], sourceAssets: photos.slice(0, 4), selectionDraft: emptyDraft(), status: 'active', rule: { mode: 'exactly', count: 2 }, returned: [], deletedFolders: [], deleteBatches: [], ...overrides };
+  const state = { photos, drafts: [], submissions: [], creates: [], sourceAssets: photos.slice(0, 4), selectionDraft: emptyDraft(), status: 'active', rule: { mode: 'exactly', count: 2 }, returned: [], deletedFolders: [], deleteBatches: [], account: owner, access: 'read-write', requests: [], ...overrides };
   await page.addInitScript(() => localStorage.setItem('veylo_cookie_preferences_v1', JSON.stringify({ version: 4, necessary: true, serviceAnalytics: true })));
   await page.route('**/api/v1/**', async route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname, method = request.method();
+    state.requests.push({ path, method });
     const json = (data, extra = {}) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data, ...extra }) });
     const fail = (message, status = 400) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ success: false, message }) });
-    if (path.endsWith('/auth/me')) return json(null, { user: owner });
-    if (path.endsWith('/billing/status')) return json({ plan: 'pro', features: { storageMode: 'read-write' }, limits: { personalStorageBytes: 100e9, photosPerDelivery: 500 }, usage: {} });
+    if (path.endsWith('/auth/me')) return json(null, { user: state.account });
+    if (path.endsWith('/billing/status')) return json({ plan: state.access === 'read-write' ? 'pro' : 'free', features: { storageMode: state.access }, limits: { personalStorageBytes: 100e9, photosPerDelivery: 500 }, usage: {} });
     if (/\/public\/.+\/(media\/|returns\/.*\/media)/.test(path)) return route.fulfill({ contentType: 'image/webp', body: image });
     if (path.endsWith('/uploads/sign')) return json({ objectKey: 'veylo/users/' + owner._id + '/library/' + crypto.randomUUID(), uploadToken: 'fixture-upload-token-for-photo', uploadUrl: 'https://fixture.r2.cloudflarestorage.com/bucket/photo', uploadHeaders: {}, editorGrant: 'fixture-scoped-editor-grant' });
     if (path.endsWith('/uploads/confirm')) {
@@ -45,7 +46,7 @@ async function fixture(page, overrides = {}) {
     if (path.endsWith('/storage') && method === 'GET') {
       let filtered = state.photos.filter(photo => (!url.searchParams.get('folder') || photo.folder === url.searchParams.get('folder')) && (!url.searchParams.get('search') || photo.originalFilename.includes(url.searchParams.get('search'))));
       const offset = (Number(url.searchParams.get('page') || 1) - 1) * 60;
-      return json(filtered.slice(offset, offset + 60), { total: filtered.length, libraryTotal: state.photos.length, access: 'read-write', shoots: [...new Set(state.photos.map(photo => photo.folder))].map(name => ({ name, count: state.photos.filter(photo => photo.folder === name).length })), usage: { usedBytes: state.photos.length * 2000000, limitBytes: 100e9 }, hasMore: filtered.length > offset + 60 });
+      return json(filtered.slice(offset, offset + 60), { total: filtered.length, libraryTotal: state.photos.length, access: state.access, shoots: [...new Set(state.photos.map(photo => photo.folder))].map(name => ({ name, count: state.photos.filter(photo => photo.folder === name).length })), usage: { usedBytes: state.photos.length * 2000000, limitBytes: 100e9 }, hasMore: filtered.length > offset + 60 });
     }
     if (path.endsWith('/collaborations') && method === 'POST') { const body = request.postDataJSON(); state.creates.push(body); return json({ ...body, _id: jobId, publicId: 'shared-link', expiresAt: new Date(Date.now() + 86400000).toISOString() }); }
     if (path.endsWith('/collaborations') && method === 'GET') return json([], { hasMore: false });
@@ -68,6 +69,126 @@ test('decision undo restores count and deck position; matching never guesses dup
   const files = [{ name: 'portrait-1-edit.jpg' }, { name: 'duplicate-edit.jpg' }];
   const matches = matchEditorReturns(files, [{ id: 'one', originalFilename: 'portrait-1.CR2' }, { id: 'two', originalFilename: 'duplicate.CR2' }, { id: 'three', originalFilename: 'duplicate.JPG' }]);
   expect(matches[0].sourceAssetId).toBe('one'); expect(matches[1].sourceAssetId).toBe('');
+});
+
+const ownerWorkflows = [
+  { path: '/pre-selection', title: 'Photo Pre-selection is included with Pro.', action: 'New pre-selection', setupHeading: 'What should your client choose from?', routes: ['', '/new', '/' + jobId + '/setup', '/' + jobId + '/revise'] },
+  { path: '/editor-links', title: 'Editor Links are included with Pro.', action: 'New Editor Link', setupHeading: 'Choose the originals for this job.', routes: ['', '/new', '/' + jobId + '/setup'] }
+];
+
+for (const access of ['unavailable', 'read-only']) for (const workflow of ownerWorkflows) test(`${access} accounts cannot start ${workflow.path}, including direct setup URLs`, async ({ page }) => {
+  // The retained account deliberately has a stale Pro label: server access wins.
+  const state = await fixture(page, { access, account: { ...owner, plan: access === 'unavailable' ? 'free' : 'pro' } });
+  for (const route of workflow.routes) {
+    await page.goto(workflow.path + route, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: workflow.title, exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: /^(Upgrade to Pro|Renew Pro)/ })).toHaveAttribute('href', '/billing');
+    await expect(page.getByRole('link', { name: workflow.action, exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Upload photographs', exact: true })).toHaveCount(0);
+    await expect(page.locator('.lib-setup')).toHaveCount(0);
+  }
+  expect(state.requests.filter(request => request.path === '/api/v1/storage' || request.path.includes('/uploads/') || request.path.includes('/photos/') || request.path.includes('/collaborations/' + jobId))).toEqual([]);
+  expect(state.creates).toEqual([]);
+  expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('veylo_library_setup:')))).toEqual([]);
+});
+
+for (const workflow of ownerWorkflows) test(`${workflow.path} checks access again before entering setup`, async ({ page }) => {
+  const state = await fixture(page);
+  await page.goto(workflow.path, { waitUntil: 'domcontentloaded' });
+  const create = page.locator('.lib-header-action').getByRole('link', { name: workflow.action, exact: true });
+  await expect(create).toBeVisible();
+  state.access = 'read-only';
+  await create.click();
+  await expect(page.getByRole('heading', { name: workflow.title, exact: true })).toBeVisible();
+  await expect(page.locator('.lib-setup')).toHaveCount(0);
+  expect(state.requests.filter(request => request.path.endsWith('/billing/status'))).toHaveLength(2);
+  expect(state.requests.filter(request => request.path === '/api/v1/storage')).toEqual([]);
+});
+
+for (const workflow of ownerWorkflows) test(`${workflow.path} waits for access and can retry a failed check`, async ({ page }) => {
+  const state = await fixture(page);
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  const failingStatus = async route => { await pending; await route.fulfill({ status: 503, json: { success: false, message: 'Please retry checking your plan.' } }); };
+  await page.route('**/api/v1/billing/status', failingStatus);
+  await page.goto(workflow.path + '/new', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('status').filter({ hasText: 'Checking your Pro access' })).toBeVisible();
+  await expect(page.locator('.lib-setup')).toHaveCount(0);
+  release();
+  await expect(page.getByRole('alert')).toContainText('Please retry checking your plan.');
+  await expect(page.locator('.lib-setup')).toHaveCount(0);
+  expect(state.requests.filter(request => request.path === '/api/v1/storage')).toEqual([]);
+  await page.unroute('**/api/v1/billing/status', failingStatus);
+  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(page.getByRole('heading', { name: workflow.setupHeading, exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Upload photographs', exact: true })).toBeEnabled();
+});
+
+test('an incomplete access response keeps setup closed', async ({ page }) => {
+  await fixture(page);
+  await page.route('**/api/v1/billing/status', route => route.fulfill({ json: { success: true, data: { plan: 'pro' } } }));
+  await page.goto('/pre-selection/new', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('alert')).toContainText('Your plan could not be checked.');
+  await expect(page.locator('.lib-setup')).toHaveCount(0);
+});
+
+for (const width of [320, 768, 834, 1440]) test(`Pro workflow prompts fit ${width}px and keep both workspaces reachable`, async ({ page }) => {
+  await fixture(page, { access: 'unavailable', account: { ...owner, plan: 'free' } });
+  await page.setViewportSize({ width, height: 900 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/pre-selection', { waitUntil: 'domcontentloaded' });
+  for (const workflow of ownerWorkflows) {
+    if (workflow.path === '/editor-links') await page.getByRole('navigation', { name: 'Photo workspaces' }).getByRole('link', { name: 'Editor Links', exact: true }).click();
+    await expect(page.getByRole('heading', { name: workflow.title, exact: true })).toBeVisible();
+    const upgrade = page.getByRole('link', { name: /^Upgrade to Pro/ });
+    await expect(upgrade).toBeVisible();
+    const bounds = await upgrade.boundingBox();
+    expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+    expect(await page.locator('.lib-locked .v-pro-price').evaluate(element => {
+      const range = document.createRange(); range.selectNodeContents(element);
+      return new Set([...range.getClientRects()].map(rect => Math.round(rect.y))).size;
+    })).toBe(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect(page.locator('.lib-locked')).toHaveCSS('opacity', '1');
+    if ([320, 834].includes(width)) {
+      mkdirSync('../.visual-review/pro-workflow-access', { recursive: true });
+      await page.screenshot({ path: `../.visual-review/pro-workflow-access/${workflow.path.slice(1)}-${width}.png`, fullPage: true });
+    }
+  }
+});
+
+test('expired Pro keeps retained photos and existing links available without creation controls', async ({ page }) => {
+  await fixture(page, { access: 'read-only' });
+  await page.goto('/library', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Select portrait-1.jpg', exact: true }).click();
+  const actions = page.getByLabel('Selected photograph actions');
+  await expect(actions.getByRole('button', { name: 'Download', exact: true })).toBeEnabled();
+  await expect(actions.getByRole('button', { name: 'Delete selected photographs', exact: true })).toBeEnabled();
+  await expect(actions.getByRole('button', { name: 'Pre-selection', exact: true })).toHaveCount(0);
+  await expect(actions.getByRole('button', { name: 'Editor Link', exact: true })).toHaveCount(0);
+  await page.route('**/api/v1/storage/collaborations?*', route => route.fulfill({ json: { success: true, data: [{ _id: jobId, title: 'Retained selection', kind: 'preselection', status: 'submitted', publicId: 'old-selection', expiresAt: new Date(Date.now() + 86400000).toISOString(), assetIds: [photo(0).id], selectedAssetIds: [photo(0).id] }], hasMore: false } }));
+  await page.goto('/pre-selection', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('heading', { name: ownerWorkflows[0].title, exact: true })).toBeVisible();
+  await page.getByRole('link').filter({ has: page.getByRole('heading', { name: 'Retained selection', exact: true }) }).click();
+  await expect(page.getByRole('button', { name: 'Download originals', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Create Editor Link', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Reopen selection', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Change photographs or allowance', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Email', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Delete pre-selection', exact: true })).toBeEnabled();
+});
+
+test('expired Pro can compare returned edits but cannot start a review or share an inactive link', async ({ page }) => {
+  const state = await fixture(page, { access: 'read-only' }), returned = photo(10);
+  await page.route('**/api/v1/storage/collaborations/' + jobId, route => route.fulfill({ json: { success: true, data: { _id: jobId, kind: 'editor-handoff', publicId: 'retained-editor', title: 'Retained editor job', status: 'active', expiresAt: new Date(Date.now() + 86400000).toISOString(), assets: [state.sourceAssets[0]], returned: [{ assetId: returned.id, sourceAssetId: state.sourceAssets[0].id, reviewStatus: 'pending', uploadedAt: new Date().toISOString(), photo: returned }], approvedAssetIds: [] } } }));
+  await page.goto('/editor-links/' + jobId, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('heading', { name: 'Retained editor job', exact: true })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Version for portrait-1.jpg', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Accept & save to Library', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Request changes', exact: true })).toBeDisabled();
+  await expect(page.getByRole('textbox', { name: 'Review note', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Email', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Delete Editor Link', exact: true })).toBeEnabled();
 });
 
 for (const width of [320, 768, 834, 1440]) test(`folder deletion and selecting every photo fit ${width}px`, async ({ page }) => {
