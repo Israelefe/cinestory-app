@@ -2,6 +2,12 @@
 
 This is a **new** Worker, `veylo-video-processing`. It manages Linux FFmpeg containers on Cloudflare. The existing `veylo-delivery-images` Worker still serves private images, legacy original video playback and automatic HLS qualities. Photographers upload from their own devices; processing runs on Cloudflare after upload, independently of your computer.
 
+Video delivery admission and encoding capacity are separate. `preparationConcurrency` defaults to 100 deliveries; one delivery occupies one preparation slot even when it contains ten videos. `workerConcurrency`, `platformEncodes`, and the Cloudflare container pool remain at 100 individual file processors. The scheduler gives photographers and deliveries a turn before assigning spare encoders. A single delivery can use up to ten idle processors without occupying extra delivery slots.
+
+Admission and file claims use one MongoDB transaction through `VideoPreparationSchedule`, shared by all encoder instances. Expired file leases recover unfinished work; completed files retain their saved outputs. Existing jobs acquire their owned delivery association in batches without resetting attempts or progress. Delayed retries release idle delivery slots until they can run again, and cleanup does not consume delivery preparation slots. Admin shows deliveries preparing and waiting separately from videos processing and waiting. Creation and publishing still require every included video's playback qualities and cover to be ready.
+
+`npm run verify:video` in `server/` includes a real temporary MongoDB check with 100 deliveries and 1,000 file jobs. It verifies scheduling and recovery; it is not a production encoding speed or billing benchmark. These changes do not raise container limits or change provider plans.
+
 ## Deploy with Cloudflare Workers Builds
 
 Cloudflare can build the container directly from this GitHub repository. Local Docker and WSL setup are unnecessary for this deployment path.

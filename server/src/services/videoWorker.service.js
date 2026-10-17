@@ -9,6 +9,7 @@ import { recordWorkerHeartbeat } from './workerHeartbeat.service.js';
 import { sendOnce } from './email.service.js';
 import { videoContext, queueVideoJob, queueAdaptiveVideo, queueOriginalPlayback, reconcileVideoUsage } from './videoDelivery.service.js';
 import { acquireVideoLease, releaseVideoLease } from './videoLease.service.js';
+import { claimVideoPreparationJob } from './videoPreparation.service.js';
 import { reserveVideoDuration, commitVideoDuration, releaseVideoQuota, reconcileVideoQuota, videoTransaction } from './videoQuota.service.js';
 import { abortR2Multipart, deleteR2Object, deleteR2Prefix, putR2Object } from './r2.service.js';
 import { deleteLegacyStreamVideo } from './videoProvider.service.js';
@@ -181,11 +182,9 @@ export async function deleteVideoAccountRecords(userId, options = {}) {
 }
 export async function runVideoJob() {
   const settings = (await getRuntimeConfig()).videoDelivery;
-  const token = crypto.randomUUID();
-  const runnable = { runAfter: { $lte: new Date() }, $or: [{ state: 'queued' }, { state: 'running', leaseUntil: { $lte: new Date() } }] };
-  if (!settings.enabled) runnable.type = 'delete';
-  const job = await VideoJob.findOneAndUpdate(runnable, { $set: { state: 'running', leaseToken: token, leaseUntil: new Date(Date.now() + 120_000) }, $inc: { attempts: 1 } }, { new: true, sort: { priority: -1, runAfter: 1 } });
+  const job = await claimVideoPreparationJob(settings);
   if (!job) return false;
+  const token = job.leaseToken;
   let globalLease; let accountLease; let encodingLease; let assetLease;
   const renew = setInterval(() => { void Promise.all([VideoJob.updateOne({ _id: job._id, leaseToken: token }, { $set: { leaseUntil: new Date(Date.now() + 120_000) } }), VideoLease.updateMany({ _id: { $in: [globalLease, accountLease, encodingLease, assetLease].filter(Boolean) }, resourceId: String(job._id) }, { $set: { expiresAt: new Date(Date.now() + 120_000) } })]).catch(() => {}); }, 30_000); renew.unref?.();
   try {
@@ -195,7 +194,7 @@ export async function runVideoJob() {
     accountLease = await acquireVideoLease('media:' + job.userId, Math.min(10, settings.workerConcurrency), { ownerId: job.userId, resourceId: job._id, ttlSeconds: 120 });
     assetLease = await acquireVideoLease('media:asset:' + job.assetId, 1, { ownerId: job.userId, resourceId: job._id, ttlSeconds: 120 });
     if (job.type === 'prepare') encodingLease = await acquireVideoLease('encode:platform', settings.platformEncodes, { ownerId: job.userId, resourceId: job._id, ttlSeconds: 120 });
-    const asset = await VideoAsset.findById(job.assetId);
+    const asset = await VideoAsset.findOne({ _id: job.assetId, userId: job.userId });
     if (asset && asset.state !== 'deleted') {
       if (job.type === 'delete') await deleteVideoOriginal(asset);
       else if (!['deleting', 'deleted'].includes(asset.state)) {

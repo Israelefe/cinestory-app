@@ -50,6 +50,8 @@ const quotaSchema = new Schema({
 const jobSchema = new Schema({
   key: { type: String, unique: true, required: true }, userId: owner,
   assetId: { type: Schema.Types.ObjectId, required: true },
+  deliveryId: { type: Schema.Types.ObjectId, ref: 'Delivery' },
+  preparationId: { type: String, maxlength: 80 },
   type: { type: String, enum: ['prepare', 'analyze', 'present', 'poster', 'delete'], required: true },
   state: { type: String, enum: ['queued', 'running', 'done', 'failed'], default: 'queued' },
   attempts: { type: Number, default: 0 }, priority: { type: Number, default: 0 }, leaseUntil: Date, leaseToken: String,
@@ -57,6 +59,16 @@ const jobSchema = new Schema({
 }, { timestamps: true });
 jobSchema.index({ state: 1, runAfter: 1, leaseUntil: 1 });
 jobSchema.index({ state: 1, priority: -1, runAfter: 1 });
+jobSchema.index({ preparationId: 1, state: 1, runAfter: 1 });
+
+// One shared, bounded admission list. File claims update this document in the
+// same transaction, so separate encoder VMs cannot over-admit deliveries.
+const preparationScheduleSchema = new Schema({
+  _id: String, turn: { type: Number, default: 0 },
+  deliveries: [{ _id: false, key: String, userId: Schema.Types.ObjectId,
+    deliveryId: Schema.Types.ObjectId, lastServed: { type: Number, default: 0 } }]
+}, { timestamps: true });
+preparationScheduleSchema.index({ updatedAt: 1 });
 
 const leaseSchema = new Schema({ _id: String, ownerId: String, resourceId: String, expiresAt: { type: Date, index: true } }, { timestamps: true });
 const usageSchema = new Schema({
@@ -77,6 +89,7 @@ export const VideoAsset = model('VideoAsset', assetSchema);
 export const VideoUpload = model('VideoUpload', uploadSchema);
 export const VideoQuota = model('VideoQuota', quotaSchema);
 export const VideoJob = model('VideoJob', jobSchema);
+export const VideoPreparationSchedule = model('VideoPreparationSchedule', preparationScheduleSchema);
 export const VideoLease = model('VideoLease', leaseSchema);
 export const VideoUsage = model('VideoUsage', usageSchema);
 export const VideoPlayback = model('VideoPlayback', playbackSchema);
@@ -87,5 +100,5 @@ export const VideoAnalysisPart = model('VideoAnalysisPart', new Schema({
 }, { timestamps: true }));
 
 export async function ensureVideoIndexes() {
-  for (const item of [VideoAsset, VideoUpload, VideoQuota, VideoJob, VideoLease, VideoUsage, VideoPlayback, VideoAIUsage, VideoAnalysisPart]) await item.createIndexes();
+  for (const item of [VideoAsset, VideoUpload, VideoQuota, VideoJob, VideoPreparationSchedule, VideoLease, VideoUsage, VideoPlayback, VideoAIUsage, VideoAnalysisPart]) await item.createIndexes();
 }

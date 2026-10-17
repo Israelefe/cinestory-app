@@ -3,6 +3,7 @@ import WorkerHeartbeat from '../models/WorkerHeartbeat.js';
 import { getRuntimeConfig } from '../services/runtimeConfig.service.js';
 import { videoInfrastructure, publicVideoSettings } from '../config/videoDelivery.js';
 import { cloudflareVideoProcessing } from '../services/videoProcessingAuth.js';
+import { videoPreparationSummary } from '../services/videoPreparation.service.js';
 
 export async function videoOperations(req, res) {
   try {
@@ -13,6 +14,7 @@ export async function videoOperations(req, res) {
       VideoUsage.aggregate([{ $match: { periodEnd: { $gt: new Date() } } }, { $group: { _id: null, deliveredMinutes: { $sum: '$deliveredMinutes' }, oldestReconciliation: { $min: '$reconciledAt' } } }]),
       VideoAIUsage.findOne({ _id: 'platform:' + new Date().toISOString().slice(0, 10) }).lean(), WorkerHeartbeat.findOne({ workerName: cloudflareVideoProcessing() ? 'video-coordinator' : 'video' }).sort({ heartbeatAt: -1 }).select('status heartbeatAt stage details').lean()
     ]);
-    res.set('Cache-Control', 'no-store').json({ success: true, data: { settings: runtime.videoDelivery, infrastructure: videoInfrastructure(), public: publicVideoSettings(runtime.videoDelivery), assets, uploads, jobs, activeTransfers, activeEncodes, activeViewers, usage: usage[0] || { deliveredMinutes: 0 }, aiBudgetChargedUsd: budgets?.spentUsd || 0, worker, qualificationConfirmed: process.env.VIDEO_DELIVERY_QUALIFIED === 'true' } });
+    const preparations = await videoPreparationSummary(runtime.videoDelivery);
+    res.set('Cache-Control', 'no-store').json({ success: true, data: { settings: runtime.videoDelivery, infrastructure: videoInfrastructure(), public: publicVideoSettings(runtime.videoDelivery), assets, uploads, jobs, preparations, activeTransfers, activeEncodes, activeViewers, usage: usage[0] || { deliveredMinutes: 0 }, aiBudgetChargedUsd: budgets?.spentUsd || 0, worker, qualificationConfirmed: process.env.VIDEO_DELIVERY_QUALIFIED === 'true' } });
   } catch { res.status(500).json({ success: false, message: 'Video operations could not be loaded.' }); }
 }

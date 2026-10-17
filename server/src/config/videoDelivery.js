@@ -7,7 +7,7 @@ export const VIDEO_DEFAULTS = Object.freeze({
   accountTransfers: 10, platformTransfers: 1000, platformEncodes: 100, accountViewers: 100,
   partBytes: 16 * 1024 * 1024, reservationHours: 24, recoveryDays: 30,
   tokenSeconds: 600, usageMaxLagSeconds: 1800, aiMonthlyBudgetUsd: 10,
-  aiPlatformDailyBudgetUsd: 20, workerConcurrency: 100
+  aiPlatformDailyBudgetUsd: 20, workerConcurrency: 100, preparationConcurrency: 100
 });
 
 const bounds = {
@@ -17,7 +17,7 @@ const bounds = {
   accountViewers: [1, 1000], partBytes: [5 * 1024 * 1024, 32 * 1024 * 1024],
   reservationHours: [1, 72], recoveryDays: [1, 30], tokenSeconds: [300, 900],
   usageMaxLagSeconds: [300, 7200], aiMonthlyBudgetUsd: [0, 100],
-  aiPlatformDailyBudgetUsd: [0, 1000], workerConcurrency: [1, 100]
+  aiPlatformDailyBudgetUsd: [0, 1000], workerConcurrency: [1, 100], preparationConcurrency: [1, 100]
 };
 
 export function normalizeVideoSettings(value = {}) {

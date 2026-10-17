@@ -10,6 +10,7 @@ import { getRuntimeConfig } from './runtimeConfig.service.js';
 import { publicVideoSettings } from '../config/videoDelivery.js';
 import { signedHlsMedia, verifyHlsToken, hlsFile, VIDEO_MEDIA_SECONDS } from './videoHls.service.js';
 import { acquireVideoLease, releaseVideoLease } from './videoLease.service.js';
+import { videoPreparationIdentity } from './videoPreparation.service.js';
 import { videoReadinessFilter, wakeVideoProcessing } from './videoProcessingAuth.js';
 import { originalVideoCompatible, originalPlaybackFile, originalVideoRange } from './videoOriginal.service.js';
 import { VIDEO_QUALITY_VERSION, AUTOMATIC_QUALITY_MIN_VERSION, encodingVariants, playbackQualities } from './videoQuality.service.js';
@@ -226,7 +227,8 @@ export async function queueAdaptiveVideo(asset) {
 export async function queueVideoJob(asset, type, options = {}, keySuffix = '') {
   const key = `${type}:${asset._id}:${keySuffix || 'v1'}`;
   const priority = type === 'delete' ? 80 : type === 'poster' ? 60 : type === 'prepare' && !options.adaptive && !options.originalPlayback ? 60 : 20;
-  const job = await VideoJob.findOneAndUpdate({ key }, { $setOnInsert: { userId: asset.userId, assetId: asset._id, type, options, priority, runAfter: new Date(), state: 'queued' } }, { new: true, upsert: true });
+  const identity = type === 'delete' ? {} : await videoPreparationIdentity(asset);
+  const job = await VideoJob.findOneAndUpdate({ key }, { ...(type === 'delete' ? {} : { $set: identity }), $setOnInsert: { userId: asset.userId, assetId: asset._id, type, options, priority, runAfter: new Date(), state: 'queued' } }, { new: true, upsert: true });
   if (job.state === 'queued') wakeVideoProcessing();
   return job;
 }

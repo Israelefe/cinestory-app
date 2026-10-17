@@ -674,7 +674,7 @@ test('100 photographers remain visible behind a large queue and occupied account
     const report = async () => { const res = response(); await videoProcessingStatus({ body: { verifiedAt: Date.now(), remainingSeconds: 8640000 } }, res, error => { throw error; }); return res.body.data; };
     assert.equal((await report()).pending, 100);
     await VideoJob.updateMany({ key: { $in: rows.slice(0, 10).map(row => row.key) } }, { $set: { state: 'running', leaseUntil: new Date(Date.now() + 120000) } });
-    assert.equal((await report()).pending, 100, 'A busy account must not hide other photographers behind the first hundred jobs.');
+    assert.equal((await report()).pending, 90, 'Ten active preparations leave 90 delivery slots for the other photographers.');
     await VideoJob.deleteMany({ key: { $in: rows.slice(150).map(row => row.key) } });
     assert.equal((await report()).pending, 0, 'A full account has no spare slots even when it has many queued jobs.');
     await VideoJob.deleteMany({ key: { $in: rows.slice(0, 10).map(row => row.key) } });
