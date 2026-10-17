@@ -1,6 +1,6 @@
 export const CREDIT_MS = 90_000;
 const POLL_MS = 30_000;
-const HARD_SLOTS = 750;
+const HARD_SLOTS = 100;
 const required = ['MONGODB_URI', 'R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET_NAME', 'VIDEO_PLAYBACK_SECRET', 'VIDEO_PLAYBACK_WORKER_URL', 'VIDEO_PROCESSING_SECRET'];
 const forwarded = [...required, 'VIDEO_PROCESSING_MODE', 'VIDEO_MEDIA_WORKER_ENABLED', 'VIDEO_DELIVERY_ENABLED', 'VIDEO_DELIVERY_PUBLIC', 'VIDEO_DELIVERY_QUALIFIED', 'VIDEO_BETA_USER_IDS', 'VIDEO_AI_MODEL_READY', 'CLOUDFLARE_AI_ACCOUNT_ID', 'CLOUDFLARE_AI_API_TOKEN', 'CLOUDFLARE_STREAM_ACCOUNT_ID', 'CLOUDFLARE_STREAM_API_TOKEN', 'CLIENT_URL'];
 export const json = (value, status = 200) => Response.json(value, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -10,7 +10,7 @@ export function integer(value, fallback, max) {
   return number;
 }
 export function processingLimits(env) {
-  const slots = integer(env.VIDEO_MAX_CONTAINERS, 750, HARD_SLOTS);
+  const slots = integer(env.VIDEO_MAX_CONTAINERS, 100, HARD_SLOTS);
   return { slots, dailySeconds: integer(env.VIDEO_DAILY_CONTAINER_SECONDS, 86400 * slots, 86400 * HARD_SLOTS), jobSeconds: integer(env.VIDEO_MAX_JOB_SECONDS, 21600, 43200) };
 }
 export function containerEnvironment(env) {

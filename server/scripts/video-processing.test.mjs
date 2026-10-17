@@ -73,10 +73,10 @@ test('runtime credentials use an explicit allowlist and limits fail closed', () 
   assert.equal(values.OTHER_BINDING, undefined);
   assert.equal(values.NODE_ENV, 'production');
   assert.throws(() => containerEnvironment({ ...env(), MONGODB_URI: '' }));
-  for (const value of ['0', '751', '1.5', 'garbage']) assert.throws(() => processingLimits({ VIDEO_MAX_CONTAINERS: value }));
+  for (const value of ['0', '101', '1.5', 'garbage']) assert.throws(() => processingLimits({ VIDEO_MAX_CONTAINERS: value }));
   assert.equal(processingLimits({ VIDEO_MAX_CONTAINERS: '100' }).slots, 100);
   assert.equal(processingLimits({ VIDEO_MAX_CONTAINERS: '100' }).dailySeconds, 8640000);
-  assert.deepEqual(processingLimits({}), { slots: 750, dailySeconds: 64800000, jobSeconds: 21600 });
+  assert.deepEqual(processingLimits({}), { slots: 100, dailySeconds: 8640000, jobSeconds: 21600 });
   assert.throws(() => processingLimits({ VIDEO_DAILY_CONTAINER_SECONDS: '0' }));
 });
 
@@ -254,47 +254,47 @@ test('new queued work reuses an idle warm encoder without waiting for another co
   assert.equal(slots[0].ctx.container.destroys, 0);
 });
 
-test('750 queued videos start exactly 750 workers and the empty pool shrinks again', async t => {
+test('100 queued videos start exactly 100 workers and the empty pool shrinks again', async t => {
   const { environment, coordinator, slots } = harness();
-  environment.VIDEO_MAX_CONTAINERS = '750';
+  environment.VIDEO_MAX_CONTAINERS = '100';
   let pending = 1000; let statusWrites = 0;
   t.mock.method(console, 'info', () => {});
   t.mock.method(globalThis, 'fetch', async url => {
     if (url.endsWith('/status')) statusWrites++;
-    return Response.json({ success: true, data: { pending, concurrency: 750 } });
+    return Response.json({ success: true, data: { pending, concurrency: 100 } });
   });
   await coordinator.ctx.storage.put('verifiedAt', Date.now());
   await coordinator.dispatch();
-  assert.equal(slots.filter(row => row.ctx.container.running).length, 750);
-  assert.equal(slots.reduce((sum, row) => sum + row.ctx.container.starts, 0), 750);
-  assert.equal((await coordinator.snapshot()).reservedSeconds, 67500, 'Every concurrent worker must reserve its own startup credit.');
+  assert.equal(slots.filter(row => row.ctx.container.running).length, 100);
+  assert.equal(slots.reduce((sum, row) => sum + row.ctx.container.starts, 0), 100);
+  assert.equal((await coordinator.snapshot()).reservedSeconds, 9000, 'Every concurrent worker must reserve its own startup credit.');
   assert.equal(statusWrites, 2, 'The startup burst shares one readiness write after its initial queue read.');
   await coordinator.dispatch();
-  assert.equal(slots.reduce((sum, row) => sum + row.ctx.container.starts, 0), 750);
+  assert.equal(slots.reduce((sum, row) => sum + row.ctx.container.starts, 0), 100);
   pending = 0;
   for (const row of slots) row.ctx.container.busy = false;
   await coordinator.dispatch();
   assert.equal(slots.filter(row => row.ctx.container.running).length, 0);
   await coordinator.dispatch();
-  assert.equal(await coordinator.ctx.storage.get('knownSlots'), 1, 'An empty queue must not keep polling 750 dormant encoder objects.');
+  assert.equal(await coordinator.ctx.storage.get('knownSlots'), 1, 'An empty queue must not keep polling 100 dormant encoder objects.');
 });
 
-test('a 750-slot deployment obeys the database limit, including zero available processing capacity', async t => {
+test('the deployment obeys a reduced database limit, including zero available processing capacity', async t => {
   const { environment, coordinator, slots } = harness();
-  environment.VIDEO_MAX_CONTAINERS = '750';
-  let concurrency = 100;
+  environment.VIDEO_MAX_CONTAINERS = '100';
+  let concurrency = 50;
   t.mock.method(console, 'info', () => {});
-  t.mock.method(globalThis, 'fetch', async () => Response.json({ success: true, data: { pending: 750, concurrency } }));
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ success: true, data: { pending: 100, concurrency } }));
   await coordinator.ctx.storage.put('verifiedAt', Date.now());
   await coordinator.dispatch();
-  assert.equal(slots.filter(row => row.ctx.container.running).length, 100);
-  assert.equal(slots.reduce((sum, row) => sum + row.ctx.container.starts, 0), 100);
+  assert.equal(slots.filter(row => row.ctx.container.running).length, 50);
+  assert.equal(slots.reduce((sum, row) => sum + row.ctx.container.starts, 0), 50);
   concurrency = 0;
   await coordinator.dispatch();
   assert.equal(slots.filter(row => row.ctx.container.running).length, 0);
   await coordinator.ctx.storage.put('verifiedAt', 0);
   await coordinator.dispatch();
-  assert.equal(slots.reduce((sum, row) => sum + row.ctx.container.starts, 0), 100, 'Zero capacity must not start even a readiness probe.');
+  assert.equal(slots.reduce((sum, row) => sum + row.ctx.container.starts, 0), 50, 'Zero capacity must not start even a readiness probe.');
 });
 
 test('demand starts only the workers needed and counts active high-numbered slots correctly', async t => {
