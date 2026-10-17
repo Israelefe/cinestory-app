@@ -6,6 +6,7 @@ import { once } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { createVideoContainerServer } from '../src/services/videoContainer.service.js';
 import { processingAuthorized, wakeVideoProcessing } from '../src/services/videoProcessingAuth.js';
+import { videoProcessingCapacity, createVideoConnectionReader } from '../src/services/videoProcessingCapacity.service.js';
 import { authorized, apiRequest, containerEnvironment, processingClasses, processingLimits, reserveCredit, handleProcessing } from '../../cloudflare/video-processing/processing.js';
 
 const secret = crypto.randomBytes(32).toString('hex');
@@ -72,10 +73,47 @@ test('runtime credentials use an explicit allowlist and limits fail closed', () 
   assert.equal(values.OTHER_BINDING, undefined);
   assert.equal(values.NODE_ENV, 'production');
   assert.throws(() => containerEnvironment({ ...env(), MONGODB_URI: '' }));
-  for (const value of ['0', '101', '1.5', 'garbage']) assert.throws(() => processingLimits({ VIDEO_MAX_CONTAINERS: value }));
+  for (const value of ['0', '751', '1.5', 'garbage']) assert.throws(() => processingLimits({ VIDEO_MAX_CONTAINERS: value }));
   assert.equal(processingLimits({ VIDEO_MAX_CONTAINERS: '100' }).slots, 100);
   assert.equal(processingLimits({ VIDEO_MAX_CONTAINERS: '100' }).dailySeconds, 8640000);
+  assert.deepEqual(processingLimits({}), { slots: 750, dailySeconds: 64800000, jobSeconds: 21600 });
   assert.throws(() => processingLimits({ VIDEO_DAILY_CONTAINER_SECONDS: '0' }));
+});
+
+test('database connection budgets preserve API headroom before admitting 750 encoders', () => {
+  const settings = { workerConcurrency: 750 };
+  const current = videoProcessingCapacity(settings, 500);
+  assert.equal(current.concurrency, 100);
+  assert.equal(current.configuredConcurrency, 750);
+  assert.equal(current.requiredConnections, 2450);
+  assert.equal(current.limitedBy, 'database-connections');
+  assert.equal(videoProcessingCapacity(settings, 2449).concurrency, 749);
+  assert.equal(videoProcessingCapacity(settings, 2450).concurrency, 750);
+  assert.equal(videoProcessingCapacity(settings, 3000).limitedBy, null);
+  assert.equal(videoProcessingCapacity({ workerConcurrency: 20 }, 3000).concurrency, 20);
+  assert.equal(videoProcessingCapacity(settings, 200).concurrency, 0);
+  for (const invalid of [null, undefined, NaN, Infinity, -1, 0, '3000', 3000.5]) {
+    const result = videoProcessingCapacity(settings, invalid);
+    assert.equal(result.concurrency, 100, 'Missing proof must never expand the existing pool.');
+    assert.equal(result.limitedBy, 'database-capacity-unverified');
+  }
+});
+
+test('connection checks share one bounded cache and discard stale expansion proof on failure', async () => {
+  let calls = 0; let clock = 0; let failed = false;
+  const read = createVideoConnectionReader(async () => {
+    calls++;
+    if (failed) throw new Error('private provider error');
+    return { connections: { current: 27, available: 2973 } };
+  }, { now: () => clock });
+  assert.deepEqual(await Promise.all(Array.from({ length: 750 }, () => read())), Array(750).fill(3000));
+  assert.equal(calls, 1);
+  clock = 29_999; assert.equal(await read(), 3000); assert.equal(calls, 1);
+  failed = true; clock = 30_000;
+  assert.equal(await read(), null); assert.equal(calls, 2);
+  assert.equal(videoProcessingCapacity({ workerConcurrency: 750 }, await read()).concurrency, 100);
+  const invalid = createVideoConnectionReader(async () => ({ connections: { current: '27', available: 473 } }));
+  assert.equal(await invalid(), null);
 });
 
 test('production encoder forwards the enabled delivery access flags used by the API', () => {
@@ -216,29 +254,47 @@ test('new queued work reuses an idle warm encoder without waiting for another co
   assert.equal(slots[0].ctx.container.destroys, 0);
 });
 
-test('a hundred queued videos start exactly a hundred workers and the empty pool shrinks again', async t => {
+test('750 queued videos start exactly 750 workers and the empty pool shrinks again', async t => {
   const { environment, coordinator, slots } = harness();
-  environment.VIDEO_MAX_CONTAINERS = '100';
+  environment.VIDEO_MAX_CONTAINERS = '750';
   let pending = 1000; let statusWrites = 0;
   t.mock.method(console, 'info', () => {});
   t.mock.method(globalThis, 'fetch', async url => {
     if (url.endsWith('/status')) statusWrites++;
-    return Response.json({ success: true, data: { pending, concurrency: 100 } });
+    return Response.json({ success: true, data: { pending, concurrency: 750 } });
   });
   await coordinator.ctx.storage.put('verifiedAt', Date.now());
   await coordinator.dispatch();
-  assert.equal(slots.filter(row => row.ctx.container.running).length, 100);
-  assert.equal(slots.reduce((sum, row) => sum + row.ctx.container.starts, 0), 100);
-  assert.equal((await coordinator.snapshot()).reservedSeconds, 9000, 'Every concurrent worker must reserve its own startup credit.');
+  assert.equal(slots.filter(row => row.ctx.container.running).length, 750);
+  assert.equal(slots.reduce((sum, row) => sum + row.ctx.container.starts, 0), 750);
+  assert.equal((await coordinator.snapshot()).reservedSeconds, 67500, 'Every concurrent worker must reserve its own startup credit.');
   assert.equal(statusWrites, 2, 'The startup burst shares one readiness write after its initial queue read.');
   await coordinator.dispatch();
-  assert.equal(slots.reduce((sum, row) => sum + row.ctx.container.starts, 0), 100);
+  assert.equal(slots.reduce((sum, row) => sum + row.ctx.container.starts, 0), 750);
   pending = 0;
   for (const row of slots) row.ctx.container.busy = false;
   await coordinator.dispatch();
   assert.equal(slots.filter(row => row.ctx.container.running).length, 0);
   await coordinator.dispatch();
-  assert.equal(await coordinator.ctx.storage.get('knownSlots'), 1, 'An empty queue must not keep polling a hundred dormant encoder objects.');
+  assert.equal(await coordinator.ctx.storage.get('knownSlots'), 1, 'An empty queue must not keep polling 750 dormant encoder objects.');
+});
+
+test('a 750-slot deployment obeys the database limit, including zero available processing capacity', async t => {
+  const { environment, coordinator, slots } = harness();
+  environment.VIDEO_MAX_CONTAINERS = '750';
+  let concurrency = 100;
+  t.mock.method(console, 'info', () => {});
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ success: true, data: { pending: 750, concurrency } }));
+  await coordinator.ctx.storage.put('verifiedAt', Date.now());
+  await coordinator.dispatch();
+  assert.equal(slots.filter(row => row.ctx.container.running).length, 100);
+  assert.equal(slots.reduce((sum, row) => sum + row.ctx.container.starts, 0), 100);
+  concurrency = 0;
+  await coordinator.dispatch();
+  assert.equal(slots.filter(row => row.ctx.container.running).length, 0);
+  await coordinator.ctx.storage.put('verifiedAt', 0);
+  await coordinator.dispatch();
+  assert.equal(slots.reduce((sum, row) => sum + row.ctx.container.starts, 0), 100, 'Zero capacity must not start even a readiness probe.');
 });
 
 test('demand starts only the workers needed and counts active high-numbered slots correctly', async t => {

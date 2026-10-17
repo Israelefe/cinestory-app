@@ -5,6 +5,7 @@ import { getRuntimeConfig } from '../services/runtimeConfig.service.js';
 import { acquireVideoLease, releaseVideoLease } from '../services/videoLease.service.js';
 import { reconcileVideoLibrary } from '../services/videoWorker.service.js';
 import { cloudflareVideoProcessing, processingAuthorized } from '../services/videoProcessingAuth.js';
+import { getVideoProcessingCapacity } from '../services/videoProcessingCapacity.service.js';
 
 export function requireVideoProcessing(req, res, next) {
   if (!cloudflareVideoProcessing() || !processingAuthorized(req.headers.authorization)) return res.status(401).json({ success: false, message: 'Unauthorised.' });
@@ -17,11 +18,13 @@ export async function videoProcessingStatus(req, res, next) {
     const verified = typeof body.verifiedAt === 'number' ? body.verifiedAt : 0;
     const verifiedAt = verified > Date.now() - 86400_000 && verified <= Date.now() + 30_000 ? new Date(Math.min(verified, Date.now())) : null;
     const budget = Number.isSafeInteger(body.remainingSeconds) && body.remainingSeconds >= 0 ? body.remainingSeconds : 0;
-    await WorkerHeartbeat.findOneAndUpdate({ workerName: 'video-coordinator', instance: 'cloudflare' }, {
-      $set: { status: verifiedAt && budget >= 90 ? 'idle' : 'disabled', heartbeatAt: new Date(), stage: 'cloudflare-containers',
-        details: { verifiedAt, remainingSeconds: budget, reservedSeconds: Number.isSafeInteger(body.reservedSeconds) ? Math.max(0, body.reservedSeconds) : 0 } }
-    }, { upsert: true });
     const settings = (await getRuntimeConfig()).videoDelivery;
+    const capacity = await getVideoProcessingCapacity(settings);
+    const concurrency = capacity.concurrency;
+    await WorkerHeartbeat.findOneAndUpdate({ workerName: 'video-coordinator', instance: 'cloudflare' }, {
+      $set: { status: verifiedAt && budget >= 90 && concurrency > 0 ? 'idle' : 'disabled', heartbeatAt: new Date(), stage: 'cloudflare-containers',
+        details: { verifiedAt, capacity, remainingSeconds: budget, reservedSeconds: Number.isSafeInteger(body.reservedSeconds) ? Math.max(0, body.reservedSeconds) : 0 } }
+    }, { upsert: true });
     const runnable = { runAfter: { $lte: new Date() }, $or: [{ state: 'queued' }, { state: 'running', leaseUntil: { $lte: new Date() } }] };
     // Cleanup must still run when uploads/AI are paused.
     if (!settings.enabled) runnable.type = 'delete';
@@ -36,18 +39,19 @@ export async function videoProcessingStatus(req, res, next) {
       VideoJob.findOne({ state: 'queued' }).sort({ runAfter: 1 }).select('runAfter').lean()
     ]);
     const active = new Map(activeOwners.map(row => [String(row._id), row.count]));
-    const accountCapacity = Math.min(10, settings.workerConcurrency);
-    const pending = Math.min(settings.workerConcurrency, queuedOwners.reduce((sum, row) => sum + Math.min(row.count, Math.max(0, accountCapacity - (active.get(String(row._id)) || 0))), 0));
+    const accountCapacity = Math.min(10, concurrency);
+    const pending = Math.min(concurrency, queuedOwners.reduce((sum, row) => sum + Math.min(row.count, Math.max(0, accountCapacity - (active.get(String(row._id)) || 0))), 0));
     // Only the authenticated coordinator receives these operational summaries.
     // Never include account IDs, filenames, object keys or raw provider errors.
     const diagnostics = {
+      capacity,
       jobs: Object.fromEntries(jobStates.map(row => [row._id, row.count])),
       assets: Object.fromEntries(assetStates.map(row => [row._id, row.count])),
       nextRunAt: nextJob?.runAfter || null,
       failures: failures.map(row => ({ type: row.type, state: row.state, attempts: row.attempts, runAfter: row.runAfter, updatedAt: row.updatedAt,
         code: /^VIDEO_[A-Z_]{1,60}$|^R2_[A-Z_]{1,60}$/.test(row.errorCode) ? row.errorCode : 'VIDEO_JOB_FAILED' }))
     };
-    res.set('Cache-Control', 'no-store').json({ success: true, data: { pending, concurrency: settings.workerConcurrency, cleanupOnly: !settings.enabled, diagnostics } });
+    res.set('Cache-Control', 'no-store').json({ success: true, data: { pending, concurrency, cleanupOnly: !settings.enabled, diagnostics } });
   } catch (error) { next(error); }
 }
 

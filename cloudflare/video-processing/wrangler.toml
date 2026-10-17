@@ -15,9 +15,9 @@ VIDEO_DELIVERY_ENABLED = "true"
 VIDEO_DELIVERY_PUBLIC = "true"
 VIDEO_DELIVERY_QUALIFIED = "true"
 # Start encoders only for queued work; stop them when their queue empties.
-VIDEO_MAX_CONTAINERS = "100"
+VIDEO_MAX_CONTAINERS = "750"
 # Enough aggregate runtime for the full pool for one UTC day.
-VIDEO_DAILY_CONTAINER_SECONDS = "8640000"
+VIDEO_DAILY_CONTAINER_SECONDS = "64800000"
 VIDEO_MAX_JOB_SECONDS = "21600"
 VIDEO_AI_MODEL_READY = "false"
 
@@ -31,7 +31,7 @@ crons = ["* * * * *"]
 class_name = "VideoEncoder"
 image = "../../server/VideoDelivery.Dockerfile"
 image_build_context = "../../server"
-max_instances = 100
+max_instances = 750
 # Custom instances require at least 3 GiB RAM per vCPU.
 instance_type = { vcpu = 2, memory_mib = 6144, disk_mb = 20000 }
 

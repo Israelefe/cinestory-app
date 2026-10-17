@@ -1,6 +1,6 @@
 export const CREDIT_MS = 90_000;
 const POLL_MS = 30_000;
-const HARD_SLOTS = 100;
+const HARD_SLOTS = 750;
 const required = ['MONGODB_URI', 'R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET_NAME', 'VIDEO_PLAYBACK_SECRET', 'VIDEO_PLAYBACK_WORKER_URL', 'VIDEO_PROCESSING_SECRET'];
 const forwarded = [...required, 'VIDEO_PROCESSING_MODE', 'VIDEO_MEDIA_WORKER_ENABLED', 'VIDEO_DELIVERY_ENABLED', 'VIDEO_DELIVERY_PUBLIC', 'VIDEO_DELIVERY_QUALIFIED', 'VIDEO_BETA_USER_IDS', 'VIDEO_AI_MODEL_READY', 'CLOUDFLARE_AI_ACCOUNT_ID', 'CLOUDFLARE_AI_API_TOKEN', 'CLOUDFLARE_STREAM_ACCOUNT_ID', 'CLOUDFLARE_STREAM_API_TOKEN', 'CLIENT_URL'];
 export const json = (value, status = 200) => Response.json(value, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -10,7 +10,7 @@ export function integer(value, fallback, max) {
   return number;
 }
 export function processingLimits(env) {
-  const slots = integer(env.VIDEO_MAX_CONTAINERS, 100, HARD_SLOTS);
+  const slots = integer(env.VIDEO_MAX_CONTAINERS, 750, HARD_SLOTS);
   return { slots, dailySeconds: integer(env.VIDEO_DAILY_CONTAINER_SECONDS, 86400 * slots, 86400 * HARD_SLOTS), jobSeconds: integer(env.VIDEO_MAX_JOB_SECONDS, 21600, 43200) };
 }
 export function containerEnvironment(env) {
@@ -79,7 +79,7 @@ export function processingClasses(DurableObject) {
       const limits = processingLimits(this.env);
       const snapshot = await this.snapshot();
       const state = await apiRequest(this.env, 'status', snapshot);
-      if (!Number.isSafeInteger(state?.pending) || state.pending < 0 || !Number.isSafeInteger(state?.concurrency) || state.concurrency < 1 || state.concurrency > HARD_SLOTS) throw new Error('Invalid queue response.');
+      if (!Number.isSafeInteger(state?.pending) || state.pending < 0 || !Number.isSafeInteger(state?.concurrency) || state.concurrency < 0 || state.concurrency > HARD_SLOTS) throw new Error('Invalid queue response.');
       if (state.diagnostics) console.info('[video-processing] Queue status ' + JSON.stringify({ pending: state.pending, cleanupOnly: state.cleanupOnly, ...state.diagnostics }));
       const activeLimit = Math.min(limits.slots, state.concurrency);
       const needsProbe = snapshot.verifiedAt < Date.now() - 23 * 3600_000;
@@ -118,7 +118,7 @@ export function processingClasses(DurableObject) {
         });
       }
       if (path === '/verified') {
-        // A hundred cold encoders can report at once. Share one database/API
+        // Hundreds of cold encoders can report at once. Share one database/API
         // readiness update, and make every caller await its successful write.
         if (!this.reportedAt || Date.now() - this.reportedAt > POLL_MS) {
           if (!this.verifying) this.verifying = (async () => {
